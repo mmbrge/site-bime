@@ -93,7 +93,9 @@ try {
     $stmt->execute([$person_id, $relativeDbPath]);
     $intro_id = $pdo->lastInsertId();
 
-    $stmt = $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, 'در انتظار انتخاب', 'NEW')");
+    // insurance_type هنوز مشخص نیست (مشتری نوع بیمه را انتخاب نکرده)؛ ستون فقط THIRDPARTY/BODY/ENDORSEMENT
+    // را می‌پذیرد، پس NULL می‌ماند تا در مرحله‌ی انتخاب نوع بیمه تعیین شود.
+    $stmt = $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, NULL, 'NEW')");
     $stmt->execute([$person_id, $intro_id]);
     $request_id = $pdo->lastInsertId();
 
