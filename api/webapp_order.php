@@ -307,7 +307,8 @@ try {
 
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
-            echo json_encode(['ok' => false, 'error' => 'خطای سرور در بارگذاری مدرک: ' . $e->getMessage()]);
+            error_log('[webapp_order upload_doc] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => 'خطای سرور در بارگذاری مدرک.']);
         }
         exit;
     }
@@ -336,5 +337,6 @@ try {
 
     echo json_encode(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {
-    echo json_encode(['ok' => false, 'error' => 'خطای سرور: ' . $e->getMessage()]);
+    error_log('[webapp_order] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
 }

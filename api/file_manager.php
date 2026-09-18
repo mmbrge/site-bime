@@ -175,5 +175,6 @@ try {
     echo json_encode(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Exception $e) {
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok' => false, 'error' => 'خطا: ' . $e->getMessage()]);
+    error_log('[file_manager] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطا در پردازش درخواست.']);
 }

@@ -28,7 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             echo json_encode(['ok' => true]);
         } catch (Exception $e) {
-            echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس: ' . $e->getMessage()]);
+            error_log('[settings] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس.']);
         }
         exit;
     }

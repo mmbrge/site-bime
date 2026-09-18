@@ -46,7 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         
         echo json_encode(['ok' => true, 'data' => $records]);
     } catch (PDOException $e) {
-        echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس: ' . $e->getMessage()]);
+        error_log('[records] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس.']);
     }
     exit;
 }

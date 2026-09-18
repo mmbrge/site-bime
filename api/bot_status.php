@@ -20,7 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'has_token' => !empty($settings['bot_token'])
         ]);
     } catch (Exception $e) {
-        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        error_log('[bot_status GET] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
     }
     exit;
 }
@@ -37,14 +38,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'bot_last_ping'");
             $stmt->execute([time()]);
             
-            // استخراج وضعیت فعلی و توکن برای ارسال به ربات
+            // استخراج وضعیت فعلی (توکن دیگر در پاسخ برگردانده نمی‌شود - اطلاعات حساس)
             $stmtSettings = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('bot_enabled', 'bot_token')");
             $settings = $stmtSettings->fetchAll(PDO::FETCH_KEY_PAIR);
-            
+
             echo json_encode([
-                'ok' => true, 
+                'ok' => true,
                 'is_enabled' => ($settings['bot_enabled'] ?? '1') === '1',
-                'bot_token' => $settings['bot_token'] ?? null
+                'has_token' => !empty($settings['bot_token'])
             ]);
             exit;
         }
@@ -64,7 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
     } catch (Exception $e) {
-        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        error_log('[bot_status POST] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
     }
     exit;
 }

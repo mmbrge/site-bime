@@ -28,6 +28,7 @@ try {
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    // نمایش دقیق خطای دیتابیس در صورت بروز مشکل
-    die("❌ خطای دقیق دیتابیس: " . $e->getMessage());
+    // جزئیات خطا فقط در لاگ سرور ثبت می‌شود، نه در خروجی عمومی
+    error_log('DB connection failed: ' . $e->getMessage());
+    die('❌ خطا در اتصال به دیتابیس.');
 }

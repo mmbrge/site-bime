@@ -225,5 +225,6 @@ try {
     }
 
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس: ' . $e->getMessage()]);
+    error_log('[user_actions] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس.']);
 }

@@ -1,8 +1,15 @@
 <?php
 // فایل: api/import_letter.php
+session_start();
 ob_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    ob_end_clean();
+    echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
+    exit;
+}
 
 // تعریف مسیر روت بایگانی دقیقا در Public_html یا روت اصلی
 $archiveRootDir = dirname(__DIR__) . '/بایگانی';
@@ -96,6 +103,7 @@ try {
 } catch (Exception $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     ob_end_clean();
-    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس: ' . $e->getMessage()]);
+    error_log('[import_letter] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس.']);
 }
 ?>

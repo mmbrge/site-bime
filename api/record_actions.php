@@ -155,7 +155,10 @@ try {
             exit;
         }
         $password = trim($data['password'] ?? '');
-        if ($password !== '9876') {
+        $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $adminHash = $stmt->fetchColumn();
+        if ($password === '' || !$adminHash || !password_verify($password, $adminHash)) {
             echo json_encode(['ok' => false, 'error' => 'رمز عبور نادرست است.']);
             exit;
         }
@@ -196,6 +199,7 @@ try {
     }
 } catch (Exception $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس: ' . $e->getMessage()]);
+    error_log('[record_actions] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای دیتابیس.']);
 }
 ?>

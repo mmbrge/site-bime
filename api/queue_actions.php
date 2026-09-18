@@ -372,5 +372,6 @@ try {
 
 } catch (Exception $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    error_log('[queue_actions] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
 }

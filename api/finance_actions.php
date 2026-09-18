@@ -807,5 +807,6 @@ try {
 
     echo json_encode(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {
-    echo json_encode(['ok' => false, 'error' => 'خطای سرور: ' . $e->getMessage()]);
+    error_log('[finance_actions] ' . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
 }
