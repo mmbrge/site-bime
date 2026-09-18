@@ -620,11 +620,17 @@ try {
             $chequeId = $pdo->lastInsertId();
         }
 
-        // فیش‌ها
+        // فیش‌ها - در پوشه‌ی سال/ماه/شرکت/«فیش‌های کارگزاری» (هم‌ساختار با پوشه‌ی صورتحساب‌ها)
         $receipts = [];
         if (!empty($_FILES['receipts'])) {
-            $dir = finance_archive_root($siteRoot) . '/فیش‌ها/' . date('Y');
-            if (!is_dir($dir)) @mkdir($dir, 0777, true);
+            $paidJalaliParts = array_map('intval', explode('/', str_replace('-', '/', trim($_POST['paid_jalali'] ?? ''))));
+            [$py, $pm, $pd] = $paidJalaliParts + [0 => intval(date('Y')) - 621, 1 => 1, 2 => 1];
+            $period = fin_resolve_period_for_date($pdo, $py, $pm, $pd);
+            $stmtCompanyName = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
+            $stmtCompanyName->execute([$companyId]);
+            $companyName = $stmtCompanyName->fetchColumn();
+            $dir = fin_receipt_folder($siteRoot, $period, $companyName, 'us');
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
             $files = $_FILES['receipts'];
             $n = is_array($files['name']) ? count($files['name']) : 0;
             for ($i = 0; $i < $n; $i++) {
@@ -748,6 +754,79 @@ try {
             $out[] = $r;
         }
         echo json_encode(['ok' => true, 'data' => $out, 'rule_collect_before_pay' => $collectRule], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // نسخه‌ی FormData همین اکشن (settle_pasargad) که فیش پرداختی به پاسارگاد را هم می‌پذیرد؛
+    // منطق تسویه دقیقاً یکسان است، فقط پیش از ثبت، فیش‌ها را در پوشه‌ی «فیش‌های پاسارگاد» ذخیره می‌کند
+    if (isset($_FILES['pasargad_receipts']) || ($_POST['action'] ?? '') === 'settle_pasargad_with_receipt') {
+        $ids = array_map('intval', json_decode($_POST['installment_ids'] ?? '[]', true) ?: []);
+        if (!$ids) { echo json_encode(['ok' => false, 'error' => 'قسطی انتخاب نشده است.']); exit; }
+
+        $collectRule = fin_settings($pdo)['rule_collect_before_pay'] === '1';
+        $place = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("
+            SELECT pi.id, pi.amount, COALESCE(SUM(pa.amount),0) AS paid
+            FROM policy_installments pi
+            LEFT JOIN payment_allocations pa ON pa.installment_id = pi.id
+            WHERE pi.id IN ($place) AND pi.settled_to_pasargad = 0
+            GROUP BY pi.id");
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll();
+
+        $ok = []; $blocked = 0; $total = 0;
+        foreach ($rows as $r) {
+            if ($collectRule && intval($r['paid']) < intval($r['amount'])) { $blocked++; continue; }
+            $ok[] = $r['id']; $total += intval($r['amount']);
+        }
+        if (!$ok) { echo json_encode(['ok' => false, 'error' => 'هیچ قسطی قابل تسویه نبود (قانون «اول دریافت، بعد پرداخت» فعال است).']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $periodId = !empty($_POST['period_id']) ? intval($_POST['period_id']) : null;
+        $companyId = !empty($_POST['company_id']) ? intval($_POST['company_id']) : null;
+
+        $receipts = [];
+        if (!empty($_FILES['pasargad_receipts'])) {
+            $paidJalaliParts = array_map('intval', explode('/', str_replace('-', '/', trim($_POST['paid_jalali'] ?? ''))));
+            [$py, $pm, $pd] = $paidJalaliParts + [0 => intval(date('Y')) - 621, 1 => 1, 2 => 1];
+            $period = fin_resolve_period_for_date($pdo, $py, $pm, $pd);
+            $companyName = null;
+            if ($companyId) {
+                $stmtCompanyName = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
+                $stmtCompanyName->execute([$companyId]);
+                $companyName = $stmtCompanyName->fetchColumn();
+            }
+            $dir = fin_receipt_folder($siteRoot, $period, $companyName, 'pasargad');
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $files = $_FILES['pasargad_receipts'];
+            $n = is_array($files['name']) ? count($files['name']) : 0;
+            for ($i = 0; $i < $n; $i++) {
+                if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
+                $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
+                $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
+                if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
+                    if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
+                    $receipts[] = ltrim(str_replace($siteRoot, '', $dest), '/');
+                }
+            }
+        }
+
+        $pdo->prepare("INSERT INTO pasargad_settlements (period_id, company_id, invoice_id, amount, paid_jalali, reference_no, receipts, note, created_by)
+                       VALUES (?,?,?,?,?,?,?,?,?)")
+            ->execute([$periodId, $companyId, null, $total, trim($_POST['paid_jalali'] ?? ''), trim($_POST['reference_no'] ?? ''),
+                       $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null, trim($_POST['note'] ?? ''), $_SESSION['user_id']]);
+        $sid = $pdo->lastInsertId();
+
+        $insLine = $pdo->prepare("INSERT INTO pasargad_settlement_lines (settlement_id, installment_id, amount) VALUES (?,?,?)");
+        $mark = $pdo->prepare("UPDATE policy_installments SET settled_to_pasargad = 1 WHERE id = ?");
+        foreach ($rows as $r) {
+            if (!in_array($r['id'], $ok, true)) continue;
+            $insLine->execute([$sid, $r['id'], intval($r['amount'])]);
+            $mark->execute([$r['id']]);
+        }
+
+        echo json_encode(['ok' => true, 'settled' => count($ok), 'blocked' => $blocked, 'total' => $total], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -489,9 +489,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
 
-            <div class="flex gap-2 mb-4">
+            <div class="flex gap-2 mb-4 flex-wrap">
                 <button onclick="switchGoftegoSub('tickets')" id="goftego-sub-tickets" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">🎫 تیکت‌های پشتیبانی</button>
                 <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 چت‌های ربات (آرشیو کامل)</button>
+                <button onclick="switchGoftegoSub('staffchat')" id="goftego-sub-staffchat" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">👥 چت داخلی</button>
+                <?php if ($canSeeCompanies): ?>
+                <button onclick="switchGoftegoSub('companychat')" id="goftego-sub-companychat" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🏢 چت با شرکت‌ها</button>
+                <?php endif; ?>
             </div>
 
             <div id="goftego-panel-tickets">
@@ -540,6 +544,48 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
             </div>
+
+            <div id="goftego-panel-staffchat" class="hidden">
+                <div class="card overflow-hidden border-blue-100 flex relative" style="height: 640px;">
+                    <div class="w-1/3 border-l flex flex-col overflow-y-auto" id="staffchat-list"></div>
+                    <div class="w-2/3 flex flex-col relative">
+                        <div id="staffchat-header" class="p-4 border-b bg-blue-50 font-bold text-blue-700 hidden"><span id="staffchat-title"></span></div>
+                        <div id="staffchat-body" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+                            <p class="text-center text-slate-400 text-sm mt-10">یک همکار را از لیست انتخاب کنید.</p>
+                        </div>
+                        <div id="staffchat-input-row" class="p-3 border-t flex gap-2 items-center hidden">
+                            <label class="text-slate-400 hover:text-blue-500 text-lg cursor-pointer">
+                                <i class="fas fa-paperclip"></i>
+                                <input type="file" id="staffchat-file" class="hidden" onchange="sendStaffChatFile()">
+                            </label>
+                            <input type="text" id="staffchat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
+                            <button onclick="sendStaffChatMessage()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">ارسال</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($canSeeCompanies): ?>
+            <div id="goftego-panel-companychat" class="hidden">
+                <div class="card overflow-hidden border-cyan-100 flex relative" style="height: 640px;">
+                    <div class="w-1/3 border-l flex flex-col overflow-y-auto" id="companychat-list"></div>
+                    <div class="w-2/3 flex flex-col relative">
+                        <div id="companychat-header" class="p-4 border-b bg-cyan-50 font-bold text-cyan-700 hidden"><span id="companychat-title"></span></div>
+                        <div id="companychat-body" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+                            <p class="text-center text-slate-400 text-sm mt-10">یک شرکت را از لیست انتخاب کنید.</p>
+                        </div>
+                        <div id="companychat-input-row" class="p-3 border-t flex gap-2 items-center hidden">
+                            <label class="text-slate-400 hover:text-cyan-500 text-lg cursor-pointer">
+                                <i class="fas fa-paperclip"></i>
+                                <input type="file" id="companychat-file" class="hidden" onchange="sendCompanyChatFile()">
+                            </label>
+                            <input type="text" id="companychat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
+                            <button onclick="sendCompanyChatMessage()" class="bg-cyan-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-cyan-700">ارسال</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
 
 
@@ -1292,24 +1338,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= کاربران داخلیِ پنل (ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON) ======================= -->
         <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
-            <p class="text-xs text-slate-400 -mt-4">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار شرکت‌ها) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
-            <div class="card p-5 max-w-lg">
-                <h3 class="font-bold text-sm mb-4">افزودن کاربر داخلی جدید</h3>
-                <div class="float-input"><label>نام و نام‌خانوادگی</label><input type="text" id="su-fullname"></div>
-                <div class="float-input"><label>نام کاربری</label><input type="text" id="su-username" dir="ltr"></div>
-                <div class="float-input"><label>رمز عبور</label><input type="text" id="su-password" dir="ltr"></div>
-                <div class="float-input"><label>شماره موبایل (اختیاری)</label><input type="text" id="su-mobile" dir="ltr"></div>
-                <div class="float-input">
-                    <label>نقش</label>
-                    <select id="su-role">
-                        <option value="OPERATOR">اپراتور</option>
-                        <option value="FINANCE">مالی</option>
-                        <option value="COMPANY_LIAISON">همکار بخش شرکت‌ها</option>
-                        <option value="ADMIN">مدیر کل</option>
-                    </select>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
+                    <p class="text-xs text-slate-400 mt-1">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار شرکت‌ها) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
                 </div>
-                <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
+                <div class="flex gap-2">
+                    <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+                    <button onclick="openModal('add-staff-user-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن عضو</button>
+                </div>
             </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
@@ -1328,14 +1365,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">درخواست‌های بیمه‌ی شرکتی</h1>
-                <select id="creq-status-filter" onchange="loadCompanyRequests()" class="text-xs font-bold border rounded-xl px-3 py-2">
-                    <option value="">همه‌ی وضعیت‌ها</option>
-                    <option value="NEW">جدید</option>
-                    <option value="DOCS_REVIEW">در حال بررسی</option>
-                    <option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
-                    <option value="ISSUED">صادر شده</option>
-                    <option value="CANCELLED">لغو شده</option>
-                </select>
+                <div class="flex items-center gap-2">
+                    <select id="creq-status-filter" onchange="loadCompanyRequests()" class="text-xs font-bold border rounded-xl px-3 py-2">
+                        <option value="">همه‌ی وضعیت‌ها</option>
+                        <option value="NEW">جدید</option>
+                        <option value="DOCS_REVIEW">در حال بررسی</option>
+                        <option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
+                        <option value="ISSUED">صادر شده</option>
+                        <option value="CANCELLED">لغو شده</option>
+                    </select>
+                    <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
+                </div>
             </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
@@ -1351,14 +1391,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= تب صندوق ورودی مدارک شرکتی ======================= -->
         <div id="tab-companies-inbox" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <h1 class="text-2xl font-black text-slate-800">صندوق ورودی مدارک و نامه‌های شرکتی</h1>
-            <p class="text-xs text-slate-400 -mt-4">هر مدرک تازه‌آپلودشده اینجا می‌نشیند تا پلاک، نوع مدرک و درخواستِ مربوطه به‌صورت دستی مشخص شود.</p>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800">صندوق ورودی مدارک و نامه‌های شرکتی</h1>
+                    <p class="text-xs text-slate-400 mt-1">هر مدرک تازه‌آپلودشده اینجا می‌نشیند تا پلاک، نوع مدرک و درخواستِ مربوطه به‌صورت دستی مشخص شود.</p>
+                </div>
+                <button onclick="loadCompanyInbox()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+            </div>
             <div id="cinbox-list" class="space-y-3"></div>
         </div>
 
         <!-- ======================= تب گزارش مالی شرکت‌ها ======================= -->
         <div id="tab-companies-finance" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <h1 class="text-2xl font-black text-slate-800">گزارش مالی شرکت‌ها</h1>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <h1 class="text-2xl font-black text-slate-800">گزارش مالی شرکت‌ها</h1>
+                <button onclick="loadCompanyFinance()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+            </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
@@ -1373,59 +1421,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php if (!$isLiaison): ?>
         <!-- ======================= تب مدیریت شرکت‌ها (فقط ادمین) ======================= -->
         <div id="tab-companies-manage" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <h1 class="text-2xl font-black text-slate-800">مدیریت شرکت‌های درخواست‌کننده</h1>
-            <div class="grid md:grid-cols-2 gap-6">
-                <div class="card p-5">
-                    <h3 class="font-bold text-sm mb-4"><span id="cm-form-title">افزودن شرکت جدید</span></h3>
-                    <input type="hidden" id="cm-company-id">
-                    <div class="float-input"><label>نام شرکت</label><input type="text" id="cm-company-name"></div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="float-input"><label>کد اقتصادی</label><input type="text" id="cm-economic-code" dir="ltr"></div>
-                        <div class="float-input"><label>شماره تماس</label><input type="text" id="cm-phone" dir="ltr"></div>
-                    </div>
-                    <div class="float-input"><label>آدرس</label><input type="text" id="cm-address"></div>
-                    <div class="float-input">
-                        <label>شرکت مادر (اگر زیرمجموعه است)</label>
-                        <select id="cm-parent-company"><option value="">شرکت مستقل / خودش مادر است</option></select>
-                    </div>
-                    <div class="float-input">
-                        <label>گروه بله‌ی مرتبط</label>
-                        <select id="cm-group-select" onchange="document.getElementById('cm-group-manual').value = this.value === '__manual__' ? '' : this.value">
-                            <option value="">بدون گروه (بعداً قابل تنظیم است)</option>
-                            <option value="__manual__">-- وارد کردن دستی شناسه‌ی گروه --</option>
-                        </select>
-                        <input type="text" id="cm-group-manual" placeholder="اگر گروه در لیست نبود، شناسه‌ی چت را اینجا بنویسید" dir="ltr" class="mt-2">
-                    </div>
-                    <div class="float-input">
-                        <label>نحوه‌ی تسویه</label>
-                        <select id="cm-payment-terms">
-                            <option value="">مشخص نشده</option>
-                            <option value="INSTALLMENT">قسطی</option>
-                            <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
-                            <option value="CASH_IMMEDIATE">نقدی - فوری</option>
-                        </select>
-                    </div>
-                    <p class="text-xs font-bold text-slate-500 mb-2">تنظیمات قسط‌بندی</p>
-                    <div class="grid grid-cols-3 gap-3">
-                        <div class="float-input"><label>تعداد اقساط</label><input type="number" id="cm-inst-count" min="1"></div>
-                        <div class="float-input"><label>سررسید اول (ماه بعد)</label><input type="number" id="cm-offset-months" min="0" value="0"></div>
-                        <div class="float-input"><label>+ روز</label><input type="number" id="cm-offset-days" min="0" value="0"></div>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="createCompany()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت شرکت</button>
-                        <button onclick="resetCompanyForm()" class="px-4 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold">فرم جدید</button>
-                    </div>
-                </div>
-                <div class="card p-5">
-                    <h3 class="font-bold text-sm mb-4">ساخت حساب کاربری ثبت‌کننده</h3>
-                    <p class="text-[11px] text-slate-400 mb-2">اگر کاربر به چند شرکت دسترسی داشته باشد، در پنلش انتخابگر شرکت نشان داده می‌شود؛ اگر فقط یکی انتخاب شود، پنلش قفل روی همان می‌ماند.</p>
-                    <label class="text-xs font-bold text-slate-500 block mb-2">شرکت(ها)</label>
-                    <div id="cm-pu-companies" class="border rounded-xl p-3 mb-4 max-h-32 overflow-y-auto text-xs"></div>
-                    <div class="float-input"><label>نام و نام‌خانوادگی</label><input type="text" id="cm-pu-fullname"></div>
-                    <div class="float-input"><label>نام کاربری</label><input type="text" id="cm-pu-username" dir="ltr"></div>
-                    <div class="float-input"><label>رمز عبور</label><input type="text" id="cm-pu-password" dir="ltr"></div>
-                    <div class="float-input"><label>شماره موبایل (اختیاری)</label><input type="text" id="cm-pu-mobile" dir="ltr"></div>
-                    <button onclick="createPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ساخت حساب کاربری</button>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <h1 class="text-2xl font-black text-slate-800">مدیریت شرکت‌های درخواست‌کننده</h1>
+                <div class="flex gap-2">
+                    <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+                    <button onclick="resetCompanyForm(); openModal('add-company-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن شرکت</button>
+                    <button onclick="openModal('add-portal-user-modal')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-plus ml-1"></i>افزودن عضو</button>
                 </div>
             </div>
             <div class="card overflow-x-auto">
@@ -1475,19 +1476,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('cinbox-tag-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">تگ‌گذاری مدرک</h3>
             <input type="hidden" id="cit-doc-id">
-            <div class="float-input"><label>درخواست مربوطه</label><select id="cit-request" onchange="onCitRequestChange()"></select></div>
+            <div class="float-input"><select id="cit-request" onchange="onCitRequestChange()"></select><label>درخواست مربوطه</label></div>
             <div class="float-input">
-                <label>پلاک</label>
                 <select id="cit-existing-plate" onchange="onCitPlateSelectChange()"><option value="">-- پلاک جدید --</option></select>
+                <label>پلاک</label>
             </div>
             <div class="float-input">
-                <label>نوع مدرک</label>
                 <select id="cit-doc-type" onchange="document.getElementById('cit-doc-type-other').classList.toggle('hidden', this.value !== 'other')">
                     <option value="car_card_or_title">کارت ماشین (پشت و رو) یا سند مالکیت</option>
                     <option value="prev_body_policy">بیمه بدنه قبلی</option>
                     <option value="health_inspection">گزارش بازدید سلامت</option>
                     <option value="other">سایر...</option>
                 </select>
+                <label>نوع مدرک</label>
                 <input type="text" id="cit-doc-type-other" placeholder="نوع مدرک را بنویسید" class="mt-2 hidden">
             </div>
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک (اگر «پلاک جدید» را انتخاب کرده‌اید)</label>
@@ -1498,10 +1499,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <input type="text" id="cit-p4" maxlength="2" placeholder="۶۷" class="text-center border rounded-lg p-2 text-sm">
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <div class="float-input"><label>نوع بیمه</label>
+                <div class="float-input">
                     <select id="cit-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
+                    <label>نوع بیمه</label>
                 </div>
-                <div class="float-input"><label>تاریخ انقضا</label><input type="date" id="cit-expiry"></div>
+                <div class="float-input"><input type="date" id="cit-expiry" placeholder=" "><label>تاریخ انقضا</label></div>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="cit-skip-health"> این پلاک نیاز به بازدید سلامت ندارد (طبق روال این شرکت)
@@ -1516,11 +1518,95 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('cissue-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">ثبت صدور بیمه‌نامه</h3>
             <input type="hidden" id="cis-plate-id">
-            <div class="float-input"><label>شماره بیمه‌نامه</label><input type="text" id="cis-policy-number" dir="ltr"></div>
-            <div class="float-input"><label>شماره شاسی (VIN)</label><input type="text" id="cis-vin" dir="ltr"></div>
-            <div class="float-input"><label>حق بیمه (ریال)</label><input type="number" id="cis-premium" dir="ltr"></div>
-            <div class="float-input"><label>فایل بیمه‌نامه‌ی صادرشده</label><input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png"></div>
+            <div class="float-input"><input type="text" id="cis-policy-number" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه</label></div>
+            <div class="float-input"><input type="text" id="cis-vin" dir="ltr" placeholder=" "><label>شماره شاسی (VIN)</label></div>
+            <div class="float-input"><input type="number" id="cis-premium" dir="ltr" placeholder=" "><label>حق بیمه (ریال)</label></div>
+            <div class="float-input"><input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png" placeholder=" "><label>فایل بیمه‌نامه‌ی صادرشده</label></div>
             <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
+        </div>
+    </div>
+
+    <!-- مودال افزودن/ویرایش شرکت -->
+    <div id="add-company-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-lg p-6 relative max-h-[85vh] overflow-y-auto">
+            <button type="button" onclick="closeModal('add-company-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4"><span id="cm-form-title">افزودن شرکت جدید</span></h3>
+            <input type="hidden" id="cm-company-id">
+            <div class="float-input"><input type="text" id="cm-company-name" placeholder=" "><label>نام شرکت</label></div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input"><input type="text" id="cm-economic-code" dir="ltr" placeholder=" "><label>کد اقتصادی</label></div>
+                <div class="float-input"><input type="text" id="cm-phone" dir="ltr" placeholder=" "><label>شماره تماس</label></div>
+            </div>
+            <div class="float-input"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
+            <div class="float-input">
+                <select id="cm-parent-company"><option value="">شرکت مستقل / خودش مادر است</option></select>
+                <label>شرکت مادر (اگر زیرمجموعه است)</label>
+            </div>
+            <div class="float-input">
+                <select id="cm-group-select" onchange="document.getElementById('cm-group-manual').value = this.value === '__manual__' ? '' : this.value">
+                    <option value="">بدون گروه (بعداً قابل تنظیم است)</option>
+                    <option value="__manual__">-- وارد کردن دستی شناسه‌ی گروه --</option>
+                </select>
+                <label>گروه بله‌ی مرتبط</label>
+                <input type="text" id="cm-group-manual" placeholder="اگر گروه در لیست نبود، شناسه‌ی چت را اینجا بنویسید" dir="ltr" class="mt-2">
+            </div>
+            <div class="float-input">
+                <select id="cm-payment-terms">
+                    <option value="">مشخص نشده</option>
+                    <option value="INSTALLMENT">قسطی</option>
+                    <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
+                    <option value="CASH_IMMEDIATE">نقدی - فوری</option>
+                </select>
+                <label>نحوه‌ی تسویه</label>
+            </div>
+            <p class="text-xs font-bold text-slate-500 mb-2">تنظیمات قسط‌بندی</p>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="float-input"><input type="number" id="cm-inst-count" min="1" placeholder=" "><label>تعداد اقساط</label></div>
+                <div class="float-input"><input type="number" id="cm-offset-months" min="0" value="0" placeholder=" "><label>سررسید اول (ماه بعد)</label></div>
+                <div class="float-input"><input type="number" id="cm-offset-days" min="0" value="0" placeholder=" "><label>+ روز</label></div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="createCompany()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت شرکت</button>
+                <button onclick="resetCompanyForm()" class="px-4 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold">فرم جدید</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- مودال افزودن حساب کاربری ثبت‌کننده -->
+    <div id="add-portal-user-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="closeModal('add-portal-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">افزودن عضو - حساب کاربری ثبت‌کننده</h3>
+            <p class="text-[11px] text-slate-400 mb-2">اگر کاربر به چند شرکت دسترسی داشته باشد، در پنلش انتخابگر شرکت نشان داده می‌شود؛ اگر فقط یکی انتخاب شود، پنلش قفل روی همان می‌ماند.</p>
+            <label class="text-xs font-bold text-slate-500 block mb-2">شرکت(ها)</label>
+            <div id="cm-pu-companies" class="border rounded-xl p-3 mb-4 max-h-32 overflow-y-auto text-xs"></div>
+            <div class="float-input"><input type="text" id="cm-pu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
+            <div class="float-input"><input type="text" id="cm-pu-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
+            <div class="float-input"><input type="text" id="cm-pu-password" dir="ltr" placeholder=" "><label>رمز عبور</label></div>
+            <div class="float-input"><input type="text" id="cm-pu-mobile" dir="ltr" placeholder=" "><label>شماره موبایل (اختیاری)</label></div>
+            <button onclick="createPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ساخت حساب کاربری</button>
+        </div>
+    </div>
+
+    <!-- مودال افزودن عضو داخلی جدید -->
+    <div id="add-staff-user-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="closeModal('add-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">افزودن کاربر داخلی جدید</h3>
+            <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
+            <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
+            <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور</label></div>
+            <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" "><label>شماره موبایل (اختیاری)</label></div>
+            <div class="float-input">
+                <select id="su-role">
+                    <option value="OPERATOR">اپراتور</option>
+                    <option value="FINANCE">مالی</option>
+                    <option value="COMPANY_LIAISON">همکار بخش شرکت‌ها</option>
+                    <option value="ADMIN">مدیر کل</option>
+                </select>
+                <label>نقش</label>
+            </div>
+            <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
         </div>
     </div>
 
@@ -1529,8 +1615,58 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content w-full max-w-sm p-6 relative">
             <button type="button" onclick="document.getElementById('reset-password-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">تغییر رمز عبور</h3>
-            <div class="float-input"><label>رمز عبور جدید</label><input type="text" id="rp-password" dir="ltr"></div>
+            <div class="float-input"><input type="text" id="rp-password" dir="ltr" placeholder=" "><label>رمز عبور جدید</label></div>
             <button onclick="submitResetPassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت رمز جدید</button>
+        </div>
+    </div>
+
+    <!-- مودال ثبت دریافت از شرکت (مالی شرکتی) -->
+    <div id="cpay-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="closeModal('cpay-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">ثبت دریافت از شرکت</h3>
+            <input type="hidden" id="cpay-request-id">
+            <div class="float-input"><input type="text" id="cpay-amount" dir="ltr" placeholder=" "><label>مبلغ (ریال)</label></div>
+            <div class="float-input">
+                <select id="cpay-method"><option value="TRANSFER">انتقال بانکی</option><option value="CHEQUE">چک</option><option value="CASH">نقد</option><option value="PAYROLL">کسر از حقوق</option></select>
+                <label>روش پرداخت</label>
+            </div>
+            <div class="float-input"><input type="text" id="cpay-jalali" dir="ltr" placeholder=" "><label>تاریخ (شمسی)</label></div>
+            <div class="float-input"><input type="text" id="cpay-ref" dir="ltr" placeholder=" "><label>شماره پیگیری/مرجع</label></div>
+            <div class="float-input"><input type="text" id="cpay-note" placeholder=" "><label>توضیحات</label></div>
+            <label class="text-xs font-bold text-slate-500 block mb-2">فیش‌ها (چند فایل مجاز)</label>
+            <input type="file" id="cpay-files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" class="mb-4 w-full text-xs">
+            <button onclick="submitCompanyPayment()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت دریافتی</button>
+        </div>
+    </div>
+
+    <!-- مودال ثبت تسویه با پاسارگاد برای اقساط شرکتی -->
+    <div id="cpsg-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="closeModal('cpsg-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1">ثبت تسویه با پاسارگاد</h3>
+            <p id="cpsg-summary" class="text-xs text-slate-500 mb-4"></p>
+            <div class="float-input"><input type="text" id="cpsg-ref" dir="ltr" placeholder=" "><label>شماره پیگیری/مرجع</label></div>
+            <div class="float-input"><input type="text" id="cpsg-jalali" dir="ltr" placeholder=" "><label>تاریخ پرداخت (شمسی)</label></div>
+            <div class="float-input"><input type="text" id="cpsg-note" placeholder=" "><label>توضیحات</label></div>
+            <label class="text-xs font-bold text-slate-500 block mb-2">فیش‌های پرداختی (چند فایل مجاز)</label>
+            <input type="file" id="cpsg-files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" class="mb-4 w-full text-xs">
+            <button onclick="submitCompanyPasargad()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت تسویه</button>
+        </div>
+    </div>
+
+    <!-- مودال ثبت تسویه با پاسارگاد (همراه با فیش) -->
+    <div id="psg-settle-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="closeModal('psg-settle-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1">ثبت تسویه با پاسارگاد</h3>
+            <p id="psg-settle-summary" class="text-xs text-slate-500 mb-4"></p>
+            <div class="float-input"><input type="text" id="psg-settle-ref" dir="ltr" placeholder=" "><label>شماره پیگیری/مرجع</label></div>
+            <div class="float-input"><input type="text" id="psg-settle-jalali" dir="ltr" placeholder=" "><label>تاریخ پرداخت (شمسی)</label></div>
+            <div class="float-input"><input type="text" id="psg-settle-note" placeholder=" "><label>توضیحات</label></div>
+            <label class="text-xs font-bold text-slate-500 block mb-2">فیش‌های پرداختی (چند فایل مجاز)</label>
+            <input type="file" id="psg-settle-files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" class="mb-4 w-full text-xs">
+            <button onclick="submitPasargadSettle()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت تسویه</button>
         </div>
     </div>
 
@@ -1931,6 +2067,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php if ($canSeeCompanies): ?>
         loadCompanyInbox();
         setInterval(loadCompanyInbox, 30000);
+        // همگام‌سازی خودکار: هر تبی که همین الان باز است، هر ۲۰ ثانیه خودش را تازه می‌کند
+        setInterval(() => {
+            const visible = id => document.getElementById('tab-' + id) && !document.getElementById('tab-' + id).classList.contains('hidden');
+            if (visible('companies-requests')) loadCompanyRequests();
+            if (visible('companies-finance')) loadCompanyFinance();
+            if (visible('companies-manage')) loadCompanyManage();
+            if (visible('staff-users')) loadStaffUsers();
+        }, 20000);
         <?php endif; ?>
         <?php if ($isLiaison): ?>
         switchTab('companies-requests');
@@ -2424,8 +2568,105 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ${platesHtml}
                 <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
                 ${docsHtml}
+                <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
+                <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
             document.getElementById('creq-detail-modal').classList.add('active');
+        }
+
+        const CINST_STATUS_FA = {0: 'وصول‌نشده', 1: 'تسویه با پاسارگاد'};
+
+        function toggleCreqFinance(requestId) {
+            const panel = document.getElementById('creq-finance-panel');
+            if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+            panel.classList.remove('hidden');
+            loadCreqFinance(requestId);
+        }
+
+        async function loadCreqFinance(requestId) {
+            const panel = document.getElementById('creq-finance-panel');
+            panel.dataset.requestId = requestId;
+            panel.innerHTML = '<p class="text-xs text-slate-400 p-2">در حال بارگذاری...</p>';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_company_installments', request_id: requestId})});
+            const data = await res.json();
+            if (!data.ok) { panel.innerHTML = `<p class="text-red-500 text-xs p-2">${data.error || 'خطا'}</p>`; return; }
+            if (!data.installments.length) { panel.innerHTML = '<p class="text-slate-400 text-xs p-2">هنوز هیچ پلاکی صادر (و در نتیجه قسط‌بندی) نشده.</p>'; return; }
+            const rows = data.installments.map(i => `
+                <tr class="border-t border-slate-100 text-[11px]">
+                    <td class="p-2"><input type="checkbox" class="cinst-cb" value="${i.id}" data-amount="${i.amount - i.settled_amount}" ${i.settled_to_pasargad || i.collected < i.amount ? 'disabled' : ''}></td>
+                    <td class="p-2 plate-display">${i.plate_display || '—'}</td>
+                    <td class="p-2">#${i.inst_number}</td>
+                    <td class="p-2 font-mono">${Number(i.amount).toLocaleString('fa-IR')}</td>
+                    <td class="p-2 font-mono ${i.collected >= i.amount ? 'text-emerald-600' : 'text-amber-600'}">${Number(i.collected).toLocaleString('fa-IR')}</td>
+                    <td class="p-2">${i.settled_to_pasargad ? '<span class="text-emerald-600 font-bold">تسویه شد</span>' : '<span class="text-slate-400">—</span>'}</td>
+                </tr>`).join('');
+            panel.innerHTML = `
+                <div class="flex gap-2 mb-2">
+                    <button onclick="openCompanyPaymentModal(${requestId})" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded-lg">ثبت دریافت از شرکت</button>
+                    <button onclick="openCompanyPasargadModal()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded-lg">ثبت تسویه با پاسارگاد</button>
+                </div>
+                <table class="w-full text-xs border rounded-lg overflow-hidden">
+                    <thead class="bg-slate-50 text-slate-500"><tr><th class="p-2"></th><th class="p-2">پلاک</th><th class="p-2">قسط</th><th class="p-2">مبلغ</th><th class="p-2">دریافتی</th><th class="p-2">وضعیت</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+
+        function openCompanyPaymentModal(requestId) {
+            document.getElementById('cpay-request-id').value = requestId;
+            ['cpay-amount','cpay-ref','cpay-note'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cpay-jalali').value = todayJalali();
+            document.getElementById('cpay-files').value = '';
+            openModal('cpay-modal');
+        }
+
+        async function submitCompanyPayment() {
+            const fd = new FormData();
+            fd.append('action', 'create_company_payment');
+            fd.append('request_id', document.getElementById('cpay-request-id').value);
+            fd.append('amount', document.getElementById('cpay-amount').value.replace(/\D/g, ''));
+            fd.append('method', document.getElementById('cpay-method').value);
+            fd.append('paid_jalali', document.getElementById('cpay-jalali').value.trim());
+            fd.append('reference_no', document.getElementById('cpay-ref').value.trim());
+            fd.append('note', document.getElementById('cpay-note').value.trim());
+            const files = document.getElementById('cpay-files').files;
+            for (let i = 0; i < files.length; i++) fd.append('company_receipts[]', files[i]);
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const data = await res.json();
+                if (data.ok) { showToast('دریافتی ثبت شد.', 'success'); closeModal('cpay-modal'); loadCreqFinance(document.getElementById('cpay-request-id').value); }
+                else showToast(data.error || 'خطا', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        function openCompanyPasargadModal() {
+            const ids = Array.from(document.querySelectorAll('.cinst-cb:checked')).map(cb => Number(cb.value));
+            if (!ids.length) { showToast('حداقل یک قسطِ کاملاً وصول‌شده را انتخاب کنید.', 'error'); return; }
+            window.cpsgPendingIds = ids;
+            const total = Array.from(document.querySelectorAll('.cinst-cb:checked')).reduce((s, cb) => s + Number(cb.dataset.amount), 0);
+            document.getElementById('cpsg-summary').textContent = `${ids.length} قسط به مبلغ ${total.toLocaleString('fa-IR')} ریال`;
+            ['cpsg-ref','cpsg-note'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cpsg-jalali').value = todayJalali();
+            document.getElementById('cpsg-files').value = '';
+            openModal('cpsg-modal');
+        }
+
+        async function submitCompanyPasargad() {
+            const fd = new FormData();
+            fd.append('action', 'settle_company_pasargad');
+            fd.append('installment_ids', JSON.stringify(window.cpsgPendingIds || []));
+            fd.append('reference_no', document.getElementById('cpsg-ref').value.trim());
+            fd.append('paid_jalali', document.getElementById('cpsg-jalali').value.trim());
+            fd.append('note', document.getElementById('cpsg-note').value.trim());
+            const files = document.getElementById('cpsg-files').files;
+            for (let i = 0; i < files.length; i++) fd.append('company_pasargad_receipts[]', files[i]);
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                closeModal('cpsg-modal');
+                showToast(`${data.settled} قسط تسویه شد.`, 'success');
+                if (currentRequestId) { openCompanyRequestDetail(currentRequestId); }
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
         }
 
         async function retryFolderTransfer(plateId) {
@@ -2669,7 +2910,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 groupSel.value = '__manual__';
                 document.getElementById('cm-group-manual').value = c.bale_group_chat_id;
             }
-            window.scrollTo({top: 0, behavior: 'smooth'});
+            openModal('add-company-modal');
         }
 
         async function createCompany() {
@@ -2694,7 +2935,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
-            if (data.ok) { showToast(companyId ? 'شرکت به‌روزرسانی شد.' : 'شرکت ثبت شد.', 'success'); resetCompanyForm(); loadCompanyManage(); }
+            if (data.ok) { showToast(companyId ? 'شرکت به‌روزرسانی شد.' : 'شرکت ثبت شد.', 'success'); resetCompanyForm(); closeModal('add-company-modal'); loadCompanyManage(); }
             else showToast(data.error || 'خطا', 'error');
         }
 
@@ -2715,6 +2956,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 showToast('حساب کاربری ساخته شد.', 'success');
                 ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
                 document.querySelectorAll('.cm-pu-company-cb:checked').forEach(cb => cb.checked = false);
+                closeModal('add-portal-user-modal');
                 loadCompanyManage();
             } else showToast(data.error || 'خطا', 'error');
         }
@@ -2756,6 +2998,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (data.ok) {
                 showToast('کاربر ثبت شد.', 'success');
                 ['su-fullname','su-username','su-password','su-mobile'].forEach(id => document.getElementById(id).value = '');
+                closeModal('add-staff-user-modal');
                 loadStaffUsers();
             } else showToast(data.error || 'خطا', 'error');
         }
@@ -3404,24 +3647,44 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         function togglePsgAll(el) { document.querySelectorAll('.psg-cb').forEach(cb => cb.checked = el.checked); }
 
-        async function settleSelectedPasargad() {
-            const ids = Array.from(document.querySelectorAll('.psg-cb:checked')).map(cb => Number(cb.value));
-            if (!ids.length) { showToast('قسطی انتخاب نشده است.', 'error'); return; }
+        let psgPendingIds = [];
+        function settleSelectedPasargad() {
+            psgPendingIds = Array.from(document.querySelectorAll('.psg-cb:checked')).map(cb => Number(cb.value));
+            if (!psgPendingIds.length) { showToast('قسطی انتخاب نشده است.', 'error'); return; }
             const total = Array.from(document.querySelectorAll('.psg-cb:checked')).reduce((s, cb) => s + Number(cb.dataset.amount), 0);
-            const ref = prompt(`تسویه ${ids.length} قسط به مبلغ ${total.toLocaleString('en-US')} ریال.\nشماره پیگیری/مرجع پرداخت را وارد کنید (اختیاری):`);
-            if (ref === null) return;
+            document.getElementById('psg-settle-summary').textContent = `${psgPendingIds.length} قسط به مبلغ ${total.toLocaleString('en-US')} ریال`;
+            ['psg-settle-ref','psg-settle-note'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('psg-settle-jalali').value = todayJalali();
+            document.getElementById('psg-settle-files').value = '';
+            openModal('psg-settle-modal');
+        }
+
+        async function submitPasargadSettle() {
+            const fd = new FormData();
+            fd.append('action', 'settle_pasargad_with_receipt');
+            fd.append('installment_ids', JSON.stringify(psgPendingIds));
+            fd.append('reference_no', document.getElementById('psg-settle-ref').value.trim());
+            fd.append('paid_jalali', document.getElementById('psg-settle-jalali').value.trim());
+            fd.append('note', document.getElementById('psg-settle-note').value.trim());
+            fd.append('period_id', document.getElementById('psg-f-period').value || '');
+            fd.append('company_id', document.getElementById('psg-f-company').value || '');
+            const files = document.getElementById('psg-settle-files').files;
+            for (let i = 0; i < files.length; i++) fd.append('pasargad_receipts[]', files[i]);
             try {
-                const res = await fetch(FIN_API, { method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ action:'settle_pasargad', installment_ids: ids, reference_no: ref,
-                        period_id: document.getElementById('psg-f-period').value || null,
-                        company_id: document.getElementById('psg-f-company').value || null }) });
+                const res = await fetch(FIN_API, {method: 'POST', body: fd});
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error, 'error'); return; }
+                closeModal('psg-settle-modal');
                 let msg = `${d.settled} قسط تسویه شد (${Number(d.total).toLocaleString('en-US')} ریال).`;
-                if (d.blocked) msg += `\n${d.blocked} قسط به‌دلیل وصول‌نشدن، تسویه نشد.`;
-                alert(msg);
+                if (d.blocked) msg += ` ${d.blocked} قسط به‌دلیل وصول‌نشدن، تسویه نشد.`;
+                showToast(msg, 'success');
                 loadPasargad();
             } catch(e) { showToast('خطا در اتصال', 'error'); }
+        }
+
+        function todayJalali() {
+            try { return new Intl.DateTimeFormat('fa-IR-u-nu-latn', {year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replace(/\//g, '/'); }
+            catch(e) { return ''; }
         }
 
         async function loadPsgHistory() {
@@ -4637,11 +4900,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= چت‌های ربات (آرشیو کامل، کنار تیکت‌های پشتیبانی) =======================
         function switchGoftegoSub(which) {
-            document.getElementById('goftego-panel-tickets').classList.toggle('hidden', which !== 'tickets');
-            document.getElementById('goftego-panel-botchats').classList.toggle('hidden', which !== 'botchats');
-            document.getElementById('goftego-sub-tickets').className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === 'tickets' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
-            document.getElementById('goftego-sub-botchats').className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === 'botchats' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
+            ['tickets','botchats','staffchat','companychat'].forEach(k => {
+                const panel = document.getElementById('goftego-panel-' + k);
+                if (panel) panel.classList.toggle('hidden', which !== k);
+                const btn = document.getElementById('goftego-sub-' + k);
+                if (btn) btn.className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === k ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
+            });
             if (which === 'botchats') loadBotChats();
+            if (which === 'staffchat') loadStaffChatList();
+            if (which === 'companychat') loadCompanyChatList();
         }
 
         async function loadBotChats(q) {
@@ -4793,6 +5060,138 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         document.getElementById('ticket-chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendTicketReply(); });
+
+        // ======================= چت داخلی (بین کاربران پنل) =======================
+        const STAFFCHAT_API = 'api/staff_chat_actions.php';
+        let currentStaffChatUserId = null;
+
+        async function loadStaffChatList() {
+            const res = await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations'})});
+            const data = await res.json();
+            const box = document.getElementById('staffchat-list');
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
+            box.innerHTML = data.conversations.map(u => `
+                <div onclick="openStaffChatWith(${u.id}, '${u.full_name}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentStaffChatUserId === u.id ? 'bg-blue-50' : ''}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-sm">${u.full_name}</span>
+                        ${u.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${u.unread}</span>` : ''}
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">${u.role} ${u.last_message ? '· ' + u.last_message.slice(0, 30) : ''}</p>
+                </div>`).join('') || '<p class="text-center text-xs text-slate-400 p-4">همکاری یافت نشد.</p>';
+        }
+
+        async function openStaffChatWith(userId, fullName) {
+            currentStaffChatUserId = userId;
+            document.getElementById('staffchat-header').classList.remove('hidden');
+            document.getElementById('staffchat-title').textContent = fullName;
+            document.getElementById('staffchat-input-row').classList.remove('hidden');
+            await refreshStaffChatMessages();
+            loadStaffChatList();
+        }
+
+        async function refreshStaffChatMessages() {
+            if (!currentStaffChatUserId) return;
+            const res = await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'get_messages', with_user_id: currentStaffChatUserId})});
+            const data = await res.json();
+            if (!data.ok) return;
+            const myId = <?php echo intval($_SESSION['user_id']); ?>;
+            const body = document.getElementById('staffchat-body');
+            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.from_user_id == myId, m.message, m.created_at, m.file_path, null, m.is_read, 'staffchat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
+            body.scrollTop = body.scrollHeight;
+        }
+
+        async function sendStaffChatMessage() {
+            if (!currentStaffChatUserId) return;
+            const input = document.getElementById('staffchat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'send_message', to_user_id: currentStaffChatUserId, message: text})});
+            refreshStaffChatMessages();
+        }
+
+        async function sendStaffChatFile() {
+            if (!currentStaffChatUserId) return;
+            const fileInput = document.getElementById('staffchat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_message');
+            fd.append('to_user_id', currentStaffChatUserId);
+            fd.append('file', fileInput.files[0]);
+            try {
+                await fetch(STAFFCHAT_API, {method: 'POST', body: fd});
+                refreshStaffChatMessages();
+            } catch (e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        document.getElementById('staffchat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendStaffChatMessage(); });
+
+        // ======================= چت با شرکت‌های درخواست‌کننده =======================
+        const COMPANYCHAT_API = 'api/company_chat_actions.php';
+        let currentCompanyChatId = null;
+
+        async function loadCompanyChatList() {
+            const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations'})});
+            const data = await res.json();
+            const box = document.getElementById('companychat-list');
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
+            box.innerHTML = data.conversations.map(c => `
+                <div onclick="openCompanyChatWith(${c.id}, '${c.name}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentCompanyChatId === c.id ? 'bg-cyan-50' : ''}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-sm">${c.name}</span>
+                        ${c.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${c.unread}</span>` : ''}
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">${c.last_message ? c.last_message.slice(0, 30) : 'گفتگویی ثبت نشده'}</p>
+                </div>`).join('') || '<p class="text-center text-xs text-slate-400 p-4">شرکتی یافت نشد.</p>';
+        }
+
+        async function openCompanyChatWith(companyId, name) {
+            currentCompanyChatId = companyId;
+            document.getElementById('companychat-header').classList.remove('hidden');
+            document.getElementById('companychat-title').textContent = name;
+            document.getElementById('companychat-input-row').classList.remove('hidden');
+            await refreshCompanyChatMessages();
+            loadCompanyChatList();
+        }
+
+        async function refreshCompanyChatMessages() {
+            if (!currentCompanyChatId) return;
+            const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'get_messages', company_id: currentCompanyChatId})});
+            const data = await res.json();
+            if (!data.ok) return;
+            const body = document.getElementById('companychat-body');
+            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.sender_type === 'ADMIN', (m.sender_type === 'COMPANY' && m.sender_portal_name ? `<b>${m.sender_portal_name}:</b> ` : '') + (m.message || ''), m.created_at, m.file_path, null, m.is_read, 'companychat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
+            body.scrollTop = body.scrollHeight;
+        }
+
+        async function sendCompanyChatMessage() {
+            if (!currentCompanyChatId) return;
+            const input = document.getElementById('companychat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'send_message', company_id: currentCompanyChatId, message: text})});
+            refreshCompanyChatMessages();
+        }
+
+        async function sendCompanyChatFile() {
+            if (!currentCompanyChatId) return;
+            const fileInput = document.getElementById('companychat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_message');
+            fd.append('company_id', currentCompanyChatId);
+            fd.append('file', fileInput.files[0]);
+            try {
+                await fetch(COMPANYCHAT_API, {method: 'POST', body: fd});
+                refreshCompanyChatMessages();
+            } catch (e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        const companychatInputEl = document.getElementById('companychat-input');
+        if (companychatInputEl) companychatInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendCompanyChatMessage(); });
 
         async function closeCurrentTicket() {
             if (!currentTicketId) return;
@@ -5102,6 +5501,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 showToast('خطا در برقراری ارتباط با سرور', 'error');
             }
         }
+
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
         function showToast(msg, type='info') {
             const container = document.getElementById('toast-container');

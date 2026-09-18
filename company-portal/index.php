@@ -100,6 +100,38 @@ async function doLogin() {
     <div id="requests-list" class="space-y-3"></div>
 </div>
 
+<button onclick="openChatModal()" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center text-xl z-50">
+    <i class="fas fa-comments"></i>
+</button>
+
+<!-- مودال چت با بیمه با ما -->
+<div id="chat-modal" class="modal-overlay">
+    <div class="modal-content p-0 flex flex-col" style="height: 70vh;">
+        <div class="p-4 border-b flex items-center justify-between">
+            <h3 class="font-bold text-lg">چت با بیمه با ما</h3>
+            <button onclick="closeModal('chat-modal')" class="text-slate-400"><i class="fas fa-times"></i></button>
+        </div>
+        <?php if (count($companies) > 1): ?>
+        <div class="p-3 border-b">
+            <select id="chat-company" onchange="loadChatMessages()" class="w-full border rounded-lg p-2 text-sm">
+                <?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?>
+            </select>
+        </div>
+        <?php else: ?>
+        <input type="hidden" id="chat-company" value="<?php echo $companies[0]['id']; ?>">
+        <?php endif; ?>
+        <div id="chat-body" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50"></div>
+        <div class="p-3 border-t flex gap-2 items-center">
+            <label class="text-slate-400 hover:text-blue-500 text-lg cursor-pointer">
+                <i class="fas fa-paperclip"></i>
+                <input type="file" id="chat-file" class="hidden" onchange="sendChatFile()">
+            </label>
+            <input type="text" id="chat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
+            <button onclick="sendChatMessage()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">ارسال</button>
+        </div>
+    </div>
+</div>
+
 <!-- مودال درخواست جدید -->
 <div id="new-request-modal" class="modal-overlay">
     <div class="modal-content p-6">
@@ -267,6 +299,54 @@ async function uploadDocument() {
         } else { showToast(data.error || 'خطا در آپلود.'); }
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
 }
+
+function fmtBubbleTime(ts) { return new Date(ts.replace(' ', 'T')).toLocaleString('fa-IR'); }
+
+function openChatModal() { openModal('chat-modal'); loadChatMessages(); }
+
+function renderBubble(isMine, msg) {
+    const align = isMine ? 'justify-end' : 'justify-start';
+    const color = isMine ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 border';
+    let fileHtml = '';
+    if (msg.file_path) {
+        const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.file_path);
+        fileHtml = isImg ? `<img src="../${msg.file_path}" class="rounded-lg max-w-full mt-2">` : `<a href="../${msg.file_path}" target="_blank" class="underline text-xs block mt-2"><i class="fas fa-paperclip ml-1"></i>مشاهده فایل</a>`;
+    }
+    return `<div class="flex ${align}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]">${msg.message || ''}${fileHtml}<div class="text-[10px] opacity-60 mt-1" dir="ltr">${fmtBubbleTime(msg.created_at)}</div></div></div>`;
+}
+
+async function loadChatMessages() {
+    const companyId = document.getElementById('chat-company').value;
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'chat_get_messages', company_id: companyId})});
+    const data = await res.json();
+    const body = document.getElementById('chat-body');
+    if (!data.ok) { body.innerHTML = `<p class="text-center text-red-500 text-xs">${data.error || 'خطا'}</p>`; return; }
+    body.innerHTML = data.messages.length ? data.messages.map(m => renderBubble(m.sender_type === 'COMPANY', m)).join('') : '<p class="text-center text-slate-400 text-xs mt-10">هنوز پیامی رد و بدل نشده.</p>';
+    body.scrollTop = body.scrollHeight;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'chat_send_message', company_id: document.getElementById('chat-company').value, message: text})});
+    loadChatMessages();
+}
+
+async function sendChatFile() {
+    const fileInput = document.getElementById('chat-file');
+    if (!fileInput.files[0]) return;
+    const fd = new FormData();
+    fd.append('action', 'chat_send_message');
+    fd.append('company_id', document.getElementById('chat-company').value);
+    fd.append('file', fileInput.files[0]);
+    try { await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd}); loadChatMessages(); }
+    catch (e) { showToast('خطا در ارسال فایل.'); }
+    fileInput.value = '';
+}
+
+document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(); });
 
 loadRequests();
 </script>

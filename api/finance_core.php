@@ -537,6 +537,14 @@ function fin_invoice_folder($siteRoot, $period, $companyName, $invoiceNo) {
     return $base . '/' . sanitize_folder_name($invoiceNo);
 }
 
+// فیش‌های دریافتی (از شرکت) و پرداختی (به پاسارگاد) در دو زیرپوشه‌ی جدا نگه داشته
+// می‌شوند - هم‌ساختار با پوشه‌ی صورتحساب‌ها (سال/ماه/شرکت)، برای اینکه هم‌جا پیدا شوند
+function fin_receipt_folder($siteRoot, $period, $companyName, $target) {
+    $base = finance_archive_root($siteRoot) . '/' . $period['jalali_year'] . '/' . fin_month_name($period['jalali_month']);
+    if ($companyName) $base .= '/' . sanitize_folder_name($companyName);
+    return $base . '/' . ($target === 'pasargad' ? 'فیش‌های پاسارگاد' : 'فیش‌های کارگزاری');
+}
+
 // =====================================================================
 //  تبدیل عدد به حروف فارسی (برای «جمع کل به حروف» در صورتحساب)
 // =====================================================================

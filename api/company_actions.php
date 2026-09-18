@@ -25,6 +25,14 @@ function company_request_letter_folder($siteRoot, $requestCreatedTs, $companyNam
     return company_archive_root($siteRoot) . '/' . $jy . '/' . sanitize_folder_name($companyName) . '/' . $letterDate;
 }
 
+// پوشه‌ی مالیِ یک درخواست (فیش‌های کارگزاری/پاسارگاد این درخواست، جدا از پوشه‌ی
+// مالیِ پرسنلی که سراسری است - طبق خواسته‌ی صریح کارفرما، بایگانی مالی شرکتی
+// باید داخل خودِ پوشه‌بندیِ همان درخواست بماند)
+function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyName, $target) {
+    return company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName)
+        . '/مالی/' . ($target === 'PASARGAD' ? 'فیش‌های پاسارگاد' : 'فیش‌های کارگزاری');
+}
+
 // پوشه‌ی یک پلاک را (بر اساس وضعیت فعلی‌اش) محاسبه می‌کند و اگر پوشه‌ی قبلی‌اش
 // جای دیگری بود (مثلاً چون insurance_type بعداً عوض شده) آن را به مسیر جدید
 // منتقل می‌کند - خودترمیم‌گر، هم برای اولین بار و هم برای اصلاحات بعدی مناسب است.
@@ -404,6 +412,170 @@ try {
         }
 
         echo json_encode(['ok' => true, 'folder_status' => $folderStatus]);
+        exit;
+    }
+
+    // =================================================================
+    //  مالی شرکتی: همان منطق دو-مرحله‌ای «اول دریافت از شرکت، بعد پرداخت
+    //  به پاسارگاد»ی مالی پرسنلی، ولی روی company_installments و با بایگانی
+    //  فیش داخل خودِ پوشه‌ی همان درخواست (نه یک آرشیو مالی سراسری جدا)
+    // =================================================================
+
+    // ---- اقساط یک درخواست (همه‌ی پلاک‌هایش) + مانده‌ی دریافتی/تسویه‌شده ----
+    if ($action === 'list_company_installments') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $stmt = $pdo->prepare("
+            SELECT ci.*, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4,
+                   COALESCE((SELECT SUM(cpa.amount) FROM company_payment_allocations cpa
+                             JOIN company_payments cp ON cp.id = cpa.payment_id
+                             WHERE cpa.installment_id = ci.id AND cp.target = 'US'), 0) AS collected,
+                   COALESCE((SELECT SUM(cpa.amount) FROM company_payment_allocations cpa
+                             JOIN company_payments cp ON cp.id = cpa.payment_id
+                             WHERE cpa.installment_id = ci.id AND cp.target = 'PASARGAD'), 0) AS settled_amount
+            FROM company_installments ci
+            JOIN company_request_plates crp ON crp.id = ci.plate_id
+            WHERE crp.request_id = ?
+            ORDER BY ci.due_date ASC
+        ");
+        $stmt->execute([$requestId]);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$r) {
+            $r['collected'] = intval($r['collected']);
+            $r['settled_amount'] = intval($r['settled_amount']);
+            $r['plate_display'] = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']);
+        }
+        echo json_encode(['ok' => true, 'installments' => $rows], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ثبت دریافت از شرکت (مرحله‌ی اول) + فیش، تخصیص خودکار به اقساط این درخواست ----
+    if (isset($_FILES['company_receipts']) || ($_POST['action'] ?? '') === 'create_company_payment') {
+        $requestId = intval($_POST['request_id'] ?? 0);
+        $amount = intval(preg_replace('/\D/', '', $_POST['amount'] ?? '0'));
+        $method = in_array($_POST['method'] ?? '', ['TRANSFER','CHEQUE','CASH','PAYROLL'], true) ? $_POST['method'] : 'TRANSFER';
+        if (!$requestId || $amount <= 0) { echo json_encode(['ok' => false, 'error' => 'درخواست و مبلغ الزامی است.']); exit; }
+
+        $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt->execute([$requestId]);
+        $req = $stmt->fetch();
+        if (!$req) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $receipts = [];
+        if (!empty($_FILES['company_receipts'])) {
+            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'US');
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $files = $_FILES['company_receipts'];
+            $n = is_array($files['name']) ? count($files['name']) : 0;
+            for ($i = 0; $i < $n; $i++) {
+                if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
+                $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
+                $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
+                if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
+                    if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
+                    $receipts[] = ltrim(str_replace($siteRoot, '', $dest), '/');
+                }
+            }
+        }
+
+        $pdo->prepare("INSERT INTO company_payments (request_id, target, amount, method, paid_jalali, paid_at, reference_no, receipts, note, created_by)
+                       VALUES (?, 'US', ?, ?, ?, ?, ?, ?, ?, ?)")
+            ->execute([$requestId, $amount, $method, trim($_POST['paid_jalali'] ?? ''),
+                       $_POST['paid_jalali'] ? date('Y-m-d', strtotime(str_replace('/', '-', $_POST['paid_jalali']))) : null,
+                       trim($_POST['reference_no'] ?? ''), $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null,
+                       trim($_POST['note'] ?? ''), $actor['user_id']]);
+        $paymentId = $pdo->lastInsertId();
+
+        // تخصیص خودکار به اقساطِ باز همین درخواست، به ترتیب سررسید
+        $stmt = $pdo->prepare("
+            SELECT ci.id, ci.amount, COALESCE((SELECT SUM(cpa.amount) FROM company_payment_allocations cpa
+                   JOIN company_payments cp ON cp.id = cpa.payment_id
+                   WHERE cpa.installment_id = ci.id AND cp.target = 'US'), 0) AS collected
+            FROM company_installments ci JOIN company_request_plates crp ON crp.id = ci.plate_id
+            WHERE crp.request_id = ? ORDER BY ci.due_date ASC");
+        $stmt->execute([$requestId]);
+        $openInstallments = $stmt->fetchAll();
+
+        $remaining = $amount;
+        $allocStmt = $pdo->prepare("INSERT INTO company_payment_allocations (payment_id, installment_id, amount) VALUES (?, ?, ?)");
+        foreach ($openInstallments as $inst) {
+            if ($remaining <= 0) break;
+            $due = intval($inst['amount']) - intval($inst['collected']);
+            if ($due <= 0) continue;
+            $alloc = min($due, $remaining);
+            $allocStmt->execute([$paymentId, $inst['id'], $alloc]);
+            $remaining -= $alloc;
+        }
+
+        echo json_encode(['ok' => true, 'payment_id' => $paymentId, 'allocated' => $amount - $remaining, 'unallocated' => $remaining], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ثبت تسویه با پاسارگاد (مرحله‌ی دوم) - فقط اقساطِ کاملاً وصول‌شده (طبق همون قانون مالی پرسنلی) ----
+    if (isset($_FILES['company_pasargad_receipts']) || ($_POST['action'] ?? '') === 'settle_company_pasargad') {
+        $ids = array_map('intval', json_decode($_POST['installment_ids'] ?? '[]', true) ?: []);
+        if (!$ids) { echo json_encode(['ok' => false, 'error' => 'قسطی انتخاب نشده است.']); exit; }
+
+        $collectRule = fin_settings($pdo)['rule_collect_before_pay'] === '1';
+        $place = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("
+            SELECT ci.id, ci.amount, ci.plate_id, crp.request_id,
+                   COALESCE((SELECT SUM(cpa.amount) FROM company_payment_allocations cpa
+                             JOIN company_payments cp ON cp.id = cpa.payment_id
+                             WHERE cpa.installment_id = ci.id AND cp.target = 'US'), 0) AS collected
+            FROM company_installments ci JOIN company_request_plates crp ON crp.id = ci.plate_id
+            WHERE ci.id IN ($place) AND ci.settled_to_pasargad = 0");
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll();
+
+        $ok = []; $blocked = 0; $total = 0; $requestId = null;
+        foreach ($rows as $r) {
+            if ($collectRule && intval($r['collected']) < intval($r['amount'])) { $blocked++; continue; }
+            $ok[] = $r['id']; $total += intval($r['amount']); $requestId = $r['request_id'];
+        }
+        if (!$ok) { echo json_encode(['ok' => false, 'error' => 'هیچ قسطی قابل تسویه نبود (قانون «اول دریافت، بعد پرداخت» فعال است).']); exit; }
+
+        $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt->execute([$requestId]);
+        $req = $stmt->fetch();
+
+        $siteRoot = dirname(__DIR__);
+        $receipts = [];
+        if (!empty($_FILES['company_pasargad_receipts'])) {
+            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'PASARGAD');
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $files = $_FILES['company_pasargad_receipts'];
+            $n = is_array($files['name']) ? count($files['name']) : 0;
+            for ($i = 0; $i < $n; $i++) {
+                if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
+                $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
+                $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
+                if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
+                    if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
+                    $receipts[] = ltrim(str_replace($siteRoot, '', $dest), '/');
+                }
+            }
+        }
+
+        $pdo->prepare("INSERT INTO company_payments (request_id, target, amount, method, paid_jalali, paid_at, reference_no, receipts, note, created_by)
+                       VALUES (?, 'PASARGAD', ?, 'TRANSFER', ?, ?, ?, ?, ?, ?)")
+            ->execute([$requestId, $total, trim($_POST['paid_jalali'] ?? ''),
+                       $_POST['paid_jalali'] ? date('Y-m-d', strtotime(str_replace('/', '-', $_POST['paid_jalali']))) : null,
+                       trim($_POST['reference_no'] ?? ''), $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null,
+                       trim($_POST['note'] ?? ''), $actor['user_id']]);
+        $paymentId = $pdo->lastInsertId();
+
+        $insLine = $pdo->prepare("INSERT INTO company_payment_allocations (payment_id, installment_id, amount) VALUES (?, ?, ?)");
+        $mark = $pdo->prepare("UPDATE company_installments SET settled_to_pasargad = 1 WHERE id = ?");
+        foreach ($rows as $r) {
+            if (!in_array($r['id'], $ok, true)) continue;
+            $insLine->execute([$paymentId, $r['id'], intval($r['amount'])]);
+            $mark->execute([$r['id']]);
+        }
+
+        echo json_encode(['ok' => true, 'settled' => count($ok), 'blocked' => $blocked, 'total' => $total], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

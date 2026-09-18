@@ -142,6 +142,41 @@ try {
         exit;
     }
 
+    // ---- چت با بیمه با ما (یک گفتگوی مشترک به ازای هر شرکت) ----
+    if ($action === 'chat_get_messages') {
+        $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null);
+        if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت انتخاب‌شده معتبر نیست.']); exit; }
+        $stmt = $pdo->prepare("SELECT * FROM company_chat_messages WHERE company_id = ? ORDER BY created_at ASC");
+        $stmt->execute([$companyId]);
+        $pdo->prepare("UPDATE company_chat_messages SET is_read = 1 WHERE company_id = ? AND sender_type = 'ADMIN' AND is_read = 0")->execute([$companyId]);
+        echo json_encode(['ok' => true, 'messages' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if ($action === 'chat_send_message') {
+        $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null);
+        if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت انتخاب‌شده معتبر نیست.']); exit; }
+        $message = trim($data['message'] ?? '');
+
+        $filePath = null;
+        if (!empty($_FILES['file'])) {
+            $siteRoot = dirname(__DIR__);
+            $stmtName = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
+            $stmtName->execute([$companyId]);
+            $companyName = $stmtName->fetchColumn() ?: 'نامشخص';
+            $destDir = temp_archive_root($siteRoot) . '/چت شرکت‌ها/' . sanitize_folder_name($companyName);
+            $saved = company_store_uploaded_file($_FILES['file'], $destDir);
+            if (!$saved['ok']) { echo json_encode($saved); exit; }
+            $filePath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
+        }
+        if ($message === '' && !$filePath) { echo json_encode(['ok' => false, 'error' => 'پیام یا فایلی ارسال نشد.']); exit; }
+
+        $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_portal_user_id, message, file_path) VALUES (?, 'COMPANY', ?, ?, ?)")
+            ->execute([$companyId, $session['company_user_id'], $message ?: null, $filePath]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     echo json_encode(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {
     error_log('[company_portal_actions] ' . $e->getMessage());
