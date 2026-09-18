@@ -1,0 +1,41 @@
+# تنظیمات حساس محلی
+config/db.local.php
+
+# فایل‌های لاگ
+*.log
+
+# پوشه‌های موقت/رانتایم پردازش OCR و رسید و بایگانی
+# (فقط ساختار پوشه با .gitkeep نگه داشته می‌شود، محتوای واقعی وارد گیت نمی‌شود)
+tmp_ocr/*
+!tmp_ocr/.gitkeep
+
+tmp_recon/*
+!tmp_recon/.gitkeep
+
+tmpl_invoice/*
+!tmpl_invoice/.gitkeep
+
+queue/pending/*
+!queue/pending/.gitkeep
+
+queue/done/*
+!queue/done/.gitkeep
+
+queue/attachments/*
+!queue/attachments/.gitkeep
+
+queue/case_uploads/*
+!queue/case_uploads/.gitkeep
+
+موقت/موقت بایگانی/*
+!موقت/موقت بایگانی/.gitkeep
+
+Archive/بایگانی/بایگانی صادره/*
+!Archive/بایگانی/بایگانی صادره/.gitkeep
+
+Archive/بایگانی/بایگانی کسر از حقوق/*
+!Archive/بایگانی/بایگانی کسر از حقوق/.gitkeep
+
+# فایل‌های سیستمی
+.DS_Store
+Thumbs.db

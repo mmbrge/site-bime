@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>بازدید مدارک و سلامت خودرو</title>
+<style>
+  :root {
+    --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
+    --glass: rgba(255,255,255,0.08); --glass-b: rgba(255,255,255,0.14);
+    --success: #10b981; --danger: #ef4444; --warn: #f59e0b;
+  }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, select, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
+  html, body { margin: 0; padding: 0; min-height: 100%; overscroll-behavior: contain; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9; min-height: 100vh; padding: 16px 16px 40px;
+  }
+  .hero { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 20px; padding: 18px; margin-bottom: 18px; }
+  .hero .greet { font-size: 13px; color: #cbd5e1; }
+  .hero .name { font-size: 19px; font-weight: 900; margin-top: 2px; }
+  .hero .nid { font-size: 11px; color: #94a3b8; direction: ltr; text-align: right; margin-top: 2px; }
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .back-btn { background: rgba(255,255,255,.08); border: 1px solid var(--glass-b); border-radius: 12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #fff; cursor: pointer; text-decoration: none; flex-shrink: 0; }
+  .app-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px; padding: 10px 14px; margin: 24px 0 10px; }
+  .app-footer img { height: 24px; width: auto; opacity: .9; }
+  .app-footer .footer-text { flex: 1; text-align: center; font-size: 9px; color: #94a3b8; line-height: 1.7; }
+  .app-footer .footer-text b { color: #a5b4fc; }
+  h2.section-title { font-size: 14px; font-weight: 800; margin: 22px 0 12px; color: #a5b4fc; }
+  .req-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
+  .req-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .req-type { font-size: 13.5px; font-weight: 800; }
+  .req-code { font-size: 10px; color: #64748b; direction: ltr; }
+  .plate-tag { direction: ltr; display: inline-flex; gap: 4px; align-items: center; background: #ffffff; color: #111827; border: 1px solid #e5e7eb; font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 8px; margin: 6px 0 10px; }
+  .action-row { display: flex; gap: 8px; margin-top: 6px; }
+  .action-btn { flex: 1; border: none; border-radius: 12px; padding: 11px 8px; font-size: 12px; font-weight: 800; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .action-btn .sub { font-size: 9.5px; font-weight: 500; opacity: .85; }
+  .action-btn.needs { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .action-btn.fix { background: rgba(239,68,68,.18); color: #fca5a5; }
+  .action-btn.pending { background: rgba(245,158,11,.15); color: #fbbf24; cursor: default; }
+  .action-btn.approved { background: rgba(16,185,129,.15); color: #6ee7b7; cursor: default; }
+  .action-btn.na { display: none; }
+
+  .form-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { font-size: 11.5px; color: #94a3b8; display: block; margin-bottom: 5px; }
+  input[type=text], input[type=tel] { background: rgba(255,255,255,.06); border: 1px solid var(--glass-b); border-radius: 12px; padding: 12px 14px; color: #fff; font-size: 14px; width: 100%; }
+  select { background: rgba(255,255,255,.06); border: 1px solid var(--glass-b); border-radius: 12px; padding: 12px 14px; color: #fff; font-size: 14px; }
+  .field-row { display: flex; gap: 8px; }
+  .btn { border: none; border-radius: 16px; padding: 14px 18px; font-size: 14px; font-weight: 800; cursor: pointer; width: 100%; margin-top: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .empty-state { text-align: center; padding: 24px; color: #64748b; font-size: 12.5px; }
+  .spinner { text-align: center; padding: 24px; color: #64748b; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-top">
+    <div>
+      <div class="greet">🚗 بازدید مدارک و سلامت خودرو</div>
+      <div class="name" id="user-name">در حال بارگذاری...</div>
+      <div class="nid" id="user-nid"></div>
+    </div>
+    <a class="back-btn" id="back-to-app-link" href="#" title="بازگشت به پنل اصلی">🏠</a>
+  </div>
+</div>
+
+<div id="requests-section" style="display:none;">
+  <h2 class="section-title">📋 درخواست‌های بیمه‌ی شما</h2>
+  <div id="requests-list"><div class="spinner">در حال بارگذاری...</div></div>
+</div>
+
+<button class="btn btn-outline" style="margin-top:20px;" onclick="toggleInspections()">📋 بازدیدهای انجام‌شده</button>
+<div id="inspections-box" style="display:none; margin-top:10px;"></div>
+
+<h2 class="section-title" style="font-size:12px; margin-top:28px; opacity:.8;">🆕 بازدید آزاد (پلاک دیگر / بدون درخواست بیمه)</h2>
+<div class="form-card" style="padding:12px;">
+  <div id="guest-name-field" class="field" style="display:none; margin-bottom:8px;">
+    <input type="text" id="guest-name" placeholder="نام شما (اختیاری)" style="font-size:12px; padding:9px 12px;">
+  </div>
+  <div class="field" style="margin-bottom:8px;">
+    <div class="field-row">
+      <input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="flex:1;text-align:center;font-size:12px;padding:9px;">
+      <span style="align-self:center;font-size:11px;">ایران</span>
+      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="flex:1.3;text-align:center;font-size:12px;padding:9px;">
+      <select id="pl-letter" style="flex:1;font-size:12px;padding:9px;"></select>
+      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="flex:1;text-align:center;font-size:12px;padding:9px;">
+    </div>
+  </div>
+  <button class="btn btn-outline" style="font-size:12px; padding:11px;" onclick="startFreeHealth()">🚗 شروع بازدید سلامت برای این پلاک</button>
+</div>
+
+<div class="app-footer">
+    <img src="/Image/mammut.png" alt="ماموت" onerror="this.style.display='none'">
+    <div class="footer-text">
+        <div>طراحی و توسعه سیستم: <b>گروه توسعه برگه</b> <span style="font-family:Arial,sans-serif;">(MMBehzadi)</span></div>
+        <div>تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ ©</div>
+    </div>
+    <img src="/Image/bimebama.png" alt="بیمه با ما" onerror="this.style.display='none'">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || '';
+const API = '/api/webapp_visit.php';
+const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+
+function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
+function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+function formatPlateHtml(plate) {
+    if (!plate) return '';
+    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    if (!m) return plate;
+    const [, region, suffix, letter, prefix] = m;
+    return `<span class="plate-tag"><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span></span>`;
+}
+function fillLetterSelect() { document.getElementById('pl-letter').innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join(''); }
+
+let isGuest = true;
+
+const INSP_STATUS = { PENDING: '⏳ در انتظار بررسی کارشناس', APPROVED: '✅ تایید شده', REJECTED: '❌ رد شده' };
+
+async function toggleInspections() {
+    const box = document.getElementById('inspections-box');
+    if (box.style.display === 'block') { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=all_inspections&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (!data.data.length) { box.innerHTML = '<div class="empty-state">هنوز بازدیدی ثبت نکرده‌اید.</div>'; return; }
+        box.innerHTML = data.data.map(r => `
+            <div class="req-card">
+                <div class="req-head">
+                    <span class="req-type">بازدید ${toFa(r.inspection_number || '-')}</span>
+                    ${r.plate ? formatPlateHtml(r.plate) : ''}
+                    <span class="req-code">${r.unique_code || 'آزاد'}</span>
+                </div>
+                <p style="font-size:11px;margin:6px 0 0;">${INSP_STATUS[r.status] || r.status}</p>
+                ${r.status === 'REJECTED' && r.reject_reason ? `<p style="font-size:10px;color:#fca5a5;margin:4px 0 0;">علت: ${r.reject_reason}</p>` : ''}
+            </div>`).join('');
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+async function init() {
+    fillLetterSelect();
+    const backLink = document.getElementById('back-to-app-link');
+    try {
+        const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        isGuest = data.is_guest;
+        if (isGuest) {
+            document.getElementById('user-name').textContent = 'کاربر مهمان';
+            document.getElementById('guest-name-field').style.display = 'block';
+            backLink.style.display = 'none'; // مهمان راهی برای برگشت به اپ اصلی ندارد
+        } else {
+            document.getElementById('user-name').textContent = data.person_name;
+            document.getElementById('user-nid').textContent = data.national_code ? toFa(data.national_code) : '';
+            document.getElementById('requests-section').style.display = 'block';
+            backLink.href = `../app/?t=${encodeURIComponent(TOKEN)}`;
+            loadRequests();
+        }
+    } catch(e) { document.getElementById('user-name').textContent = 'خطا در اتصال به سرور'; }
+}
+
+const TYPE_FA = { BODY: 'بدنه', THIRDPARTY: 'ثالث' };
+const STATUS_CLASS = { not_started: 'needs', partial: 'needs', needs_fix: 'fix', submitted: 'pending', approved: 'approved', not_applicable: 'na' };
+const STATUS_ICON = { not_started: '📤', partial: '📤', needs_fix: '⚠️', submitted: '⏳', approved: '✅' };
+const STATUS_LABEL = { not_started: 'در انتظار ارسال مدارک', partial: 'تکمیل ارسال مدارک', needs_fix: 'در انتظار اصلاح کاربر', submitted: 'در انتظار تایید کارشناس', approved: 'تایید شده' };
+const HSTATUS_LABEL = { not_started: 'در انتظار ثبت بازدید', needs_fix: 'در انتظار اصلاح کاربر', submitted: 'در انتظار تایید کارشناس', approved: 'تایید شده' };
+
+async function loadRequests() {
+    const box = document.getElementById('requests-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=my_requests&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز درخواستی که نیاز به مدارک/بازدید داشته باشد ندارید.</div>'; return; }
+
+        box.innerHTML = data.data.map(r => {
+            const docsCls = STATUS_CLASS[r.docs_status] || 'na';
+            const docsClickable = ['not_started','partial','needs_fix'].includes(r.docs_status);
+            const docsDone = ['submitted','approved'].includes(r.docs_status);
+            const healthNotApplicable = r.health_status === 'not_applicable';
+            const healthCls = healthNotApplicable ? 'na' : (docsDone ? (STATUS_CLASS[r.health_status] || 'na') : 'pending');
+            const healthClickable = docsDone && ['not_started','needs_fix'].includes(r.health_status);
+            const healthSub = healthNotApplicable ? '' :
+                (docsDone ? (HSTATUS_LABEL[r.health_status]||'') : 'ابتدا بازدید مدارک را انجام دهید');
+
+            let detailLine = r.insured_name ? `بیمه‌گذار: ${r.insured_name}` : '';
+            if (r.insurance_type === 'THIRDPARTY' && r.liability_limit) {
+                detailLine += (detailLine ? ' — ' : '') + `سقف تعهد: ${toFa((r.liability_limit/10).toLocaleString())} تومان`;
+            } else if (r.insurance_type === 'BODY' && r.estimated_car_value) {
+                detailLine += (detailLine ? ' — ' : '') + `ارزش خودرو: ${toFa(r.estimated_car_value.toLocaleString())} تومان`;
+            }
+            const healthReasonLine = (r.health_status === 'needs_fix' && r.health_reject_reason)
+                ? `<p style="font-size:10px;color:#fca5a5;margin:4px 0 0;">علت اصلاح بازدید: ${r.health_reject_reason}</p>` : '';
+
+            return `
+            <div class="req-card">
+                <div class="req-head">
+                    <span class="req-type">${TYPE_FA[r.insurance_type]}</span>
+                    ${formatPlateHtml(r.plate) || ''}
+                    <span class="req-code">${r.unique_code}</span>
+                </div>
+                ${detailLine ? `<p style="font-size:10.5px;color:#94a3b8;margin:2px 0 10px;">${detailLine}</p>` : ''}
+                <div class="action-row">
+                    <button class="action-btn ${docsCls}" ${docsClickable ? `onclick="goDocs(${r.id})"` : ''}>
+                        <span>${STATUS_ICON[r.docs_status]||''} بازدید مدارک</span>
+                        <span class="sub">${STATUS_LABEL[r.docs_status]||''}</span>
+                    </button>
+                    <button class="action-btn ${healthCls}" ${healthClickable ? `onclick="goHealth(${r.id})"` : ''}>
+                        <span>${STATUS_ICON[r.health_status]||''} بازدید سلامت خودرو</span>
+                        <span class="sub">${healthSub}</span>
+                    </button>
+                </div>
+                ${healthReasonLine}
+            </div>`;
+        }).join('');
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+function goDocs(caseId) {
+    location.href = `../visit/index_docs.html?t=${encodeURIComponent(TOKEN)}&case=${caseId}`;
+}
+async function goHealth(caseId) {
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'start_health', token:TOKEN, mode:'case', case_id:caseId }) });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error); return; }
+        location.href = `../bazdid/index_bazdid.html?t=${encodeURIComponent(data.health_token)}&return=visit&rt=${encodeURIComponent(TOKEN)}`;
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+async function startFreeHealth() {
+    const region = toEn(document.getElementById('pl-region').value.trim());
+    const suffix = toEn(document.getElementById('pl-suffix').value.trim());
+    const prefix = toEn(document.getElementById('pl-prefix').value.trim());
+    const letter = document.getElementById('pl-letter').value;
+    if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
+    const plate = `${region}ایران - ${suffix} ${letter} ${prefix}`;
+    const body = { action:'start_health', token:TOKEN, mode:'free', plate };
+    if (isGuest) body.guest_name = document.getElementById('guest-name').value.trim();
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error); return; }
+        location.href = `../bazdid/index_bazdid.html?t=${encodeURIComponent(data.health_token)}&return=visit&rt=${encodeURIComponent(TOKEN)}`;
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+init();
+</script>
+</body>
+</html>

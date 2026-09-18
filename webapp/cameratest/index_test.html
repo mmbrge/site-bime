@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تست دوربین</title>
+<style>
+  body { font-family: Tahoma, sans-serif; background:#0f172a; color:#fff; margin:0; padding:20px; text-align:center; }
+  h1 { font-size:18px; }
+  p { font-size:13px; color:#cbd5e1; line-height:2; }
+  video { width:100%; max-width:420px; border-radius:12px; background:#000; margin-top:16px; }
+  button { background:#6366f1; color:#fff; border:none; border-radius:12px; padding:14px 24px; font-size:15px; font-weight:bold; margin-top:16px; cursor:pointer; }
+  #result { margin-top:20px; padding:14px; border-radius:12px; font-size:14px; font-weight:bold; }
+  .ok { background:rgba(16,185,129,.15); color:#6ee7b7; }
+  .fail { background:rgba(239,68,68,.15); color:#fca5a5; }
+</style>
+</head>
+<body>
+  <h1>🧪 تست دسترسی دوربین</h1>
+  <p>این یه صفحه‌ی آزمایشیه، فقط برای این‌که ببینیم توی همین مرورگر (که از طریق یه دکمه‌ی معمولی توی بله باز شده، نه دکمه‌ی مینی‌اپ) دوربین باز می‌شه یا نه.</p>
+  <button onclick="testCamera()">📷 تست باز کردن دوربین</button>
+  <video id="video" autoplay playsinline muted style="display:none;"></video>
+  <div id="result"></div>
+  <script>
+// ============================================================
+//  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
+//  نکته‌ی کلیدی: facingMode:'environment' به‌تنهایی روی خیلی از گوشی‌ها لنز اولترا-واید را
+//  انتخاب می‌کند که تصویرِ کشیده و بی‌کیفیت می‌دهد. تنها راه قابل‌اتکا این است که فهرست
+//  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
+// ============================================================
+async function openMainCameraStream() {
+    let probe = null;
+    try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (e) {}
+
+    let chosenId = null;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
+        const pool = backCams.length ? backCams : cams;
+        const nonWide = pool.filter(d => !/ultra|wide|0\.5|tele|zoom|depth|macro/i.test(d.label));
+        const chosen = nonWide[0] || pool[0];
+        if (chosen) chosenId = chosen.deviceId;
+    } catch (e) {}
+
+    if (probe) probe.getTracks().forEach(t => t.stop());
+
+    let stream;
+    if (chosenId) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: chosenId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+            });
+        } catch (e) {}
+    }
+    if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+        });
+    }
+    try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
+            await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+        }
+    } catch (e) {}
+    return stream;
+}
+
+    async function testCamera() {
+      const result = document.getElementById('result');
+      result.className = ''; result.textContent = 'در حال تلاش...';
+      try {
+        const stream = await openMainCameraStream();
+        document.getElementById('video').srcObject = stream;
+        document.getElementById('video').style.display = 'block';
+        result.className = 'ok';
+        result.textContent = '✅ موفق! دوربین باز شد. یعنی این روش (دکمه‌ی معمولی + مرورگر داخلی بله) کار می‌کنه.';
+      } catch (e) {
+        result.className = 'fail';
+        result.textContent = '❌ ناموفق: ' + e.message + ' — این مرورگر هم همون محدودیت رو داره.';
+      }
+    }
+  </script>
+</body>
+</html>

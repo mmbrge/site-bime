@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>بازدید سلامت خودرو</title>
+<script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<style>
+  :root {
+    --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
+    --glass: rgba(255,255,255,0.08); --glass-b: rgba(255,255,255,0.14);
+    --success: #10b981; --danger: #ef4444; --warn: #f59e0b;
+    --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, select, textarea, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
+  html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: none; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex; flex-direction: column;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+  }
+  .screen { display: none; flex: 1; flex-direction: column; padding: 16px; animation: fadeIn .35s ease; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; position: relative; z-index: 1; }
+  .screen.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+
+  /* --- top status bar (always visible during inspection) --- */
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--glass); border: 1px solid var(--glass-b);
+    border-radius: 18px; padding: 10px 14px; margin-bottom: 14px;
+  }
+  .topbar .back-btn {
+    background: rgba(255,255,255,0.08); border: 1px solid var(--glass-b); border-radius: 12px;
+    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #fff; cursor: pointer; flex-shrink: 0;
+  }
+  .topbar .user-info { font-size: 12px; color: #cbd5e1; }
+  .topbar .user-info b { color: #fff; font-size: 13px; }
+  .topbar .plate-chip {
+    background: #ffffff; color: #111827; border: 1px solid #e5e7eb;
+    font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 8px; display: inline-block; margin-top: 2px;
+  }
+  .timers { display: flex; gap: 8px; }
+  .timer-pill {
+    background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px; padding: 6px 10px; text-align: center; min-width: 56px;
+  }
+  .timer-pill .lbl { font-size: 9px; color: #94a3b8; display: block; }
+  .timer-pill .val { font-size: 15px; font-weight: 800; direction: ltr; unicode-bidi: bidi-override; }
+  .timer-pill.warn .val { color: var(--warn); }
+  .timer-pill.danger .val { color: var(--danger); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  /* --- progress bar --- */
+  .progress-wrap { margin-bottom: 16px; }
+  .progress-track { height: 8px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; }
+  .progress-text { font-size: 11px; color: #94a3b8; margin-top: 6px; text-align: center; }
+
+  /* --- generic centered card --- */
+  .center-card {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 14px; padding: 20px;
+  }
+  .icon-badge {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center; font-size: 32px;
+    box-shadow: 0 8px 30px rgba(99,102,241,0.4);
+  }
+  h1.title { font-size: 20px; font-weight: 800; margin: 0; }
+  p.desc { font-size: 13px; color: #cbd5e1; line-height: 2; margin: 0; max-width: 340px; }
+
+  .btn {
+    border: none; border-radius: 16px; padding: 15px 20px; font-size: 15px; font-weight: 800;
+    cursor: pointer; width: 100%; transition: transform .15s ease, opacity .15s ease;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
+  .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; box-shadow: 0 8px 24px rgba(16,185,129,0.35); }
+  .btn-outline { background: var(--glass); color: #e2e8f0; border: 1px solid var(--glass-b); }
+  .btn-danger { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .btn-sm { padding: 10px 14px; font-size: 12px; border-radius: 12px; }
+  .btn-row { display: flex; gap: 10px; width: 100%; }
+  .btn[disabled] { opacity: .5; pointer-events: none; }
+
+  /* --- rules screen --- */
+  .rules-list { text-align: right; width: 100%; background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 18px; margin: 10px 0; }
+  .rules-list li { font-size: 12.5px; color: #e2e8f0; line-height: 2; margin-bottom: 4px; }
+
+  /* --- step screen --- */
+  .step-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 20px; padding: 16px; margin-bottom: 14px; }
+  .step-num { font-size: 11px; color: var(--accent2); font-weight: 800; }
+  .step-title { font-size: 17px; font-weight: 800; margin: 4px 0 10px; }
+  .req-badge { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
+  .req-badge.required { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .req-badge.optional { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+
+  .guide-img-wrap { width: 100%; aspect-ratio: 4/3; border-radius: 16px; overflow: hidden; background: #1e293b; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; position: relative; }
+  .guide-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+  .guide-img-wrap .no-guide { color: #64748b; font-size: 12px; }
+  .guide-label { position: absolute; bottom: 8px; right: 8px; background: rgba(15,23,42,0.75); font-size: 10px; padding: 3px 10px; border-radius: 8px; }
+
+  .capture-area { display: none; flex-direction: column; gap: 10px; }
+  .capture-area.active { display: flex; }
+  video#live-video { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 4/3; object-fit: cover; }
+
+  /* ===== دوربین تمام‌صفحه (افقی) ===== */
+  #fs-camera { position: fixed; inset: 0; z-index: 9000; background: #000; }
+  /* اگر گوشی فیزیکاً افقی گرفته شده ولی مرورگر چیدمان را نچرخانده (قفل چرخش سیستم)، کل رابط
+     را خودمان ۹۰ درجه می‌چرخانیم تا برای کاربرِ گوشی‌به‌دست افقی و خوانا باشد */
+  #fs-camera.force-landscape {
+    width: 100vh; height: 100vw;
+    transform-origin: top left;
+    transform: rotate(90deg) translateY(-100%);
+    inset: auto; top: 0; left: 0;
+  }
+  #fs-video, #fs-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .fs-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px;
+            padding: 8px 12px; background: linear-gradient(180deg, rgba(0,0,0,.75), transparent); z-index: 3; }
+  .fs-user { font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; }
+  .fs-plate { background: #fff; color: #111827; border-radius: 6px; padding: 2px 7px; font-size: 11px; margin-right: 6px; display: inline-block; }
+  .fs-timers { margin-right: auto; display: flex; gap: 6px; }
+  .fs-pill { background: rgba(255,255,255,.15); color: #fff; border-radius: 8px; padding: 3px 8px; font-size: 10.5px; font-weight: 700; }
+  .fs-pill b { font-variant-numeric: tabular-nums; }
+  .fs-close { background: var(--danger); border: none; color: #fff; width: 34px; height: 34px;
+              border-radius: 10px; font-size: 17px; font-weight: 900; cursor: pointer; flex-shrink: 0;
+              box-shadow: 0 2px 10px rgba(239,68,68,.5); }
+  .fs-step-title { color: #fff; font-size: 13.5px; font-weight: 900; text-shadow: 0 1px 4px #000; }
+  .fs-guide { position: absolute; top: 52px; left: 12px; z-index: 3; width: 24%; max-width: 210px; opacity: .82;
+              border-radius: 10px; border: 2px solid rgba(255,255,255,.8); box-shadow: 0 4px 16px rgba(0,0,0,.5);
+              cursor: pointer; background: #1e293b; transition: width .25s; }
+  .fs-guide.big { width: 36%; max-width: 320px; opacity: 1; }
+  .fs-flash { position: absolute; bottom: 14px; left: 18px; z-index: 4; width: 46px; height: 46px; border-radius: 50%;
+              background: rgba(255,255,255,.2); border: none; color: #fff; font-size: 20px; cursor: pointer; }
+  .fs-flash.on { background: #fbbf24; color: #111827; }
+  /* شاتر همیشه روی لبه‌ی راستِ کادر و وسطِ ارتفاع قرار می‌گیرد - همان‌جایی که در همه‌ی
+     اپ‌های دوربین هست. این موقعیت مستقل از این است که مرورگر خودش چیدمان را چرخانده باشد
+     یا ما آن را دستی چرخانده باشیم، چون در هر دو حالت این نقطه برای شستِ کاربر یکسان است. */
+  .fs-bottom { position: absolute; top: 50%; right: 10px; bottom: auto; left: auto;
+               transform: translateY(-50%); display: flex; flex-direction: column;
+               justify-content: center; align-items: center; gap: 12px; padding: 0; z-index: 3; }
+  .fs-spacer { width: 110px; flex-shrink: 0; }
+  .fs-prev { background: rgba(255,255,255,.2); color: #fff; width: 110px; flex-shrink: 0; padding: 10px 8px; font-size: 12px; }
+  .fs-prev:disabled { opacity: .35; cursor: default; }
+
+  /* نوار پیشرفت روی صفحه‌ی دوربین */
+  .fs-progress-wrap { position: absolute; top: 38px; left: 12px; right: 12px; z-index: 3; display: flex; align-items: center; gap: 8px; }
+  .fs-progress-track { flex: 1; height: 4px; background: rgba(255,255,255,.25); border-radius: 4px; overflow: hidden; }
+  .fs-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 4px; transition: width .3s; }
+  .fs-progress-label { font-size: 10px; color: #fff; font-weight: 700; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+
+  /* ستون اطلاعات مرحله (سمت راست) */
+  .fs-side { position: absolute; top: 52px; right: 12px; z-index: 3; max-width: 46%; text-align: right; }
+  .fs-badges { display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 4px; }
+  .fs-badge-step { background: rgba(99,102,241,.85); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 800; }
+  .fs-badge-req { border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 800; }
+  .fs-badge-req.req { background: rgba(239,68,68,.9); color: #fff; }
+  .fs-badge-req.opt { background: rgba(255,255,255,.25); color: #fff; }
+
+  /* اسلایدر زوم دستی */
+  .fs-zoom { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px;
+             background: rgba(0,0,0,.35); padding: 6px 12px; border-radius: 20px; }
+  .fs-zoom input { width: 110px; }
+  .fs-zoom-lbl { color: #fff; font-size: 11px; font-weight: 800; min-width: 28px; }
+
+  .fs-side-btn { border: none; border-radius: 12px; padding: 9px 12px; font-size: 11.5px; font-weight: 800;
+                 cursor: pointer; white-space: nowrap; }
+  .fs-skip { background: rgba(255,255,255,.22); color: #fff; }
+  .fs-finish { background: var(--success); color: #fff; }
+  .fs-multi-count { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); z-index: 4;
+                    background: rgba(16,185,129,.9); color: #fff; padding: 5px 14px; border-radius: 20px;
+                    font-size: 11.5px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+
+  /* نوار پیشرفت ارسال */
+  #fs-upload { position: absolute; inset: 0; z-index: 15; background: rgba(2,6,23,.72);
+               display: flex; align-items: center; justify-content: center; }
+  .fs-up-box { width: 62%; max-width: 420px; text-align: center; }
+  .fs-up-title { color: #fff; font-size: 13px; font-weight: 800; margin: 0 0 10px; }
+  .fs-up-track { height: 8px; background: rgba(255,255,255,.22); border-radius: 6px; overflow: hidden; }
+  .fs-up-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .15s; }
+  .fs-up-pct { color: #c7d2fe; font-size: 12px; font-weight: 800; margin: 8px 0 0; }
+
+  /* دیالوگ تایید خروج */
+  #fs-exit-confirm { position: absolute; inset: 0; z-index: 20; background: rgba(2,6,23,.88);
+                     display: flex; align-items: center; justify-content: center; }
+  .fs-exit-box { text-align: center; max-width: 420px; padding: 18px; }
+  .fs-exit-title { font-size: 15px; font-weight: 900; color: #fff; margin: 0 0 6px; }
+  .fs-exit-sub { font-size: 12px; color: #cbd5e1; margin: 0 0 16px; }
+  .fs-exit-actions { display: flex; gap: 10px; justify-content: center; }
+  .fs-exit-yes { background: var(--danger); color: #fff; }
+  .fs-exit-no { background: rgba(255,255,255,.2); color: #fff; }
+  /* دکمه‌ی شاتر: یک دایره‌ی سفیدِ توپر که حلقه‌ای سفید دورش را احاطه کرده است.
+     فاصله‌ی بین دایره و حلقه با border شفاف ساخته می‌شود (پس‌زمینه فقط زیر دایره‌ی
+     داخلی کشیده می‌شود تا حلقه از آن جدا بماند). */
+  .fs-shutter {
+      width: 74px; height: 74px; border-radius: 50%;
+      background: #fff;
+      background-clip: content-box;          /* رنگ فقط داخل ناحیه‌ی محتوا */
+      padding: 4px;                          /* فاصله‌ی دایره تا حلقه */
+      border: 3px solid #fff;                /* خودِ حلقه */
+      box-shadow: 0 4px 20px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.15);
+      cursor: pointer; flex-shrink: 0;
+      transition: transform .12s ease, padding .12s ease;
+      -webkit-tap-highlight-color: transparent;
+  }
+  .fs-shutter:active { transform: scale(.92); padding: 7px; }
+  .fs-shutter:disabled { opacity: .5; }
+  .fs-btn { border: none; border-radius: 14px; padding: 11px 16px; font-size: 12.5px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+  .fs-confirm { background: var(--success); color: #fff; }
+  .fs-retake { background: rgba(255,255,255,.22); color: #fff; }
+
+  /* رابط قدیمیِ مرحله فقط در حالت fallback (نبودِ دوربین) دیده می‌شود */
+  #screen-step > .topbar,
+  #screen-step > .progress-wrap,
+  #screen-step > .step-card,
+  #screen-step > .btn-row { display: none; }
+  #screen-step.fallback > .topbar,
+  #screen-step.fallback > .progress-wrap,
+  #screen-step.fallback > .step-card { display: block; }
+  #screen-step.fallback > .btn-row { display: flex; }
+  #screen-step.fallback > .topbar { display: flex; }
+  #screen-step { background: #0b1220; }
+
+  /* ===== پرده‌ی پوششی (تا دوربین واقعاً باز شود) ===== */
+  #cam-curtain { position: fixed; inset: 0; z-index: 9400; background: #0b1220;
+                 display: flex; align-items: center; justify-content: center; }
+  .curtain-inner { text-align: center; }
+  .curtain-spin { width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 50%;
+                  border: 4px solid rgba(255,255,255,.18); border-top-color: var(--accent2);
+                  animation: curtainSpin .9s linear infinite; }
+  @keyframes curtainSpin { to { transform: rotate(360deg); } }
+  .curtain-text { font-size: 13px; color: #cbd5e1; font-weight: 700; margin: 0; }
+
+  /* ===== راهنمای چرخاندن گوشی ===== */
+  #rotate-hint { position: fixed; inset: 0; z-index: 9500; background: rgba(2,6,23,.96);
+                 display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .rot-box { text-align: center; position: relative; max-width: 330px; }
+  .rot-close { position: absolute; top: -6px; left: -6px; background: rgba(255,255,255,.12); border: none;
+               color: #fff; width: 34px; height: 34px; border-radius: 10px; font-size: 15px; cursor: pointer; }
+  .rot-phone { font-size: 64px; animation: rotPhone 1.8s ease-in-out infinite; }
+  .rot-arrow { font-size: 30px; color: var(--accent2); margin-top: -6px; animation: rotArrow 1.8s linear infinite; }
+  @keyframes rotPhone { 0%,15% { transform: rotate(0deg); } 45%,100% { transform: rotate(90deg); } }
+  @keyframes rotArrow { 0% { transform: rotate(0deg); opacity: .5; } 50% { opacity: 1; } 100% { transform: rotate(180deg); opacity: .5; } }
+  .rot-title { font-size: 15px; font-weight: 900; margin: 14px 0 6px; }
+  .rot-sub { font-size: 12px; color: #94a3b8; margin: 0 0 14px; }
+  .rot-count { font-size: 12px; color: #c7d2fe; }
+  canvas#capture-canvas { display: none; }
+  .preview-wrap { width: 100%; aspect-ratio: 4/3; border-radius: 16px; overflow: hidden; background: #000; }
+  .preview-wrap img { width: 100%; height: 100%; object-fit: cover; }
+
+  .thumb-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .thumb-row img { width: 52px; height: 52px; object-fit: cover; border-radius: 10px; border: 1px solid var(--glass-b); }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ==================== لودینگ ==================== -->
+<div id="screen-loading" class="screen active">
+  <div class="center-card">
+    <div class="icon-badge">🚗</div>
+    <h1 class="title">در حال آماده‌سازی...</h1>
+    <p class="desc">لطفاً چند لحظه صبر کنید</p>
+  </div>
+</div>
+
+<!-- ==================== خطا ==================== -->
+<div id="screen-error" class="screen">
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#ef4444,#b91c1c)">⚠️</div>
+    <h1 class="title">مشکلی پیش آمد</h1>
+    <p class="desc" id="error-text">لینک نامعتبر یا منقضی شده است.</p>
+  </div>
+</div>
+
+<!-- ==================== قوانین ==================== -->
+<div id="screen-rules" class="screen">
+  <div class="topbar">
+    <div class="back-btn" onclick="goBackToPreviousPage()" title="بازگشت">›</div>
+    <div class="user-info">👤 <b id="rules-name"></b><br><span class="plate-chip" id="rules-plate"></span></div>
+    <div class="back-btn" onclick="exitToMenu()" title="بازگشت به منو">🏠</div>
+  </div>
+  <div class="center-card" style="justify-content:flex-start; padding-top: 10px;">
+    <div class="icon-badge">📋</div>
+    <h1 class="title">قوانین بازدید سلامت</h1>
+    <ul class="rules-list" id="rules-list-content"></ul>
+    <div id="attempts-warning" style="font-size:12px;color:#fca5a5;"></div>
+    <button class="btn btn-primary" id="btn-start-inspection" onclick="startAttempt()">✅ شروع بازدید</button>
+    <button class="btn btn-outline" onclick="nav_myInspections()">📁 بازدیدهای انجام‌شده</button>
+  </div>
+</div>
+
+<!-- ==================== دوربین تمام‌صفحه (افقی) ==================== -->
+<div id="fs-camera" style="display:none;">
+  <video id="fs-video" autoplay playsinline muted></video>
+  <img id="fs-shot" style="display:none;">
+
+  <!-- نوار بالا: نام، پلاک، تایمرها، انصراف -->
+  <div class="fs-top">
+    <div class="fs-user">👤 <b id="fs-name"></b> <span class="fs-plate" id="fs-plate"></span></div>
+    <div class="fs-timers">
+      <span class="fs-pill">این مرحله <b id="fs-step-timer">--</b></span>
+      <span class="fs-pill">کل <b id="fs-total-timer">--</b></span>
+    </div>
+    <button class="fs-close" onclick="askExitFullscreen()" title="انصراف و خروج">✕</button>
+  </div>
+
+  <!-- نوار پیشرفت مراحل، درست زیر نوار بالا -->
+  <div class="fs-progress-wrap">
+    <div class="fs-progress-track"><div class="fs-progress-fill" id="fs-progress-fill" style="width:0%"></div></div>
+    <span class="fs-progress-label" id="fs-progress-label"></span>
+  </div>
+
+  <!-- ستون اطلاعات مرحله: سمت راست، افقی و جمع‌وجور -->
+  <div class="fs-multi-count" id="fs-multi-count" style="display:none;"></div>
+
+  <div class="fs-side">
+    <div class="fs-badges">
+      <span class="fs-badge-step" id="fs-badge-step"></span>
+      <span class="fs-badge-req" id="fs-badge-req"></span>
+    </div>
+    <div class="fs-step-title" id="fs-step-title"></div>
+  </div>
+
+  <!-- راهنمای تصویری: سمت چپ، با کلیک بزرگ می‌شود -->
+  <img id="fs-guide" class="fs-guide" onclick="toggleFsGuide()">
+
+  <!-- دکمه‌های پایین: مرحله قبل سمت راست، شاتر وسط -->
+  <!-- زوم دستی (اگر دوربین پشتیبانی کند) -->
+  <div class="fs-zoom" id="fs-zoom-wrap" style="display:none;">
+    <span class="fs-zoom-lbl" id="fs-zoom-val">۱x</span>
+    <input type="range" id="fs-zoom" min="1" max="3" step="0.1" value="1" oninput="setZoomManual(this.value)">
+  </div>
+
+  <!-- نوار پیشرفت ارسال عکس -->
+  <div id="fs-upload" style="display:none;">
+    <div class="fs-up-box">
+      <p class="fs-up-title">در حال ارسال عکس...</p>
+      <div class="fs-up-track"><div class="fs-up-fill" id="fs-up-fill"></div></div>
+      <p class="fs-up-pct" id="fs-up-pct">۰٪</p>
+    </div>
+  </div>
+
+  <div class="fs-bottom" id="fs-capture-bar">
+    <button class="fs-shutter" id="fs-shutter-btn" onpointerdown="takeLiveShot(event)" title="گرفتن عکس"></button>
+    <button class="fs-side-btn fs-skip" id="fs-skip-btn" onclick="skipStep()" style="display:none;">⏭ رد کردن</button>
+    <button class="fs-side-btn fs-finish" id="fs-finish-btn" onclick="finishMultiStep()" style="display:none;">✅ پایان بازدید</button>
+  </div>
+  <!-- تایید خروج (داخل خودِ صفحه‌ی دوربین، چون تمام‌صفحه است) -->
+  <div id="fs-exit-confirm" style="display:none;">
+    <div class="fs-exit-box">
+      <p class="fs-exit-title">آیا می‌خواهید از بازدید خارج شوید؟</p>
+      <p class="fs-exit-sub">با خروج، مراحل ثبت‌نشده از بین می‌رود.</p>
+      <div class="fs-exit-actions">
+        <button class="fs-btn fs-exit-yes" onclick="confirmExitFullscreen()">بله، خارج شو</button>
+        <button class="fs-btn fs-exit-no" onclick="document.getElementById('fs-exit-confirm').style.display='none'">ادامه بازدید</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fs-bottom" id="fs-preview-bar" style="display:none;">
+    <button class="fs-btn fs-retake" onclick="retakeLiveShot()">🔁 دوباره</button>
+    <button class="fs-btn fs-confirm" onclick="confirmLiveShot()">✅ تایید و ارسال</button>
+  </div>
+</div>
+
+<!-- ==================== پرده‌ی پوششی بین راهنما و باز شدن دوربین ==================== -->
+<div id="cam-curtain" style="display:none;">
+  <div class="curtain-inner">
+    <div class="curtain-spin"></div>
+    <p class="curtain-text">در حال آماده‌سازی دوربین...</p>
+  </div>
+</div>
+
+<!-- ==================== راهنمای چرخاندن گوشی ==================== -->
+<div id="rotate-hint" style="display:none;">
+  <div class="rot-box">
+    <button class="rot-close" onclick="cancelRotateHint()">✕</button>
+    <div class="rot-phone">📱</div>
+    <div class="rot-arrow">⟳</div>
+    <p class="rot-title">کاربر عزیز، لطفاً گوشی را افقی بگیرید</p>
+    <p class="rot-sub">برای گرفتن عکس بهتر و سریع‌تر، گوشی را بچرخانید.</p>
+    <p class="rot-count">شروع تا <b id="rot-sec">۳</b> ثانیه دیگر</p>
+  </div>
+</div>
+
+<!-- ==================== مرحله (اصلی) ==================== -->
+<div id="screen-step" class="screen">
+  <div class="topbar">
+    <div class="user-info">👤 <b id="step-name"></b><br><span class="plate-chip" id="step-plate"></span></div>
+    <div class="timers">
+      <div class="timer-pill" id="pill-step"><span class="lbl">این مرحله</span><span class="val" id="val-step">00:00</span></div>
+      <div class="timer-pill" id="pill-total"><span class="lbl">کل بازدید</span><span class="val" id="val-total">00:00</span></div>
+    </div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-text" id="progress-text">مرحله ۱ از ۱۴</div>
+  </div>
+
+  <div class="step-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="step-num" id="step-num-label">مرحله ۱</span>
+      <span class="req-badge required" id="step-req-badge">اجباری</span>
+    </div>
+    <div class="step-title" id="step-title-text">نمای جلوی خودرو</div>
+
+    <div class="guide-img-wrap" id="guide-img-wrap">
+      <span class="no-guide">تصویر راهنما موجود نیست</span>
+    </div>
+
+    <!-- قبل از شروع عکس‌برداری این مرحله -->
+    <div id="pre-capture-actions">
+      <button class="btn btn-primary" onclick="revealCaptureOptions()">📸 بازکردن دوربین</button>
+      <p style="font-size:11px;color:#94a3b8;margin-top:8px;">عکس‌برداری در صفحه‌ی دوربینِ تمام‌صفحه انجام می‌شود.</p>
+    </div>
+
+    <!-- دوربین زنده (اگر مرورگر اجازه بدهد - مثلاً وقتی از «هاب بازدید» وارد شده باشیم) -->
+    <div id="live-camera-area" class="capture-area">
+      <video id="live-video" autoplay playsinline muted></video>
+      <div id="live-camera-controls" class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" onclick="takeLiveShot()">📸 گرفتن عکس</button>
+      </div>
+      <div id="live-preview-controls" class="btn-row" style="margin-top:8px; display:none;">
+        <button class="btn btn-success" onclick="confirmLiveShot()">✅ تایید و ارسال</button>
+        <button class="btn btn-outline" onclick="retakeLiveShot()" style="max-width:110px;">🔁 دوباره</button>
+      </div>
+      <img id="live-shot-img" style="display:none; width:100%; border-radius:16px; aspect-ratio:4/3; object-fit:cover; margin-top:8px;">
+    </div>
+
+    <!-- اگر دوربین زنده در دسترس نبود (مثلاً داخل WebView مینی‌اپ)، این گزینه‌ها نمایش داده می‌شود -->
+    <div id="capture-choice" class="capture-area">
+      <p class="desc" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">دسترسی مستقیم به دوربین ممکن نشد؛ از یکی از این روش‌ها استفاده کنید:</p>
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="pickFromCamera()">🖼 انتخاب از گالری</button>
+        <button class="btn btn-outline" onclick="pickFromGallery()">📁 انتخاب فایل</button>
+      </div>
+      <button class="btn btn-primary" onclick="openCameraInBrowser()" style="margin-top:10px;">📷 گرفتن عکس زنده با دوربین (در مرورگر)</button>
+      <div id="upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
+    </div>
+    <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="onFileSelected(event)">
+    <input type="file" id="gallery-input" accept="image/*" onchange="onFileSelected(event)">
+
+    <!-- برای مرحله‌ی چندعکسی -->
+    <div id="multi-actions" style="display:none;">
+      <div class="thumb-row" id="multi-thumbs"></div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-outline" onclick="revealCaptureOptions()">➕ افزودن عکس دیگر</button>
+        <button class="btn btn-success" onclick="finishMultiStep()">پایان این مرحله</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-outline btn-sm" id="btn-skip-step" onclick="skipStep()" style="display:none;">⏭ رد (اختیاری)</button>
+    <button class="btn btn-danger btn-sm" onclick="cancelInspection()">❌ انصراف</button>
+  </div>
+</div>
+
+<!-- ==================== تایید نهایی پیش از ثبت ==================== -->
+<div id="screen-review" class="screen">
+  <div class="topbar">
+    <div class="user-info">👤 <b id="review-name"></b><br><span class="plate-chip" id="review-plate"></span></div>
+  </div>
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#10b981,#059669)">✅</div>
+    <h1 class="title">همه‌ی مراحل تکمیل شد</h1>
+    <p class="desc">با تایید نهایی، بازدید شما ثبت و برای بررسی کارشناسان ارسال می‌شود. پس از تایید امکان ویرایش وجود ندارد.</p>
+    <button class="btn btn-primary" onclick="finalizeInspection()">✅ تایید نهایی و ثبت بازدید</button>
+    <button class="btn btn-outline btn-sm" onclick="goBackStep()">◀ بازگشت و بازبینی مرحله‌ی آخر</button>
+  </div>
+</div>
+
+<!-- ==================== موفقیت ==================== -->
+<div id="screen-success" class="screen">
+  <div class="topbar">
+    <div class="user-info">👤 <b id="success-name"></b><br><span class="plate-chip" id="success-plate"></span></div>
+  </div>
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#10b981,#059669)">🎉</div>
+    <h1 class="title">بازدید با موفقیت ثبت شد</h1>
+    <p class="desc">بازدید شماره <b id="success-num"></b> در انتظار بررسی کارشناس است. نتیجه از طریق ربات به شما اطلاع داده می‌شود.</p>
+    <div id="success-visit-return" style="display:none;">
+      <p class="desc">اگر بازدید دیگری نمی‌خواهید ثبت کنید، با دکمه‌ی زیر به پنل کاربری بله بازگردید.</p>
+      <button class="btn btn-primary" onclick="returnToVisitHub()">↩️ بازگشت به پنل کاربری بله</button>
+      <p class="desc" style="font-size:11px;">به‌طور خودکار ظرف <b id="countdown-num">۵</b> ثانیه هدایت می‌شوید...</p>
+    </div>
+    <button class="btn btn-outline" onclick="nav_myInspections()">📁 مشاهده بازدیدهای انجام‌شده</button>
+  </div>
+</div>
+
+<!-- ==================== بازدیدهای انجام‌شده ==================== -->
+<div id="screen-my-inspections" class="screen">
+  <div class="topbar">
+    <div class="back-btn" onclick="showScreen('screen-rules')" style="background:var(--glass);border:1px solid var(--glass-b);border-radius:12px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;">›</div>
+    <div class="user-info">👤 <b id="mi-name"></b><br><span class="plate-chip" id="mi-plate"></span></div>
+  </div>
+  <h1 class="title" style="margin-bottom:12px;">📁 بازدیدهای انجام‌شده</h1>
+  <div id="my-inspections-list" style="flex:1; overflow-y:auto;"></div>
+</div>
+
+<!-- ==================== منقضی/لغو ==================== -->
+<div id="screen-expired" class="screen">
+  <div class="topbar">
+    <div class="user-info">👤 <b id="expired-name"></b><br><span class="plate-chip" id="expired-plate"></span></div>
+  </div>
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#f59e0b,#d97706)">⏱</div>
+    <h1 class="title" id="expired-title">زمان به پایان رسید</h1>
+    <p class="desc" id="expired-text">بازدید باطل شد. برای تلاش دوباره به ربات برگردید و دوباره «بازدید سلامت خودرو» را انتخاب کنید.</p>
+    <button class="btn btn-primary" onclick="showScreen('screen-rules')">🔄 بازگشت به صفحه‌ی بازدید</button>
+    <button class="btn btn-outline btn-sm" onclick="exitToMenu()">🏠 بازگشت به منو</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  اتصال به Bale WebApp (در صورت وجود) - برای تجربه‌ی بهتر (رنگ هدر و ...)
+// ============================================================
+try {
+  if (window.Bale && window.Bale.WebApp) {
+    Bale.WebApp.ready();
+    Bale.WebApp.expand();
+  }
+} catch(e) {}
+
+// ============================================================
+//  وضعیت کلی برنامه
+// ============================================================
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || params.get('token') || '';
+const API = '/api/webapp_health.php';
+
+let appData = null;       // خروجی init
+let attemptId = null;
+let stepDeadline = null;  // timestamp پایان مرحله فعلی
+let totalDeadline = null; // timestamp پایان کل بازدید
+let currentStepKey = null;
+let stepsMap = {};        // key -> step object
+let stepOrder = [];
+let timerHandle = null;
+let multiCount = 0;
+
+function showScreen(id) {
+  // هر بار از صفحه‌ی مرحله خارج می‌شویم (بازبینی، انقضا، پایان...) دوربین تمام‌صفحه هم
+  // باید بسته شود، وگرنه روی صفحه‌ی جدید باقی می‌ماند
+  if (id !== 'screen-step') {
+    const cam = document.getElementById('fs-camera');
+    if (cam && cam.style.display === 'block') exitFullscreenCamera();
+  }
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+function fmtTime(sec) {
+  if (sec < 0) sec = 0;
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  const raw = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  return raw.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+}
+
+// ============================================================
+//  init
+// ============================================================
+async function init() {
+  if (!TOKEN) { showError('لینک نامعتبر است. از ربات دوباره وارد شوید.'); return; }
+  try {
+    const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`);
+    const data = await res.json();
+    if (!data.ok) { showError(data.error); return; }
+    appData = data;
+    stepOrder = data.steps.map(s => s.key);
+    data.steps.forEach(s => stepsMap[s.key] = s);
+
+    document.getElementById('rules-name').textContent = data.person_name || '';
+    document.getElementById('rules-plate').innerHTML = formatPlateHtml(data.plate);
+    fillAllTopbars(data.person_name, data.plate);
+
+    const totalMin = Math.round(data.total_seconds / 60 * 10) / 10;
+    const stepMin = Math.round(data.step_seconds / 60 * 10) / 10;
+    document.getElementById('rules-list-content').innerHTML = `
+      <li>بازدید شامل ۱۴ مرحله عکس‌برداری است (۱۲ مرحله اجباری و ۲ مرحله اختیاری).</li>
+      <li>برای هر مرحله ${toFa(stepMin)} دقیقه فرصت دارید؛ در صورت تأخیر، بازدید باطل و باید از نو شروع شود.</li>
+      <li>کل بازدید باید ظرف ${toFa(totalMin)} دقیقه تمام شود.</li>
+      <li>برای هر پلاک، حداکثر ${toFa(data.max_attempts_per_day)} بار در طول روز می‌توانید تلاش کنید.</li>
+      <li>لطفاً گوشی را به‌صورت افقی (خوابیده) نگه دارید تا کل خودرو در کادر عکس جا شود.</li>
+      <li>لطفاً در محیطی با نور کافی و دسترسی کامل به خودرو باشید.</li>
+    `;
+    const remaining = data.max_attempts_per_day - data.attempts_today;
+    if (remaining <= 0) {
+      document.getElementById('attempts-warning').textContent = 'شما امروز سهمیه‌ی تلاش خود را استفاده کرده‌اید؛ فردا دوباره تلاش کنید.';
+      document.getElementById('btn-start-inspection').disabled = true;
+    } else {
+      document.getElementById('attempts-warning').textContent = `تلاش‌های امروز: ${toFa(data.attempts_today)} از ${toFa(data.max_attempts_per_day)}`;
+    }
+
+    if (data.active_attempt) {
+      // ادامه‌ی یک بازدید نیمه‌کاره
+      attemptId = data.active_attempt.id;
+      totalDeadline = data.active_attempt.started_at + data.total_seconds;
+      resumeFromState(data.active_attempt.state);
+    } else {
+      showScreen('screen-rules');
+    }
+    // نکته: از input[capture] استفاده می‌کنیم که مجوز دوربین را خودِ سیستم‌عامل موقع باز کردن دوربین می‌پرسد،
+    // پس دیگر نیازی به درخواست پیشاپیش مجوز از طریق getUserMedia نیست
+  } catch (e) {
+    showError('خطا در اتصال به سرور.');
+  }
+}
+function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
+// چون این صفحه معمولاً با ناوبری از اپ اصلی باز می‌شود، «بازگشت» یعنی برگشت در تاریخچه‌ی مرورگر
+function goBackToPreviousPage() {
+    if (window.history.length > 1) history.back();
+    else exitToMenu();
+}
+function exitToMenu() {
+    try { if (window.Bale && window.Bale.WebApp && window.Bale.WebApp.close) { Bale.WebApp.close(); return; } } catch(e) {}
+    history.back();
+}
+// بازگشت به «هاب بازدید» - چون اینجا از قبل در مرورگرِ واقعیِ داخل بله هستیم (نه WebView مینی‌اپ)،
+// یک لینک ساده کافی است؛ هاب با بارگذاری‌اش خودش لیست درخواست‌ها را با وضعیت تازه نشان می‌دهد
+function returnToVisitHub() {
+    const returnToken = params.get('rt');
+    if (returnToken) { location.href = `../visit/index_visit.html?t=${encodeURIComponent(returnToken)}`; return; }
+    exitToMenu();
+}
+// همه‌ی نوارهای بالای صفحه (در همه‌ی صفحه‌ها) را با نام و پلاک یکسان پر می‌کند
+function fillAllTopbars(name, plate) {
+    ['step', 'review', 'success', 'expired', 'mi'].forEach(prefix => {
+        const nameEl = document.getElementById(prefix + '-name');
+        const plateEl = document.getElementById(prefix + '-plate');
+        if (nameEl) nameEl.textContent = name || '';
+        if (plateEl) plateEl.innerHTML = formatPlateHtml(plate);
+    });
+}
+// پلاک را با چیدمان DOM (فلکس)، نه صرفاً یونیکد bidi، می‌سازیم؛ چون bidi-override به‌تنهایی
+// می‌تواند شکل حروف فارسی/عربی را هم به‌هم بریزد. با اسپن‌های جدا، هر بخش در جهت طبیعی
+// خودش رندر می‌شود ولی چیدمان کلی همیشه دقیقاً چپ‌به‌راست و صحیح می‌ماند.
+function formatPlateHtml(plate) {
+    if (!plate) return '';
+    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    if (!m) return plate;
+    const [, region, suffix, letter, prefix] = m;
+    const seg = s => `<span>${toFa(s)}</span>`;
+    return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">` +
+        seg(prefix) + `<span>${letter}</span>` + seg(suffix) + `<span>ایران</span>` + seg(region) +
+        `</span>`;
+}
+function showError(msg) {
+  document.getElementById('error-text').textContent = msg;
+  showScreen('screen-error');
+}
+
+// ============================================================
+//  شروع بازدید
+// ============================================================
+async function startAttempt() {
+  document.getElementById('btn-start-inspection').disabled = true;
+  // راهنمای چرخاندن گوشی همین حالا (قبل از تماس با سرور) روی صفحه می‌آید تا هیچ لحظه‌ای از
+  // رابط قدیمیِ مرحله دیده نشود؛ در همین فاصله هم دوربین پیش‌گرم می‌شود
+  revealCaptureOptions();
+  try {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: `action=start_attempt&token=${encodeURIComponent(TOKEN)}` });
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (parseErr) { cancelRotateHint(); showToast('خطای غیرمنتظره از سرور. لطفاً دوباره تلاش کنید یا به پشتیبانی اطلاع دهید.'); document.getElementById('btn-start-inspection').disabled = false; return; }
+    if (!data.ok) { cancelRotateHint(); showToast(data.error); document.getElementById('btn-start-inspection').disabled = false; return; }
+    attemptId = data.attempt_id;
+    totalDeadline = Math.floor(Date.now()/1000) + appData.total_seconds;
+    resumeFromState(data.state);
+  } catch (e) { cancelRotateHint(); showToast('خطا در اتصال به اینترنت. لطفاً دوباره تلاش کنید.'); document.getElementById('btn-start-inspection').disabled = false; }
+}
+
+function resumeFromState(state) {
+  currentStepKey = state.current_step;
+  if (!currentStepKey) {
+    // همه‌ی مراحل قبلاً تمام شده ولی ثبت نهایی کامل نشده بود (مثلاً به‌خاطر قطعی ارتباط)
+    showScreen('screen-review');
+    return;
+  }
+  // اگر هنوز کاربر روی «ثبت بازدید این مرحله» نزده (step_started_at خالی است)، تایمر این مرحله
+  // هنوز شروع نشده - null می‌ماند تا در renderStep به‌جای شمارش معکوس «آماده» نشان داده شود
+  stepDeadline = state.step_started_at ? (state.step_started_at + appData.step_seconds) : null;
+  multiCount = (state.photos && state.photos[currentStepKey] && Array.isArray(state.photos[currentStepKey])) ? state.photos[currentStepKey].length : 0;
+  renderStep();
+  showScreen('screen-step');
+  startTimerLoop();
+}
+
+// ============================================================
+//  بازگشت به مرحله‌ی قبل (برای بازبینی/عکس مجدد)
+// ============================================================
+async function goBackStep() {
+  try {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: `action=go_back_step&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+    const data = await res.json();
+    if (data.expired) { showExpired(data.error); return; }
+    if (!data.ok) { showToast(data.error || 'مرحله‌ی قبلی وجود ندارد.'); return; }
+    currentStepKey = data.step; stepDeadline = data.step_deadline; multiCount = data.multi_count || 0;
+    renderStep();
+    showScreen('screen-step');
+  } catch(e) { showToast('خطا در اتصال.'); }
+}
+
+// ============================================================
+//  صفحه‌ی «بازدیدهای انجام‌شده»
+// ============================================================
+function nav_myInspections() {
+  showScreen('screen-my-inspections');
+  loadMyInspections();
+}
+const MI_STATUS = {PENDING:['⏳ در انتظار بررسی','#fbbf24'], APPROVED:['✅ تایید شده','#6ee7b7'], REJECTED:['❌ رد شده','#fca5a5']};
+async function loadMyInspections() {
+  const box = document.getElementById('my-inspections-list');
+  box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+  try {
+    const res = await fetch(`${API}?action=my_inspections&token=${encodeURIComponent(TOKEN)}`);
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+    if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز بازدیدی ثبت نکرده‌اید.</div>'; return; }
+    box.innerHTML = data.data.map(i => {
+      const [label, color] = MI_STATUS[i.status] || ['-', '#94a3b8'];
+      return `<div class="step-card" style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <b style="font-size:13px;">بازدید شماره ${toFa(i.inspection_number)}</b>
+          <span style="font-size:11px;font-weight:800;color:${color};">${label}</span>
+        </div>
+        ${i.status === 'REJECTED' ? `<p style="font-size:11.5px;color:#fca5a5;margin-top:8px;">علت رد: ${i.reject_reason || '-'}</p>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+// ============================================================
+//  رندر مرحله‌ی فعلی
+// ============================================================
+function renderStep() {
+  const step = stepsMap[currentStepKey];
+  const idx = stepOrder.indexOf(currentStepKey);
+  document.getElementById('step-num-label').textContent = `مرحله ${toFa(idx+1)}`;
+  document.getElementById('progress-text').textContent = `مرحله ${toFa(idx+1)} از ${toFa(stepOrder.length)}`;
+  document.getElementById('progress-fill').style.width = Math.round((idx/stepOrder.length)*100) + '%';
+  document.getElementById('step-title-text').textContent = step.label;
+  const badge = document.getElementById('step-req-badge');
+  badge.textContent = step.required ? 'اجباری' : 'اختیاری';
+  badge.className = 'req-badge ' + (step.required ? 'required' : 'optional');
+  document.getElementById('btn-skip-step').style.display = step.required ? 'none' : 'flex';
+
+  const guideWrap = document.getElementById('guide-img-wrap');
+  guideWrap.innerHTML = `<img src="${API}?action=guide_image&step=${step.key}" onerror="this.parentElement.innerHTML='<span class=no-guide>تصویر راهنما موجود نیست</span>'"><span class="guide-label">نمونه‌ی صحیح این مرحله</span>`;
+
+  syncFsStepInfo();   // اگر دوربین تمام‌صفحه باز است، اطلاعات همین مرحله روی آن هم بنشیند
+  resetCaptureUI();
+  if (step.multi) {
+    document.getElementById('multi-actions').style.display = multiCount > 0 ? 'block' : 'none';
+    renderMultiThumbs();
+  }
+}
+
+// اطلاعات مرحله‌ی جاری را روی صفحه‌ی دوربینِ تمام‌صفحه می‌نشاند (عنوان، شماره‌ی مرحله،
+// اجباری/اختیاری، نوار پیشرفت، تصویر راهنما و فعال/غیرفعال‌بودن «مرحله قبل»)
+function syncFsStepInfo() {
+  const cam = document.getElementById('fs-camera');
+  if (!cam || cam.style.display !== 'block') return;
+  const step = stepsMap[currentStepKey];
+  if (!step) return;
+  const idx = stepOrder.indexOf(currentStepKey);
+
+  document.getElementById('fs-step-title').textContent = step.label || '';
+  document.getElementById('fs-badge-step').textContent = `مرحله ${toFa(idx+1)} از ${toFa(stepOrder.length)}`;
+  const req = document.getElementById('fs-badge-req');
+  req.textContent = step.required ? 'اجباری' : 'اختیاری';
+  req.className = 'fs-badge-req ' + (step.required ? 'req' : 'opt');
+  document.getElementById('fs-progress-fill').style.width = Math.round((idx/stepOrder.length)*100) + '%';
+  document.getElementById('fs-progress-label').textContent = `${toFa(idx+1)}/${toFa(stepOrder.length)}`;
+
+  const g = document.getElementById('fs-guide');
+  g.onerror = () => { g.style.display = 'none'; };
+  g.src = `${API}?action=guide_image&step=${step.key}`;
+  g.style.display = 'block';
+  g.classList.remove('big');
+
+  // «رد کردن» فقط در مراحل اختیاریِ تک‌عکسی؛ «پایان بازدید» فقط در مرحله‌ی چندعکسی
+  document.getElementById('fs-skip-btn').style.display = (!step.required && !step.multi) ? 'block' : 'none';
+  document.getElementById('fs-finish-btn').style.display = step.multi ? 'block' : 'none';
+
+  updateMultiCounter();
+}
+
+// شمارنده‌ی عکس‌های ثبت‌شده در مرحله‌ی چندعکسی (مواضع آسیب‌دیده)
+function updateMultiCounter() {
+  const box = document.getElementById('fs-multi-count');
+  if (!box) return;
+  const step = stepsMap[currentStepKey];
+  if (step && step.multi) {
+    box.style.display = 'block';
+    box.textContent = multiCount > 0
+      ? `📸 ${toFa(multiCount)} موضع آسیب‌دیده ثبت شد — ادامه دهید یا «پایان بازدید» را بزنید`
+      : '📸 از هر موضع آسیب‌دیده عکس بگیرید، سپس «پایان بازدید» را بزنید';
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+
+
+function renderMultiThumbs() {
+  const box = document.getElementById('multi-thumbs');
+  box.innerHTML = '';
+  for (let i = 0; i < multiCount; i++) {
+    const d = document.createElement('div');
+    d.style.cssText = 'width:52px;height:52px;border-radius:10px;background:#334155;display:flex;align-items:center;justify-content:center;font-size:11px;';
+    d.textContent = '✓';
+    box.appendChild(d);
+  }
+}
+
+function resetCaptureUI() {
+  document.getElementById('pre-capture-actions').style.display = 'block';
+  document.getElementById('capture-choice').classList.remove('active');
+  document.getElementById('live-camera-area').classList.remove('active');
+  document.getElementById('upload-progress-note').style.display = 'none';
+  // اگر دوربین تمام‌صفحه باز است، استریم را نبند - قرار است در همان صفحه به مرحله‌ی بعد برویم
+  const cam = document.getElementById('fs-camera');
+  if (!cam || cam.style.display !== 'block') stopLiveStream();
+}
+
+// تایمرِ ۱.۵دقیقه‌ای این مرحله را از همین لحظه (شروعِ واقعیِ عکس‌گرفتن/انتخاب) ریست می‌کند
+async function startCaptureTimer() {
+    try {
+        const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+            body: `action=start_capture&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+        const data = await res.json();
+        if (data.ok) { stepDeadline = data.step_deadline; }
+    } catch(e) {}
+}
+
+// ابتدا دوربین زنده را امتحان می‌کنیم (اگر از «هاب بازدید» در مرورگر واقعی وارد شده باشیم کار می‌کند)؛
+// اگر ممکن نبود (مثلاً داخل WebView محدود مینی‌اپ)، خودکار به گزینه‌های گالری/فایل برمی‌گردیم
+let liveStream = null;
+let liveCapturedBlob = null;
+// ============================================================
+//  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
+//  نکته‌ی کلیدی: facingMode:'environment' به‌تنهایی روی خیلی از گوشی‌ها لنز اولترا-واید را
+//  انتخاب می‌کند که تصویرِ کشیده و بی‌کیفیت می‌دهد. تنها راه قابل‌اتکا این است که فهرست
+//  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
+// ============================================================
+async function openMainCameraStream() {
+    // مجوز را یک‌بار می‌گیریم تا نامِ دوربین‌ها در enumerateDevices قابل خواندن شود
+    let probe = null;
+    try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (e) {}
+
+    let backCams = [];
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
+        if (!backCams.length) backCams = cams;
+    } catch (e) {}
+    if (probe) probe.getTracks().forEach(t => t.stop());
+
+    // کیفیت بالا می‌خواهیم؛ اگر دوربین پشتیبانی نکند مرورگر خودش پایین می‌آورد
+    const quality = { width: { ideal: 4096 }, height: { ideal: 2160 }, frameRate: { ideal: 30 }, resizeMode: 'none' };
+
+    // ---------------------------------------------------------------
+    //  انتخاب لنز اصلی به روشِ «اندازه‌گیری میدان دید»:
+    //  تکیه بر نامِ دستگاه قابل‌اعتماد نیست (روی خیلی از گوشی‌ها نام‌ها عمومی‌اند). اما
+    //  لنز اولترا-واید همیشه بزرگ‌ترین میدان دید را دارد. پس هر دوربین پشت را باز می‌کنیم،
+    //  مقدار واقعی zoom.min و میدان دید را می‌خوانیم و دوربینی را نگه می‌داریم که
+    //  اولترا-واید نباشد (بزرگ‌ترین FOV را نداشته باشد) و بالاترین رزولوشن را بدهد.
+    // ---------------------------------------------------------------
+    const candidates = [];
+    for (const cam of backCams) {
+        try {
+            const s = await navigator.mediaDevices.getUserMedia({
+                video: Object.assign({ deviceId: { exact: cam.deviceId } }, quality), audio: false
+            });
+            const track = s.getVideoTracks()[0];
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            const settings = track.getSettings ? track.getSettings() : {};
+            candidates.push({
+                stream: s, track, caps,
+                // zoom.min کمتر از ۱ نشانه‌ی قطعیِ لنز اولترا-واید است
+                isUltraWide: !!(caps.zoom && caps.zoom.min < 1),
+                pixels: (settings.width || 0) * (settings.height || 0),
+            });
+        } catch (e) {}
+    }
+
+    let chosen = null;
+    if (candidates.length) {
+        const normal = candidates.filter(c2 => !c2.isUltraWide);
+        const pool = normal.length ? normal : candidates;
+        // میان لنزهای غیر-اولترا-واید، بالاترین رزولوشن را انتخاب کن
+        pool.sort((a, b) => b.pixels - a.pixels);
+        chosen = pool[0];
+        candidates.forEach(c2 => { if (c2 !== chosen) c2.stream.getTracks().forEach(t => t.stop()); });
+    }
+
+    let stream = chosen ? chosen.stream : null;
+    if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: Object.assign({ facingMode: { ideal: 'environment' } }, quality), audio: false
+        });
+    }
+
+    // ---------------------------------------------------------------
+    //  تنظیم زوم روی «۱ برابر» (بدون زوم)
+    //  نکته‌ی مهم: روی بعضی دستگاه‌ها applyConstraints خطا نمی‌دهد ولی عملاً اثر هم نمی‌کند.
+    //  پس بعد از هر تلاش، مقدار واقعی را با getSettings می‌خوانیم و چند روشِ مختلف را
+    //  یکی‌یکی امتحان می‌کنیم تا یکی واقعاً بنشیند.
+    // ---------------------------------------------------------------
+    try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+
+        if (caps && caps.zoom) {
+            const target = Math.min(Math.max(1, caps.zoom.min), caps.zoom.max);
+            const attempts = [
+                () => track.applyConstraints({ advanced: [{ zoom: target }] }),
+                () => track.applyConstraints({ zoom: target }),
+                () => track.applyConstraints({ advanced: [{ zoom: { exact: target } }] }),
+                () => track.applyConstraints({ advanced: [{ zoom: { ideal: target } }] }),
+            ];
+            for (const attempt of attempts) {
+                try {
+                    await attempt();
+                    const cur = track.getSettings ? (track.getSettings().zoom) : undefined;
+                    // اگر مقدار واقعی خوانده شد و به هدف رسیدیم، کار تمام است
+                    if (cur === undefined || Math.abs(cur - target) < 0.05) break;
+                } catch (e) { /* روش بعدی */ }
+            }
+        }
+
+        if (caps && caps.focusMode && caps.focusMode.includes('continuous')) {
+            try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+        }
+    } catch (e) {}
+
+    return stream;
+}
+
+// ============================================================
+//  جریان گرفتن عکس: ابتدا راهنمای چرخاندن گوشی (۵ ثانیه، با امکان انصراف)، سپس دوربینِ
+//  تمام‌صفحه‌ی افقی با راهنما/تایمر/دکمه‌ها روی خودِ تصویر - تا کاربر بدون رفت‌وبرگشت بین
+//  صفحه‌ها سریع عکس بگیرد
+// ============================================================
+let rotateHintTimer = null, rotateHintCancelled = false;
+
+async function revealCaptureOptions() {
+    rotateHintCancelled = false;
+    const hint = document.getElementById('rotate-hint');
+    hint.style.display = 'flex';
+    let sec = 3;
+    document.getElementById('rot-sec').textContent = toFa(sec);
+    clearInterval(rotateHintTimer);
+    // در همین ۳ ثانیه، استریم دوربین را از قبل آماده می‌کنیم تا وقتی راهنما تمام شد، صفحه‌ی
+    // دوربین بدون هیچ تاخیری باز شود (گرفتن مجوز و باز کردن لنز معمولاً ۱-۲ ثانیه طول می‌کشد)
+    let prewarm = openMainCameraStream().catch(() => null);
+    window._fsPrewarm = prewarm;
+
+    rotateHintTimer = setInterval(() => {
+        sec--;
+        if (sec <= 0) {
+            clearInterval(rotateHintTimer);
+            hint.style.display = 'none';
+            if (!rotateHintCancelled) {
+                // پرده تا لحظه‌ی باز شدن واقعیِ دوربین روی صفحه می‌ماند
+                document.getElementById('cam-curtain').style.display = 'flex';
+                startFullscreenCapture();
+            }
+        } else {
+            document.getElementById('rot-sec').textContent = toFa(sec);
+        }
+    }, 1000);
+}
+
+function cancelRotateHint() {
+    rotateHintCancelled = true;
+    clearInterval(rotateHintTimer);
+    document.getElementById('rotate-hint').style.display = 'none';
+    document.getElementById('cam-curtain').style.display = 'none';
+    // استریمی که برای شروع سریع آماده شده بود، اگر استفاده نشد باید آزاد شود
+    if (window._fsPrewarm) {
+        window._fsPrewarm.then(s => { if (s) s.getTracks().forEach(t => t.stop()); }).catch(()=>{});
+        window._fsPrewarm = null;
+    }
+}
+
+async function startFullscreenCapture() {
+    document.getElementById('pre-capture-actions').style.display = 'none';
+
+    // چون راهنما پیش از پاسخِ سرور نمایش داده می‌شود، ممکن است هنوز attemptId آماده نباشد.
+    // حداکثر ۱۰ ثانیه منتظر می‌مانیم؛ اگر نیامد یعنی شروع بازدید شکست خورده و برمی‌گردیم.
+    for (let i = 0; i < 100 && !attemptId; i++) await new Promise(r => setTimeout(r, 100));
+    if (!attemptId || rotateHintCancelled) { document.getElementById('cam-curtain').style.display = 'none'; return; }
+
+    await startCaptureTimer();
+    try {
+        // اگر استریم در زمان نمایش راهنما از قبل آماده شده، همان را استفاده کن (باز شدن فوری)
+        liveStream = (window._fsPrewarm ? await window._fsPrewarm : null) || await openMainCameraStream();
+        window._fsPrewarm = null;
+
+        // پرکردن اطلاعات روی صفحه‌ی دوربین از همان داده‌های صفحه‌ی مرحله
+        document.getElementById('fs-name').textContent = document.getElementById('step-name').textContent || '';
+        document.getElementById('fs-plate').innerHTML = document.getElementById('step-plate').innerHTML || '';
+        const titleEl = document.getElementById('step-title-text');
+        document.getElementById('fs-step-title').textContent = titleEl ? titleEl.textContent : '';
+        const guideSrc = document.querySelector('#guide-img-wrap img') ? document.querySelector('#guide-img-wrap img').src : '';
+        const fsGuide = document.getElementById('fs-guide');
+        if (guideSrc) { fsGuide.src = guideSrc; fsGuide.style.display = 'block'; }
+        else { fsGuide.style.display = 'none'; }
+        fsGuide.classList.remove('big');
+
+        const v = document.getElementById('fs-video');
+        v.srcObject = liveStream;
+        v.style.display = 'block';
+        document.getElementById('fs-shot').style.display = 'none';
+        document.getElementById('fs-capture-bar').style.display = 'flex';
+        document.getElementById('fs-preview-bar').style.display = 'none';
+        document.getElementById('fs-camera').style.display = 'block';
+        document.getElementById('cam-curtain').style.display = 'none';
+        applyForcedLandscape();
+        setupZoomSlider();
+        watchCameraTrack();
+        syncFsStepInfo();
+
+        // درخواست قفلِ افقی (روی مرورگرهایی که پشتیبانی می‌کنند)
+        try {
+            if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+            if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+        } catch (e) { /* بی‌ضرر - کاربر خودش گوشی را افقی می‌گیرد */ }
+    } catch (e) {
+        document.getElementById('cam-curtain').style.display = 'none';
+        // دوربین در دسترس نیست: رابط قدیمیِ مرحله را به‌عنوان جایگزین نشان بده
+        document.getElementById('screen-step').classList.add('fallback');
+        document.getElementById('capture-choice').classList.add('active');
+    }
+}
+
+function toggleFsGuide() { document.getElementById('fs-guide').classList.toggle('big'); }
+
+// ------------------------------------------------------------------
+//  بازیابی خودکار دوربین
+//  اگر به هر دلیلی استریم دوربین قطع شود (خطای سیستمی، تماس ورودی، رفتن به پس‌زمینه...)،
+//  به‌جای پرت‌شدن از صفحه، پیام «در حال بارگذاری دوباره‌ی دوربین» نشان داده می‌شود و از
+//  همان مرحله‌ای که روی سرور ذخیره شده ادامه می‌دهیم.
+// ------------------------------------------------------------------
+let camRecovering = false;
+
+function watchCameraTrack() {
+    if (!liveStream) return;
+    const track = liveStream.getVideoTracks()[0];
+    if (!track) return;
+    track.onended = () => recoverCamera('استریم دوربین قطع شد');
+    track.onmute = () => setTimeout(() => { if (track.muted) recoverCamera('دوربین موقتاً در دسترس نیست'); }, 1200);
+}
+
+async function recoverCamera(reason) {
+    const cam = document.getElementById('fs-camera');
+    if (camRecovering || !cam || cam.style.display !== 'block') return;
+    if (!attemptId) return;   // بازدیدی در جریان نیست
+    camRecovering = true;
+
+    const curtain = document.getElementById('cam-curtain');
+    curtain.querySelector('.curtain-text').textContent = 'در حال بارگذاری دوباره‌ی دوربین...';
+    curtain.style.display = 'flex';
+
+    // چند بار تلاش می‌کنیم؛ اگر باز نشد، کاربر را به هاب برمی‌گردانیم تا گیر نکند
+    for (let i = 0; i < 5; i++) {
+        try {
+            stopLiveStream();
+            liveStream = await openMainCameraStream();
+            const v = document.getElementById('fs-video');
+            v.srcObject = liveStream;
+            v.style.display = 'block';
+            document.getElementById('fs-shot').style.display = 'none';
+            document.getElementById('fs-capture-bar').style.display = 'flex';
+            document.getElementById('fs-preview-bar').style.display = 'none';
+            setupZoomSlider();
+            watchCameraTrack();
+            syncFsStepInfo();              // همان مرحله‌ی ذخیره‌شده ادامه پیدا می‌کند
+            curtain.style.display = 'none';
+            curtain.querySelector('.curtain-text').textContent = 'در حال آماده‌سازی دوربین...';
+            camRecovering = false;
+            showToast('دوربین دوباره برقرار شد.');
+            return;
+        } catch (e) {
+            await new Promise(r => setTimeout(r, 1200));
+        }
+    }
+    camRecovering = false;
+    curtain.style.display = 'none';
+    showToast('دسترسی به دوربین ممکن نشد.');
+    returnToVisitHub();
+}
+
+// وقتی کاربر به برنامه برمی‌گردد، اگر استریم مرده بود بازیابی کن
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const cam = document.getElementById('fs-camera');
+    if (!cam || cam.style.display !== 'block') return;
+    const track = liveStream && liveStream.getVideoTracks()[0];
+    if (!track || track.readyState === 'ended' || track.muted) recoverCamera('بازگشت به برنامه');
+});
+
+// اگر ویوپورت هنوز عمودی است (یعنی مرورگر چیدمان را نچرخانده)، رابط را خودمان می‌چرخانیم
+function applyForcedLandscape() {
+    const cam = document.getElementById('fs-camera');
+    if (!cam || cam.style.display !== 'block') return;
+    const portrait = window.innerHeight > window.innerWidth;
+    cam.classList.toggle('force-landscape', portrait);
+}
+window.addEventListener('resize', applyForcedLandscape);
+window.addEventListener('orientationchange', () => setTimeout(applyForcedLandscape, 250));
+
+// روشن/خاموش‌کردن چراغ دوربین (torch) - روی مرورگرهایی که پشتیبانی می‌کنند
+// ---------------- زوم دستی ----------------
+// اگر تنظیم خودکارِ زوم روی بعضی دستگاه‌ها اثر نکند، کاربر می‌تواند خودش تنظیم کند
+async function setZoomManual(v) {
+    document.getElementById('fs-zoom-val').textContent = toFa(Number(v).toFixed(1)) + 'x';
+    if (!liveStream) return;
+    const track = liveStream.getVideoTracks()[0];
+    if (!track) return;
+    const val = Number(v);
+    const tries = [
+        () => track.applyConstraints({ advanced: [{ zoom: val }] }),
+        () => track.applyConstraints({ zoom: val }),
+        () => track.applyConstraints({ advanced: [{ zoom: { exact: val } }] }),
+    ];
+    for (const t of tries) { try { await t(); return; } catch (e) {} }
+}
+
+// اسلایدر را بر اساس توانایی واقعی دوربین آماده می‌کند (اگر زوم پشتیبانی نشود، پنهان می‌ماند)
+function setupZoomSlider() {
+    const wrap = document.getElementById('fs-zoom-wrap');
+    if (!wrap || !liveStream) return;
+    const track = liveStream.getVideoTracks()[0];
+    const caps = (track && track.getCapabilities) ? track.getCapabilities() : null;
+    if (!caps || !caps.zoom) { wrap.style.display = 'none'; return; }
+    const slider = document.getElementById('fs-zoom');
+    slider.min = caps.zoom.min;
+    // سقف زوم را حداکثر ۲.۵ برابر می‌گذاریم؛ بالاتر از آن زومِ دیجیتال تصویر را برفکی می‌کند
+    slider.max = Math.min(caps.zoom.max, Math.max(caps.zoom.min + 0.1, 2.5));
+    slider.step = caps.zoom.step || 0.1;
+    const cur = (track.getSettings && track.getSettings().zoom) || Math.max(1, caps.zoom.min);
+    slider.value = cur;
+    document.getElementById('fs-zoom-val').textContent = toFa(Number(cur).toFixed(1)) + 'x';
+    wrap.style.display = 'flex';
+}
+
+
+
+function exitFullscreenCamera() {
+    document.getElementById('cam-curtain').style.display = 'none';
+    const cv = document.getElementById('fs-shot-canvas');
+    if (cv) cv.remove();
+    liveEncodePromise = null;
+    stopLiveStream();
+    liveCapturedBlob = null;
+    document.getElementById('fs-camera').style.display = 'none';
+    document.getElementById('pre-capture-actions').style.display = '';
+    try {
+        if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+    } catch (e) {}
+}
+
+function stopLiveStream() { if (liveStream) { liveStream.getTracks().forEach(t=>t.stop()); liveStream = null; } }
+
+let shotBusy = false;
+let liveEncodePromise = null;
+function takeLiveShot(ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    if (shotBusy) return;           // جلوگیری از دوبار شلیک با یک لمس
+    shotBusy = true;
+    setTimeout(() => { shotBusy = false; }, 600);
+
+    const video = document.getElementById('fs-video');
+    // نکته‌ی مهم برای سرعت آپلود: تصویر خام دوربین ممکن است ۴K باشد که چند مگابایت می‌شود و
+    // آپلودش ۱۵-۲۰ ثانیه طول می‌کشد. برای بازدید خودرو، رزولوشن بالا با سقف حجم ۱.۵ مگابایت کنترل می‌شود،
+    // پس قبل از ساختن فایل، تصویر را به این اندازه کوچک می‌کنیم (حجم تا حدود یک‌دهم کم می‌شود).
+    // رزولوشن: ۲۴۰۰ پیکسل برای دیدن جزئیات خودرو کاملاً کافی است و نسبت به ۴۰۰۰
+    // چند برابر سریع‌تر رمزگذاری می‌شود (رمزگذاری با مربعِ ابعاد سنگین‌تر می‌شود).
+    const MAX_W = 2400;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const scale = vw > MAX_W ? (MAX_W / vw) : 1;
+    const w = Math.round(vw * scale), h = Math.round(vh * scale);
+
+    // ------------------------------------------------------------------
+    //  صاف‌کردن خودکار عکس: وقتی رابط را دستی چرخانده‌ایم (چون سیستم‌عامل چرخش را قفل کرده)،
+    //  تصویرِ خامِ دوربین نسبت به چیزی که کاربر می‌بیند ۹۰ درجه اختلاف دارد و عکس کج ذخیره
+    //  می‌شود. اینجا همان اختلاف را جبران می‌کنیم تا عکس دقیقاً مثل کادرِ دیده‌شده باشد.
+    // ------------------------------------------------------------------
+    const rotated = document.getElementById('fs-camera').classList.contains('force-landscape');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (rotated) {
+        canvas.width = h; canvas.height = w;
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(video, -w / 2, -h / 2, w, h);
+    } else {
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+    }
+
+    // بازخورد بصری فوری
+    const camEl = document.getElementById('fs-camera');
+    const flashEl = document.createElement('div');
+    flashEl.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.85;z-index:18;pointer-events:none;transition:opacity .18s;';
+    camEl.appendChild(flashEl);
+    requestAnimationFrame(() => { flashEl.style.opacity = '0'; setTimeout(() => flashEl.remove(), 200); });
+
+    // ------------------------------------------------------------------
+    //  نمایشِ فوریِ پیش‌نمایش (مهم‌ترین تغییر برای سرعت):
+    //  قبلاً پیش‌نمایش فقط *بعد از* اتمام رمزگذاری نشان داده می‌شد و روی موبایل
+    //  ۱۰-۲۰ ثانیه طول می‌کشید. حالا خودِ canvas که همین الان آماده است مستقیم روی
+    //  صفحه نشان داده می‌شود و رمزگذاری در پس‌زمینه ادامه پیدا می‌کند.
+    // ------------------------------------------------------------------
+    stopLiveStream();
+    video.style.display = 'none';
+    const shot = document.getElementById('fs-shot');
+    shot.style.display = 'none';
+
+    canvas.id = 'fs-shot-canvas';
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;';
+    const prevCanvas = document.getElementById('fs-shot-canvas');
+    if (prevCanvas) prevCanvas.remove();
+    camEl.appendChild(canvas);
+
+    document.getElementById('fs-capture-bar').style.display = 'none';
+    document.getElementById('fs-preview-bar').style.display = 'flex';
+
+    // ------------------------------------------------------------------
+    //  رمزگذاری در پس‌زمینه با حداکثر دو پاس. دکمه‌ی «تایید و ارسال» تا آماده‌شدن فایل
+    //  غیرفعال می‌ماند، ولی کاربر بلافاصله عکس را می‌بیند و می‌تواند «دوباره» بزند.
+    // ------------------------------------------------------------------
+    const MAX_BYTES = 2 * 1024 * 1024;
+    const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
+
+    const confirmBtn = document.querySelector('#fs-preview-bar .fs-confirm');
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '.55'; }
+
+    liveCapturedBlob = null;
+    liveEncodePromise = (async () => {
+        let blob = await encodeAt(0.92);
+        if (blob && blob.size > MAX_BYTES) {
+            const ratio = MAX_BYTES / blob.size;
+            const q2 = Math.max(0.62, Math.min(0.90, 0.92 * Math.sqrt(ratio)));
+            const second = await encodeAt(q2);
+            if (second) blob = second;
+        }
+        liveCapturedBlob = blob;
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = ''; }
+        return blob;
+    })();
+}
+
+async function retakeLiveShot() {
+    liveCapturedBlob = null;
+    liveEncodePromise = null;
+    const cv = document.getElementById('fs-shot-canvas');
+    if (cv) cv.remove();
+    await restartFsStream();
+}
+
+// بعد از تایید عکس، دوربین بسته نمی‌شود: آپلود انجام می‌شود، سرور مرحله‌ی بعد را برمی‌گرداند،
+// اطلاعات روی همان صفحه به‌روز می‌شود و استریم برای عکس بعدی دوباره باز می‌شود
+async function confirmLiveShot() {
+    // اگر رمزگذاری هنوز تمام نشده، منتظرش می‌مانیم (دکمه تا آن لحظه غیرفعال است،
+    // ولی این محافظ برای حالت‌های حاشیه‌ای هم لازم است)
+    if (!liveCapturedBlob && liveEncodePromise) {
+        showToast('در حال آماده‌سازی عکس...');
+        await liveEncodePromise;
+    }
+    if (!liveCapturedBlob) return;
+    const blob = liveCapturedBlob;
+    liveCapturedBlob = null;
+    liveEncodePromise = null;
+    document.getElementById('fs-preview-bar').style.display = 'none';
+    const cv = document.getElementById('fs-shot-canvas');
+    if (cv) cv.style.opacity = '.45';
+    await uploadPhoto(blob);
+    if (cv) cv.remove();
+
+    // اگر هنوز در جریان بازدید هستیم (صفحه‌ی پایان/انقضا نیامده)، برای مرحله‌ی بعد آماده شو
+    const cam = document.getElementById('fs-camera');
+    if (cam && cam.style.display === 'block') {
+        syncFsStepInfo();
+        await startCaptureTimer();   // تایمرِ مرحله‌ی جدید باید روی سرور ثبت شود
+        await restartFsStream();
+    }
+}
+
+async function restartFsStream() {
+    try {
+        const cv = document.getElementById('fs-shot-canvas');
+        if (cv) cv.remove();
+        stopLiveStream();
+        liveStream = await openMainCameraStream();
+        const v = document.getElementById('fs-video');
+        v.srcObject = liveStream;
+        v.style.display = 'block';
+        document.getElementById('fs-shot').style.display = 'none';
+        document.getElementById('fs-capture-bar').style.display = 'flex';
+        document.getElementById('fs-preview-bar').style.display = 'none';
+        setupZoomSlider();
+        watchCameraTrack();
+    } catch (e) { exitFullscreenCamera(); }
+}
+
+// خروج با تایید (ضربدر قرمز)
+function askExitFullscreen() { document.getElementById('fs-exit-confirm').style.display = 'flex'; }
+async function confirmExitFullscreen() {
+    document.getElementById('fs-exit-confirm').style.display = 'none';
+    exitFullscreenCamera();
+    stopTimerLoop();
+
+    // انصراف یعنی کل این تلاشِ بازدید رها شده - روی سرور هم باید لغو شود تا عکس‌های
+    // نیمه‌کاره باقی نمانند و کاربر بتواند از ابتدا شروع کند
+    if (attemptId) {
+        try {
+            await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+                body: `action=cancel&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+        } catch (e) {}
+    }
+
+    attemptId = null; currentStepKey = null; stepDeadline = null; multiCount = 0; liveCapturedBlob = null;
+    const btn = document.getElementById('btn-start-inspection');
+    if (btn) btn.disabled = false;
+    showScreen('screen-rules');
+    showToast('بازدید لغو شد.');
+    // طبق تصمیم: پس از انصراف، کاربر به صفحه‌ی «بازدید مدارک و سلامت» برمی‌گردد تا اگر خواست
+    // از همان‌جا دوباره شروع کند
+    setTimeout(returnToVisitHub, 900);
+}
+
+// ============================================================
+//  دوربین/گالری - به‌جای استریم زنده (getUserMedia که در وب‌ویوی بله همیشه
+//  پشتیبانی نمی‌شود)، مستقیماً به دوربین/گالریِ خودِ گوشی سپرده می‌شود؛
+//  این روش با input[capture] در تقریباً همه‌ی مرورگرها/وب‌ویوهای موبایل کار می‌کند
+//  و مجوز دوربین را خودِ سیستم‌عامل (نه صفحه‌ی وب) مدیریت می‌کند.
+// ============================================================
+function pickFromCamera() { document.getElementById('camera-input').click(); }
+
+// ============================================================
+//  گرفتن عکس زنده با دوربین، در یک صفحه‌ی مرورگر واقعی (نه WebView محدود بله)
+//  چون getUserMedia معمولاً در مرورگر واقعی کامل پشتیبانی می‌شود، برخلاف WebView داخل اپ
+// ============================================================
+function openCameraInBrowser() {
+  const step = stepsMap[currentStepKey];
+  const url = `${location.origin}/webapp/capture/index_capture.html?t=${encodeURIComponent(TOKEN)}&mode=health&attempt=${attemptId}&step=${encodeURIComponent(currentStepKey)}&label=${encodeURIComponent(step ? step.label : '')}`;
+  try {
+    if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
+      Bale.WebApp.openLink(url);
+      return;
+    }
+  } catch(e) {}
+  window.open(url, '_blank');
+}
+
+// وقتی کاربر از صفحه‌ی مرورگر دوربین به این مینی‌اپ برمی‌گردد (تب/اپ دوباره دیده می‌شود)،
+// خودکار آخرین وضعیت را از سرور می‌گیریم تا اگر عکس آنجا ثبت شده بود، این‌جا هم جلو برویم
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !attemptId) return;
+  if (!document.getElementById('screen-step').classList.contains('active')) return;
+  try {
+    const res = await fetch(`${API}?action=attempt_state&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    if (data.status !== 'IN_PROGRESS') { showExpired('این بازدید دیگر فعال نیست.'); return; }
+    const newStep = data.state.current_step;
+    if (newStep !== currentStepKey) {
+      currentStepKey = newStep;
+      if (!currentStepKey) { showScreen('screen-review'); return; }
+      stepDeadline = data.state.step_started_at ? (data.state.step_started_at + appData.step_seconds) : null;
+      multiCount = (data.state.photos && Array.isArray(data.state.photos[currentStepKey])) ? data.state.photos[currentStepKey].length : 0;
+      renderStep();
+      showToast('✅ عکس ثبت شد، رفتیم مرحله‌ی بعد');
+    }
+  } catch(e) {}
+});
+
+function pickFromGallery() { document.getElementById('gallery-input').click(); }
+function onFileSelected(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = '';
+  uploadPhoto(file);
+}
+
+// ============================================================
+//  ارسال عکسِ انتخاب‌شده به سرور - بلافاصله بعد از انتخاب (بدون مرحله‌ی پیش‌نمایش)
+// ============================================================
+// آپلود با نمایش درصد پیشرفت روی صفحه‌ی دوربین
+function uploadWithProgress(url, formData) {
+    return new Promise((resolve, reject) => {
+        const box = document.getElementById('fs-upload');
+        const fill = document.getElementById('fs-up-fill');
+        const pct = document.getElementById('fs-up-pct');
+        const camOpen = document.getElementById('fs-camera').style.display === 'block';
+        if (camOpen && box) { box.style.display = 'flex'; fill.style.width = '0%'; pct.textContent = toFa(0) + '٪'; }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable || !camOpen || !box) return;
+            const p = Math.round((e.loaded / e.total) * 100);
+            fill.style.width = p + '%';
+            pct.textContent = toFa(p) + '٪';
+        };
+        xhr.onload = () => {
+            if (camOpen && box) {
+                fill.style.width = '100%'; pct.textContent = 'در حال پردازش...';
+                setTimeout(() => { box.style.display = 'none'; }, 250);
+            }
+            try { resolve(JSON.parse(xhr.responseText)); }
+            catch (e) { reject(new Error('پاسخ نامعتبر از سرور')); }
+        };
+        xhr.onerror = () => { if (camOpen && box) box.style.display = 'none'; reject(new Error('خطای شبکه')); };
+        xhr.send(formData);
+    });
+}
+
+async function uploadPhoto(file) {
+  document.getElementById('capture-choice').classList.remove('active');
+  document.getElementById('upload-progress-note').style.display = 'block';
+
+  const fd = new FormData();
+  fd.append('action', 'upload_step');
+  fd.append('token', TOKEN);
+  fd.append('attempt_id', attemptId);
+  fd.append('step_key', currentStepKey);
+  fd.append('photo', file, 'photo.jpg');
+
+  try {
+    // از XHR استفاده می‌کنیم (نه fetch) چون فقط XHR رویداد پیشرفتِ آپلود دارد
+    const data = await uploadWithProgress(API, fd);
+    if (data.expired) { showExpired(data.error); return; }
+    if (!data.ok) { showToast(data.error || 'خطا در ارسال'); resetCaptureUI(); return; }
+
+    if (data.stay_on_step) {
+      multiCount = data.count;
+      document.getElementById('multi-actions').style.display = 'block';
+      renderMultiThumbs();
+      updateMultiCounter();   // شمارنده‌ی روی صفحه‌ی دوربین هم به‌روز شود
+      resetCaptureUI();
+      showToast(`عکس ${toFa(multiCount)} ثبت شد.`);
+    } else if (data.next_step) {
+      currentStepKey = data.next_step;
+      stepDeadline = data.step_deadline;
+      multiCount = 0;
+      renderStep();
+      showToast('✅ ثبت شد');
+    } else {
+      showScreen('screen-review');
+    }
+  } catch (e) { showToast('خطا در اتصال.'); resetCaptureUI(); }
+}
+
+async function finishMultiStep() {
+  try {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: `action=finish_multi_step&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+    const data = await res.json();
+    if (data.expired) { showExpired(data.error); return; }
+    if (!data.ok) { showToast(data.error); return; }
+    if (data.next_step) {
+      currentStepKey = data.next_step; stepDeadline = data.step_deadline; multiCount = 0;
+      renderStep();
+      const cam = document.getElementById('fs-camera');
+      if (cam && cam.style.display === 'block') {
+        syncFsStepInfo();
+        await startCaptureTimer();
+        await restartFsStream();
+      }
+    } else { showScreen('screen-review'); }
+  } catch(e) { showToast('خطا در اتصال.'); }
+}
+
+async function skipStep() {
+  try {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: `action=skip_step&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+    const data = await res.json();
+    if (data.expired) { showExpired(data.error); return; }
+    if (!data.ok) { showToast(data.error); return; }
+    if (data.next_step) {
+      currentStepKey = data.next_step; stepDeadline = data.step_deadline; multiCount = 0;
+      renderStep();
+      const cam = document.getElementById('fs-camera');
+      if (cam && cam.style.display === 'block') {
+        syncFsStepInfo();
+        await startCaptureTimer();
+        await restartFsStream();
+      }
+    } else { showScreen('screen-review'); }
+  } catch(e) { showToast('خطا در اتصال.'); }
+}
+
+async function finalizeInspection() {
+  try {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: `action=finalize&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'خطا در ثبت نهایی'); return; }
+    document.getElementById('success-num').textContent = toFa(data.inspection_number);
+    stopTimerLoop();
+    showScreen('screen-success');
+
+    const returnMode = params.get('return');
+    const returnToken = params.get('rt');
+    if (returnMode === 'visit' && returnToken) {
+      document.getElementById('success-visit-return').style.display = 'block';
+      let secondsLeft = 5;
+      const countdownEl = document.getElementById('countdown-num');
+      const timer = setInterval(() => {
+        secondsLeft--;
+        countdownEl.textContent = toFa(secondsLeft);
+        if (secondsLeft <= 0) { clearInterval(timer); returnToVisitHub(); }
+      }, 1000);
+      return;
+    }
+    try { if (window.Bale && window.Bale.WebApp) setTimeout(() => Bale.WebApp.close(), 2500); } catch(e){}
+  } catch (e) { showToast('خطا در اتصال.'); }
+}
+
+async function cancelInspection() {
+  if (!confirm('آیا از انصراف مطمئن هستید؟ اطلاعات این بازدید ذخیره نمی‌شود.')) return;
+  try {
+    await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: `action=cancel&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+  } catch(e) {}
+  stopTimerLoop();
+  document.getElementById('expired-title').textContent = 'بازدید لغو شد';
+  document.getElementById('expired-text').textContent = 'هر زمان آماده بودید می‌توانید از ربات دوباره شروع کنید.';
+  showScreen('screen-expired');
+}
+
+function showExpired(msg) {
+  stopTimerLoop();
+  // اگر دوربین تمام‌صفحه باز بود، حتماً بسته شود
+  const fsCam = document.getElementById('fs-camera');
+  if (fsCam && fsCam.style.display === 'block') exitFullscreenCamera();
+
+  // انقضای زمان دقیقاً مثل انصراف رفتار می‌کند: تلاش روی سرور لغو، وضعیت محلی پاک، و کاربر
+  // باید از ابتدا شروع کند (نه اینکه در وضعیت نیمه‌کاره گیر کند)
+  if (attemptId) {
+    try {
+      fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: `action=cancel&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
+    } catch (e) {}
+  }
+  attemptId = null; currentStepKey = null; stepDeadline = null; multiCount = 0; liveCapturedBlob = null;
+  const btn = document.getElementById('btn-start-inspection');
+  if (btn) btn.disabled = false;
+
+  document.getElementById('expired-title').textContent = 'زمان به پایان رسید';
+  document.getElementById('expired-text').textContent = (msg || '') + ' در حال بازگشت به صفحه‌ی بازدید...';
+  showScreen('screen-expired');
+  // مثل انصراف: بازگشت به صفحه‌ی «بازدید مدارک و سلامت»
+  setTimeout(returnToVisitHub, 2200);
+}
+
+// ============================================================
+//  تایمرها (نمایش لحظه‌ای، اعتبارسنجی نهایی همیشه سمت سرور انجام می‌شود)
+// ============================================================
+function startTimerLoop() {
+  stopTimerLoop();
+  tickTimers();
+  timerHandle = setInterval(tickTimers, 1000);
+}
+function stopTimerLoop() { if (timerHandle) clearInterval(timerHandle); timerHandle = null; }
+function tickTimers() {
+  const now = Math.floor(Date.now()/1000);
+  const totalLeft = totalDeadline - now;
+
+  if (stepDeadline === null) {
+    // هنوز کاربر روی «ثبت بازدید این مرحله» نزده؛ تایمر این مرحله هنوز شروع نشده
+    // نکته: این‌جا باید جهت را به حالت عادیِ فارسی برگردانیم، چون style پیش‌فرضِ این المان
+    // (bidi-override + ltr) مخصوص فرمت عددیِ MM:SS است و روی متن فارسی خالص باعث بهم‌ریختگی می‌شود
+    const stepValEl = document.getElementById('val-step');
+    stepValEl.textContent = 'آماده';
+    stepValEl.style.direction = 'rtl';
+    stepValEl.style.unicodeBidi = 'normal';
+    document.getElementById('pill-step').className = 'timer-pill';
+  } else {
+    const stepValEl = document.getElementById('val-step');
+    stepValEl.style.direction = '';
+    stepValEl.style.unicodeBidi = '';
+    const stepLeft = stepDeadline - now;
+    document.getElementById('val-step').textContent = fmtTime(stepLeft);
+    document.getElementById('pill-step').className = 'timer-pill' + (stepLeft <= 10 ? ' danger' : stepLeft <= 20 ? ' warn' : '');
+    if (stepLeft <= 0) { showExpired('زمان این مرحله تمام شد.'); return; }
+  }
+
+  document.getElementById('val-total').textContent = fmtTime(totalLeft);
+  const totalPill = document.getElementById('pill-total');
+  totalPill.className = 'timer-pill' + (totalLeft <= 30 ? ' danger' : totalLeft <= 90 ? ' warn' : '');
+
+  // بازتاب همان تایمرها روی نوار بالای دوربینِ تمام‌صفحه (اگر باز باشد)
+  const fsCam = document.getElementById('fs-camera');
+  if (fsCam && fsCam.style.display === 'block') {
+    document.getElementById('fs-step-timer').textContent = document.getElementById('val-step').textContent;
+    document.getElementById('fs-total-timer').textContent = fmtTime(totalLeft);
+  }
+
+  if (totalLeft <= 0) { showExpired('زمان کل بازدید تمام شد.'); }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>گرفتن عکس</title>
+<style>
+  :root { --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6; --success: #10b981; --danger: #ef4444; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9; min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column; padding: 16px;
+  }
+  h1.title { font-size: 17px; font-weight: 800; text-align: center; margin: 8px 0 4px; }
+  p.desc { font-size: 12.5px; color: #cbd5e1; text-align: center; line-height: 1.9; margin: 0 0 16px; }
+  .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  video, img.shot { width: 100%; max-width: 480px; border-radius: 16px; background: #000; aspect-ratio: 4/3; object-fit: cover; }
+  canvas { display: none; }
+  .btn { border: none; border-radius: 16px; padding: 15px 20px; font-size: 15px; font-weight: 800; cursor: pointer; width: 100%; max-width: 480px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 8px 24px rgba(99,102,241,.35); }
+  .btn-outline { background: rgba(255,255,255,.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); }
+  .btn-row { display: flex; gap: 10px; width: 100%; max-width: 480px; }
+  .icon-badge { width: 68px; height: 68px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 8px 30px rgba(99,102,241,.4); }
+  .icon-badge.ok { background: linear-gradient(135deg, var(--success), #059669); }
+  .icon-badge.err { background: linear-gradient(135deg, var(--danger), #b91c1c); }
+</style>
+</head>
+<body>
+
+<div id="stage-loading" class="stage">
+  <div class="icon-badge">📷</div>
+  <h1 class="title">در حال آماده‌سازی دوربین...</h1>
+</div>
+
+<div id="stage-live" class="stage" style="display:none;">
+  <p class="desc" id="live-label"></p>
+  <video id="video" autoplay playsinline muted></video>
+  <button class="btn btn-primary" onclick="takeShot()">📸 گرفتن عکس</button>
+</div>
+
+<div id="stage-preview" class="stage" style="display:none;">
+  <img id="shot-img" class="shot" src="">
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="confirmUpload()">✅ تایید و ارسال</button>
+    <button class="btn btn-outline" onclick="retake()" style="max-width:140px;">🔁 دوباره</button>
+  </div>
+</div>
+
+<div id="stage-uploading" class="stage" style="display:none;">
+  <div class="icon-badge">⏳</div>
+  <h1 class="title">در حال ارسال...</h1>
+</div>
+
+<div id="stage-success" class="stage" style="display:none;">
+  <div class="icon-badge ok">✅</div>
+  <h1 class="title">عکس با موفقیت ثبت شد</h1>
+  <p class="desc">حالا می‌توانید به بله برگردید — همان‌جا ادامه بدهید، خودش به‌روزرسانی می‌شود.</p>
+  <button class="btn btn-primary" onclick="window.close()">بستن این صفحه</button>
+</div>
+
+<div id="stage-error" class="stage" style="display:none;">
+  <div class="icon-badge err">⚠️</div>
+  <h1 class="title" id="error-title">مشکلی پیش آمد</h1>
+  <p class="desc" id="error-text"></p>
+  <button class="btn btn-outline" onclick="location.reload()">تلاش دوباره</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+// ============================================================
+//  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
+//  نکته‌ی کلیدی: facingMode:'environment' به‌تنهایی روی خیلی از گوشی‌ها لنز اولترا-واید را
+//  انتخاب می‌کند که تصویرِ کشیده و بی‌کیفیت می‌دهد. تنها راه قابل‌اتکا این است که فهرست
+//  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
+// ============================================================
+async function openMainCameraStream() {
+    let probe = null;
+    try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (e) {}
+
+    let chosenId = null;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
+        const pool = backCams.length ? backCams : cams;
+        const nonWide = pool.filter(d => !/ultra|wide|0\.5|tele|zoom|depth|macro/i.test(d.label));
+        const chosen = nonWide[0] || pool[0];
+        if (chosen) chosenId = chosen.deviceId;
+    } catch (e) {}
+
+    if (probe) probe.getTracks().forEach(t => t.stop());
+
+    let stream;
+    if (chosenId) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: chosenId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+            });
+        } catch (e) {}
+    }
+    if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+        });
+    }
+    try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
+            await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+        }
+    } catch (e) {}
+    return stream;
+}
+
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || '';
+const MODE = params.get('mode') || 'health'; // health | doc
+const ATTEMPT_ID = params.get('attempt') || '';
+const STEP_KEY = params.get('step') || '';
+const CASE_ID = params.get('case') || '';
+const DOC_KEY = params.get('doc') || '';
+const STEP_LABEL = decodeURIComponent(params.get('label') || '');
+
+let stream = null;
+let capturedBlob = null;
+
+function showStage(id) {
+  ['loading','live','preview','uploading','success','error'].forEach(s => {
+    document.getElementById('stage-' + s).style.display = (s === id) ? 'flex' : 'none';
+  });
+}
+
+async function initCamera() {
+  if (!TOKEN || (MODE === 'health' && (!ATTEMPT_ID || !STEP_KEY)) || (MODE === 'doc' && (!CASE_ID || !DOC_KEY))) {
+    document.getElementById('error-title').textContent = 'لینک نامعتبر است';
+    document.getElementById('error-text').textContent = 'این صفحه باید از داخل مینی‌اپ باز شود.';
+    showStage('error');
+    return;
+  }
+  document.getElementById('live-label').textContent = STEP_LABEL ? `در حال ثبت: ${STEP_LABEL}` : 'دوربین را رو به خودرو بگیرید';
+  try {
+    stream = await openMainCameraStream();
+    document.getElementById('video').srcObject = stream;
+    showStage('live');
+  } catch (e) {
+    document.getElementById('error-title').textContent = 'دسترسی به دوربین داده نشد';
+    document.getElementById('error-text').textContent = 'لطفاً از تنظیمات مرورگر به این صفحه اجازه‌ی دسترسی به دوربین بدهید و دوباره امتحان کنید.';
+    showStage('error');
+  }
+}
+
+function takeShot() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(blob => {
+    capturedBlob = blob;
+    document.getElementById('shot-img').src = URL.createObjectURL(blob);
+    stopStream();
+    showStage('preview');
+  }, 'image/jpeg', 0.9);
+}
+function stopStream() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
+async function retake() { showStage('loading'); await initCamera(); }
+
+async function confirmUpload() {
+  if (!capturedBlob) return;
+  showStage('uploading');
+  const fd = new FormData();
+  let url;
+  if (MODE === 'health') {
+    fd.append('action', 'upload_step'); fd.append('token', TOKEN); fd.append('attempt_id', ATTEMPT_ID);
+    fd.append('step_key', STEP_KEY); fd.append('photo', capturedBlob, 'photo.jpg');
+    url = '/api/webapp_health.php';
+  } else {
+    fd.append('token', TOKEN); fd.append('case_id', CASE_ID); fd.append('doc_key', DOC_KEY); fd.append('file', capturedBlob, 'doc.jpg');
+    url = '/api/webapp_order.php?action=upload_doc';
+  }
+  try {
+    const res = await fetch(url, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      document.getElementById('error-title').textContent = 'خطا در ارسال';
+      document.getElementById('error-text').textContent = data.error || 'لطفاً دوباره تلاش کنید.';
+      showStage('error');
+      return;
+    }
+    showStage('success');
+  } catch (e) {
+    document.getElementById('error-title').textContent = 'خطا در اتصال';
+    document.getElementById('error-text').textContent = 'لطفاً اتصال اینترنت را بررسی و دوباره تلاش کنید.';
+    showStage('error');
+  }
+}
+
+initCamera();
+</script>
+</body>
+</html>

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ثبت درخواست بیمه</title>
+<script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<style>
+  :root {
+    --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
+    --glass: rgba(255,255,255,0.08); --glass-b: rgba(255,255,255,0.14);
+    --success: #10b981; --danger: #ef4444; --warn: #f59e0b;
+    --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, select, textarea, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
+  html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: none; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9; min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+  }
+  .screen { display: none; flex: 1; flex-direction: column; padding: 16px; animation: fadeIn .3s ease; overflow-y: auto; overscroll-behavior: contain; }
+  .screen.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .topbar .back-btn { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 12px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #fff; cursor: pointer; flex-shrink:0; }
+  .topbar h2 { font-size: 14.5px; font-weight: 800; margin: 0; text-align:center; flex:1; }
+
+  .progress-wrap { margin-bottom: 16px; }
+  .progress-track { height: 6px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; }
+
+  .center-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 10px; }
+  .icon-badge { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 8px 30px rgba(99,102,241,0.4); flex-shrink:0; }
+  h1.title { font-size: 18px; font-weight: 800; margin: 0; }
+  p.desc { font-size: 12.5px; color: #cbd5e1; line-height: 2; margin: 0; max-width: 320px; }
+
+  .btn { border: none; border-radius: 16px; padding: 14px 18px; font-size: 14px; font-weight: 800; cursor: pointer; width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform .15s ease; margin-top:8px; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
+  .btn-outline { background: var(--glass); color: #e2e8f0; border: 1px solid var(--glass-b); }
+  .btn-danger { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+  .btn-sm { padding: 10px 14px; font-size: 12px; border-radius: 12px; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { margin-top: 0; }
+  .btn[disabled] { opacity: .5; pointer-events: none; }
+
+  .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+  .option-card {
+    background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px; padding: 18px 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; text-align:center;
+    transition: transform .15s ease, background .15s, border-color .15s;
+  }
+  .option-card:active { transform: scale(0.96); }
+  .option-card.selected { border-color: var(--accent); background: rgba(99,102,241,0.15); }
+  .option-card .ic { font-size: 24px; }
+  .option-card .lbl { font-size: 12.5px; font-weight: 800; }
+  .option-card.wide { grid-column: span 2; flex-direction: row; }
+
+  .field { margin-bottom: 12px; width: 100%; }
+  .field label { font-size: 11.5px; color: #94a3b8; display:block; margin-bottom: 5px; }
+  input[type=text], input[type=number], input[type=tel], textarea, select {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--glass-b); border-radius: 12px; padding: 12px 14px;
+    color: #fff; font-family: 'Vazir', sans-serif; font-size: 14px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  input::placeholder, textarea::placeholder { color: #64748b; }
+  .field-error { color: #fca5a5; font-size: 11px; margin-top: 4px; display:none; }
+  .field-row { display: flex; gap: 8px; }
+
+  .form-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 16px; width: 100%; margin-bottom: 12px; }
+
+  .plate-tag { direction: ltr; display: inline-flex; gap: 4px; align-items: center; background: #ffffff; color: #111827; font-weight: 800; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid #e5e7eb; }
+
+  .list-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; display:flex; justify-content:space-between; align-items:center; transition: border-color .15s; }
+  .list-card:active { border-color: var(--accent); }
+
+  .cov-item { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+  .cov-item.selected { border-color: var(--accent); background: rgba(99,102,241,0.12); }
+  .cov-item .head { display:flex; justify-content:space-between; align-items:center; }
+  .cov-item .lbl { font-size:12.5px; font-weight:800; }
+  .cov-item .desc { font-size:10.5px; color:#94a3b8; margin-top:4px; line-height:1.7; }
+  .cov-item .tiers { display:none; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  .cov-item.selected .tiers { display:flex; }
+  .tier-chip { background: rgba(255,255,255,0.08); border:1px solid var(--glass-b); border-radius:8px; padding:6px 10px; font-size:10.5px; cursor:pointer; }
+  .tier-chip.active { background: var(--accent); border-color: var(--accent); }
+
+  .doc-btn { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 14px; padding: 12px; text-align:center; cursor:pointer; font-size:11.5px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:6px; min-height: 64px; justify-content:center; }
+  .doc-btn.approved { border-color: var(--success); background: rgba(16,185,129,0.12); }
+  .doc-btn.pending { border-color: #60a5fa; background: rgba(96,165,250,0.1); }
+  .doc-btn.rejected { border-color: var(--danger); background: rgba(239,68,68,0.12); }
+  .doc-btn.approved, .doc-btn.pending { cursor: default; }
+  .doc-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; width:100%; }
+
+  .guide-img-wrap { width: 100%; aspect-ratio: 4/3; border-radius: 16px; overflow: hidden; background: #1e293b; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .preview-wrap { width: 100%; aspect-ratio: 4/3; border-radius: 16px; overflow: hidden; background: #000; margin-bottom: 10px; }
+  .preview-wrap img { width: 100%; height: 100%; object-fit: cover; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .spinner { text-align: center; padding: 30px; color: #64748b; }
+  .summary-row { display:flex; justify-content:space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); font-size:12px; }
+  .summary-row b { color: #fff; }
+  .summary-row span:first-child { color: #94a3b8; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div id="screen-loading" class="screen active">
+  <div class="center-card"><div class="icon-badge">📝</div><h1 class="title">در حال آماده‌سازی...</h1></div>
+</div>
+
+<div id="screen-error" class="screen">
+  <div class="center-card"><div class="icon-badge" style="background:linear-gradient(135deg,#ef4444,#b91c1c)">⚠️</div><h1 class="title">مشکلی پیش آمد</h1><p class="desc" id="error-text"></p></div>
+</div>
+
+<!-- انتخاب نوع بیمه -->
+<div id="screen-type" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="exitToApp()">›</div><h2>📝 ثبت درخواست بیمه</h2><div style="width:38px"></div></div>
+  <p class="desc" style="margin-bottom:16px;">نوع بیمه‌نامه‌ای که می‌خواهید ثبت کنید را انتخاب کنید:</p>
+  <div class="option-grid">
+    <div class="option-card" onclick="chooseType('THIRDPARTY')"><span class="ic">🚦</span><span class="lbl">بیمه ثالث</span></div>
+    <div class="option-card" onclick="chooseType('BODY')"><span class="ic">🚘</span><span class="lbl">بیمه بدنه</span></div>
+  </div>
+  <p class="desc" id="quota-info" style="margin-top:16px;"></p>
+</div>
+
+<!-- ادامه یا حذف درخواست ناتمام -->
+<div id="screen-resume" class="screen">
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#f59e0b,#d97706)">📋</div>
+    <h1 class="title">درخواست ناتمام دارید</h1>
+    <p class="desc">یک درخواست <b id="resume-type-label"></b> نیمه‌کاره دارید. می‌خواهید از همان‌جا ادامه دهید یا آن را حذف کرده و از نو شروع کنید؟</p>
+    <button class="btn btn-primary" onclick="resumeExisting()">▶️ ادامه بده</button>
+    <button class="btn btn-danger" onclick="discardAndStartNew()">🗑 حذف و شروع دوباره</button>
+    <button class="btn btn-outline btn-sm" onclick="exitToApp()">🏠 بازگشت به منو</button>
+  </div>
+</div>
+
+<!-- نسبت بیمه‌گذار -->
+<div id="screen-relationship" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>این بیمه‌نامه برای کیست؟</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:10%"></div></div></div>
+  <div class="option-grid" id="relationship-grid"></div>
+</div>
+
+<!-- اطلاعات بستگان -->
+<div id="screen-relative-info" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>مشخصات <span id="ri-addressee">بیمه‌گذار</span></h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:16%"></div></div></div>
+  <div class="form-card">
+    <div class="field"><label>نام و نام‌خانوادگی <span id="ri-addressee2">بیمه‌گذار</span></label><input type="text" id="rel-name" placeholder="مثلاً زهرا احمدی"></div>
+    <div class="field"><label>کد ملی <span id="ri-addressee3">بیمه‌گذار</span></label><input type="tel" id="rel-nid" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم"></div>
+    <div class="field-error" id="rel-error"></div>
+  </div>
+  <button class="btn btn-primary" onclick="submitRelativeInfo()">ادامه</button>
+</div>
+
+<!-- استفاده از پروفایل قبلی -->
+<div id="screen-profile-reuse" class="screen">
+  <div class="center-card">
+    <div class="icon-badge">📇</div>
+    <h1 class="title">اطلاعات قبلی پیدا شد</h1>
+    <p class="desc">اطلاعات هویتیِ ذخیره‌شده‌ی قبلیِ <b id="reuse-addressee"></b> پیدا شد. می‌خواهید از همان استفاده کنید؟</p>
+    <button class="btn btn-primary" onclick="useProfileReuse()">✅ استفاده از اطلاعات قبلی</button>
+    <button class="btn btn-outline" onclick="skipProfileReuse()">📝 وارد کردن اطلاعات جدید</button>
+    <button class="btn btn-outline btn-sm" onclick="goBack()">◀ بازگشت</button>
+  </div>
+</div>
+
+<!-- اطلاعات هویتی -->
+<div id="screen-personal-info" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>اطلاعات هویتی <span id="pi-addressee"></span></h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:30%"></div></div></div>
+  <div class="form-card">
+    <div class="field">
+      <label>تاریخ تولد</label>
+      <div class="field-row">
+        <input type="text" id="pi-birthdate" placeholder="۱۴۰۵/۰۲/۰۳" dir="ltr" style="text-align:center;flex:1;">
+        <button type="button" class="btn btn-outline btn-sm" style="flex:0 0 90px;margin-top:0;" onclick="openDatePicker()">📅 تقویم</button>
+      </div>
+    </div>
+    <div class="field"><label>آدرس محل سکونت</label><textarea id="pi-address" placeholder="آدرس کامل..."></textarea></div>
+    <div class="field"><label>شماره موبایل</label><input type="tel" id="pi-phone" maxlength="11" inputmode="numeric" placeholder="09123456789" dir="ltr" style="text-align:center;"></div>
+    <div class="field">
+      <label>کد پستی (ثبت‌شده در سامانه املاک و اسکان)</label>
+      <input type="tel" id="pi-postal" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم" dir="ltr" style="text-align:center;">
+      <p style="font-size:10px;color:#64748b;margin-top:6px;line-height:1.8;">اگر کد پستی را نمی‌دانید، باید به سامانه‌ی ملی املاک و اسکان (amlak.mrud.ir) مراجعه کنید.</p>
+    </div>
+    <div class="field-error" id="pi-error"></div>
+  </div>
+  <button class="btn btn-primary" onclick="submitPersonalInfo()">ادامه</button>
+</div>
+
+<!-- پلاک -->
+<div id="screen-plate" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پلاک خودرو</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:45%"></div></div></div>
+  <div id="plate-vehicles-list"></div>
+  <div class="form-card">
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی خودرو وارد کنید:</p>
+    <div class="field-row">
+      <input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="flex:1;text-align:center;">
+      <span style="align-self:center;font-size:12px;">ایران</span>
+      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="flex:1.3;text-align:center;">
+      <select id="pl-letter" style="flex:1"></select>
+      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="flex:1;text-align:center;">
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="submitNewPlate()">✅ ثبت این پلاک</button>
+</div>
+
+<!-- مالکیت -->
+<div id="screen-ownership" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>مدارک خودرو</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:55%"></div></div></div>
+  <p class="desc" style="margin-bottom:14px;">کدام یک را در اختیار دارید؟</p>
+  <div class="option-grid">
+    <div class="option-card wide" onclick="submitOwnership('سند')"><span class="ic">📄</span><span class="lbl">سند مالکیت</span></div>
+    <div class="option-card wide" onclick="submitOwnership('کارت ماشین')"><span class="ic">🪪</span><span class="lbl">کارت ماشین (رو و پشت)</span></div>
+  </div>
+</div>
+
+<!-- بیمه ثالث قبل + سقف تعهد -->
+<div id="screen-liability" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>سقف تعهد مالی</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:65%"></div></div></div>
+  <div class="form-card">
+    <p style="font-size:11.5px;color:#cbd5e1;line-height:2;">
+      <b>تعهد مالی</b>: خسارت واردشده به اموال شخص ثالث را جبران می‌کند.<br>
+      <b>تعهد جانی</b>: دیه/ارش ناشی از صدمه یا فوت شخص ثالث را پوشش می‌دهد.<br>
+      <b>حوادث راننده</b>: خسارت جانی خودِ راننده‌ی مقصر را جبران می‌کند.
+    </p>
+  </div>
+  <p class="desc" style="margin-bottom:10px;">مبلغ موردنظر برای تعهد مالی را انتخاب کنید (تومان):</p>
+  <div id="liability-list"></div>
+</div>
+
+<!-- بیمه بدنه قبلی -->
+<div id="screen-prev-body" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>سابقه‌ی بیمه بدنه</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:65%"></div></div></div>
+  <p class="desc" style="margin-bottom:16px;">آیا پیش‌تر بیمه بدنه داشته‌اید؟</p>
+  <div class="option-grid">
+    <div class="option-card" onclick="submitPrevBody('بله')"><span class="ic">✅</span><span class="lbl">بله</span></div>
+    <div class="option-card" onclick="submitPrevBody('خیر')"><span class="ic">❌</span><span class="lbl">خیر</span></div>
+  </div>
+</div>
+
+<div id="screen-prev-body-claim" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>خسارت بیمه بدنه‌ی قبلی</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:68%"></div></div></div>
+  <p class="desc" style="margin-bottom:16px;">آیا از بیمه بدنه قبلی خسارتی دریافت کرده‌اید؟</p>
+  <div class="option-grid">
+    <div class="option-card" onclick="submitPrevBodyClaim('بله')"><span class="ic">✅</span><span class="lbl">بله</span></div>
+    <div class="option-card" onclick="submitPrevBodyClaim('خیر')"><span class="ic">❌</span><span class="lbl">خیر</span></div>
+  </div>
+</div>
+
+<div id="screen-no-claim-years" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>سابقه‌ی بدون خسارت</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:70%"></div></div></div>
+  <div class="form-card">
+    <div class="field"><label>چند سال متوالی بدون خسارت بوده‌اید؟</label><input type="number" id="ncy-years" min="0" max="50" placeholder="مثلاً 3" style="text-align:center;"></div>
+    <div class="field-error" id="ncy-error"></div>
+  </div>
+  <button class="btn btn-primary" onclick="submitNoClaimYears()">ادامه</button>
+</div>
+
+<!-- پوشش‌های بدنه -->
+<div id="screen-coverages" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پوشش‌های تکمیلی</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:75%"></div></div></div>
+  <p class="desc" style="margin-bottom:10px;">هرکدام را می‌خواهید انتخاب کنید (چند مورد قابل انتخاب است):</p>
+  <div id="coverages-list"></div>
+  <button class="btn btn-primary" onclick="submitCoverages()">تایید و ادامه</button>
+</div>
+
+<!-- ارزش خودرو -->
+<div id="screen-car-value" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>ارزش خودرو</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:80%"></div></div></div>
+  <div class="form-card">
+    <div class="field"><label>ارزش حدودی خودرو (تومان)</label><input type="text" id="cv-value" inputmode="numeric" placeholder="مثلاً ۸۰۰،۰۰۰،۰۰۰" dir="ltr" style="text-align:center;" oninput="formatCarValueInput(this)"></div>
+  </div>
+  <button class="btn btn-primary" onclick="submitCarValue(false)">ثبت این مبلغ</button>
+  <button class="btn btn-outline" onclick="submitCarValue(true)">🧮 محاسبه خودکار توسط کارشناس</button>
+</div>
+
+<!-- مدارک -->
+<div id="screen-docs" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>ارسال مدارک</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:90%"></div></div></div>
+  <p class="desc" style="margin-bottom:12px;" id="docs-hint">هرکدام از موارد زیر را که آماده دارید انتخاب و عکس/فایل آن را ارسال کنید:</p>
+  <div class="doc-grid" id="docs-grid"></div>
+  <div id="docs-continue-wrap"></div>
+
+  <!-- گزینه‌های دریافت عکس (وقتی یک مدرک انتخاب شود نمایش داده می‌شود) -->
+  <div id="doc-capture-area" style="display:none; margin-top:14px;">
+    <p class="desc" id="doc-capture-title" style="margin-bottom:10px;"></p>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="pickDocFromCamera()">🖼 انتخاب از گالری</button>
+      <button class="btn btn-outline" onclick="pickDocFromGallery()">📁 انتخاب فایل</button>
+    </div>
+    <button class="btn btn-primary" onclick="openDocCameraInBrowser()" style="margin-top:10px;">📷 گرفتن عکس زنده با دوربین (در مرورگر)</button>
+    <input type="file" id="doc-camera-input" accept="image/*" capture="environment" onchange="onDocFileSelected(event)">
+    <input type="file" id="doc-gallery-input" accept="image/*,application/pdf" onchange="onDocFileSelected(event)">
+    <div id="doc-upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
+  </div>
+</div>
+
+<!-- خلاصه و تایید نهایی -->
+<div id="screen-review" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>بازبینی و تایید نهایی</h2><div style="width:38px"></div></div>
+  <div class="form-card" id="review-summary"></div>
+  <p class="desc" style="font-size:11.5px;color:#94a3b8;">بعد از تایید، برای بارگذاری مدارک و ثبت نهایی به بخش «بازدید مدارک و سلامت خودرو» هدایت می‌شوید.</p>
+  <button class="btn btn-primary" onclick="submitFinalize()">✅ تایید و ادامه</button>
+</div>
+
+<!-- موفقیت -->
+<div id="screen-success" class="screen">
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#10b981,#059669)">🎉</div>
+    <h1 class="title">اطلاعات اولیه ثبت شد</h1>
+    <p class="desc">شناسه‌ی پرونده: <b id="success-code" style="direction:ltr;display:inline-block;"></b><br>برای بارگذاری مدارک و (در صورت بیمه بدنه) ثبت بازدید سلامت خودرو و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.</p>
+    <button class="btn btn-primary" onclick="goToVisitHub()">📎 بازدید مدارک و سلامت خودرو</button>
+    <button class="btn btn-outline" onclick="exitToApp()">بازگشت به منوی اصلی</button>
+  </div>
+</div>
+
+<!-- انتخاب‌گر تاریخ شمسی (روز/ماه/سال) -->
+<div id="date-picker-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; align-items:flex-end; justify-content:center;">
+  <div style="background:#1e1b4b; border-radius:20px 20px 0 0; padding:20px; width:100%; max-width:480px; animation:fadeIn .25s ease;">
+    <h3 style="font-size:14px; font-weight:800; margin:0 0 14px; text-align:center;">📅 انتخاب تاریخ تولد</h3>
+    <div class="field-row">
+      <select id="dp-day" style="flex:1;"></select>
+      <select id="dp-month" style="flex:1.4;"></select>
+      <select id="dp-year" style="flex:1;"></select>
+    </div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn btn-primary" onclick="confirmDatePicker()">✅ تایید</button>
+      <button class="btn btn-outline btn-sm" style="flex:0 0 90px;" onclick="closeDatePicker()">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch(e) {}
+
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || params.get('token') || '';
+const API = '/api/webapp_order.php';
+const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+
+let caseId = null, caseData = null, personName = '';
+let navStack = [];
+let docsData = [];
+let activeDocKey = null;
+let selectedCoverages = {};
+
+function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
+function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+function formatPlateHtml(plate) {
+    if (!plate) return '';
+    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    if (!m) return plate;
+    const [, region, suffix, letter, prefix] = m;
+    return `<span class="plate-tag"><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span></span>`;
+}
+function fillLetterSelects() {
+    ['pl-letter'].forEach(id => { const sel=document.getElementById(id); if(sel) sel.innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join(''); });
+}
+function exitToApp() { location.href = '../app/?t=' + TOKEN; }
+function goToVisitHub() {
+    // اینجا هم داخل WebView مینی‌اپیم؛ باید با openLink به مرورگر واقعیِ بله برویم
+    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}`;
+    try {
+        if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
+            Bale.WebApp.openLink(url);
+            return;
+        }
+    } catch(e) {}
+    location.href = url;
+}
+function computeAddressee(relationship) {
+    return relationship === 'خودم' ? 'خودتان' : (relationship + 'تان');
+}
+
+// ============================================================
+//  انتخاب‌گر تاریخ شمسی
+// ============================================================
+const JALALI_MONTHS_ORDER = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+function isJalaliLeap(jy) {
+    const r = (jy - (jy > 0 ? 474 : 473)) % 2820 + 474;
+    return ((r + 38) * 682) % 2816 < 682;
+}
+function daysInJalaliMonth(jy, jm) {
+    if (jm <= 6) return 31;
+    if (jm <= 11) return 30;
+    return isJalaliLeap(jy) ? 30 : 29;
+}
+function currentJalaliYear() {
+    const now = new Date();
+    // تبدیل ساده‌ی میلادی به شمسی فقط برای گرفتن سال جاری (همان الگوریتم صفحه‌ی اپ اصلی)
+    const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
+    let gy = now.getFullYear(), gm = now.getMonth()+1, gd = now.getDate();
+    let jy = (gy <= 1600) ? 0 : 979;
+    gy -= (gy <= 1600) ? 621 : 1600;
+    const gy2 = (gm > 2) ? (gy + 1) : gy;
+    let days = (365*gy) + (Math.floor((gy2+3)/4)) - (Math.floor((gy2+99)/100)) + (Math.floor((gy2+399)/400)) - 80 + gd + g_d_m[gm-1];
+    jy += 33*Math.floor(days/12053); days %= 12053;
+    jy += 4*Math.floor(days/1461); days %= 1461;
+    if (days > 365) { jy += Math.floor((days-1)/365); }
+    return jy;
+}
+function openDatePicker() {
+    const yearSel = document.getElementById('dp-year');
+    const curY = currentJalaliYear();
+    let yearsHtml = '';
+    for (let y = curY; y >= 1300; y--) yearsHtml += `<option value="${y}">${toFa(y)}</option>`;
+    yearSel.innerHTML = yearsHtml;
+
+    const monthSel = document.getElementById('dp-month');
+    monthSel.innerHTML = JALALI_MONTHS_ORDER.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
+
+    // اگر تاریخ قبلاً وارد شده، همان را پیش‌فرض بگذار
+    const existing = toEn(document.getElementById('pi-birthdate').value.trim());
+    const m = existing.match(/^(\d{4})\D(\d{1,2})\D(\d{1,2})$/);
+    if (m) { yearSel.value = m[1]; monthSel.value = parseInt(m[2]); }
+
+    fillDayOptions();
+    monthSel.onchange = fillDayOptions;
+    yearSel.onchange = fillDayOptions;
+    if (m) document.getElementById('dp-day').value = parseInt(m[3]);
+
+    document.getElementById('date-picker-overlay').style.display = 'flex';
+}
+function fillDayOptions() {
+    const y = parseInt(document.getElementById('dp-year').value);
+    const mo = parseInt(document.getElementById('dp-month').value);
+    const daySel = document.getElementById('dp-day');
+    const prevVal = daySel.value;
+    const maxDay = daysInJalaliMonth(y, mo);
+    let html = '';
+    for (let d = 1; d <= maxDay; d++) html += `<option value="${d}">${toFa(d)}</option>`;
+    daySel.innerHTML = html;
+    if (prevVal && parseInt(prevVal) <= maxDay) daySel.value = prevVal;
+}
+function closeDatePicker() { document.getElementById('date-picker-overlay').style.display = 'none'; }
+function confirmDatePicker() {
+    const y = document.getElementById('dp-year').value;
+    const mo = String(document.getElementById('dp-month').value).padStart(2,'0');
+    const d = String(document.getElementById('dp-day').value).padStart(2,'0');
+    document.getElementById('pi-birthdate').value = toFa(`${y}/${mo}/${d}`);
+    closeDatePicker();
+}
+
+// ============================================================
+//  ناوبری (پشته‌ی صفحات برای بازگشت واقعی به مرحله‌ی قبل)
+// ============================================================
+function showScreenRaw(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById('screen-' + name);
+    // برخی «مرحله‌ها» (مثل profile-check) صفحه‌ی واقعی ندارند، فقط تصمیم می‌گیرند
+    // کدام صفحه‌ی واقعی را نشان بدهند؛ تا آن لحظه صفحه‌ی لودینگ نمایش داده می‌شود
+    (el || document.getElementById('screen-loading')).classList.add('active');
+}
+function goToScreen(name, replace) {
+    if (replace) navStack.pop();
+    navStack.push(name);
+    showScreenRaw(name);
+    renderScreen(name);
+}
+function goBack() {
+    if (navStack.length <= 1) { exitToApp(); return; }
+    navStack.pop();
+    const prev = navStack[navStack.length - 1];
+    showScreenRaw(prev);
+    renderScreen(prev);
+}
+
+// ============================================================
+//  شروع
+// ============================================================
+async function initApp() {
+    if (!TOKEN) { showAppError('لینک نامعتبر است.'); return; }
+    fillLetterSelects();
+    const existingCaseId = params.get('case');
+    if (existingCaseId) {
+        caseId = parseInt(existingCaseId);
+        await loadCaseAndAdvance();
+        return;
+    }
+    try {
+        const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { showAppError(data.error); return; }
+        personName = data.person_name;
+        document.getElementById('quota-info').textContent = data.quota_summary ? `سهمیه‌ی باقی‌مانده‌ی شما: ${toFa(data.quota_summary)}` : '';
+        window._initData = data;
+        goToScreen('type');
+    } catch (e) { showAppError('خطا در اتصال به سرور.'); }
+}
+function showAppError(msg) { document.getElementById('error-text').textContent = msg; showScreenRaw('error'); }
+
+async function chooseType(type) {
+    // اگر همین الان روی پرونده‌ای از همین نوع در حال کار هستیم (مثلاً کاربر با دکمه‌ی
+    // بازگشت به این صفحه برگشته)، دوباره پیام «درخواست ناتمام» نشان نده - مستقیم ادامه بده
+    if (caseId && caseData && caseData.insurance_type === type) {
+        await loadCaseAndAdvance();
+        return;
+    }
+    window._chosenType = type;
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:type }) });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error); return; }
+        if (data.existing_case_id) {
+            caseId = data.existing_case_id;
+            document.getElementById('resume-type-label').textContent = type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث';
+            goToScreen('resume');
+            return;
+        }
+        caseId = data.case_id;
+        await loadCaseAndAdvance();
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+async function resumeExisting() { await loadCaseAndAdvance(); }
+async function discardAndStartNew() {
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:window._chosenType, discard_existing:true }) });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error); return; }
+        caseId = data.case_id;
+        await loadCaseAndAdvance();
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+// ============================================================
+//  گرفتن آخرین وضعیت پرونده و رفتن به مرحله‌ی درست بعدی
+// ============================================================
+async function loadCaseAndAdvance() {
+    try {
+        const res = await fetch(`${API}?action=get_case&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
+        const data = await res.json();
+        if (!data.ok) { showAppError(data.error); return; }
+        caseData = data.case; personName = data.person_name;
+        const next = determineNextScreen(caseData);
+        goToScreen(next);
+    } catch(e) { showAppError('خطا در اتصال به سرور.'); }
+}
+
+function determineNextScreen(c) {
+    if (!c.insured_relationship) return 'relationship';
+    if (c.insured_relationship !== 'خودم' && !c.insured_name) return 'relative-info';
+    if (!c.insured_birth_date) return 'profile-check';
+    if (!c.plate) return 'plate';
+    if (!c.ownership_choice) return 'ownership';
+    if (c.insurance_type === 'THIRDPARTY' && !c.liability_limit) return 'liability';
+    if (c.insurance_type === 'BODY' && c.prev_body_insurance === null) return 'prev-body';
+    if (c.insurance_type === 'BODY' && c.prev_body_insurance === 'بله' && c.prev_body_claim === null) return 'prev-body-claim';
+    if (c.insurance_type === 'BODY' && c.prev_body_claim === 'خیر' && c.no_claim_years === null) return 'no-claim-years';
+    if (c.insurance_type === 'BODY' && !c.selected_coverages) return 'coverages';
+    if (c.insurance_type === 'BODY' && c.estimated_car_value === null) return 'car-value';
+    return 'review';
+}
+
+// «profile-check» یک صفحه‌ی نمایشی نیست؛ تصمیم می‌گیرد پروفایل قبلی را پیشنهاد بدهد یا مستقیم فرم خالی را باز کند
+async function renderScreen(name) {
+    if (name === 'profile-check') {
+        try {
+            const res = await fetch(`${API}?action=get_saved_profile&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
+            const data = await res.json();
+            const addr = computeAddressee(caseData.insured_relationship);
+            if (data.ok && data.profile) {
+                document.getElementById('reuse-addressee').textContent = addr;
+                showScreenRaw('profile-reuse');
+                navStack[navStack.length-1] = 'profile-reuse';
+                window._savedProfile = data.profile;
+            } else {
+                openPersonalInfoForm();
+            }
+        } catch(e) { openPersonalInfoForm(); }
+        return;
+    }
+    if (name === 'relationship') renderRelationshipGrid();
+    if (name === 'relative-info') {
+        document.getElementById('rel-name').value = (caseData.insured_relationship !== 'خودم' ? (caseData.insured_name || '') : '');
+        document.getElementById('rel-nid').value = (caseData.insured_relationship !== 'خودم' ? (caseData.insured_national_id || '') : '');
+        const addr = computeAddressee(caseData.insured_relationship);
+        document.getElementById('ri-addressee').textContent = addr;
+        document.getElementById('ri-addressee2').textContent = addr;
+        document.getElementById('ri-addressee3').textContent = addr;
+    }
+    if (name === 'personal-info') openPersonalInfoForm();
+    if (name === 'plate') renderPlateScreen();
+    if (name === 'liability') renderLiabilityList();
+    if (name === 'coverages') { selectedCoverages = caseData.selected_coverages ? JSON.parse(caseData.selected_coverages) : {}; renderCoveragesList(); }
+    if (name === 'docs') renderDocsGrid();
+    if (name === 'review') renderReviewSummary();
+}
+
+// ============================================================
+//  نسبت
+// ============================================================
+const RELATIONSHIPS = ['خودم', 'پدر', 'مادر', 'همسر', 'فرزند'];
+const REL_ICONS = {'خودم':'👤','پدر':'👨','مادر':'👩','همسر':'💑','فرزند':'👶'};
+function renderRelationshipGrid() {
+    const grid = document.getElementById('relationship-grid');
+    grid.innerHTML = RELATIONSHIPS.map(r => `<div class="option-card" onclick="submitRelationship('${r}')"><span class="ic">${REL_ICONS[r]}</span><span class="lbl">${r}</span></div>`).join('');
+}
+async function submitRelationship(rel) {
+    const res = await saveStep({ step:'relationship', relationship:rel });
+    if (res.ok) await loadCaseAndAdvance();
+}
+
+async function submitRelativeInfo() {
+    const name = document.getElementById('rel-name').value.trim();
+    const nid = toEn(document.getElementById('rel-nid').value.trim());
+    const res = await saveStep({ step:'relative_info', name, national_id:nid });
+    const errBox = document.getElementById('rel-error');
+    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    errBox.style.display='none';
+    await loadCaseAndAdvance();
+}
+
+// ============================================================
+//  پروفایل قبلی
+// ============================================================
+function openPersonalInfoForm() {
+    const addr = computeAddressee(caseData.insured_relationship);
+    document.getElementById('pi-addressee').textContent = addr;
+    document.getElementById('pi-birthdate').value = caseData.insured_birth_date || '';
+    document.getElementById('pi-address').value = caseData.insured_address || '';
+    document.getElementById('pi-phone').value = caseData.insured_phone || '';
+    document.getElementById('pi-postal').value = caseData.insured_postal_code || '';
+    showScreenRaw('personal-info');
+    navStack[navStack.length-1] = 'personal-info';
+}
+function useProfileReuse() {
+    const p = window._savedProfile;
+    saveStep({ step:'personal_info', birth_date:p.birth_date, address:p.address, phone:p.phone, postal_code:p.postal_code }).then(res => {
+        if (res.ok) loadCaseAndAdvance();
+        else { showToast(res.error); openPersonalInfoForm(); }
+    });
+}
+function skipProfileReuse() { openPersonalInfoForm(); }
+
+async function submitPersonalInfo() {
+    const birth_date = toEn(document.getElementById('pi-birthdate').value.trim());
+    const address = document.getElementById('pi-address').value.trim();
+    const phone = toEn(document.getElementById('pi-phone').value.trim());
+    const postal_code = toEn(document.getElementById('pi-postal').value.trim());
+    const res = await saveStep({ step:'personal_info', birth_date, address, phone, postal_code });
+    const errBox = document.getElementById('pi-error');
+    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    errBox.style.display='none';
+    await loadCaseAndAdvance();
+}
+
+// ============================================================
+//  پلاک
+// ============================================================
+async function renderPlateScreen() {
+    const box = document.getElementById('plate-vehicles-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`/api/webapp_app.php?action=my_vehicles&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (data.ok && data.data.length > 0) {
+            box.innerHTML = '<p class="desc" style="margin-bottom:8px;">یکی از پلاک‌های قبلی را انتخاب کنید:</p>' +
+                data.data.map(v => `<div class="list-card" onclick="chooseExistingPlate('${v.plate.replace(/'/g,"")}')">${formatPlateHtml(v.plate)}<span style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:4px;">انتخاب این پلاک ›</span></div>`).join('');
+        } else { box.innerHTML = ''; }
+    } catch(e) { box.innerHTML = ''; }
+}
+async function chooseExistingPlate(plate) {
+    const res = await saveStep({ step:'plate', plate });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+async function submitNewPlate() {
+    const region = toEn(document.getElementById('pl-region').value.trim());
+    const suffix = toEn(document.getElementById('pl-suffix').value.trim());
+    const prefix = toEn(document.getElementById('pl-prefix').value.trim());
+    const letter = document.getElementById('pl-letter').value;
+    if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
+    const plate = `${region}ایران - ${suffix} ${letter} ${prefix}`;
+    const res = await saveStep({ step:'plate', plate });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+
+// ============================================================
+//  مالکیت
+// ============================================================
+async function submitOwnership(choice) {
+    const res = await saveStep({ step:'ownership', ownership_choice:choice });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+
+// ============================================================
+//  ثالث: سقف تعهد
+// ============================================================
+const LIABILITY_OPTIONS_RIAL = [700000000,800000000,1000000000,2000000000,2500000000,3000000000,4000000000,5000000000,6000000000,7000000000,8000000000,9000000000,10000000000];
+function renderLiabilityList() {
+    const box = document.getElementById('liability-list');
+    box.innerHTML = LIABILITY_OPTIONS_RIAL.map(r => {
+        const toman = r/10;
+        return `<div class="list-card" onclick="submitLiability(${r})"><b>${toFa(toman.toLocaleString('en-US'))} تومان</b><span>›</span></div>`;
+    }).join('');
+}
+async function submitLiability(amountRial) {
+    const res = await saveStep({ step:'liability', liability_limit:amountRial });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+
+// ============================================================
+//  بدنه: سابقه، سال بدون خسارت
+// ============================================================
+async function submitPrevBody(val) {
+    const res = await saveStep({ step:'prev_body', prev_body_insurance:val });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+async function submitPrevBodyClaim(val) {
+    const res = await saveStep({ step:'prev_body_claim', prev_body_claim:val });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+async function submitNoClaimYears() {
+    const years = toEn(document.getElementById('ncy-years').value.trim());
+    const res = await saveStep({ step:'no_claim_years', no_claim_years:parseInt(years||-1) });
+    const errBox = document.getElementById('ncy-error');
+    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    errBox.style.display='none';
+    await loadCaseAndAdvance();
+}
+
+// ============================================================
+//  بدنه: پوشش‌های تکمیلی
+// ============================================================
+const BODY_COVERAGES = {
+    war_damage: {label:'پوشش خسارت ناشی از جنگ', desc:'خسارت وارده در اثر عملیات جنگی را پوشش می‌دهد.'},
+    price_fluctuation: {label:'پوشش نوسان قیمت (افزایش ارزش خودرو)', desc:'مابه‌التفاوت افزایش قیمت روز خودرو را جبران می‌کند.', tiers:{'50':'۵۰٪','100':'۱۰۰٪'}},
+    paint_acid: {label:'پاشیدگی رنگ، مواد اسیدی، شیمیایی', desc:'خسارت ناشی از پاشیده‌شدن رنگ یا مواد شیمیایی.'},
+    glass_break: {label:'شکست شیشه بدون برخورد اشیاء', desc:'شکستن شیشه بدون برخورد جسم خارجی.'},
+    natural_disaster: {label:'سیل، زلزله، آتشفشان، تگرگ، طوفان و بهمن', desc:'خسارت ناشی از بلایای طبیعی.'},
+    parts_theft: {label:'سرقت لوازم و قطعات', desc:'در صورت سرقت لوازم (نه کل خودرو).', tiers:{'10':'تا ۱۰٪','15':'تا ۱۵٪'}},
+    transport_cost: {label:'هزینه ایاب‌وذهاب در مدت تعمیر', desc:'هزینه‌ی رفت‌وآمد در مدت تعمیر خودرو.', tiers:{'750000':'۷۵۰هزار ریال','1200000':'۱.۲میلیون ریال','1500000':'۱.۵میلیون ریال'}},
+    depreciation_waiver: {label:'پوشش حذف استهلاک', desc:'کسر استهلاک قطعات تعویضی (به‌جز باتری و لاستیک) اعمال نمی‌شود.'},
+    deductible_adjust: {label:'پوشش تعدیل فرانشیز خسارت‌های جزئی', desc:'فرانشیز در خسارت‌های جزئی کاهش می‌یابد.'},
+};
+function renderCoveragesList() {
+    // توجه: اینجا selectedCoverages را دوباره از caseData نمی‌خوانیم؛ چون این تابع هر بار
+    // بعد از هر تیک‌زدن هم صدا زده می‌شود و caseData هنوز به‌روز نشده (تا وقتی ذخیره شود) -
+    // بازخوانی از caseData اینجا یعنی هر انتخاب بلافاصله پاک شود (همان باگ قبلی)
+    const box = document.getElementById('coverages-list');
+    box.innerHTML = Object.entries(BODY_COVERAGES).map(([key,o]) => {
+        const isSel = selectedCoverages.hasOwnProperty(key);
+        const tiersHtml = o.tiers ? `<div class="tiers">${Object.entries(o.tiers).map(([tk,tl]) => `<div class="tier-chip ${selectedCoverages[key]===tk?'active':''}" onclick="event.stopPropagation();selectTier('${key}','${tk}')">${tl}</div>`).join('')}</div>` : '';
+        return `<div class="cov-item ${isSel?'selected':''}" id="cov-${key}" onclick="toggleCoverage('${key}')">
+            <div class="head"><span class="lbl">${o.label}</span><span>${isSel?'✅':'⬜'}</span></div>
+            <div class="desc">${o.desc}</div>
+            ${tiersHtml}
+        </div>`;
+    }).join('');
+}
+function toggleCoverage(key) {
+    if (selectedCoverages.hasOwnProperty(key)) delete selectedCoverages[key];
+    else selectedCoverages[key] = BODY_COVERAGES[key].tiers ? Object.keys(BODY_COVERAGES[key].tiers)[0] : true;
+    renderCoveragesList();
+}
+function selectTier(key, tier) { selectedCoverages[key] = tier; renderCoveragesList(); }
+async function submitCoverages() {
+    const res = await saveStep({ step:'coverages', coverages:selectedCoverages });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+
+// جداکننده‌ی سه‌رقمی زنده هنگام تایپ ارزش خودرو - ذخیره‌سازی همچنان با عدد خام انگلیسی انجام می‌شود
+function formatCarValueInput(el) {
+    const raw = toEn(el.value).replace(/\D/g, '');
+    el.value = raw ? toFa(Number(raw).toLocaleString('en-US')) : '';
+}
+async function submitCarValue(auto) {
+    const value = toEn(document.getElementById('cv-value').value).replace(/\D/g, '');
+    if (!auto && (!value || parseInt(value) <= 0)) { showToast('مبلغ را درست وارد کنید یا از محاسبه‌ی خودکار استفاده کنید.'); return; }
+    const res = await saveStep({ step:'car_value', car_value: auto ? undefined : parseInt(value), auto_calc: auto });
+    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+}
+
+// ============================================================
+//  مدارک
+// ============================================================
+const STATUS_LABEL = {PENDING:'⏳ در انتظار بررسی', APPROVED:'✅ تایید شده', REJECTED:'❌ رد شده'};
+async function renderDocsGrid() {
+    const grid = document.getElementById('docs-grid');
+    grid.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=required_docs&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
+        const data = await res.json();
+        if (!data.ok) { grid.innerHTML = `<div class="spinner">${data.error}</div>`; return; }
+        docsData = data.docs;
+        grid.innerHTML = docsData.map(d => {
+            const cls = d.status === 'APPROVED' ? 'approved' : d.status === 'PENDING' ? 'pending' : d.status === 'REJECTED' ? 'rejected' : '';
+            const statusLine = d.status ? `<span style="font-size:9.5px;opacity:.8;">${STATUS_LABEL[d.status]}</span>` : '';
+            return `<div class="doc-btn ${cls}" onclick="selectDoc('${d.key}')"><span>${d.label}</span>${statusLine}${d.status==='REJECTED' && d.reject_reason ? `<span style="font-size:9px;color:#fca5a5;">${d.reject_reason}</span>`:''}</div>`;
+        }).join('');
+        if (data.all_done) {
+            document.getElementById('docs-hint').innerHTML = '✅ همه‌ی مدارک لازم دریافت شد.';
+            document.getElementById('docs-continue-wrap').innerHTML = '<button class="btn btn-primary" onclick="goToScreen(\'review\')">ادامه به بازبینی نهایی ›</button>';
+        } else {
+            document.getElementById('docs-continue-wrap').innerHTML = '';
+        }
+    } catch(e) { grid.innerHTML = '<div class="spinner">خطا در اتصال به سرور.</div>'; }
+}
+function selectDoc(key) {
+    const doc = docsData.find(d => d.key === key);
+    if (doc.status === 'PENDING' || doc.status === 'APPROVED') {
+        showToast(doc.status === 'APPROVED' ? 'این مدرک تایید شده و قابل تغییر نیست.' : 'این مدرک ارسال شده و در انتظار بررسی است؛ تا مشخص شدن نتیجه قابل تغییر نیست.');
+        return;
+    }
+    activeDocKey = key;
+    document.getElementById('doc-capture-title').textContent = `ارسال «${doc.label}»:`;
+    document.getElementById('doc-capture-area').style.display = 'block';
+    document.getElementById('doc-upload-progress-note').style.display = 'none';
+    document.getElementById('doc-capture-area').scrollIntoView({behavior:'smooth'});
+}
+function pickDocFromCamera() { document.getElementById('doc-camera-input').click(); }
+
+// گرفتن عکس زنده با دوربین در یک صفحه‌ی مرورگر واقعی (نه WebView محدود بله) - چون getUserMedia
+// معمولاً در مرورگر واقعی کامل پشتیبانی می‌شود
+function openDocCameraInBrowser() {
+  const doc = docsData.find(d => d.key === activeDocKey);
+  const url = `${location.origin}/webapp/capture/index_capture.html?t=${encodeURIComponent(TOKEN)}&mode=doc&case=${caseId}&doc=${encodeURIComponent(activeDocKey)}&label=${encodeURIComponent(doc ? doc.label : '')}`;
+  try {
+    if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
+      Bale.WebApp.openLink(url);
+      return;
+    }
+  } catch(e) {}
+  window.open(url, '_blank');
+}
+
+// وقتی از صفحه‌ی مرورگر دوربین به این مینی‌اپ برمی‌گردیم، لیست مدارک را دوباره می‌خوانیم
+// تا اگر آنجا مدرکی ثبت شده بود، این‌جا هم به‌روز شود
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (document.getElementById('screen-docs') && document.getElementById('screen-docs').classList.contains('active') && caseId) {
+    renderDocsGrid();
+  }
+});
+
+function pickDocFromGallery() { document.getElementById('doc-gallery-input').click(); }
+function onDocFileSelected(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    ev.target.value = '';
+    uploadDocFile(file);
+}
+async function uploadDocFile(file) {
+    if (!activeDocKey) return;
+    document.getElementById('doc-upload-progress-note').style.display = 'block';
+    const fd = new FormData();
+    fd.append('token', TOKEN); fd.append('case_id', caseId); fd.append('doc_key', activeDocKey); fd.append('file', file, 'doc.jpg');
+    try {
+        const res = await fetch(`${API}?action=upload_doc`, { method:'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); document.getElementById('doc-upload-progress-note').style.display = 'none'; return; }
+        showToast('✅ ثبت شد');
+        activeDocKey = null;
+        document.getElementById('doc-capture-area').style.display = 'none';
+        renderDocsGrid();
+    } catch(e) { showToast('خطا در اتصال به سرور.'); document.getElementById('doc-upload-progress-note').style.display = 'none'; }
+}
+
+// ============================================================
+//  خلاصه و تایید نهایی
+// ============================================================
+function renderReviewSummary() {
+    const c = caseData;
+    const typeFa = c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث';
+    const addr = computeAddressee(c.insured_relationship);
+
+    let personRows = [
+        ['نسبت بیمه‌گذار', c.insured_relationship],
+        ['نام بیمه‌گذار', c.insured_name],
+        ['کد ملی', c.insured_national_id ? toFa(c.insured_national_id) : ''],
+        ['تاریخ تولد', c.insured_birth_date ? toFa(c.insured_birth_date) : ''],
+        ['آدرس', c.insured_address],
+        ['موبایل', c.insured_phone ? toFa(c.insured_phone) : ''],
+        ['کد پستی', c.insured_postal_code ? toFa(c.insured_postal_code) : ''],
+    ];
+
+    let policyRows = [
+        ['نوع بیمه', 'بیمه ' + typeFa],
+        ['مدرک مالکیت ارائه‌شده', c.ownership_choice],
+    ];
+    if (c.insurance_type === 'THIRDPARTY') {
+        if (c.liability_limit) policyRows.push(['سقف تعهد مالی', toFa((c.liability_limit/10).toLocaleString('en-US')) + ' تومان']);
+    }
+    if (c.insurance_type === 'BODY') {
+        if (c.prev_body_insurance) policyRows.push(['بیمه بدنه‌ی قبلی', c.prev_body_insurance]);
+        if (c.prev_body_insurance === 'بله' && c.prev_body_claim) policyRows.push(['خسارت بیمه بدنه‌ی قبلی', c.prev_body_claim]);
+        if (c.prev_body_claim === 'خیر' && c.no_claim_years !== null && c.no_claim_years !== undefined) policyRows.push(['سابقه‌ی بدون خسارت', toFa(c.no_claim_years) + ' سال']);
+        if (c.selected_coverages) {
+            try {
+                const cov = JSON.parse(c.selected_coverages);
+                const labels = Object.keys(cov).map(k => BODY_COVERAGES[k] ? BODY_COVERAGES[k].label : k);
+                if (labels.length) policyRows.push(['پوشش‌های تکمیلی', labels.join('، ')]);
+            } catch(e) {}
+        }
+        if (c.estimated_car_value) policyRows.push(['ارزش خودرو', toFa(Number(c.estimated_car_value).toLocaleString('en-US')) + ' تومان']);
+        else policyRows.push(['ارزش خودرو', 'محاسبه‌ی خودکار توسط کارشناس']);
+    }
+
+    const renderRows = rows => rows.filter(r=>r[1]).map(([l,v]) => `<div class="summary-row"><span>${l}</span><b>${v}</b></div>`).join('');
+
+    document.getElementById('review-summary').innerHTML = `
+        <div style="margin-bottom:6px;"><b style="font-size:12px;color:#a5b4fc;">🚘 مشخصات خودرو و بیمه‌نامه</b></div>
+        <div class="summary-row"><span>پلاک</span><b>${formatPlateHtml(c.plate)}</b></div>
+        ${renderRows(policyRows)}
+        <div style="margin:14px 0 6px;"><b style="font-size:12px;color:#a5b4fc;">👤 مشخصات ${addr === 'خودتان' ? 'بیمه‌گذار (خودتان)' : 'بیمه‌گذار'}</b></div>
+        ${renderRows(personRows)}
+    `;
+
+    // متن راهنمای زیر خلاصه، بسته به نوع بیمه فرق می‌کند: ثالث فقط نیاز به بازدید مدارک دارد،
+    // ولی بدنه به بازدید سلامت خودرو هم نیاز دارد
+    const reviewDescEl = document.querySelector('#screen-review .desc');
+    if (reviewDescEl) {
+        reviewDescEl.textContent = c.insurance_type === 'BODY'
+            ? 'بعد از تایید، برای بارگذاری مدارک و ثبت بازدید سلامت خودرو و تکمیل نهایی، به بخش «بازدید مدارک و سلامت خودرو» هدایت می‌شوید.'
+            : 'بعد از تایید، برای بارگذاری مدارک و تکمیل نهایی، به بخش «بازدید مدارک» هدایت می‌شوید.';
+    }
+}
+async function submitFinalize() {
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'finalize', token:TOKEN, case_id:caseId }) });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error); return; }
+        document.getElementById('success-code').textContent = data.unique_code;
+
+        // متن و برچسب دکمه‌ی صفحه‌ی موفقیت هم بسته به نوع بیمه فرق می‌کند
+        const isBody = caseData.insurance_type === 'BODY';
+        const successDescEl = document.querySelector('#screen-success .desc');
+        if (successDescEl) {
+            successDescEl.innerHTML = `شناسه‌ی پرونده: <b id="success-code" style="direction:ltr;display:inline-block;">${data.unique_code}</b><br>` +
+                (isBody
+                    ? 'برای بارگذاری مدارک و ثبت بازدید سلامت خودرو و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.'
+                    : 'برای بارگذاری مدارک و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.');
+        }
+        const successBtn = document.querySelector('#screen-success .btn-primary');
+        if (successBtn) successBtn.textContent = isBody ? '📎 بازدید مدارک و سلامت خودرو' : '📎 بازدید مدارک';
+
+        showScreenRaw('success');
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+// ============================================================
+//  کمکی مشترک: ذخیره‌ی هر مرحله
+// ============================================================
+async function saveStep(body) {
+    try {
+        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'save_step', token:TOKEN, case_id:caseId, ...body }) });
+        return await res.json();
+    } catch(e) { return { ok:false, error:'خطا در اتصال به سرور.' }; }
+}
+
+initApp();
+</script>
+</body>
+</html>

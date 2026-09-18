@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>بازدید مدارک</title>
+<style>
+  :root { --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6; --success: #10b981; --danger: #ef4444; --warn: #f59e0b; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, select, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
+  html, body { margin: 0; padding: 0; min-height: 100%; overscroll-behavior: contain; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9; min-height: 100vh; padding: 16px;
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .topbar h2 { font-size: 14.5px; font-weight: 800; margin: 0; }
+  .back-btn { background: var(--glass, rgba(255,255,255,.08)); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; text-decoration: none; }
+  .plate-tag { direction: ltr; display: inline-flex; gap: 4px; align-items: center; background: #ffffff; color: #111827; border: 1px solid #e5e7eb; font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
+  p.desc { font-size: 12.5px; color: #cbd5e1; line-height: 1.9; margin: 14px 0; }
+  .doc-btn { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 12px; text-align: center; cursor: pointer; font-size: 11.5px; font-weight: 800; display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 64px; justify-content: center; }
+  .doc-btn.approved { border-color: var(--success); background: rgba(16,185,129,.12); cursor: default; }
+  .doc-btn.pending { border-color: #60a5fa; background: rgba(96,165,250,.1); cursor: default; }
+  .doc-btn.rejected { border-color: var(--danger); background: rgba(239,68,68,.12); }
+  .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { border: none; border-radius: 16px; padding: 14px 18px; font-size: 14px; font-weight: 800; cursor: pointer; width: 100%; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn-outline { background: rgba(255,255,255,.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); }
+  .btn-success { background: linear-gradient(135deg, var(--success), #059669); color: #fff; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { margin-top: 0; }
+  video, img.shot { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 3/4; object-fit: cover; margin-top: 12px; }
+  canvas { display: none; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .spinner { text-align: center; padding: 24px; color: #64748b; }
+
+  /* ===== دوربین تمام‌صفحه‌ی مدارک (عمودی) ===== */
+  #fs-doc { position: fixed; inset: 0; z-index: 9000; background: #000; }
+  #fs-doc-video, #fs-doc-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .fsd-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: 10px;
+             padding: 12px 14px; background: linear-gradient(180deg, rgba(0,0,0,.8), transparent); z-index: 3; }
+  .fsd-info { flex: 1; }
+  .fsd-badges { display: flex; gap: 6px; margin-bottom: 5px; }
+  .fsd-badge-step { background: rgba(99,102,241,.9); color: #fff; border-radius: 6px; padding: 3px 8px; font-size: 10.5px; font-weight: 800; }
+  .fsd-badge-req { border-radius: 6px; padding: 3px 8px; font-size: 10.5px; font-weight: 800; }
+  .fsd-badge-req.req { background: rgba(239,68,68,.92); color: #fff; }
+  .fsd-badge-req.opt { background: rgba(255,255,255,.28); color: #fff; }
+  .fsd-title { color: #fff; font-size: 15px; font-weight: 900; text-shadow: 0 1px 4px #000; }
+  .fsd-close { background: #ef4444; border: none; color: #fff; width: 34px; height: 34px; border-radius: 10px;
+               font-size: 17px; font-weight: 900; cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 10px rgba(239,68,68,.5); }
+  .fsd-guide { position: absolute; top: 88px; left: 14px; z-index: 3; width: 30%; max-width: 200px;
+               border-radius: 10px; border: 2px solid rgba(255,255,255,.75); opacity: .8;
+               box-shadow: 0 4px 16px rgba(0,0,0,.55); cursor: pointer; transition: width .25s, opacity .25s; }
+  .fsd-guide.big { width: 68%; max-width: 420px; opacity: 1; }
+  .fsd-bottom { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; justify-content: center;
+                align-items: center; gap: 20px; z-index: 3; padding: 0 20px; }
+  /* شاتر: دایره‌ی سفید توپر با حلقه‌ی سفیدِ احاطه‌کننده */
+  .fsd-shutter {
+      width: 74px; height: 74px; border-radius: 50%;
+      background: #fff; background-clip: content-box;
+      padding: 4px; border: 3px solid #fff;
+      box-shadow: 0 4px 20px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.15);
+      cursor: pointer; flex-shrink: 0;
+      transition: transform .12s ease, padding .12s ease;
+      -webkit-tap-highlight-color: transparent;
+  }
+  .fsd-shutter:active { transform: scale(.92); padding: 7px; }
+  .fsd-shutter:disabled { opacity: .5; }
+  .fsd-gallery { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.2); border: none;
+                 color: #fff; font-size: 19px; cursor: pointer; flex-shrink: 0; }
+  .fsd-btn { border: none; border-radius: 14px; padding: 12px 18px; font-size: 13px; font-weight: 800; cursor: pointer; }
+  .fsd-confirm { background: #10b981; color: #fff; }
+  .fsd-retake { background: rgba(255,255,255,.22); color: #fff; }
+  .fsd-exit-yes { background: #ef4444; color: #fff; }
+  #fsd-upload { position: absolute; inset: 0; z-index: 15; background: rgba(2,6,23,.75); display: flex; align-items: center; justify-content: center; }
+  .fsd-up-box { width: 70%; max-width: 380px; text-align: center; }
+  .fsd-up-title { color: #fff; font-size: 13px; font-weight: 800; margin: 0 0 10px; }
+  .fsd-up-track { height: 8px; background: rgba(255,255,255,.22); border-radius: 6px; overflow: hidden; }
+  .fsd-up-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#6366f1,#8b5cf6); transition: width .15s; }
+  .fsd-up-pct { color: #c7d2fe; font-size: 12px; font-weight: 800; margin: 8px 0 0; }
+  #fsd-exit-confirm { position: absolute; inset: 0; z-index: 20; background: rgba(2,6,23,.9); display: flex; align-items: center; justify-content: center; }
+  .fsd-exit-box { text-align: center; padding: 18px; }
+  .fsd-exit-title { color: #fff; font-size: 15px; font-weight: 900; margin: 0 0 16px; }
+  .fsd-exit-actions { display: flex; gap: 10px; justify-content: center; }
+  #doc-curtain { position: fixed; inset: 0; z-index: 9400; background: #0b1220; display: flex; align-items: center; justify-content: center; }
+  .dc-inner { text-align: center; }
+  .dc-spin { width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 50%; border: 4px solid rgba(255,255,255,.18);
+             border-top-color: #8b5cf6; animation: dcSpin .9s linear infinite; }
+  @keyframes dcSpin { to { transform: rotate(360deg); } }
+  .dc-text { font-size: 13px; color: #cbd5e1; font-weight: 700; margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back-btn" href="index_visit.html?t=" id="back-link">›</a>
+  <h2>📎 بازدید مدارک</h2>
+  <span class="plate-tag" id="header-plate"></span>
+</div>
+
+<p class="desc" id="docs-hint">در حال بارگذاری...</p>
+<div class="doc-grid" id="docs-grid"></div>
+<div id="docs-continue-wrap"></div>
+
+<!-- ==================== دوربین تمام‌صفحه (عمودی) برای مدارک ==================== -->
+<div id="fs-doc" style="display:none;">
+  <video id="fs-doc-video" autoplay playsinline muted></video>
+  <img id="fs-doc-shot" style="display:none;">
+
+  <div class="fsd-top">
+    <div class="fsd-info">
+      <div class="fsd-badges">
+        <span class="fsd-badge-step" id="fsd-badge-step"></span>
+        <span class="fsd-badge-req" id="fsd-badge-req"></span>
+      </div>
+      <div class="fsd-title" id="fsd-title"></div>
+    </div>
+    <button class="fsd-close" onclick="askExitDocCam()" title="انصراف">✕</button>
+  </div>
+
+  <img id="fsd-guide" class="fsd-guide" onclick="this.classList.toggle('big')">
+
+  <div class="fsd-bottom" id="fsd-capture-bar">
+    <button class="fsd-gallery" onclick="pickFromGallery()" title="گالری">🖼</button>
+    <button class="fsd-shutter" id="fsd-shutter" onpointerdown="takeShot(event)" title="گرفتن عکس"></button>
+    <button class="fsd-gallery" onclick="pickFromFile()" title="فایل">📁</button>
+  </div>
+  <div class="fsd-bottom" id="fsd-preview-bar" style="display:none;">
+    <button class="fsd-btn fsd-retake" onclick="retake()">🔁 دوباره</button>
+    <button class="fsd-btn fsd-confirm" onclick="confirmUpload()">✅ تایید و ارسال</button>
+  </div>
+
+  <div id="fsd-upload" style="display:none;">
+    <div class="fsd-up-box">
+      <p class="fsd-up-title">در حال ارسال...</p>
+      <div class="fsd-up-track"><div class="fsd-up-fill" id="fsd-up-fill"></div></div>
+      <p class="fsd-up-pct" id="fsd-up-pct">۰٪</p>
+    </div>
+  </div>
+
+  <div id="fsd-exit-confirm" style="display:none;">
+    <div class="fsd-exit-box">
+      <p class="fsd-exit-title">از بارگذاری مدارک خارج می‌شوید؟</p>
+      <div class="fsd-exit-actions">
+        <button class="fsd-btn fsd-exit-yes" onclick="confirmExitDocCam()">بله، خروج</button>
+        <button class="fsd-btn fsd-retake" onclick="document.getElementById('fsd-exit-confirm').style.display='none'">ادامه</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="doc-curtain" style="display:none;">
+  <div class="dc-inner"><div class="dc-spin"></div><p class="dc-text">در حال آماده‌سازی دوربین...</p></div>
+</div>
+
+<div id="capture-area" style="display:none; margin-top:16px;">
+  <p class="desc" id="capture-title" style="margin:0 0 8px;"></p>
+  <video id="video" autoplay playsinline muted style="display:none;"></video>
+  <img id="shot-img" class="shot" src="" style="display:none;">
+  <div id="live-controls" style="display:none;">
+    <button class="btn btn-primary" onclick="takeShot()">📸 گرفتن عکس</button>
+  </div>
+  <div id="preview-controls" style="display:none;" class="btn-row">
+    <button class="btn btn-success" onclick="confirmUpload()">✅ تایید و ارسال</button>
+    <button class="btn btn-outline" onclick="retake()" style="max-width:120px;">🔁 دوباره</button>
+  </div>
+  <div class="btn-row" style="margin-top:8px;">
+    <button class="btn btn-outline" onclick="pickFromGallery()">🖼 انتخاب از گالری</button>
+    <button class="btn btn-outline" onclick="pickFromFile()">📁 انتخاب فایل</button>
+  </div>
+  <button class="btn btn-outline" onclick="cancelCapture()" style="margin-top:8px;">انصراف</button>
+  <input type="file" id="gallery-input" accept="image/*" capture="environment" style="display:none;" onchange="onFilePicked(event)">
+  <input type="file" id="file-input" accept="image/*,application/pdf" style="display:none;" onchange="onFilePicked(event)">
+</div>
+<canvas id="canvas"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
+//  نکته‌ی کلیدی: facingMode:'environment' به‌تنهایی روی خیلی از گوشی‌ها لنز اولترا-واید را
+//  انتخاب می‌کند که تصویرِ کشیده و بی‌کیفیت می‌دهد. تنها راه قابل‌اتکا این است که فهرست
+//  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
+// ============================================================
+async function openMainCameraStream() {
+    let probe = null;
+    try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (e) {}
+
+    let chosenId = null;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
+        const pool = backCams.length ? backCams : cams;
+        const nonWide = pool.filter(d => !/ultra|wide|0\.5|tele|zoom|depth|macro/i.test(d.label));
+        const chosen = nonWide[0] || pool[0];
+        if (chosen) chosenId = chosen.deviceId;
+    } catch (e) {}
+
+    if (probe) probe.getTracks().forEach(t => t.stop());
+
+    let stream;
+    if (chosenId) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: chosenId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+            });
+        } catch (e) {}
+    }
+    if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+        });
+    }
+    try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
+            await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+        }
+    } catch (e) {}
+    return stream;
+}
+
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || '';
+const CASE_ID = params.get('case') || '';
+const API = '/api/webapp_visit.php';
+document.getElementById('back-link').href = `index_visit.html?t=${encodeURIComponent(TOKEN)}`;
+
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
+// نکته: هر جزء پلاک داخل یک span جداگانه گذاشته می‌شود تا الگوریتم bidi مرورگر نتواند
+// ترتیب اعداد و حرف فارسی را به‌هم بریزد (اگر همه‌ی متن یک رشته‌ی واحد باشد، در محیط ltr
+// اجزا جابه‌جا نمایش داده می‌شوند - همان باگی که در هدر این صفحه دیده شد)
+function formatPlateHtml(plate) {
+    if (!plate) return '';
+    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    if (!m) return plate;
+    const [, region, suffix, letter, prefix] = m;
+    return `<span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span>`;
+}
+
+let docsData = [];
+let activeDocKey = null;
+let stream = null;
+let capturedBlob = null;
+
+async function loadDocs() {
+    const grid = document.getElementById('docs-grid');
+    try {
+        const res = await fetch(`${API}?action=case_docs&token=${encodeURIComponent(TOKEN)}&case_id=${CASE_ID}`);
+        const data = await res.json();
+        if (!data.ok) { document.getElementById('docs-hint').textContent = data.error; return; }
+        docsData = data.docs;
+        document.getElementById('header-plate').innerHTML = formatPlateHtml(data.plate);
+        renderGrid();
+    } catch(e) { document.getElementById('docs-hint').textContent = 'خطا در اتصال به سرور.'; }
+}
+
+const STATUS_LABEL = { PENDING: '⏳ در انتظار بررسی', APPROVED: '✅ تایید شده', REJECTED: '❌ رد شده' };
+let countdownTimer = null;
+function renderGrid() {
+    const grid = document.getElementById('docs-grid');
+    let allApproved = true, allSubmitted = true;
+    grid.innerHTML = docsData.map(d => {
+        const cls = d.status === 'APPROVED' ? 'approved' : d.status === 'PENDING' ? 'pending' : d.status === 'REJECTED' ? 'rejected' : '';
+        if (d.status !== 'APPROVED') allApproved = false;
+        if (!d.status || d.status === 'REJECTED') allSubmitted = false;
+        const clickable = d.status !== 'APPROVED' && d.status !== 'PENDING';
+        const statusLine = d.status ? `<span style="font-size:9.5px;opacity:.8;">${STATUS_LABEL[d.status]}</span>` : '';
+        const reasonLine = d.status === 'REJECTED' && d.reject_reason ? `<span style="font-size:9px;color:#fca5a5;">${d.reject_reason}</span>` : '';
+        return `<div class="doc-btn ${cls}" ${clickable ? `onclick="selectDoc('${d.key}')"` : ''}><span>${d.label}</span>${statusLine}${reasonLine}</div>`;
+    }).join('');
+
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (allApproved) {
+        document.getElementById('docs-hint').textContent = '✅ همه‌ی مدارک لازم تایید شده‌اند.';
+        document.getElementById('docs-continue-wrap').innerHTML = `<button class="btn btn-primary" onclick="location.href='index_visit.html?t=${encodeURIComponent(TOKEN)}'">بازگشت به لیست درخواست‌ها ›</button>`;
+    } else if (allSubmitted) {
+        document.getElementById('docs-hint').textContent = '✅ همه‌ی مدارک لازم ارسال شد و در انتظار بررسی کارشناس است.';
+        document.getElementById('docs-continue-wrap').innerHTML = `
+            <p class="desc">اگر مدرک دیگری نمی‌خواهید ارسال کنید، با دکمه‌ی زیر به پنل کاربری بله بازگردید.</p>
+            <button class="btn btn-primary" onclick="returnToVisitHub()">↩️ بازگشت به پنل کاربری بله</button>
+            <p class="desc" style="font-size:11px;">به‌طور خودکار ظرف <b id="countdown-num">۵</b> ثانیه هدایت می‌شوید...</p>`;
+        let secondsLeft = 5;
+        countdownTimer = setInterval(() => {
+            secondsLeft--;
+            const el = document.getElementById('countdown-num');
+            if (el) el.textContent = toFa(secondsLeft);
+            if (secondsLeft <= 0) { clearInterval(countdownTimer); returnToVisitHub(); }
+        }, 1000);
+    } else {
+        document.getElementById('docs-hint').textContent = 'هرکدام از موارد زیر را که آماده دارید انتخاب و عکس آن را ارسال کنید:';
+        document.getElementById('docs-continue-wrap').innerHTML = '';
+    }
+}
+function returnToVisitHub() { location.href = `index_visit.html?t=${encodeURIComponent(TOKEN)}`; }
+
+// تصویر راهنمای هر نوع مدرک (فایل‌ها داخل پوشه‌ی Image سایت قرار می‌گیرند)
+const DOC_GUIDES = {
+    ownership_doc:       '/Image/20.png',   // سند مالکیت
+    car_card_front:      '/Image/21.png',   // کارت ماشین رو
+    car_card_back:       '/Image/22.png',   // کارت ماشین پشت
+    identity_doc:        '/Image/23.png',   // کارت ملی رو
+    prev_body_insurance: '/Image/24.png',   // بیمه بدنه قبل
+};
+
+async function selectDoc(key) {
+    activeDocKey = key;
+    const doc = docsData.find(d => d.key === key);
+    document.getElementById('capture-title').textContent = `ارسال «${doc.label}»:`;
+    await openDocFullscreen(doc);
+}
+
+// اطلاعات مدرک جاری را روی صفحه‌ی دوربین می‌نشاند
+function syncDocInfo(doc) {
+    if (!doc) return;
+    const pending = docsData.filter(d => d.status !== 'APPROVED' && d.status !== 'PENDING');
+    const idx = docsData.findIndex(d => d.key === doc.key);
+    document.getElementById('fsd-title').textContent = doc.label || '';
+    document.getElementById('fsd-badge-step').textContent = `مدرک ${toFa(idx + 1)} از ${toFa(docsData.length)}`;
+    const req = document.getElementById('fsd-badge-req');
+    const isRequired = (doc.required === undefined) ? true : !!doc.required;
+    req.textContent = isRequired ? 'اجباری' : 'اختیاری';
+    req.className = 'fsd-badge-req ' + (isRequired ? 'req' : 'opt');
+
+    const g = document.getElementById('fsd-guide');
+    const src = DOC_GUIDES[doc.key];
+    if (src) { g.src = src; g.style.display = 'block'; g.classList.remove('big'); g.onerror = () => { g.style.display = 'none'; }; }
+    else { g.style.display = 'none'; }
+}
+
+async function openDocFullscreen(doc) {
+    document.getElementById('doc-curtain').style.display = 'flex';
+    try {
+        stopStream();
+        stream = await openMainCameraStream();
+        const v = document.getElementById('fs-doc-video');
+        v.srcObject = stream;
+        v.style.display = 'block';
+        document.getElementById('fs-doc-shot').style.display = 'none';
+        document.getElementById('fsd-capture-bar').style.display = 'flex';
+        document.getElementById('fsd-preview-bar').style.display = 'none';
+        syncDocInfo(doc);
+        document.getElementById('fs-doc').style.display = 'block';
+        document.getElementById('doc-curtain').style.display = 'none';
+    } catch (e) {
+        document.getElementById('doc-curtain').style.display = 'none';
+        // دوربین در دسترس نیست: رابط ساده‌ی قبلی به‌عنوان جایگزین
+        document.getElementById('capture-area').style.display = 'block';
+        document.getElementById('capture-area').scrollIntoView({behavior:'smooth'});
+        showToast('دسترسی به دوربین ممکن نشد؛ از «انتخاب فایل» استفاده کنید.');
+    }
+}
+
+function exitDocCam() {
+    stopStream();
+    capturedBlob = null;
+    document.getElementById('fs-doc').style.display = 'none';
+    document.getElementById('doc-curtain').style.display = 'none';
+}
+function askExitDocCam() { document.getElementById('fsd-exit-confirm').style.display = 'flex'; }
+function confirmExitDocCam() {
+    document.getElementById('fsd-exit-confirm').style.display = 'none';
+    exitDocCam();
+    activeDocKey = null;
+    loadDocs();
+}
+async function startLiveCamera() {
+    document.getElementById('shot-img').style.display = 'none';
+    document.getElementById('preview-controls').style.display = 'none';
+    try {
+        stream = await openMainCameraStream();
+        const video = document.getElementById('video');
+        video.srcObject = stream; video.style.display = 'block';
+        document.getElementById('live-controls').style.display = 'block';
+    } catch(e) {
+        showToast('دسترسی به دوربین ممکن نشد؛ از «انتخاب فایل» استفاده کنید.');
+    }
+}
+function stopStream() { if (stream) { stream.getTracks().forEach(t=>t.stop()); stream = null; } }
+let docShotBusy = false;
+function takeShot(ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    if (docShotBusy) return;
+    docShotBusy = true;
+    setTimeout(() => { docShotBusy = false; }, 600);
+
+    const fsOpen = document.getElementById('fs-doc').style.display === 'block';
+    const video = document.getElementById(fsOpen ? 'fs-doc-video' : 'video');
+    const canvas = document.getElementById('canvas');
+
+    // مدارک باید با بالاترین کیفیت ذخیره شوند چون قرار است اطلاعاتِ روی سند از آن‌ها
+    // خوانده شود؛ پس رزولوشن کامل نگه داشته می‌شود و فقط اگر از سقفِ حجم رد شد کمی فشرده می‌شود.
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0);
+
+    if (fsOpen) {
+        const camEl = document.getElementById('fs-doc');
+        const fl = document.createElement('div');
+        fl.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.85;z-index:18;pointer-events:none;transition:opacity .18s;';
+        camEl.appendChild(fl);
+        requestAnimationFrame(() => { fl.style.opacity = '0'; setTimeout(() => fl.remove(), 200); });
+    }
+
+    // رمزگذاری سریع با حداکثر دو پاس (مدارک سقف بالاتری دارند تا متنِ سند خوانا بماند)
+    const MAX_BYTES = 3 * 1024 * 1024;
+    const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
+
+    (async () => {
+        let blob = await encodeAt(0.97);
+        if (blob && blob.size > MAX_BYTES) {
+            const ratio = MAX_BYTES / blob.size;
+            const q2 = Math.max(0.70, Math.min(0.95, 0.97 * Math.sqrt(ratio)));
+            const second = await encodeAt(q2);
+            if (second) blob = second;
+        }
+        capturedBlob = blob;
+        stopStream();
+        if (fsOpen) {
+            document.getElementById('fs-doc-video').style.display = 'none';
+            const shot = document.getElementById('fs-doc-shot');
+            shot.src = URL.createObjectURL(blob);
+            shot.style.display = 'block';
+            document.getElementById('fsd-capture-bar').style.display = 'none';
+            document.getElementById('fsd-preview-bar').style.display = 'flex';
+        } else {
+            document.getElementById('video').style.display = 'none';
+            document.getElementById('live-controls').style.display = 'none';
+            document.getElementById('shot-img').src = URL.createObjectURL(blob);
+            document.getElementById('shot-img').style.display = 'block';
+            document.getElementById('preview-controls').style.display = 'flex';
+        }
+    })();
+}
+async function retake() {
+    capturedBlob = null;
+    if (document.getElementById('fs-doc').style.display === 'block') {
+        const doc = docsData.find(d => d.key === activeDocKey);
+        await openDocFullscreen(doc);
+    } else {
+        await startLiveCamera();
+    }
+}
+function pickFromGallery() { document.getElementById('gallery-input').click(); }
+function pickFromFile() { document.getElementById('file-input').click(); }
+function onFilePicked(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    ev.target.value = '';
+    stopStream();
+    capturedBlob = file;
+    confirmUpload();
+}
+function cancelCapture() {
+    stopStream();
+    capturedBlob = null; activeDocKey = null;
+    document.getElementById('capture-area').style.display = 'none';
+    document.getElementById('video').style.display = 'none';
+    document.getElementById('shot-img').style.display = 'none';
+}
+function uploadDocWithProgress(url, formData) {
+    return new Promise((resolve, reject) => {
+        const fsOpen = document.getElementById('fs-doc').style.display === 'block';
+        const box = document.getElementById('fsd-upload');
+        const fill = document.getElementById('fsd-up-fill');
+        const pct = document.getElementById('fsd-up-pct');
+        if (fsOpen) { box.style.display = 'flex'; fill.style.width = '0%'; pct.textContent = toFa(0) + '٪'; }
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable || !fsOpen) return;
+            const p = Math.round((e.loaded / e.total) * 100);
+            fill.style.width = p + '%'; pct.textContent = toFa(p) + '٪';
+        };
+        xhr.onload = () => {
+            if (fsOpen) { fill.style.width = '100%'; pct.textContent = 'در حال پردازش...'; setTimeout(() => { box.style.display = 'none'; }, 250); }
+            try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(new Error('پاسخ نامعتبر')); }
+        };
+        xhr.onerror = () => { if (fsOpen) box.style.display = 'none'; reject(new Error('خطای شبکه')); };
+        xhr.send(formData);
+    });
+}
+
+async function confirmUpload() {
+    if (!capturedBlob || !activeDocKey) return;
+    const fd = new FormData();
+    fd.append('token', TOKEN); fd.append('case_id', CASE_ID); fd.append('doc_key', activeDocKey); fd.append('file', capturedBlob, 'doc.jpg');
+    try {
+        const data = await uploadDocWithProgress(`${API}?action=upload_doc`, fd);
+        if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); return; }
+        showToast('✅ ثبت شد');
+        capturedBlob = null;
+        const fsOpen = document.getElementById('fs-doc').style.display === 'block';
+        await loadDocs();
+        if (fsOpen) {
+            // مدرکِ بعدیِ باقی‌مانده را پیدا کن و در همان صفحه‌ی دوربین ادامه بده
+            const next = docsData.find(d => d.status !== 'APPROVED' && d.status !== 'PENDING');
+            if (next) { activeDocKey = next.key; await openDocFullscreen(next); }
+            else { exitDocCam(); activeDocKey = null; showToast('همه‌ی مدارک ارسال شد.'); }
+        } else {
+            cancelCapture();
+        }
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+// با ورود به صفحه، مستقیم دوربینِ تمام‌صفحه روی اولین مدرکِ باقی‌مانده باز می‌شود
+(async () => {
+    await loadDocs();
+    const first = docsData.find(d => d.status !== 'APPROVED' && d.status !== 'PENDING');
+    if (first) { activeDocKey = first.key; await openDocFullscreen(first); }
+})();
+</script>
+</body>
+</html>

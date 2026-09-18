@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>بیمه با ما</title>
+<script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<style>
+  :root {
+    --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
+    --glass: rgba(255,255,255,0.08); --glass-b: rgba(255,255,255,0.14);
+    --success: #10b981; --danger: #ef4444; --warn: #f59e0b;
+    --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, select, textarea, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
+  html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: none; }
+  body {
+    font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+    background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
+    color: #f1f5f9; min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+  }
+  .screen { display: none; flex: 1; flex-direction: column; padding: 16px; animation: fadeIn .3s ease; overflow-y: auto; overscroll-behavior: contain; }
+  .screen.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .topbar .back-btn { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 12px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #fff; cursor: pointer; }
+  .topbar h2 { font-size: 16px; font-weight: 800; margin: 0; }
+
+  .hero { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 20px; padding: 18px; margin-bottom: 18px; }
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .hero .greet { font-size: 13px; color: #cbd5e1; }
+  .hero .name { font-size: 19px; font-weight: 900; margin-top: 2px; }
+  .hero .nid { font-size: 11px; color: #94a3b8; direction: ltr; text-align: right; margin-top: 2px; }
+  .hero-datetime { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
+  .hero-datetime b { color: #cbd5e1; }
+  .notif-icon-wrap { position: relative; width: 40px; height: 40px; background: rgba(255,255,255,0.06); border: 1px solid var(--glass-b); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+
+  .grid-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card-btn {
+    background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 18px 12px; min-height: 92px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+    transition: transform .15s ease, background .15s ease; text-align: center;
+  }
+  .card-btn:active { transform: scale(0.96); background: rgba(255,255,255,0.14); }
+  .card-btn .ic { font-size: 26px; }
+  .card-btn .lbl { font-size: 12.5px; font-weight: 800; }
+  .card-btn .sub { font-size: 10px; color: #94a3b8; }
+  .card-btn.wide { grid-column: span 2; flex-direction: row; justify-content: center; padding: 16px; min-height: 92px; }
+  .card-btn.wide .ic { font-size: 24px; }
+  .card-btn { position: relative; }
+
+  .btn { border: none; border-radius: 16px; padding: 15px 20px; font-size: 14px; font-weight: 800; cursor: pointer; width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform .15s ease; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
+  .btn-outline { background: var(--glass); color: #e2e8f0; border: 1px solid var(--glass-b); }
+  .btn-danger { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .btn-sm { padding: 10px 14px; font-size: 12px; border-radius: 12px; }
+
+  .list-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+  .badge { font-size: 10px; padding: 3px 9px; border-radius: 8px; font-weight: 800; display: inline-block; }
+  .badge.pending { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge.review { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+  .badge.issuing { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .badge.issued { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+  .badge.rejected { background: rgba(239,68,68,0.15); color: #fca5a5; }
+
+  .plate-tag { direction: ltr; display: inline-flex; gap: 4px; align-items: center; background: #ffffff; color: #111827; font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid #e5e7eb; }
+
+  .center-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 20px; }
+  .icon-badge { width: 68px; height: 68px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 30px; box-shadow: 0 8px 30px rgba(99,102,241,0.4); }
+  h1.title { font-size: 19px; font-weight: 800; margin: 0; }
+  p.desc { font-size: 13px; color: #cbd5e1; line-height: 2; margin: 0; max-width: 320px; }
+
+  input[type=text], input[type=number], select {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--glass-b); border-radius: 12px; padding: 12px 14px;
+    color: #fff; font-family: 'Vazir', sans-serif; font-size: 14px; width: 100%;
+  }
+  input::placeholder { color: #64748b; }
+  .field-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .field-row input, .field-row select { text-align: center; }
+
+  .chat-wrap { flex: 1; display: flex; flex-direction: column; }
+  .chat-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
+  .msg-bubble { max-width: 78%; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.8; }
+  .msg-bubble.me { align-self: flex-start; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-left-radius: 4px; }
+  .msg-bubble.them { align-self: flex-end; background: var(--glass); border: 1px solid var(--glass-b); border-bottom-right-radius: 4px; }
+  .chat-input-row { display: flex; gap: 8px; margin-top: 10px; }
+  .chat-input-row input { flex: 1; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .spinner { text-align: center; padding: 30px; color: #64748b; }
+  .empty-state { text-align: center; padding: 30px; color: #64748b; font-size: 12.5px; }
+
+  .app-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px;
+    padding: 10px 14px; margin: 14px 16px calc(10px + var(--safe-bottom));
+  }
+  .app-footer img { height: 26px; width: auto; opacity: .9; }
+  .app-footer .footer-text { flex: 1; text-align: center; font-size: 9.5px; color: #94a3b8; line-height: 1.7; }
+  .app-footer .footer-text b { color: #a5b4fc; }
+  .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--danger); color: #fff; font-size: 9px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+</style>
+</head>
+<body>
+
+<div id="app-body" style="flex:1; display:flex; flex-direction:column;">
+
+<!-- ==================== لودینگ ==================== -->
+<div id="screen-loading" class="screen active">
+  <div class="center-card">
+    <div class="icon-badge">🛡️</div>
+    <h1 class="title">در حال آماده‌سازی...</h1>
+  </div>
+</div>
+
+<!-- ==================== خطا ==================== -->
+<div id="screen-error" class="screen">
+  <div class="center-card">
+    <div class="icon-badge" style="background:linear-gradient(135deg,#ef4444,#b91c1c)">⚠️</div>
+    <h1 class="title">مشکلی پیش آمد</h1>
+    <p class="desc" id="error-text"></p>
+  </div>
+</div>
+
+<!-- ==================== صفحه‌ی اصلی ==================== -->
+<div id="screen-home" class="screen">
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="greet">👋 خوش آمدید</div>
+        <div class="name" id="home-name"></div>
+        <div class="nid" id="home-nid"></div>
+      </div>
+      <div class="notif-icon-wrap" onclick="nav('notifications')">
+        🔔
+        <span id="notif-badge" class="notif-badge" style="display:none;"></span>
+      </div>
+    </div>
+    <div class="hero-datetime">
+      <span id="live-date">-</span>
+      <span id="live-time" dir="ltr">--:--:--</span>
+    </div>
+  </div>
+  <div class="grid-cards">
+    <div class="card-btn wide" onclick="location.href='../order/index_order.html?t='+TOKEN">
+      <span class="ic">📝</span>
+      <div class="lbl">ثبت درخواست بیمه جدید</div>
+    </div>
+    <div class="card-btn" onclick="openVisitHub()"><span class="ic">🚗</span><span class="lbl">بازدید مدارک و سلامت خودرو</span></div>
+    <div class="card-btn" onclick="nav('policies')"><span class="ic">📁</span><span class="lbl">بیمه‌نامه‌های من</span><span class="sub" id="policies-count-badge"></span></div>
+    <div class="card-btn" onclick="nav('vehicles')"><span class="ic">🚙</span><span class="lbl">پلاک‌های من</span><span class="sub" id="vehicles-count-badge"></span></div>
+    <div class="card-btn" onclick="location.href='../premium/index_premium.html?t='+TOKEN"><span class="ic">💰</span><span class="lbl">استعلام حق بیمه</span></div>
+    <div class="card-btn wide" onclick="nav('support')">
+      <span class="ic">💬</span><span class="lbl">ارتباط با کارشناس</span>
+      <span id="support-reply-badge" style="display:none; position:absolute; top:8px; left:8px; font-size:9px; background:var(--success); color:#fff; padding:2px 6px; border-radius:8px; font-weight:800;">پاسخ جدید</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== اعلان‌ها ==================== -->
+<div id="screen-notifications" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🔔 اعلان‌ها</h2><div style="width:38px"></div></div>
+  <div id="notifications-list"><div class="spinner">در حال بارگذاری...</div></div>
+</div>
+
+<!-- ==================== بیمه‌نامه‌های من ==================== -->
+<div id="screen-policies" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>📁 بیمه‌نامه‌های من</h2><div style="width:38px"></div></div>
+  <div id="policies-list"><div class="spinner">در حال بارگذاری...</div></div>
+</div>
+
+<!-- ==================== پلاک‌های من ==================== -->
+<div id="screen-vehicles" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚙 پلاک‌های من</h2><div style="width:38px"></div></div>
+  <div id="vehicles-list"></div>
+  <button class="btn btn-outline" onclick="showAddVehicleForm()" id="btn-show-add-vehicle">➕ افزودن پلاک جدید</button>
+  <div id="add-vehicle-form" style="display:none; margin-top:14px;">
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی خودرو وارد کنید:</p>
+    <div class="field-row">
+      <input type="text" id="veh-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="flex:1">
+      <span style="align-self:center;font-size:12px;">ایران</span>
+      <input type="text" id="veh-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="flex:1.3">
+      <select id="veh-letter" style="flex:1"></select>
+      <input type="text" id="veh-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="flex:1">
+    </div>
+    <button class="btn btn-primary" onclick="submitAddVehicle()">✅ ذخیره پلاک</button>
+  </div>
+</div>
+
+<!-- ==================== بازدید سلامت ==================== -->
+<div id="screen-health" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚗 بازدید سلامت</h2><div style="width:38px"></div></div>
+  <div id="health-case-list"></div>
+  <p style="font-size:12px;color:#94a3b8;margin:14px 0 8px;">یا برای خودروی دیگری غیر از موارد بالا:</p>
+  <div class="field-row">
+    <input type="text" id="free-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="flex:1">
+    <span style="align-self:center;font-size:12px;">ایران</span>
+    <input type="text" id="free-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="flex:1.3">
+    <select id="free-letter" style="flex:1"></select>
+    <input type="text" id="free-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="flex:1">
+  </div>
+  <button class="btn btn-outline" onclick="startFreeHealthSession()">🆕 شروع بازدید آزاد</button>
+</div>
+
+<!-- ==================== استعلام حق بیمه ==================== -->
+<div id="screen-premium" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>💰 استعلام حق بیمه</h2><div style="width:38px"></div></div>
+  <div class="center-card">
+    <div class="icon-badge">💰</div>
+    <h1 class="title">به‌زودی...</h1>
+    <p class="desc">این بخش در حال آماده‌سازی است و به‌زودی فعال می‌شود.</p>
+  </div>
+</div>
+
+<!-- ==================== ارتباط با کارشناس ==================== -->
+<div id="screen-support" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>💬 ارتباط با کارشناس</h2><div style="width:38px"></div></div>
+  <div class="chat-wrap">
+    <div class="chat-msgs" id="support-msgs"><div class="spinner">در حال بارگذاری...</div></div>
+    <div id="typing-indicator" style="display:none; font-size:11px; color:#94a3b8; padding:4px 8px;">کارشناس در حال نوشتن است...</div>
+    <div id="emoji-picker" style="display:none; padding:8px; background:var(--glass); border-radius:12px; margin-bottom:6px; flex-wrap:wrap; gap:6px;"></div>
+    <div class="chat-input-row">
+      <button class="btn btn-outline btn-sm" style="width:auto; flex:0 0 40px; padding:8px;" onclick="toggleEmojiPicker()">😊</button>
+      <button class="btn btn-outline btn-sm" style="width:auto; flex:0 0 40px; padding:8px;" onclick="document.getElementById('support-file-input').click()">📎</button>
+      <input type="file" id="support-file-input" accept="image/*,application/pdf" style="display:none;" onchange="sendSupportFile(event)">
+      <input type="text" id="support-input" placeholder="پیام خود را بنویسید..." oninput="onSupportTyping()">
+      <button class="btn btn-primary btn-sm" style="width:auto;" onclick="sendSupportMessage()">ارسال</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-body -->
+
+<div class="toast" id="toast"></div>
+
+<div class="app-footer">
+    <img src="/Image/mammut.png" alt="ماموت" onerror="this.style.display='none'">
+    <div class="footer-text">
+        <div>طراحی و توسعه سیستم: <b>گروه توسعه برگه</b> <span style="font-family:Arial,sans-serif;">(MMBehzadi)</span></div>
+        <div>تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ ©</div>
+    </div>
+    <img src="/Image/bimebama.png" alt="بیمه با ما" onerror="this.style.display='none'">
+</div>
+
+<script>
+try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch(e) {}
+
+const params = new URLSearchParams(location.search);
+let TOKEN = params.get('t') || params.get('token') || '';
+const API = '/api/webapp_app.php';
+const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+
+function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
+function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2400);
+}
+function formatPlateHtml(plate) {
+    if (!plate) return '';
+    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    if (!m) return plate;
+    const [, region, suffix, letter, prefix] = m;
+    return `<span class="plate-tag"><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span></span>`;
+}
+function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + id).classList.add('active');
+}
+function nav(screen) {
+    showScreen(screen);
+    if (screen === 'policies') loadPolicies();
+    if (screen === 'vehicles') loadVehicles();
+    if (screen === 'health') loadHealthCases();
+    if (screen === 'support') nav_supportEnter(); else nav_supportLeave();
+    if (screen === 'notifications') loadNotifications();
+}
+
+// این‌جا داخل WebView محدودِ مینی‌اپ هستیم؛ برای این‌که «هاب بازدید» واقعاً در مرورگر معمولیِ
+// داخل بله باز شود (نه همین WebView)، باید از openLink استفاده کنیم، نه فقط location.href
+function openVisitHub() {
+    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}`;
+    try {
+        if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
+            Bale.WebApp.openLink(url);
+            return;
+        }
+    } catch(e) {}
+    location.href = url;
+}
+
+// پرکردن انتخاب‌گرهای حرف پلاک
+function fillLetterSelects() {
+    ['veh-letter', 'free-letter'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = PLATE_LETTERS.map(l => `<option value="${l}">${l}</option>`).join('');
+    });
+}
+
+// ======================= تاریخ و ساعت زنده (شمسی، ثانیه‌شمار، اعداد فارسی) =======================
+const JALALI_MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+function gregorianToJalali(gy, gm, gd) {
+    const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
+    let jy = (gy <= 1600) ? 0 : 979;
+    gy -= (gy <= 1600) ? 621 : 1600;
+    const gy2 = (gm > 2) ? (gy + 1) : gy;
+    let days = (365*gy) + (Math.floor((gy2+3)/4)) - (Math.floor((gy2+99)/100)) + (Math.floor((gy2+399)/400)) - 80 + gd + g_d_m[gm-1];
+    jy += 33*Math.floor(days/12053);
+    days %= 12053;
+    jy += 4*Math.floor(days/1461);
+    days %= 1461;
+    if (days > 365) { jy += Math.floor((days-1)/365); days = (days-1)%365; }
+    const jm = (days < 186) ? 1 + Math.floor(days/31) : 7 + Math.floor((days-186)/30);
+    const jd = 1 + ((days < 186) ? (days % 31) : ((days-186) % 30));
+    return [jy, jm, jd];
+}
+function startLiveClock() {
+    function tick() {
+        const now = new Date();
+        const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth()+1, now.getDate());
+        document.getElementById('live-date').textContent = `${toFa(jd)} ${JALALI_MONTHS[jm-1]} ${toFa(jy)}`;
+        const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0'), ss = String(now.getSeconds()).padStart(2,'0');
+        document.getElementById('live-time').textContent = toFa(`${hh}:${mm}:${ss}`);
+    }
+    tick();
+    setInterval(tick, 1000);
+}
+
+async function initApp() {
+    fillLetterSelects();
+    startLiveClock();
+    // اگر لینکِ اختصاصیِ ما (?t=) در دسترس نبود (مثلاً ورود از دکمه‌ی ثابتِ بات‌فادر در بله)،
+    // از initData امضاشده‌ی خودِ بله برای شناسایی استفاده می‌کنیم
+    let initData = '';
+    try { if (window.Bale && window.Bale.WebApp) initData = Bale.WebApp.initData || ''; } catch(e) {}
+    if (!TOKEN && !initData) { showAppError('لینک نامعتبر است. از ربات دوباره وارد شوید.'); return; }
+    try {
+        const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}&init_data=${encodeURIComponent(initData)}`);
+        const data = await res.json();
+        if (!data.ok) { showAppError(data.error); return; }
+        if (data.resolved_token) TOKEN = data.resolved_token; // برای همه‌ی فراخوانی‌های بعدی و لینک‌های داخلی
+        document.getElementById('home-name').textContent = data.person_name || '';
+        document.getElementById('home-nid').textContent = data.national_code ? toFa(data.national_code) : '';
+        document.getElementById('policies-count-badge').textContent = data.policies_count ? `${toFa(data.policies_count)} مورد` : '';
+        document.getElementById('vehicles-count-badge').textContent = data.vehicles_count ? `${toFa(data.vehicles_count)} پلاک` : '';
+        const badge = document.getElementById('notif-badge');
+        if (data.unread_notifications > 0) { badge.textContent = toFa(data.unread_notifications); badge.style.display = 'flex'; }
+        if (data.has_unread_support_reply) { document.getElementById('support-reply-badge').style.display = 'block'; }
+        showScreen('home');
+    } catch (e) { showAppError('خطا در اتصال به سرور.'); }
+}
+function showAppError(msg) { document.getElementById('error-text').textContent = msg; showScreen('error'); }
+
+// ======================= بیمه‌نامه‌های من =======================
+const STATUS_FA = {REGISTERED:'ثبت شده', AWAITING_DOCS:'در انتظار بارگذاری مدارک', DOCS_PENDING:'در انتظار اصلاح', DOCS_REVIEW:'در انتظار تایید مدارک', ISSUING:'در حال صدور', ISSUED:'صادر شده ✅', REJECTED:'رد شده'};
+const STATUS_CLASS = {REGISTERED:'pending', DOCS_PENDING:'rejected', DOCS_REVIEW:'review', ISSUING:'issuing', ISSUED:'issued', REJECTED:'rejected'};
+
+async function loadPolicies() {
+    const box = document.getElementById('policies-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=my_policies&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز درخواست بیمه‌ای ثبت نکرده‌اید.</div>'; return; }
+        box.innerHTML = data.data.map(c => `
+            <div class="list-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <b style="font-size:13px;">${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</b>
+                    <span class="badge ${STATUS_CLASS[c.status]||''}">${STATUS_FA[c.status]||c.status}</span>
+                </div>
+                <div style="margin-top:8px;">${formatPlateHtml(c.plate) || '<span style="font-size:11px;color:#64748b;">بدون پلاک</span>'}</div>
+                <div style="font-size:10px;color:#64748b;margin-top:6px;">شناسه: ${c.unique_code}</div>
+                ${c.status === 'ISSUED' ? `
+                    <a href="${API}?action=download_policy&token=${encodeURIComponent(TOKEN)}&case_id=${c.id}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="margin-top:10px;">📥 دانلود فایل بیمه‌نامه</a>
+                    <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="toggleInstallments(${c.id}, this)">💳 اقساط این بیمه‌نامه</button>
+                    <div id="inst-box-${c.id}" style="display:none; margin-top:10px;"></div>
+                ` : ''}
+            </div>`).join('');
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+// ======================= اقساط یک بیمه‌نامه =======================
+const INST_STATUS = {
+    PAID:    { t: '✅ پرداخت شده',        c: '#6ee7b7' },
+    PARTIAL: { t: '🟡 پرداخت ناقص',       c: '#fcd34d' },
+    UNPAID:  { t: '⏳ در انتظار پرداخت',  c: '#94a3b8' },
+};
+
+async function toggleInstallments(caseId, btn) {
+    const box = document.getElementById('inst-box-' + caseId);
+    if (box.style.display === 'block') { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=my_installments&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (!data.data.length) { box.innerHTML = '<div class="empty-state">هنوز قسطی برای این بیمه‌نامه ثبت نشده است.</div>'; return; }
+
+        const totalPaid = data.data.reduce((s, r) => s + r.paid, 0);
+        const rows = data.data.map(r => {
+            const st = INST_STATUS[r.status] || INST_STATUS.UNPAID;
+            const partial = r.status === 'PARTIAL'
+                ? `<div style="font-size:9.5px;color:#fcd34d;">پرداخت‌شده ${toFa(r.paid.toLocaleString('en-US'))} — مانده ${toFa(r.remaining.toLocaleString('en-US'))}</div>` : '';
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.07);">
+                <div>
+                    <div style="font-size:11.5px;font-weight:800;">قسط ${toFa(r.inst_number)}</div>
+                    <div style="font-size:9.5px;color:#64748b;">سررسید ${toFa(r.due_jalali)}</div>
+                    ${partial}
+                </div>
+                <div style="text-align:left;">
+                    <div style="font-size:11.5px;font-weight:800;" class="num-ltr">${toFa(r.amount.toLocaleString('en-US'))}</div>
+                    <div style="font-size:9.5px;color:${st.c};">${st.t}</div>
+                </div>
+            </div>`;
+        }).join('');
+
+        box.innerHTML = `
+            <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:10px;">
+                <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;">
+                    حق بیمه کل: <b>${toFa(data.total_premium.toLocaleString('en-US'))}</b> ریال —
+                    پرداخت‌شده تاکنون: <b>${toFa(totalPaid.toLocaleString('en-US'))}</b> ریال
+                </div>
+                ${rows}
+                <p style="font-size:9.5px;color:#64748b;margin:8px 0 0;">اقساط توسط شرکت شما از حقوق کسر و به ما پرداخت می‌شود.</p>
+            </div>`;
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+// ======================= پلاک‌های من =======================
+async function loadVehicles() {
+    document.getElementById('add-vehicle-form').style.display = 'none';
+    document.getElementById('btn-show-add-vehicle').style.display = 'block';
+    const box = document.getElementById('vehicles-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=my_vehicles&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز خودرویی ثبت نکرده‌اید.</div>'; return; }
+        box.innerHTML = data.data.map(v => `
+            <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;">
+                ${formatPlateHtml(v.plate)}
+                <button class="btn btn-danger btn-sm" style="width:auto;" onclick="deleteVehicle(${v.id})">🗑 حذف</button>
+            </div>`).join('');
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+function showAddVehicleForm() {
+    document.getElementById('add-vehicle-form').style.display = 'block';
+    document.getElementById('btn-show-add-vehicle').style.display = 'none';
+}
+async function submitAddVehicle() {
+    const region = toEn(document.getElementById('veh-region').value.trim());
+    const suffix = toEn(document.getElementById('veh-suffix').value.trim());
+    const prefix = toEn(document.getElementById('veh-prefix').value.trim());
+    const letter = document.getElementById('veh-letter').value;
+    if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
+    try {
+        const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'add_vehicle', token: TOKEN, region, suffix, prefix, letter }) });
+        const data = await res.json();
+        if (data.ok) { showToast('پلاک ذخیره شد.'); loadVehicles(); }
+        else showToast(data.error || 'خطا در ثبت پلاک.');
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+async function deleteVehicle(id) {
+    if (!confirm('این پلاک حذف شود؟')) return;
+    try {
+        await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'delete_vehicle', token: TOKEN, vehicle_id: id }) });
+        loadVehicles();
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+// ======================= بازدید سلامت =======================
+async function loadHealthCases() {
+    const box = document.getElementById('health-case-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=health_case_list&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">پرونده‌ی بیمه بدنه‌ی فعالی ندارید. می‌توانید از بخش پایین «بازدید آزاد» ثبت کنید.</div>'; return; }
+        box.innerHTML = data.data.map(c => `
+            <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="startCaseHealthSession(${c.id})">
+                ${formatPlateHtml(c.plate) || c.unique_code}
+                <span style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:4px;">انجام بازدید <span style="font-size:18px;">›</span></span>
+            </div>`).join('');
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+async function startCaseHealthSession(caseId) {
+    try {
+        const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'start_health_session', token: TOKEN, mode: 'case', case_id: caseId }) });
+        const data = await res.json();
+        if (data.ok) { location.href = '../bazdid/index_bazdid.html?t=' + data.health_token; }
+        else showToast(data.error || 'خطا در شروع بازدید.');
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+async function startFreeHealthSession() {
+    const region = toEn(document.getElementById('free-region').value.trim());
+    const suffix = toEn(document.getElementById('free-suffix').value.trim());
+    const prefix = toEn(document.getElementById('free-prefix').value.trim());
+    const letter = document.getElementById('free-letter').value;
+    if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
+    const plate = `${region}ایران - ${suffix} ${letter} ${prefix}`;
+    try {
+        const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'start_health_session', token: TOKEN, mode: 'free', plate }) });
+        const data = await res.json();
+        if (data.ok) { location.href = '../bazdid/index_bazdid.html?t=' + data.health_token; }
+        else showToast(data.error || 'خطا در شروع بازدید.');
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+// ======================= ارتباط با کارشناس (چت زنده با پولینگ) =======================
+let supportPollTimer = null;
+let supportTypingTimer = null;
+const EMOJI_LIST = ['😀','😂','😍','👍','🙏','❤️','😢','😡','🎉','🤔','👌','🚗','📄','✅','❌','⏰'];
+
+function nav_supportEnter() {
+    loadSupportMessages();
+    if (supportPollTimer) clearInterval(supportPollTimer);
+    supportPollTimer = setInterval(loadSupportMessages, 4000);
+}
+function nav_supportLeave() {
+    if (supportPollTimer) { clearInterval(supportPollTimer); supportPollTimer = null; }
+}
+
+function fmtMsgTime(iso) {
+    const d = new Date(iso.replace(' ', 'T'));
+    const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+    return toFa(`${hh}:${mm}`);
+}
+
+async function loadSupportMessages() {
+    document.getElementById('support-reply-badge').style.display = 'none';
+    const box = document.getElementById('support-msgs');
+    const wasEmpty = box.dataset.loaded !== '1';
+    if (wasEmpty) box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=support_messages&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        box.dataset.loaded = '1';
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز گفتگویی نداشته‌اید. پیام خود را بنویسید.</div>'; }
+        else {
+            const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+            box.innerHTML = data.data.map(m => {
+                const isMe = m.sender_type !== 'ADMIN';
+                const fileHtml = m.file_path ? (/\.(jpg|jpeg|png|webp)$/i.test(m.file_path)
+                    ? `<img src="/${m.file_path}" style="max-width:180px;border-radius:10px;display:block;margin-bottom:4px;" onclick="window.open('/${m.file_path}')">`
+                    : `<a href="/${m.file_path}" target="_blank" style="color:inherit;text-decoration:underline;">📎 فایل ضمیمه</a>`) : '';
+                const readTick = isMe ? `<span style="font-size:9px;opacity:.7;">${m.is_read == 1 ? '✓✓ دیده شد' : '✓ ارسال شد'}</span>` : '';
+                return `<div class="msg-bubble ${isMe ? 'me' : 'them'}">
+                    ${fileHtml}${m.message_text ? m.message_text : ''}
+                    <div style="font-size:9px;opacity:.6;margin-top:4px;display:flex;justify-content:space-between;gap:8px;">
+                        <span>${fmtMsgTime(m.created_at)}</span>${readTick}
+                    </div>
+                </div>`;
+            }).join('');
+            if (wasAtBottom || wasEmpty) box.scrollTop = box.scrollHeight;
+        }
+        document.getElementById('typing-indicator').style.display = data.admin_typing ? 'block' : 'none';
+    } catch(e) { if (wasEmpty) box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+function onSupportTyping() {
+    if (supportTypingTimer) return;
+    fetch(`${API}?action=support_typing&token=${encodeURIComponent(TOKEN)}`).catch(()=>{});
+    supportTypingTimer = setTimeout(() => { supportTypingTimer = null; }, 3000);
+}
+
+async function sendSupportMessage() {
+    const input = document.getElementById('support-input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    document.getElementById('emoji-picker').style.display = 'none';
+    try {
+        await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'support_send', token: TOKEN, message: text }) });
+        loadSupportMessages();
+    } catch(e) { showToast('خطا در ارسال پیام.'); }
+}
+
+async function sendSupportFile(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    ev.target.value = '';
+    showToast('در حال ارسال...');
+    const fd = new FormData();
+    fd.append('token', TOKEN); fd.append('file', file);
+    try {
+        const res = await fetch(`${API}?action=support_send_file`, { method:'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); return; }
+        loadSupportMessages();
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+function toggleEmojiPicker() {
+    const box = document.getElementById('emoji-picker');
+    if (box.style.display === 'flex') { box.style.display = 'none'; return; }
+    box.innerHTML = EMOJI_LIST.map(e => `<span style="font-size:20px;cursor:pointer;" onclick="insertEmoji('${e}')">${e}</span>`).join('');
+    box.style.display = 'flex';
+}
+function insertEmoji(e) {
+    const input = document.getElementById('support-input');
+    input.value += e;
+    input.focus();
+}
+
+// ======================= اعلان‌ها =======================
+const NOTIF_ICON = {info:'ℹ️', success:'✅', warning:'⚠️', error:'❌'};
+async function loadNotifications() {
+    const box = document.getElementById('notifications-list');
+    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
+    try {
+        const res = await fetch(`${API}?action=notifications&token=${encodeURIComponent(TOKEN)}`);
+        const data = await res.json();
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">اعلانی وجود ندارد.</div>'; return; }
+        box.innerHTML = data.data.map(n => `
+            <div class="list-card" style="${n.is_read == 0 ? 'border-color:var(--accent);' : 'opacity:.7;'}">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <b style="font-size:12.5px;">${NOTIF_ICON[n.type]||'ℹ️'} ${n.title}</b>
+                    ${n.is_read == 0 ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></span>' : ''}
+                </div>
+                <p style="font-size:11.5px;color:#cbd5e1;margin:6px 0 0;line-height:1.8;">${n.message}</p>
+            </div>`).join('');
+        // بعد از نمایش، همه را خوانده‌شده علامت می‌زنیم
+        fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'mark_notifications_read', token: TOKEN }) })
+            .then(() => { document.getElementById('notif-badge').style.display = 'none'; });
+    } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+
+initApp();
+</script>
+</body>
+</html>
