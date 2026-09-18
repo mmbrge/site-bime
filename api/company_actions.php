@@ -197,7 +197,11 @@ try {
         $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
-        foreach ($docs as &$d) $d['uploaded_at_jalali'] = jd(strtotime($d['uploaded_at']));
+        $siteRootForDocs = dirname(__DIR__);
+        foreach ($docs as &$d) {
+            $d['uploaded_at_jalali'] = jd(strtotime($d['uploaded_at']));
+            $d['is_dir'] = is_dir($siteRootForDocs . '/' . $d['file_path']);
+        }
 
         $stmt = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ?");
         $stmt->execute([$requestId]);
@@ -293,7 +297,14 @@ try {
         $destDir = $plateFolder . '/' . ($isHealthDoc ? 'بازدید سلامت' : 'مدارک');
         if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
         $newRelPath = $doc['file_path'];
-        if (is_file($absOld) && dirname($absOld) !== $destDir) {
+        // اگر مدرکِ «بازدید سلامت» است و خودِ فایل زیپ است، به‌جای جابه‌جاییِ زیپ،
+        // محتوایش مستقیم داخل پوشه‌ی «بازدید سلامت» استخراج می‌شود
+        if ($isHealthDoc && is_file($absOld) && strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) === 'zip') {
+            if (company_extract_zip_to_dir($absOld, $destDir) !== false) {
+                @unlink($absOld);
+                $newRelPath = ltrim(str_replace($siteRoot, '', $destDir), '/');
+            }
+        } elseif (is_file($absOld) && dirname($absOld) !== $destDir) {
             $destPath = unique_dest_path($destDir . '/' . basename($absOld));
             if (@rename($absOld, $destPath)) $newRelPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
         }
@@ -317,7 +328,7 @@ try {
         $plateFolder = ensure_plate_folder($pdo, $siteRoot, $plateId);
         if (!$plateFolder) { echo json_encode(['ok' => false, 'error' => 'پلاک یافت نشد.']); exit; }
         $destDir = $plateFolder . '/بازدید سلامت';
-        $saved = company_store_uploaded_file($_FILES['report_file'] ?? [], $destDir, 15728640, true);
+        $saved = company_store_uploaded_file($_FILES['report_file'] ?? [], $destDir, 15728640, true, true);
         if (!$saved['ok']) { echo json_encode($saved); exit; }
 
         $stmt = $pdo->prepare("SELECT request_id, cr.company_id FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
@@ -432,6 +443,27 @@ try {
         if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
         header('Content-Type: application/zip');
         header('Content-Disposition: attachment; filename="درخواست-' . $requestId . '.zip"');
+        header('Content-Length: ' . filesize($zipPath));
+        readfile($zipPath);
+        @unlink($zipPath);
+        exit;
+    }
+
+    // ---- دانلود زیپِ یک پوشه‌ی مدرکِ چندفایلی (مثلاً پوشه‌ی استخراج‌شده‌ی گزارش بازدید) ----
+    if ($action === 'download_folder_zip') {
+        $docId = intval($_GET['doc_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT file_path, orig_name FROM company_documents WHERE id = ?");
+        $stmt->execute([$docId]);
+        $doc = $stmt->fetch();
+        $siteRoot = dirname(__DIR__);
+        $absPath = $doc ? $siteRoot . '/' . $doc['file_path'] : null;
+        if (!$doc || !is_dir($absPath)) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'پوشه یافت نشد.']); exit; }
+
+        $zipPath = company_zip_folder($absPath);
+        if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
+        $downloadName = sanitize_folder_name(pathinfo($doc['orig_name'] ?: 'گزارش', PATHINFO_FILENAME)) . '.zip';
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);

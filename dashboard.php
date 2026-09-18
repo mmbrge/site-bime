@@ -56,6 +56,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
     } catch (Exception $e) {}
 }
+
+// همینطور برای ربات جداگانه‌ی «درخواست‌های شرکتی» (فاز ۲)
+$company_bot_token_masked = '';
+if (($_SESSION['role'] ?? '') === 'ADMIN') {
+    try {
+        $stmtToken2 = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'company_bot_token'");
+        $tokenVal2 = $stmtToken2->fetchColumn();
+        if ($tokenVal2) {
+            $parts2 = explode(':', $tokenVal2);
+            if (count($parts2) == 2) {
+                $company_bot_token_masked = $parts2[0] . ':' . substr($parts2[1], 0, 4) . '***' . substr($parts2[1], -4) . ' (توکن فعلی)';
+            } else {
+                $company_bot_token_masked = substr($tokenVal2, 0, 8) . '*** (توکن فعلی)';
+            }
+        }
+    } catch (Exception $e) {}
+}
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -242,6 +259,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a>
                         <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
+                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران پنل (داخلی)</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1036,6 +1054,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div class="card p-6 border-cyan-100 bg-gradient-to-br from-white to-cyan-50/30">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-cyan-100 pb-3"><i class="fas fa-robot text-cyan-500 ml-2"></i>ربات درخواست‌های شرکتی</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">این یک ربات کاملاً جدا از ربات پرسنل است، مخصوص شرکت‌های درخواست‌کننده. توکن ربات را اینجا وارد کنید تا به آن وصل شود.</p>
+
+                    <div class="float-input">
+                        <input type="text" id="company-bot-token-input" placeholder="<?php echo $company_bot_token_masked ? htmlspecialchars($company_bot_token_masked) : ' '; ?>" dir="ltr" autocomplete="off">
+                        <label>توکن ربات شرکتی (از BotFather@ بله)</label>
+                    </div>
+
+                    <button onclick="saveCompanyBotToken()" class="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-cyan-500/20 hover-target transition-all text-xs">
+                        <i class="fas fa-save ml-2"></i> ذخیره توکن ربات شرکتی
+                    </button>
+                </div>
+
                 <div class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-blue-100 pb-3"><i class="fas fa-layer-group text-blue-500 ml-2"></i>سقف بیمه‌نامه به ازای هر معرفی‌نامه</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">حداکثر تعداد بیمه‌نامه‌ای که با یک معرفی‌نامه قابل صدور است (پیش‌فرض: ۴ فقره).</p>
@@ -1257,6 +1289,38 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <i class="fas fa-save ml-2"></i> ذخیره تنظیمات مالی
             </button>
         </div>
+
+        <!-- ======================= کاربران داخلیِ پنل (ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON) ======================= -->
+        <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
+            <p class="text-xs text-slate-400 -mt-4">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار شرکت‌ها) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
+            <div class="card p-5 max-w-lg">
+                <h3 class="font-bold text-sm mb-4">افزودن کاربر داخلی جدید</h3>
+                <div class="float-input"><label>نام و نام‌خانوادگی</label><input type="text" id="su-fullname"></div>
+                <div class="float-input"><label>نام کاربری</label><input type="text" id="su-username" dir="ltr"></div>
+                <div class="float-input"><label>رمز عبور</label><input type="text" id="su-password" dir="ltr"></div>
+                <div class="float-input"><label>شماره موبایل (اختیاری)</label><input type="text" id="su-mobile" dir="ltr"></div>
+                <div class="float-input">
+                    <label>نقش</label>
+                    <select id="su-role">
+                        <option value="OPERATOR">اپراتور</option>
+                        <option value="FINANCE">مالی</option>
+                        <option value="COMPANY_LIAISON">همکار بخش شرکت‌ها</option>
+                        <option value="ADMIN">مدیر کل</option>
+                    </select>
+                </div>
+                <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
+            </div>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نام</th>
+                        <th class="p-3 text-right">نقش</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right"></th>
+                    </tr></thead>
+                    <tbody id="su-body"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
         <?php endif; ?>
 
         <?php if ($canSeeCompanies): ?>
@@ -1457,6 +1521,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><label>حق بیمه (ریال)</label><input type="number" id="cis-premium" dir="ltr"></div>
             <div class="float-input"><label>فایل بیمه‌نامه‌ی صادرشده</label><input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png"></div>
             <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
+        </div>
+    </div>
+
+    <!-- مودال تغییر رمز عبور کاربر داخلی -->
+    <div id="reset-password-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-sm p-6 relative">
+            <button type="button" onclick="document.getElementById('reset-password-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">تغییر رمز عبور</h3>
+            <div class="float-input"><label>رمز عبور جدید</label><input type="text" id="rp-password" dir="ltr"></div>
+            <button onclick="submitResetPassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت رمز جدید</button>
         </div>
     </div>
 
@@ -2308,7 +2382,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const missing = Object.values(p.missing_docs || {});
                 const plateDocs = docsForPlate(p.id).map(d => `
                     <div class="flex items-center justify-between text-[11px] bg-slate-50 rounded-lg p-1.5 mb-1">
-                        <a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name}</a>
+                        ${d.is_dir
+                            ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="text-blue-600 hover:underline"><i class="fas fa-file-zipper ml-1"></i>${d.orig_name} (پوشه - دانلود زیپ)</a>`
+                            : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name}</a>`}
                         <span class="text-slate-400">${DOC_TYPE_FA[d.doc_type] || d.doc_type || '—'}</span>
                     </div>`).join('');
                 const fs = FOLDER_STATUS_FA[p.folder_status] || ['—', 'text-slate-400'];
@@ -2643,6 +2719,68 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } else showToast(data.error || 'خطا', 'error');
         }
 
+        // ======================= کاربران داخلیِ پنل =======================
+        const STAFF_API = 'api/staff_users_actions.php';
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'اپراتور', FINANCE: 'مالی', COMPANY_LIAISON: 'همکار شرکت‌ها'};
+
+        async function loadStaffUsers() {
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list'})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            document.getElementById('su-body').innerHTML = data.users.map(u => `
+                <tr class="border-t border-slate-100">
+                    <td class="p-3 font-mono">${u.username}</td>
+                    <td class="p-3">${u.full_name}</td>
+                    <td class="p-3">
+                        <select onchange="changeStaffRole(${u.id}, this.value)" class="border rounded-lg px-2 py-1 text-xs">
+                            ${Object.keys(ROLE_FA).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_FA[r]}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="p-3 font-mono text-slate-400">${u.mobile_number || '—'}</td>
+                    <td class="p-3"><button onclick="openResetPasswordModal(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">تغییر رمز</button></td>
+                </tr>`).join('') || '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
+        }
+
+        async function createStaffUser() {
+            const payload = {
+                action: 'create',
+                full_name: document.getElementById('su-fullname').value.trim(),
+                username: document.getElementById('su-username').value.trim(),
+                password: document.getElementById('su-password').value,
+                mobile_number: document.getElementById('su-mobile').value.trim(),
+                role: document.getElementById('su-role').value,
+            };
+            if (!payload.full_name || !payload.username || !payload.password) { showToast('همه‌ی فیلدها الزامی هستند.', 'error'); return; }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                showToast('کاربر ثبت شد.', 'success');
+                ['su-fullname','su-username','su-password','su-mobile'].forEach(id => document.getElementById(id).value = '');
+                loadStaffUsers();
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
+        async function changeStaffRole(id, role) {
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'update_role', id, role})});
+            const data = await res.json();
+            showToast(data.ok ? 'نقش به‌روزرسانی شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+            if (!data.ok) loadStaffUsers();
+        }
+
+        let resetPasswordUserId = null;
+        function openResetPasswordModal(id) {
+            resetPasswordUserId = id;
+            document.getElementById('rp-password').value = '';
+            document.getElementById('reset-password-modal').classList.add('active');
+        }
+        async function submitResetPassword() {
+            const password = document.getElementById('rp-password').value;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_password', id: resetPasswordUserId, password})});
+            const data = await res.json();
+            if (data.ok) { showToast('رمز عبور تغییر کرد.', 'success'); document.getElementById('reset-password-modal').classList.remove('active'); }
+            else showToast(data.error || 'خطا', 'error');
+        }
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
@@ -2690,6 +2828,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();
             if (tabId === 'companies-manage') loadCompanyManage();
+            if (tabId === 'staff-users') loadStaffUsers();
         }
 
         // ======================= بخش مالی =======================
@@ -4850,6 +4989,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     showToast(data.error || 'خطا در ذخیره تنظیمات.', 'error');
                 }
             } catch (e) { showToast('خطا در ارتباط با سرور (مطمئن شوید فایل api/settings.php وجود دارد).', 'error'); }
+        }
+
+        async function saveCompanyBotToken() {
+            const tokenInput = document.getElementById('company-bot-token-input');
+            const token = tokenInput.value.trim();
+            if (!token) { showToast('لطفاً توکن را به درستی وارد کنید.', 'warning'); return; }
+            try {
+                const res = await fetch('api/settings.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save_company_bot_token', token: token })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('توکن ربات شرکتی ذخیره شد.', 'success');
+                    tokenInput.value = '';
+                    setTimeout(() => location.reload(), 1500);
+                } else { showToast(data.error || 'خطا در ذخیره تنظیمات.', 'error'); }
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
         function openEditModal() {

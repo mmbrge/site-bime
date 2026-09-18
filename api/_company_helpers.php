@@ -152,7 +152,10 @@ function require_admin_only() {
 // اعتبارسنجی/ذخیره‌ی فایل آپلودی برای ماژول شرکت‌ها (PDF یا عکس، یا زیپ اگر
 // $allowZip=true - برای گزارش‌های بازدید سلامت که معمولاً زیپ چند فایلی هستند؛
 // عمداً استخراج نمی‌شود، خودِ زیپ همان‌طور داخل پوشه‌ی بازدید سلامت نگه داشته می‌شود)
-function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $allowZip = false) {
+// اگر $extractZip=true و فایل زیپ بود، به‌جای ذخیره‌ی خودِ زیپ، محتوایش مستقیم
+// داخل $destDir استخراج می‌شود (برای گزارش‌های بازدید سلامت که معمولاً چند فایلی‌اند)
+// و path برگشتی خودِ $destDir خواهد بود (is_dir=true)؛ در غیر این صورت مثل قبل یک فایل تکی.
+function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $allowZip = false, $extractZip = false) {
     if (empty($fileArr) || !is_uploaded_file($fileArr['tmp_name'] ?? '')) {
         return ['ok' => false, 'error' => 'فایلی دریافت نشد.'];
     }
@@ -168,6 +171,20 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     if (!is_dir($destDir) && !@mkdir($destDir, 0755, true) && !is_dir($destDir)) {
         return ['ok' => false, 'error' => 'خطا در آماده‌سازی پوشه‌ی ذخیره‌سازی.'];
     }
+
+    if ($extractZip && $ext === 'zip') {
+        $tmpZipPath = sys_get_temp_dir() . '/' . uniqid('company_zip_') . '.zip';
+        if (!move_uploaded_file($fileArr['tmp_name'], $tmpZipPath)) {
+            return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل روی سرور.'];
+        }
+        $extracted = company_extract_zip_to_dir($tmpZipPath, $destDir);
+        @unlink($tmpZipPath);
+        if ($extracted === false) {
+            return ['ok' => false, 'error' => 'فایل زیپ خراب است یا قابل استخراج نیست.'];
+        }
+        return ['ok' => true, 'path' => $destDir, 'orig_name' => $fileArr['name'], 'is_dir' => true, 'extracted_count' => $extracted];
+    }
+
     $destPath = unique_dest_path($destDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext);
     if (!move_uploaded_file($fileArr['tmp_name'], $destPath)) {
         return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل روی سرور.'];
@@ -175,7 +192,52 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && function_exists('compress_image_if_needed')) {
         compress_image_if_needed($destPath);
     }
-    return ['ok' => true, 'path' => $destPath, 'orig_name' => $fileArr['name']];
+    return ['ok' => true, 'path' => $destPath, 'orig_name' => $fileArr['name'], 'is_dir' => false];
+}
+
+// استخراج امنِ یک زیپ داخل یک پوشه‌ی مقصد: هر ورودی که بخواهد از مقصد بیرون بزند
+// (مثلاً با «..» یا مسیر مطلق) نادیده گرفته می‌شود تا zip-slip ممکن نباشد.
+// خروجی: تعداد فایل‌های استخراج‌شده، یا false در صورت خرابی زیپ.
+function company_extract_zip_to_dir($zipPath, $destDir) {
+    $zip = new ZipArchive();
+    if ($zip->open($zipPath) !== true) return false;
+    if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
+    $destReal = realpath($destDir) ?: $destDir;
+    $count = 0;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entryName = $zip->getNameIndex($i);
+        if ($entryName === false) continue;
+        // نام‌های حاوی «..» یا مسیر مطلق را رد کن (zip-slip)
+        if (str_contains($entryName, '..') || str_starts_with($entryName, '/') || preg_match('/^[a-zA-Z]:/', $entryName)) continue;
+        $targetPath = $destReal . '/' . ltrim($entryName, '/');
+        if (substr($entryName, -1) === '/') { @mkdir($targetPath, 0755, true); continue; }
+        if (!is_dir(dirname($targetPath))) @mkdir(dirname($targetPath), 0755, true);
+        $stream = $zip->getStream($entryName);
+        if ($stream === false) continue;
+        $out = fopen(unique_dest_path($targetPath), 'wb');
+        if ($out) { stream_copy_to_stream($stream, $out); fclose($out); $count++; }
+        fclose($stream);
+    }
+    $zip->close();
+    return $count;
+}
+
+// زیپ‌کردنِ محتوای یک پوشه (بازگشتی) برای دانلود آنی - نتیجه فایل موقتی است که
+// پس از ارسال باید حذف شود (مثل build_zip_from_files از _case_helpers.php)
+function company_zip_folder($folderPath) {
+    if (!is_dir($folderPath)) return null;
+    $zipPath = sys_get_temp_dir() . '/' . uniqid('folderzip_') . '.zip';
+    $zip = new ZipArchive();
+    if ($zip->open($zipPath, ZipArchive::CREATE) !== true) return null;
+    $base = realpath($folderPath);
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $file) {
+        $localName = ltrim(str_replace($base, '', $file->getPathname()), '/');
+        if ($file->isDir()) $zip->addEmptyDir($localName);
+        else $zip->addFile($file->getPathname(), $localName);
+    }
+    $zip->close();
+    return $zipPath;
 }
 
 // =====================================================================
