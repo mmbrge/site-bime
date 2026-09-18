@@ -1,12 +1,22 @@
 <?php
 // فایل: company-portal/index.php
 // پنل وب ثبت‌کننده‌ی شرکت درخواست‌کننده: ثبت درخواست بیمه + آپلود تدریجیِ مدارک.
+// یک کاربر می‌تواند به چند شرکت دسترسی داشته باشد؛ اگر فقط یکی دارد، پنل قفل روی همان می‌ماند.
 require __DIR__ . '/../config/db.php';
 require __DIR__ . '/../api/_case_helpers.php';
 require __DIR__ . '/../api/_company_helpers.php';
 
 company_portal_session_start();
 $loggedIn = !empty($_SESSION['company_user_id']);
+$companies = [];
+if ($loggedIn) {
+    $stmt = $pdo->prepare("SELECT c.id, c.name FROM company_portal_user_companies cpuc
+                            JOIN companies c ON c.id = cpuc.company_id
+                            WHERE cpuc.portal_user_id = ? ORDER BY c.name");
+    $stmt->execute([$_SESSION['company_user_id']]);
+    $companies = $stmt->fetchAll();
+    if (!$companies) { $_SESSION = []; session_destroy(); $loggedIn = false; }
+}
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -76,7 +86,7 @@ async function doLogin() {
 <div class="max-w-3xl mx-auto p-4 pb-20">
     <div class="flex items-center justify-between py-5">
         <div>
-            <h1 class="font-black text-lg"><?php echo htmlspecialchars($_SESSION['company_name']); ?></h1>
+            <h1 class="font-black text-lg"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'چند شرکت'; ?></h1>
             <p class="text-xs text-slate-400"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?></p>
         </div>
         <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target"><i class="fas fa-sign-out-alt ml-1"></i>خروج</button>
@@ -94,6 +104,14 @@ async function doLogin() {
 <div id="new-request-modal" class="modal-overlay">
     <div class="modal-content p-6">
         <h3 class="font-bold text-lg mb-4">ثبت درخواست جدید</h3>
+        <?php if (count($companies) > 1): ?>
+        <div class="float-input">
+            <label>برای کدام شرکت؟</label>
+            <select id="nr-company"><?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?></select>
+        </div>
+        <?php else: ?>
+        <input type="hidden" id="nr-company" value="<?php echo $companies[0]['id']; ?>">
+        <?php endif; ?>
         <div class="float-input">
             <label>بیمه‌گر</label>
             <select id="nr-insurer"><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
@@ -123,7 +141,15 @@ async function doLogin() {
         <div id="request-detail-body"></div>
         <div class="border-t mt-4 pt-4">
             <label class="text-xs font-bold text-slate-500 block mb-2">افزودن مدرک جدید به این درخواست</label>
-            <input type="file" id="doc-upload-input" accept=".pdf,.jpg,.jpeg,.png,.webp" class="mb-2 w-full text-xs">
+            <p class="text-[11px] text-slate-400 mb-2">اگر می‌دانید این مدرک برای کدام پلاک است، وارد کنید تا سریع‌تر بررسی شود (اختیاری).</p>
+            <div class="grid grid-cols-4 gap-2 mb-2" dir="ltr">
+                <input type="text" id="du-p1" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-xs">
+                <input type="text" id="du-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-xs">
+                <input type="text" id="du-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-xs">
+                <input type="text" id="du-p4" maxlength="2" placeholder="۶۷" class="text-center border rounded-lg p-2 text-xs">
+            </div>
+            <input type="text" id="du-doc-type" placeholder="نوع مدرک (اختیاری، مثلاً: کارت ماشین)" class="w-full border rounded-lg p-2 text-xs mb-2">
+            <input type="file" id="doc-upload-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" class="mb-2 w-full text-xs">
             <button onclick="uploadDocument()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">
                 <i class="fas fa-upload ml-1"></i> آپلود مدرک
             </button>
@@ -160,11 +186,11 @@ async function loadRequests() {
     box.innerHTML = data.requests.map(r => `
         <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick="openRequestDetail(${r.id})">
             <div class="flex items-center justify-between mb-1">
-                <span class="font-bold text-sm">درخواست #${r.id}</span>
+                <span class="font-bold text-sm">درخواست #${r.id}${r.company_name ? ' - ' + r.company_name : ''}</span>
                 <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
             </div>
             <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
-            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${r.created_at}</p>
+            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
         </div>
     `).join('');
 }
@@ -172,6 +198,7 @@ async function loadRequests() {
 async function submitNewRequest() {
     const fd = new FormData();
     fd.append('action', 'submit_request');
+    fd.append('company_id', document.getElementById('nr-company').value);
     fd.append('insurer', document.getElementById('nr-insurer').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
     const fileInput = document.getElementById('nr-letter');
@@ -199,12 +226,19 @@ async function openRequestDetail(id) {
             <span><i class="fas fa-file ml-1 text-slate-400"></i> ${d.orig_name || 'فایل'}</span>
             <span class="text-[10px] ${d.status === 'ASSIGNED' ? 'text-emerald-600' : 'text-amber-500'} font-bold">${d.status === 'ASSIGNED' ? 'بررسی‌شده' : 'در انتظار بررسی'}</span>
         </div>`).join('') : '<p class="text-xs text-slate-400">هنوز مدرکی آپلود نشده.</p>';
+    const platesHtml = data.plates.length ? data.plates.map(p => `
+        <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2.5 mb-2">
+            <span>${[p.plate_p1, p.plate_p2, p.plate_letter, p.plate_p4].filter(Boolean).join(' ') || 'پلاک نامشخص'} ${p.insurance_type ? '(' + (p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث') + ')' : ''}</span>
+            <span class="text-[10px] font-bold ${p.status === 'ISSUED' ? 'text-emerald-600' : 'text-slate-400'}">${p.status === 'ISSUED' ? 'صادر شده' : 'در جریان'}</span>
+        </div>`).join('') : '';
     document.getElementById('request-detail-body').innerHTML = `
         <div class="flex items-center gap-2 mb-3">
             <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
             <span class="text-xs text-slate-400">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'}</span>
         </div>
+        <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
         <p class="text-sm text-slate-600 mb-4">${r.request_text || '(بدون توضیح متنی)'}</p>
+        ${platesHtml ? '<h4 class="text-xs font-bold text-slate-500 mb-2">پلاک‌ها</h4>' + platesHtml : ''}
         <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک ارسالی</h4>
         ${docsHtml}
     `;
@@ -217,12 +251,20 @@ async function uploadDocument() {
     const fd = new FormData();
     fd.append('action', 'upload_document');
     fd.append('request_id', activeRequestId);
+    fd.append('plate_p1', document.getElementById('du-p1').value.trim());
+    fd.append('plate_p2', document.getElementById('du-p2').value.trim());
+    fd.append('plate_letter', document.getElementById('du-letter').value.trim());
+    fd.append('plate_p4', document.getElementById('du-p4').value.trim());
+    fd.append('doc_type', document.getElementById('du-doc-type').value.trim());
     fd.append('file', fileInput.files[0]);
     try {
         const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
         const data = await res.json();
-        if (data.ok) { showToast('مدرک آپلود شد.'); fileInput.value = ''; openRequestDetail(activeRequestId); }
-        else { showToast(data.error || 'خطا در آپلود.'); }
+        if (data.ok) {
+            showToast('مدرک آپلود شد.'); fileInput.value = '';
+            ['du-p1','du-p2','du-letter','du-p4','du-doc-type'].forEach(id => document.getElementById(id).value = '');
+            openRequestDetail(activeRequestId);
+        } else { showToast(data.error || 'خطا در آپلود.'); }
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
 }
 

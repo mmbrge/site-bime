@@ -40,6 +40,16 @@ $last_name       = trim($message['from']['last_name'] ?? '');
 $sender_name     = trim($first_name . ' ' . $last_name);
 $sender_username = $message['from']['username'] ?? null;
 
+// ثبت/به‌روزرسانیِ فهرست گروه‌هایی که ربات عضو است (برای فرم «گروه مرتبط با این
+// شرکت» در ماژول شرکت‌ها). کاملاً مجزا و بی‌خطر: اگر جدولش هنوز روی این هاست
+// نباشد (پیش از اجرای migrations/002)، فقط بی‌صدا رد می‌شود و به بقیه‌ی ربات آسیبی نمی‌زند.
+if (in_array($chat_type, ['group', 'supergroup'], true)) {
+    try {
+        $pdo->prepare("INSERT INTO bot_known_groups (chat_id, title) VALUES (?, ?) ON DUPLICATE KEY UPDATE title = VALUES(title)")
+            ->execute([$chat_id, $chat_title]);
+    } catch (Throwable $e) { /* جدول موجود نیست یا خطای دیگر - نادیده گرفته می‌شود */ }
+}
+
 if (!$chat_id) exit;
 
 // =====================================================================
