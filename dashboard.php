@@ -7,6 +7,10 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
+$isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
+$canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
+
 $toast_message = '';
 $toast_type = '';
 
@@ -182,6 +186,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
 
+                <?php if (!$isLiaison): ?>
                 <!-- ===== عملیات بیمه ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
@@ -240,6 +245,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
+
+                <?php if ($canSeeCompanies): ?>
+                <!-- ===== شرکت‌ها ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-building ml-1"></i> شرکت‌ها
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                        <span id="companies-inbox-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('companies-requests')" id="nav-companies-requests" class="nav-item menu-link"><i class="fas fa-file-lines ml-2"></i> درخواست‌های شرکتی</a>
+                        <a href="#" onclick="switchTab('companies-inbox')" id="nav-companies-inbox" class="nav-item menu-link"><i class="fas fa-inbox ml-2"></i> صندوق ورودی مدارک</a>
+                        <a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a>
+                        <?php if (!$isLiaison): ?>
+                        <a href="#" onclick="switchTab('companies-manage')" id="nav-companies-manage" class="nav-item menu-link"><i class="fas fa-gear ml-2"></i> مدیریت شرکت‌ها</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </nav>
         </div>
 
@@ -1234,6 +1259,92 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
         <?php endif; ?>
 
+        <?php if ($canSeeCompanies): ?>
+        <!-- ======================= تب درخواست‌های شرکتی ======================= -->
+        <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <h1 class="text-2xl font-black text-slate-800">درخواست‌های بیمه‌ی شرکتی</h1>
+                <select id="creq-status-filter" onchange="loadCompanyRequests()" class="text-xs font-bold border rounded-xl px-3 py-2">
+                    <option value="">همه‌ی وضعیت‌ها</option>
+                    <option value="NEW">جدید</option>
+                    <option value="DOCS_REVIEW">در حال بررسی</option>
+                    <option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
+                    <option value="ISSUED">صادر شده</option>
+                    <option value="CANCELLED">لغو شده</option>
+                </select>
+            </div>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3 text-right">شماره</th><th class="p-3 text-right">شرکت</th>
+                        <th class="p-3 text-right">بیمه‌گر</th><th class="p-3 text-right">وضعیت</th>
+                        <th class="p-3 text-right">تاریخ ثبت</th><th class="p-3 text-right"></th>
+                    </tr></thead>
+                    <tbody id="creq-body"><tr><td colspan="6" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ======================= تب صندوق ورودی مدارک شرکتی ======================= -->
+        <div id="tab-companies-inbox" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <h1 class="text-2xl font-black text-slate-800">صندوق ورودی مدارک و نامه‌های شرکتی</h1>
+            <p class="text-xs text-slate-400 -mt-4">هر مدرک تازه‌آپلودشده اینجا می‌نشیند تا پلاک، نوع مدرک و درخواستِ مربوطه به‌صورت دستی مشخص شود.</p>
+            <div id="cinbox-list" class="space-y-3"></div>
+        </div>
+
+        <!-- ======================= تب گزارش مالی شرکت‌ها ======================= -->
+        <div id="tab-companies-finance" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <h1 class="text-2xl font-black text-slate-800">گزارش مالی شرکت‌ها</h1>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3 text-right">شرکت</th><th class="p-3 text-right">مجموع صورتحساب</th>
+                        <th class="p-3 text-right">مجموع دریافتی</th><th class="p-3 text-right">مانده</th>
+                    </tr></thead>
+                    <tbody id="cfin-body"><tr><td colspan="4" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <?php if (!$isLiaison): ?>
+        <!-- ======================= تب مدیریت شرکت‌ها (فقط ادمین) ======================= -->
+        <div id="tab-companies-manage" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <h1 class="text-2xl font-black text-slate-800">مدیریت شرکت‌های درخواست‌کننده</h1>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="card p-5">
+                    <h3 class="font-bold text-sm mb-4">افزودن شرکت جدید</h3>
+                    <div class="float-input"><label>نام شرکت</label><input type="text" id="cm-company-name"></div>
+                    <div class="float-input">
+                        <label>نحوه‌ی تسویه</label>
+                        <select id="cm-payment-terms">
+                            <option value="">مشخص نشده</option>
+                            <option value="INSTALLMENT">قسطی</option>
+                            <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
+                            <option value="CASH_IMMEDIATE">نقدی - فوری</option>
+                        </select>
+                    </div>
+                    <button onclick="createCompany()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت شرکت</button>
+                </div>
+                <div class="card p-5">
+                    <h3 class="font-bold text-sm mb-4">ساخت حساب کاربری ثبت‌کننده</h3>
+                    <div class="float-input"><label>شرکت</label><select id="cm-pu-company"></select></div>
+                    <div class="float-input"><label>نام و نام‌خانوادگی</label><input type="text" id="cm-pu-fullname"></div>
+                    <div class="float-input"><label>نام کاربری</label><input type="text" id="cm-pu-username" dir="ltr"></div>
+                    <div class="float-input"><label>رمز عبور</label><input type="text" id="cm-pu-password" dir="ltr"></div>
+                    <div class="float-input"><label>شماره موبایل (اختیاری)</label><input type="text" id="cm-pu-mobile" dir="ltr"></div>
+                    <button onclick="createPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ساخت حساب کاربری</button>
+                </div>
+            </div>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr><th class="p-3 text-right">شرکت</th><th class="p-3 text-right">نحوه‌ی تسویه</th></tr></thead>
+                    <tbody id="cm-companies-body"><tr><td colspan="2" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+
         <div class="footer-credit mt-auto">
             <div class="footer-box group/author hover-target relative">
                 <span>طراحی و توسعه سیستم :</span>
@@ -1243,6 +1354,54 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ ©</p>
         </div>
     </main>
+
+    <!-- مودال جزئیات درخواست شرکتی -->
+    <div id="creq-detail-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-lg p-6 relative max-h-[85vh] overflow-y-auto">
+            <button type="button" onclick="document.getElementById('creq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">جزئیات درخواست شرکتی</h3>
+            <div id="creq-detail-body" class="text-sm"></div>
+        </div>
+    </div>
+
+    <!-- مودال تگ‌گذاریِ یک مدرک صندوق ورودی -->
+    <div id="cinbox-tag-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="document.getElementById('cinbox-tag-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">تگ‌گذاری مدرک</h3>
+            <input type="hidden" id="cit-doc-id">
+            <div class="float-input"><label>درخواست مربوطه</label><select id="cit-request"></select></div>
+            <div class="float-input"><label>نوع مدرک</label><input type="text" id="cit-doc-type" placeholder="مثلاً: کارت خودرو، بیمه‌نامه‌ی قبلی، نامه"></div>
+            <label class="text-xs font-bold text-slate-500 block mb-2">پلاک</label>
+            <div class="grid grid-cols-4 gap-2 mb-4" dir="ltr">
+                <input type="text" id="cit-p1" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="cit-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="cit-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="cit-p4" maxlength="2" placeholder="۶۷" class="text-center border rounded-lg p-2 text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input"><label>نوع بیمه</label>
+                    <select id="cit-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
+                </div>
+                <div class="float-input"><label>تاریخ انقضا</label><input type="date" id="cit-expiry"></div>
+            </div>
+            <button onclick="submitAssignDocument()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">تخصیص مدرک</button>
+        </div>
+    </div>
+
+    <!-- مودال ثبت صدور نهایی یک پلاک شرکتی -->
+    <div id="cissue-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="document.getElementById('cissue-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">ثبت صدور بیمه‌نامه</h3>
+            <input type="hidden" id="cis-plate-id">
+            <div class="float-input"><label>شماره بیمه‌نامه</label><input type="text" id="cis-policy-number" dir="ltr"></div>
+            <div class="float-input"><label>شماره شاسی (VIN)</label><input type="text" id="cis-vin" dir="ltr"></div>
+            <div class="float-input"><label>حق بیمه (ریال)</label><input type="number" id="cis-premium" dir="ltr"></div>
+            <div class="float-input"><label>فایل بیمه‌نامه‌ی صادرشده</label><input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png"></div>
+            <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
+        </div>
+    </div>
 
     <!-- مودال ثبت دستی پرونده جدید -->
     <div id="manual-create-modal" class="modal-overlay">
@@ -1638,6 +1797,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
         loadStats();
+        <?php if ($canSeeCompanies): ?>
+        loadCompanyInbox();
+        setInterval(loadCompanyInbox, 30000);
+        <?php endif; ?>
+        <?php if ($isLiaison): ?>
+        switchTab('companies-requests');
+        <?php endif; ?>
 
         async function loadRecords() {
             loadStats();
@@ -2032,6 +2198,210 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         });
 
+        // ======================= ماژول شرکت‌ها =======================
+        const COMPANY_API = 'api/company_actions.php';
+        const CREQ_STATUS_FA = {NEW:'جدید', DOCS_PENDING:'در انتظار مدارک', DOCS_REVIEW:'در حال بررسی', READY_FOR_ISSUE:'آماده‌ی صدور', ISSUED:'صادر شده', CANCELLED:'لغو شده'};
+        const CREQ_STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
+        let companyRequestsCache = [];
+
+        function fmtPlate(p) {
+            if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
+            return `${p.plate_p1 || ''}ایران - ${p.plate_p2 || ''} ${p.plate_letter || ''} ${p.plate_p4 || ''}`;
+        }
+
+        async function loadCompanyRequests() {
+            const status = document.getElementById('creq-status-filter').value;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status})});
+            const data = await res.json();
+            const tbody = document.getElementById('creq-body');
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="6" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            companyRequestsCache = data.requests;
+            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
+            tbody.innerHTML = data.requests.map(r => `
+                <tr class="border-t border-slate-100 hover:bg-slate-50">
+                    <td class="p-3">#${r.id}</td>
+                    <td class="p-3 font-bold">${r.company_name}</td>
+                    <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</td>
+                    <td class="p-3"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span></td>
+                    <td class="p-3 text-slate-400">${r.created_at}</td>
+                    <td class="p-3"><button onclick="openCompanyRequestDetail(${r.id})" class="text-blue-600 hover:underline text-xs font-bold">مشاهده</button></td>
+                </tr>`).join('');
+        }
+
+        async function openCompanyRequestDetail(id) {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: id})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            const r = data.request;
+            const docsHtml = data.documents.length ? data.documents.map(d => `
+                <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2 mb-1.5">
+                    <a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                    <span class="text-[10px] text-slate-400">${d.doc_type || '—'}</span>
+                </div>`).join('') : '<p class="text-xs text-slate-400">مدرکی ثبت نشده.</p>';
+            const isAdmin = <?php echo $isLiaison ? 'false' : 'true'; ?>;
+            const platesHtml = data.plates.length ? data.plates.map(p => `
+                <div class="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-2.5 mb-1.5">
+                    <div>
+                        <span class="plate-display font-bold text-xs">${fmtPlate(p)}</span>
+                        <span class="text-[10px] text-slate-400 mr-2">${p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '')}</span>
+                        <span class="text-[10px] text-slate-400">${p.expiry_date ? 'انقضا: ' + p.expiry_date : ''}</span>
+                    </div>
+                    ${p.status === 'ISSUED'
+                        ? '<span class="status-badge bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-full">صادر شده</span>'
+                        : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline text-xs font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>')}
+                </div>`).join('') : '<p class="text-xs text-slate-400">هنوز پلاکی مشخص نشده.</p>';
+
+            document.getElementById('creq-detail-body').innerHTML = `
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
+                    <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
+                </div>
+                <p class="text-sm text-slate-600 mb-4">${r.request_text || '(بدون توضیح متنی)'}</p>
+                <h4 class="text-xs font-bold text-slate-500 mb-2">پلاک‌ها</h4>
+                ${platesHtml}
+                <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4">مدارک</h4>
+                ${docsHtml}
+            `;
+            document.getElementById('creq-detail-modal').classList.add('active');
+        }
+
+        async function loadCompanyInbox() {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
+            const data = await res.json();
+            const box = document.getElementById('cinbox-list');
+            const badge = document.getElementById('companies-inbox-badge');
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
+            if (badge) { if (data.documents.length) { badge.textContent = data.documents.length; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
+            if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
+            box.innerHTML = data.documents.map(d => `
+                <div class="card p-4 flex items-center justify-between gap-3">
+                    <div>
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                        <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${d.uploaded_at}</p>
+                    </div>
+                    <button onclick="openInboxTagModal(${d.id}, ${d.company_id}, ${d.request_id || 'null'})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
+                </div>`).join('');
+        }
+
+        async function openInboxTagModal(docId, companyId, requestId) {
+            document.getElementById('cit-doc-id').value = docId;
+            const sel = document.getElementById('cit-request');
+            sel.innerHTML = '<option>در حال بارگذاری...</option>';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests'})});
+            const data = await res.json();
+            const forCompany = (data.requests || []).filter(r => r.company_id == companyId);
+            sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === requestId ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
+            ['cit-doc-type','cit-p1','cit-p2','cit-letter','cit-p4','cit-expiry'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cit-insurance-type').value = '';
+            document.getElementById('cinbox-tag-modal').classList.add('active');
+        }
+
+        async function submitAssignDocument() {
+            const payload = {
+                action: 'assign_document',
+                doc_id: document.getElementById('cit-doc-id').value,
+                request_id: document.getElementById('cit-request').value,
+                doc_type: document.getElementById('cit-doc-type').value.trim(),
+                plate_p1: document.getElementById('cit-p1').value.trim(),
+                plate_p2: document.getElementById('cit-p2').value.trim(),
+                plate_letter: document.getElementById('cit-letter').value.trim(),
+                plate_p4: document.getElementById('cit-p4').value.trim(),
+                insurance_type: document.getElementById('cit-insurance-type').value,
+                expiry_date: document.getElementById('cit-expiry').value,
+            };
+            if (!payload.request_id) { showToast('یک درخواست انتخاب کنید.', 'error'); return; }
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+                const data = await res.json();
+                if (data.ok) { showToast('مدرک تخصیص داده شد.', 'success'); document.getElementById('cinbox-tag-modal').classList.remove('active'); loadCompanyInbox(); }
+                else showToast(data.error || 'خطا در تخصیص مدرک', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        function openMarkIssued(plateId) {
+            document.getElementById('cis-plate-id').value = plateId;
+            ['cis-policy-number','cis-vin','cis-premium'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cis-file').value = '';
+            document.getElementById('cissue-modal').classList.add('active');
+        }
+
+        async function submitMarkIssued() {
+            const fd = new FormData();
+            fd.append('action', 'mark_issued');
+            fd.append('plate_id', document.getElementById('cis-plate-id').value);
+            fd.append('policy_number', document.getElementById('cis-policy-number').value.trim());
+            fd.append('vin', document.getElementById('cis-vin').value.trim());
+            fd.append('total_premium', document.getElementById('cis-premium').value);
+            const fileInput = document.getElementById('cis-file');
+            if (fileInput.files[0]) fd.append('issued_file', fileInput.files[0]);
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('صدور با موفقیت ثبت شد.', 'success');
+                    document.getElementById('cissue-modal').classList.remove('active');
+                    document.getElementById('creq-detail-modal').classList.remove('active');
+                    loadCompanyRequests();
+                } else showToast(data.error || 'خطا در ثبت صدور', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        async function loadCompanyFinance() {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'finance_summary'})});
+            const data = await res.json();
+            const tbody = document.getElementById('cfin-body');
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="4" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            if (!data.companies.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center p-8 text-slate-400">شرکتی ثبت نشده.</td></tr>'; return; }
+            tbody.innerHTML = data.companies.map(c => `
+                <tr class="border-t border-slate-100">
+                    <td class="p-3 font-bold">${c.name}</td>
+                    <td class="p-3 font-mono">${c.total_invoiced.toLocaleString('fa-IR')}</td>
+                    <td class="p-3 font-mono">${c.total_paid.toLocaleString('fa-IR')}</td>
+                    <td class="p-3 font-mono ${c.outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}">${c.outstanding.toLocaleString('fa-IR')}</td>
+                </tr>`).join('');
+        }
+
+        async function loadCompanyManage() {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            const PAY_FA = {INSTALLMENT: 'قسطی', CASH_NET30: 'نقدی - ۳۰ روزه', CASH_IMMEDIATE: 'نقدی - فوری'};
+            const tbody = document.getElementById('cm-companies-body');
+            tbody.innerHTML = data.companies.length ? data.companies.map(c => `
+                <tr class="border-t border-slate-100"><td class="p-3 font-bold">${c.name}</td><td class="p-3 text-slate-500">${PAY_FA[c.payment_terms] || '—'}</td></tr>
+            `).join('') : '<tr><td colspan="2" class="text-center p-6 text-slate-400">شرکتی ثبت نشده.</td></tr>';
+            const sel = document.getElementById('cm-pu-company');
+            if (sel) sel.innerHTML = data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+
+        async function createCompany() {
+            const name = document.getElementById('cm-company-name').value.trim();
+            if (!name) { showToast('نام شرکت را وارد کنید.', 'error'); return; }
+            const payload = {action: 'create_company', name, payment_terms: document.getElementById('cm-payment-terms').value};
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) { showToast('شرکت ثبت شد.', 'success'); document.getElementById('cm-company-name').value = ''; loadCompanyManage(); }
+            else showToast(data.error || 'خطا', 'error');
+        }
+
+        async function createPortalUser() {
+            const payload = {
+                action: 'create_portal_user',
+                company_id: document.getElementById('cm-pu-company').value,
+                full_name: document.getElementById('cm-pu-fullname').value.trim(),
+                username: document.getElementById('cm-pu-username').value.trim(),
+                password: document.getElementById('cm-pu-password').value,
+                mobile_number: document.getElementById('cm-pu-mobile').value.trim(),
+            };
+            if (!payload.company_id || !payload.full_name || !payload.username || !payload.password) { showToast('همه‌ی فیلدها الزامی هستند.', 'error'); return; }
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                showToast('حساب کاربری ساخته شد.', 'success');
+                ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
@@ -2075,6 +2445,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId.startsWith('fin-')) initFinance(tabId);
+            if (tabId === 'companies-requests') loadCompanyRequests();
+            if (tabId === 'companies-inbox') loadCompanyInbox();
+            if (tabId === 'companies-finance') loadCompanyFinance();
+            if (tabId === 'companies-manage') loadCompanyManage();
         }
 
         // ======================= بخش مالی =======================
