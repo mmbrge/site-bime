@@ -580,16 +580,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         const cursorOutline = document.querySelector('.cursor-outline');
         let mouseX = 0, mouseY = 0, outlineX = 0, outlineY = 0;
 
+        // موقعیت با همان متغیرهایی ست می‌شود که در CSS داخل transform استفاده شده‌اند
+        // (--cx/--cy و --ox/--oy). اگر اینجا به‌جای آن‌ها left/top ست شود، مقدارِ
+        // پیش‌فرضِ داخل var() هم اضافه می‌شود و نشانگر با مکان واقعی موس اختلاف پیدا می‌کند.
         window.addEventListener('mousemove', (e) => {
             mouseX = e.clientX; mouseY = e.clientY;
-            cursorDot.style.left = `${mouseX}px`; cursorDot.style.top = `${mouseY}px`;
-        });
+            cursorDot.style.setProperty('--cx', mouseX + 'px');
+            cursorDot.style.setProperty('--cy', mouseY + 'px');
+        }, { passive: true });
         window.addEventListener('mousedown', () => document.body.classList.add('cursor-active'));
         window.addEventListener('mouseup', () => document.body.classList.remove('cursor-active'));
 
         function animateOutline() {
             outlineX += (mouseX - outlineX) * 0.2; outlineY += (mouseY - outlineY) * 0.2;
-            cursorOutline.style.left = `${outlineX}px`; cursorOutline.style.top = `${outlineY}px`;
+            cursorOutline.style.setProperty('--ox', outlineX + 'px');
+            cursorOutline.style.setProperty('--oy', outlineY + 'px');
             requestAnimationFrame(animateOutline);
         }
         animateOutline();

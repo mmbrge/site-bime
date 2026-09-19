@@ -97,19 +97,21 @@ async function doLogin() {
             <h1 class="font-black text-lg"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'چند شرکت'; ?></h1>
             <p class="text-xs text-slate-400"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?></p>
         </div>
-        <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target"><i class="fas fa-sign-out-alt ml-1"></i>خروج</button>
+        <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target">خروج</button>
     </div>
 
     <button onclick="openNewRequestModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-blue-500/20 mb-6 transition-colors">
-        <i class="fas fa-plus ml-2"></i> ثبت درخواست جدید
+        <span class="ml-2">+</span> ثبت درخواست جدید
     </button>
 
     <h2 class="text-sm font-bold text-slate-500 mb-3">درخواست‌های من</h2>
     <div id="requests-list" class="space-y-3"></div>
 </div>
 
-<button onclick="openChatModal()" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center text-xl z-50">
-    <i class="fas fa-comments"></i>
+<button onclick="openChatModal()" title="گفتگو با پشتیبانی" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center z-50">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
 </button>
 
 <!-- مودال چت با بیمه با ما -->
@@ -117,7 +119,9 @@ async function doLogin() {
     <div class="modal-content p-0 flex flex-col" style="height: 70vh;">
         <div class="p-4 border-b flex items-center justify-between">
             <h3 class="font-bold text-lg">چت با بیمه با ما</h3>
-            <button onclick="closeModal('chat-modal')" class="text-slate-400"><i class="fas fa-times"></i></button>
+            <button onclick="closeModal('chat-modal')" aria-label="بستن" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
         </div>
         <?php if (count($companies) > 1): ?>
         <div class="p-3 border-b">
@@ -130,8 +134,8 @@ async function doLogin() {
         <?php endif; ?>
         <div id="chat-body" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50"></div>
         <div class="p-3 border-t flex gap-2 items-center">
-            <label class="text-slate-400 hover:text-blue-500 text-lg cursor-pointer">
-                <i class="fas fa-paperclip"></i>
+            <label title="پیوست فایل" class="text-slate-400 hover:text-blue-500 cursor-pointer shrink-0">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 <input type="file" id="chat-file" class="hidden" onchange="sendChatFile()">
             </label>
             <input type="text" id="chat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
@@ -180,8 +184,10 @@ async function doLogin() {
 <div id="request-detail-modal" class="modal-overlay">
     <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-black text-lg flex items-center gap-2"><i class="fas fa-file-lines text-blue-500"></i>جزئیات درخواست</h3>
-            <button onclick="closeModal('request-detail-modal')" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg flex items-center gap-2">جزئیات درخواست</h3>
+            <button onclick="closeModal('request-detail-modal')" aria-label="بستن" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
         </div>
         <div id="request-detail-body"></div>
         <div class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
@@ -268,7 +274,9 @@ function addPlateRow(containerId) {
                     <input class="plate-p4 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
                 </div>
             </div>
-            <button type="button" onclick="this.closest('.plate-row').remove()" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+            <button type="button" onclick="this.closest('.plate-row').remove()" aria-label="حذف این پلاک" title="حذف این پلاک" class="text-red-400 hover:text-red-600 shrink-0">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </button>
         </div>
         <select class="plate-instype text-xs border rounded-lg p-1.5 w-full mt-1.5">
             <option value="THIRDPARTY">بیمه‌ی درخواستی: ثالث</option>
