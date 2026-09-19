@@ -97,10 +97,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         #tsparticles { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 
         * { cursor: none !important; }
-        .cursor-dot { position: fixed; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 99999999 !important; transform: translate(-50%, -50%); transition: background 0.2s; box-shadow: 0 0 10px rgba(59,130,246,0.5); }
-        .cursor-outline { position: fixed; width: 34px; height: 34px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 99999998 !important; transform: translate(-50%, -50%); transition: opacity 0.2s, transform 0.15s ease-out; }
-        body.cursor-hover .cursor-outline { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
-        body.cursor-hover .cursor-dot { transform: translate(-50%, -50%) scale(1.8) !important; background: #2563eb; }
+        /* موقعیتِ نشانگر با متغیرهای CSS (--cx/--cy/--ox/--oy) و transform تنظیم می‌شود، نه
+           left/top؛ چون تغییرِ left/top روی هر حرکتِ موس باعثِ layout+paint کامل صفحه
+           می‌شود ولی transform فقط composite (GPU) است - همان جلوه، بدون افتِ سرعتِ پنل. */
+        .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 99999999 !important; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background 0.2s; box-shadow: 0 0 10px rgba(59,130,246,0.5); will-change: transform; }
+        .cursor-outline { position: fixed; left: 0; top: 0; width: 34px; height: 34px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 99999998 !important; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s; will-change: transform; }
+        body.cursor-hover .cursor-outline { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); opacity: 0; }
+        body.cursor-hover .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8) !important; background: #2563eb; }
 
         .glass-header { background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.4); box-shadow: 0 4px 30px rgba(0,0,0,0.03); }
         .card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid rgba(255,255,255,0.4); }
@@ -1445,9 +1448,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
                         <th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نام</th>
-                        <th class="p-3 text-right">شرکت(ها)</th><th class="p-3 text-right">موبایل</th>
+                        <th class="p-3 text-right">شرکت(ها)</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right"></th>
                     </tr></thead>
-                    <tbody id="cm-portal-users-body"><tr><td colspan="4" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                    <tbody id="cm-portal-users-body"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -1764,19 +1767,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label>شرکت (مثال: ماموت)</label>
             </div>
             
-            <div class="mb-5">
-                <label class="text-xs font-bold text-slate-500 block mb-2">نوع بیمه درخواستی</label>
-                <div class="flex gap-2">
-                    <label class="flex-1 flex items-center justify-center gap-2 bg-slate-50 border border-slate-200 rounded-xl py-2.5 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 transition-all hover-target">
-                        <input type="radio" name="mc-type" value="ثالث" checked class="accent-blue-500"> <span class="text-xs font-bold text-slate-700">ثالث</span>
-                    </label>
-                    <label class="flex-1 flex items-center justify-center gap-2 bg-slate-50 border border-slate-200 rounded-xl py-2.5 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 transition-all hover-target">
-                        <input type="radio" name="mc-type" value="بدنه" class="accent-blue-500"> <span class="text-xs font-bold text-slate-700">بدنه</span>
-                    </label>
-                </div>
-            </div>
+            <p class="text-[11px] text-slate-400 mb-5 text-center">
+                نوع بیمه‌نامه اینجا مشخص نمی‌شود؛ بعد از ثبت، از داخل جزئیات معرفی‌نامه‌ی همین شخص، برای هر درخواست/پرونده به‌طور جداگانه نوع بیمه (ثالث یا بدنه) انتخاب می‌شود.
+            </p>
 
-            <button onclick="submitManualCreate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors">ثبت و ایجاد پرونده</button>
+            <button onclick="submitManualCreate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors">ثبت و ایجاد معرفی‌نامه</button>
         </div>
     </div>
 
@@ -3075,7 +3070,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${c.installment_count ? c.installment_count + ' قسط' : '—'}</td>
                     <td class="p-3 text-slate-500">${CM_INSURER_FA[c.allowed_insurers] || 'پاسارگاد و ایران'}</td>
                     <td class="p-3 text-slate-400 font-mono">${c.created_at_jalali || '—'}</td>
-                    <td class="p-3"><button onclick="editCompany(${c.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button></td>
+                    <td class="p-3 flex gap-2">
+                        <button onclick="editCompany(${c.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
+                        <button onclick="deleteCompanyRow(${c.id}, '${(c.name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
+                    </td>
                 </tr>
             `).join('') : '<tr><td colspan="7" class="text-center p-6 text-slate-400">شرکتی ثبت نشده.</td></tr>';
 
@@ -3100,7 +3098,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <tr class="border-t border-slate-100">
                         <td class="p-3 font-mono">${u.username}</td><td class="p-3">${u.full_name}</td>
                         <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${u.mobile_number || '—'}</td>
-                    </tr>`).join('') : '<tr><td colspan="4" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
+                        <td class="p-3"><button onclick="deletePortalUserRow(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button></td>
+                    </tr>`).join('') : '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
             }
         }
 
@@ -3189,6 +3188,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 closeModal('add-portal-user-modal');
                 loadCompanyManage();
             } else showToast(data.error || 'خطا', 'error');
+        }
+
+        async function deletePortalUserRow(id, name) {
+            if (!confirm(`حساب کاربری «${name}» حذف شود؟`)) return;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_portal_user', id})});
+            const data = await res.json();
+            if (data.ok) { showToast('حساب کاربری حذف شد.', 'success'); loadCompanyManage(); }
+            else showToast(data.error || 'خطا', 'error');
+        }
+
+        async function deleteCompanyRow(id, name) {
+            if (!confirm(`شرکت «${name}» و همه‌ی درخواست‌ها/مدارک/اطلاعات مالیِ آن برای همیشه حذف شود؟ این کار قابل بازگشت نیست.`)) return;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_company', id})});
+            const data = await res.json();
+            if (data.ok) { showToast('شرکت حذف شد.', 'success'); loadCompanyManage(); }
+            else showToast(data.error || 'خطا', 'error');
         }
 
         // ======================= کاربران داخلیِ پنل =======================
@@ -4110,8 +4125,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="text-slate-400">تفکیک:</span> <b class="text-[11px]">${introRow.relationship_summary || ''}</b></div>
                     </div>`;
 
+                const addCaseHtml = `
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center gap-2">
+                        <select id="intro-new-case-type" class="border rounded-lg px-2 py-1.5 text-xs flex-1">
+                            <option value="THIRDPARTY">ثالث</option>
+                            <option value="BODY">بدنه</option>
+                        </select>
+                        <button onclick="createCaseForIntro(${introId})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن پرونده‌ی جدید</button>
+                    </div>`;
+
                 if (data.data.length === 0) {
-                    body.innerHTML = header + '<p class="text-center text-slate-400 text-sm p-6 mt-3">هنوز هیچ بیمه‌نامه‌ای برای این معرفی‌نامه ثبت نشده.</p>';
+                    body.innerHTML = header + addCaseHtml + '<p class="text-center text-slate-400 text-sm p-6 mt-3">هنوز هیچ بیمه‌نامه‌ای برای این معرفی‌نامه ثبت نشده.</p>';
                     return;
                 }
 
@@ -4129,10 +4153,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>`;
                 }).join('');
 
-                body.innerHTML = header + '<div class="space-y-2 mt-3">' + cardsHtml + '</div>';
+                body.innerHTML = header + addCaseHtml + '<div class="space-y-2 mt-3">' + cardsHtml + '</div>';
             } catch (e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-6">خطا در اتصال به سرور.</p>'; }
         }
         function insurance_type_fa_js(t) { return t === 'BODY' ? 'بدنه' : 'ثالث'; }
+
+        async function createCaseForIntro(introId) {
+            const insuranceType = document.getElementById('intro-new-case-type').value;
+            try {
+                const res = await fetch('api/record_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'create_case_for_intro', introduction_id: introId, insurance_type: insuranceType })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('پرونده‌ی جدید ایجاد شد.', 'success');
+                    openIntroDetail(introId, document.getElementById('intro-detail-name').textContent);
+                    loadRecords();
+                } else showToast(data.error || 'خطا در ایجاد پرونده.', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
 
         async function openCase(caseId, mode) {
             currentCaseId = caseId;
@@ -5641,7 +5681,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 national_code: p2e(document.getElementById('mc-national-code').value.trim()),
                 personnel_code: p2e(document.getElementById('mc-personnel-code').value.trim()),
                 company_name: document.getElementById('mc-company-name').value.trim(),
-                insurance_type: document.querySelector('input[name="mc-type"]:checked').value
             };
 
             if (!payload.full_name || !/^\d{10}$/.test(payload.national_code)) {
@@ -5657,9 +5696,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 });
                 const data = await res.json();
                 if (data.ok) {
-                    showToast('پرونده با موفقیت ثبت شد.', 'success');
+                    showToast('معرفی‌نامه ثبت شد؛ حالا نوع اولین پرونده را انتخاب کنید.', 'success');
                     document.getElementById('manual-create-modal').classList.remove('active');
                     loadRecords();
+                    if (data.intro_id) openIntroDetail(data.intro_id, payload.full_name);
                 } else {
                     showToast(data.error || 'خطا در ثبت پرونده.', 'error');
                 }
@@ -5827,8 +5867,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const cursorDot = document.querySelector('.cursor-dot');
         const cursorOutline = document.querySelector('.cursor-outline');
         let mouseX = 0, mouseY = 0, outlineX = 0, outlineY = 0;
-        window.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; cursorDot.style.left = `${mouseX}px`; cursorDot.style.top = `${mouseY}px`; });
-        function animateOutline() { outlineX += (mouseX - outlineX) * 0.2; outlineY += (mouseY - outlineY) * 0.2; cursorOutline.style.left = `${outlineX}px`; cursorOutline.style.top = `${outlineY}px`; requestAnimationFrame(animateOutline); }
+        window.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX; mouseY = e.clientY;
+            cursorDot.style.setProperty('--cx', mouseX + 'px');
+            cursorDot.style.setProperty('--cy', mouseY + 'px');
+        }, { passive: true });
+        function animateOutline() {
+            outlineX += (mouseX - outlineX) * 0.2; outlineY += (mouseY - outlineY) * 0.2;
+            cursorOutline.style.setProperty('--ox', outlineX + 'px');
+            cursorOutline.style.setProperty('--oy', outlineY + 'px');
+            requestAnimationFrame(animateOutline);
+        }
         animateOutline();
         document.querySelectorAll('a, button, input, label, select').forEach(el => el.classList.add('hover-target'));
         document.querySelectorAll('.hover-target').forEach(el => { el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover')); el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover')); });

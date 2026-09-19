@@ -159,25 +159,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         /* ================= موس اختصاصی ================= */
         * { cursor: none !important; user-select: none; }
 
+        /* موقعیتِ نشانگر با متغیرهای CSS (--cx/--cy/--ox/--oy) و transform تنظیم می‌شود، نه
+           left/top؛ چون تغییرِ left/top روی هر حرکتِ موس باعثِ layout+paint کامل صفحه
+           می‌شود ولی transform فقط composite (GPU) است - همان جلوه، بدون افتِ سرعت. */
         .cursor-dot {
             position: fixed; top: 0; left: 0; width: 8px; height: 8px;
-            background-color: #00d2ff; border-radius: 50%; pointer-events: none; 
-            z-index: 99999999 !important; transform: translate(-50%, -50%);
+            background-color: #00d2ff; border-radius: 50%; pointer-events: none;
+            z-index: 99999999 !important; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%);
             box-shadow: 0 0 10px rgba(0, 210, 255, 0.6);
-            transition: transform 0.15s ease-out, background-color 0.15s; will-change: transform;
+            transition: background-color 0.15s; will-change: transform;
         }
 
         .cursor-outline {
             position: fixed; top: 0; left: 0; width: 36px; height: 36px;
             border: 2px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(2px);
-            border-radius: 50%; pointer-events: none; z-index: 99999998 !important; 
-            transform: translate(-50%, -50%); transition: opacity 0.2s ease-out, transform 0.2s ease-out; will-change: transform;
+            border-radius: 50%; pointer-events: none; z-index: 99999998 !important;
+            transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s ease-out; will-change: transform;
         }
 
-        body.cursor-hover .cursor-outline { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-        body.cursor-hover .cursor-dot { transform: translate(-50%, -50%) scale(1.6); background-color: #ffffff; box-shadow: 0 0 15px rgba(255, 255, 255, 0.8); }
+        body.cursor-hover .cursor-outline { opacity: 0; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); }
+        body.cursor-hover .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.6); background-color: #ffffff; box-shadow: 0 0 15px rgba(255, 255, 255, 0.8); }
         body.cursor-active .cursor-outline { opacity: 0 !important; }
-        body.cursor-active .cursor-dot { transform: translate(-50%, -50%) scale(2.2) !important; background-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.9); }
+        body.cursor-active .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(2.2) !important; background-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.9); }
 
         /* ================= پس‌زمینه ================= */
         .hero-bg {

@@ -248,29 +248,46 @@ updateInsurerOptions();
 function addPlateRow(containerId) {
     const container = document.getElementById(containerId);
     const row = document.createElement('div');
-    row.className = 'flex items-center gap-2 mb-1';
+    row.className = 'plate-row border rounded-lg p-2 mb-1';
     row.innerHTML = `
-        <div class="grid grid-cols-4 gap-1 flex-1" dir="ltr">
-            <input class="plate-p1 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
-            <input class="plate-letter text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="الف">
-            <input class="plate-p2 text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="۳۴۵">
-            <div class="flex items-center gap-1 border rounded-lg px-1">
-                <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                <input class="plate-p4 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
+        <div class="flex items-center gap-2">
+            <div class="grid grid-cols-4 gap-1 flex-1" dir="ltr">
+                <input class="plate-p1 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
+                <input class="plate-letter text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="الف">
+                <input class="plate-p2 text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="۳۴۵">
+                <div class="flex items-center gap-1 border rounded-lg px-1">
+                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
+                    <input class="plate-p4 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
+                </div>
             </div>
+            <button type="button" onclick="this.closest('.plate-row').remove()" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
         </div>
-        <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+        <select class="plate-instype text-xs border rounded-lg p-1.5 w-full mt-1.5">
+            <option value="THIRDPARTY">بیمه‌ی درخواستی: ثالث</option>
+            <option value="BODY">بیمه‌ی درخواستی: بدنه</option>
+            <option value="BOTH">بیمه‌ی درخواستی: ثالث و بدنه (هردو)</option>
+        </select>
     `;
     container.appendChild(row);
 }
 
 function collectPlateRows(containerId) {
-    return Array.from(document.getElementById(containerId).querySelectorAll('.flex.items-center.gap-2')).map(row => ({
+    const rows = Array.from(document.getElementById(containerId).querySelectorAll('.plate-row')).map(row => ({
         p1: row.querySelector('.plate-p1').value.trim(),
         p2: row.querySelector('.plate-p2').value.trim(),
         letter: row.querySelector('.plate-letter').value.trim(),
         p4: row.querySelector('.plate-p4').value.trim(),
+        insurance_type: row.querySelector('.plate-instype').value,
     })).filter(p => p.p1 || p.p2 || p.letter || p.p4);
+    // اگر «هردو» انتخاب شده، همین پلاک به دو ردیفِ جدا (ثالث + بدنه) تبدیل می‌شود
+    const out = [];
+    rows.forEach(p => {
+        if (p.insurance_type === 'BOTH') {
+            out.push({...p, insurance_type: 'THIRDPARTY'});
+            out.push({...p, insurance_type: 'BODY'});
+        } else out.push(p);
+    });
+    return out;
 }
 
 async function submitNewRequest() {
@@ -361,6 +378,7 @@ async function openRequestDetail(id) {
 }
 
 const DOC_TYPE_OPTIONS = [
+    ['letter', 'نامه‌ی درخواست (اگر موقع ثبت درخواست نامه ارسال نشده بود)'],
     ['car_card_or_title', 'کارت ماشین (پشت و رو) یا سند مالکیت'],
     ['prev_body_policy', 'بیمه بدنه قبلی'],
     ['health_inspection', 'گزارش بازدید سلامت'],

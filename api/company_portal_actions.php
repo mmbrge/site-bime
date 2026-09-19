@@ -100,15 +100,18 @@ try {
         $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer]);
         $requestId = $pdo->lastInsertId();
 
-        // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز)
+        // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز؛ برای هر پلاک هم نوع بیمه‌ی
+        // درخواستی‌اش - ثالث/بدنه - مشخص می‌شود؛ اگر «هردو» خواسته شده بود، سمتِ کلاینت
+        // از قبل آن را به دو ردیفِ جدا تبدیل کرده است)
         $plates = json_decode($data['plates'] ?? '[]', true);
         if (is_array($plates)) {
-            $insPlate = $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4) VALUES (?, ?, ?, ?, ?)");
+            $insPlate = $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4, insurance_type) VALUES (?, ?, ?, ?, ?, ?)");
             foreach ($plates as $p) {
                 $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');
                 $pletter = trim($p['letter'] ?? ''); $pp4 = trim($p['p4'] ?? '');
                 if ($pp1 === '' && $pp2 === '' && $pletter === '' && $pp4 === '') continue;
-                $insPlate->execute([$requestId, $pp1 ?: null, $pp2 ?: null, $pletter ?: null, $pp4 ?: null]);
+                $pInsType = in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $p['insurance_type'] : null;
+                $insPlate->execute([$requestId, $pp1 ?: null, $pp2 ?: null, $pletter ?: null, $pp4 ?: null, $pInsType]);
             }
         }
 
@@ -154,9 +157,18 @@ try {
         $p1 = trim($data['plate_p1'] ?? '') ?: null; $p2 = trim($data['plate_p2'] ?? '') ?: null;
         $letter = trim($data['plate_letter'] ?? '') ?: null; $p4 = trim($data['plate_p4'] ?? '') ?: null;
 
+        // اگر درخواست بدون نامه ثبت شده بود، بعداً هم می‌شود نامه‌اش را همین‌جا اضافه کرد
+        $isLetter = ($suggestedType === 'letter');
+        $fileKind = $isLetter ? 'LETTER' : 'SUPPORTING_DOC';
+        $docType = $isLetter ? null : $suggestedType;
+
         $pdo->prepare("INSERT INTO company_documents (company_id, request_id, uploaded_by, file_path, orig_name, file_kind, doc_type, plate_p1, plate_p2, plate_letter, plate_p4, status)
-                        VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, ?, ?, ?, ?, 'UNASSIGNED')")
-            ->execute([$companyId, $requestId, $session['company_user_id'], $relPath, $saved['orig_name'], $suggestedType, $p1, $p2, $letter, $p4]);
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNASSIGNED')")
+            ->execute([$companyId, $requestId, $session['company_user_id'], $relPath, $saved['orig_name'], $fileKind, $docType, $p1, $p2, $letter, $p4]);
+
+        if ($isLetter) {
+            $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ? AND letter_file_path IS NULL")->execute([$relPath, $requestId]);
+        }
 
         echo json_encode(['ok' => true]);
         exit;

@@ -171,6 +171,31 @@ try {
         exit;
     }
 
+    // ---- حذف حساب کاربری یک ثبت‌کننده ----
+    if ($action === 'delete_portal_user') {
+        $id = intval($data['id'] ?? 0);
+        $pdo->prepare("DELETE FROM company_portal_users WHERE id = ?")->execute([$id]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- حذف کاملِ یک شرکت (و به‌تبع آن، طبق FK: درخواست‌ها/پلاک‌ها/مدارک/مالی/کاربران
+    //      ثبت‌کننده‌ی همان شرکت هم پاک می‌شوند - این یک عملیات غیرقابل‌بازگشت است).
+    //      اگر همین شرکت به‌عنوان کارفرمای پرسنل (BOTH) هم پرسنلی وصل داشته باشد، برای
+    //      جلوگیری از حذف ناخواسته‌ی اطلاعات پرسنلی، حذف را انجام نمی‌دهیم ----
+    if ($action === 'delete_company') {
+        if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند شرکت را حذف کند.']); exit; }
+        $id = intval($data['id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM persons WHERE company_id = ?");
+        $stmt->execute([$id]);
+        if (intval($stmt->fetchColumn()) > 0) {
+            echo json_encode(['ok' => false, 'error' => 'این شرکت به‌عنوان کارفرمای پرسنل هم استفاده شده و پرسنلی دارد؛ برای جلوگیری از حذف ناخواسته‌ی اطلاعات پرسنلی، حذف نشد.']); exit;
+        }
+        $pdo->prepare("DELETE FROM companies WHERE id = ?")->execute([$id]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     // ---- لیست کاربران ثبت‌کننده (برای مرور در پنل مدیریت) ----
     if ($action === 'list_portal_users') {
         $stmt = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active,

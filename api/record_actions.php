@@ -88,21 +88,34 @@ try {
         exit;
     }
 
-    // ---- ۵. ثبت دستی پرونده جدید ----
+    // ---- ۵. ثبت دستی معرفی‌نامه‌ی جدید (نوع بیمه اینجا مشخص نمی‌شود - آن مالِ هر
+    //      پرونده/درخواست جداگانه است، از طریق create_case_for_intro) ----
     if ($action === 'create_manual') {
         $full_name = trim($data['full_name'] ?? '');
         $national_code = trim($data['national_code'] ?? '');
         $personnel_code = trim($data['personnel_code'] ?? '');
         $company_name = trim($data['company_name'] ?? 'ماموت');
-        $insurance_type = trim($data['insurance_type'] ?? 'ثالث');
-        
+
         if (empty($full_name) || empty($national_code)) {
             echo json_encode(['ok' => false, 'error' => 'نام و کد ملی الزامی است.']);
             exit;
         }
-        
+
+        // اگر قبلاً برای همین کد ملی پرونده‌ای ثبت شده، دوباره از صفر معرفی‌نامه نسازیم
+        // (احتمالاً اشتباه اپراتور است - معرفی‌نامه‌ی موجود را باز کند و پرونده اضافه کند)
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM policy_cases pc
+            JOIN persons p ON pc.person_id = p.id
+            WHERE p.national_code = ?
+        ");
+        $stmt->execute([$national_code]);
+        if (intval($stmt->fetchColumn()) > 0) {
+            echo json_encode(['ok' => false, 'error' => 'قبلاً برای این کد ملی پرونده ثبت شده است. از داخل معرفی‌نامه‌ی همین شخص، پرونده‌ی جدید اضافه کنید.']);
+            exit;
+        }
+
         $pdo->beginTransaction();
-        
+
         // ثبت شرکت
         $company_id = null;
         if (!empty($company_name)) {
@@ -115,12 +128,12 @@ try {
                 $company_id = $pdo->lastInsertId();
             }
         }
-        
+
         // ثبت یا آپدیت پرسنل
         $stmt = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
         $stmt->execute([$national_code]);
         $person_id = $stmt->fetchColumn();
-        
+
         if (!$person_id) {
             $stmt = $pdo->prepare("INSERT INTO persons (national_code, personnel_code, full_name, company_id) VALUES (?, ?, ?, ?)");
             $stmt->execute([$national_code, $personnel_code, $full_name, $company_id]);
@@ -129,36 +142,51 @@ try {
             $stmt = $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = ?, company_id = ? WHERE id = ?");
             $stmt->execute([$full_name, $personnel_code, $company_id, $person_id]);
         }
-        
+
         // ثبت معرفی‌نامه با دیتای پیش‌فرض دستی
         $stmt = $pdo->prepare("INSERT INTO introductions (person_id, file_path) VALUES (?, 'ثبت_دستی')");
         $stmt->execute([$person_id]);
         $intro_id = $pdo->lastInsertId();
-        
-        // تنظیم Enum دیتابیس
-        $enum_type = 'THIRDPARTY';
-        if ($insurance_type == 'بدنه') $enum_type = 'BODY';
-        if ($insurance_type == 'الحاقیه') $enum_type = 'ENDORSEMENT';
-        
-        // ثبت درخواست نهایی (برای کارتابل داخلی پنل)
-        $stmt = $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, ?, 'NEW')");
-        $stmt->execute([$person_id, $intro_id, $enum_type]);
 
-        // همچنین یک «پرونده» (policy_cases) با وضعیت REGISTERED هم ساخته می‌شود، دقیقاً
-        // هم‌شکل با start_case در webapp_order.php - وگرنه این ثبتِ دستی هیچ‌وقت در
-        // اپ بله‌ی خودِ آن شخص («پرونده‌های نیمه‌کاره») دیده نمی‌شد، چون ربات فقط از
-        // روی policy_cases کار می‌کند نه insurance_requests. برای الحاقیه (که مسیر
-        // جداگانه‌ای دارد) این پرونده ساخته نمی‌شود.
-        if (in_array($enum_type, ['THIRDPARTY', 'BODY'], true)) {
-            $stmt = $pdo->prepare("INSERT INTO policy_cases (introduction_id, person_id, insurance_type, unique_code) VALUES (?, ?, ?, '')");
-            $stmt->execute([$intro_id, $person_id, $enum_type]);
-            $case_id = $pdo->lastInsertId();
-            $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([generate_case_unique_code($case_id), $case_id]);
-            $pdo->prepare("UPDATE introductions SET used_quota = used_quota + 1 WHERE id = ?")->execute([$intro_id]);
-        }
+        // ثبت درخواست نهایی (برای کارتابل داخلی پنل) - نوع هنوز نامشخص است، بعداً برای
+        // هر پرونده‌ی جداگانه مشخص می‌شود
+        $stmt = $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, NULL, 'NEW')");
+        $stmt->execute([$person_id, $intro_id]);
 
         $pdo->commit();
-        echo json_encode(['ok' => true]);
+        echo json_encode(['ok' => true, 'intro_id' => $intro_id, 'person_id' => $person_id]);
+        exit;
+    }
+
+    // ---- ۵ب. افزودن یک پرونده‌ی جدید (با نوع مشخص) به یک معرفی‌نامه‌ی موجود - هم برای
+    //      معرفی‌نامه‌های ثبتِ دستی و هم برای معرفی‌نامه‌های عادی که می‌خواهیم دستی یک
+    //      پرونده‌ی دیگر (مثلاً هم ثالث هم بدنه) رویشان اضافه کنیم؛ دقیقاً هم‌شکل با
+    //      start_case در webapp_order.php ----
+    if ($action === 'create_case_for_intro') {
+        $introId = intval($data['introduction_id'] ?? 0);
+        $insuranceType = in_array($data['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $data['insurance_type'] : null;
+        if (!$introId || !$insuranceType) {
+            echo json_encode(['ok' => false, 'error' => 'معرفی‌نامه و نوع بیمه الزامی است.']);
+            exit;
+        }
+
+        $stmt = $pdo->prepare("SELECT * FROM introductions WHERE id = ?");
+        $stmt->execute([$introId]);
+        $intro = $stmt->fetch();
+        if (!$intro) { echo json_encode(['ok' => false, 'error' => 'معرفی‌نامه یافت نشد.']); exit; }
+        if (intval($intro['used_quota']) >= intval($intro['max_quota'] ?: 4)) {
+            echo json_encode(['ok' => false, 'error' => 'سقف صدور بیمه‌نامه با این معرفی‌نامه تکمیل شده است.']); exit;
+        }
+
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare("INSERT INTO policy_cases (introduction_id, person_id, insurance_type, unique_code) VALUES (?, ?, ?, '')");
+        $stmt->execute([$introId, $intro['person_id'], $insuranceType]);
+        $caseId = $pdo->lastInsertId();
+        $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([generate_case_unique_code($caseId), $caseId]);
+        $pdo->prepare("UPDATE introductions SET used_quota = used_quota + 1 WHERE id = ?")->execute([$introId]);
+        $pdo->commit();
+
+        echo json_encode(['ok' => true, 'case_id' => $caseId]);
         exit;
     }
 
