@@ -7,23 +7,26 @@ require __DIR__ . '/../api/_case_helpers.php';
 require __DIR__ . '/../api/_company_helpers.php';
 
 company_portal_session_start();
-$loggedIn = !empty($_SESSION['company_user_id']);
-
 // ورودِ مستقیم از این صفحه دیگر مجاز نیست - همه باید از درگاهِ یکپارچه‌ی خودمان
 // (index.php، گزینه‌ی «همکار شرکت‌ها») وارد شوند تا اشتباهیِ درگاه پیش نیاید
-if (!$loggedIn) {
+if (empty($_SESSION['company_user_id'])) {
     header('Location: ../index.php');
     exit;
 }
 
-$companies = [];
-if ($loggedIn) {
-    $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
-                            JOIN companies c ON c.id = cpuc.company_id
-                            WHERE cpuc.portal_user_id = ? ORDER BY c.name");
-    $stmt->execute([$_SESSION['company_user_id']]);
-    $companies = $stmt->fetchAll();
-    if (!$companies) { $_SESSION = []; session_destroy(); $loggedIn = false; }
+$stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
+                        JOIN companies c ON c.id = cpuc.company_id
+                        WHERE cpuc.portal_user_id = ? ORDER BY c.name");
+$stmt->execute([$_SESSION['company_user_id']]);
+$companies = $stmt->fetchAll();
+
+// اگر دسترسیِ این کاربر به همه‌ی شرکت‌ها برداشته شده باشد، نشست باطل و به همان
+// درگاهِ یکپارچه برمی‌گردد (نه فرم ورودِ جداگانه‌ی این صفحه)
+if (!$companies) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: ../index.php');
+    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -55,42 +58,6 @@ if ($loggedIn) {
 </head>
 <body class="min-h-screen">
 
-<?php if (!$loggedIn): ?>
-<div class="min-h-screen flex items-center justify-center p-4">
-    <div class="card w-full max-w-sm p-8">
-        <h1 class="text-xl font-black text-center mb-1">پنل شرکت‌ها</h1>
-        <p class="text-xs text-slate-400 text-center mb-6">بیمه با ما</p>
-        <div id="login-error" class="hidden bg-red-50 text-red-600 text-xs font-bold rounded-xl p-3 mb-4"></div>
-        <div class="float-input">
-            <label>نام کاربری</label>
-            <input type="text" id="login-username" dir="ltr">
-        </div>
-        <div class="float-input">
-            <label>رمز عبور</label>
-            <input type="password" id="login-password" dir="ltr">
-        </div>
-        <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">ورود</button>
-    </div>
-</div>
-<script>
-async function doLogin() {
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
-    const errBox = document.getElementById('login-error');
-    errBox.classList.add('hidden');
-    try {
-        const res = await fetch('../api/company_portal_auth.php', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'login', username, password})
-        });
-        const data = await res.json();
-        if (data.ok) { location.reload(); }
-        else { errBox.textContent = data.error || 'خطا در ورود.'; errBox.classList.remove('hidden'); }
-    } catch (e) { errBox.textContent = 'خطا در ارتباط با سرور.'; errBox.classList.remove('hidden'); }
-}
-</script>
-
-<?php else: ?>
 <div class="max-w-3xl mx-auto p-4 pb-20">
     <div class="flex items-center justify-between py-5">
         <div>
@@ -500,6 +467,5 @@ document.getElementById('chat-input').addEventListener('keydown', e => { if (e.k
 
 loadRequests();
 </script>
-<?php endif; ?>
 </body>
 </html>

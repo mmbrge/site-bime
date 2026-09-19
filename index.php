@@ -399,7 +399,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <input type="password" name="password" id="login-pass" placeholder=" " class="peer w-full bg-black/20 border-2 border-white/20 focus:border-brand-accent outline-none rounded-xl py-3.5 pr-12 pl-10 text-sm font-bold text-white transition-all hover-target shadow-inner focus:bg-black/40">
                     <label class="absolute right-10 top-3.5 text-gray-400 text-sm font-bold transition-all duration-300 pointer-events-none peer-focus:-translate-y-[22px] peer-focus:right-4 peer-focus:text-[12px] peer-focus:text-brand-accent peer-focus:bg-[#1a252f] peer-focus:px-2 peer-focus:rounded-md peer-[:not(:placeholder-shown)]:-translate-y-[22px] peer-[:not(:placeholder-shown)]:right-4 peer-[:not(:placeholder-shown)]:text-[12px] peer-[:not(:placeholder-shown)]:text-gray-300 peer-[:not(:placeholder-shown)]:bg-[#1a252f] peer-[:not(:placeholder-shown)]:px-2 peer-[:not(:placeholder-shown)]:rounded-md">رمز عبور</label>
                     <i class="fas fa-lock absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 peer-focus:text-brand-accent transition-colors"></i>
-                    <i class="far fa-eye absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white hover-target transition-colors cursor-pointer" id="togglePass"></i>
+                    <!-- نمایش/پنهان‌سازی رمز: آیکونِ درون‌خطی (SVG) تا اگر CDN فونت‌آوسام نیامد هم دکمه ناحیه‌ی کلیک داشته باشد -->
+                    <button type="button" id="togglePass" aria-label="نمایش رمز عبور" title="نمایش / پنهان‌سازی رمز عبور" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white hover-target transition-colors">
+                        <svg id="togglePass-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg id="togglePass-off" style="display:none" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>
+                    </button>
                 </div>
 
                 <!-- کپچای هوشمند -->
@@ -578,7 +582,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // ۳. موس گرافیکی
         const cursorDot = document.querySelector('.cursor-dot');
         const cursorOutline = document.querySelector('.cursor-outline');
-        let mouseX = 0, mouseY = 0, outlineX = 0, outlineY = 0;
+        // مقدارِ اولیه همان -100px داخل var() در CSS است تا تا قبل از اولین حرکتِ موس
+        // هر دو بخشِ نشانگر بیرونِ صفحه بمانند (اگر ۰ باشد، حلقه‌ی بیرونی گوشه‌ی بالا-چپ دیده می‌شود)
+        let mouseX = -100, mouseY = -100, outlineX = -100, outlineY = -100;
 
         // موقعیت با همان متغیرهایی ست می‌شود که در CSS داخل transform استفاده شده‌اند
         // (--cx/--cy و --ox/--oy). اگر اینجا به‌جای آن‌ها left/top ست شود، مقدارِ
@@ -783,10 +789,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         const loginForm = document.getElementById('login-form');
         const loginBtn = document.getElementById('login-btn');
 
+        const togglePassOn = document.getElementById('togglePass-on');
+        const togglePassOff = document.getElementById('togglePass-off');
+
         togglePass.addEventListener('click', () => {
             const type = loginPass.getAttribute('type') === 'password' ? 'text' : 'password';
             loginPass.setAttribute('type', type);
-            togglePass.classList.toggle('fa-eye'); togglePass.classList.toggle('fa-eye-slash');
+            const shown = type === 'text';
+            togglePassOn.style.display = shown ? 'none' : '';
+            togglePassOff.style.display = shown ? '' : 'none';
+            togglePass.setAttribute('aria-label', shown ? 'پنهان‌سازی رمز عبور' : 'نمایش رمز عبور');
         });
 
         // جلوگیری از ارسال فرم در صورت حل نشدن کپچا
