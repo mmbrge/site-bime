@@ -368,9 +368,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="mb-5" id="gate-selector">
                 <p class="text-[11px] font-bold text-gray-400 mb-2 text-center">من وارد می‌شوم به‌عنوان:</p>
                 <div class="grid grid-cols-3 gap-2">
-                    <button type="button" data-gate="STAFF" onclick="selectGate('STAFF')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">صدور / مدیریت<br><span class="text-[9px] font-normal opacity-70">(کارکنان ما)</span></button>
-                    <button type="button" data-gate="LIAISON" onclick="selectGate('LIAISON')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">همکار شرکت‌ها<br><span class="text-[9px] font-normal opacity-70">(رابط داخلی ما با شرکت‌ها)</span></button>
-                    <button type="button" data-gate="COMPANY" onclick="selectGate('COMPANY')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">پنل شرکت‌ها<br><span class="text-[9px] font-normal opacity-70">(نماینده‌ی شرکت مشتری)</span></button>
+                    <button type="button" data-gate="STAFF" onclick="selectGate('STAFF')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">صدور / مدیریت</button>
+                    <button type="button" data-gate="COMPANY" onclick="selectGate('COMPANY')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">همکار شرکت‌ها</button>
+                    <button type="button" data-gate="LIAISON" onclick="selectGate('LIAISON')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">کاربر همکار بیمه با ما</button>
                 </div>
             </div>
 
