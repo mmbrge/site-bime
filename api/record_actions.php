@@ -2,6 +2,7 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
+require __DIR__ . '/_case_helpers.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -139,10 +140,23 @@ try {
         if ($insurance_type == 'بدنه') $enum_type = 'BODY';
         if ($insurance_type == 'الحاقیه') $enum_type = 'ENDORSEMENT';
         
-        // ثبت درخواست نهایی
+        // ثبت درخواست نهایی (برای کارتابل داخلی پنل)
         $stmt = $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, ?, 'NEW')");
         $stmt->execute([$person_id, $intro_id, $enum_type]);
-        
+
+        // همچنین یک «پرونده» (policy_cases) با وضعیت REGISTERED هم ساخته می‌شود، دقیقاً
+        // هم‌شکل با start_case در webapp_order.php - وگرنه این ثبتِ دستی هیچ‌وقت در
+        // اپ بله‌ی خودِ آن شخص («پرونده‌های نیمه‌کاره») دیده نمی‌شد، چون ربات فقط از
+        // روی policy_cases کار می‌کند نه insurance_requests. برای الحاقیه (که مسیر
+        // جداگانه‌ای دارد) این پرونده ساخته نمی‌شود.
+        if (in_array($enum_type, ['THIRDPARTY', 'BODY'], true)) {
+            $stmt = $pdo->prepare("INSERT INTO policy_cases (introduction_id, person_id, insurance_type, unique_code) VALUES (?, ?, ?, '')");
+            $stmt->execute([$intro_id, $person_id, $enum_type]);
+            $case_id = $pdo->lastInsertId();
+            $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([generate_case_unique_code($case_id), $case_id]);
+            $pdo->prepare("UPDATE introductions SET used_quota = used_quota + 1 WHERE id = ?")->execute([$intro_id]);
+        }
+
         $pdo->commit();
         echo json_encode(['ok' => true]);
         exit;
@@ -171,9 +185,18 @@ try {
             'health_inspections', 'health_attempts', 'policy_cases', 'insurance_requests',
             'introductions', 'person_vehicles', 'bot_sessions', 'persons', 'companies',
             'processing_queue', 'audit_logs', 'app_notifications', 'webapp_sessions',
+            // ماژول شرکت‌ها: درخواست‌ها/پلاک‌ها/مدارک، مالی شرکتی، چت داخلی و شرکتی،
+            // و حساب‌های کاربری ثبت‌کننده‌ی شرکت‌ها - قبلاً پاک نمی‌شدند
+            'company_payment_allocations', 'company_payments', 'company_installments',
+            'company_documents', 'company_request_plates', 'company_requests',
+            'company_portal_user_companies', 'company_portal_users',
+            'staff_chat_messages', 'company_chat_messages', 'bot_known_groups',
         ] as $table) {
             try { $pdo->exec("TRUNCATE TABLE `$table`;"); } catch (Exception $e) { /* اگر جدولی وجود نداشت، رد شو */ }
         }
+        // کاربران داخلی «همکار» (اپراتور/مالی/همکار شرکت‌ها) هم پاک می‌شوند؛ فقط
+        // حساب‌های ADMIN دست‌نخورده می‌مانند تا کسی از پنل بیرون نماند
+        try { $pdo->exec("DELETE FROM `users` WHERE `role` <> 'ADMIN';"); } catch (Exception $e) { /* ... */ }
         $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
         $pdo->commit();
 
@@ -189,6 +212,7 @@ try {
         }
         $siteRoot = dirname(__DIR__);
         foreach (['/Archive/بایگانی/بایگانی کسر از حقوق', '/Archive/بایگانی/بایگانی صادره', '/Archive/بایگانی/سایر مدارک',
+                  '/Archive/بایگانی/بایگانی شرکتی',
                   '/موقت/موقت بایگانی', '/queue/pending', '/queue/case_uploads', '/queue/attachments'] as $rel) {
             rrmdir_contents($siteRoot . $rel);
         }

@@ -204,6 +204,50 @@ try {
         exit;
     }
 
+    // ---- ثبت دستیِ یک درخواست برای یک شرکت، توسط خودمان (بدون اینکه ثبت‌کننده‌ی
+    //      شرکت لازم باشد چیزی بفرستد) - submitted_by=NULL می‌ماند و چون my_requests
+    //      فقط بر اساس company_id فیلتر می‌کند، همین باعث می‌شود در پنل خودِ شرکت هم دیده شود ----
+    if ($action === 'admin_create_request') {
+        $companyId = intval($data['company_id'] ?? 0);
+        if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت را انتخاب کنید.']); exit; }
+        $requestText = trim($data['request_text'] ?? '');
+        $insurer = in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true) ? $data['insurer'] : 'PASARGAD';
+
+        $stmt = $pdo->prepare("SELECT allowed_insurers FROM companies WHERE id = ?");
+        $stmt->execute([$companyId]);
+        $allowedInsurers = $stmt->fetchColumn();
+        if (!$allowedInsurers) { echo json_encode(['ok' => false, 'error' => 'شرکت یافت نشد.']); exit; }
+        if ($allowedInsurers !== 'BOTH' && $allowedInsurers !== $insurer) {
+            echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($allowedInsurers === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.']); exit;
+        }
+
+        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, status) VALUES (?, NULL, ?, ?, 'NEW')");
+        $stmt->execute([$companyId, $requestText ?: null, $insurer]);
+        echo json_encode(['ok' => true, 'request_id' => $pdo->lastInsertId()]);
+        exit;
+    }
+
+    // ---- افزودن دستیِ یک پلاک به یک درخواست (بدون نیاز به مدرک) - برای وقتی که
+    //      خودمان می‌خواهیم از قبل ردیف پلاک را بسازیم و بعداً مدارکش را تگ کنیم ----
+    if ($action === 'admin_add_plate') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT id FROM company_requests WHERE id = ?");
+        $stmt->execute([$requestId]);
+        if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+
+        $p1 = trim($data['plate_p1'] ?? ''); $p2 = trim($data['plate_p2'] ?? '');
+        $letter = trim($data['plate_letter'] ?? ''); $p4 = trim($data['plate_p4'] ?? '');
+        $insuranceType = in_array($data['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $data['insurance_type'] : null;
+        $expiryDate = trim($data['expiry_date'] ?? '') ?: null;
+        $skipHealth = !empty($data['skip_health_inspection']) ? 1 : 0;
+
+        $stmt = $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4, insurance_type, expiry_date, skip_health_inspection)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$requestId, $p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null, $insuranceType, $expiryDate, $skipHealth]);
+        echo json_encode(['ok' => true, 'plate_id' => $pdo->lastInsertId()]);
+        exit;
+    }
+
     // ---- مدارکِ تخصیص‌نیافته‌ی یک درخواست مشخص (برای دکمه‌ی «بررسی مدارک» روی هر ردیف) ----
     if ($action === 'list_request_inbox') {
         $requestId = intval($data['request_id'] ?? 0);

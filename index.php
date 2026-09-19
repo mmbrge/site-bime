@@ -86,7 +86,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->execute([$username]);
             $user = $stmt->fetch();
 
-            if ($user && password_verify($password, $user['password_hash'])) {
+            // درگاهِ انتخاب‌شده باید با نقشِ واقعیِ حساب کاربری هم‌خوانی داشته باشد
+            $gate = $_POST['login_gate'] ?? 'STAFF';
+            $gateOk = $user && (
+                ($gate === 'LIAISON' && $user['role'] === 'COMPANY_LIAISON') ||
+                ($gate !== 'LIAISON' && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE'], true))
+            );
+
+            if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
+                $error = 'درگاه ورود را درست انتخاب کنید.';
+            } elseif ($user && password_verify($password, $user['password_hash'])) {
                 if (otp_required($pdo, $user)) {
                     $res = otp_issue($pdo, $user, $_SERVER['REMOTE_ADDR'] ?? null);
                     if ($res['ok']) {
@@ -277,6 +286,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             font-weight: normal;
         }
 
+        /* ================= دکمه‌های انتخاب درگاه ورود ================= */
+        .gate-btn { background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.15); color: #9ca3af; }
+        .gate-btn.active { background: rgba(0,210,255,0.15); border-color: #00d2ff; color: #fff; box-shadow: 0 0 12px rgba(0,210,255,0.25); }
+
     </style>
 </head>
 <body class="font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
@@ -347,6 +360,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
 
         <div id="login-section" class="form-section w-full">
+            <!-- درگاه ورود: هرکسی اول مشخص می‌کند چه‌جور کاربری است، تا با اطلاعاتِ
+                 همان جدولِ کاربری وارد شود و اشتباهی به پنل دیگری هدایت نشود -->
+            <div class="mb-5" id="gate-selector">
+                <p class="text-[11px] font-bold text-gray-400 mb-2 text-center">من وارد می‌شوم به‌عنوان:</p>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" data-gate="STAFF" onclick="selectGate('STAFF')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">صدور / مدیریت</button>
+                    <button type="button" data-gate="LIAISON" onclick="selectGate('LIAISON')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">همکار شرکت‌ها</button>
+                    <button type="button" data-gate="COMPANY" onclick="selectGate('COMPANY')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">کاربر همکار بیمه با ما</button>
+                </div>
+            </div>
+
             <div class="flex bg-black/30 rounded-xl p-1 mb-6 relative z-20">
                 <button class="flex-1 py-2 text-sm font-bold bg-white/20 text-white rounded-lg shadow-sm hover-target transition-all">رمز عبور</button>
                 <button type="button" class="flex-1 py-2 text-sm font-bold text-gray-400 cursor-not-allowed relative group hover-target" onclick="showToast('ورود با پیامک به زودی فعال می‌شود.', 'warning')">
@@ -354,8 +378,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </button>
             </div>
 
-            <!-- فرم واقعی متصل به بک‌اند PHP -->
+            <!-- فرم واقعی متصل به بک‌اند PHP (برای درگاه شرکتی، ارسالش با جاوااسکریپت
+                 به سمت api/company_portal_auth.php تغییر مسیر داده می‌شود) -->
             <form id="login-form" method="POST" action="" class="flex-col gap-4 w-full" style="display:<?= $otpStage ? 'none' : 'flex' ?>;">
+                <input type="hidden" name="login_gate" id="login-gate" value="STAFF">
                 <div class="relative group/input">
                     <input type="text" name="username" id="login-nid" placeholder=" " autocomplete="off" class="peer w-full bg-black/20 border-2 border-white/20 focus:border-brand-accent outline-none rounded-xl py-3.5 pr-12 pl-4 text-sm font-bold text-white transition-all hover-target shadow-inner focus:bg-black/40">
                     <label class="absolute right-10 top-3.5 text-gray-400 text-sm font-bold transition-all duration-300 pointer-events-none peer-focus:-translate-y-[22px] peer-focus:right-4 peer-focus:text-[12px] peer-focus:text-brand-accent peer-focus:bg-[#1a252f] peer-focus:px-2 peer-focus:rounded-md peer-[:not(:placeholder-shown)]:-translate-y-[22px] peer-[:not(:placeholder-shown)]:right-4 peer-[:not(:placeholder-shown)]:text-[12px] peer-[:not(:placeholder-shown)]:text-gray-300 peer-[:not(:placeholder-shown)]:bg-[#1a252f] peer-[:not(:placeholder-shown)]:px-2 peer-[:not(:placeholder-shown)]:rounded-md">کد ملی / نام کاربری</label>
@@ -705,6 +731,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         window.addEventListener('mouseup', endDrag); window.addEventListener('touchend', endDrag);
         initCaptcha();
 
+        // ۰. انتخاب درگاه ورود (صدور/مدیریت - همکار شرکت‌ها - کاربر شرکتی)
+        function selectGate(gate) {
+            document.getElementById('login-gate').value = gate;
+            document.querySelectorAll('.gate-btn').forEach(b => b.classList.toggle('active', b.dataset.gate === gate));
+        }
+        selectGate('STAFF');
+
+        // ورود کاربرِ شرکتی از جدول جدایی (company_portal_users) می‌آید و OTP بله ندارد؛
+        // به‌جای ارسال فرم اصلی، مستقیم به بک‌اندِ پنل شرکت‌ها وصل می‌شویم
+        async function submitCompanyGateLogin() {
+            const username = document.getElementById('login-nid').value.trim();
+            const password = document.getElementById('login-pass').value;
+            if (!username || !password) { showToast('نام کاربری و رمز عبور را وارد کنید.', 'error'); return; }
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin ml-2"></i> در حال احراز هویت...';
+            try {
+                const res = await fetch('api/company_portal_auth.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'login', username, password})
+                });
+                const data = await res.json();
+                if (data.ok) { location.href = 'company-portal/index.php'; }
+                else {
+                    showToast(data.error || 'خطا در ورود.', 'error');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'ورود به سیستم';
+                }
+            } catch (e) {
+                showToast('خطا در ارتباط با سرور.', 'error');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'ورود به سیستم';
+            }
+        }
+
         // ۷. منطق فرم و نمایش رمز عبور
         const togglePass = document.getElementById('togglePass');
         const loginPass = document.getElementById('login-pass');
@@ -722,8 +782,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if(!isVerified) {
                 e.preventDefault(); // فرم ارسال نشود
                 showToast("ابتدا تست امنیتی (کپچا) را انجام دهید.", "error");
-                captchaBox.classList.add('captcha-error-anim'); 
-                setTimeout(() => captchaBox.classList.remove('captcha-error-anim'), 500); 
+                captchaBox.classList.add('captcha-error-anim');
+                setTimeout(() => captchaBox.classList.remove('captcha-error-anim'), 500);
+            } else if (document.getElementById('login-gate').value === 'COMPANY') {
+                // درگاه شرکتی از بک‌اند جدایی می‌آید؛ فرم اصلی (که برای users/OTP است) ارسال نشود
+                e.preventDefault();
+                submitCompanyGateLogin();
             } else {
                 loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin ml-2"></i> در حال احراز هویت...';
             }

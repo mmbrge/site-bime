@@ -172,16 +172,16 @@ async function doLogin() {
 <div id="request-detail-modal" class="modal-overlay">
     <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg">جزئیات درخواست</h3>
-            <button onclick="closeModal('request-detail-modal')" class="text-slate-400"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg flex items-center gap-2"><i class="fas fa-file-lines text-blue-500"></i>جزئیات درخواست</h3>
+            <button onclick="closeModal('request-detail-modal')" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"><i class="fas fa-times"></i></button>
         </div>
         <div id="request-detail-body"></div>
-        <div class="border-t mt-4 pt-4">
-            <label class="text-xs font-bold text-slate-500 block mb-2">افزودن مدارک جدید به این درخواست</label>
-            <p class="text-[11px] text-slate-400 mb-2">می‌توانید چند فایل با هم انتخاب کنید؛ فقط برای هر فایل نوعش را مشخص کنید.</p>
-            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs">
+        <div class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
+            <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5 mb-1"><i class="fas fa-cloud-arrow-up text-blue-400"></i>افزودن مدارک جدید به این درخواست</label>
+            <p class="text-[11px] text-slate-400 mb-3">می‌توانید چند فایل با هم انتخاب کنید؛ فقط برای هر فایل نوعش را مشخص کنید.</p>
+            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs bg-white border border-slate-200 rounded-lg p-2">
             <div id="doc-upload-rows" class="space-y-2 mb-2"></div>
-            <button onclick="uploadDocuments()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">
+            <button onclick="uploadDocuments()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
                 <i class="fas fa-upload ml-1"></i> آپلود مدارک
             </button>
         </div>
@@ -302,25 +302,57 @@ async function openRequestDetail(id) {
     if (!data.ok) { showToast(data.error || 'خطا در دریافت اطلاعات.'); return; }
     const r = data.request;
     currentRequestPlates = data.plates;
-    const docsHtml = data.documents.length ? data.documents.map(d => `
-        <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2.5 mb-2">
-            <span><i class="fas fa-file ml-1 text-slate-400"></i> ${d.orig_name || 'فایل'}</span>
-            <span class="text-[10px] ${d.status === 'ASSIGNED' ? 'text-emerald-600' : 'text-amber-500'} font-bold">${d.status === 'ASSIGNED' ? 'بررسی‌شده' : 'در انتظار بررسی'}</span>
-        </div>`).join('') : '<p class="text-xs text-slate-400">هنوز مدرکی آپلود نشده.</p>';
-    const platesHtml = data.plates.length ? data.plates.map(p => `
-        <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2.5 mb-2">
-            <span>${p.plate_p1 || ''} ${p.plate_letter || ''} ${p.plate_p2 || ''} ${p.plate_p4 ? 'ایران ' + p.plate_p4 : ''}${!(p.plate_p1||p.plate_p2||p.plate_letter||p.plate_p4) ? 'پلاک نامشخص' : ''} ${p.insurance_type ? '(' + (p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث') + ')' : ''}</span>
-            <span class="text-[10px] font-bold ${p.status === 'ISSUED' ? 'text-emerald-600' : 'text-slate-400'}">${p.status === 'ISSUED' ? 'صادر شده' : 'در جریان'}</span>
-        </div>`).join('') : '';
+
+    const fileIcon = (name) => {
+        const ext = (name || '').split('.').pop().toLowerCase();
+        if (['jpg','jpeg','png','webp'].includes(ext)) return ['fa-file-image', 'text-purple-500'];
+        if (ext === 'pdf') return ['fa-file-pdf', 'text-red-500'];
+        if (ext === 'zip') return ['fa-file-zipper', 'text-amber-500'];
+        return ['fa-file', 'text-slate-400'];
+    };
+    const docsHtml = data.documents.length ? data.documents.map(d => {
+        const [icon, color] = fileIcon(d.orig_name);
+        const assigned = d.status === 'ASSIGNED';
+        return `
+        <a href="../${d.file_path}" target="_blank" class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2 hover:shadow-md hover:border-blue-200 transition-all group">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors"><i class="fas ${icon} ${color}"></i></div>
+                <span class="text-xs font-bold text-slate-700 truncate">${d.orig_name || 'فایل'}</span>
+            </div>
+            <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${assigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}">${assigned ? '✓ بررسی‌شده' : 'در انتظار بررسی'}</span>
+        </a>`;
+    }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">هنوز مدرکی آپلود نشده.</p>';
+
+    const platesHtml = data.plates.length ? data.plates.map(p => {
+        const plateStr = (p.plate_p1||p.plate_p2||p.plate_letter||p.plate_p4)
+            ? `${p.plate_p1 || '--'} ${p.plate_letter || '-'} ${p.plate_p2 || '---'} <span class="text-slate-400">ایران</span> ${p.plate_p4 || '--'}`
+            : 'پلاک نامشخص';
+        return `
+        <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2">
+            <div class="flex items-center gap-2.5">
+                <div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateStr}</div>
+                ${p.insurance_type ? `<span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>` : ''}
+            </div>
+            <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${p.status === 'ISSUED' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${p.status === 'ISSUED' ? '✓ صادر شده' : 'در جریان'}</span>
+        </div>`;
+    }).join('') : '';
+
     document.getElementById('request-detail-body').innerHTML = `
-        <div class="flex items-center gap-2 mb-3">
-            <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
-            <span class="text-xs text-slate-400">${INSURER_FA[r.insurer] ? 'بیمه ' + INSURER_FA[r.insurer] : ''}</span>
+        <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 mb-5 text-white relative overflow-hidden">
+            <div class="absolute -left-6 -top-6 w-28 h-28 bg-white/10 rounded-full"></div>
+            <div class="absolute -left-2 -bottom-8 w-20 h-20 bg-white/10 rounded-full"></div>
+            <div class="relative flex items-center justify-between mb-3">
+                <span class="status-badge bg-white/20 backdrop-blur-sm">${STATUS_FA[r.status] || r.status}</span>
+                <span class="text-xs font-bold opacity-90">${INSURER_FA[r.insurer] ? 'بیمه ' + INSURER_FA[r.insurer] : ''}</span>
+            </div>
+            <p class="relative text-sm leading-relaxed font-bold">${r.request_text || '(بدون توضیح متنی)'}</p>
+            <div class="relative flex gap-4 mt-3 text-[10.5px] opacity-80">
+                <span><i class="far fa-calendar-plus ml-1"></i>ثبت: ${r.created_at_jalali}</span>
+                <span><i class="far fa-clock ml-1"></i>ویرایش: ${r.updated_at_jalali}</span>
+            </div>
         </div>
-        <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
-        <p class="text-sm text-slate-600 mb-4">${r.request_text || '(بدون توضیح متنی)'}</p>
-        ${platesHtml ? '<h4 class="text-xs font-bold text-slate-500 mb-2">پلاک‌ها</h4>' + platesHtml : ''}
-        <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک ارسالی</h4>
+        ${platesHtml ? `<h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>پلاک‌ها</h4>${platesHtml}` : ''}
+        <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>مدارک ارسالی</h4>
         ${docsHtml}
     `;
     document.getElementById('doc-upload-input').value = '';
@@ -345,11 +377,11 @@ function renderDocUploadRows() {
     const box = document.getElementById('doc-upload-rows');
     const plateOptions = '<option value="">بدون پلاک مشخص</option>' + currentRequestPlates.map((p, i) => `<option value="${i}">${plateOptionLabel(p)}</option>`).join('');
     box.innerHTML = Array.from(files).map((f, i) => `
-        <div class="border rounded-lg p-2 text-xs du-row" data-index="${i}">
-            <p class="font-bold mb-1 truncate">${f.name}</p>
+        <div class="bg-white border border-slate-200 rounded-xl p-2.5 text-xs du-row" data-index="${i}">
+            <p class="font-bold mb-1.5 truncate text-slate-700"><i class="fas fa-paperclip text-slate-300 ml-1"></i>${f.name}</p>
             <div class="grid grid-cols-2 gap-2">
-                <select class="du-type border rounded p-1">${DOC_TYPE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
-                <select class="du-plate border rounded p-1">${plateOptions}</select>
+                <select class="du-type border border-slate-200 rounded-lg p-1.5">${DOC_TYPE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+                <select class="du-plate border border-slate-200 rounded-lg p-1.5">${plateOptions}</select>
             </div>
         </div>`).join('');
 }

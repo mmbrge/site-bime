@@ -1375,6 +1375,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <option value="CANCELLED">لغو شده</option>
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
+                    <button onclick="openAdminNewRequestModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواست</button>
                 </div>
             </div>
             <div class="card overflow-x-auto">
@@ -1469,6 +1470,51 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('creq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">جزئیات درخواست شرکتی</h3>
             <div id="creq-detail-body" class="text-sm"></div>
+        </div>
+    </div>
+
+    <!-- مودال ثبت دستیِ یک درخواست شرکتی (توسط خودمان، بدون نیاز به ثبت‌کننده‌ی شرکت) -->
+    <div id="admin-new-creq-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">ثبت دستی درخواست شرکتی</h3>
+            <div class="float-input">
+                <select id="ancr-company" onchange="ancrUpdateInsurerOptions()"><option value="">-- انتخاب شرکت --</option></select>
+                <label>شرکت</label>
+            </div>
+            <div class="float-input">
+                <select id="ancr-insurer"></select>
+                <label>بیمه‌گر</label>
+            </div>
+            <label class="text-xs font-bold text-slate-500 block mb-2">توضیح / متن نامه (اختیاری)</label>
+            <textarea id="ancr-text" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
+            <button onclick="submitAdminNewRequest()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت درخواست</button>
+        </div>
+    </div>
+
+    <!-- مودال افزودن دستیِ یک پلاک به درخواست جاری (بدون نیاز به مدرک) -->
+    <div id="admin-add-plate-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" onclick="document.getElementById('admin-add-plate-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">افزودن پلاک</h3>
+            <input type="hidden" id="aap-request-id">
+            <div class="grid grid-cols-4 gap-2 mb-3" dir="ltr">
+                <input type="text" id="aap-p1" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="aap-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="aap-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-sm">
+                <input type="text" id="aap-p4" maxlength="2" placeholder="۶۷" class="text-center border rounded-lg p-2 text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input">
+                    <select id="aap-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
+                    <label>نوع بیمه</label>
+                </div>
+                <div class="float-input"><input type="date" id="aap-expiry" placeholder=" "><label>تاریخ انقضا</label></div>
+            </div>
+            <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
+                <input type="checkbox" id="aap-skip-health"> این پلاک نیاز به بازدید سلامت ندارد
+            </label>
+            <button onclick="submitAdminAddPlate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">افزودن پلاک</button>
         </div>
     </div>
 
@@ -2530,14 +2576,84 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </tr>`).join('');
         }
 
+        // ---------- ثبت دستی درخواست شرکتی توسط خودمان ----------
+        let ancrCompaniesCache = [];
+        async function openAdminNewRequestModal() {
+            document.getElementById('ancr-text').value = '';
+            const sel = document.getElementById('ancr-company');
+            sel.innerHTML = '<option value="">در حال بارگذاری...</option>';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})});
+            const data = await res.json();
+            ancrCompaniesCache = data.ok ? data.companies : [];
+            sel.innerHTML = '<option value="">-- انتخاب شرکت --</option>' + ancrCompaniesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            ancrUpdateInsurerOptions();
+            openModal('admin-new-creq-modal');
+        }
+        function ancrUpdateInsurerOptions() {
+            const companyId = Number(document.getElementById('ancr-company').value);
+            const company = ancrCompaniesCache.find(c => c.id === companyId);
+            const allowed = (company && company.allowed_insurers) || 'BOTH';
+            const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
+            document.getElementById('ancr-insurer').innerHTML = options.map(o => `<option value="${o}">${o === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('');
+        }
+        async function submitAdminNewRequest() {
+            const companyId = document.getElementById('ancr-company').value;
+            if (!companyId) { showToast('شرکت را انتخاب کنید.', 'error'); return; }
+            const payload = {
+                action: 'admin_create_request', company_id: companyId,
+                insurer: document.getElementById('ancr-insurer').value,
+                request_text: document.getElementById('ancr-text').value.trim(),
+            };
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                showToast('درخواست ثبت شد.', 'success');
+                document.getElementById('admin-new-creq-modal').classList.remove('active');
+                loadCompanyRequests();
+                openCompanyRequestDetail(data.request_id);
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
+        // ---------- افزودن دستیِ پلاک به یک درخواست ----------
+        function openAdminAddPlateModal(requestId) {
+            document.getElementById('aap-request-id').value = requestId;
+            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-expiry'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('aap-insurance-type').value = '';
+            document.getElementById('aap-skip-health').checked = false;
+            openModal('admin-add-plate-modal');
+        }
+        async function submitAdminAddPlate() {
+            const payload = {
+                action: 'admin_add_plate',
+                request_id: document.getElementById('aap-request-id').value,
+                plate_p1: document.getElementById('aap-p1').value.trim(),
+                plate_p2: document.getElementById('aap-p2').value.trim(),
+                plate_letter: document.getElementById('aap-letter').value.trim(),
+                plate_p4: document.getElementById('aap-p4').value.trim(),
+                insurance_type: document.getElementById('aap-insurance-type').value,
+                expiry_date: document.getElementById('aap-expiry').value,
+                skip_health_inspection: document.getElementById('aap-skip-health').checked ? 1 : 0,
+            };
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                showToast('پلاک اضافه شد.', 'success');
+                document.getElementById('admin-add-plate-modal').classList.remove('active');
+                if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
         const DOC_TYPE_FA = {car_card_or_title: 'کارت ماشین/سند', prev_body_policy: 'بیمه بدنه قبلی', health_inspection: 'گزارش بازدید سلامت', letter: 'نامه'};
         const FOLDER_STATUS_FA = {PENDING: ['در انتظار صدور', 'text-slate-400'], TRANSFERRED: ['منتقل شد', 'text-emerald-600'], FAILED: ['ناموفق - نیاز به تلاش دوباره', 'text-red-600']};
         let currentRequestId = null;
 
         async function openCompanyRequestDetail(id) {
             currentRequestId = id;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: id})});
-            const data = await res.json();
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: id})});
+                data = await res.json();
+            } catch (e) { showToast('خطا در ارتباط با سرور. دوباره تلاش کنید.', 'error'); return; }
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
             const r = data.request;
             const docsForPlate = (plateId) => data.documents.filter(d => d.plate_id === plateId);
@@ -2591,7 +2707,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
                 <p class="text-sm text-slate-600 mb-4">${r.request_text || '(بدون توضیح متنی)'}</p>
                 ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="inline-block mb-4 text-xs font-bold bg-slate-800 text-white px-3 py-2 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی بیمه‌نامه‌های صادرشده</a>` : ''}
-                <h4 class="text-xs font-bold text-slate-500 mb-2">پلاک‌ها</h4>
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-xs font-bold text-slate-500">پلاک‌ها</h4>
+                    ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-blue-600 hover:underline text-[11px] font-bold"><i class="fas fa-plus ml-1"></i>افزودن پلاک</button>` : ''}
+                </div>
                 ${platesHtml}
                 <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
                 ${docsHtml}
@@ -2728,9 +2847,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         async function loadRequestDocsReview() {
             const requestId = currentDocsReviewRequestId;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_request_inbox', request_id: requestId})});
-            const data = await res.json();
             const box = document.getElementById('creq-docs-list');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_request_inbox', request_id: requestId})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-6">خطا در ارتباط با سرور. دوباره تلاش کنید.</p>'; return; }
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
             companyInboxCache = data.documents;
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">مدرک تخصیص‌نیافته‌ای برای این درخواست نیست.</p>'; return; }
@@ -2746,10 +2868,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function loadCompanyInbox() {
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
-            const data = await res.json();
             const box = document.getElementById('cinbox-list');
             const badge = document.getElementById('companies-inbox-badge');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-6">خطا در ارتباط با سرور. دوباره تلاش کنید.</p>'; return; }
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
             companyInboxCache = data.documents;
             if (badge) { if (data.documents.length) { badge.textContent = data.documents.length; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
@@ -2795,8 +2920,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cit-doc-id').value = docId;
             const sel = document.getElementById('cit-request');
             sel.innerHTML = '<option>در حال بارگذاری...</option>';
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests'})});
-            const data = await res.json();
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests'})});
+                data = await res.json();
+            } catch (e) { sel.innerHTML = '<option value="">خطا در ارتباط با سرور - دوباره تلاش کنید</option>'; return; }
             const forCompany = (data.requests || []).filter(r => r.company_id == doc.company_id);
             sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === doc.request_id ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
 
