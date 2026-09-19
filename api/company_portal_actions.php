@@ -86,15 +86,35 @@ try {
             exit;
         }
 
+        // بیمه‌گر انتخاب‌شده باید طبق تنظیمات همین شرکت مجاز باشد
+        $stmtAllowed = $pdo->prepare("SELECT allowed_insurers, name FROM companies WHERE id = ?");
+        $stmtAllowed->execute([$companyId]);
+        $companyRow = $stmtAllowed->fetch();
+        $allowedInsurers = $companyRow['allowed_insurers'] ?? 'BOTH';
+        if ($allowedInsurers !== 'BOTH' && $allowedInsurers !== $insurer) {
+            echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($allowedInsurers === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.']);
+            exit;
+        }
+
         $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, status) VALUES (?, ?, ?, ?, 'NEW')");
         $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer]);
         $requestId = $pdo->lastInsertId();
 
+        // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز)
+        $plates = json_decode($data['plates'] ?? '[]', true);
+        if (is_array($plates)) {
+            $insPlate = $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4) VALUES (?, ?, ?, ?, ?)");
+            foreach ($plates as $p) {
+                $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');
+                $pletter = trim($p['letter'] ?? ''); $pp4 = trim($p['p4'] ?? '');
+                if ($pp1 === '' && $pp2 === '' && $pletter === '' && $pp4 === '') continue;
+                $insPlate->execute([$requestId, $pp1 ?: null, $pp2 ?: null, $pletter ?: null, $pp4 ?: null]);
+            }
+        }
+
         if (!empty($_FILES['letter_file'])) {
             $siteRoot = dirname(__DIR__);
-            $stmtName = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
-            $stmtName->execute([$companyId]);
-            $companyName = $stmtName->fetchColumn() ?: 'نامشخص';
+            $companyName = $companyRow['name'] ?? 'نامشخص';
             $tmpDir = company_unassigned_temp_path($siteRoot, $companyName);
             $saved = company_store_uploaded_file($_FILES['letter_file'], $tmpDir);
             if ($saved['ok']) {

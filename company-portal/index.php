@@ -10,7 +10,7 @@ company_portal_session_start();
 $loggedIn = !empty($_SESSION['company_user_id']);
 $companies = [];
 if ($loggedIn) {
-    $stmt = $pdo->prepare("SELECT c.id, c.name FROM company_portal_user_companies cpuc
+    $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
                             JOIN companies c ON c.id = cpuc.company_id
                             WHERE cpuc.portal_user_id = ? ORDER BY c.name");
     $stmt->execute([$_SESSION['company_user_id']]);
@@ -134,19 +134,19 @@ async function doLogin() {
 
 <!-- مودال درخواست جدید -->
 <div id="new-request-modal" class="modal-overlay">
-    <div class="modal-content p-6">
+    <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
         <h3 class="font-bold text-lg mb-4">ثبت درخواست جدید</h3>
         <?php if (count($companies) > 1): ?>
         <div class="float-input">
             <label>برای کدام شرکت؟</label>
-            <select id="nr-company"><?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?></select>
+            <select id="nr-company" onchange="updateInsurerOptions()"><?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?></select>
         </div>
         <?php else: ?>
         <input type="hidden" id="nr-company" value="<?php echo $companies[0]['id']; ?>">
         <?php endif; ?>
         <div class="float-input">
             <label>بیمه‌گر</label>
-            <select id="nr-insurer"><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+            <select id="nr-insurer"></select>
         </div>
         <div class="float-input">
             <label>توضیح درخواست</label>
@@ -156,6 +156,11 @@ async function doLogin() {
             <label>فایل نامه (اختیاری - PDF یا عکس)</label>
             <input type="file" id="nr-letter" accept=".pdf,.jpg,.jpeg,.png,.webp">
         </div>
+
+        <label class="text-xs font-bold text-slate-500 block mb-2">پلاک‌های این درخواست (اختیاری - می‌توانید چند پلاک اضافه کنید)</label>
+        <div id="nr-plates-list" class="space-y-2 mb-2"></div>
+        <button type="button" onclick="addPlateRow('nr-plates-list')" class="text-xs font-bold text-blue-600 mb-4"><i class="fas fa-plus ml-1"></i>افزودن پلاک</button>
+
         <div class="flex gap-3 mt-2">
             <button onclick="closeModal('new-request-modal')" class="flex-1 bg-slate-100 hover:bg-slate-200 font-bold py-2.5 rounded-xl">انصراف</button>
             <button onclick="submitNewRequest()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl">ثبت</button>
@@ -165,25 +170,19 @@ async function doLogin() {
 
 <!-- مودال جزئیات درخواست -->
 <div id="request-detail-modal" class="modal-overlay">
-    <div class="modal-content p-6">
+    <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-bold text-lg">جزئیات درخواست</h3>
             <button onclick="closeModal('request-detail-modal')" class="text-slate-400"><i class="fas fa-times"></i></button>
         </div>
         <div id="request-detail-body"></div>
         <div class="border-t mt-4 pt-4">
-            <label class="text-xs font-bold text-slate-500 block mb-2">افزودن مدرک جدید به این درخواست</label>
-            <p class="text-[11px] text-slate-400 mb-2">اگر می‌دانید این مدرک برای کدام پلاک است، وارد کنید تا سریع‌تر بررسی شود (اختیاری).</p>
-            <div class="grid grid-cols-4 gap-2 mb-2" dir="ltr">
-                <input type="text" id="du-p1" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-xs">
-                <input type="text" id="du-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-xs">
-                <input type="text" id="du-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-xs">
-                <input type="text" id="du-p4" maxlength="2" placeholder="۶۷" class="text-center border rounded-lg p-2 text-xs">
-            </div>
-            <input type="text" id="du-doc-type" placeholder="نوع مدرک (اختیاری، مثلاً: کارت ماشین)" class="w-full border rounded-lg p-2 text-xs mb-2">
-            <input type="file" id="doc-upload-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" class="mb-2 w-full text-xs">
-            <button onclick="uploadDocument()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">
-                <i class="fas fa-upload ml-1"></i> آپلود مدرک
+            <label class="text-xs font-bold text-slate-500 block mb-2">افزودن مدارک جدید به این درخواست</label>
+            <p class="text-[11px] text-slate-400 mb-2">می‌توانید چند فایل با هم انتخاب کنید؛ فقط برای هر فایل نوعش را مشخص کنید.</p>
+            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs">
+            <div id="doc-upload-rows" class="space-y-2 mb-2"></div>
+            <button onclick="uploadDocuments()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">
+                <i class="fas fa-upload ml-1"></i> آپلود مدارک
             </button>
         </div>
     </div>
@@ -203,7 +202,11 @@ function showToast(msg) {
 }
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-function openNewRequestModal() { openModal('new-request-modal'); }
+function openNewRequestModal() {
+    document.getElementById('nr-plates-list').innerHTML = '';
+    updateInsurerOptions();
+    openModal('new-request-modal');
+}
 
 async function doLogout() {
     await fetch('../api/company_portal_auth.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'logout'})});
@@ -227,12 +230,56 @@ async function loadRequests() {
     `).join('');
 }
 
+const COMPANIES_DATA = <?php echo json_encode($companies, JSON_UNESCAPED_UNICODE); ?>;
+const INSURER_FA = {PASARGAD: 'پاسارگاد', IRAN: 'ایران'};
+let currentRequestPlates = [];
+
+function updateInsurerOptions() {
+    const companyId = Number(document.getElementById('nr-company').value);
+    const company = COMPANIES_DATA.find(c => c.id === companyId) || COMPANIES_DATA[0];
+    const allowed = (company && company.allowed_insurers) || 'BOTH';
+    const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
+    const sel = document.getElementById('nr-insurer');
+    sel.innerHTML = options.map(o => `<option value="${o}">${INSURER_FA[o]}</option>`).join('');
+}
+updateInsurerOptions();
+
+// پلاک به ترتیب نمایشِ خواسته‌شده: [۲رقم] [حرف] [۳رقم] [ایران + ۲رقم آخر]
+function addPlateRow(containerId) {
+    const container = document.getElementById(containerId);
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 mb-1';
+    row.innerHTML = `
+        <div class="grid grid-cols-4 gap-1 flex-1" dir="ltr">
+            <input class="plate-p1 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
+            <input class="plate-letter text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="الف">
+            <input class="plate-p2 text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="۳۴۵">
+            <div class="flex items-center gap-1 border rounded-lg px-1">
+                <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
+                <input class="plate-p4 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
+            </div>
+        </div>
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+    `;
+    container.appendChild(row);
+}
+
+function collectPlateRows(containerId) {
+    return Array.from(document.getElementById(containerId).querySelectorAll('.flex.items-center.gap-2')).map(row => ({
+        p1: row.querySelector('.plate-p1').value.trim(),
+        p2: row.querySelector('.plate-p2').value.trim(),
+        letter: row.querySelector('.plate-letter').value.trim(),
+        p4: row.querySelector('.plate-p4').value.trim(),
+    })).filter(p => p.p1 || p.p2 || p.letter || p.p4);
+}
+
 async function submitNewRequest() {
     const fd = new FormData();
     fd.append('action', 'submit_request');
     fd.append('company_id', document.getElementById('nr-company').value);
     fd.append('insurer', document.getElementById('nr-insurer').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
+    fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list')));
     const fileInput = document.getElementById('nr-letter');
     if (fileInput.files[0]) fd.append('letter_file', fileInput.files[0]);
     try {
@@ -242,6 +289,7 @@ async function submitNewRequest() {
             showToast('درخواست با موفقیت ثبت شد.');
             closeModal('new-request-modal');
             document.getElementById('nr-text').value = ''; fileInput.value = '';
+            document.getElementById('nr-plates-list').innerHTML = '';
             loadRequests();
         } else { showToast(data.error || 'خطا در ثبت درخواست.'); }
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
@@ -253,6 +301,7 @@ async function openRequestDetail(id) {
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'خطا در دریافت اطلاعات.'); return; }
     const r = data.request;
+    currentRequestPlates = data.plates;
     const docsHtml = data.documents.length ? data.documents.map(d => `
         <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2.5 mb-2">
             <span><i class="fas fa-file ml-1 text-slate-400"></i> ${d.orig_name || 'فایل'}</span>
@@ -260,13 +309,13 @@ async function openRequestDetail(id) {
         </div>`).join('') : '<p class="text-xs text-slate-400">هنوز مدرکی آپلود نشده.</p>';
     const platesHtml = data.plates.length ? data.plates.map(p => `
         <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2.5 mb-2">
-            <span>${[p.plate_p1, p.plate_p2, p.plate_letter, p.plate_p4].filter(Boolean).join(' ') || 'پلاک نامشخص'} ${p.insurance_type ? '(' + (p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث') + ')' : ''}</span>
+            <span>${p.plate_p1 || ''} ${p.plate_letter || ''} ${p.plate_p2 || ''} ${p.plate_p4 ? 'ایران ' + p.plate_p4 : ''}${!(p.plate_p1||p.plate_p2||p.plate_letter||p.plate_p4) ? 'پلاک نامشخص' : ''} ${p.insurance_type ? '(' + (p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث') + ')' : ''}</span>
             <span class="text-[10px] font-bold ${p.status === 'ISSUED' ? 'text-emerald-600' : 'text-slate-400'}">${p.status === 'ISSUED' ? 'صادر شده' : 'در جریان'}</span>
         </div>`).join('') : '';
     document.getElementById('request-detail-body').innerHTML = `
         <div class="flex items-center gap-2 mb-3">
             <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
-            <span class="text-xs text-slate-400">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'}</span>
+            <span class="text-xs text-slate-400">${INSURER_FA[r.insurer] ? 'بیمه ' + INSURER_FA[r.insurer] : ''}</span>
         </div>
         <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
         <p class="text-sm text-slate-600 mb-4">${r.request_text || '(بدون توضیح متنی)'}</p>
@@ -274,30 +323,65 @@ async function openRequestDetail(id) {
         <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک ارسالی</h4>
         ${docsHtml}
     `;
+    document.getElementById('doc-upload-input').value = '';
+    document.getElementById('doc-upload-rows').innerHTML = '';
     openModal('request-detail-modal');
 }
 
-async function uploadDocument() {
-    const fileInput = document.getElementById('doc-upload-input');
-    if (!fileInput.files[0]) { showToast('یک فایل انتخاب کنید.'); return; }
-    const fd = new FormData();
-    fd.append('action', 'upload_document');
-    fd.append('request_id', activeRequestId);
-    fd.append('plate_p1', document.getElementById('du-p1').value.trim());
-    fd.append('plate_p2', document.getElementById('du-p2').value.trim());
-    fd.append('plate_letter', document.getElementById('du-letter').value.trim());
-    fd.append('plate_p4', document.getElementById('du-p4').value.trim());
-    fd.append('doc_type', document.getElementById('du-doc-type').value.trim());
-    fd.append('file', fileInput.files[0]);
-    try {
-        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
-        const data = await res.json();
-        if (data.ok) {
-            showToast('مدرک آپلود شد.'); fileInput.value = '';
-            ['du-p1','du-p2','du-letter','du-p4','du-doc-type'].forEach(id => document.getElementById(id).value = '');
-            openRequestDetail(activeRequestId);
-        } else { showToast(data.error || 'خطا در آپلود.'); }
-    } catch (e) { showToast('خطا در ارتباط با سرور.'); }
+const DOC_TYPE_OPTIONS = [
+    ['car_card_or_title', 'کارت ماشین (پشت و رو) یا سند مالکیت'],
+    ['prev_body_policy', 'بیمه بدنه قبلی'],
+    ['health_inspection', 'گزارش بازدید سلامت'],
+    ['other', 'سایر'],
+];
+
+function plateOptionLabel(p) {
+    const parts = [p.plate_p1, p.plate_letter, p.plate_p2].filter(Boolean).join(' ');
+    return (parts || 'بدون‌شماره') + (p.plate_p4 ? ' ایران ' + p.plate_p4 : '');
+}
+
+function renderDocUploadRows() {
+    const files = document.getElementById('doc-upload-input').files;
+    const box = document.getElementById('doc-upload-rows');
+    const plateOptions = '<option value="">بدون پلاک مشخص</option>' + currentRequestPlates.map((p, i) => `<option value="${i}">${plateOptionLabel(p)}</option>`).join('');
+    box.innerHTML = Array.from(files).map((f, i) => `
+        <div class="border rounded-lg p-2 text-xs du-row" data-index="${i}">
+            <p class="font-bold mb-1 truncate">${f.name}</p>
+            <div class="grid grid-cols-2 gap-2">
+                <select class="du-type border rounded p-1">${DOC_TYPE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+                <select class="du-plate border rounded p-1">${plateOptions}</select>
+            </div>
+        </div>`).join('');
+}
+
+async function uploadDocuments() {
+    const files = document.getElementById('doc-upload-input').files;
+    if (!files.length) { showToast('حداقل یک فایل انتخاب کنید.'); return; }
+    const rows = document.querySelectorAll('#doc-upload-rows .du-row');
+    let okCount = 0;
+    for (let i = 0; i < files.length; i++) {
+        const row = rows[i];
+        const fd = new FormData();
+        fd.append('action', 'upload_document');
+        fd.append('request_id', activeRequestId);
+        fd.append('doc_type', row ? row.querySelector('.du-type').value : '');
+        const plateIdx = row ? row.querySelector('.du-plate').value : '';
+        const plate = plateIdx !== '' ? currentRequestPlates[Number(plateIdx)] : null;
+        fd.append('plate_p1', plate ? (plate.plate_p1 || '') : '');
+        fd.append('plate_p2', plate ? (plate.plate_p2 || '') : '');
+        fd.append('plate_letter', plate ? (plate.plate_letter || '') : '');
+        fd.append('plate_p4', plate ? (plate.plate_p4 || '') : '');
+        fd.append('file', files[i]);
+        try {
+            const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
+            const data = await res.json();
+            if (data.ok) okCount++;
+        } catch (e) { /* ادامه با فایل بعدی */ }
+    }
+    showToast(`${okCount} از ${files.length} فایل آپلود شد.`);
+    document.getElementById('doc-upload-input').value = '';
+    document.getElementById('doc-upload-rows').innerHTML = '';
+    openRequestDetail(activeRequestId);
 }
 
 function fmtBubbleTime(ts) { return new Date(ts.replace(' ', 'T')).toLocaleString('fa-IR'); }

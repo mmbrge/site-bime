@@ -11,6 +11,9 @@ require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments
 
 $actor = require_admin_or_liaison();
 
+// اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
+@mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
+
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
@@ -92,7 +95,9 @@ try {
         $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name FROM companies c
                               LEFT JOIN companies parent ON parent.id = c.parent_id
                               WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') ORDER BY c.name");
-        echo json_encode(['ok' => true, 'companies' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        $companiesList = $stmt->fetchAll();
+        foreach ($companiesList as &$c) { $c['created_at_jalali'] = $c['created_at'] ? jd(strtotime($c['created_at'])) : null; }
+        echo json_encode(['ok' => true, 'companies' => $companiesList], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -109,14 +114,15 @@ try {
         $instCount = intval($data['installment_count'] ?? 0) ?: null;
         $offsetMonths = intval($data['first_due_offset_months'] ?? 0);
         $offsetDays = intval($data['first_due_offset_days'] ?? 0);
+        $allowedInsurers = in_array($data['allowed_insurers'] ?? '', ['PASARGAD', 'IRAN', 'BOTH'], true) ? $data['allowed_insurers'] : 'BOTH';
 
         if ($action === 'update_company') {
             $companyId = intval($data['id'] ?? 0);
             if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت نامعتبر است.']); exit; }
             if ($parentId === $companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت نمی‌تواند زیرمجموعه‌ی خودش باشد.']); exit; }
             $pdo->prepare("UPDATE companies SET name=?, payment_terms=?, economic_code=?, address=?, phone=?, parent_id=?,
-                            bale_group_chat_id=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
-                ->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $instCount, $offsetMonths, $offsetDays, $companyId]);
+                            bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
+                ->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $companyId]);
             echo json_encode(['ok' => true, 'company_id' => $companyId]);
             exit;
         }
@@ -127,15 +133,15 @@ try {
         if ($existing) {
             $newKind = $existing['kind'] === 'PERSONNEL_EMPLOYER' ? 'BOTH' : $existing['kind'];
             $pdo->prepare("UPDATE companies SET kind=?, payment_terms=?, economic_code=?, address=?, phone=?, parent_id=?,
-                            bale_group_chat_id=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
-                ->execute([$newKind, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $instCount, $offsetMonths, $offsetDays, $existing['id']]);
+                            bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
+                ->execute([$newKind, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $existing['id']]);
             echo json_encode(['ok' => true, 'company_id' => $existing['id']]);
             exit;
         }
         $stmt = $pdo->prepare("INSERT INTO companies (name, kind, payment_terms, economic_code, address, phone, parent_id,
-                                bale_group_chat_id, installment_count, first_due_offset_months, first_due_offset_days)
-                                VALUES (?, 'INSURANCE_CLIENT', ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $instCount, $offsetMonths, $offsetDays]);
+                                bale_group_chat_id, allowed_insurers, installment_count, first_due_offset_months, first_due_offset_days)
+                                VALUES (?, 'INSURANCE_CLIENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays]);
         echo json_encode(['ok' => true, 'company_id' => $pdo->lastInsertId()]);
         exit;
     }
@@ -180,15 +186,34 @@ try {
     // ---- لیست درخواست‌ها (همه‌ی شرکت‌ها یا فیلترشده) ----
     if ($action === 'list_requests') {
         $statusFilter = $data['status'] ?? '';
-        $sql = "SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id";
+        $sql = "SELECT cr.*, c.name AS company_name,
+                       (SELECT COUNT(*) FROM company_documents cd WHERE cd.request_id = cr.id AND cd.status = 'UNASSIGNED') AS pending_docs_count
+                FROM company_requests cr JOIN companies c ON c.id = cr.company_id";
         $params = [];
         if ($statusFilter !== '') { $sql .= " WHERE cr.status = ?"; $params[] = $statusFilter; }
         $sql .= " ORDER BY cr.created_at DESC LIMIT 200";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$r) { $r['created_at_jalali'] = jd(strtotime($r['created_at'])); $r['updated_at_jalali'] = jd(strtotime($r['updated_at'])); }
+        foreach ($rows as &$r) {
+            $r['created_at_jalali'] = jd(strtotime($r['created_at']));
+            $r['updated_at_jalali'] = jd(strtotime($r['updated_at']));
+            $r['pending_docs_count'] = intval($r['pending_docs_count']);
+        }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- مدارکِ تخصیص‌نیافته‌ی یک درخواست مشخص (برای دکمه‌ی «بررسی مدارک» روی هر ردیف) ----
+    if ($action === 'list_request_inbox') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT cd.*, c.name AS company_name FROM company_documents cd
+                                JOIN companies c ON c.id = cd.company_id
+                                WHERE cd.request_id = ? AND cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC");
+        $stmt->execute([$requestId]);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$r) $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
+        echo json_encode(['ok' => true, 'documents' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

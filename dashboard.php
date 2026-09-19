@@ -1433,7 +1433,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
                         <th class="p-3 text-right">شرکت</th><th class="p-3 text-right">شرکت مادر</th>
-                        <th class="p-3 text-right">نحوه‌ی تسویه</th><th class="p-3 text-right"></th>
+                        <th class="p-3 text-right">نحوه‌ی تسویه</th><th class="p-3 text-right">اقساط</th>
+                        <th class="p-3 text-right">بیمه‌گر مجاز</th><th class="p-3 text-right">تاریخ ایجاد</th>
+                        <th class="p-3 text-right"></th>
                     </tr></thead>
                     <tbody id="cm-companies-body"><tr><td colspan="4" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
@@ -1467,6 +1469,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('creq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">جزئیات درخواست شرکتی</h3>
             <div id="creq-detail-body" class="text-sm"></div>
+        </div>
+    </div>
+
+    <!-- مودال «بررسی مدارک» یک درخواست مشخص -->
+    <div id="creq-docs-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-lg p-6 relative max-h-[85vh] overflow-y-auto">
+            <button type="button" onclick="document.getElementById('creq-docs-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">بررسی مدارک درخواست <span id="creq-docs-req-id"></span></h3>
+            <div id="creq-docs-list" class="space-y-3"></div>
         </div>
     </div>
 
@@ -1508,7 +1519,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="cit-skip-health"> این پلاک نیاز به بازدید سلامت ندارد (طبق روال این شرکت)
             </label>
-            <button onclick="submitAssignDocument()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">تخصیص مدرک</button>
+            <button onclick="submitAssignDocument()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت اطلاعات (تگ‌گذاری)</button>
         </div>
     </div>
 
@@ -1550,14 +1561,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label>گروه بله‌ی مرتبط</label>
                 <input type="text" id="cm-group-manual" placeholder="اگر گروه در لیست نبود، شناسه‌ی چت را اینجا بنویسید" dir="ltr" class="mt-2">
             </div>
-            <div class="float-input">
-                <select id="cm-payment-terms">
-                    <option value="">مشخص نشده</option>
-                    <option value="INSTALLMENT">قسطی</option>
-                    <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
-                    <option value="CASH_IMMEDIATE">نقدی - فوری</option>
-                </select>
-                <label>نحوه‌ی تسویه</label>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input">
+                    <select id="cm-payment-terms">
+                        <option value="">مشخص نشده</option>
+                        <option value="INSTALLMENT">قسطی</option>
+                        <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
+                        <option value="CASH_IMMEDIATE">نقدی - فوری</option>
+                    </select>
+                    <label>نحوه‌ی تسویه</label>
+                </div>
+                <div class="float-input">
+                    <select id="cm-allowed-insurers">
+                        <option value="BOTH">پاسارگاد و ایران (هردو)</option>
+                        <option value="PASARGAD">فقط پاسارگاد</option>
+                        <option value="IRAN">فقط ایران</option>
+                    </select>
+                    <label>بیمه‌گر(های) مجاز برای این شرکت</label>
+                </div>
             </div>
             <p class="text-xs font-bold text-slate-500 mb-2">تنظیمات قسط‌بندی</p>
             <div class="grid grid-cols-3 gap-3">
@@ -2499,7 +2520,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</td>
                     <td class="p-3"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span></td>
                     <td class="p-3 text-slate-400">${r.created_at}</td>
-                    <td class="p-3"><button onclick="openCompanyRequestDetail(${r.id})" class="text-blue-600 hover:underline text-xs font-bold">مشاهده</button></td>
+                    <td class="p-3 flex items-center gap-2">
+                        <button onclick="openCompanyRequestDetail(${r.id})" class="text-blue-600 hover:underline text-xs font-bold">مشاهده</button>
+                        <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-lg">
+                            بررسی مدارک
+                            ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
+                        </button>
+                    </td>
                 </tr>`).join('');
         }
 
@@ -2689,6 +2716,34 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         let companyInboxCache = [];
+        let currentDocsReviewRequestId = null;
+
+        async function openRequestDocsReview(requestId) {
+            currentDocsReviewRequestId = requestId;
+            document.getElementById('creq-docs-req-id').textContent = '#' + requestId;
+            document.getElementById('creq-docs-list').innerHTML = '<p class="text-center text-xs text-slate-400 py-6">در حال بارگذاری...</p>';
+            document.getElementById('creq-docs-modal').classList.add('active');
+            await loadRequestDocsReview();
+        }
+
+        async function loadRequestDocsReview() {
+            const requestId = currentDocsReviewRequestId;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_request_inbox', request_id: requestId})});
+            const data = await res.json();
+            const box = document.getElementById('creq-docs-list');
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
+            companyInboxCache = data.documents;
+            if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">مدرک تخصیص‌نیافته‌ای برای این درخواست نیست.</p>'; return; }
+            box.innerHTML = data.documents.map(d => `
+                <div class="card p-4 flex items-center justify-between gap-3">
+                    <div>
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                        <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${d.uploaded_at_jalali}
+                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + [d.plate_p1, d.plate_p2, d.plate_letter, d.plate_p4].filter(Boolean).join(' ') + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                    </div>
+                    <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">ثبت اطلاعات (تگ‌گذاری)</button>
+                </div>`).join('');
+        }
 
         async function loadCompanyInbox() {
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
@@ -2779,7 +2834,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             try {
                 const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
                 const data = await res.json();
-                if (data.ok) { showToast('مدرک تخصیص داده شد.', 'success'); document.getElementById('cinbox-tag-modal').classList.remove('active'); loadCompanyInbox(); }
+                if (data.ok) {
+                    showToast('اطلاعات ثبت شد.', 'success');
+                    document.getElementById('cinbox-tag-modal').classList.remove('active');
+                    if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+                    else loadCompanyInbox();
+                    loadCompanyRequests();
+                }
                 else showToast(data.error || 'خطا در تخصیص مدرک', 'error');
             } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
         }
@@ -2829,6 +2890,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         let companiesCache = [];
         const PAY_FA = {INSTALLMENT: 'قسطی', CASH_NET30: 'نقدی - ۳۰ روزه', CASH_IMMEDIATE: 'نقدی - فوری'};
+        const CM_INSURER_FA = {BOTH: 'پاسارگاد و ایران', PASARGAD: 'فقط پاسارگاد', IRAN: 'فقط ایران'};
 
         async function loadCompanyManage() {
             const [compRes, groupRes, usersRes] = await Promise.all([
@@ -2848,9 +2910,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 font-bold">${c.name}</td>
                     <td class="p-3 text-slate-500">${c.parent_name || '—'}</td>
                     <td class="p-3 text-slate-500">${PAY_FA[c.payment_terms] || '—'}</td>
+                    <td class="p-3 text-slate-500">${c.installment_count ? c.installment_count + ' قسط' : '—'}</td>
+                    <td class="p-3 text-slate-500">${CM_INSURER_FA[c.allowed_insurers] || 'پاسارگاد و ایران'}</td>
+                    <td class="p-3 text-slate-400 font-mono">${c.created_at_jalali || '—'}</td>
                     <td class="p-3"><button onclick="editCompany(${c.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button></td>
                 </tr>
-            `).join('') : '<tr><td colspan="4" class="text-center p-6 text-slate-400">شرکتی ثبت نشده.</td></tr>';
+            `).join('') : '<tr><td colspan="7" class="text-center p-6 text-slate-400">شرکتی ثبت نشده.</td></tr>';
 
             const parentSel = document.getElementById('cm-parent-company');
             parentSel.innerHTML = '<option value="">شرکت مستقل / خودش مادر است</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -2884,6 +2949,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-parent-company').value = '';
             document.getElementById('cm-group-select').value = '';
             document.getElementById('cm-payment-terms').value = '';
+            document.getElementById('cm-allowed-insurers').value = 'BOTH';
             document.getElementById('cm-inst-count').value = '';
             document.getElementById('cm-offset-months').value = '0';
             document.getElementById('cm-offset-days').value = '0';
@@ -2900,6 +2966,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-address').value = c.address || '';
             document.getElementById('cm-parent-company').value = c.parent_id || '';
             document.getElementById('cm-payment-terms').value = c.payment_terms || '';
+            document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
             document.getElementById('cm-inst-count').value = c.installment_count || '';
             document.getElementById('cm-offset-months').value = c.first_due_offset_months || 0;
             document.getElementById('cm-offset-days').value = c.first_due_offset_days || 0;
@@ -2924,6 +2991,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 id: companyId || undefined,
                 name,
                 payment_terms: document.getElementById('cm-payment-terms').value,
+                allowed_insurers: document.getElementById('cm-allowed-insurers').value,
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),

@@ -26,7 +26,7 @@ try {
             echo json_encode(['ok' => false, 'error' => 'نام کاربری یا رمز عبور نادرست است.']);
             exit;
         }
-        $stmt = $pdo->prepare("SELECT c.id, c.name FROM company_portal_user_companies cpuc
+        $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
                                 JOIN companies c ON c.id = cpuc.company_id
                                 WHERE cpuc.portal_user_id = ? ORDER BY c.name");
         $stmt->execute([$user['id']]);

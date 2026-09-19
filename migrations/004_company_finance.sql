@@ -5,8 +5,11 @@
 -- فقط جدول/ستون اضافه می‌کند.
 -- =====================================================================
 
-ALTER TABLE `company_installments`
-  ADD COLUMN `settled_to_pasargad` TINYINT(1) NOT NULL DEFAULT 0 AFTER `due_date`;
+-- توجه: ستون settled_to_pasargad از قبل در migrations/002_company_module_updates.sql
+-- به company_installments اضافه شده؛ اینجا دوباره اضافه نمی‌شود (باعث خطای
+-- «Duplicate column name» و توقف این فایل در phpMyAdmin پیش از ساخته‌شدنِ دو
+-- جدول زیر می‌شد - برای رفعش روی دیتابیس‌هایی که این را قبلاً اجرا کرده‌اند
+-- به migrations/006_fix_missing_company_finance_tables.sql نگاه کنید).
 
 CREATE TABLE `company_payments` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,

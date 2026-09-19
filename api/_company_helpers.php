@@ -114,7 +114,7 @@ function require_company_portal_session($pdo) {
         echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز. لطفاً دوباره وارد شوید.']);
         exit;
     }
-    $stmt = $pdo->prepare("SELECT c.id, c.name FROM company_portal_user_companies cpuc
+    $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
                             JOIN companies c ON c.id = cpuc.company_id
                             WHERE cpuc.portal_user_id = ? ORDER BY c.name");
     $stmt->execute([$_SESSION['company_user_id']]);
@@ -280,7 +280,8 @@ function company_generate_installments($pdo, $plateId) {
     $firstTs = jalali_to_gregorian_ts($fy, $fm, $fd) + (intval($comp['first_due_offset_days'] ?? 0) * 86400);
     [$fy, $fm, $fd] = jalali_from_gregorian_ts($firstTs);
 
-    $parts = fin_split_installments($plate['total_premium'], $count, 'easy');
+    // «فرمول ماموت»: همان روش رُندکردنِ اقساط که برای پرسنل استفاده می‌شود
+    $parts = fin_split_installments($plate['total_premium'], $count, 'mamut');
 
     $pdo->prepare("DELETE FROM company_installments WHERE plate_id = ?")->execute([$plateId]);
     $ins = $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date) VALUES (?, ?, ?, ?, ?)");
