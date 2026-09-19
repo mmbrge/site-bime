@@ -3274,7 +3274,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th>
                             <th class="p-2">پلاک</th><th class="p-2">نوع</th><th class="p-2">شماره بیمه‌نامه</th>
                             <th class="p-2">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ</th>
-                            <th class="p-2">پرداخت‌شده</th><th class="p-2">مانده</th><th class="p-2">وضعیت</th><th class="p-2">پاسارگاد</th>
+                            <th class="p-2">پرداخت‌شده</th><th class="p-2">مانده</th><th class="p-2">وضعیت</th><th class="p-2">پاسارگاد</th><th class="p-2">صورتحساب</th>
                         </tr></thead><tbody>` +
                     d.data.map(r => {
                         const st = INST_ST[r.pay_status];
@@ -3291,6 +3291,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-2 text-center ${r.remaining > 0 ? 'text-amber-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
                             <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[1]}">${st[0]}</span></td>
                             <td class="p-2 text-center">${r.settled_to_pasargad == 1 ? '<span class="text-blue-600">✓ تسویه</span>' : '<span class="text-slate-300">—</span>'}</td>
+                            <td class="p-2 text-center">${r.is_invoiced == 1 ? '<span class="text-emerald-600">دارای صورتحساب</span>' : '<span class="text-slate-300">بدون صورتحساب</span>'}</td>
                         </tr>`;
                     }).join('') + '</tbody></table>';
             } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
@@ -3444,7 +3445,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const cols = kind === 'SUMMARY'
                     ? [['نام شرکت','company_name'],['تعداد بیمه‌نامه','policy_count'],['جمع حق بیمه','total_premium'],['قسط ماهانه','monthly_amount']]
                     : kind === 'PERSONNEL'
-                    ? [['نام پرسنل','person_name'],['کد پرسنلی','personnel_code'],['کد ملی','national_code'],['نوع بیمه‌نامه','insurance_type'],['مبلغ حق بیمه','total_premium']]
+                    ? [['نام پرسنل','person_name'],['نام شرکت','company_name'],['کد پرسنلی','personnel_code'],['کد ملی','national_code'],['نوع بیمه‌نامه','insurance_type'],['مبلغ حق بیمه','total_premium']]
                     : [['نام پرسنل','person_name'],['کد ملی','national_code'],['پلاک','plate'],['نوع','insurance_type'],['شماره بیمه‌نامه','policy_number'],['حق بیمه','total_premium'],['قسط ماهانه','monthly_amount']];
 
                 box.innerHTML = recWarn + `
@@ -3521,14 +3522,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <table class="w-full text-[10.5px]"><thead class="bg-slate-100 sticky top-0"><tr>
                             <th class="p-2">ردیف</th><th class="p-2">${i.kind === 'SUMMARY' ? 'شرکت' : 'پرسنل'}</th>
                             ${i.kind === 'SUMMARY' ? '<th class="p-2">تعداد</th>'
-                              : i.kind === 'PERSONNEL' ? '<th class="p-2">کد پرسنلی</th><th class="p-2">کد ملی</th>'
+                              : i.kind === 'PERSONNEL' ? '<th class="p-2">شرکت</th><th class="p-2">کد پرسنلی</th><th class="p-2">کد ملی</th>'
                               : '<th class="p-2">پلاک</th><th class="p-2">بیمه‌نامه</th>'}
                             <th class="p-2">حق بیمه</th><th class="p-2">قسط ماهانه</th></tr></thead><tbody>` +
                         d.lines.map((l, n) => `<tr class="border-b">
                             <td class="p-2 text-center">${e2p(n+1)}</td>
                             <td class="p-2">${l.person_name || '-'}</td>
                             ${i.kind === 'SUMMARY' ? `<td class="p-2 text-center">${e2p(l.policy_count)}</td>`
-                              : i.kind === 'PERSONNEL' ? `<td class="p-2 text-center" dir="ltr">${e2p(l.personnel_code) || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.national_code) || '-'}</td>`
+                              : i.kind === 'PERSONNEL' ? `<td class="p-2 text-center">${l.company_name || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.personnel_code) || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.national_code) || '-'}</td>`
                               : `<td class="p-2 text-center" dir="ltr">${l.plate || '-'}</td><td class="p-2 text-center" dir="ltr">${l.policy_number || '-'}</td>`}
                             <td class="p-2 text-center">${money(l.total_premium)}</td>
                             <td class="p-2 text-center">${money(l.monthly_amount)}</td></tr>`).join('') + `</tbody></table>

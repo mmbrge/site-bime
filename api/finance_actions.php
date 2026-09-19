@@ -56,6 +56,7 @@ try {
         $sql = "
             SELECT pi.id, pi.case_id, pi.inst_number, pi.amount, pi.due_jalali, pi.settled_to_pasargad,
                    pc.plate, pc.insurance_type, pc.policy_number, pc.insured_name, pc.total_premium,
+                   COALESCE(pc.is_invoiced,0) AS is_invoiced,
                    p.full_name AS holder_name, c.name AS company_name, c.id AS company_id,
                    bp.title AS period_title,
                    COALESCE(SUM(pa.amount), 0) AS paid
@@ -431,9 +432,11 @@ try {
             }
             $lines = array_values($byCompany);
         } elseif ($kind === 'PERSONNEL') {
-            // هر بیمه‌نامه یک ردیف، ولی فقط اطلاعات پرسنلی و مبلغ
+            // هر بیمه‌نامه یک ردیف، شامل نام شرکت (چون این نوع روی کل دوره/همه‌ی
+            // شرکت‌هاست - هم‌شکل با «نوع ۳» برنامه‌ی قدیمی که ستون شرکت را هم داشت)
             $lines = array_map(fn($r) => [
                 'case_id' => $r['case_id'], 'person_name' => $r['insured_name'] ?: $r['holder_name'],
+                'company_name' => $r['company_name'],
                 'personnel_code' => $r['personnel_code'], 'national_code' => $r['national_code'],
                 'insurance_type' => insurance_type_fa($r['insurance_type']),
                 'total_premium' => intval($r['total_premium']),
@@ -544,6 +547,15 @@ try {
 
         $pdo->prepare("UPDATE invoices SET total_amount = ? WHERE id = ?")->execute([$total, $invoiceId]);
 
+        // هم‌شکل با برنامه‌ی قدیمی: پرونده‌هایی که وارد این صورتحساب شدند، علامت
+        // می‌خورند تا دفعه‌ی بعد (در هیچ نوع صورتحسابی) دوباره صورتحساب نشوند
+        $caseIds = array_values(array_unique(array_filter(array_column($rows, 'case_id'))));
+        if ($caseIds) {
+            $ph = implode(',', array_fill(0, count($caseIds), '?'));
+            $pdo->prepare("UPDATE policy_cases SET is_invoiced = 1, invoiced_invoice_id = ? WHERE id IN ($ph)")
+                ->execute(array_merge([$invoiceId], $caseIds));
+        }
+
         $stmt = $pdo->prepare("SELECT * FROM invoices WHERE id = ?");
         $stmt->execute([$invoiceId]);
         $invoice = $stmt->fetch();
@@ -591,7 +603,8 @@ try {
         $stmt->execute([$id]);
         $inv = $stmt->fetch();
         if (!$inv) { echo json_encode(['ok' => false, 'error' => 'صورتحساب یافت نشد.']); exit; }
-        $lines = $pdo->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY id");
+        $lines = $pdo->prepare("SELECT il.*, comp.name AS company_name FROM invoice_lines il
+                                 LEFT JOIN companies comp ON comp.id = il.company_id WHERE il.invoice_id = ? ORDER BY il.id");
         $lines->execute([$id]);
         $pays = $pdo->prepare("SELECT * FROM payments WHERE invoice_id = ? ORDER BY id DESC");
         $pays->execute([$id]);

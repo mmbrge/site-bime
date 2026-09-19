@@ -586,7 +586,9 @@ function fin_num_to_words($num) {
 //  پرونده‌هایی که پرداخت مستقیم نقدی بوده‌اند، وارد صورتحساب نمی‌شوند.
 // =====================================================================
 function fin_collect_invoice_rows($pdo, $periodId, $companyId = null) {
-    $where = ["pi.period_id = ?", "pc.status = 'ISSUED'", "COALESCE(pc.is_direct_payment,0) = 0"];
+    // هم‌شکل با برنامه‌ی قدیمی: بیمه‌نامه‌ای که قبلاً در یک صورتحساب دیگر آمده،
+    // دوباره در صورتحساب بعدی نمی‌آید (جلوگیری از صدور دوبرابری)
+    $where = ["pi.period_id = ?", "pc.status = 'ISSUED'", "COALESCE(pc.is_direct_payment,0) = 0", "COALESCE(pc.is_invoiced,0) = 0"];
     $params = [$periodId];
     if ($companyId) { $where[] = "p.company_id = ?"; $params[] = $companyId; }
 
@@ -645,7 +647,8 @@ function fin_render_invoice_files($pdo, $invoice, $folder, $companyName, $period
     $tplAbs = $siteRoot . '/' . $tplRel;
     if (!file_exists($tplAbs)) { $out['note'] = 'فایل قالب روی سرور پیدا نشد.'; return $out; }
 
-    $lines = $pdo->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY id");
+    $lines = $pdo->prepare("SELECT il.*, c.name AS company_name FROM invoice_lines il
+                             LEFT JOIN companies c ON c.id = il.company_id WHERE il.invoice_id = ? ORDER BY il.id");
     $lines->execute([$invoice['id']]);
     $rows = $lines->fetchAll();
 
@@ -763,10 +766,12 @@ function fin_build_docx_table($kind, array $rows) {
 
     // ستون‌ها: [عنوان, کلید, وزنِ عرض]  — وزن بر اساس طول معمولِ محتوا
     if ($kind === 'PERSONNEL') {
-        // تلفیقی: هر بیمه‌نامه‌ی صادرشده یک ردیف، ولی فقط اطلاعات پرسنلی و مبلغ
+        // تلفیقی: هر بیمه‌نامه‌ی صادرشده یک ردیف، شامل نام شرکت (چون این نوع صورتحساب
+        // روی کل دوره و همه‌ی شرکت‌ها با هم است - هم‌شکل با «نوع ۳» برنامه‌ی قدیمی)
         $cols = [
             ['ردیف',          'row_no',         5],
-            ['نام پرسنل',     'person_name',   28],
+            ['نام پرسنل',     'person_name',   24],
+            ['نام شرکت',      'company_name',  20],
             ['کد پرسنلی',     'personnel_code',13],
             ['کد ملی',        'national_code', 16],
             ['نوع بیمه‌نامه', 'insurance_type',13],
