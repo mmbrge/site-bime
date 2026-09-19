@@ -57,7 +57,9 @@ try {
         $request['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['created_at']));
         $request['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['updated_at']));
 
-        $stmt = $pdo->prepare("SELECT id, orig_name, file_kind, doc_type, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
+        // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به
+        // ../undefined می‌خورد و کاربر نمی‌تواند فایلی که خودش فرستاده را ببیند
+        $stmt = $pdo->prepare("SELECT id, orig_name, file_path, file_kind, doc_type, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
 
@@ -205,6 +207,27 @@ try {
 
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_portal_user_id, message, file_path) VALUES (?, 'COMPANY', ?, ?, ?)")
             ->execute([$companyId, $session['company_user_id'], $message ?: null, $filePath]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- ویرایش/حذف پیام: فقط پیام‌های سمتِ خودِ شرکت و فقط داخل شرکت‌های مجازِ
+    //      همین کاربر (نه پیام‌های ما، نه پیام شرکت دیگر) ----
+    if ($action === 'chat_edit_message' || $action === 'chat_delete_message') {
+        $messageId = intval($data['message_id'] ?? 0);
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $stmt = $pdo->prepare("SELECT id FROM company_chat_messages
+                                WHERE id = ? AND sender_type = 'COMPANY' AND company_id IN ($placeholders)");
+        $stmt->execute(array_merge([$messageId], $allowedCompanyIds));
+        if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'این پیام قابل تغییر نیست.']); exit; }
+
+        if ($action === 'chat_delete_message') {
+            $pdo->prepare("DELETE FROM company_chat_messages WHERE id = ?")->execute([$messageId]);
+        } else {
+            $message = trim($data['message'] ?? '');
+            if ($message === '') { echo json_encode(['ok' => false, 'error' => 'متن پیام خالی است.']); exit; }
+            $pdo->prepare("UPDATE company_chat_messages SET message = ? WHERE id = ?")->execute([$message, $messageId]);
+        }
         echo json_encode(['ok' => true]);
         exit;
     }

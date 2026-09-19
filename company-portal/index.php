@@ -169,6 +169,30 @@ if (!$companies) {
     </div>
 </div>
 
+<!-- دیالوگ تایید -->
+<div id="portal-confirm-modal" class="modal-overlay">
+    <div class="modal-content p-6 text-center" style="max-width:360px">
+        <h3 id="portal-confirm-title" class="text-base font-black text-slate-800 mb-2"></h3>
+        <p id="portal-confirm-message" class="text-xs text-slate-500 mb-6"></p>
+        <div class="flex gap-3">
+            <button type="button" id="portal-confirm-yes" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-xs transition-colors">بله، مطمئنم</button>
+            <button type="button" id="portal-confirm-no" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-xs transition-colors">انصراف</button>
+        </div>
+    </div>
+</div>
+
+<!-- دیالوگ ورودی متن -->
+<div id="portal-prompt-modal" class="modal-overlay">
+    <div class="modal-content p-6" style="max-width:360px">
+        <h3 id="portal-prompt-title" class="text-base font-black text-slate-800 mb-4"></h3>
+        <textarea id="portal-prompt-input" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
+        <div class="flex gap-3">
+            <button type="button" id="portal-prompt-save" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors">ذخیره</button>
+            <button type="button" id="portal-prompt-cancel" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-xs transition-colors">انصراف</button>
+        </div>
+    </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script>
@@ -217,7 +241,7 @@ let currentRequestPlates = [];
 
 function updateInsurerOptions() {
     const companyId = Number(document.getElementById('nr-company').value);
-    const company = COMPANIES_DATA.find(c => c.id === companyId) || COMPANIES_DATA[0];
+    const company = COMPANIES_DATA.find(c => String(c.id) === String(companyId)) || COMPANIES_DATA[0];
     const allowed = (company && company.allowed_insurers) || 'BOTH';
     const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
     const sel = document.getElementById('nr-insurer');
@@ -324,9 +348,7 @@ async function openRequestDetail(id) {
     }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">هنوز مدرکی آپلود نشده.</p>';
 
     const platesHtml = data.plates.length ? data.plates.map(p => {
-        const plateStr = (p.plate_p1||p.plate_p2||p.plate_letter||p.plate_p4)
-            ? `${p.plate_p1 || '--'} ${p.plate_letter || '-'} ${p.plate_p2 || '---'} <span class="text-slate-400">ایران</span> ${p.plate_p4 || '--'}`
-            : 'پلاک نامشخص';
+        const plateStr = plateHtml(p);
         return `
         <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2">
             <div class="flex items-center gap-2.5">
@@ -371,6 +393,17 @@ const DOC_TYPE_OPTIONS = [
 function plateOptionLabel(p) {
     const parts = [p.plate_p1, p.plate_letter, p.plate_p2].filter(Boolean).join(' ');
     return (parts || 'بدون‌شماره') + (p.plate_p4 ? ' ایران ' + p.plate_p4 : '');
+}
+
+// نمایشِ پلاک از چپ به راست: [۲ رقم] [حرف] [۳ رقم] [ایران] [۲ رقم].
+// inline-flex + unicode-bidi:isolate لازم است، وگرنه مرورگر در متنِ راست‌به‌چپ
+// ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
+function plateHtml(p) {
+    if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return 'پلاک نامشخص';
+    const seg = v => `<span>${v || ''}</span>`;
+    return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">`
+        + seg(p.plate_p1 || '--') + `<span>${p.plate_letter || '-'}</span>` + seg(p.plate_p2 || '---')
+        + `<span class="text-slate-400">ایران</span>` + seg(p.plate_p4 || '--') + `</span>`;
 }
 
 function renderDocUploadRows() {
@@ -419,6 +452,33 @@ async function uploadDocuments() {
 
 function fmtBubbleTime(ts) { return new Date(ts.replace(' ', 'T')).toLocaleString('fa-IR'); }
 
+// دیالوگ‌های تایید/ورودی با استایل خودِ پنل (نه پنجره‌ی پیش‌فرض مرورگر)
+function showPortalConfirm(title, message) {
+    return new Promise(resolve => {
+        document.getElementById('portal-confirm-title').textContent = title;
+        document.getElementById('portal-confirm-message').textContent = message;
+        const modal = document.getElementById('portal-confirm-modal');
+        const done = (val) => { modal.classList.remove('active'); resolve(val); };
+        document.getElementById('portal-confirm-yes').onclick = () => done(true);
+        document.getElementById('portal-confirm-no').onclick = () => done(false);
+        modal.classList.add('active');
+    });
+}
+
+function showPortalPrompt(title, currentValue) {
+    return new Promise(resolve => {
+        document.getElementById('portal-prompt-title').textContent = title;
+        const input = document.getElementById('portal-prompt-input');
+        input.value = currentValue || '';
+        const modal = document.getElementById('portal-prompt-modal');
+        const done = (val) => { modal.classList.remove('active'); resolve(val); };
+        document.getElementById('portal-prompt-save').onclick = () => done(input.value);
+        document.getElementById('portal-prompt-cancel').onclick = () => done(null);
+        modal.classList.add('active');
+        setTimeout(() => input.focus(), 50);
+    });
+}
+
 function openChatModal() { openModal('chat-modal'); loadChatMessages(); }
 
 function renderBubble(isMine, msg) {
@@ -429,7 +489,33 @@ function renderBubble(isMine, msg) {
         const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.file_path);
         fileHtml = isImg ? `<img src="../${msg.file_path}" class="rounded-lg max-w-full mt-2">` : `<a href="../${msg.file_path}" target="_blank" class="underline text-xs block mt-2"><i class="fas fa-paperclip ml-1"></i>مشاهده فایل</a>`;
     }
-    return `<div class="flex ${align}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]">${msg.message || ''}${fileHtml}<div class="text-[10px] opacity-60 mt-1" dir="ltr">${fmtBubbleTime(msg.created_at)}</div></div></div>`;
+    // پیام‌های خودِ شرکت قابل ویرایش و حذف‌اند (پیام‌های ما نه)
+    const controls = isMine ? `
+        <div class="flex gap-2 mt-1 opacity-70">
+            <button onclick="editMyChatMessage(${msg.id})" class="text-[10px] underline hover:opacity-100">ویرایش</button>
+            <button onclick="deleteMyChatMessage(${msg.id})" class="text-[10px] underline hover:opacity-100">حذف</button>
+        </div>` : '';
+    return `<div class="flex ${align}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]"><span id="pmsg-text-${msg.id}">${msg.message || ''}</span>${fileHtml}<div class="text-[10px] opacity-60 mt-1" dir="ltr">${fmtBubbleTime(msg.created_at)}</div>${controls}</div></div>`;
+}
+
+async function editMyChatMessage(msgId) {
+    const current = document.getElementById('pmsg-text-' + msgId).innerText;
+    const updated = await showPortalPrompt('ویرایش پیام', current);
+    if (updated === null || !updated.trim() || updated === current) return;
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'chat_edit_message', message_id: msgId, message: updated})});
+    const data = await res.json();
+    if (data.ok) { showToast('پیام ویرایش شد.'); loadChatMessages(); }
+    else showToast(data.error || 'خطا در ویرایش پیام.');
+}
+
+async function deleteMyChatMessage(msgId) {
+    if (!await showPortalConfirm('حذف پیام', 'این پیام برای همیشه حذف می‌شود.')) return;
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'chat_delete_message', message_id: msgId})});
+    const data = await res.json();
+    if (data.ok) { showToast('پیام حذف شد.'); loadChatMessages(); }
+    else showToast(data.error || 'خطا در حذف پیام.');
 }
 
 async function loadChatMessages() {

@@ -16,14 +16,32 @@ $action = $data['action'] ?? ($_GET['action'] ?? '');
 try {
     // ---- لیست شرکت‌ها + آخرین پیام + تعداد نخوانده ----
     if ($action === 'list_conversations') {
-        $stmt = $pdo->query("
+        // جستجو هم روی نام شرکت و هم روی نام ثبت‌کننده‌های همان شرکت انجام می‌شود،
+        // تا بشود با اسمِ خودِ شخص هم گفتگو را پیدا کرد (گفتگو به ازای هر شرکت است)
+        $q = trim($data['q'] ?? '');
+        $params = [];
+        $where = "c.kind IN ('INSURANCE_CLIENT','BOTH')";
+        if ($q !== '') {
+            $where .= " AND (c.name LIKE ? OR EXISTS (
+                            SELECT 1 FROM company_portal_user_companies cpuc
+                            JOIN company_portal_users cpu ON cpu.id = cpuc.portal_user_id
+                            WHERE cpuc.company_id = c.id AND cpu.full_name LIKE ?))";
+            $like = '%' . $q . '%';
+            $params[] = $like; $params[] = $like;
+        }
+        $stmt = $pdo->prepare("
             SELECT c.id, c.name,
                    (SELECT message FROM company_chat_messages WHERE company_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
                    (SELECT created_at FROM company_chat_messages WHERE company_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_at,
-                   (SELECT COUNT(*) FROM company_chat_messages WHERE company_id = c.id AND sender_type = 'COMPANY' AND is_read = 0) AS unread
-            FROM companies c WHERE c.kind IN ('INSURANCE_CLIENT','BOTH')
+                   (SELECT COUNT(*) FROM company_chat_messages WHERE company_id = c.id AND sender_type = 'COMPANY' AND is_read = 0) AS unread,
+                   (SELECT GROUP_CONCAT(cpu.full_name SEPARATOR '، ')
+                      FROM company_portal_user_companies cpuc
+                      JOIN company_portal_users cpu ON cpu.id = cpuc.portal_user_id
+                     WHERE cpuc.company_id = c.id) AS members
+            FROM companies c WHERE $where
             ORDER BY last_at IS NULL, last_at DESC
         ");
+        $stmt->execute($params);
         echo json_encode(['ok' => true, 'conversations' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -61,6 +79,37 @@ try {
 
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_user_id, message, file_path) VALUES (?, 'ADMIN', ?, ?, ?)")
             ->execute([$companyId, $actor['user_id'], $message ?: null, $filePath]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- ویرایش پیام (فقط پیام‌های خودمان، نه پیام‌های شرکت) ----
+    if ($action === 'edit_message') {
+        $messageId = intval($data['message_id'] ?? 0);
+        $message = trim($data['message'] ?? '');
+        if ($message === '') { echo json_encode(['ok' => false, 'error' => 'متن پیام خالی است.']); exit; }
+
+        $stmt = $pdo->prepare("SELECT sender_type FROM company_chat_messages WHERE id = ?");
+        $stmt->execute([$messageId]);
+        $senderType = $stmt->fetchColumn();
+        if ($senderType === false) { echo json_encode(['ok' => false, 'error' => 'پیام یافت نشد.']); exit; }
+        if ($senderType !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط پیام‌های خودتان قابل ویرایش است.']); exit; }
+
+        $pdo->prepare("UPDATE company_chat_messages SET message = ? WHERE id = ?")->execute([$message, $messageId]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- حذف پیام (فقط پیام‌های خودمان) ----
+    if ($action === 'delete_message') {
+        $messageId = intval($data['message_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT sender_type FROM company_chat_messages WHERE id = ?");
+        $stmt->execute([$messageId]);
+        $senderType = $stmt->fetchColumn();
+        if ($senderType === false) { echo json_encode(['ok' => false, 'error' => 'پیام یافت نشد.']); exit; }
+        if ($senderType !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط پیام‌های خودتان قابل حذف است.']); exit; }
+
+        $pdo->prepare("DELETE FROM company_chat_messages WHERE id = ?")->execute([$messageId]);
         echo json_encode(['ok' => true]);
         exit;
     }

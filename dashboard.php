@@ -274,7 +274,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
                         <i class="fas fa-building ml-1"></i> شرکت‌ها
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                        <span id="companies-inbox-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
                     </button>
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab('companies-requests')" id="nav-companies-requests" class="nav-item menu-link"><i class="fas fa-file-lines ml-2"></i> درخواست‌های شرکتی</a>
@@ -571,7 +570,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <?php if ($canSeeCompanies): ?>
             <div id="goftego-panel-companychat" class="hidden">
                 <div class="card overflow-hidden border-cyan-100 flex relative" style="height: 640px;">
-                    <div class="w-1/3 border-l flex flex-col overflow-y-auto" id="companychat-list"></div>
+                    <div class="w-1/3 border-l flex flex-col">
+                        <div class="p-2 border-b bg-white">
+                            <input type="text" id="companychat-search" oninput="debouncedCompanyChatSearch()" placeholder="جستجوی نام شخص یا شرکت..." class="w-full border rounded-xl px-3 py-2 text-xs">
+                        </div>
+                        <div class="flex-1 overflow-y-auto" id="companychat-list"></div>
+                    </div>
                     <div class="w-2/3 flex flex-col relative">
                         <div id="companychat-header" class="p-4 border-b bg-cyan-50 font-bold text-cyan-700 hidden"><span id="companychat-title"></span></div>
                         <div id="companychat-body" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
@@ -1897,6 +1901,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
+    <!-- دیالوگ ورودی متن (جایگزین prompt() مرورگر) -->
+    <div id="generic-prompt-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-sm p-6 relative">
+            <button type="button" onclick="document.getElementById('generic-prompt-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 id="generic-prompt-title" class="text-lg font-black text-slate-800 mb-4">ویرایش</h3>
+            <textarea id="generic-prompt-input" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
+            <div class="flex gap-3">
+                <button type="button" onclick="executeGenericPrompt()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">ذخیره</button>
+                <button type="button" onclick="document.getElementById('generic-prompt-modal').classList.remove('active')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
+            </div>
+        </div>
+    </div>
+
     <div id="confirm-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-sm p-6 relative text-center">
             <button type="button" onclick="document.getElementById('confirm-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
@@ -2080,6 +2097,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function executeGenericConfirm() {
             document.getElementById('generic-confirm-modal').classList.remove('active');
             if (typeof _confirmCallback === 'function') _confirmCallback();
+        }
+
+        // ---- دیالوگ ورودی متن (جایگزین prompt() مرورگر) ----
+        let _promptCallback = null;
+        function showPrompt(title, currentValue, onSubmit) {
+            document.getElementById('generic-prompt-title').innerText = title;
+            document.getElementById('generic-prompt-input').value = currentValue || '';
+            _promptCallback = onSubmit;
+            document.getElementById('generic-prompt-modal').classList.add('active');
+            setTimeout(() => document.getElementById('generic-prompt-input').focus(), 50);
+        }
+        function executeGenericPrompt() {
+            const value = document.getElementById('generic-prompt-input').value;
+            document.getElementById('generic-prompt-modal').classList.remove('active');
+            if (typeof _promptCallback === 'function') _promptCallback(value);
         }
         const p2e = s => s ? s.toString().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)) : '';
 
@@ -2579,9 +2611,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const CREQ_STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
         let companyRequestsCache = [];
 
+        // متنِ ساده‌ی پلاک (برای جایی که HTML نمی‌شود گذاشت، مثل option های یک select)
         function fmtPlate(p) {
             if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
-            return `${p.plate_p1 || ''}ایران - ${p.plate_p2 || ''} ${p.plate_letter || ''} ${p.plate_p4 || ''}`;
+            return `${p.plate_p1 || ''} ${p.plate_letter || ''} ${p.plate_p2 || ''} ایران ${p.plate_p4 || ''}`;
+        }
+
+        // نمایشِ پلاک از چپ به راست: [۲ رقم] [حرف] [۳ رقم] [ایران] [۲ رقم].
+        // از inline-flex و unicode-bidi:isolate استفاده می‌شود چون در متنِ راست‌به‌چپ،
+        // مرورگر ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
+        function fmtPlateHtml(p) {
+            if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
+            const seg = v => `<span>${e2p(v || '')}</span>`;
+            return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">`
+                + seg(p.plate_p1) + `<span>${p.plate_letter || ''}</span>` + seg(p.plate_p2)
+                + `<span>ایران</span>` + seg(p.plate_p4) + `</span>`;
         }
 
         async function loadCompanyRequests() {
@@ -2648,17 +2692,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function ancrUpdateInsurerOptions() {
             const companyId = Number(document.getElementById('ancr-company').value);
-            const company = ancrCompaniesCache.find(c => c.id === companyId);
+            const company = ancrCompaniesCache.find(c => String(c.id) === String(companyId));
             const allowed = (company && company.allowed_insurers) || 'BOTH';
             const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
             document.getElementById('ancr-insurer').innerHTML = options.map(o => `<option value="${o}">${o === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('');
         }
-        async function deleteRequestRow(requestId) {
-            if (!confirm(`درخواست #${requestId} و همه‌ی پلاک‌ها/مدارک/اطلاعات مالیِ آن برای همیشه حذف شود؟ این کار قابل بازگشت نیست.`)) return;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_request', request_id: requestId})});
-            const data = await res.json();
-            if (data.ok) { showToast('درخواست حذف شد.', 'success'); loadCompanyRequests(); }
-            else showToast(data.error || 'خطا', 'error');
+        function deleteRequestRow(requestId) {
+            showConfirm('حذف درخواست', `درخواست #${requestId} و همه‌ی پلاک‌ها، مدارک و اطلاعات مالیِ آن برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_request', request_id: requestId})});
+                const data = await res.json();
+                if (data.ok) { showToast('درخواست حذف شد.', 'success'); loadCompanyRequests(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
         }
         async function submitAdminNewRequest() {
             const requestId = document.getElementById('ancr-request-id').value;
@@ -2757,7 +2802,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="bg-white border border-slate-100 rounded-lg p-3 mb-2">
                     <div class="flex items-center justify-between mb-1">
                         <div>
-                            <span class="plate-display font-bold text-xs">${fmtPlate(p)}</span>
+                            <span class="plate-display font-bold text-xs">${fmtPlateHtml(p)}</span>
                             <span class="text-[10px] text-slate-400 mr-2">${p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '')}</span>
                             <span class="text-[10px] text-slate-400">${p.expiry_date_jalali ? 'انقضا: ' + p.expiry_date_jalali : ''}</span>
                         </div>
@@ -2981,7 +3026,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         async function loadCompanyInbox() {
             const box = document.getElementById('cinbox-list');
-            const badge = document.getElementById('companies-inbox-badge');
+
             let data;
             try {
                 const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
@@ -2989,7 +3034,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-6">خطا در ارتباط با سرور. دوباره تلاش کنید.</p>'; return; }
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
             companyInboxCache = data.documents;
-            if (badge) { if (data.documents.length) { badge.textContent = data.documents.length; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
             box.innerHTML = data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
@@ -3027,7 +3071,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function openInboxTagModal(docId) {
-            const doc = companyInboxCache.find(d => d.id === docId);
+            const doc = companyInboxCache.find(d => String(d.id) === String(docId));
             if (!doc) return;
             document.getElementById('cit-doc-id').value = docId;
             const sel = document.getElementById('cit-request');
@@ -3278,7 +3322,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         function editCompany(id) {
-            const c = companiesCache.find(x => x.id === id);
+            const c = companiesCache.find(x => String(x.id) === String(id));
             if (!c) return;
             document.getElementById('cm-form-title').textContent = `ویرایش «${c.name}»`;
             document.getElementById('cm-company-id').value = c.id;
@@ -3342,7 +3386,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             openModal('add-portal-user-modal');
         }
         function editPortalUser(id) {
-            const u = portalUsersCache.find(x => x.id === id);
+            const u = portalUsersCache.find(x => String(x.id) === String(id));
             if (!u) return;
             document.getElementById('cm-pu-modal-title').textContent = `ویرایش «${u.full_name}»`;
             document.getElementById('cm-pu-submit-label').textContent = 'ذخیره تغییرات';
@@ -3381,20 +3425,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } else showToast(data.error || 'خطا', 'error');
         }
 
-        async function deletePortalUserRow(id, name) {
-            if (!confirm(`حساب کاربری «${name}» حذف شود؟`)) return;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_portal_user', id})});
-            const data = await res.json();
-            if (data.ok) { showToast('حساب کاربری حذف شد.', 'success'); loadCompanyManage(); }
-            else showToast(data.error || 'خطا', 'error');
+        function deletePortalUserRow(id, name) {
+            showConfirm('حذف حساب کاربری', `حساب کاربری «${name}» حذف می‌شود.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_portal_user', id})});
+                const data = await res.json();
+                if (data.ok) { showToast('حساب کاربری حذف شد.', 'success'); loadCompanyManage(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
         }
 
-        async function deleteCompanyRow(id, name) {
-            if (!confirm(`شرکت «${name}» و همه‌ی درخواست‌ها/مدارک/اطلاعات مالیِ آن برای همیشه حذف شود؟ این کار قابل بازگشت نیست.`)) return;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_company', id})});
-            const data = await res.json();
-            if (data.ok) { showToast('شرکت حذف شد.', 'success'); loadCompanyManage(); }
-            else showToast(data.error || 'خطا', 'error');
+        function deleteCompanyRow(id, name) {
+            showConfirm('حذف شرکت', `شرکت «${name}» و همه‌ی درخواست‌ها، مدارک و اطلاعات مالیِ آن برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_company', id})});
+                const data = await res.json();
+                if (data.ok) { showToast('شرکت حذف شد.', 'success'); loadCompanyManage(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
         }
 
         // ======================= کاربران داخلیِ پنل =======================
@@ -5278,29 +5324,46 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return `<div class="flex ${align}" id="msg-row-${msgId || ''}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]"><span id="msg-text-${msgId || ''}">${text || ''}</span>${fileHtml}<div class="text-[10px] opacity-60 mt-1 flex justify-between gap-2" dir="ltr"><span>${time ? toJalali(time) : ''}</span>${readTick}</div>${controls}</div></div>`;
         }
 
-        async function editAdminMessage(msgId, scope) {
-            const current = document.getElementById('msg-text-' + msgId).innerText;
-            const updated = prompt('ویرایش پیام:', current);
-            if (updated === null || updated.trim() === '' || updated === current) return;
-            const isTicket = scope === 'ticket';
-            try {
-                await fetch(isTicket ? 'api/ticket_actions.php' : 'api/user_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action: isTicket ? 'edit_ticket_message' : 'edit_message', message_id: msgId, message: updated })
-                });
-                document.getElementById('msg-text-' + msgId).innerText = updated;
-                showToast('پیام ویرایش شد.', 'success');
-            } catch(e) { showToast('خطا در ویرایش پیام', 'error'); }
+        // هر بخش چت، اندپوینت و نام اکشن خودش را دارد
+        function chatMsgEndpoint(scope) {
+            if (scope === 'ticket')      return ['api/ticket_actions.php', 'edit_ticket_message', 'delete_ticket_message'];
+            if (scope === 'companychat') return ['api/company_chat_actions.php', 'edit_message', 'delete_message'];
+            if (scope === 'staffchat')   return ['api/staff_chat_actions.php', 'edit_message', 'delete_message'];
+            return ['api/user_actions.php', 'edit_message', 'delete_message'];
         }
 
-        async function deleteAdminMessage(msgId, btnEl, scope) {
-            const isTicket = scope === 'ticket';
-            showConfirm('حذف پیام', isTicket ? 'این پیام از رشته‌ی گفتگوی کاربر حذف شود؟' : 'این پیام هم از پنل و هم از چت کاربر در بله حذف شود؟', async () => {
+        function editAdminMessage(msgId, scope) {
+            const current = document.getElementById('msg-text-' + msgId).innerText;
+            showPrompt('ویرایش پیام', current, async (updated) => {
+                if (!updated.trim() || updated === current) return;
+                const [url, editAction] = chatMsgEndpoint(scope);
                 try {
-                    await fetch(isTicket ? 'api/ticket_actions.php' : 'api/user_actions.php', {
+                    const res = await fetch(url, {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ action: isTicket ? 'delete_ticket_message' : 'delete_message', message_id: msgId })
+                        body: JSON.stringify({ action: editAction, message_id: msgId, message: updated })
                     });
+                    const data = await res.json();
+                    if (data && data.ok === false) { showToast(data.error || 'خطا در ویرایش پیام', 'error'); return; }
+                    document.getElementById('msg-text-' + msgId).innerText = updated;
+                    showToast('پیام ویرایش شد.', 'success');
+                } catch(e) { showToast('خطا در ویرایش پیام', 'error'); }
+            });
+        }
+
+        function deleteAdminMessage(msgId, btnEl, scope) {
+            const [url, , deleteAction] = chatMsgEndpoint(scope);
+            const note = scope === 'ticket' ? 'این پیام از رشته‌ی گفتگوی کاربر حذف شود؟'
+                       : scope === 'companychat' ? 'این پیام از گفتگو با شرکت حذف شود؟'
+                       : scope === 'staffchat' ? 'این پیام از گفتگوی داخلی حذف شود؟'
+                       : 'این پیام هم از پنل و هم از چت کاربر در بله حذف شود؟';
+            showConfirm('حذف پیام', note, async () => {
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ action: deleteAction, message_id: msgId })
+                    });
+                    const data = await res.json();
+                    if (data && data.ok === false) { showToast(data.error || 'خطا در حذف پیام', 'error'); return; }
                     const row = document.getElementById('msg-row-' + msgId);
                     if (row) row.remove();
                     showToast('پیام حذف شد.', 'success');
@@ -5663,19 +5726,31 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const COMPANYCHAT_API = 'api/company_chat_actions.php';
         let currentCompanyChatId = null;
 
+        let companyChatSearchTimer = null;
+        function debouncedCompanyChatSearch() {
+            clearTimeout(companyChatSearchTimer);
+            companyChatSearchTimer = setTimeout(loadCompanyChatList, 300);
+        }
+
         async function loadCompanyChatList() {
-            const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations'})});
-            const data = await res.json();
             const box = document.getElementById('companychat-list');
+            const searchEl = document.getElementById('companychat-search');
+            const q = searchEl ? searchEl.value.trim() : '';
+            let data;
+            try {
+                const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations', q})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-4">خطا در ارتباط با سرور.</p>'; return; }
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
             box.innerHTML = data.conversations.map(c => `
-                <div onclick="openCompanyChatWith(${c.id}, '${c.name}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentCompanyChatId === c.id ? 'bg-cyan-50' : ''}">
+                <div onclick="openCompanyChatWith(${c.id}, '${(c.name||'').replace(/'/g,'')}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${String(currentCompanyChatId) === String(c.id) ? 'bg-cyan-50' : ''}">
                     <div class="flex items-center justify-between">
                         <span class="font-bold text-sm">${c.name}</span>
                         ${c.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${c.unread}</span>` : ''}
                     </div>
+                    ${c.members ? `<p class="text-[10px] text-slate-500 mt-0.5">${c.members}</p>` : ''}
                     <p class="text-[10px] text-slate-400 mt-1">${c.last_message ? c.last_message.slice(0, 30) : 'گفتگویی ثبت نشده'}</p>
-                </div>`).join('') || '<p class="text-center text-xs text-slate-400 p-4">شرکتی یافت نشد.</p>';
+                </div>`).join('') || `<p class="text-center text-xs text-slate-400 p-4">${q ? 'موردی با این نام پیدا نشد.' : 'شرکتی یافت نشد.'}</p>`;
         }
 
         async function openCompanyChatWith(companyId, name) {
@@ -5693,7 +5768,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const data = await res.json();
             if (!data.ok) return;
             const body = document.getElementById('companychat-body');
-            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.sender_type === 'ADMIN', (m.sender_type === 'COMPANY' && m.sender_portal_name ? `<b>${m.sender_portal_name}:</b> ` : '') + (m.message || ''), m.created_at, m.file_path, null, m.is_read, 'companychat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
+            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.sender_type === 'ADMIN', (m.sender_type === 'COMPANY' && m.sender_portal_name ? `<b>${m.sender_portal_name}:</b> ` : '') + (m.message || ''), m.created_at, m.file_path, m.sender_type === 'ADMIN' ? m.id : null, m.is_read, 'companychat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
             body.scrollTop = body.scrollHeight;
         }
 
