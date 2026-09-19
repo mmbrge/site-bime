@@ -169,6 +169,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .menu-trigger .fa-chevron-down { transition: transform .2s; }
         .menu-panel { display: none; }
         .menu-group.open .menu-panel { display: block; }
+        /* جداکننده‌ی داخلِ منو (مثلاً بینِ کارهای روزمره‌ی مالی و «تنظیمات مالی») */
+        .menu-sep { height: 1px; background: #e2e8f0; margin: 5px 8px; }
         .menu-link { display: block; padding: 7px 10px; border-radius: 8px; color: #475569;
                      transition: background .12s, color .12s; white-space: nowrap; }
         .menu-link:hover { background: #eff6ff; color: #2563eb; }
@@ -177,6 +179,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             .menu-panel { position: absolute; top: 100%; right: 0; min-width: 210px; background: #fff;
                           border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 12px 32px rgba(15,23,42,.14);
                           padding: 7px; z-index: 60; }
+            /* پلِ نامرئی بینِ سرمنو و پنل: بدون این، حرکتِ موس از سرمنو به سمتِ زیرمنو
+               ممکن است از یک شکافِ یک‌پیکسلی رد شود و منو بسته شود */
+            .menu-panel::before { content: ""; position: absolute; top: -8px; right: 0; left: 0; height: 8px; }
+            /* بازشدن با هاور، بدون نیاز به کلیک (فقط روی دستگاهی که موس واقعی دارد).
+               حالتِ کلیکی هم دست‌نخورده می‌ماند تا صفحه‌کلید و لمس هم کار کند. */
+            @media (hover: hover) and (pointer: fine) {
+                .menu-group:hover .menu-panel { display: block; }
+                .menu-group:hover .menu-trigger { color: #2563eb; }
+                .menu-group:hover .menu-trigger .fa-chevron-down { transform: rotate(180deg); }
+            }
+            /* بازشدن با صفحه‌کلید (Tab) هم پشتیبانی می‌شود */
+            .menu-group:focus-within .menu-panel { display: block; }
         }
         @media (max-width: 1023px) {
             .menu-panel { padding-right: 14px; border-right: 2px solid #e2e8f0; margin: 2px 6px 6px 0; }
@@ -228,9 +242,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
 
                 <?php if (!$isLiaison): ?>
-                <!-- ===== عملیات بیمه ===== -->
+                <!-- ===== عملیات بیمه: خطِ کارِ پرسنلی، از پرونده تا صدور ===== -->
                 <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
                         <i class="fas fa-file-shield ml-1"></i> عملیات بیمه
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                         <span id="ops-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
@@ -241,76 +255,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
                     </div>
                 </div>
-
-                <?php endif; ?>
-
-                <!-- ===== حسابداری ===== (طبق خواسته‌ی کارفرما همکار شرکت‌ها هم می‌بیند:
-                     همه‌ی رکوردهای مالی را می‌بیند/مدیریت می‌کند و پرداختی ثبت می‌کند؛
-                     «تنظیمات مالی» همچنان فقط برای مدیر کل است) -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-calculator ml-1"></i> حسابداری
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
-                        <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link"><i class="fas fa-list-ol ml-2"></i> اقساط بیمه‌نامه‌ها</a>
-                        <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
-                        <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
-                        <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-hand-holding-dollar ml-2"></i> دریافت‌ها و چک‌ها</a>
-                        <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه با پاسارگاد</a>
-                    </div>
-                </div>
-
-                <?php if (!$isLiaison): ?>
-                <!-- ===== ارتباطات ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-comments ml-1"></i> ارتباطات
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                        <span id="tickets-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('tickets')" id="nav-tickets" class="nav-item menu-link"><i class="fas fa-comments ml-2"></i> گفتگوها</a>
-                        <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران</a>
-                    </div>
-                </div>
-
-                <!-- ===== سامانه ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-sliders ml-1"></i> سامانه
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR</a>
-                        <a href="#" onclick="switchTab('filemanager')" id="nav-filemanager" class="nav-item menu-link"><i class="fas fa-archive ml-2"></i> بایگانی فایل‌ها</a>
-                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
-                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a>
-                        <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
-                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران پنل (داخلی)</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <?php if ($isLiaison): ?>
-                <!-- ===== بایگانی (برای همکار شرکت‌ها) ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-archive ml-1"></i> بایگانی
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('filemanager')" id="nav-filemanager" class="nav-item menu-link"><i class="fas fa-archive ml-2"></i> بایگانی فایل‌ها</a>
-                    </div>
-                </div>
                 <?php endif; ?>
 
                 <?php if ($canSeeCompanies): ?>
-                <!-- ===== شرکت‌ها ===== -->
+                <!-- ===== شرکت‌ها: خطِ کارِ شرکتی، کنارِ عملیات بیمه چون هر دو «مسیرِ رسیدن به صدور»اند ===== -->
                 <div class="menu-group">
-                    <button type="button" class="menu-trigger" onclick="toggleMenuGroup(this)">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
                         <i class="fas fa-building ml-1"></i> شرکت‌ها
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
@@ -320,6 +270,72 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a>
                         <?php if (!$isLiaison): ?>
                         <a href="#" onclick="switchTab('companies-manage')" id="nav-companies-manage" class="nav-item menu-link"><i class="fas fa-gear ml-2"></i> مدیریت شرکت‌ها</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- ===== حسابداری: همه‌ی مالی یک‌جا، «تنظیمات مالی» هم که قبلاً زیر «سامانه» بود
+                     به همین‌جا آمد تا کنارِ بقیه‌ی مالی باشد (فقط مدیر کل می‌بیند) ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-calculator ml-1"></i> حسابداری
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
+                        <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link"><i class="fas fa-list-ol ml-2"></i> اقساط بیمه‌نامه‌ها</a>
+                        <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
+                        <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-hand-holding-dollar ml-2"></i> دریافت‌ها و چک‌ها</a>
+                        <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه با پاسارگاد</a>
+                        <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
+                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
+                        <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- ===== بایگانی: گروهِ مستقل برای همه (قبلاً زیر «سامانه» بود که جایش نبود،
+                     و برای همکار شرکت‌ها یک گروهِ تکراری جدا داشت) ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-archive ml-1"></i> بایگانی
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('filemanager')" id="nav-filemanager" class="nav-item menu-link"><i class="fas fa-folder-tree ml-2"></i> بایگانی فایل‌ها</a>
+                    </div>
+                </div>
+
+                <?php if (!$isLiaison): ?>
+                <!-- ===== ارتباطات و کاربران: هر دو فهرستِ «آدم‌ها» (مشتری‌های ربات و کاربران
+                     داخلیِ پنل) کنار هم آمدند؛ قبلاً در دو منوی جدا بودند ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-comments ml-1"></i> ارتباطات و کاربران
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                        <span id="tickets-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('tickets')" id="nav-tickets" class="nav-item menu-link"><i class="fas fa-comments ml-2"></i> گفتگوها</a>
+                        <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران ربات بله</a>
+                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
+                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران پنل (داخلی)</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- ===== سامانه: فقط چیزهای فنیِ خودِ سیستم ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-sliders ml-1"></i> سامانه
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR</a>
+                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
+                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -2190,6 +2206,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script>
+        // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
+        // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
+        // مرده‌ی زمانی (TDZ) است - نتیجه‌اش ReferenceError بود و صندوق ورودی مدارک و
+        // شمارنده‌اش هرگز موقعِ باز شدنِ پنل بار نمی‌شد (و برای همکار شرکت‌ها که مستقیم
+        // روی تبِ شرکت‌ها می‌نشیند، همان اول کار پنل با خطا بالا می‌آمد).
+        const COMPANY_API = 'api/company_actions.php';
+
         let currentRecordsData = [];
         let activeRowId = null;
         let activeRowNational = '';
@@ -2760,22 +2783,63 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // باز/بسته‌کردن گروه‌های منوی درختی (هر بار فقط یکی باز می‌ماند)
+        // ===== منوها =====
+        // روی دسکتاپ زیرمنو با هاور باز می‌شود (خودِ بازشدن کارِ CSS است، این‌جا فقط
+        // یک تاخیرِ کوچکِ بسته‌شدن مدیریت می‌شود تا اگر موس کمی کج از سرمنو به زیرمنو
+        // رفت، منو زیر دست بسته نشود). روی موبایل و لمسی همان کلیک کار می‌کند.
+        const CLOSE_DELAY = 220;
+        let menuCloseTimer = null;
+
+        function closeAllMenuGroups() {
+            document.querySelectorAll('.menu-group.open').forEach(g => {
+                g.classList.remove('open');
+                const t = g.querySelector('.menu-trigger');
+                if (t) t.setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        function openMenuGroup(group) {
+            clearTimeout(menuCloseTimer);
+            if (group.classList.contains('open')) return;
+            closeAllMenuGroups();
+            group.classList.add('open');
+            const t = group.querySelector('.menu-trigger');
+            if (t) t.setAttribute('aria-expanded', 'true');
+        }
+
         function toggleMenuGroup(btn) {
             const group = btn.closest('.menu-group');
-            const wasOpen = group.classList.contains('open');
-            document.querySelectorAll('.menu-group').forEach(g => g.classList.remove('open'));
-            if (!wasOpen) group.classList.add('open');
+            if (group.classList.contains('open')) closeAllMenuGroups();
+            else openMenuGroup(group);
         }
-        // کلیک بیرون از منو، همه‌ی گروه‌ها را می‌بندد (فقط در دسکتاپ)
-        document.addEventListener('click', (e) => {
-            if (window.innerWidth < 1024) return;
-            if (!e.target.closest('.menu-group')) {
-                document.querySelectorAll('.menu-group').forEach(g => g.classList.remove('open'));
-            }
-        });
+
+        (function initMenuHover() {
+            const desktopHover = window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
+            document.querySelectorAll('.menu-group').forEach(group => {
+                group.addEventListener('mouseenter', () => { if (desktopHover.matches) openMenuGroup(group); });
+                group.addEventListener('mouseleave', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(menuCloseTimer);
+                    menuCloseTimer = setTimeout(closeAllMenuGroups, CLOSE_DELAY);
+                });
+            });
+            // انتخابِ یک گزینه باید منو را ببندد (قبلاً بعد از رفتن به تب، منو باز می‌ماند).
+            // blur هم لازم است: وگرنه فوکوس روی همان لینک می‌ماند و قاعده‌ی
+            // :focus-within (که برای کاربرِ صفحه‌کلید گذاشته شده) زیرمنو را باز نگه می‌دارد.
+            document.querySelectorAll('.menu-panel .menu-link').forEach(link => {
+                link.addEventListener('click', () => { closeAllMenuGroups(); link.blur(); });
+            });
+            // کلیک بیرون از منو، همه را می‌بندد (فقط دسکتاپ)
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth < 1024) return;
+                if (!e.target.closest('.menu-group')) closeAllMenuGroups();
+            });
+            // Esc هم ببندد
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllMenuGroups(); });
+        })();
 
         // ======================= ماژول شرکت‌ها =======================
-        const COMPANY_API = 'api/company_actions.php';
+        // (COMPANY_API بالای همین اسکریپت تعریف شده - نگاه کنید به توضیحش همان‌جا)
         const CREQ_STATUS_FA = {NEW:'جدید', DOCS_PENDING:'در انتظار مدارک', DOCS_REVIEW:'در حال بررسی', READY_FOR_ISSUE:'آماده‌ی صدور', ISSUED:'صادر شده', CANCELLED:'لغو شده'};
         const CREQ_STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
         let companyRequestsCache = [];
@@ -4017,13 +4081,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             // در موبایل، بعد از انتخاب یک تب، منو خودکار بسته شود
             if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
-            if (tabId === 'fin-dashboard') loadFinDashboard();
-            if (tabId === 'fin-installments') loadFinInstallments();
-            if (tabId === 'fin-reconcile') loadReconcilePage();
-            if (tabId === 'fin-invoices') loadInvoices();
-            if (tabId === 'fin-payments') loadPayments();
-            if (tabId === 'fin-pasargad') loadPasargadSettle();
-            if (tabId === 'fin-settings') loadFinSettings();
+            // نکته: بارگذاریِ همه‌ی تب‌های مالی از یک جا انجام می‌شود، با
+            // initFinance(tabId) در پایینِ همین تابع (که اول bootstrap را می‌گیرد و
+            // کشویی‌های دوره/شرکت را پر می‌کند). قبلاً همین‌جا یک فهرستِ تکراری هم بود
+            // که سه اسمِ تابعِ منقضی داشت (loadReconcilePage / loadPasargadSettle /
+            // loadFinSettings که هیچ‌کدام وجود ندارند) و باعث می‌شد سه تبِ «مغایرت‌گیری
+            // با اکسل»، «تسویه با پاسارگاد» و «تنظیمات مالی» با ReferenceError متوقف
+            // شوند و هیچ‌وقت داده‌شان بار نشود؛ چهار تبِ دیگر هم دو بار بار می‌شدند.
             if (tabId === 'records') loadRecords();
             if (tabId === 'dashboard') loadStats();
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
