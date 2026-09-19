@@ -17,17 +17,29 @@ function company_archive_root($siteRoot) {
     return archive_root($siteRoot) . '/بایگانی شرکتی';
 }
 
+// ساختار پوشه‌بندیِ یک درخواست، طبق آخرین خواسته‌ی کارفرما، از بیرون به داخل:
+//   بایگانی شرکتی / {سال درخواست مثلاً ۱۴۰۵} / {نام شرکت} / {ماه درخواست به حروف مثلاً شهریور}
+//   / {تاریخ درخواست مثلاً ۱۴۰۵.۰۶.۱۲} / {پوشه‌ی هر پلاک}
+// «نام شرکت» بین سال و ماه نگه داشته شده چون بدون آن، دو شرکت که در یک روز نامه
+// می‌دهند روی هم می‌افتند. سطح «بدنه/ثالث» حذف شده چون خودِ نامِ پوشه‌ی پلاک از
+// قبل با «(بدنه)» یا «(ثالث)» شروع می‌شود و آن سطح اضافه و زائد بود.
+function company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName) {
+    [$jy, $jm, ] = jalali_from_gregorian_ts($requestCreatedTimestamp);
+    $letterDate = jalali_from_gregorian_ts_dotted($requestCreatedTimestamp);
+    return company_archive_root($siteRoot) . '/' . $jy . '/' . sanitize_folder_name($companyName)
+        . '/' . jalali_month_name($jm) . '/' . $letterDate;
+}
+
 // پوشه‌ی موقتِ مدارکِ تخصیص‌نیافته‌ی یک شرکت (پیش از تگ‌گذاری دستی)
 function company_unassigned_temp_path($siteRoot, $companyName) {
     return temp_archive_root($siteRoot) . '/شرکت‌ها/' . sanitize_folder_name($companyName) . '/نامرتب';
 }
 
-// طبق ساختار خواسته‌شده:
-// بایگانی شرکتی/{سال ثبت نامه}/{نام شرکت}/{تاریخ ثبت نامه به‌صورت ۱۴۰۵.۰۲.۱۵}/{بدنه|ثالث}/
-function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum) {
-    [$jy, ] = jalali_from_gregorian_ts($requestCreatedTimestamp);
-    $letterDate = jalali_from_gregorian_ts_dotted($requestCreatedTimestamp);
-    return company_archive_root($siteRoot) . '/' . $jy . '/' . sanitize_folder_name($companyName) . '/' . $letterDate . '/' . insurance_type_fa($insuranceTypeEnum);
+// پوشه‌ی پایه‌ی پلاک‌های یک درخواست = همان پوشه‌ی تاریخ درخواست.
+// ($insuranceTypeEnum فقط برای سازگاری با فراخوانی‌های قبلی نگه داشته شده و دیگر
+//  یک سطح پوشه‌ی جدا نمی‌سازد - نوع بیمه داخل نامِ خودِ پوشه‌ی پلاک است.)
+function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null) {
+    return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName);
 }
 
 // نام پوشه‌ی هر پلاک، پیش از صدور: «{روزِ ماهِ تاریخ انقضا}(بدنه|ثالث) پلاک»
@@ -68,29 +80,490 @@ function company_copy_to_shared_sadere($siteRoot, $issuedFolderAbsPath, $issuedT
 }
 
 // =====================================================================
-//  چک‌لیستِ مدارک لازم برای هر پلاک، بر اساس نوع بیمه
+//  فهرست انواع مدرکِ ماژول شرکت‌ها + چک‌لیستِ هر ردیف (هر پلاک) بر اساس نوع بیمه
 // =====================================================================
-function company_required_docs($insuranceTypeEnum, $skipHealthInspection = false) {
-    $docs = ['car_card_or_title' => 'کارت ماشین (پشت و رو) یا سند مالکیت'];
-    if ($insuranceTypeEnum === 'BODY') {
-        $docs['prev_body_policy'] = 'بیمه بدنه قبلی (در صورت وجود)';
-        if (!$skipHealthInspection) {
-            $docs['health_inspection'] = 'گزارش بازدید سلامت خودرو';
-        }
-    }
-    return $docs;
+
+// کلید => برچسب فارسی. همین برچسب هم در نام‌گذاری فایل استفاده می‌شود:
+// «(سند) 21ایران - 693 ع 31»
+function company_doc_types() {
+    return [
+        'car_card_front'    => 'کارت ماشین رو',
+        'car_card_back'     => 'کارت ماشین پشت',
+        'ownership_doc'     => 'سند',
+        'prev_third_policy' => 'بیمه ثالث قبل',
+        'prev_body_policy'  => 'بیمه بدنه قبل',
+        'health_inspection' => 'بازدید سلامت',
+        'health_report'     => 'گزارش بازدید',
+        'other'             => 'سایر مدارک',
+        // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
+        'car_card_or_title' => 'کارت ماشین یا سند',
+    ];
 }
 
-// وضعیت کامل‌بودن مدارک یک پلاک: کدام مدارک لازم هنوز تخصیص‌نیافته‌اند
-function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes) {
-    $required = company_required_docs($insuranceTypeEnum, $skipHealthInspection);
+function company_doc_type_label($key) {
+    return company_doc_types()[$key] ?? ($key ?: 'نامشخص');
+}
+
+// مدرکی که به‌صورت «پوشه» ذخیره می‌شود (زیپِ چندفایلی) نه یک فایل تکی
+function company_doc_type_is_folder($key) {
+    return $key === 'health_inspection';
+}
+
+// چک‌لیستِ یک ردیف. هر آیتم یک «گروه» است، چون مثلاً «کارت ماشین پشت و رو یا سند»
+// با دو راهِ مختلف کامل می‌شود. خروجی برای هر آیتم:
+//   key, label, required (bool), satisfied (bool), upload_types (کلیدهایی که
+//   می‌توان برایش آپلود کرد), hint (توضیح)
+// قواعد (طبق توضیح کارفرما):
+//   - ثالث: «کارت ماشین پشت و رو یا سند» اجباری؛ «بیمه ثالث قبل» اختیاری.
+//   - بدنه: «کارت ماشین پشت و رو یا سند» اجباری؛ «بیمه بدنه قبل» در صورت وجود
+//     اجباری (با has_prev_body مشخص می‌شود)؛ «بازدید سلامت» برای بعضی خودروها
+//     اجباری است و برای بعضی نه (skip_health_inspection)؛ و «گزارش بازدید» در
+//     صورت وجودِ بازدید سلامت اجباری است.
+function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null) {
+    $has = fn($k) => in_array($k, $assignedDocTypes, true);
+    $items = [];
+
+    // ---- گروه ۱: کارت ماشین (پشت و رو) یا سند - همیشه اجباری ----
+    $cardOk = ($has('car_card_front') && $has('car_card_back')) || $has('ownership_doc') || $has('car_card_or_title');
+    $items[] = [
+        'key' => 'car_card_or_title',
+        'label' => 'کارت ماشین (پشت و رو) یا سند',
+        'required' => true,
+        'satisfied' => $cardOk,
+        'upload_types' => ['car_card_front', 'car_card_back', 'ownership_doc'],
+        'hint' => 'یا هر دو روی کارت ماشین، یا سند مالکیت',
+    ];
+
+    if ($insuranceTypeEnum === 'BODY') {
+        // ---- بیمه بدنه قبل: در صورت وجود، اجباری ----
+        $items[] = [
+            'key' => 'prev_body_policy',
+            'label' => 'بیمه بدنه قبل',
+            'required' => ($hasPrevBody === 'YES'),
+            'satisfied' => $has('prev_body_policy'),
+            'upload_types' => ['prev_body_policy'],
+            'hint' => $hasPrevBody === 'NO' ? 'این خودرو بیمه بدنه قبلی ندارد' : 'در صورت وجود، اجباری است',
+        ];
+
+        // ---- بازدید سلامت: برای بعضی خودروها اجباری، برای بعضی نه ----
+        $healthNeeded = !$skipHealthInspection;
+        $items[] = [
+            'key' => 'health_inspection',
+            'label' => 'بازدید سلامت',
+            'required' => $healthNeeded,
+            'satisfied' => $has('health_inspection'),
+            'upload_types' => ['health_inspection'],
+            'hint' => $healthNeeded ? 'عکس‌های بازدید (می‌توانید زیپ بفرستید)' : 'این خودرو نیاز به بازدید سلامت ندارد',
+        ];
+
+        // ---- گزارش بازدید: فقط اگر بازدید سلامت در جریان/موجود باشد ----
+        if ($healthNeeded || $has('health_inspection')) {
+            $items[] = [
+                'key' => 'health_report',
+                'label' => 'گزارش بازدید',
+                'required' => true,
+                'satisfied' => $has('health_report'),
+                'upload_types' => ['health_report'],
+                'hint' => 'در صورت وجود بازدید سلامت، گزارشش هم اجباری است',
+            ];
+        }
+    } else {
+        // ---- ثالث: بیمه ثالث قبل اختیاری ----
+        $items[] = [
+            'key' => 'prev_third_policy',
+            'label' => 'بیمه ثالث قبل',
+            'required' => false,
+            'satisfied' => $has('prev_third_policy'),
+            'upload_types' => ['prev_third_policy'],
+            'hint' => 'اختیاری است',
+        ];
+    }
+
+    return $items;
+}
+
+// فهرستِ «چه چیزی کم دارد» - فقط آیتم‌های اجباریِ تکمیل‌نشده
+function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null) {
     $missing = [];
-    foreach ($required as $key => $label) {
-        // «بیمه بدنه قبلی» اختیاری است؛ فقط بقیه را در فهرست «کم دارد» می‌آوریم
-        if ($key === 'prev_body_policy') continue;
-        if (!in_array($key, $assignedDocTypes, true)) $missing[$key] = $label;
+    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody) as $it) {
+        if ($it['required'] && !$it['satisfied']) $missing[$it['key']] = $it['label'];
     }
     return $missing;
+}
+
+// مدارکی که این ردیف دارد، به‌صورت برچسب فارسی (برای فهرست متنیِ خروجی)
+function company_plate_present_labels(array $assignedDocTypes) {
+    $labels = [];
+    foreach ($assignedDocTypes as $k) {
+        if ($k === null || $k === '') continue;
+        $labels[company_doc_type_label($k)] = true;
+    }
+    return array_keys($labels);
+}
+
+// برچسب فارسیِ وضعیت هر ردیف
+function company_plate_status_fa($status) {
+    return [
+        'PENDING'         => 'در انتظار مدارک',
+        'READY_FOR_ISSUE' => 'مدارک کامل - آماده‌ی صدور',
+        'WITH_BOSS'       => 'ارسال‌شده برای رئیس',
+        'IN_ISSUANCE'     => 'در حال صدور',
+        'ISSUED'          => 'صادر شد',
+        'CANCELLED'       => 'لغو شد',
+    ][$status] ?? $status;
+}
+
+// وضعیت هر ردیف بر اساس کامل‌بودن مدارک به‌طور خودکار بین «در انتظار مدارک» و
+// «آماده‌ی صدور» جابه‌جا می‌شود؛ مرحله‌های دستی (ارسال به رئیس / در حال صدور /
+// صادر شد / لغو) دست‌نخورده می‌مانند.
+function company_sync_plate_status($pdo, $plateId) {
+    $stmt = $pdo->prepare("SELECT insurance_type, skip_health_inspection, has_prev_body, status FROM company_request_plates WHERE id = ?");
+    $stmt->execute([$plateId]);
+    $plate = $stmt->fetch();
+    if (!$plate) return null;
+    if (!in_array($plate['status'], ['PENDING', 'READY_FOR_ISSUE'], true)) return $plate['status'];
+
+    $stmt = $pdo->prepare("SELECT doc_type FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED'");
+    $stmt->execute([$plateId]);
+    $types = array_filter(array_column($stmt->fetchAll(), 'doc_type'));
+    $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types, $plate['has_prev_body']);
+    $newStatus = $missing ? 'PENDING' : 'READY_FOR_ISSUE';
+    if ($newStatus !== $plate['status']) {
+        $pdo->prepare("UPDATE company_request_plates SET status = ? WHERE id = ?")->execute([$newStatus, $plateId]);
+    }
+    return $newStatus;
+}
+
+// نام فایلِ هر مدرکِ بارگزاری‌شده، دقیقاً طبق قالبِ خواسته‌شده:
+//   «(سند) 21ایران - 693 ع 31»   /   «(بیمه بدنه قبل) 21ایران - 693 ع 31»
+// (خط‌تیره‌ی داخلیِ خودِ پلاک عمداً حفظ می‌شود - در نام‌گذاریِ مدارک، برخلاف نام
+//  پوشه‌ی بیمه‌نامه‌ی صادره، پلاک همان شکل خوانای معمولش را دارد)
+function company_doc_filename($docTypeKey, $plateDisplay, $ext) {
+    $base = '(' . company_doc_type_label($docTypeKey) . ') ' . ($plateDisplay ?: 'بدون‌پلاک');
+    return sanitize_folder_name($base) . ($ext ? '.' . strtolower($ext) : '');
+}
+
+// نامِ پوشه‌ی مدرکِ پوشه‌ای (بازدید سلامت) - همان قالب، ولی بدون پسوند
+function company_doc_foldername($docTypeKey, $plateDisplay) {
+    return sanitize_folder_name('(' . company_doc_type_label($docTypeKey) . ') ' . ($plateDisplay ?: 'بدون‌پلاک'));
+}
+
+// فهرست متنیِ ریزِ یک درخواست - همان قالبی که کارفرما خواسته:
+//   55ایران - 456 ص 25 ( بیمه بدنه قبل ، سند )
+//       ناموجود: بازدید سلامت، گزارش بازدید
+function company_request_rows_text_report($pdo, $requestId) {
+    $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr
+                            JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+    $stmt->execute([$requestId]);
+    $req = $stmt->fetch();
+    if (!$req) return null;
+
+    $stmt = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
+    $stmt->execute([$requestId]);
+    $plates = $stmt->fetchAll();
+
+    $stmt = $pdo->prepare("SELECT plate_id, doc_type FROM company_documents WHERE request_id = ? AND status = 'ASSIGNED'");
+    $stmt->execute([$requestId]);
+    $byPlate = [];
+    foreach ($stmt->fetchAll() as $d) {
+        if (!$d['plate_id']) continue;
+        $byPlate[$d['plate_id']][] = $d['doc_type'];
+    }
+
+    $lines = [];
+    $lines[] = 'شرکت ' . $req['company_name'] . ' - نامه‌ی ' . jalali_from_gregorian_ts_dotted(strtotime($req['created_at']));
+    $lines[] = '';
+    foreach ($plates as $p) {
+        $types = array_values(array_filter($byPlate[$p['id']] ?? []));
+        $display = company_plate_display($p['plate_p1'], $p['plate_p2'], $p['plate_letter'], $p['plate_p4']) ?: 'بدون پلاک';
+        $present = company_plate_present_labels($types);
+        $line = $display . ' (' . insurance_type_fa($p['insurance_type']) . ')';
+        $line .= $present ? ' ( ' . implode(' ، ', $present) . ' )' : ' ( بدون مدرک )';
+        $lines[] = $line;
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null);
+        if ($missing) $lines[] = '    ناموجود: ' . implode('، ', array_values($missing));
+    }
+
+    $total = count($plates);
+    $body = 0; $third = 0; $issued = 0;
+    foreach ($plates as $p) {
+        if ($p['insurance_type'] === 'BODY') $body++; else $third++;
+        if ($p['status'] === 'ISSUED') $issued++;
+    }
+    $lines[] = '';
+    $lines[] = "جمع: {$total} ردیف ({$body} بدنه، {$third} ثالث) - صادرشده: {$issued}";
+    return implode("\n", $lines);
+}
+
+// مسیر پوشه‌ی «نامه»ی یک درخواست (سطح بالاتر از تفکیک بدنه/ثالث، چون یک نامه
+// می‌تواند چند پلاک از هر دو نوع را همزمان پوشش بدهد)
+function company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName) {
+    return company_request_date_folder($siteRoot, $requestCreatedTs, $companyName);
+}
+
+// پوشه‌ی مالیِ یک درخواست (فیش‌های کارگزاری/پاسارگاد این درخواست، جدا از پوشه‌ی
+// مالیِ پرسنلی که سراسری است - طبق خواسته‌ی صریح کارفرما، بایگانی مالی شرکتی
+// باید داخل خودِ پوشه‌بندیِ همان درخواست بماند)
+function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyName, $target) {
+    return company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName)
+        . '/مالی/' . ($target === 'PASARGAD' ? 'فیش‌های پاسارگاد' : 'فیش‌های کارگزاری');
+}
+
+// پوشه‌ی یک پلاک را (بر اساس وضعیت فعلی‌اش) محاسبه می‌کند و اگر پوشه‌ی قبلی‌اش
+// جای دیگری بود (مثلاً چون insurance_type بعداً عوض شده) آن را به مسیر جدید
+// منتقل می‌کند - خودترمیم‌گر، هم برای اولین بار و هم برای اصلاحات بعدی مناسب است.
+function ensure_plate_folder($pdo, $siteRoot, $plateId) {
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, c.name AS company_name
+                            FROM company_request_plates crp
+                            JOIN company_requests cr ON cr.id = crp.request_id
+                            JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+    $stmt->execute([$plateId]);
+    $plate = $stmt->fetch();
+    if (!$plate) return null;
+
+    // باگ واقعیِ رفع‌شده: بعد از صدور، نامِ پوشه همان «پلاک - شرکت - شماره بیمه‌نامه -
+    // VIN» است؛ اگر این تابع بعد از صدور هم دوباره صدا زده می‌شد (مثلاً برای آپلود یک
+    // مدرک تکمیلی) پوشه را به نامِ پیش‌از‌صدور برمی‌گرداند و نام‌گذاریِ صادره از بین
+    // می‌رفت. پس پوشه‌ی پلاکِ صادرشده هرگز تغییر نام داده نمی‌شود.
+    if ($plate['status'] === 'ISSUED' && $plate['folder_path']) {
+        if (!is_dir($plate['folder_path'])) @mkdir($plate['folder_path'], 0755, true);
+        return $plate['folder_path'];
+    }
+
+    $plateDisplay = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+    $desired = build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'], $plate['insurance_type'], $plate['expiry_date'], $plateDisplay);
+
+    if ($plate['folder_path'] && $plate['folder_path'] !== $desired && is_dir($plate['folder_path'])) {
+        if (!is_dir(dirname($desired))) @mkdir(dirname($desired), 0755, true);
+        if (!is_dir($desired) && @rename($plate['folder_path'], $desired)) {
+            // مسیرهای ذخیره‌شده‌ی مدارک هم باید با نام/محلِ جدیدِ پوشه هماهنگ شوند،
+            // وگرنه لینکِ مدارک بعد از جابه‌جایی پوشه می‌شکند
+            company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $plate['folder_path'], $desired);
+        }
+    }
+    if (!is_dir($desired)) @mkdir($desired, 0755, true);
+    if ($plate['folder_path'] !== $desired) {
+        $pdo->prepare("UPDATE company_request_plates SET folder_path = ? WHERE id = ?")->execute([$desired, $plateId]);
+    }
+    return $desired;
+}
+
+// وقتی پوشه‌ی یک پلاک جابه‌جا/تغییرنام می‌شود، file_path مدارکِ همان پلاک (و فایل
+// بیمه‌نامه‌ی صادرشده‌اش) هم باید با مسیر جدید هماهنگ شود.
+function company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $oldAbs, $newAbs) {
+    $oldRel = ltrim(str_replace($siteRoot, '', $oldAbs), '/');
+    $newRel = ltrim(str_replace($siteRoot, '', $newAbs), '/');
+    if ($oldRel === '' || $oldRel === $newRel) return;
+    $pdo->prepare("UPDATE company_documents SET file_path = REPLACE(file_path, ?, ?) WHERE plate_id = ?")
+        ->execute([$oldRel, $newRel, $plateId]);
+    $pdo->prepare("UPDATE company_request_plates SET issued_file_path = REPLACE(issued_file_path, ?, ?) WHERE id = ? AND issued_file_path IS NOT NULL")
+        ->execute([$oldRel, $newRel, $plateId]);
+}
+
+// =====================================================================
+//  بایگانی‌کردنِ یک مدرک روی پوشه‌ی ردیفِ خودش، با نام‌گذاریِ استاندارد
+// =====================================================================
+// ساختار نهایی داخل پوشه‌ی هر پلاک:
+//   (سند) 21ایران - 693 ع 31.pdf
+//   (بیمه بدنه قبل) 21ایران - 693 ع 31.pdf
+//   (بازدید سلامت) 21ایران - 693 ع 31/            <-- پوشه (زیپِ بازدید اینجا باز می‌شود)
+//        (گزارش بازدید) 21ایران - 693 ع 31.pdf     <-- گزارش داخل همان پوشه
+// خروجی: مسیر نسبیِ جدیدِ مدرک (یا مسیر قبلی، اگر جابه‌جایی ممکن نشد)
+function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
+    $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE id = ?");
+    $stmt->execute([$docId]);
+    $doc = $stmt->fetch();
+    if (!$doc) return null;
+
+    $stmt = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
+    $stmt->execute([$plateId]);
+    $plate = $stmt->fetch();
+    if (!$plate) return $doc['file_path'];
+
+    $plateFolder = ensure_plate_folder($pdo, $siteRoot, $plateId);
+    if (!$plateFolder) return $doc['file_path'];
+    $plateDisplay = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+
+    $absOld = $siteRoot . '/' . $doc['file_path'];
+    $newRel = $doc['file_path'];
+
+    // پوشه‌ی «بازدید سلامت» این پلاک - هم مقصدِ خودِ بازدید و هم جایی که گزارش بازدید می‌نشیند
+    $healthDir = $plateFolder . '/' . company_doc_foldername('health_inspection', $plateDisplay);
+
+    if ($docType === 'health_inspection') {
+        if (!is_dir($healthDir)) @mkdir($healthDir, 0755, true);
+        if (is_file($absOld) && strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) === 'zip') {
+            // زیپِ بازدید داخل همان پوشه باز می‌شود (خودِ زیپ نگه داشته نمی‌شود)
+            if (company_extract_zip_to_dir($absOld, $healthDir) !== false) {
+                @unlink($absOld);
+                $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+            }
+        } elseif (is_dir($absOld) && realpath($absOld) !== realpath($healthDir)) {
+            copy_dir_recursive($absOld, $healthDir);
+            $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+        } elseif (is_file($absOld)) {
+            // یک عکس/فایل تکی از بازدید: داخل همان پوشه با نام استاندارد می‌نشیند
+            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'jpg';
+            $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_inspection', $plateDisplay, $ext));
+            if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
+        } else {
+            $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+        }
+    } elseif ($docType === 'health_report') {
+        // گزارش بازدید کنار عکس‌های بازدید، داخل همان پوشه‌ی «بازدید سلامت»
+        if (!is_dir($healthDir)) @mkdir($healthDir, 0755, true);
+        if (is_file($absOld)) {
+            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+            $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_report', $plateDisplay, $ext));
+            if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
+        }
+    } elseif (is_file($absOld)) {
+        // بقیه‌ی مدارک: مستقیم داخل پوشه‌ی خودِ پلاک، با نام «(نوع مدرک) پلاک»
+        $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+        $dest = unique_dest_path($plateFolder . '/' . company_doc_filename($docType ?: 'other', $plateDisplay, $ext));
+        if (realpath($absOld) !== realpath($dest) && @rename($absOld, $dest)) {
+            $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
+        }
+    }
+
+    $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([$newRel, $docId]);
+    return $newRel;
+}
+
+// =====================================================================
+//  ورودِ ردیف‌های یک نامه از خروجیِ هوش مصنوعی (JSON یا متنِ خط‌به‌خط)
+// =====================================================================
+// قالبِ JSON که باید به هوش مصنوعی گفته شود تولید کند (قالب رسمیِ همین سیستم):
+// {
+//   "rows": [
+//     { "plate": "31 ع 693 ایران 21", "insurance_type": "بدنه",
+//       "expiry_date": "1405/07/30", "car_name": "پژو ۲۰۶",
+//       "has_prev_body": "بله", "health_inspection": "لازم", "note": "" }
+//   ]
+// }
+// قالبِ متنیِ جایگزین (هر خط یک ردیف، جداکننده «|»):
+//   31 ع 693 ایران 21 | بدنه | 1405/07/30 | پژو 206
+// نوع بیمه می‌تواند «بدنه»، «ثالث» یا «هردو» باشد؛ «هردو» به دو ردیفِ جدا تبدیل می‌شود.
+
+// پلاک را از هر نوشتاری که هوش مصنوعی بدهد به چهار بخشِ دیتابیس تبدیل می‌کند.
+// خروجی: ['p1' => کد شهر, 'p2' => سه رقم, 'letter' => حرف, 'p4' => دو رقم] یا null
+function company_parse_plate_text($text) {
+    $t = p2e_digits(trim((string)$text));
+    $t = str_replace(['ـ', '–', '—'], '-', $t);
+    // حالت ۱: «31 ع 693 ایران 21» یا «31ع693ایران21» (ترتیب خوانا، ایران در انتها)
+    if (preg_match('/(\d{2})\s*([^\d\s\-]{1,3})\s*(\d{3})\s*ایران\s*(\d{2})/u', $t, $m)) {
+        return ['p4' => $m[1], 'letter' => trim($m[2]), 'p2' => $m[3], 'p1' => $m[4]];
+    }
+    // حالت ۲: قالبِ ذخیره‌سازیِ خودمان «21ایران - 693 ع 31»
+    if (preg_match('/(\d{2})\s*ایران\s*-?\s*(\d{3})\s*([^\d\s\-]{1,3})\s*(\d{2})/u', $t, $m)) {
+        return ['p1' => $m[1], 'p2' => $m[2], 'letter' => trim($m[3]), 'p4' => $m[4]];
+    }
+    // حالت ۳: بدون «ایران»، فقط «31 ع 693 21»
+    if (preg_match('/(\d{2})\s*([^\d\s\-]{1,3})\s*(\d{3})\s*[-\s]\s*(\d{2})/u', $t, $m)) {
+        return ['p4' => $m[1], 'letter' => trim($m[2]), 'p2' => $m[3], 'p1' => $m[4]];
+    }
+    return null;
+}
+
+// نوع بیمه‌ی نوشته‌شده به enum. «هردو» با مقدار BOTH برگردانده می‌شود تا فراخوان
+// بداند باید دو ردیف بسازد.
+function company_parse_insurance_type($text) {
+    $t = trim((string)$text);
+    if ($t === '') return null;
+    if (in_array(strtoupper($t), ['BODY', 'THIRDPARTY', 'BOTH'], true)) return strtoupper($t);
+    $hasBody = mb_strpos($t, 'بدنه') !== false;
+    $hasThird = mb_strpos($t, 'ثالث') !== false;
+    // «هردو» / «هر دو» / «both» هم به‌معنی هر دو نوع است، حتی اگر اسم هیچ‌کدام نوشته نشده باشد
+    if (($hasBody && $hasThird) || mb_strpos($t, 'هردو') !== false || mb_strpos($t, 'هر دو') !== false) return 'BOTH';
+    if ($hasBody) return 'BODY';
+    if ($hasThird) return 'THIRDPARTY';
+    return null;
+}
+
+// «بله/خیر» را از هر نوشتاری تشخیص می‌دهد. نکته‌ی مهم: عبارت‌های منفی *اول* چک
+// می‌شوند، وگرنه «لازم نیست» به‌خاطر وجودِ «لازم» اشتباهاً «بله» خوانده می‌شود.
+function company_parse_yes_no($text) {
+    if (is_bool($text)) return $text ? 'YES' : 'NO';
+    if (is_int($text)) return $text ? 'YES' : 'NO';
+    $t = trim((string)$text);
+    if ($t === '') return null;
+    if (in_array(strtoupper($t), ['YES', 'NO'], true)) return strtoupper($t);
+    if ($t === '1') return 'YES';
+    if ($t === '0') return 'NO';
+    foreach (['ندارد', 'نیست', 'لازم نیست', 'خیر', 'نه', 'بدون'] as $neg) {
+        if (mb_strpos($t, $neg) !== false) return 'NO';
+    }
+    foreach (['بله', 'دارد', 'لازم', 'اجباری', 'هست'] as $pos) {
+        if (mb_strpos($t, $pos) !== false) return 'YES';
+    }
+    return null;
+}
+
+// متنِ ورودی (JSON یا خط‌به‌خط) را به فهرستِ ردیف‌های آماده‌ی درج تبدیل می‌کند.
+// خروجی: ['rows' => [...], 'errors' => [...]]
+function company_parse_letter_rows($raw) {
+    $raw = trim((string)$raw);
+    $rows = []; $errors = [];
+    if ($raw === '') return ['rows' => [], 'errors' => ['متنی برای تبدیل داده نشد.']];
+
+    $parsed = null;
+    if ($raw[0] === '{' || $raw[0] === '[') {
+        $json = json_decode($raw, true);
+        if (is_array($json)) $parsed = isset($json['rows']) && is_array($json['rows']) ? $json['rows'] : $json;
+        else $errors[] = 'فایل JSON خوانده نشد (ساختارش درست نیست)؛ به‌عنوان متنِ خط‌به‌خط بررسی می‌شود.';
+    }
+
+    if ($parsed === null) {
+        // متنِ خط‌به‌خط: «پلاک | نوع بیمه | تاریخ انقضا | نام خودرو | توضیح»
+        $parsed = [];
+        foreach (preg_split('/\R/u', $raw) as $line) {
+            $line = trim($line);
+            if ($line === '' || mb_substr($line, 0, 1) === '#') continue;
+            $cols = array_map('trim', preg_split('/\s*[|،,;\t]\s*/u', $line));
+            $parsed[] = [
+                'plate' => $cols[0] ?? '',
+                'insurance_type' => $cols[1] ?? '',
+                'expiry_date' => $cols[2] ?? '',
+                'car_name' => $cols[3] ?? '',
+                'note' => $cols[4] ?? '',
+            ];
+        }
+    }
+
+    foreach ($parsed as $i => $r) {
+        if (!is_array($r)) continue;
+        $lineNo = $i + 1;
+        $plateText = $r['plate'] ?? trim(($r['plate_p4'] ?? '') . ' ' . ($r['plate_letter'] ?? '') . ' ' . ($r['plate_p2'] ?? '') . ' ایران ' . ($r['plate_p1'] ?? ''));
+        $plate = company_parse_plate_text($plateText);
+        if (!$plate) { $errors[] = "ردیف {$lineNo}: پلاک «" . mb_substr((string)$plateText, 0, 40) . "» شناسایی نشد."; continue; }
+
+        $type = company_parse_insurance_type($r['insurance_type'] ?? ($r['type'] ?? ''));
+        if (!$type) { $errors[] = "ردیف {$lineNo}: نوع بیمه (بدنه/ثالث/هردو) مشخص نیست."; continue; }
+
+        $expiryRaw = trim((string)($r['expiry_date'] ?? ($r['expiry'] ?? '')));
+        $expiry = $expiryRaw === '' ? null : (preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryRaw) ? $expiryRaw : fin_jalali_to_date($expiryRaw));
+        if ($expiryRaw !== '' && !$expiry) $errors[] = "ردیف {$lineNo}: تاریخ انقضای «{$expiryRaw}» خوانده نشد (این ردیف بدون تاریخ ساخته می‌شود).";
+
+        $base = [
+            'plate_p1' => $plate['p1'], 'plate_p2' => $plate['p2'],
+            'plate_letter' => $plate['letter'], 'plate_p4' => $plate['p4'],
+            'expiry_date' => $expiry,
+            // همه‌ی تاریخ‌های نمایشیِ سایت شمسی‌اند؛ تاریخ میلادی فقط برای ذخیره در دیتابیس است
+            'expiry_date_jalali' => $expiry ? jalali_from_gregorian_ts_dotted(strtotime($expiry)) : null,
+            'car_name' => trim((string)($r['car_name'] ?? ($r['car'] ?? ''))) ?: null,
+            'row_note' => trim((string)($r['note'] ?? '')) ?: null,
+            'has_prev_body' => company_parse_yes_no($r['has_prev_body'] ?? ''),
+            // «بازدید سلامت لازم نیست» => skip_health_inspection = 1
+            'skip_health_inspection' => (company_parse_yes_no($r['health_inspection'] ?? '') === 'NO') ? 1 : 0,
+            'plate_display' => company_plate_display($plate['p1'], $plate['p2'], $plate['letter'], $plate['p4']),
+        ];
+
+        foreach ($type === 'BOTH' ? ['THIRDPARTY', 'BODY'] : [$type] as $t) {
+            $rows[] = array_merge($base, ['insurance_type' => $t, 'insurance_type_fa' => insurance_type_fa($t)]);
+        }
+    }
+
+    return ['rows' => $rows, 'errors' => $errors];
 }
 
 // =====================================================================

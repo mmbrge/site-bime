@@ -15,9 +15,12 @@ $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
 $data = $jsonBody;
 
-// فقط ADMIN و FINANCE به این بخش دسترسی دارند
+// ADMIN، FINANCE و COMPANY_LIAISON به این بخش دسترسی دارند. همکار شرکت‌ها طبق
+// خواسته‌ی کارفرما می‌تواند همه‌ی رکوردهای مالی را ببیند و مدیریت کند و برای
+// همه‌ی آن‌ها پرداختی ثبت کند - ولی مثل FINANCE به تنظیمات و قالب صورتحساب
+// (که فقط با $isAdmin باز می‌شوند) دسترسی ندارد.
 $role = $_SESSION['role'] ?? '';
-if (!in_array($role, ['ADMIN', 'FINANCE'], true)) {
+if (!in_array($role, ['ADMIN', 'FINANCE', 'COMPANY_LIAISON'], true)) {
     echo json_encode(['ok' => false, 'error' => 'شما به بخش مالی دسترسی ندارید.']); exit;
 }
 $isAdmin = ($role === 'ADMIN');

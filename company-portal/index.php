@@ -148,6 +148,19 @@ if (!$companies) {
 </div>
 
 <!-- مودال جزئیات درخواست -->
+<!-- مودال فهرست متنیِ ریزِ درخواست -->
+<div id="prows-text-modal" class="modal-overlay">
+    <div class="modal-content w-full max-w-lg p-5 relative">
+        <button type="button" onclick="closeModal('prows-text-modal')" aria-label="بستن" title="بستن" class="absolute top-4 left-4 text-slate-400 hover:text-red-500">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <h3 class="font-black text-base mb-1">فهرست متنی ریز درخواست</h3>
+        <p class="text-[11px] text-slate-400 mb-3">هر ردیف با مدارکی که دارد، و زیرش مدارکِ ناموجودش.</p>
+        <textarea id="prows-text-content" rows="14" dir="rtl" class="w-full text-[11px] font-mono border rounded-xl p-3 bg-slate-50" readonly></textarea>
+        <button onclick="copyPortalRowsText()" class="w-full mt-3 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-xl text-sm">کپی کردن</button>
+    </div>
+</div>
+
 <div id="request-detail-modal" class="modal-overlay">
     <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
@@ -230,6 +243,10 @@ async function loadRequests() {
                 <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
             </div>
             <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
+            <div class="flex flex-wrap gap-1 mt-2">
+                ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${r.body_count} درخواستی / ${r.body_issued} صادره</span>` : ''}
+                ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${r.third_count} درخواستی / ${r.third_issued} صادره</span>` : ''}
+            </div>
             <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
         </div>
     `).join('');
@@ -257,12 +274,12 @@ function addPlateRow(containerId) {
     row.innerHTML = `
         <div class="flex items-center gap-2">
             <div class="grid grid-cols-4 gap-1 flex-1" dir="ltr">
-                <input class="plate-p1 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
+                <input class="plate-p4 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
                 <input class="plate-letter text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="الف">
                 <input class="plate-p2 text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="۳۴۵">
                 <div class="flex items-center gap-1 border rounded-lg px-1">
                     <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input class="plate-p4 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
+                    <input class="plate-p1 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
                 </div>
             </div>
             <button type="button" onclick="this.closest('.plate-row').remove()" aria-label="حذف این پلاک" title="حذف این پلاک" class="text-red-400 hover:text-red-600 shrink-0">
@@ -319,6 +336,53 @@ async function submitNewRequest() {
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
 }
 
+// یک خانه‌ی چک‌لیست در پنل شرکت: تیک اگر دارند، ضربدر اگر ندارند (قرمز اگر اجباری
+// است) و همان‌جا دکمه‌ی آپلود، تا خودِ ثبت‌کننده هم بتواند کم‌وکسری را کامل کند.
+function portalChecklistChip(plate, item) {
+    const ok = item.satisfied;
+    const tone = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : (item.required ? 'bg-red-50 border-red-200 text-red-600'
+                                     : 'bg-slate-50 border-slate-200 text-slate-400');
+    const star = item.required ? '<span class="text-red-400">*</span>' : '';
+    const links = (item.docs || []).map(d => d.is_dir
+        ? `<span class="text-slate-500">${d.label} (پوشه)</span>`
+        : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>`
+    ).join('<span class="text-slate-300 mx-1">|</span>');
+
+    let uploader = '';
+    if (!ok && plate.status !== 'ISSUED') {
+        const types = item.upload_types || [item.key];
+        const sel = types.length > 1
+            ? `<select id="pr-type-${plate.id}-${item.key}" class="text-[10px] border rounded px-1 py-0.5 bg-white">
+                   ${types.map(t => `<option value="${t}">${PORTAL_DOC_TYPE_FA[t] || t}</option>`).join('')}
+               </select>`
+            : `<input type="hidden" id="pr-type-${plate.id}-${item.key}" value="${types[0]}">`;
+        const accept = item.key === 'health_inspection' ? '.zip,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
+        uploader = `<span class="inline-flex items-center gap-1 mt-1">${sel}
+            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
+                بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-${item.key}', this)">
+            </label></span>`;
+    }
+
+    return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="${item.hint || ''}">
+        <div class="font-bold whitespace-nowrap">${ok ? '✓' : '✗'} ${item.label}${star}</div>
+        ${links ? `<div class="mt-0.5">${links}</div>` : ''}
+        ${uploader}
+    </div>`;
+}
+
+const PORTAL_ROW_STATUS_COLOR = {
+    PENDING: 'bg-amber-50 text-amber-600', READY_FOR_ISSUE: 'bg-cyan-50 text-cyan-600',
+    WITH_BOSS: 'bg-indigo-50 text-indigo-600', IN_ISSUANCE: 'bg-violet-50 text-violet-600',
+    ISSUED: 'bg-emerald-50 text-emerald-600', CANCELLED: 'bg-red-50 text-red-600',
+};
+const PORTAL_DOC_TYPE_FA = {
+    car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند',
+    prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
+    health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
+    other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست',
+};
+
 async function openRequestDetail(id) {
     activeRequestId = id;
     const res = await fetch('../api/company_portal_actions.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'request_detail', request_id: id})});
@@ -326,6 +390,7 @@ async function openRequestDetail(id) {
     if (!data.ok) { showToast(data.error || 'خطا در دریافت اطلاعات.'); return; }
     const r = data.request;
     currentRequestPlates = data.plates;
+    const c = data.counts || {body: 0, third: 0, body_issued: 0, third_issued: 0};
 
     const fileIcon = (name) => {
         const ext = (name || '').split('.').pop().toLowerCase();
@@ -335,32 +400,52 @@ async function openRequestDetail(id) {
         return ['fa-file', 'text-slate-400'];
     };
     const docsHtml = data.documents.length ? data.documents.map(d => {
-        const [icon, color] = fileIcon(d.orig_name);
+        const [icon, color] = fileIcon(d.orig_name || d.file_path);
         const assigned = d.status === 'ASSIGNED';
         return `
         <a href="../${d.file_path}" target="_blank" class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2 hover:shadow-md hover:border-blue-200 transition-all group">
             <div class="flex items-center gap-2.5 min-w-0">
                 <div class="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors"><i class="fas ${icon} ${color}"></i></div>
-                <span class="text-xs font-bold text-slate-700 truncate">${d.orig_name || 'فایل'}</span>
+                <div class="min-w-0">
+                    <span class="text-xs font-bold text-slate-700 truncate block">${d.orig_name || 'فایل'}</span>
+                    <span class="text-[10px] text-slate-400">${d.doc_type_label || ''}${d.uploaded_at_jalali ? ' · ' + d.uploaded_at_jalali : ''}</span>
+                </div>
             </div>
             <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${assigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}">${assigned ? '✓ بررسی‌شده' : 'در انتظار بررسی'}</span>
         </a>`;
     }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">هنوز مدرکی آپلود نشده.</p>';
 
-    const platesHtml = data.plates.length ? data.plates.map(p => {
-        const plateStr = plateHtml(p);
+    // ---- ریزِ درخواست: یک ردیف به ازای هر بیمه‌نامه‌ی درخواستی، با چک‌لیستِ مدارکش ----
+    const rowsHtml = data.plates.length ? data.plates.map((p, idx) => {
+        const missing = Object.values(p.missing_docs || {});
+        const chips = (p.checklist || []).map(it => portalChecklistChip(p, it)).join('');
         return `
-        <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2">
-            <div class="flex items-center gap-2.5">
-                <div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateStr}</div>
-                ${p.insurance_type ? `<span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>` : ''}
+        <div class="bg-white border border-slate-100 rounded-xl p-3 mb-2">
+            <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-[10px] text-slate-300 font-bold">${idx + 1}</span>
+                    <div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateHtml(p)}</div>
+                    <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
+                    ${p.expiry_date_jalali ? `<span class="text-[10px] text-slate-400">انقضا: ${p.expiry_date_jalali}</span>` : ''}
+                </div>
+                <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${PORTAL_ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-500'}">${p.status_fa || p.status}</span>
             </div>
-            <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${p.status === 'ISSUED' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${p.status === 'ISSUED' ? '✓ صادر شده' : 'در جریان'}</span>
+            ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
+            <div class="flex flex-wrap gap-1">${chips}</div>
+            ${missing.length
+                ? `<p class="text-[10px] text-amber-600 mt-2"><i class="fas fa-triangle-exclamation ml-1"></i>مدارک ناموجود: ${missing.join('، ')}</p>`
+                : '<p class="text-[10px] text-emerald-600 mt-2"><i class="fas fa-check ml-1"></i>مدارک این ردیف کامل است</p>'}
+            ${p.status === 'ISSUED' ? `
+                <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                    <span class="text-[10px] text-slate-500">${p.policy_number ? 'شماره بیمه‌نامه: ' + p.policy_number : ''}${p.issued_at_jalali ? ' · ' + p.issued_at_jalali : ''}</span>
+                    ${p.has_issued_file ? `<a href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${p.id}"
+                        class="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded-lg">دانلود بیمه‌نامه</a>` : ''}
+                </div>` : ''}
         </div>`;
-    }).join('') : '';
+    }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">ریزِ درخواست هنوز ثبت نشده؛ به‌محض ثبت، هر ردیف و مدارک لازمش همین‌جا نمایش داده می‌شود.</p>';
 
     document.getElementById('request-detail-body').innerHTML = `
-        <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 mb-5 text-white relative overflow-hidden">
+        <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 mb-4 text-white relative overflow-hidden">
             <div class="absolute -left-6 -top-6 w-28 h-28 bg-white/10 rounded-full"></div>
             <div class="absolute -left-2 -bottom-8 w-20 h-20 bg-white/10 rounded-full"></div>
             <div class="relative flex items-center justify-between mb-3">
@@ -373,8 +458,20 @@ async function openRequestDetail(id) {
                 <span><i class="far fa-clock ml-1"></i>ویرایش: ${r.updated_at_jalali}</span>
             </div>
         </div>
-        ${platesHtml ? `<h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>پلاک‌ها</h4>${platesHtml}` : ''}
-        <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>مدارک ارسالی</h4>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+            <div class="bg-cyan-50 border border-cyan-100 rounded-xl p-2 text-center"><p class="text-[10px] text-cyan-700">بدنه درخواستی</p><p class="font-black text-cyan-800">${c.body}</p></div>
+            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-2 text-center"><p class="text-[10px] text-emerald-700">بدنه صادرشده</p><p class="font-black text-emerald-800">${c.body_issued}</p></div>
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-2 text-center"><p class="text-[10px] text-blue-700">ثالث درخواستی</p><p class="font-black text-blue-800">${c.third}</p></div>
+            <div class="bg-teal-50 border border-teal-100 rounded-xl p-2 text-center"><p class="text-[10px] text-teal-700">ثالث صادرشده</p><p class="font-black text-teal-800">${c.third_issued}</p></div>
+        </div>
+
+        <button onclick="showPortalRowsText(${r.id})" class="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
+
+        <h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>ریز درخواست و مدارک هر ردیف</h4>
+        ${rowsHtml}
+
+        <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>همه‌ی مدارک ارسالی</h4>
         ${docsHtml}
     `;
     document.getElementById('doc-upload-input').value = '';
@@ -382,17 +479,64 @@ async function openRequestDetail(id) {
     openModal('request-detail-modal');
 }
 
+// آپلودِ هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست
+async function portalUploadRowDoc(plateId, typeElId, input) {
+    if (!input.files[0]) return;
+    const typeEl = document.getElementById(typeElId);
+    const fd = new FormData();
+    fd.append('action', 'upload_row_doc');
+    fd.append('plate_id', plateId);
+    fd.append('doc_type', typeEl ? typeEl.value : 'other');
+    fd.append('doc_file', input.files[0]);
+    try {
+        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
+        const data = await res.json();
+        showToast(data.ok ? 'مدرک ثبت شد.' : (data.error || 'خطا در بارگذاری.'));
+        if (data.ok && activeRequestId) openRequestDetail(activeRequestId);
+    } catch (e) { showToast('خطا در ارتباط با سرور.'); }
+    input.value = '';
+}
+
+// فهرست متنیِ ریزِ درخواست - همان چیزی که ما هم می‌بینیم
+async function showPortalRowsText(requestId) {
+    const box = document.getElementById('prows-text-content');
+    box.value = 'در حال آماده‌سازی...';
+    openModal('prows-text-modal');
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_rows_text', request_id: requestId})});
+    const data = await res.json();
+    box.value = data.ok ? data.text : (data.error || 'خطا');
+}
+
+function copyPortalRowsText() {
+    const box = document.getElementById('prows-text-content');
+    box.select();
+    navigator.clipboard.writeText(box.value)
+        .then(() => showToast('فهرست کپی شد.'))
+        .catch(() => showToast('کپی نشد؛ متن انتخاب شده، دستی کپی کنید.'));
+}
+
 const DOC_TYPE_OPTIONS = [
     ['letter', 'نامه‌ی درخواست (اگر موقع ثبت درخواست نامه ارسال نشده بود)'],
-    ['car_card_or_title', 'کارت ماشین (پشت و رو) یا سند مالکیت'],
-    ['prev_body_policy', 'بیمه بدنه قبلی'],
-    ['health_inspection', 'گزارش بازدید سلامت'],
-    ['other', 'سایر'],
+    ['ownership_doc', 'سند'],
+    ['car_card_front', 'کارت ماشین رو'],
+    ['car_card_back', 'کارت ماشین پشت'],
+    ['prev_third_policy', 'بیمه ثالث قبل'],
+    ['prev_body_policy', 'بیمه بدنه قبل'],
+    ['health_inspection', 'بازدید سلامت (زیپ/عکس)'],
+    ['health_report', 'گزارش بازدید'],
+    ['other', 'سایر مدارک'],
 ];
 
+// معنیِ ستون‌های پلاک در دیتابیس، دقیقاً هم‌شکل با پلاک‌های پرسنلی
+// («{p1}ایران - {p2} {letter} {p4}» در api/_company_helpers.php و همان چیزی که
+//  api/webapp_app.php با نام region/suffix/letter/prefix می‌سازد):
+//    plate_p1 = دو رقمِ کنارِ «ایران» (کد شهر)   plate_p2 = سه رقمِ وسط
+//    plate_letter = حرف  plate_p4 = دو رقمِ ابتدای پلاک
+// پس ترتیبِ نمایشیِ چپ‌به‌راست می‌شود: p4 - حرف - p2 - ایران - p1
+// (اگر این ترتیب جابه‌جا شود، نامِ فایل‌ها و مقایسه‌ی پلاکِ OCR غلط از آب درمی‌آید)
 function plateOptionLabel(p) {
-    const parts = [p.plate_p1, p.plate_letter, p.plate_p2].filter(Boolean).join(' ');
-    return (parts || 'بدون‌شماره') + (p.plate_p4 ? ' ایران ' + p.plate_p4 : '');
+    const parts = [p.plate_p4, p.plate_letter, p.plate_p2].filter(Boolean).join(' ');
+    return (parts || 'بدون‌شماره') + (p.plate_p1 ? ' ایران ' + p.plate_p1 : '');
 }
 
 // نمایشِ پلاک از چپ به راست: [۲ رقم] [حرف] [۳ رقم] [ایران] [۲ رقم].
@@ -402,8 +546,8 @@ function plateHtml(p) {
     if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return 'پلاک نامشخص';
     const seg = v => `<span>${v || ''}</span>`;
     return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">`
-        + seg(p.plate_p1 || '--') + `<span>${p.plate_letter || '-'}</span>` + seg(p.plate_p2 || '---')
-        + `<span class="text-slate-400">ایران</span>` + seg(p.plate_p4 || '--') + `</span>`;
+        + seg(p.plate_p4 || '--') + `<span>${p.plate_letter || '-'}</span>` + seg(p.plate_p2 || '---')
+        + `<span class="text-slate-400">ایران</span>` + seg(p.plate_p1 || '--') + `</span>`;
 }
 
 function renderDocUploadRows() {

@@ -219,6 +219,16 @@ try {
             'company_documents', 'company_request_plates', 'company_requests',
             'company_portal_user_companies', 'company_portal_users',
             'staff_chat_messages', 'company_chat_messages', 'bot_known_groups',
+            // مالی پرسنلی: اقساط، دریافتی‌ها و تخصیص‌هایشان، چک‌ها، صورتحساب‌ها،
+            // تسویه‌های پاسارگاد، مغایرت‌گیری و دوره‌های صورتحساب - این‌ها هم قبلاً
+            // در «پاک کردن اطلاعات» جا مانده بودند، پس بدهی/بستانکاریِ پرونده‌های
+            // پاک‌شده به‌صورت یتیم در گزارش‌های مالی باقی می‌ماند
+            'payment_allocations', 'payments', 'policy_installments',
+            'invoice_lines', 'invoices', 'cheques',
+            'pasargad_settlement_lines', 'pasargad_settlements',
+            'reconciliations', 'billing_periods',
+            // وضعیت گفتگوی ربات و کدهای یک‌بارمصرف ورود
+            'conversation_state', 'login_otps',
         ] as $table) {
             try { $pdo->exec("TRUNCATE TABLE `$table`;"); } catch (Exception $e) { /* اگر جدولی وجود نداشت، رد شو */ }
         }
@@ -241,6 +251,9 @@ try {
         $siteRoot = dirname(__DIR__);
         foreach (['/Archive/بایگانی/بایگانی کسر از حقوق', '/Archive/بایگانی/بایگانی صادره', '/Archive/بایگانی/سایر مدارک',
                   '/Archive/بایگانی/بایگانی شرکتی',
+                  // بایگانی مالی (فیش‌ها/صورتحساب‌ها) و پوشه‌های موقتِ مالی و OCR هم
+                  // باید پاک شوند، وگرنه فیش و PDF مشتری‌های پاک‌شده روی سرور می‌ماند
+                  '/Archive/مالی', '/موقت/موقت مالی', '/tmp_ocr', '/tmp_recon',
                   '/موقت/موقت بایگانی', '/queue/pending', '/queue/case_uploads', '/queue/attachments'] as $rel) {
             rrmdir_contents($siteRoot . $rel);
         }

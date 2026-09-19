@@ -33,7 +33,12 @@ try {
     // ---- لیست درخواست‌های شرکت‌های این کاربر ----
     if ($action === 'my_requests') {
         $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
-        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr
+        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name,
+                       (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type = 'BODY') AS body_count,
+                       (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type <> 'BODY') AS third_count,
+                       (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type = 'BODY' AND crp.status = 'ISSUED') AS body_issued,
+                       (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type <> 'BODY' AND crp.status = 'ISSUED') AS third_issued
+                                FROM company_requests cr
                                 JOIN companies c ON c.id = cr.company_id
                                 WHERE cr.company_id IN ($placeholders) ORDER BY cr.created_at DESC");
         $stmt->execute($allowedCompanyIds);
@@ -41,6 +46,7 @@ try {
         foreach ($rows as &$r) {
             $r['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['updated_at']));
+            foreach (['body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -59,20 +65,130 @@ try {
 
         // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به
         // ../undefined می‌خورد و کاربر نمی‌تواند فایلی که خودش فرستاده را ببیند
-        $stmt = $pdo->prepare("SELECT id, orig_name, file_path, file_kind, doc_type, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
+        $stmt = $pdo->prepare("SELECT id, orig_name, file_path, file_kind, doc_type, plate_id, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
+        $siteRoot = dirname(__DIR__);
+        foreach ($docs as &$d) {
+            $d['doc_type_label'] = company_doc_type_label($d['doc_type']);
+            $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
+            $d['uploaded_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($d['uploaded_at']));
+        }
+        unset($d);
 
         $stmt = $pdo->prepare("SELECT id, plate_p1, plate_p2, plate_letter, plate_p4, insurance_type, status, expiry_date,
-                                       issued_file_path IS NOT NULL AS has_issued_file
-                                FROM company_request_plates WHERE request_id = ?");
+                                       skip_health_inspection, has_prev_body, car_name, row_note, policy_number, issued_at,
+                                       issued_file_path, issued_file_path IS NOT NULL AS has_issued_file
+                                FROM company_request_plates WHERE request_id = ? ORDER BY id");
         $stmt->execute([$requestId]);
         $plates = $stmt->fetchAll();
+        // همان چک‌لیستی که ما در پنل خودمان می‌بینیم، عیناً برای ثبت‌کننده‌ی شرکت هم
+        // نمایش داده می‌شود تا هر دو طرف بدانند هر ردیف چه کم دارد و خودش بتواند
+        // همان‌جا آپلود کند (خواسته‌ی صریح کارفرما: «هم اون بتونه انجام بده هم من»)
         foreach ($plates as &$p) {
+            $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
+            $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
+            $p['plate_display'] = company_plate_display($p['plate_p1'], $p['plate_p2'], $p['plate_letter'], $p['plate_p4']);
+            $p['status_fa'] = company_plate_status_fa($p['status']);
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body']);
+            foreach ($p['checklist'] as &$item) {
+                $item['docs'] = array_values(array_map(
+                    fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
+                               'label' => company_doc_type_label($d['doc_type']), 'is_dir' => !empty($d['is_dir'])],
+                    array_filter($rowDocs, fn($d) => in_array($d['doc_type'], $item['upload_types'], true) || $d['doc_type'] === $item['key'])
+                ));
+            }
+            unset($item);
+            $p['present_labels'] = company_plate_present_labels($assignedTypes);
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body']);
             if ($p['expiry_date']) $p['expiry_date_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['expiry_date']));
+            if ($p['issued_at']) $p['issued_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['issued_at']));
+        }
+        unset($p);
+
+        $counts = ['body' => 0, 'third' => 0, 'body_issued' => 0, 'third_issued' => 0];
+        foreach ($plates as $p) {
+            $k = $p['insurance_type'] === 'BODY' ? 'body' : 'third';
+            $counts[$k]++;
+            if ($p['status'] === 'ISSUED') $counts[$k . '_issued']++;
         }
 
-        echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
+                          'counts' => $counts, 'doc_types' => company_doc_types()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- آپلود هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست.
+    //      چون پلاک و نوع مدرک مشخص است، مستقیم ASSIGNED می‌شود، نام‌گذاری
+    //      استاندارد «(نوع مدرک) پلاک» می‌گیرد و داخل پوشه‌ی همان ردیف می‌نشیند. ----
+    if (isset($_FILES['doc_file']) && ($_POST['action'] ?? '') === 'upload_row_doc') {
+        $plateId = intval($_POST['plate_id'] ?? 0);
+        $docType = trim($_POST['doc_type'] ?? '');
+        if (!$plateId || !array_key_exists($docType, company_doc_types())) {
+            echo json_encode(['ok' => false, 'error' => 'ردیف یا نوع مدرک مشخص نیست.']); exit;
+        }
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $stmt = $pdo->prepare("SELECT crp.id, crp.request_id, cr.company_id FROM company_request_plates crp
+                                JOIN company_requests cr ON cr.id = crp.request_id
+                                WHERE crp.id = ? AND cr.company_id IN ($placeholders)");
+        $stmt->execute(array_merge([$plateId], $allowedCompanyIds));
+        $row = $stmt->fetch();
+        if (!$row) { echo json_encode(['ok' => false, 'error' => 'این ردیف متعلق به شرکت شما نیست.']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $plateFolder = ensure_plate_folder($pdo, $siteRoot, $plateId);
+        if (!$plateFolder) { echo json_encode(['ok' => false, 'error' => 'پوشه‌ی این ردیف ساخته نشد.']); exit; }
+
+        $isHealth = ($docType === 'health_inspection');
+        $saved = company_store_uploaded_file($_FILES['doc_file'], $plateFolder, 31457280, $isHealth, false);
+        if (!$saved['ok']) { echo json_encode($saved); exit; }
+
+        $relPath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
+        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status)
+                        VALUES (?, ?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED')")
+            ->execute([$row['company_id'], $row['request_id'], $plateId, $session['company_user_id'], $relPath, $saved['orig_name'], $docType]);
+        $docId = $pdo->lastInsertId();
+
+        $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
+        $rowStatus = company_sync_plate_status($pdo, $plateId);
+        echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- فهرست متنیِ ریزِ یک درخواست (همان قالبی که ما هم می‌بینیم) ----
+    if ($action === 'request_rows_text') {
+        $requestId = intval($data['request_id'] ?? ($_GET['request_id'] ?? 0));
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $stmt = $pdo->prepare("SELECT id FROM company_requests WHERE id = ? AND company_id IN ($placeholders)");
+        $stmt->execute(array_merge([$requestId], $allowedCompanyIds));
+        if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+        echo json_encode(['ok' => true, 'text' => company_request_rows_text_report($pdo, $requestId)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- دانلود فایل بیمه‌نامه‌ی صادرشده‌ی یک ردیف (فقط ردیف‌های شرکت‌های خودش) ----
+    if (($action === 'download_issued_policy') || ($_GET['action'] ?? '') === 'download_issued_policy') {
+        $plateId = intval($data['plate_id'] ?? ($_GET['plate_id'] ?? 0));
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $stmt = $pdo->prepare("SELECT crp.issued_file_path, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4,
+                                      crp.policy_number, crp.insurance_type
+                                 FROM company_request_plates crp
+                                 JOIN company_requests cr ON cr.id = crp.request_id
+                                WHERE crp.id = ? AND cr.company_id IN ($placeholders) AND crp.status = 'ISSUED'");
+        $stmt->execute(array_merge([$plateId], $allowedCompanyIds));
+        $row = $stmt->fetch();
+        $siteRoot = dirname(__DIR__);
+        $abs = ($row && $row['issued_file_path']) ? $siteRoot . '/' . $row['issued_file_path'] : null;
+        if (!$abs || !is_file($abs)) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'فایل بیمه‌نامه یافت نشد.']); exit; }
+
+        $plateDisplay = company_plate_display($row['plate_p1'], $row['plate_p2'], $row['plate_letter'], $row['plate_p4']);
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+        $name = sanitize_folder_name(insurance_type_fa($row['insurance_type']) . ' - ' . ($plateDisplay ?: 'بدون پلاک')
+                 . ($row['policy_number'] ? ' - ' . policy_number_for_filename($row['policy_number']) : '')) . '.' . $ext;
+        header('Content-Type: ' . ($ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
+        header('Content-Disposition: attachment; filename="' . $name . '"');
+        header('Content-Length: ' . filesize($abs));
+        readfile($abs);
         exit;
     }
 
