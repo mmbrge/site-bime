@@ -1409,8 +1409,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-companies-finance" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">گزارش مالی شرکت‌ها</h1>
-                <button onclick="loadCompanyFinance()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <select id="cfin-chart-company" onchange="loadFinanceChart()" class="text-xs font-bold border rounded-xl px-3 py-2">
+                        <option value="">همه‌ی شرکت‌ها</option>
+                    </select>
+                    <select id="cfin-chart-range" onchange="loadFinanceChart()" class="text-xs font-bold border rounded-xl px-3 py-2">
+                        <option value="MONTH">یک ماه اخیر</option>
+                        <option value="3M">۳ ماه اخیر</option>
+                        <option value="6M" selected>۶ ماه اخیر</option>
+                        <option value="YEAR">یک سال اخیر</option>
+                        <option value="ALL">کل بازه</option>
+                    </select>
+                    <button onclick="loadCompanyFinance()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+                </div>
             </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="card p-5 md:col-span-3">
+                    <p class="text-xs font-bold text-slate-500 mb-3"><i class="fas fa-chart-column text-blue-500 ml-1"></i>نمودار فروش (جمع صورتحساب به تفکیک ماه)</p>
+                    <div id="cfin-chart-box" class="w-full" style="min-height:220px;"></div>
+                </div>
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="card p-4">
+                        <p class="text-[11px] text-slate-400 font-bold mb-1">تعداد بیمه‌نامه‌ی صادره</p>
+                        <p class="text-xl font-black text-slate-800" id="cfin-stat-count">—</p>
+                    </div>
+                    <div class="card p-4">
+                        <p class="text-[11px] text-slate-400 font-bold mb-1">مجموع حق بیمه</p>
+                        <p class="text-xl font-black text-blue-600" id="cfin-stat-premium">—</p>
+                    </div>
+                    <div class="card p-4">
+                        <p class="text-[11px] text-slate-400 font-bold mb-1">مبلغ بدهی</p>
+                        <p class="text-xl font-black text-rose-600" id="cfin-stat-debt">—</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
@@ -1430,7 +1464,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex gap-2">
                     <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
                     <button onclick="resetCompanyForm(); openModal('add-company-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن شرکت</button>
-                    <button onclick="openModal('add-portal-user-modal')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-plus ml-1"></i>افزودن عضو</button>
+                    <button onclick="openAddPortalUserModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-plus ml-1"></i>افزودن عضو</button>
                 </div>
             </div>
             <div class="card overflow-x-auto">
@@ -1480,7 +1514,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <div id="admin-new-creq-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-md p-6 relative">
             <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-4">ثبت دستی درخواست شرکتی</h3>
+            <h3 class="font-black text-lg mb-4"><span id="ancr-modal-title">ثبت دستی درخواست شرکتی</span></h3>
+            <input type="hidden" id="ancr-request-id">
             <div class="float-input">
                 <select id="ancr-company" onchange="ancrUpdateInsurerOptions()"><option value="">-- انتخاب شرکت --</option></select>
                 <label>شرکت</label>
@@ -1491,6 +1526,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <label class="text-xs font-bold text-slate-500 block mb-2">توضیح / متن نامه (اختیاری)</label>
             <textarea id="ancr-text" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
+            <label class="text-xs font-bold text-slate-500 block mb-2">فایل نامه (اختیاری)</label>
+            <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full border rounded-xl p-2 text-xs mb-4">
             <button onclick="submitAdminNewRequest()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت درخواست</button>
         </div>
     </div>
@@ -1646,15 +1683,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <div id="add-portal-user-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-md p-6 relative">
             <button type="button" onclick="closeModal('add-portal-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-4">افزودن عضو - حساب کاربری ثبت‌کننده</h3>
+            <h3 class="font-black text-lg mb-4"><span id="cm-pu-modal-title">افزودن عضو - حساب کاربری ثبت‌کننده</span></h3>
+            <input type="hidden" id="cm-pu-id">
             <p class="text-[11px] text-slate-400 mb-2">اگر کاربر به چند شرکت دسترسی داشته باشد، در پنلش انتخابگر شرکت نشان داده می‌شود؛ اگر فقط یکی انتخاب شود، پنلش قفل روی همان می‌ماند.</p>
             <label class="text-xs font-bold text-slate-500 block mb-2">شرکت(ها)</label>
             <div id="cm-pu-companies" class="border rounded-xl p-3 mb-4 max-h-32 overflow-y-auto text-xs"></div>
             <div class="float-input"><input type="text" id="cm-pu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
             <div class="float-input"><input type="text" id="cm-pu-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
-            <div class="float-input"><input type="text" id="cm-pu-password" dir="ltr" placeholder=" "><label>رمز عبور</label></div>
+            <div class="float-input"><input type="text" id="cm-pu-password" dir="ltr" placeholder=" "><label id="cm-pu-password-label">رمز عبور</label></div>
             <div class="float-input"><input type="text" id="cm-pu-mobile" dir="ltr" placeholder=" "><label>شماره موبایل (اختیاری)</label></div>
-            <button onclick="createPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ساخت حساب کاربری</button>
+            <button onclick="submitPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm"><span id="cm-pu-submit-label">ساخت حساب کاربری</span></button>
         </div>
     </div>
 
@@ -2560,28 +2598,52 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 font-bold">${r.company_name}</td>
                     <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</td>
                     <td class="p-3"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span></td>
-                    <td class="p-3 text-slate-400">${r.created_at}</td>
+                    <td class="p-3 text-slate-400" dir="ltr">${toJalali(r.created_at)}</td>
                     <td class="p-3 flex items-center gap-2">
                         <button onclick="openCompanyRequestDetail(${r.id})" class="text-blue-600 hover:underline text-xs font-bold">مشاهده</button>
                         <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-lg">
                             بررسی مدارک
                             ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
                         </button>
+                        <button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
+                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
                     </td>
                 </tr>`).join('');
         }
 
-        // ---------- ثبت دستی درخواست شرکتی توسط خودمان ----------
+        // ---------- ثبت دستی درخواست شرکتی توسط خودمان (همین مودال برای ویرایش هم استفاده می‌شود) ----------
         let ancrCompaniesCache = [];
-        async function openAdminNewRequestModal() {
-            document.getElementById('ancr-text').value = '';
+        async function loadAncrCompanies() {
             const sel = document.getElementById('ancr-company');
             sel.innerHTML = '<option value="">در حال بارگذاری...</option>';
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})});
             const data = await res.json();
             ancrCompaniesCache = data.ok ? data.companies : [];
             sel.innerHTML = '<option value="">-- انتخاب شرکت --</option>' + ancrCompaniesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+        async function openAdminNewRequestModal() {
+            document.getElementById('ancr-modal-title').textContent = 'ثبت دستی درخواست شرکتی';
+            document.getElementById('ancr-request-id').value = '';
+            document.getElementById('ancr-text').value = '';
+            document.getElementById('ancr-letter-file').value = '';
+            document.getElementById('ancr-company').disabled = false;
+            await loadAncrCompanies();
             ancrUpdateInsurerOptions();
+            openModal('admin-new-creq-modal');
+        }
+        async function openEditRequestModal(requestId) {
+            document.getElementById('ancr-modal-title').textContent = `ویرایش درخواست #${requestId}`;
+            document.getElementById('ancr-request-id').value = requestId;
+            document.getElementById('ancr-letter-file').value = '';
+            await loadAncrCompanies();
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            document.getElementById('ancr-company').value = data.request.company_id;
+            document.getElementById('ancr-company').disabled = true;
+            ancrUpdateInsurerOptions();
+            document.getElementById('ancr-insurer').value = data.request.insurer;
+            document.getElementById('ancr-text').value = data.request.request_text || '';
             openModal('admin-new-creq-modal');
         }
         function ancrUpdateInsurerOptions() {
@@ -2591,22 +2653,43 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
             document.getElementById('ancr-insurer').innerHTML = options.map(o => `<option value="${o}">${o === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('');
         }
+        async function deleteRequestRow(requestId) {
+            if (!confirm(`درخواست #${requestId} و همه‌ی پلاک‌ها/مدارک/اطلاعات مالیِ آن برای همیشه حذف شود؟ این کار قابل بازگشت نیست.`)) return;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_request', request_id: requestId})});
+            const data = await res.json();
+            if (data.ok) { showToast('درخواست حذف شد.', 'success'); loadCompanyRequests(); }
+            else showToast(data.error || 'خطا', 'error');
+        }
         async function submitAdminNewRequest() {
+            const requestId = document.getElementById('ancr-request-id').value;
             const companyId = document.getElementById('ancr-company').value;
             if (!companyId) { showToast('شرکت را انتخاب کنید.', 'error'); return; }
-            const payload = {
-                action: 'admin_create_request', company_id: companyId,
-                insurer: document.getElementById('ancr-insurer').value,
-                request_text: document.getElementById('ancr-text').value.trim(),
-            };
+            const payload = requestId
+                ? { action: 'edit_request', request_id: requestId,
+                    insurer: document.getElementById('ancr-insurer').value,
+                    request_text: document.getElementById('ancr-text').value.trim() }
+                : { action: 'admin_create_request', company_id: companyId,
+                    insurer: document.getElementById('ancr-insurer').value,
+                    request_text: document.getElementById('ancr-text').value.trim() };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
-            if (data.ok) {
-                showToast('درخواست ثبت شد.', 'success');
-                document.getElementById('admin-new-creq-modal').classList.remove('active');
-                loadCompanyRequests();
-                openCompanyRequestDetail(data.request_id);
-            } else showToast(data.error || 'خطا', 'error');
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            if (requestId) { data.request_id = requestId; }
+
+            const letterFile = document.getElementById('ancr-letter-file').files[0];
+            if (letterFile) {
+                const fd = new FormData();
+                fd.append('action', 'admin_upload_plate_doc');
+                fd.append('request_id', data.request_id);
+                fd.append('doc_type', 'letter');
+                fd.append('file', letterFile);
+                try { await fetch(COMPANY_API, {method: 'POST', body: fd}); } catch (e) { /* درخواست ثبت شد، فقط نامه آپلود نشد */ }
+            }
+
+            showToast(requestId ? 'درخواست ویرایش شد.' : 'درخواست ثبت شد.', 'success');
+            document.getElementById('admin-new-creq-modal').classList.remove('active');
+            loadCompanyRequests();
+            openCompanyRequestDetail(data.request_id);
         }
 
         // ---------- افزودن دستیِ پلاک به یک درخواست ----------
@@ -3043,9 +3126,83 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 font-mono">${c.total_paid.toLocaleString('fa-IR')}</td>
                     <td class="p-3 font-mono ${c.outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}">${c.outstanding.toLocaleString('fa-IR')}</td>
                 </tr>`).join('');
+
+            const companySel = document.getElementById('cfin-chart-company');
+            if (companySel.options.length <= 1) {
+                companySel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            }
+            loadFinanceChart();
+        }
+
+        async function loadFinanceChart() {
+            const companyId = document.getElementById('cfin-chart-company').value;
+            const range = document.getElementById('cfin-chart-range').value;
+            const box = document.getElementById('cfin-chart-box');
+            box.innerHTML = '<p class="text-center text-slate-400 text-xs py-16"><i class="fas fa-spinner fa-spin ml-1"></i>در حال بارگذاری...</p>';
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'finance_chart', company_id: companyId, range})});
+                const data = await res.json();
+                if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs py-16">${data.error || 'خطا'}</p>`; return; }
+                document.getElementById('cfin-stat-count').textContent = e2p(data.issued_count) + ' فقره';
+                document.getElementById('cfin-stat-premium').textContent = money(data.total_premium) + ' ریال';
+                document.getElementById('cfin-stat-debt').textContent = money(data.total_debt) + ' ریال';
+                renderSalesChart(data.monthly);
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs py-16">خطا در ارتباط با سرور.</p>'; }
+        }
+
+        // نمودار میله‌ای ساده و سبک (بدون کتابخانه‌ی خارجی، تا وابسته به CDN نباشد) -
+        // یک سری (رنگ آبیِ برند سایت)، میله‌های نازک با لبه‌ی گرد بالا، خط پایه، و
+        // برچسبِ مقدار روی هاور
+        function renderSalesChart(monthly) {
+            const box = document.getElementById('cfin-chart-box');
+            if (!monthly || !monthly.length) { box.innerHTML = '<p class="text-center text-slate-400 text-xs py-16">داده‌ای برای این بازه/شرکت یافت نشد.</p>'; return; }
+
+            const W = Math.max(560, monthly.length * 80), H = 220;
+            const padL = 8, padR = 8, padTop = 24, padBottom = 34;
+            const plotW = W - padL - padR, plotH = H - padTop - padBottom;
+            const maxVal = Math.max(...monthly.map(m => m.amount), 1);
+            const barGap = 14;
+            const barW = Math.min(46, (plotW / monthly.length) - barGap);
+
+            const bars = monthly.map((m, i) => {
+                const slot = plotW / monthly.length;
+                const x = padL + i * slot + (slot - barW) / 2;
+                const h = Math.max(2, (m.amount / maxVal) * plotH);
+                const y = padTop + (plotH - h);
+                return `
+                    <g class="sales-bar-g" data-amount="${m.amount}" data-label="${m.label}">
+                        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" ry="4" fill="#3b82f6" class="sales-bar" style="transition:opacity .15s"/>
+                        <text x="${x + barW / 2}" y="${H - 12}" text-anchor="middle" font-size="10" fill="#94a3b8" font-weight="bold">${m.label.replace(/\d+/g, d => d.replace(/\d/g, dd => '۰۱۲۳۴۵۶۷۸۹'[dd]))}</text>
+                    </g>`;
+            }).join('');
+
+            box.innerHTML = `
+                <div class="relative">
+                    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:240px" id="sales-chart-svg">
+                        <line x1="${padL}" y1="${padTop + plotH}" x2="${W - padR}" y2="${padTop + plotH}" stroke="#e2e8f0" stroke-width="1"/>
+                        ${bars}
+                    </svg>
+                    <div id="sales-chart-tooltip" class="absolute hidden bg-slate-800 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg pointer-events-none whitespace-nowrap" style="transform:translate(-50%,-110%)"></div>
+                </div>`;
+
+            const tooltip = document.getElementById('sales-chart-tooltip');
+            document.querySelectorAll('.sales-bar-g').forEach(g => {
+                g.addEventListener('mouseenter', () => { g.querySelector('.sales-bar').style.opacity = '0.8'; });
+                g.addEventListener('mouseleave', () => { g.querySelector('.sales-bar').style.opacity = '1'; tooltip.classList.add('hidden'); });
+                g.addEventListener('mousemove', (ev) => {
+                    const svg = document.getElementById('sales-chart-svg');
+                    const rect = svg.getBoundingClientRect();
+                    const rectBox = g.querySelector('.sales-bar').getBoundingClientRect();
+                    tooltip.style.left = (rectBox.left - rect.left + rectBox.width / 2) + 'px';
+                    tooltip.style.top = (rectBox.top - rect.top) + 'px';
+                    tooltip.textContent = g.dataset.label + ': ' + money(g.dataset.amount) + ' ریال';
+                    tooltip.classList.remove('hidden');
+                });
+            });
         }
 
         let companiesCache = [];
+        let portalUsersCache = [];
         const PAY_FA = {INSTALLMENT: 'قسطی', CASH_NET30: 'نقدی - ۳۰ روزه', CASH_IMMEDIATE: 'نقدی - فوری'};
         const CM_INSURER_FA = {BOTH: 'پاسارگاد و ایران', PASARGAD: 'فقط پاسارگاد', IRAN: 'فقط ایران'};
 
@@ -3093,12 +3250,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             `).join('') || '<p class="text-slate-400">ابتدا یک شرکت ثبت کنید.</p>';
 
             if (usersData.ok) {
+                portalUsersCache = usersData.users;
                 const utbody = document.getElementById('cm-portal-users-body');
                 utbody.innerHTML = usersData.users.length ? usersData.users.map(u => `
                     <tr class="border-t border-slate-100">
                         <td class="p-3 font-mono">${u.username}</td><td class="p-3">${u.full_name}</td>
                         <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${u.mobile_number || '—'}</td>
-                        <td class="p-3"><button onclick="deletePortalUserRow(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button></td>
+                        <td class="p-3 flex gap-2">
+                            <button onclick="editPortalUser(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
+                            <button onclick="deletePortalUserRow(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
+                        </td>
                     </tr>`).join('') : '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
             }
         }
@@ -3168,23 +3329,53 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             else showToast(data.error || 'خطا', 'error');
         }
 
-        async function createPortalUser() {
+        function resetPortalUserForm() {
+            document.getElementById('cm-pu-modal-title').textContent = 'افزودن عضو - حساب کاربری ثبت‌کننده';
+            document.getElementById('cm-pu-submit-label').textContent = 'ساخت حساب کاربری';
+            document.getElementById('cm-pu-password-label').textContent = 'رمز عبور';
+            document.getElementById('cm-pu-id').value = '';
+            ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
+            document.querySelectorAll('.cm-pu-company-cb:checked').forEach(cb => cb.checked = false);
+        }
+        function openAddPortalUserModal() {
+            resetPortalUserForm();
+            openModal('add-portal-user-modal');
+        }
+        function editPortalUser(id) {
+            const u = portalUsersCache.find(x => x.id === id);
+            if (!u) return;
+            document.getElementById('cm-pu-modal-title').textContent = `ویرایش «${u.full_name}»`;
+            document.getElementById('cm-pu-submit-label').textContent = 'ذخیره تغییرات';
+            document.getElementById('cm-pu-password-label').textContent = 'رمز عبور (اختیاری - فقط برای تغییر رمز پر کنید)';
+            document.getElementById('cm-pu-id').value = u.id;
+            document.getElementById('cm-pu-fullname').value = u.full_name || '';
+            document.getElementById('cm-pu-username').value = u.username || '';
+            document.getElementById('cm-pu-password').value = '';
+            document.getElementById('cm-pu-mobile').value = u.mobile_number || '';
+            const ids = (u.company_ids || '').split(',').filter(Boolean);
+            document.querySelectorAll('.cm-pu-company-cb').forEach(cb => cb.checked = ids.includes(cb.value));
+            openModal('add-portal-user-modal');
+        }
+        async function submitPortalUser() {
+            const userId = document.getElementById('cm-pu-id').value;
             const companyIds = [...document.querySelectorAll('.cm-pu-company-cb:checked')].map(cb => cb.value);
             const payload = {
-                action: 'create_portal_user',
+                action: userId ? 'update_portal_user' : 'create_portal_user',
+                id: userId || undefined,
                 company_ids: companyIds,
                 full_name: document.getElementById('cm-pu-fullname').value.trim(),
                 username: document.getElementById('cm-pu-username').value.trim(),
                 password: document.getElementById('cm-pu-password').value,
                 mobile_number: document.getElementById('cm-pu-mobile').value.trim(),
             };
-            if (!companyIds.length || !payload.full_name || !payload.username || !payload.password) { showToast('همه‌ی فیلدها الزامی هستند و حداقل یک شرکت باید انتخاب شود.', 'error'); return; }
+            if (!companyIds.length || !payload.full_name || !payload.username || (!userId && !payload.password)) {
+                showToast('همه‌ی فیلدها الزامی هستند و حداقل یک شرکت باید انتخاب شود.', 'error'); return;
+            }
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
             if (data.ok) {
-                showToast('حساب کاربری ساخته شد.', 'success');
-                ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
-                document.querySelectorAll('.cm-pu-company-cb:checked').forEach(cb => cb.checked = false);
+                showToast(userId ? 'حساب کاربری ویرایش شد.' : 'حساب کاربری ساخته شد.', 'success');
+                resetPortalUserForm();
                 closeModal('add-portal-user-modal');
                 loadCompanyManage();
             } else showToast(data.error || 'خطا', 'error');

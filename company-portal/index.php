@@ -8,6 +8,14 @@ require __DIR__ . '/../api/_company_helpers.php';
 
 company_portal_session_start();
 $loggedIn = !empty($_SESSION['company_user_id']);
+
+// ورودِ مستقیم از این صفحه دیگر مجاز نیست - همه باید از درگاهِ یکپارچه‌ی خودمان
+// (index.php، گزینه‌ی «همکار شرکت‌ها») وارد شوند تا اشتباهیِ درگاه پیش نیاید
+if (!$loggedIn) {
+    header('Location: ../index.php');
+    exit;
+}
+
 $companies = [];
 if ($loggedIn) {
     $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc

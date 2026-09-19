@@ -83,6 +83,67 @@ try {
         exit;
     }
 
+    // ---- نمودار فروش + خلاصه‌ی مالی شرکت‌ها، قابل فیلتر بر اساس شرکت و بازه‌ی زمانی
+    //      (بر مبنای صورتحساب‌های صادرشده‌ی پرسنلی که به هر شرکت مرتبط‌اند - همان
+    //      جدولی که در گزارش مالی شرکت‌ها استفاده می‌شود) ----
+    if ($action === 'finance_chart') {
+        $companyId = intval($data['company_id'] ?? 0);
+        $range = in_array($data['range'] ?? '', ['MONTH', '3M', '6M', 'YEAR', 'ALL'], true) ? $data['range'] : '6M';
+        $months = ['MONTH' => 1, '3M' => 3, '6M' => 6, 'YEAR' => 12][$range] ?? null;
+
+        $whereInv = ["1=1"]; $paramsInv = [];
+        if ($companyId) { $whereInv[] = "i.company_id = ?"; $paramsInv[] = $companyId; }
+        if ($months) { $whereInv[] = "i.created_at >= DATE_SUB(NOW(), INTERVAL $months MONTH)"; }
+        $whereInvSql = implode(' AND ', $whereInv);
+
+        // نمودار: جمع مبلغ صورتحساب به تفکیک ماهِ شمسی (نه میلادی - چون یک ماه میلادی
+        // می‌تواند بین دو ماه شمسی تقسیم شود)
+        $stmt = $pdo->prepare("SELECT created_at, total_amount FROM invoices i WHERE $whereInvSql");
+        $stmt->execute($paramsInv);
+        $monthly = [];
+        foreach ($stmt->fetchAll() as $inv) {
+            [$jy, $jm] = jalali_from_gregorian_ts(strtotime($inv['created_at']));
+            $key = sprintf('%04d-%02d', $jy, $jm);
+            if (!isset($monthly[$key])) $monthly[$key] = ['label' => jalali_month_name($jm) . ' ' . $jy, 'amount' => 0];
+            $monthly[$key]['amount'] += intval($inv['total_amount']);
+        }
+        ksort($monthly);
+        $monthly = array_values($monthly);
+
+        // خلاصه: تعداد بیمه‌نامه‌های صادره و جمع حق بیمه (از سطرهای خودِ صورتحساب‌ها)
+        $whereLines = ["1=1"]; $paramsLines = [];
+        if ($companyId) { $whereLines[] = "il.company_id = ?"; $paramsLines[] = $companyId; }
+        if ($months) { $whereLines[] = "i.created_at >= DATE_SUB(NOW(), INTERVAL $months MONTH)"; }
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(COALESCE(il.policy_count, 1)), 0) AS issued_count, COALESCE(SUM(il.total_premium), 0) AS total_premium
+            FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id
+            WHERE " . implode(' AND ', $whereLines)
+        );
+        $stmt->execute($paramsLines);
+        $summary = $stmt->fetch();
+
+        // بدهی: جمع صورتحساب‌شده منهای جمع دریافتی، در همان بازه/شرکت
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(i.total_amount), 0) FROM invoices i WHERE $whereInvSql");
+        $stmt->execute($paramsInv);
+        $totalInvoiced = intval($stmt->fetchColumn());
+
+        $wherePay = ["1=1"]; $paramsPay = [];
+        if ($companyId) { $wherePay[] = "p.company_id = ?"; $paramsPay[] = $companyId; }
+        if ($months) { $wherePay[] = "p.paid_at >= DATE_SUB(CURDATE(), INTERVAL $months MONTH)"; }
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE " . implode(' AND ', $wherePay));
+        $stmt->execute($paramsPay);
+        $totalPaid = intval($stmt->fetchColumn());
+
+        echo json_encode([
+            'ok' => true,
+            'monthly' => $monthly,
+            'issued_count' => intval($summary['issued_count']),
+            'total_premium' => intval($summary['total_premium']),
+            'total_debt' => max(0, $totalInvoiced - $totalPaid),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- گروه‌های بله‌ای که ربات دیده (برای انتخابگر «گروه مرتبط با شرکت») ----
     if ($action === 'list_bot_groups') {
         $stmt = $pdo->query("SELECT chat_id, title FROM bot_known_groups ORDER BY last_seen_at DESC LIMIT 200");
@@ -171,6 +232,37 @@ try {
         exit;
     }
 
+    // ---- ویرایش حساب کاربری یک ثبت‌کننده (رمز عبور اختیاری - فقط اگر پر شود تغییر می‌کند) ----
+    if ($action === 'update_portal_user') {
+        $id = intval($data['id'] ?? 0);
+        $companyIds = array_values(array_filter(array_map('intval', (array)($data['company_ids'] ?? []))));
+        $username = trim($data['username'] ?? '');
+        $fullName = trim($data['full_name'] ?? '');
+        $password = (string)($data['password'] ?? '');
+        if (!$id || !$companyIds || $username === '' || $fullName === '') {
+            echo json_encode(['ok' => false, 'error' => 'همه‌ی فیلدها الزامی هستند و حداقل یک شرکت باید انتخاب شود.']); exit;
+        }
+        if ($password !== '' && strlen($password) < 6) {
+            echo json_encode(['ok' => false, 'error' => 'رمز عبور باید حداقل ۶ کاراکتر باشد.']); exit;
+        }
+
+        $pdo->beginTransaction();
+        if ($password !== '') {
+            $pdo->prepare("UPDATE company_portal_users SET username = ?, full_name = ?, mobile_number = ?, password_hash = ? WHERE id = ?")
+                ->execute([$username, $fullName, trim($data['mobile_number'] ?? '') ?: null, password_hash($password, PASSWORD_DEFAULT), $id]);
+        } else {
+            $pdo->prepare("UPDATE company_portal_users SET username = ?, full_name = ?, mobile_number = ? WHERE id = ?")
+                ->execute([$username, $fullName, trim($data['mobile_number'] ?? '') ?: null, $id]);
+        }
+        $pdo->prepare("DELETE FROM company_portal_user_companies WHERE portal_user_id = ?")->execute([$id]);
+        $stmt = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
+        foreach ($companyIds as $cid) $stmt->execute([$id, $cid]);
+        $pdo->commit();
+
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     // ---- حذف حساب کاربری یک ثبت‌کننده ----
     if ($action === 'delete_portal_user') {
         $id = intval($data['id'] ?? 0);
@@ -199,7 +291,8 @@ try {
     // ---- لیست کاربران ثبت‌کننده (برای مرور در پنل مدیریت) ----
     if ($action === 'list_portal_users') {
         $stmt = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active,
-                                     GROUP_CONCAT(c.name SEPARATOR '، ') AS company_names
+                                     GROUP_CONCAT(c.name SEPARATOR '، ') AS company_names,
+                                     GROUP_CONCAT(c.id) AS company_ids
                               FROM company_portal_users cpu
                               LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
                               LEFT JOIN companies c ON c.id = cpuc.company_id
@@ -249,6 +342,35 @@ try {
         $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, status) VALUES (?, NULL, ?, ?, 'NEW')");
         $stmt->execute([$companyId, $requestText ?: null, $insurer]);
         echo json_encode(['ok' => true, 'request_id' => $pdo->lastInsertId()]);
+        exit;
+    }
+
+    // ---- ویرایش متن/بیمه‌گرِ یک درخواست موجود ----
+    if ($action === 'edit_request') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT cr.*, c.allowed_insurers FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt->execute([$requestId]);
+        $req = $stmt->fetch();
+        if (!$req) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+
+        $requestText = trim($data['request_text'] ?? '');
+        $insurer = in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true) ? $data['insurer'] : $req['insurer'];
+        if ($req['allowed_insurers'] !== 'BOTH' && $req['allowed_insurers'] !== $insurer) {
+            echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($req['allowed_insurers'] === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.']); exit;
+        }
+
+        $pdo->prepare("UPDATE company_requests SET request_text = ?, insurer = ? WHERE id = ?")
+            ->execute([$requestText ?: null, $insurer, $requestId]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- حذف کاملِ یک درخواست (پلاک‌ها/مدارک/اقساط/پرداخت‌هایش هم طبق FK پاک می‌شوند) ----
+    if ($action === 'delete_request') {
+        if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند درخواست را حذف کند.']); exit; }
+        $requestId = intval($data['request_id'] ?? 0);
+        $pdo->prepare("DELETE FROM company_requests WHERE id = ?")->execute([$requestId]);
+        echo json_encode(['ok' => true]);
         exit;
     }
 
@@ -306,6 +428,9 @@ try {
                        $plateId ? 'SUPPORTING_DOC' : 'LETTER', $plateId ? $docType : 'letter', $actor['user_id']]);
 
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
+        if (!$plateId) {
+            $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ? AND letter_file_path IS NULL")->execute([$relPath, $requestId]);
+        }
 
         echo json_encode(['ok' => true, 'doc_id' => $pdo->lastInsertId()]);
         exit;
