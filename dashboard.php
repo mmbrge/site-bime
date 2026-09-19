@@ -2692,8 +2692,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${plateDocs}
                     ${isAdmin && p.insurance_type === 'BODY' && !p.skip_health_inspection ? `
                         <label class="text-[10px] text-slate-400 mt-1 block">افزودن گزارش بازدید سلامت (زیپ یا PDF/عکس)
-                            <input type="file" onchange="uploadHealthReport(${p.id}, this)" accept=".pdf,.jpg,.jpeg,.png,.zip" class="block mt-1 text-[10px]">
+                            <input type="file" onchange="uploadCompanyHealthReport(${p.id}, this)" accept=".pdf,.jpg,.jpeg,.png,.zip" class="block mt-1 text-[10px]">
                         </label>` : ''}
+                    ${isAdmin ? `
+                        <div class="flex gap-1.5 mt-2">
+                            <select id="pdoc-type-${p.id}" class="text-[10px] border rounded-lg px-1.5 py-1 flex-1">
+                                <option value="car_card_or_title">کارت ماشین/سند</option>
+                                <option value="prev_body_policy">بیمه بدنه قبلی</option>
+                                <option value="health_inspection">گزارش بازدید سلامت</option>
+                                <option value="other">سایر</option>
+                            </select>
+                            <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2.5 py-1 rounded-lg cursor-pointer whitespace-nowrap">
+                                بارگذاری مدرک<input type="file" class="hidden" onchange="uploadPlateDocDirect(${p.id}, this)">
+                            </label>
+                        </div>` : ''}
                 </div>`;
             }).join('') : '<p class="text-xs text-slate-400">هنوز پلاکی مشخص نشده.</p>';
 
@@ -2714,6 +2726,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ${platesHtml}
                 <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
                 ${docsHtml}
+                ${isAdmin ? `
+                <label class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-teal-100">
+                    <i class="fas fa-cloud-arrow-up"></i>بارگذاری نامه/مدرک عمومی (بدون پلاک مشخص)
+                    <input type="file" class="hidden" onchange="uploadPlateDocDirect(null, this)">
+                </label>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
@@ -2822,7 +2839,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (currentRequestId) openCompanyRequestDetail(currentRequestId);
         }
 
-        async function uploadHealthReport(plateId, input) {
+        async function uploadCompanyHealthReport(plateId, input) {
             if (!input.files[0]) return;
             const fd = new FormData();
             fd.append('action', 'upload_health_report');
@@ -2832,6 +2849,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const data = await res.json();
             showToast(data.ok ? 'گزارش بازدید ثبت شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
             if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
+        async function uploadPlateDocDirect(plateId, input) {
+            if (!input.files[0]) return;
+            const typeSel = plateId ? document.getElementById(`pdoc-type-${plateId}`) : null;
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_plate_doc');
+            fd.append('request_id', currentRequestId);
+            if (plateId) fd.append('plate_id', plateId);
+            fd.append('doc_type', typeSel ? typeSel.value : 'letter');
+            fd.append('file', input.files[0]);
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const data = await res.json();
+                showToast(data.ok ? 'مدرک بارگذاری و ثبت شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
         let companyInboxCache = [];
@@ -4350,6 +4384,40 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         <div class="space-y-2">${docsHtml}</div>
                     </div>
+
+                    ${!isIssueMode ? `
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                        <p class="text-xs font-bold text-indigo-700 mb-3"><i class="fas fa-user-pen ml-1"></i>تکمیل/ویرایش دستیِ اطلاعات (برای پرونده‌های ثبتِ دستی - چون خودمان وارد می‌کنیم)</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="adm-plate" placeholder="پلاک" value="${c.plate || ''}" class="border rounded-lg px-2 py-1.5 text-xs plate-display" dir="ltr">
+                            <input type="text" id="adm-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
+                            <input type="text" id="adm-insured-nid" placeholder="کد ملی بیمه‌گذار" value="${c.insured_national_id || ''}" class="border rounded-lg px-2 py-1.5 text-xs" dir="ltr">
+                            <select id="adm-ownership" class="border rounded-lg px-2 py-1.5 text-xs">
+                                <option value="">مدرک مالکیت؟</option>
+                                <option value="کارت ماشین" ${c.ownership_choice === 'کارت ماشین' ? 'selected' : ''}>کارت ماشین</option>
+                                <option value="سند" ${c.ownership_choice === 'سند' ? 'selected' : ''}>سند</option>
+                            </select>
+                            ${c.insurance_type === 'BODY' ? `
+                            <select id="adm-prev-body" class="border rounded-lg px-2 py-1.5 text-xs col-span-2">
+                                <option value="">بیمه بدنه‌ی قبلی داشته؟</option>
+                                <option value="بله" ${c.prev_body_insurance === 'بله' ? 'selected' : ''}>بله</option>
+                                <option value="خیر" ${c.prev_body_insurance === 'خیر' ? 'selected' : ''}>خیر</option>
+                            </select>` : ''}
+                        </div>
+                        <button onclick="saveAdminCaseInfo(${caseId})" class="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره اطلاعات</button>
+                    </div>
+
+                    <div class="bg-teal-50 border border-teal-100 rounded-xl p-4">
+                        <p class="text-xs font-bold text-teal-700 mb-3"><i class="fas fa-cloud-arrow-up ml-1"></i>بارگذاری مستقیمِ مدرک توسط خودمان (نیازی به تاییدِ جداگانه ندارد)</p>
+                        <div class="grid grid-cols-1 gap-2">
+                            <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs">
+                                ${Object.entries(data.required_docs || {}).map(([k, l]) => `<option value="${k}">${l}</option>`).join('') || ''}
+                                <option value="other">سایر مدارک</option>
+                            </select>
+                            <input type="file" id="adm-doc-file" class="border rounded-lg px-2 py-1.5 text-xs">
+                        </div>
+                        <button onclick="uploadAdminCaseDoc(${caseId})" class="mt-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
+                    </div>` : ''}
                 `;
             } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm">خطا در دریافت اطلاعات پرونده.</p>'; }
         }
@@ -4582,6 +4650,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             showToast('فیلدهای نام‌گذاری ذخیره شد.', 'success');
             loadCases();
+        }
+
+        async function saveAdminCaseInfo(caseId) {
+            const payload = {
+                action: 'set_naming', case_id: caseId,
+                plate: document.getElementById('adm-plate').value.trim(),
+                insured_name: document.getElementById('adm-insured-name').value.trim(),
+                insured_national_id: document.getElementById('adm-insured-nid').value.trim(),
+                ownership_choice: document.getElementById('adm-ownership').value,
+            };
+            const prevBodyEl = document.getElementById('adm-prev-body');
+            if (prevBodyEl) payload.prev_body_insurance = prevBodyEl.value;
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (data.ok) { showToast('اطلاعات ذخیره شد.', 'success'); openCase(caseId); loadCases(); }
+                else showToast(data.error || 'خطا', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        async function uploadAdminCaseDoc(caseId) {
+            const fileInput = document.getElementById('adm-doc-file');
+            if (!fileInput.files[0]) { showToast('یک فایل انتخاب کنید.', 'error'); return; }
+            const docKeySel = document.getElementById('adm-doc-key');
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_case_doc');
+            fd.append('case_id', caseId);
+            fd.append('doc_key', docKeySel.value);
+            fd.append('doc_label', docKeySel.options[docKeySel.selectedIndex].textContent);
+            fd.append('file', fileInput.files[0]);
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.ok) { showToast('مدرک بارگذاری و تایید شد.', 'success'); openCase(caseId); loadCases(); }
+                else showToast(data.error || 'خطا', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
         // ======================= بازدیدهای سلامت خودرو =======================

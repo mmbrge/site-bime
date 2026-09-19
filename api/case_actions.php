@@ -29,6 +29,32 @@ function notify_customer($pdo, $chatId, $text) {
     curl_exec($ch); curl_close($ch);
 }
 
+// تاییدِ یک مدرک + بررسیِ اینکه آیا با تاییدِ همین یکی، همه‌ی مدارکِ لازمِ پرونده کامل
+// شده‌اند (که در این صورت پرونده وارد «در حال صدور» می‌شود و مدارک بایگانی می‌شوند) -
+// دقیقاً هم‌منطقِ approve_doc، برای استفاده‌ی مشترک با آپلود مستقیم ادمین
+function approve_case_document_and_maybe_finalize($pdo, $docId) {
+    $pdo->prepare("UPDATE case_documents SET status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")->execute([$docId]);
+    $stmt = $pdo->prepare("SELECT case_id FROM case_documents WHERE id = ?");
+    $stmt->execute([$docId]);
+    $caseId = $stmt->fetchColumn();
+    if (!$caseId) return;
+
+    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+    $stmt->execute([$caseId]);
+    $case = $stmt->fetch();
+    if (!$case) return;
+
+    $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
+    $stmt = $pdo->prepare("SELECT doc_key FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
+    $stmt->execute([$caseId]);
+    $approvedKeys = array_column($stmt->fetchAll(), 'doc_key');
+
+    if (count(array_diff(array_keys($required), $approvedKeys)) === 0) {
+        $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
+        finalize_case_documents_to_archive($pdo, dirname(__DIR__), $caseId);
+    }
+}
+
 try {
     // ۱. لیست پرونده‌های صدور
     if ($action === 'list') {
@@ -77,7 +103,8 @@ try {
         // (price_fluctuation و ...) نام خوانای فارسی را نمایش دهد
         $coverageLabels = [];
         foreach (body_coverage_options() as $key => $opt) { $coverageLabels[$key] = $opt['label']; }
-        echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels], JSON_UNESCAPED_UNICODE);
+        $requiredDocs = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
+        echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels, 'required_docs' => $requiredDocs], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -385,6 +412,10 @@ try {
         $plate = trim($data['plate'] ?? '');
         $insuredName = trim($data['insured_name'] ?? '');
         $insuredNationalId = trim($data['insured_national_id'] ?? '');
+        // این دو مورد فقط برای پرونده‌های ثبتِ دستی است، تا مدارکِ لازم (get_required_docs_v2)
+        // درست محاسبه شوند - در بقیه‌ی حالت‌ها این دو قبلاً توسط خودِ شخص در ویزارد پر شده‌اند
+        $ownershipChoice = in_array($data['ownership_choice'] ?? '', ['کارت ماشین', 'سند'], true) ? $data['ownership_choice'] : '';
+        $prevBodyInsurance = in_array($data['prev_body_insurance'] ?? '', ['بله', 'خیر'], true) ? $data['prev_body_insurance'] : '';
 
         $fields = [];
         if ($plate !== '') $fields['plate'] = $plate;
@@ -395,11 +426,48 @@ try {
         if ($plate !== '') { $sets[] = 'plate = ?'; $params[] = $plate; }
         if ($insuredName !== '') { $sets[] = 'insured_name = ?'; $params[] = $insuredName; }
         if ($insuredNationalId !== '') { $sets[] = 'insured_national_id = ?'; $params[] = $insuredNationalId; }
+        if ($ownershipChoice !== '') { $sets[] = 'ownership_choice = ?'; $params[] = $ownershipChoice; }
+        if ($prevBodyInsurance !== '') { $sets[] = 'prev_body_insurance = ?'; $params[] = $prevBodyInsurance; }
         $sets[] = 'naming_fields = ?'; $params[] = json_encode($fields, JSON_UNESCAPED_UNICODE);
         $params[] = $caseId;
 
         $pdo->prepare("UPDATE policy_cases SET " . implode(', ', $sets) . " WHERE id = ?")->execute($params);
         echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // ---- بارگذاری مستقیمِ یک مدرک توسط خودمان (ادمین) برای پرونده‌ای که خودمان دستی
+    //      ثبت کرده‌ایم - چون خودمان مدرک را می‌بینیم و وارد می‌کنیم، نیازی به مرحله‌ی
+    //      تایید جداگانه نیست و مستقیم APPROVED ثبت می‌شود (هم‌شکل با approve_doc) ----
+    if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'admin_upload_case_doc') {
+        $caseId = intval($_POST['case_id'] ?? 0);
+        $docKey = trim($_POST['doc_key'] ?? '') ?: 'other';
+        $docLabel = trim($_POST['doc_label'] ?? '') ?: $docKey;
+
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        $stmt->execute([$caseId]);
+        $case = $stmt->fetch();
+        if (!$case) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) {
+            echo json_encode(['ok' => false, 'error' => 'فایل ارسال نشد.']); exit;
+        }
+
+        $siteRoot = dirname(__DIR__);
+        $tmpDir = temp_archive_root($siteRoot) . '/مدارک دستی ادمین';
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
+        $ext = pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION) ?: 'jpg';
+        $destPath = $tmpDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
+        if (!move_uploaded_file($_FILES['file']['tmp_name'], $destPath)) {
+            echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.']); exit;
+        }
+        $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
+
+        $pdo->prepare("INSERT INTO case_documents (case_id, doc_key, doc_label, file_path, status) VALUES (?, ?, ?, ?, 'PENDING')")
+            ->execute([$caseId, $docKey, $docLabel, $relPath]);
+        $docId = $pdo->lastInsertId();
+        approve_case_document_and_maybe_finalize($pdo, $docId);
+
+        echo json_encode(['ok' => true, 'doc_id' => $docId]);
         exit;
     }
 

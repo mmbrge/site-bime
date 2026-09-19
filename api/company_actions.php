@@ -248,6 +248,44 @@ try {
         exit;
     }
 
+    // ---- بارگذاری مستقیمِ یک مدرک توسط خودمان برای یک پلاک (یا سطح-نامه، اگر پلاک
+    //      مشخص نشود) - چون خودمان مدرک را وارد می‌کنیم، نیازی به مرحله‌ی تگ‌گذاری
+    //      جداگانه (assign_document) نیست، مستقیم ASSIGNED و در پوشه‌ی درست ثبت می‌شود ----
+    if ($action === 'admin_upload_plate_doc') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $plateId = intval($data['plate_id'] ?? 0) ?: null;
+        $docType = trim($data['doc_type'] ?? '') ?: null;
+
+        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt->execute([$requestId]);
+        $requestRow = $stmt->fetch();
+        if (!$requestRow) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $isHealthDoc = ($docType === 'health_inspection');
+        if ($plateId) {
+            $plateFolder = ensure_plate_folder($pdo, $siteRoot, $plateId);
+            if (!$plateFolder) { echo json_encode(['ok' => false, 'error' => 'پلاک یافت نشد.']); exit; }
+            $destDir = $plateFolder . '/' . ($isHealthDoc ? 'بازدید سلامت' : 'مدارک');
+        } else {
+            $destDir = company_request_letter_folder($siteRoot, strtotime($requestRow['created_at']), $requestRow['company_name']);
+        }
+
+        $saved = company_store_uploaded_file($_FILES['file'] ?? [], $destDir, 15728640, true, $isHealthDoc);
+        if (!$saved['ok']) { echo json_encode($saved); exit; }
+        $relPath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
+
+        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'ASSIGNED', ?, NOW())")
+            ->execute([$requestRow['company_id'], $requestId, $plateId, $relPath, $saved['orig_name'],
+                       $plateId ? 'SUPPORTING_DOC' : 'LETTER', $plateId ? $docType : 'letter', $actor['user_id']]);
+
+        $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
+
+        echo json_encode(['ok' => true, 'doc_id' => $pdo->lastInsertId()]);
+        exit;
+    }
+
     // ---- مدارکِ تخصیص‌نیافته‌ی یک درخواست مشخص (برای دکمه‌ی «بررسی مدارک» روی هر ردیف) ----
     if ($action === 'list_request_inbox') {
         $requestId = intval($data['request_id'] ?? 0);
