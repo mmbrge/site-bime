@@ -47,8 +47,26 @@ if (!$companies) {
     .float-input input, .float-input select, .float-input textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; outline: none; transition: all .2s; }
     .float-input input:focus, .float-input select:focus, .float-input textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.1); }
     .float-input label { display:block; font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 6px; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); z-index: 999; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:.2s; }
-    .modal-overlay.active { opacity:1; pointer-events:auto; }
+    /* مودالِ بسته باید کاملاً از مدارِ رندر بیرون باشد؛ opacity:0 تنها کافی نیست و
+       مرورگر همه‌ی مودال‌های تمام‌صفحه را زنده نگه می‌دارد (همان چیزی که پنل ادمین را کُند کرده بود) */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); z-index: 999; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; pointer-events:none; transition: opacity .2s, visibility .2s; }
+    .modal-overlay.active { opacity:1; visibility:visible; pointer-events:auto; transition: opacity .2s; }
+
+    /* ================= نشانگرِ اختصاصیِ موس (هم‌شکل با پنل خودمان) =================
+       فقط روی دستگاهی که موسِ واقعی دارد روشن می‌شود - روی موبایل نه لازم است نه
+       درست (چون cursor:none آزاردهنده می‌شود). موقعیت با متغیرهای CSS و transform
+       تنظیم می‌شود، نه left/top؛ چون transform فقط composite است و layout نمی‌خواهد.
+       کلاسِ حالتِ hover هم روی خودِ نشانگر می‌نشیند نه روی body، تا استایلِ کلِ صفحه
+       دوباره محاسبه نشود. */
+    .cursor-dot, .cursor-outline { display: none; }
+    @media (hover: hover) and (pointer: fine) {
+        * { cursor: none !important; }
+        .cursor-dot, .cursor-outline { display: block; }
+    }
+    .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 2147483647; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background .2s; box-shadow: 0 0 10px rgba(59,130,246,.5); will-change: transform; }
+    .cursor-outline { position: fixed; left: 0; top: 0; width: 24px; height: 24px; border: 2px solid rgba(59,130,246,.5); border-radius: 50%; pointer-events: none; z-index: 2147483646; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity .2s; will-change: transform; }
+    .cursor-dot.is-hover { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8); background: #2563eb; }
+    .cursor-outline.is-hover { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(.5); opacity: 0; }
     .modal-content { background:#fff; border-radius: 20px; max-width: 520px; width: 92%; max-height: 88vh; overflow-y:auto; transform: scale(.96); transition:.2s; }
     .modal-overlay.active .modal-content { transform: scale(1); }
     .status-badge { font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; }
@@ -57,6 +75,8 @@ if (!$companies) {
 </style>
 </head>
 <body class="min-h-screen">
+<div class="cursor-dot"></div>
+<div class="cursor-outline"></div>
 
 <div class="max-w-3xl mx-auto p-4 pb-20">
     <div class="flex items-center justify-between py-5">
@@ -696,6 +716,48 @@ async function sendChatFile() {
 document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(); });
 
 loadRequests();
+
+// ================= نشانگرِ اختصاصیِ موس =================
+// دقیقاً همان پیاده‌سازیِ پنل خودمان: همه‌ی نوشتن‌ها یک بار در هر فریم انجام می‌شود،
+// حلقه به‌محض رسیدنِ حلقه‌ی بیرونی به موس می‌خوابد (پس در حالت بی‌حرکت هیچ کاری
+// نمی‌کند)، و تشخیصِ hover با یک شنونده‌ی واگذارشده روی document است تا دکمه‌هایی
+// که بعداً داینامیک ساخته می‌شوند هم جلوه را بگیرند.
+(function initCustomCursor() {
+    const dot = document.querySelector('.cursor-dot');
+    const outline = document.querySelector('.cursor-outline');
+    if (!dot || !outline) return;
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+    let mx = -100, my = -100, ox = -100, oy = -100, running = false;
+    const EASE = 0.35;
+    function frame() {
+        ox += (mx - ox) * EASE;
+        oy += (my - oy) * EASE;
+        if (Math.abs(mx - ox) < 0.15 && Math.abs(my - oy) < 0.15) { ox = mx; oy = my; }
+        dot.style.setProperty('--cx', mx + 'px');
+        dot.style.setProperty('--cy', my + 'px');
+        outline.style.setProperty('--ox', ox + 'px');
+        outline.style.setProperty('--oy', oy + 'px');
+        if (ox === mx && oy === my) { running = false; return; }
+        requestAnimationFrame(frame);
+    }
+    function wake() { if (!running) { running = true; requestAnimationFrame(frame); } }
+    window.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; wake(); }, { passive: true });
+
+    const HOVER_SELECTOR = 'a, button, input, select, textarea, label, summary, [onclick], [role="button"]';
+    let hovering = false;
+    function setHover(on) {
+        if (on === hovering) return;
+        hovering = on;
+        dot.classList.toggle('is-hover', on);
+        outline.classList.toggle('is-hover', on);
+    }
+    document.addEventListener('mouseover', (e) => {
+        setHover(!!(e.target instanceof Element && e.target.closest(HOVER_SELECTOR)));
+    }, { passive: true });
+    document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) setHover(false); }, { passive: true });
+    window.addEventListener('blur', () => setHover(false));
+})();
 </script>
 </body>
 </html>

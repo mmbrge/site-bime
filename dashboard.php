@@ -93,20 +93,29 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         body { font-family: 'Vazir', sans-serif; overflow-x: hidden; color: #334155; margin: 0; }
         
         .hero-bg { position: fixed; inset: 0; z-index: -2; background-image: url('Image/asli1.jpg'); background-size: cover; background-position: center; }
-        .hero-bg::after { content: ""; position: absolute; inset: 0; background: rgba(241, 245, 249, 0.85); z-index: -1; backdrop-filter: blur(5px); }
+        /* این لایه زیرِ یک پرده‌ی سفیدِ ۸۵٪ است، پس بلورش عملاً دیده نمی‌شد و فقط هزینه داشت */
+        .hero-bg::after { content: ""; position: absolute; inset: 0; background: rgba(241, 245, 249, 0.85); z-index: -1; }
         #tsparticles { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 
-        * { cursor: none !important; }
+        /* نشانگرِ اختصاصی فقط روی دستگاهی که موسِ واقعی دارد روشن می‌شود؛ روی موبایل و
+           تبلت هم بی‌معنی است و هم بی‌خود هزینه دارد (و cursor:none آزاردهنده است). */
+        .cursor-dot, .cursor-outline { display: none; }
+        @media (hover: hover) and (pointer: fine) {
+            * { cursor: none !important; }
+            .cursor-dot, .cursor-outline { display: block; }
+        }
         /* موقعیتِ نشانگر با متغیرهای CSS (--cx/--cy/--ox/--oy) و transform تنظیم می‌شود، نه
            left/top؛ چون تغییرِ left/top روی هر حرکتِ موس باعثِ layout+paint کامل صفحه
-           می‌شود ولی transform فقط composite (GPU) است - همان جلوه، بدون افتِ سرعتِ پنل. */
+           می‌شود ولی transform فقط composite (GPU) است - همان جلوه، بدون افتِ سرعتِ پنل.
+           کلاسِ حالتِ «روی چیزِ قابل‌کلیک» هم روی خودِ همین دو عنصر گذاشته می‌شود، نه روی
+           body؛ چون عوض‌کردنِ کلاسِ body باعثِ بازمحاسبه‌ی استایلِ کلِ صفحه می‌شد. */
         .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 99999999 !important; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background 0.2s; box-shadow: 0 0 10px rgba(59,130,246,0.5); will-change: transform; }
-        .cursor-outline { position: fixed; left: 0; top: 0; width: 34px; height: 34px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 99999998 !important; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s; will-change: transform; }
-        body.cursor-hover .cursor-outline { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); opacity: 0; }
-        body.cursor-hover .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8) !important; background: #2563eb; }
+        .cursor-outline { position: fixed; left: 0; top: 0; width: 24px; height: 24px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 99999998 !important; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s; will-change: transform; }
+        .cursor-outline.is-hover { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); opacity: 0; }
+        .cursor-dot.is-hover { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8); background: #2563eb; }
 
-        .glass-header { background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.4); box-shadow: 0 4px 30px rgba(0,0,0,0.03); }
-        .card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid rgba(255,255,255,0.4); }
+        .glass-header { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.4); box-shadow: 0 4px 30px rgba(0,0,0,0.03); }
+        .card { background: rgba(255, 255, 255, 0.94); border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid rgba(255,255,255,0.4); }
         
         .win11-menu { background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); border-radius: 12px; color: white; display: none; }
         .win11-menu.active { display: block; animation: popIn 0.1s ease-out forwards; }
@@ -115,11 +124,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .ctx-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .ctx-divider { border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 0; }
 
-        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(8px); z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        /* دلیلِ اصلیِ کندیِ پنل همین‌جا بود: ۲۵ مودالِ تمام‌صفحه همیشه در DOM هستند و
+           فقط opacity:0 دارند. opacity صفر، عنصر را از مدارِ رندر بیرون نمی‌برد - یعنی
+           مرورگر ۲۵ ناحیه‌ی backdrop-filter تمام‌صفحه را زنده نگه می‌داشت و هر فریمی که
+           نشانگر موس حرکت می‌کرد، همه‌ی آن‌ها دوباره بلور می‌شدند (اندازه‌گیری‌شده:
+           ~۱۵۸ میلی‌ثانیه برای هر فریم، یعنی حدود ۶ فریم در ثانیه).
+           راه‌حل: visibility:hidden تا مودالِ بسته کاملاً از مدارِ رندر بیرون بماند، و
+           backdrop-filter فقط روی مودالی که واقعاً باز است اعمال شود. ظاهر و همان
+           محو‌شدن تدریجی دست‌نخورده می‌ماند. */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s, visibility 0.3s; }
         /* پلاک، متن ترکیبی فارسی+عدد است که باید دقیقاً به همان ترتیب کاراکترها (چپ‌به‌راست) نمایش داده شود؛
            dir="ltr" به‌تنهایی کافی نیست چون الگوریتم bidi مرورگر رشته‌های فارسی داخلش را دوباره می‌چیند */
         .plate-display { direction: ltr; unicode-bidi: bidi-override; display: inline-block; }
-        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        /* مودالِ باز هم بلورِ پس‌زمینه ندارد: اندازه‌گیری نشان داد فقط وجودِ یک ناحیه‌ی
+           backdrop-filter تمام‌صفحه (با هر شعاعی، حتی ۳px) هر فریم ~۳۰ میلی‌ثانیه می‌گیرد
+           و پنل را روی ~۲۱ فریم در ثانیه نگه می‌داشت. به‌جایش پرده‌ی تیره کمی غلیظ‌تر شد
+           که همان حسِ «جدا شدن از پس‌زمینه» را می‌دهد، با ۶۰ فریم در ثانیه. */
+        .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; background: rgba(15, 23, 42, 0.78); transition: opacity 0.3s; }
         .modal-content { background: rgba(255,255,255,0.98); border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3); transform: scale(0.95); transition: transform 0.3s; overflow: hidden; }
         .modal-overlay.active .modal-content { transform: scale(1); }
 
@@ -130,7 +151,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .float-input input:focus ~ label, .float-input input:not(:placeholder-shown) ~ label, .float-input select:focus ~ label, .float-input select:not(:placeholder-shown) ~ label { transform: translateY(-24px) scale(0.9); color: #3b82f6; }
 
         .footer-credit { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 60px; padding-top: 24px; border-top: 1px solid rgba(148,163,184,0.15); margin-bottom: 20px; }
-        .footer-box { background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.4); padding: 10px 24px; border-radius: 16px; color: #334155; font-size: 13px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .footer-box { background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(255, 255, 255, 0.4); padding: 10px 24px; border-radius: 16px; color: #334155; font-size: 13px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         /* اعداد همه‌جای پنل باید با فونت وزیر باشند، نه فونت پیش‌فرض مونواسپیس تیلویند */
         .font-mono { font-family: 'Vazir', monospace !important; }
 
@@ -6594,23 +6615,54 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
         });
 
-        const cursorDot = document.querySelector('.cursor-dot');
-        const cursorOutline = document.querySelector('.cursor-outline');
-        let mouseX = 0, mouseY = 0, outlineX = 0, outlineY = 0;
-        window.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX; mouseY = e.clientY;
-            cursorDot.style.setProperty('--cx', mouseX + 'px');
-            cursorDot.style.setProperty('--cy', mouseY + 'px');
-        }, { passive: true });
-        function animateOutline() {
-            outlineX += (mouseX - outlineX) * 0.2; outlineY += (mouseY - outlineY) * 0.2;
-            cursorOutline.style.setProperty('--ox', outlineX + 'px');
-            cursorOutline.style.setProperty('--oy', outlineY + 'px');
-            requestAnimationFrame(animateOutline);
-        }
-        animateOutline();
-        document.querySelectorAll('a, button, input, label, select').forEach(el => el.classList.add('hover-target'));
-        document.querySelectorAll('.hover-target').forEach(el => { el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover')); el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover')); });
+        // ================= نشانگرِ اختصاصیِ موس =================
+        (function initCustomCursor() {
+            const dot = document.querySelector('.cursor-dot');
+            const outline = document.querySelector('.cursor-outline');
+            if (!dot || !outline) return;
+            // روی دستگاهِ لمسی نه نشانگر لازم است نه هزینه‌اش
+            if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+            // -100 یعنی پیش از اولین حرکتِ موس، هر دو بخش بیرونِ صفحه‌اند
+            let mx = -100, my = -100, ox = -100, oy = -100, running = false;
+
+            // همه‌ی نوشتن‌ها در یک فریم جمع می‌شوند: mousemove فقط مختصات را نگه می‌دارد
+            // (موس‌های پرسرعت چند بار در یک فریم رویداد می‌دهند) و نوشتن روی DOM دقیقاً
+            // یک بار در هر فریم انجام می‌شود. حلقه هم به‌محض رسیدنِ حلقه‌ی بیرونی به موس
+            // می‌خوابد، نه اینکه بی‌دلیل همیشه ۶۰ بار در ثانیه کار کند.
+            const EASE = 0.35; // تندتر از قبل (۰.۲) تا نشانگر چسبیده‌تر و سریع‌تر حس شود
+            function frame() {
+                ox += (mx - ox) * EASE;
+                oy += (my - oy) * EASE;
+                if (Math.abs(mx - ox) < 0.15 && Math.abs(my - oy) < 0.15) { ox = mx; oy = my; }
+                dot.style.setProperty('--cx', mx + 'px');
+                dot.style.setProperty('--cy', my + 'px');
+                outline.style.setProperty('--ox', ox + 'px');
+                outline.style.setProperty('--oy', oy + 'px');
+                if (ox === mx && oy === my) { running = false; return; }
+                requestAnimationFrame(frame);
+            }
+            function wake() { if (!running) { running = true; requestAnimationFrame(frame); } }
+
+            window.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; wake(); }, { passive: true });
+
+            // تشخیصِ «روی چیزِ قابل‌کلیک هستیم» با یک شنونده‌ی واگذارشده روی document،
+            // نه دو شنونده به‌ازای هر دکمه. این‌طور هر دکمه‌ای که بعداً به‌صورت داینامیک
+            // ساخته می‌شود هم خودش جلوه را می‌گیرد (قبلاً فقط دکمه‌های لحظه‌ی لود را می‌گرفت).
+            const HOVER_SELECTOR = 'a, button, input, select, textarea, label, summary, .hover-target, [onclick], [role="button"]';
+            let hovering = false;
+            function setHover(on) {
+                if (on === hovering) return;
+                hovering = on;
+                dot.classList.toggle('is-hover', on);
+                outline.classList.toggle('is-hover', on);
+            }
+            document.addEventListener('mouseover', (e) => {
+                setHover(!!(e.target instanceof Element && e.target.closest(HOVER_SELECTOR)));
+            }, { passive: true });
+            document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) setHover(false); }, { passive: true });
+            window.addEventListener('blur', () => setHover(false));
+        })();
     </script>
 </body>
 </html>

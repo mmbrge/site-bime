@@ -161,7 +161,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         @font-face { font-family: 'Vazir'; src: url('https://cdn.fontcdn.ir/Font/Persian/Vazir/Vazir-Black.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
 
         /* ================= موس اختصاصی ================= */
-        * { cursor: none !important; user-select: none; }
+        /* روی دستگاهِ لمسی نشانگرِ اختصاصی روشن نمی‌شود (هم بی‌معنی است، هم cursor:none
+           روی موبایل آزاردهنده است و هم بی‌خود هزینه دارد) */
+        * { user-select: none; }
+        .cursor-dot, .cursor-outline { display: none; }
+        @media (hover: hover) and (pointer: fine) {
+            * { cursor: none !important; }
+            .cursor-dot, .cursor-outline { display: block; }
+        }
 
         /* موقعیتِ نشانگر با متغیرهای CSS (--cx/--cy/--ox/--oy) و transform تنظیم می‌شود، نه
            left/top؛ چون تغییرِ left/top روی هر حرکتِ موس باعثِ layout+paint کامل صفحه
@@ -174,17 +181,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             transition: background-color 0.15s; will-change: transform;
         }
 
+        /* شعاعِ حلقه کوچک‌تر شد تا نشانگر چسبیده‌تر و سریع‌تر حس شود.
+           backdrop-filter از روی حلقه برداشته شد: این تنها بلورِ صفحه بود که هر فریم
+           جابه‌جا می‌شد (گران‌ترین حالتِ ممکن) و با آلفای ۰.۱ عملاً دیده نمی‌شد. */
         .cursor-outline {
-            position: fixed; top: 0; left: 0; width: 36px; height: 36px;
-            border: 2px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(2px);
+            position: fixed; top: 0; left: 0; width: 26px; height: 26px;
+            border: 2px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.1);
             border-radius: 50%; pointer-events: none; z-index: 99999998 !important;
             transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s ease-out; will-change: transform;
         }
 
-        body.cursor-hover .cursor-outline { opacity: 0; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); }
-        body.cursor-hover .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.6); background-color: #ffffff; box-shadow: 0 0 15px rgba(255, 255, 255, 0.8); }
-        body.cursor-active .cursor-outline { opacity: 0 !important; }
-        body.cursor-active .cursor-dot { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(2.2) !important; background-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.9); }
+        /* کلاسِ حالت روی خودِ نشانگر می‌نشیند نه روی body، تا تغییرش استایلِ کلِ صفحه را باطل نکند */
+        .cursor-outline.is-hover { opacity: 0; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); }
+        .cursor-dot.is-hover { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.6); background-color: #ffffff; box-shadow: 0 0 15px rgba(255, 255, 255, 0.8); }
+        .cursor-outline.is-active { opacity: 0 !important; }
+        .cursor-dot.is-active { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(2.2) !important; background-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.9); }
 
         /* ================= پس‌زمینه ================= */
         .hero-bg {
@@ -580,38 +591,52 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // ۳. موس گرافیکی
-        const cursorDot = document.querySelector('.cursor-dot');
-        const cursorOutline = document.querySelector('.cursor-outline');
-        // مقدارِ اولیه همان -100px داخل var() در CSS است تا تا قبل از اولین حرکتِ موس
-        // هر دو بخشِ نشانگر بیرونِ صفحه بمانند (اگر ۰ باشد، حلقه‌ی بیرونی گوشه‌ی بالا-چپ دیده می‌شود)
-        let mouseX = -100, mouseY = -100, outlineX = -100, outlineY = -100;
+        (function initCustomCursor() {
+            const dot = document.querySelector('.cursor-dot');
+            const outline = document.querySelector('.cursor-outline');
+            if (!dot || !outline) return;
+            if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
 
-        // موقعیت با همان متغیرهایی ست می‌شود که در CSS داخل transform استفاده شده‌اند
-        // (--cx/--cy و --ox/--oy). اگر اینجا به‌جای آن‌ها left/top ست شود، مقدارِ
-        // پیش‌فرضِ داخل var() هم اضافه می‌شود و نشانگر با مکان واقعی موس اختلاف پیدا می‌کند.
-        window.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX; mouseY = e.clientY;
-            cursorDot.style.setProperty('--cx', mouseX + 'px');
-            cursorDot.style.setProperty('--cy', mouseY + 'px');
-        }, { passive: true });
-        window.addEventListener('mousedown', () => document.body.classList.add('cursor-active'));
-        window.addEventListener('mouseup', () => document.body.classList.remove('cursor-active'));
+            // -100 یعنی پیش از اولین حرکتِ موس هر دو بخش بیرونِ صفحه‌اند
+            let mx = -100, my = -100, ox = -100, oy = -100, running = false;
 
-        function animateOutline() {
-            outlineX += (mouseX - outlineX) * 0.2; outlineY += (mouseY - outlineY) * 0.2;
-            cursorOutline.style.setProperty('--ox', outlineX + 'px');
-            cursorOutline.style.setProperty('--oy', outlineY + 'px');
-            requestAnimationFrame(animateOutline);
-        }
-        animateOutline();
+            // همه‌ی نوشتن‌ها یک بار در هر فریم انجام می‌شود (نه در هر رویدادِ mousemove که
+            // روی موس‌های پرسرعت چند بار در یک فریم می‌آید)، و حلقه به‌محض رسیدنِ حلقه‌ی
+            // بیرونی به موس می‌خوابد - پس در حالتِ بی‌حرکت هیچ کاری انجام نمی‌شود.
+            const EASE = 0.35; // تندتر از قبل (۰.۲)
+            function frame() {
+                ox += (mx - ox) * EASE;
+                oy += (my - oy) * EASE;
+                if (Math.abs(mx - ox) < 0.15 && Math.abs(my - oy) < 0.15) { ox = mx; oy = my; }
+                dot.style.setProperty('--cx', mx + 'px');
+                dot.style.setProperty('--cy', my + 'px');
+                outline.style.setProperty('--ox', ox + 'px');
+                outline.style.setProperty('--oy', oy + 'px');
+                if (ox === mx && oy === my) { running = false; return; }
+                requestAnimationFrame(frame);
+            }
+            function wake() { if (!running) { running = true; requestAnimationFrame(frame); } }
 
-        function attachHoverEvents() {
-            document.querySelectorAll('.hover-target, a, button, input, label, li').forEach(el => {
-                el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
-                el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
-            });
-        }
-        attachHoverEvents();
+            window.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; wake(); }, { passive: true });
+            window.addEventListener('mousedown', () => { dot.classList.add('is-active'); outline.classList.add('is-active'); });
+            window.addEventListener('mouseup', () => { dot.classList.remove('is-active'); outline.classList.remove('is-active'); });
+
+            // یک شنونده‌ی واگذارشده روی document، به‌جای دو شنونده به‌ازای هر عنصر؛
+            // این‌طور هر چیزی که بعداً ساخته شود هم جلوه را می‌گیرد.
+            const HOVER_SELECTOR = 'a, button, input, select, textarea, label, li, summary, .hover-target, [onclick], [role="button"]';
+            let hovering = false;
+            function setHover(on) {
+                if (on === hovering) return;
+                hovering = on;
+                dot.classList.toggle('is-hover', on);
+                outline.classList.toggle('is-hover', on);
+            }
+            document.addEventListener('mouseover', (e) => {
+                setHover(!!(e.target instanceof Element && e.target.closest(HOVER_SELECTOR)));
+            }, { passive: true });
+            document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) setHover(false); }, { passive: true });
+            window.addEventListener('blur', () => setHover(false));
+        })();
 
         // ۴. ذرات پس‌زمینه
         window.addEventListener('load', () => {
