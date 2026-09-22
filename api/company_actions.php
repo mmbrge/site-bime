@@ -102,6 +102,99 @@ try {
         exit;
     }
 
+    // ---- فیدِ اعلان‌ها: هر چیزِ تازه‌ای که از آخرین بررسی تا حالا اتفاق افتاده ----
+    //  عمداً جدولِ جدیدی برای رویدادها ساخته نشده؛ همه‌چیز از روی created_at خودِ
+    //  جدول‌های موجود خوانده می‌شود تا نه مهاجرتِ تازه‌ای لازم باشد و نه داده‌ی اضافه
+    //  انباشته شود. کلاینت آخرین زمانِ دیده‌شده را می‌فرستد و همان را دوباره می‌گیرد.
+    if ($action === 'notifications_feed') {
+        $since = trim($data['since'] ?? '');
+        // اولین بار: فقط از همین لحظه به بعد، تا انبوهی از اعلانِ قدیمی نریزد
+        if ($since === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $since)) {
+            echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => []], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $now = date('Y-m-d H:i:s');
+        $events = [];
+
+        $add = function ($type, $title, $body, $at, $tab = null, $extra = []) use (&$events) {
+            $events[] = array_merge(['type' => $type, 'title' => $title, 'body' => $body,
+                                     'at' => $at, 'at_jalali' => jd(strtotime($at)), 'tab' => $tab], $extra);
+        };
+
+        // درخواست‌های تازه‌ی شرکت‌ها
+        $stmt = $pdo->prepare("SELECT cr.id, cr.created_at, c.name AS company_name FROM company_requests cr
+                                JOIN companies c ON c.id = cr.company_id
+                                WHERE cr.created_at > ? ORDER BY cr.created_at DESC LIMIT 20");
+        $stmt->execute([$since]);
+        foreach ($stmt->fetchAll() as $r) {
+            $add('company_request', 'درخواست جدید شرکتی', $r['company_name'] . ' یک درخواست تازه ثبت کرد.',
+                 $r['created_at'], 'companies-requests', ['request_id' => intval($r['id'])]);
+        }
+
+        // مدارکِ تازه‌ای که شرکت‌ها فرستاده‌اند و هنوز تگ نخورده‌اند
+        $stmt = $pdo->prepare("SELECT cd.id, cd.request_id, cd.orig_name, cd.doc_type, cd.uploaded_at, c.name AS company_name
+                                FROM company_documents cd JOIN companies c ON c.id = cd.company_id
+                                WHERE cd.uploaded_at > ? AND cd.uploaded_by IS NOT NULL
+                                ORDER BY cd.uploaded_at DESC LIMIT 20");
+        $stmt->execute([$since]);
+        foreach ($stmt->fetchAll() as $r) {
+            $add('company_doc', 'مدرک جدید از شرکت',
+                 $r['company_name'] . ' یک «' . company_doc_type_label($r['doc_type']) . '» فرستاد.',
+                 $r['uploaded_at'], 'companies-inbox', ['request_id' => intval($r['request_id'])]);
+        }
+
+        // پیام‌های تازه‌ی شرکت‌ها در چت
+        $stmt = $pdo->prepare("SELECT ccm.id, ccm.company_id, ccm.message, ccm.created_at, c.name AS company_name
+                                FROM company_chat_messages ccm JOIN companies c ON c.id = ccm.company_id
+                                WHERE ccm.created_at > ? AND ccm.sender_type = 'COMPANY'
+                                ORDER BY ccm.created_at DESC LIMIT 20");
+        $stmt->execute([$since]);
+        foreach ($stmt->fetchAll() as $r) {
+            $add('company_chat', 'پیام جدید از ' . $r['company_name'],
+                 mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'companies-requests',
+                 ['company_id' => intval($r['company_id'])]);
+        }
+
+        // پرونده‌های تازه‌ی بیمه‌ی کارکنان
+        try {
+            $stmt = $pdo->prepare("SELECT pc.id, pc.plate, pc.insurance_type, pc.created_at, p.full_name
+                                    FROM policy_cases pc LEFT JOIN persons p ON p.id = pc.person_id
+                                    WHERE pc.created_at > ? ORDER BY pc.created_at DESC LIMIT 20");
+            $stmt->execute([$since]);
+            foreach ($stmt->fetchAll() as $r) {
+                $add('case', 'درخواست جدید بیمه کارکنان',
+                     ($r['full_name'] ?: 'کاربر') . ' - ' . insurance_type_fa($r['insurance_type']) . ' ' . ($r['plate'] ?: ''),
+                     $r['created_at'], 'records', ['case_id' => intval($r['id'])]);
+            }
+        } catch (Throwable $e) { /* اگر ستونی نبود، بقیه‌ی اعلان‌ها نباید بخوابند */ }
+
+        // پیام‌های داخلیِ تازه برای خودم
+        try {
+            $stmt = $pdo->prepare("SELECT scm.id, scm.message, scm.created_at, u.full_name
+                                    FROM staff_chat_messages scm LEFT JOIN users u ON u.id = scm.from_user_id
+                                    WHERE scm.created_at > ? AND scm.to_user_id = ? ORDER BY scm.created_at DESC LIMIT 20");
+            $stmt->execute([$since, $actor['user_id']]);
+            foreach ($stmt->fetchAll() as $r) {
+                $add('staff_chat', 'پیام داخلی از ' . ($r['full_name'] ?: 'همکار'),
+                     mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'tickets');
+            }
+        } catch (Throwable $e) { /* ... */ }
+
+        // تیکت‌های تازه‌ی مشتری‌ها
+        try {
+            $stmt = $pdo->prepare("SELECT tm.id, tm.message, tm.created_at FROM ticket_messages tm
+                                    WHERE tm.created_at > ? AND tm.sender_type <> 'ADMIN' ORDER BY tm.created_at DESC LIMIT 10");
+            $stmt->execute([$since]);
+            foreach ($stmt->fetchAll() as $r) {
+                $add('ticket', 'پیام جدید در گفتگوها', mb_substr((string)($r['message'] ?: 'پیام تازه'), 0, 90), $r['created_at'], 'tickets');
+            }
+        } catch (Throwable $e) { /* ... */ }
+
+        usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
+        echo json_encode(['ok' => true, 'now' => $now, 'events' => array_slice($events, -25)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- گروه‌های بله‌ای که ربات دیده (برای انتخابگر «گروه مرتبط با شرکت») ----
     if ($action === 'list_bot_groups') {
         $stmt = $pdo->query("SELECT chat_id, title FROM bot_known_groups ORDER BY last_seen_at DESC LIMIT 200");
@@ -350,14 +443,29 @@ try {
 
         $p1 = trim($data['plate_p1'] ?? ''); $p2 = trim($data['plate_p2'] ?? '');
         $letter = trim($data['plate_letter'] ?? ''); $p4 = trim($data['plate_p4'] ?? '');
+        $chassis = trim($data['chassis_no'] ?? '');
         $insuranceType = in_array($data['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $data['insurance_type'] : null;
         $expiryDate = trim($data['expiry_date'] ?? '') ?: null;
-        $skipHealth = !empty($data['skip_health_inspection']) ? 1 : 0;
+        if ($expiryDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryDate)) $expiryDate = fin_jalali_to_date($expiryDate);
+        $isNew = !empty($data['is_new_vehicle']) ? 1 : 0;
+        $skipHealth = ($isNew || !empty($data['skip_health_inspection'])) ? 1 : 0;
+        // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
+        if ($p1 === '' && $p2 === '' && $letter === '' && $p4 === '' && $chassis === '') {
+            echo json_encode(['ok' => false, 'error' => 'یا پلاک را کامل وارد کنید یا شماره شاسی را.']); exit;
+        }
 
-        $stmt = $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4, insurance_type, expiry_date, skip_health_inspection)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$requestId, $p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null, $insuranceType, $expiryDate, $skipHealth]);
-        echo json_encode(['ok' => true, 'plate_id' => $pdo->lastInsertId()]);
+        $stmt = $pdo->prepare("INSERT INTO company_request_plates
+            (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
+             car_value, liability_limit, insurance_type, expiry_date, skip_health_inspection, car_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$requestId, $p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null,
+                        $chassis ?: null, trim($data['engine_no'] ?? '') ?: null, $isNew,
+                        company_parse_money($data['car_value'] ?? ''), company_parse_money($data['liability_limit'] ?? ''),
+                        $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null]);
+        $newPlateId = $pdo->lastInsertId();
+        ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
+        company_sync_plate_status($pdo, $newPlateId);
+        echo json_encode(['ok' => true, 'plate_id' => $newPlateId]);
         exit;
     }
 
@@ -403,7 +511,14 @@ try {
 
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
         if (!$plateId) {
-            $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ? AND letter_file_path IS NULL")->execute([$relPath, $requestId]);
+            $abs = $siteRoot . '/' . $relPath;
+            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $placed = company_place_letter($pdo, $siteRoot, $requestId, $abs, $ext);
+            if ($placed) {
+                $relPath = $placed;
+                $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([$relPath, $docId]);
+            }
+            $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$relPath, $requestId]);
         }
 
         echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $relPath], JSON_UNESCAPED_UNICODE);
@@ -448,7 +563,7 @@ try {
         foreach ($plates as &$p) {
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
-            $p['plate_display'] = company_plate_display($p['plate_p1'], $p['plate_p2'], $p['plate_letter'], $p['plate_p4']);
+            $p['plate_display'] = company_row_label($p);
             $p['status_fa'] = company_plate_status_fa($p['status']);
             // چک‌لیستِ کاملِ همین ردیف: هر آیتم با تیک/ضربدر، اجباری یا اختیاری، و
             // مدرکِ متناظرش (اگر موجود است) تا در جدول قابل باز کردن باشد
@@ -498,6 +613,32 @@ try {
         exit;
     }
 
+    // ---- رد کردن یک مدرکِ ارسالیِ شرکت: فایل حذف می‌شود تا طرف دوباره و درست
+    //      بفرستد. دلیلِ رد به‌صورت پیام در چتِ همان شرکت ثبت می‌شود تا ببیند چرا. ----
+    if ($action === 'reject_document') {
+        $docId = intval($data['doc_id'] ?? 0);
+        $reason = trim($data['reason'] ?? '');
+        $stmt = $pdo->prepare("SELECT cd.*, c.name AS company_name FROM company_documents cd
+                                JOIN companies c ON c.id = cd.company_id WHERE cd.id = ?");
+        $stmt->execute([$docId]);
+        $doc = $stmt->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک یافت نشد.']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $abs = $siteRoot . '/' . $doc['file_path'];
+        if (is_file($abs)) @unlink($abs);
+        $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$docId]);
+        if ($doc['plate_id']) company_sync_plate_status($pdo, $doc['plate_id']);
+
+        $note = 'مدرک «' . ($doc['orig_name'] ?: company_doc_type_label($doc['doc_type'])) . '» تایید نشد و حذف شد.'
+              . ($reason !== '' ? ' دلیل: ' . $reason : '') . ' لطفاً دوباره و درست ارسال کنید.';
+        $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_user_id, message) VALUES (?, 'ADMIN', ?, ?)")
+            ->execute([$doc['company_id'], $actor['user_id'], $note]);
+
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     // ---- تگ‌گذاری/تاییدِ یک مدرک: پلاک + نوع مدرک + درخواست، سپس جابه‌جاییِ خودکار فایل ----
     // اگر doc.file_kind==='LETTER' است، به پوشه‌ی سطح-نامه (نه پوشه‌ی یک پلاک خاص) می‌رود.
     if ($action === 'assign_document') {
@@ -526,18 +667,12 @@ try {
 
         // ---- حالت «نامه»: به پوشه‌ی سطح-درخواست می‌رود، نه پوشه‌ی یک پلاک ----
         if ($doc['file_kind'] === 'LETTER') {
-            $destDir = company_request_letter_folder($siteRoot, strtotime($requestRow['created_at']), $doc['company_name']);
-            if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
-            $newRelPath = $doc['file_path'];
-            if (is_file($absOld) && dirname($absOld) !== $destDir) {
-                $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
-                $letterName = sanitize_folder_name('(نامه‌ی درخواست) ' . $doc['company_name'] . ' - ' . jd(strtotime($requestRow['created_at']))) . '.' . $ext;
-                $destPath = unique_dest_path($destDir . '/' . $letterName);
-                if (@rename($absOld, $destPath)) $newRelPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
-            }
+            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+            $newRelPath = company_place_letter($pdo, $siteRoot, $requestId, $absOld, $ext) ?: $doc['file_path'];
             $pdo->prepare("UPDATE company_documents SET request_id = ?, doc_type = 'letter', status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), file_path = ? WHERE id = ?")
                 ->execute([$requestId, $actor['user_id'], $newRelPath, $docId]);
-            $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
+            $pdo->prepare("UPDATE company_requests SET letter_file_path = ?, status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")
+                ->execute([$newRelPath, $requestId]);
             $pdo->commit();
             echo json_encode(['ok' => true]);
             exit;
@@ -675,6 +810,13 @@ try {
                 $insuranceType, $expiry, $hasPrevBody, !empty($data['skip_health_inspection']) ? 1 : 0,
                 trim($data['car_name'] ?? '') ?: null, trim($data['row_note'] ?? '') ?: null, $plateId,
             ]);
+        // شناسه‌های خودروی بدونِ پلاک و مبالغ، جدا بروز می‌شوند (رشته‌ی خالی یعنی «پاک کن»)
+        $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, engine_no = ?, is_new_vehicle = ?,
+                          car_value = ?, liability_limit = ? WHERE id = ?")
+            ->execute([trim($data['chassis_no'] ?? '') ?: null, trim($data['engine_no'] ?? '') ?: null,
+                       !empty($data['is_new_vehicle']) ? 1 : 0,
+                       company_parse_money($data['car_value'] ?? ''), company_parse_money($data['liability_limit'] ?? ''),
+                       $plateId]);
 
         // نوع بیمه/انقضا در نامِ پوشه‌ی ردیف هست، پس پوشه هم باید هم‌نام شود
         ensure_plate_folder($pdo, dirname(__DIR__), $plateId);
@@ -701,31 +843,29 @@ try {
     // ---- پیش‌نمایشِ ردیف‌های استخراج‌شده از نامه (بدون درج در دیتابیس) ----
     //      ورودی: raw (متنِ JSON یا خط‌به‌خطِ خروجیِ هوش مصنوعی) یا فایل import_file
     if ($action === 'preview_letter_rows' || ($_POST['action'] ?? '') === 'preview_letter_rows') {
-        $raw = (string)($data['raw'] ?? '');
-        if (!empty($_FILES['import_file']['tmp_name']) && is_uploaded_file($_FILES['import_file']['tmp_name'])) {
-            if (($_FILES['import_file']['size'] ?? 0) > 2097152) { echo json_encode(['ok' => false, 'error' => 'حجم فایل بیشتر از ۲ مگابایت است.']); exit; }
-            $raw = (string)file_get_contents($_FILES['import_file']['tmp_name']);
-        }
-        $parsed = company_parse_letter_rows($raw);
-        echo json_encode(['ok' => true, 'rows' => $parsed['rows'], 'errors' => $parsed['errors']], JSON_UNESCAPED_UNICODE);
+        $parsed = company_read_import_input($data, $_FILES['import_file'] ?? null);
+        if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'rows' => $parsed['rows'], 'errors' => $parsed['errors'],
+                          'source' => $parsed['source']], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
     // ---- درجِ نهاییِ ردیف‌ها روی یک درخواست (بعد از دیدنِ پیش‌نمایش) ----
-    if ($action === 'import_letter_rows') {
+    if ($action === 'import_letter_rows' || ($_POST['action'] ?? '') === 'import_letter_rows') {
         $requestId = intval($data['request_id'] ?? 0);
-        $raw = (string)($data['raw'] ?? '');
         $replace = !empty($data['replace_existing']);
 
         $stmt = $pdo->prepare("SELECT id FROM company_requests WHERE id = ?");
         $stmt->execute([$requestId]);
         if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
 
-        $parsed = company_parse_letter_rows($raw);
+        $parsed = company_read_import_input($data, $_FILES['import_file'] ?? null);
+        if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
         if (!$parsed['rows']) {
             echo json_encode(['ok' => false, 'error' => 'هیچ ردیفِ قابل‌استفاده‌ای شناسایی نشد.', 'errors' => $parsed['errors']], JSON_UNESCAPED_UNICODE);
             exit;
         }
+        $raw = $parsed['raw'];
 
         $pdo->beginTransaction();
         if ($replace) {
@@ -733,17 +873,23 @@ try {
             $pdo->prepare("DELETE FROM company_request_plates WHERE request_id = ? AND status <> 'ISSUED'")->execute([$requestId]);
         }
 
+        // ردیفِ تکراری با پلاک *یا* شماره شاسی تشخیص داده می‌شود (ردیف‌های بدون پلاک
+        // فقط شاسی دارند و بدون این شرط همه‌شان تکراری حساب می‌شدند)
         $find = $pdo->prepare("SELECT id FROM company_request_plates WHERE request_id = ?
-                                AND plate_p1 <=> ? AND plate_p2 <=> ? AND plate_letter <=> ? AND plate_p4 <=> ? AND insurance_type <=> ?");
+                                AND plate_p1 <=> ? AND plate_p2 <=> ? AND plate_letter <=> ? AND plate_p4 <=> ?
+                                AND chassis_no <=> ? AND insurance_type <=> ?");
         $ins = $pdo->prepare("INSERT INTO company_request_plates
-                              (request_id, plate_p1, plate_p2, plate_letter, plate_p4, insurance_type, expiry_date,
+                              (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no,
+                               is_new_vehicle, car_value, liability_limit, insurance_type, expiry_date,
                                skip_health_inspection, has_prev_body, car_name, row_note)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
         foreach ($parsed['rows'] as $r) {
-            $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'], $r['insurance_type']]);
+            $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
+                            $r['chassis_no'], $r['insurance_type']]);
             if ($find->fetchColumn()) { $skipped++; continue; } // ردیفِ تکراری دوباره ساخته نمی‌شود
             $ins->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
+                           $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
                            $r['has_prev_body'], $r['car_name'], $r['row_note']]);
             $newIds[] = $pdo->lastInsertId();
@@ -816,7 +962,7 @@ try {
         }
 
         // ---- اعتبارسنجی: فایل باید مربوط به همین ردیف باشد ----
-        $expectedPlate = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+        $expectedPlate = company_row_label($plate);
         if ($ocrData && ($ocrData['ins_type'] ?? '') !== 'ناشناخته' && ($ocrData['ins_type'] ?? '') !== 'معرفی‌نامه') {
             if (!empty($ocrData['plate']) && $expectedPlate && plate_core($ocrData['plate']) !== plate_core($expectedPlate)) {
                 @unlink($tempPath);
@@ -861,7 +1007,7 @@ try {
         $stmt->execute([$plateId]);
         $plate = $stmt->fetch();
 
-        $plateDisplay = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+        $plateDisplay = company_row_label($plate);
         // همان قاعده‌ی نام‌گذاری پرسنلی: پلاک بدون خط‌تیره‌ی داخلی، و «/» شماره‌ی
         // بیمه‌نامه با «∕» جایگزین می‌شود (چون در نام فایل/پوشه‌ی ویندوز مجاز نیست)
         $plateForName = plate_for_filename($plateDisplay);
@@ -962,7 +1108,7 @@ try {
         foreach ($rows as &$r) {
             $r['collected'] = intval($r['collected']);
             $r['settled_amount'] = intval($r['settled_amount']);
-            $r['plate_display'] = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']);
+            $r['plate_display'] = company_row_label($r);
         }
         echo json_encode(['ok' => true, 'installments' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -1128,7 +1274,7 @@ try {
         $siteRoot = dirname(__DIR__);
         $files = [];
         foreach ($rows as $r) {
-            $plateDisplay = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']);
+            $plateDisplay = company_row_label($r);
             $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => sanitize_folder_name($plateDisplay ?: 'بدون‌پلاک') . '.' . pathinfo($r['issued_file_path'], PATHINFO_EXTENSION)];
         }
         $zipPath = build_zip_from_files($files, "درخواست-{$requestId}.zip");

@@ -68,10 +68,22 @@ if (!$companies) {
     .cursor-dot.is-hover { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8); background: #2563eb; }
     .cursor-outline.is-hover { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(.5); opacity: 0; }
     .modal-content { background:#fff; border-radius: 20px; max-width: 520px; width: 92%; max-height: 88vh; overflow-y:auto; transform: scale(.96); transition:.2s; }
+    /* مودالِ جزئیاتِ درخواست پهن‌تر است تا چک‌لیستِ مدارک در یک ردیف جا شود */
+    .modal-content.wide { max-width: 1100px; }
+    /* چک‌لیستِ هر ردیف: خانه‌ها کنارِ هم پخش می‌شوند، نه زیرِ هم */
+    .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; align-items: start; }
     .modal-overlay.active .modal-content { transform: scale(1); }
     .status-badge { font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; }
     .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px); background:#1e293b; color:#fff; padding: 12px 22px; border-radius: 12px; font-size: 13px; font-weight: bold; z-index: 9999; transition:.3s; opacity:0; }
     .toast.show { transform: translateX(-50%) translateY(0); opacity:1; }
+
+    /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راست، روی هم انباشته، و هرکدام بعد از ۵ ثانیه خودش می‌رود */
+    #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: flex; flex-direction: column; gap: 8px;
+                   max-width: min(330px, calc(100vw - 40px)); pointer-events: none; }
+    .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 4px solid #3b82f6; border-radius: 14px;
+                  padding: 10px 13px; box-shadow: 0 10px 28px rgba(15,23,42,.14); cursor: pointer; pointer-events: auto;
+                  opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .3s; }
+    .notif-card.show { opacity: 1; transform: translateX(0); }
 </style>
 </head>
 <body class="min-h-screen">
@@ -91,7 +103,17 @@ if (!$companies) {
         <span class="ml-2">+</span> ثبت درخواست جدید
     </button>
 
-    <h2 class="text-sm font-bold text-slate-500 mb-3">درخواست‌های من</h2>
+    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h2 class="text-sm font-bold text-slate-500">درخواست‌های من</h2>
+        <div class="relative flex-1 min-w-[180px]">
+            <input type="search" id="req-search" oninput="debouncedRequestSearch()" placeholder="جستجو: شماره درخواست، پلاک، شماره شاسی، خودرو یا متن..."
+                   class="w-full border border-slate-200 rounded-xl py-2 pr-9 pl-3 text-xs outline-none focus:border-blue-500">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                 class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+            </svg>
+        </div>
+    </div>
     <div id="requests-list" class="space-y-3"></div>
 </div>
 
@@ -182,7 +204,7 @@ if (!$companies) {
 </div>
 
 <div id="request-detail-modal" class="modal-overlay">
-    <div class="modal-content p-6" style="max-height: 88vh; overflow-y: auto;">
+    <div class="modal-content wide p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-black text-lg flex items-center gap-2">جزئیات درخواست</h3>
             <button onclick="closeModal('request-detail-modal')" aria-label="بستن" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0">
@@ -227,6 +249,7 @@ if (!$companies) {
 </div>
 
 <div id="toast" class="toast"></div>
+<div id="notif-stack" aria-live="polite"></div>
 
 <script>
 let activeRequestId = null;
@@ -238,6 +261,49 @@ function showToast(msg) {
     t.textContent = msg; t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
 }
+
+// ---- ارقام فارسی: همه‌ی عددهای نمایشیِ پنل باید فارسی باشند ----
+const faNum = v => (v === null || v === undefined || v === '') ? '' : String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const faMoney = v => v ? faNum(Number(v).toLocaleString('en-US')) + ' ریال' : '—';
+
+// ---- جستجو در درخواست‌های خودِ شرکت ----
+let reqSearchTimer = null;
+function debouncedRequestSearch() {
+    clearTimeout(reqSearchTimer);
+    reqSearchTimer = setTimeout(loadRequests, 300);
+}
+
+// ---- اعلان‌ها: هر پیام تازه از ما یا بیمه‌نامه‌ی تازه صادرشده، گوشه‌ی پایین
+//      نشان داده می‌شود و بعد از ۵ ثانیه خودش می‌رود ----
+let notifSince = null;
+function pushNotification(title, body) {
+    const box = document.getElementById('notif-stack');
+    if (!box) return;
+    const el = document.createElement('div');
+    el.className = 'notif-card';
+    el.innerHTML = `<p class="font-bold text-xs mb-0.5">${title}</p>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">${body || ''}</p>`;
+    el.onclick = () => el.remove();
+    box.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 5000);
+}
+
+async function pollNotifications() {
+    try {
+        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'notifications_feed', since: notifSince})});
+        const data = await res.json();
+        if (!data.ok) return;
+        (data.events || []).forEach(e => pushNotification(e.title, e.body));
+        notifSince = data.now;
+        // اگر پیام تازه‌ای آمد و مودال چت باز است، همان‌جا هم تازه شود
+        if ((data.events || []).some(e => e.type === 'chat')
+            && document.getElementById('chat-modal').classList.contains('active')) loadChatMessages();
+    } catch (e) { /* قطعیِ لحظه‌ای نباید چیزی را خراب کند */ }
+}
+pollNotifications();
+setInterval(pollNotifications, 15000);
 function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openNewRequestModal() {
@@ -252,20 +318,24 @@ async function doLogout() {
 }
 
 async function loadRequests() {
-    const res = await fetch('../api/company_portal_actions.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'my_requests'})});
+    const q = (document.getElementById('req-search')?.value || '').trim();
+    const res = await fetch('../api/company_portal_actions.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'my_requests', q})});
     const data = await res.json();
     const box = document.getElementById('requests-list');
-    if (!data.ok || !data.requests.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">هنوز درخواستی ثبت نکرده‌اید.</p>'; return; }
+    if (!data.ok || !data.requests.length) {
+        box.innerHTML = `<p class="text-center text-xs text-slate-400 py-10">${q ? 'برای این جستجو درخواستی پیدا نشد.' : 'هنوز درخواستی ثبت نکرده‌اید.'}</p>`;
+        return;
+    }
     box.innerHTML = data.requests.map(r => `
         <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick="openRequestDetail(${r.id})">
             <div class="flex items-center justify-between mb-1">
-                <span class="font-bold text-sm">درخواست #${r.id}${r.company_name ? ' - ' + r.company_name : ''}</span>
+                <span class="font-bold text-sm">درخواست #${faNum(r.id)}${r.company_name ? ' - ' + r.company_name : ''}</span>
                 <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
             </div>
             <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
             <div class="flex flex-wrap gap-1 mt-2">
-                ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${r.body_count} درخواستی / ${r.body_issued} صادره</span>` : ''}
-                ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${r.third_count} درخواستی / ${r.third_issued} صادره</span>` : ''}
+                ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${faNum(r.body_count)} درخواستی / ${faNum(r.body_issued)} صادره</span>` : ''}
+                ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${faNum(r.third_count)} درخواستی / ${faNum(r.third_issued)} صادره</span>` : ''}
             </div>
             <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
         </div>
@@ -306,13 +376,45 @@ function addPlateRow(containerId) {
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
             </button>
         </div>
-        <select class="plate-instype text-xs border rounded-lg p-1.5 w-full mt-1.5">
+        <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 mt-1.5 cursor-pointer">
+            <input type="checkbox" class="plate-isnew" onchange="togglePlateNoPlate(this)">
+            پلاک ندارد (لیفتراک یا خودروی صفرکیلومتر)
+        </label>
+        <div class="plate-chassis-box hidden grid grid-cols-2 gap-1.5 mt-1.5">
+            <input class="plate-chassis border rounded-lg p-2 text-xs" placeholder="شماره شاسی" dir="ltr">
+            <input class="plate-engine border rounded-lg p-2 text-xs" placeholder="شماره موتور" dir="ltr">
+        </div>
+        <select class="plate-instype text-xs border rounded-lg p-1.5 w-full mt-1.5" onchange="togglePlateValueBox(this)">
             <option value="THIRDPARTY">بیمه‌ی درخواستی: ثالث</option>
             <option value="BODY">بیمه‌ی درخواستی: بدنه</option>
             <option value="BOTH">بیمه‌ی درخواستی: ثالث و بدنه (هردو)</option>
         </select>
+        <div class="plate-value-box grid grid-cols-2 gap-1.5 mt-1.5">
+            <input class="plate-carvalue border rounded-lg p-2 text-xs hidden" placeholder="ارزش خودرو (ریال)" inputmode="numeric">
+            <input class="plate-liability border rounded-lg p-2 text-xs" placeholder="سقف تعهد مالی (ریال)" inputmode="numeric">
+        </div>
     `;
     container.appendChild(row);
+    togglePlateValueBox(row.querySelector('.plate-instype'));
+}
+
+// «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود
+function togglePlateNoPlate(cb) {
+    const row = cb.closest('.plate-row');
+    row.querySelector('.plate-chassis-box').classList.toggle('hidden', !cb.checked);
+    row.querySelectorAll('.plate-p1, .plate-p2, .plate-p4, .plate-letter').forEach(i => {
+        i.disabled = cb.checked;
+        i.classList.toggle('opacity-40', cb.checked);
+        if (cb.checked) i.value = '';
+    });
+}
+
+// ارزش خودرو فقط برای بدنه، سقف تعهد مالی فقط برای ثالث
+function togglePlateValueBox(sel) {
+    const row = sel.closest('.plate-row');
+    const t = sel.value;
+    row.querySelector('.plate-carvalue').classList.toggle('hidden', !(t === 'BODY' || t === 'BOTH'));
+    row.querySelector('.plate-liability').classList.toggle('hidden', !(t === 'THIRDPARTY' || t === 'BOTH'));
 }
 
 function collectPlateRows(containerId) {
@@ -321,8 +423,14 @@ function collectPlateRows(containerId) {
         p2: row.querySelector('.plate-p2').value.trim(),
         letter: row.querySelector('.plate-letter').value.trim(),
         p4: row.querySelector('.plate-p4').value.trim(),
+        chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(),
+        engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
+        is_new_vehicle: row.querySelector('.plate-isnew')?.checked ? 1 : 0,
+        car_value: (row.querySelector('.plate-carvalue')?.value || '').trim(),
+        liability_limit: (row.querySelector('.plate-liability')?.value || '').trim(),
         insurance_type: row.querySelector('.plate-instype').value,
-    })).filter(p => p.p1 || p.p2 || p.letter || p.p4);
+    // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
+    })).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
     // اگر «هردو» انتخاب شده، همین پلاک به دو ردیفِ جدا (ثالث + بدنه) تبدیل می‌شود
     const out = [];
     rows.forEach(p => {
@@ -442,16 +550,22 @@ async function openRequestDetail(id) {
         return `
         <div class="bg-white border border-slate-100 rounded-xl p-3 mb-2">
             <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
-                <div class="flex items-center gap-2.5">
-                    <span class="text-[10px] text-slate-300 font-bold">${idx + 1}</span>
-                    <div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateHtml(p)}</div>
+                <div class="flex items-center gap-2.5 flex-wrap">
+                    <span class="text-[10px] text-slate-300 font-bold">${faNum(idx + 1)}</span>
+                    ${(p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4)
+                        ? `<div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateHtml(p)}</div>`
+                        : `<div class="border-2 border-dashed border-slate-400 rounded-md px-2.5 py-1 font-black text-xs text-slate-600" dir="ltr" title="شماره شاسی">${p.chassis_no || 'بدون شناسه'}</div>`}
                     <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
-                    ${p.expiry_date_jalali ? `<span class="text-[10px] text-slate-400">انقضا: ${p.expiry_date_jalali}</span>` : ''}
+                    ${p.expiry_date_jalali ? `<span class="text-[10px] text-slate-400">انقضا: ${p.expiry_date_jalali}</span>`
+                        : (Number(p.is_new_vehicle) ? '<span class="text-[10px] text-slate-400">صفر کیلومتر</span>' : '')}
+                    ${p.insurance_type === 'BODY' && p.car_value ? `<span class="text-[10px] text-slate-500">ارزش: ${faMoney(p.car_value)}</span>` : ''}
+                    ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<span class="text-[10px] text-slate-500">تعهد: ${faMoney(p.liability_limit)}</span>` : ''}
                 </div>
                 <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${PORTAL_ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-500'}">${p.status_fa || p.status}</span>
             </div>
             ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
-            <div class="flex flex-wrap gap-1">${chips}</div>
+            ${p.engine_no ? `<p class="text-[10px] text-slate-400 mb-1" dir="ltr">شماره موتور: ${p.engine_no}</p>` : ''}
+            <div class="checklist-grid">${chips}</div>
             ${missing.length
                 ? `<p class="text-[10px] text-amber-600 mt-2"><i class="fas fa-triangle-exclamation ml-1"></i>مدارک ناموجود: ${missing.join('، ')}</p>`
                 : '<p class="text-[10px] text-emerald-600 mt-2"><i class="fas fa-check ml-1"></i>مدارک این ردیف کامل است</p>'}
@@ -480,10 +594,10 @@ async function openRequestDetail(id) {
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-            <div class="bg-cyan-50 border border-cyan-100 rounded-xl p-2 text-center"><p class="text-[10px] text-cyan-700">بدنه درخواستی</p><p class="font-black text-cyan-800">${c.body}</p></div>
-            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-2 text-center"><p class="text-[10px] text-emerald-700">بدنه صادرشده</p><p class="font-black text-emerald-800">${c.body_issued}</p></div>
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-2 text-center"><p class="text-[10px] text-blue-700">ثالث درخواستی</p><p class="font-black text-blue-800">${c.third}</p></div>
-            <div class="bg-teal-50 border border-teal-100 rounded-xl p-2 text-center"><p class="text-[10px] text-teal-700">ثالث صادرشده</p><p class="font-black text-teal-800">${c.third_issued}</p></div>
+            <div class="bg-cyan-50 border border-cyan-100 rounded-xl p-2 text-center"><p class="text-[10px] text-cyan-700">بدنه درخواستی</p><p class="font-black text-cyan-800">${faNum(c.body || 0)}</p></div>
+            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-2 text-center"><p class="text-[10px] text-emerald-700">بدنه صادرشده</p><p class="font-black text-emerald-800">${faNum(c.body_issued || 0)}</p></div>
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-2 text-center"><p class="text-[10px] text-blue-700">ثالث درخواستی</p><p class="font-black text-blue-800">${faNum(c.third || 0)}</p></div>
+            <div class="bg-teal-50 border border-teal-100 rounded-xl p-2 text-center"><p class="text-[10px] text-teal-700">ثالث صادرشده</p><p class="font-black text-teal-800">${faNum(c.third_issued || 0)}</p></div>
         </div>
 
         <button onclick="showPortalRowsText(${r.id})" class="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>

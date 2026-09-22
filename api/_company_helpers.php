@@ -11,6 +11,22 @@ function company_plate_display($p1, $p2, $letter, $p4) {
     return "{$p1}ایران - {$p2} {$letter} {$p4}";
 }
 
+// شناسه‌ی نمایشیِ یک ردیف: اگر پلاک دارد پلاک، وگرنه شماره شاسی (لیفتراک‌ها و
+// خودروهای صفرکیلومتر پلاک ندارند و فقط با شماره شاسی شناخته می‌شوند). همه‌جا -
+// جدول‌ها، نام پوشه، نام فایل و فهرست متنی - از همین استفاده می‌شود.
+function company_row_label($row) {
+    $plate = company_plate_display($row['plate_p1'] ?? '', $row['plate_p2'] ?? '', $row['plate_letter'] ?? '', $row['plate_p4'] ?? '');
+    if ($plate) return $plate;
+    $chassis = trim((string)($row['chassis_no'] ?? ''));
+    return $chassis !== '' ? $chassis : 'بدون‌پلاک';
+}
+
+// آیا این ردیف با شماره شاسی شناخته می‌شود (نه پلاک)؟
+function company_row_is_chassis($row) {
+    return !company_plate_display($row['plate_p1'] ?? '', $row['plate_p2'] ?? '', $row['plate_letter'] ?? '', $row['plate_p4'] ?? '')
+        && trim((string)($row['chassis_no'] ?? '')) !== '';
+}
+
 // ریشه‌ی بایگانی شرکتی، کاملاً جدا از شخصِ «بایگانی صادره»ی پرسنلی (بعد از صدور
 // یک کپی هم به بایگانی صادره‌ی مشترک می‌رود - نگاه کنید به company_copy_to_shared_sadere)
 function company_archive_root($siteRoot) {
@@ -35,22 +51,26 @@ function company_unassigned_temp_path($siteRoot, $companyName) {
     return temp_archive_root($siteRoot) . '/شرکت‌ها/' . sanitize_folder_name($companyName) . '/نامرتب';
 }
 
-// پوشه‌ی پایه‌ی پلاک‌های یک درخواست = همان پوشه‌ی تاریخ درخواست.
-// ($insuranceTypeEnum فقط برای سازگاری با فراخوانی‌های قبلی نگه داشته شده و دیگر
-//  یک سطح پوشه‌ی جدا نمی‌سازد - نوع بیمه داخل نامِ خودِ پوشه‌ی پلاک است.)
+// داخلِ پوشه‌ی تاریخِ درخواست، اول پوشه‌ی «بدنه» و «ثالث» می‌آید و پوشه‌ی هر ردیف
+// (و نامه‌ی همان نوع) داخلِ آن می‌نشیند - طبق ساختار خواسته‌شده:
+//   {تاریخ}/بدنه/(نامه‌ی درخواست) ....pdf
+//   {تاریخ}/بدنه/{۳۰}(بدنه) ۲۱ایران - ۹۸۹ ع ۴۱/
 function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null) {
-    return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName);
+    return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName)
+        . '/' . insurance_type_fa($insuranceTypeEnum);
 }
 
-// نام پوشه‌ی هر پلاک، پیش از صدور: «{روزِ ماهِ تاریخ انقضا}(بدنه|ثالث) پلاک»
-// مثال خواسته‌شده: «۳۰(بدنه) ۲۱ایران - ۵۱۵ ع ۴۴»
+// نام پوشه‌ی هر ردیف، پیش از صدور: «{روزِ ماهِ تاریخ انقضا}(بدنه|ثالث) پلاک»
+// روزِ انقضا داخلِ آکولاد نوشته می‌شود: «{30}(بدنه) 21ایران - 515 ع 44».
+// خودروهای صفرکیلومتر تاریخ انقضا ندارند، پس آکولاد هم ندارند و با شماره شاسی
+// نوشته می‌شوند: «(بدنه) SGG10197IRF553».
 function company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay) {
     $dayPart = '';
     if ($expiryDate) {
         $ts = is_numeric($expiryDate) ? $expiryDate : strtotime($expiryDate);
-        if ($ts) { [, , $jd] = jalali_from_gregorian_ts($ts); $dayPart = intval($jd); }
+        if ($ts) { [, , $jd] = jalali_from_gregorian_ts($ts); $dayPart = '{' . sprintf('%02d', intval($jd)) . '}'; }
     }
-    $prefix = $dayPart !== '' ? "{$dayPart}(" . insurance_type_fa($insuranceTypeEnum) . ')' : '(' . insurance_type_fa($insuranceTypeEnum) . ')';
+    $prefix = $dayPart . '(' . insurance_type_fa($insuranceTypeEnum) . ')';
     return sanitize_folder_name($prefix . ' ' . ($plateDisplay ?: 'بدون‌پلاک'));
 }
 
@@ -234,6 +254,26 @@ function company_sync_plate_status($pdo, $plateId) {
     return $newStatus;
 }
 
+// نامِ فایلِ نامه‌ی درخواست. قبلاً چند نامه در یک روز فقط با «_1» و «_2» از هم جدا
+// می‌شدند؛ حالا نوعِ بیمه‌ی درخواستی داخلِ نام می‌آید تا خوانا باشد:
+//   «(نامه‌ی درخواست) دیلی مارکت - 1405.06.29 - بدنه.pdf»
+function company_letter_filename($companyName, $requestCreatedTs, $typesFa, $ext) {
+    $base = '(نامه‌ی درخواست) ' . $companyName . ' - ' . jalali_from_gregorian_ts_dotted($requestCreatedTs);
+    if ($typesFa) $base .= ' - ' . $typesFa;
+    return sanitize_folder_name($base) . ($ext ? '.' . strtolower($ext) : '');
+}
+
+// نوع(های) بیمه‌ی یک درخواست به فارسی: «بدنه»، «ثالث» یا «بدنه و ثالث»
+function company_request_types_fa($pdo, $requestId) {
+    $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ?");
+    $stmt->execute([$requestId]);
+    $types = array_filter(array_column($stmt->fetchAll(), 'insurance_type'));
+    if (!$types) return '';
+    $fa = array_map('insurance_type_fa', $types);
+    sort($fa);
+    return implode(' و ', array_unique($fa));
+}
+
 // نام فایلِ هر مدرکِ بارگزاری‌شده، دقیقاً طبق قالبِ خواسته‌شده:
 //   «(سند) 21ایران - 693 ع 31»   /   «(بیمه بدنه قبل) 21ایران - 693 ع 31»
 // (خط‌تیره‌ی داخلیِ خودِ پلاک عمداً حفظ می‌شود - در نام‌گذاریِ مدارک، برخلاف نام
@@ -275,7 +315,7 @@ function company_request_rows_text_report($pdo, $requestId) {
     $lines[] = '';
     foreach ($plates as $p) {
         $types = array_values(array_filter($byPlate[$p['id']] ?? []));
-        $display = company_plate_display($p['plate_p1'], $p['plate_p2'], $p['plate_letter'], $p['plate_p4']) ?: 'بدون پلاک';
+        $display = company_row_label($p);
         $present = company_plate_present_labels($types);
         $line = $display . ' (' . insurance_type_fa($p['insurance_type']) . ')';
         $line .= $present ? ' ( ' . implode(' ، ', $present) . ' )' : ' ( بدون مدرک )';
@@ -330,7 +370,7 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
         return $plate['folder_path'];
     }
 
-    $plateDisplay = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+    $plateDisplay = company_row_label($plate);
     $desired = build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'], $plate['insurance_type'], $plate['expiry_date'], $plateDisplay);
 
     if ($plate['folder_path'] && $plate['folder_path'] !== $desired && is_dir($plate['folder_path'])) {
@@ -382,7 +422,7 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
 
     $plateFolder = ensure_plate_folder($pdo, $siteRoot, $plateId);
     if (!$plateFolder) return $doc['file_path'];
-    $plateDisplay = company_plate_display($plate['plate_p1'], $plate['plate_p2'], $plate['plate_letter'], $plate['plate_p4']);
+    $plateDisplay = company_row_label($plate);
 
     $absOld = $siteRoot . '/' . $doc['file_path'];
     $newRel = $doc['file_path'];
@@ -482,6 +522,14 @@ function company_parse_insurance_type($text) {
 
 // «بله/خیر» را از هر نوشتاری تشخیص می‌دهد. نکته‌ی مهم: عبارت‌های منفی *اول* چک
 // می‌شوند، وگرنه «لازم نیست» به‌خاطر وجودِ «لازم» اشتباهاً «بله» خوانده می‌شود.
+// مبلغ (ریال) را از هر نوشتاری بیرون می‌کشد: «۴۰,۰۰۰,۰۰۰,۰۰۰ ریال» یا «40000000000»
+function company_parse_money($text) {
+    if (is_int($text) || is_float($text)) return intval($text) ?: null;
+    $t = p2e_digits(trim((string)$text));
+    $digits = preg_replace('/\D/', '', $t);
+    return $digits === '' ? null : intval($digits);
+}
+
 function company_parse_yes_no($text) {
     if (is_bool($text)) return $text ? 'YES' : 'NO';
     if (is_int($text)) return $text ? 'YES' : 'NO';
@@ -533,30 +581,53 @@ function company_parse_letter_rows($raw) {
     foreach ($parsed as $i => $r) {
         if (!is_array($r)) continue;
         $lineNo = $i + 1;
+
+        // ---- شناسه‌ی ردیف: یا پلاک، یا شماره شاسی ----
+        // لیفتراک‌ها اصلاً پلاک ندارند و خودروهای صفرکیلومتر هنوز پلاک نگرفته‌اند؛
+        // این‌ها فقط با شماره شاسی شناخته می‌شوند، پس نبودِ پلاک خطا نیست.
         $plateText = $r['plate'] ?? trim(($r['plate_p4'] ?? '') . ' ' . ($r['plate_letter'] ?? '') . ' ' . ($r['plate_p2'] ?? '') . ' ایران ' . ($r['plate_p1'] ?? ''));
         $plate = company_parse_plate_text($plateText);
-        if (!$plate) { $errors[] = "ردیف {$lineNo}: پلاک «" . mb_substr((string)$plateText, 0, 40) . "» شناسایی نشد."; continue; }
+        $chassis = trim((string)($r['chassis_no'] ?? ($r['chassis'] ?? ($r['vin'] ?? ''))));
+        // اگر پلاک خوانده نشد ولی متنش شبیه شماره شاسی بود، همان را شاسی حساب کن
+        if (!$plate && $chassis === '' && trim((string)$plateText) !== '' && preg_match('/^[A-Za-z0-9\-]{6,}$/', trim((string)$plateText))) {
+            $chassis = trim((string)$plateText);
+        }
+        if (!$plate && $chassis === '') {
+            $errors[] = "ردیف {$lineNo}: نه پلاک خوانده شد و نه شماره شاسی («" . mb_substr((string)$plateText, 0, 40) . "»).";
+            continue;
+        }
 
         $type = company_parse_insurance_type($r['insurance_type'] ?? ($r['type'] ?? ''));
         if (!$type) { $errors[] = "ردیف {$lineNo}: نوع بیمه (بدنه/ثالث/هردو) مشخص نیست."; continue; }
 
+        // خودروی صفرکیلومتر تاریخ انقضا ندارد، پس نبودش هم خطا نیست
         $expiryRaw = trim((string)($r['expiry_date'] ?? ($r['expiry'] ?? '')));
         $expiry = $expiryRaw === '' ? null : (preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryRaw) ? $expiryRaw : fin_jalali_to_date($expiryRaw));
         if ($expiryRaw !== '' && !$expiry) $errors[] = "ردیف {$lineNo}: تاریخ انقضای «{$expiryRaw}» خوانده نشد (این ردیف بدون تاریخ ساخته می‌شود).";
 
+        $isNew = company_parse_yes_no($r['is_new_vehicle'] ?? ($r['new'] ?? '')) === 'YES';
+        // اگر پلاک ندارد و تاریخ انقضا هم ندارد، عملاً خودروی صفرکیلومتر است
+        if (!$plate && !$expiry) $isNew = true;
+
         $base = [
-            'plate_p1' => $plate['p1'], 'plate_p2' => $plate['p2'],
-            'plate_letter' => $plate['letter'], 'plate_p4' => $plate['p4'],
+            'plate_p1' => $plate ? $plate['p1'] : null, 'plate_p2' => $plate ? $plate['p2'] : null,
+            'plate_letter' => $plate ? $plate['letter'] : null, 'plate_p4' => $plate ? $plate['p4'] : null,
+            'chassis_no' => $chassis ?: null,
+            'engine_no' => trim((string)($r['engine_no'] ?? ($r['engine'] ?? ''))) ?: null,
+            'is_new_vehicle' => $isNew ? 1 : 0,
+            'car_value' => company_parse_money($r['car_value'] ?? ($r['value'] ?? '')),
+            'liability_limit' => company_parse_money($r['liability_limit'] ?? ($r['liability'] ?? '')),
             'expiry_date' => $expiry,
             // همه‌ی تاریخ‌های نمایشیِ سایت شمسی‌اند؛ تاریخ میلادی فقط برای ذخیره در دیتابیس است
             'expiry_date_jalali' => $expiry ? jalali_from_gregorian_ts_dotted(strtotime($expiry)) : null,
             'car_name' => trim((string)($r['car_name'] ?? ($r['car'] ?? ''))) ?: null,
             'row_note' => trim((string)($r['note'] ?? '')) ?: null,
             'has_prev_body' => company_parse_yes_no($r['has_prev_body'] ?? ''),
-            // «بازدید سلامت لازم نیست» => skip_health_inspection = 1
-            'skip_health_inspection' => (company_parse_yes_no($r['health_inspection'] ?? '') === 'NO') ? 1 : 0,
-            'plate_display' => company_plate_display($plate['p1'], $plate['p2'], $plate['letter'], $plate['p4']),
+            // «بازدید سلامت لازم نیست» => skip_health_inspection = 1.
+            // خودروی صفرکیلومتر هم طبعاً بازدید سلامت نمی‌خواهد.
+            'skip_health_inspection' => ($isNew || company_parse_yes_no($r['health_inspection'] ?? '') === 'NO') ? 1 : 0,
         ];
+        $base['plate_display'] = company_row_label($base);
 
         foreach ($type === 'BOTH' ? ['THIRDPARTY', 'BODY'] : [$type] as $t) {
             $rows[] = array_merge($base, ['insurance_type' => $t, 'insurance_type_fa' => insurance_type_fa($t)]);
@@ -564,6 +635,155 @@ function company_parse_letter_rows($raw) {
     }
 
     return ['rows' => $rows, 'errors' => $errors];
+}
+
+// =====================================================================
+//  خواندنِ ردیف‌ها از فایل اکسل/CSV
+// =====================================================================
+// ستون‌ها با نامِ سرستونشان شناخته می‌شوند (نه با جایشان)، پس ترتیبِ ستون‌ها مهم
+// نیست و ستون‌های اضافه هم نادیده گرفته می‌شوند. برای هر فیلد چند نامِ رایج پذیرفته
+// می‌شود تا کاربر مجبور نباشد فایلش را بازنویسی کند.
+function company_excel_column_map() {
+    return [
+        'plate'          => ['پلاک', 'شماره پلاک', 'شمارهپلاک', 'plate'],
+        'chassis_no'     => ['شماره شاسی', 'شمارهشاسی', 'شاسی', 'vin', 'chassis', 'chassis no', 'شماره شاسی/vin'],
+        'engine_no'      => ['شماره موتور', 'شمارهموتور', 'موتور', 'engine', 'engine no'],
+        'car_value'      => ['ارزش خودرو', 'ارزش', 'ارزش روز', 'قیمت خودرو', 'car value', 'value'],
+        'liability_limit'=> ['تعهد مالی', 'سقف تعهد', 'سقف تعهد مالی', 'تعهد', 'liability'],
+        'insurance_type' => ['نوع بیمه', 'نوع بیمه نامه', 'نوع بیمه‌نامه', 'نوع بیمهنامه', 'نوع', 'type'],
+        'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'expiry'],
+        'car_name'       => ['خودرو', 'نام خودرو', 'سیستم', 'تیپ', 'مدل', 'car'],
+        'has_prev_body'  => ['بیمه بدنه قبل', 'بدنه قبل', 'بیمه قبلی'],
+        'health_inspection' => ['بازدید سلامت', 'بازدید'],
+        'is_new_vehicle' => ['صفر کیلومتر', 'صفرکیلومتر', 'خودرو صفر', 'صفر'],
+        'note'           => ['توضیح', 'توضیحات', 'ملاحظات', 'note'],
+    ];
+}
+
+// نرمال‌سازیِ نامِ سرستون برای مقایسه: ارقام انگلیسی، حذف فاصله‌ها و نویسه‌های
+// نامرئی، و یکدست‌کردنِ «ی» و «ک» عربی/فارسی
+function company_normalize_header($h) {
+    $h = mb_strtolower(trim((string)$h));
+    $h = str_replace(['ي', 'ك', 'ـ', "\xE2\x80\x8C", "\xE2\x80\x8E", "\xE2\x80\x8F"], ['ی', 'ک', '', '', '', ''], $h);
+    return preg_replace('/\s+/u', '', $h);
+}
+
+// از یک فایل اکسل/CSV، فهرستِ ردیف‌های آماده‌ی company_parse_letter_rows را می‌سازد.
+// خروجی: ['rows' => [...], 'errors' => [...]] یا ['error' => '...'] در صورت شکست.
+function company_rows_from_spreadsheet($path) {
+    if (!function_exists('fin_read_spreadsheet')) {
+        return ['error' => 'ماژول خواندن اکسل در دسترس نیست.'];
+    }
+    $table = fin_read_spreadsheet($path);
+    if (!$table) return ['error' => 'فایل خوانده نشد. اگر xlsx است، یک‌بار با فرمت CSV ذخیره کنید و دوباره بدهید.'];
+
+    $map = company_excel_column_map();
+    // نرمال‌شده‌ی همه‌ی نام‌های مجاز، برای جستجوی سریع
+    $lookup = [];
+    foreach ($map as $field => $names) {
+        foreach ($names as $n) $lookup[company_normalize_header($n)] = $field;
+    }
+
+    // ردیفِ سرستون را پیدا کن: اولین ردیفی که حداقل دو ستونِ شناخته‌شده دارد
+    $headerIdx = -1; $cols = [];
+    foreach ($table as $idx => $row) {
+        if (!is_array($row)) continue;
+        $found = [];
+        foreach ($row as $c => $cell) {
+            $key = company_normalize_header($cell);
+            if ($key !== '' && isset($lookup[$key])) $found[$c] = $lookup[$key];
+        }
+        if (count($found) >= 2) { $headerIdx = $idx; $cols = $found; break; }
+        if ($idx > 20) break; // سرستون معمولاً در ۲۰ ردیف اول است
+    }
+    if ($headerIdx < 0) {
+        return ['error' => 'سرستون‌ها شناسایی نشدند. حداقل دو ستون از این‌ها لازم است: پلاک یا شماره شاسی، و نوع بیمه.'];
+    }
+
+    $out = [];
+    foreach (array_slice($table, $headerIdx + 1) as $row) {
+        if (!is_array($row)) continue;
+        $rec = [];
+        foreach ($cols as $c => $field) {
+            $val = isset($row[$c]) ? trim((string)$row[$c]) : '';
+            if ($val !== '') $rec[$field] = $val;
+        }
+        // ردیفِ کاملاً خالی را رد کن
+        if (!$rec) continue;
+        if (empty($rec['plate']) && empty($rec['chassis_no'])) continue;
+        $out[] = $rec;
+    }
+    if (!$out) return ['error' => 'زیر سرستون‌ها هیچ ردیفِ پُری پیدا نشد.'];
+    return ['rows' => $out];
+}
+
+// ورودیِ «ورود ردیف‌ها» می‌تواند متنِ چسبانده‌شده باشد یا فایل (JSON/متن/اکسل/CSV).
+// این تابع هر سه را یکدست می‌کند و همیشه خروجیِ company_parse_letter_rows می‌دهد.
+function company_read_import_input($data, $file) {
+    $raw = (string)($data['raw'] ?? '');
+    $source = 'text';
+
+    if (!empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
+        if (($file['size'] ?? 0) > 5242880) return ['error' => 'حجم فایل بیشتر از ۵ مگابایت است.'];
+        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if (in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
+            // اکسل/CSV باید با پسوندِ درست روی دیسک باشد تا خواننده بتواند تشخیص دهد
+            $tmp = sys_get_temp_dir() . '/' . uniqid('cimport_') . '.' . $ext;
+            if (!@copy($file['tmp_name'], $tmp)) return ['error' => 'فایل روی سرور ذخیره نشد.'];
+            $res = company_rows_from_spreadsheet($tmp);
+            @unlink($tmp);
+            if (isset($res['error'])) return $res;
+            $parsed = company_parse_letter_rows(json_encode(['rows' => $res['rows']], JSON_UNESCAPED_UNICODE));
+            $parsed['raw'] = json_encode(['rows' => $res['rows']], JSON_UNESCAPED_UNICODE);
+            $parsed['source'] = 'excel';
+            return $parsed;
+        }
+        $raw = (string)file_get_contents($file['tmp_name']);
+        $source = 'file';
+    }
+
+    $parsed = company_parse_letter_rows($raw);
+    $parsed['raw'] = $raw;
+    $parsed['source'] = $source;
+    return $parsed;
+}
+
+// نامه‌ی درخواست باید داخلِ پوشه‌ی هر نوعِ بیمه‌ای که این درخواست دارد بنشیند
+// (بدنه و/یا ثالث)، طبق ساختار خواسته‌شده. اگر هنوز هیچ ردیفی ثبت نشده، فعلاً در
+// پوشه‌ی تاریخ می‌ماند و بارِ بعد که ردیف اضافه شد سرِ جایش می‌رود.
+// خروجی: مسیرِ نسبیِ اولین نسخه (همان که در دیتابیس ذخیره می‌شود).
+function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
+    $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr
+                            JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+    $stmt->execute([$requestId]);
+    $req = $stmt->fetch();
+    if (!$req || !is_file($absSource)) return null;
+
+    $ts = strtotime($req['created_at']);
+    $dateDir = company_request_date_folder($siteRoot, $ts, $req['company_name']);
+
+    $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IS NOT NULL");
+    $stmt->execute([$requestId]);
+    $types = array_column($stmt->fetchAll(), 'insurance_type');
+
+    $typesFa = company_request_types_fa($pdo, $requestId);
+    $fileName = company_letter_filename($req['company_name'], $ts, $typesFa, $ext);
+
+    // مقصدها: پوشه‌ی هر نوعِ بیمه؛ و اگر هنوز ردیفی نیست، خودِ پوشه‌ی تاریخ
+    $targets = [];
+    foreach ($types as $t) $targets[] = $dateDir . '/' . insurance_type_fa($t);
+    if (!$targets) $targets[] = $dateDir;
+
+    $firstRel = null;
+    foreach ($targets as $i => $dir) {
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+        $dest = $dir . '/' . $fileName;
+        // نسخه‌ی قبلیِ همین نامه (اگر بود) بازنویسی می‌شود تا کپی تکراری جمع نشود
+        if ($i === count($targets) - 1) { if (!@rename($absSource, $dest)) @copy($absSource, $dest); }
+        else { @copy($absSource, $dest); }
+        if ($firstRel === null) $firstRel = ltrim(str_replace($siteRoot, '', $dest), '/');
+    }
+    return $firstRel;
 }
 
 // =====================================================================
