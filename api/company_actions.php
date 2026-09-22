@@ -205,22 +205,36 @@ try {
     //  این فهرست بیرون می‌رود (چون فقط status <> 'ISSUED' می‌آید).
     // =================================================================
     if ($action === 'issue_queue') {
+        $src = $data['source'] ?? 'ALL';   // ALL | COMPANY | PERSONNEL
+        $out = []; $ready = 0; $waiting = 0;
+        $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
+        $missingFilter = trim($data['missing_doc'] ?? '');
+        $q = trim($data['q'] ?? '');
+        $typeF = $data['insurance_type'] ?? '';
+        $expFrom = fin_jalali_to_date($data['expiry_from'] ?? '');
+        $expTo   = fin_jalali_to_date($data['expiry_to'] ?? '');
+
         $where = ["crp.status <> 'ISSUED'", "crp.status <> 'CANCELLED'"];
         $params = [];
 
         if (!empty($data['company_id']))     { $where[] = "cr.company_id = ?";   $params[] = intval($data['company_id']); }
-        if (!empty($data['insurance_type'])) { $where[] = "crp.insurance_type = ?"; $params[] = $data['insurance_type']; }
+        if ($typeF)                          { $where[] = "crp.insurance_type = ?"; $params[] = $typeF; }
         if (!empty($data['request_kind']))   { $where[] = "cr.request_kind = ?";  $params[] = $data['request_kind']; }
         if (!empty($data['insurer']))        { $where[] = "cr.insurer = ?";       $params[] = $data['insurer']; }
-        if (!empty($data['stage']))          { $where[] = "crp.status = ?";       $params[] = $data['stage']; }
+        // مرحله: مقدارهای شرکتی و پرسنلی با هم قاطی نمی‌شوند؛ اگر مرحله‌ی پرسنلی
+        // انتخاب شده باشد، هیچ ردیف شرکتی نباید بیاید (و برعکس).
+        $stageF = trim($data['stage'] ?? '');
+        $companyStages   = ['PENDING', 'READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE'];
+        $personnelStages = ['REGISTERED', 'AWAITING_DOCS', 'DOCS_PENDING', 'DOCS_REVIEW', 'ISSUING'];
+        if ($stageF !== '') {
+            if (in_array($stageF, $companyStages, true)) { $where[] = "crp.status = ?"; $params[] = $stageF; }
+            else { $where[] = "1=0"; }
+        }
 
         // بازه‌ی تاریخ انقضا (شمسی داده می‌شود، میلادی مقایسه می‌شود)
-        $expFrom = fin_jalali_to_date($data['expiry_from'] ?? '');
-        $expTo   = fin_jalali_to_date($data['expiry_to'] ?? '');
         if ($expFrom) { $where[] = "crp.expiry_date >= ?"; $params[] = $expFrom; }
         if ($expTo)   { $where[] = "crp.expiry_date <= ?"; $params[] = $expTo; }
 
-        $q = trim($data['q'] ?? '');
         if ($q !== '') {
             $like = '%' . $q . '%';
             $where[] = "(c.name LIKE ? OR crp.chassis_no LIKE ? OR crp.car_name LIKE ? OR crp.ref_policy_number LIKE ?
@@ -229,38 +243,36 @@ try {
             array_push($params, $like, $like, $like, $like, $like, $like, intval($q));
         }
 
-        $stmt = $pdo->prepare("
-            SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS request_created_at,
-                   cr.letter_file_path, c.name AS company_name, c.phone AS company_phone, c.economic_code, c.address AS company_address
-              FROM company_request_plates crp
-              JOIN company_requests cr ON cr.id = crp.request_id
-              JOIN companies c ON c.id = cr.company_id
-             WHERE " . implode(' AND ', $where) . "
-             ORDER BY crp.expiry_date IS NULL, crp.expiry_date ASC, crp.id ASC
-             LIMIT 1000");
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll();
-        if (!$rows) {
-            echo json_encode(['ok' => true, 'rows' => [], 'counts' => ['total' => 0, 'ready' => 0, 'waiting' => 0]], JSON_UNESCAPED_UNICODE);
-            exit;
+        $rows = [];
+        if ($src !== 'PERSONNEL') {
+            $stmt = $pdo->prepare("
+                SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS request_created_at,
+                       cr.letter_file_path, c.name AS company_name, c.phone AS company_phone, c.economic_code, c.address AS company_address
+                  FROM company_request_plates crp
+                  JOIN company_requests cr ON cr.id = crp.request_id
+                  JOIN companies c ON c.id = cr.company_id
+                 WHERE " . implode(' AND ', $where) . "
+                 ORDER BY crp.expiry_date IS NULL, crp.expiry_date ASC, crp.id ASC
+                 LIMIT 1000");
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
         }
 
-        // مدارکِ تخصیص‌یافته‌ی همه‌ی این ردیف‌ها را یک‌جا می‌گیریم (نه یک کوئری به ازای هر ردیف)
-        $ids = array_column($rows, 'id');
-        $ph = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, orig_name, status FROM company_documents WHERE plate_id IN ($ph)");
-        $stmt->execute($ids);
-        $docsByPlate = [];
         $siteRoot = dirname(__DIR__);
-        foreach ($stmt->fetchAll() as $d) {
-            $d['label'] = company_doc_type_label($d['doc_type']);
-            $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
-            $docsByPlate[$d['plate_id']][] = $d;
+        $docsByPlate = [];
+        if ($rows) {
+            // مدارکِ تخصیص‌یافته‌ی همه‌ی این ردیف‌ها را یک‌جا می‌گیریم (نه یک کوئری به ازای هر ردیف)
+            $ids = array_column($rows, 'id');
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, orig_name, status FROM company_documents WHERE plate_id IN ($ph)");
+            $stmt->execute($ids);
+            foreach ($stmt->fetchAll() as $d) {
+                $d['label'] = company_doc_type_label($d['doc_type']);
+                $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
+                $docsByPlate[$d['plate_id']][] = $d;
+            }
         }
 
-        $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
-        $missingFilter = trim($data['missing_doc'] ?? '');
-        $out = []; $ready = 0; $waiting = 0;
         foreach ($rows as $r) {
             $rowDocs = array_values(array_filter($docsByPlate[$r['id']] ?? [], fn($d) => $d['status'] === 'ASSIGNED'));
             $types = array_values(array_filter(array_column($rowDocs, 'doc_type')));
@@ -281,6 +293,8 @@ try {
             if ($missingFilter !== '' && !array_key_exists($missingFilter, $r['missing_docs'])) continue;
 
             $r['is_ready'] ? $ready++ : $waiting++;
+            $r['source']              = 'COMPANY';
+            $r['source_fa']           = 'شرکتی';
             $r['plate_display']       = company_row_label($r);
             $r['status_fa']           = company_plate_status_fa($r['status'], $kind);
             $r['request_kind_fa']     = company_request_kind_fa($kind);
@@ -288,7 +302,119 @@ try {
             $r['expiry_date_jalali']  = $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null;
             $r['request_date_jalali'] = jd(strtotime($r['request_created_at']));
             $r['days_to_expiry']      = $r['expiry_date'] ? (int)floor((strtotime($r['expiry_date']) - strtotime('today')) / 86400) : null;
+            // ستون‌هایی که فقط برای کارکنان معنی دارند، برای ردیف شرکتی خالی می‌مانند
+            $r['insured_name']    = $r['company_name'];
+            $r['holder_name']     = null;
+            $r['personnel_code']  = null;
+            $r['national_id']     = $r['economic_code'];
+            $r['period_title']    = null;
+            $r['relationship']    = null;
             $out[] = $r;
+        }
+
+        // ---------- پرونده‌های صدورِ کارکنان، در همین فهرست ----------
+        // بیمه‌ی کارکنان بخشِ «همکارِ شرکت‌ها» نیست؛ فقط مدیر کل آن را می‌بیند.
+        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN') {
+            $pw = ["pc.status <> 'ISSUED'", "pc.status <> 'CANCELLED'"]; $pp = [];
+            if ($typeF) { $pw[] = "pc.insurance_type = ?"; $pp[] = $typeF; }
+            // «نوع درخواست» برای کارکنان همیشه صدور جدید است؛ اگر فیلترِ دیگری خورده، چیزی نیاید
+            if (!empty($data['request_kind']) && $data['request_kind'] !== 'NEW_POLICY') $pw[] = "1=0";
+            if (!empty($data['company_id'])) { $pw[] = "per.company_id = ?"; $pp[] = intval($data['company_id']); }
+            if ($expFrom || $expTo) $pw[] = "1=0";  // پرونده‌ی کارکنان تاریخ انقضا ندارد
+            if ($stageF !== '') {
+                if (in_array($stageF, $personnelStages, true)) { $pw[] = "pc.status = ?"; $pp[] = $stageF; }
+                else { $pw[] = "1=0"; }
+            }
+            if ($q !== '') {
+                $like = '%' . $q . '%';
+                $pw[] = "(per.full_name LIKE ? OR pc.insured_name LIKE ? OR pc.plate LIKE ? OR pc.unique_code LIKE ?
+                          OR per.personnel_code LIKE ? OR per.national_code LIKE ? OR co.name LIKE ?)";
+                array_push($pp, $like, $like, $like, $like, $like, $like, $like);
+            }
+
+            try {
+                $period = function_exists('fin_current_period') ? fin_current_period($pdo) : null;
+                $stmt = $pdo->prepare("
+                    SELECT pc.*, per.full_name AS holder_name, per.national_code AS holder_national_code,
+                           per.personnel_code, per.mobile_number, co.name AS company_name, co.phone AS company_phone,
+                           i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file_path
+                      FROM policy_cases pc
+                      JOIN persons per ON per.id = pc.person_id
+                      LEFT JOIN companies co ON co.id = per.company_id
+                      LEFT JOIN introductions i ON i.id = pc.introduction_id
+                     WHERE " . implode(' AND ', $pw) . "
+                     ORDER BY pc.created_at DESC LIMIT 1000");
+                $stmt->execute($pp);
+                foreach ($stmt->fetchAll() as $c) {
+                    // آماده‌بودنِ پرونده‌ی کارکنان: همه‌ی مدارک تاییدشده، و اگر بدنه است
+                    // بازدید سلامتش هم تاییدشده و گزارشش بارگذاری شده باشد
+                    $docsSt   = compute_docs_status($pdo, $c);
+                    $healthSt = compute_health_status($pdo, $c);
+                    $missing = [];
+                    if ($docsSt !== 'approved' && $docsSt !== 'not_applicable') {
+                        $missing['case_docs'] = [
+                            'needs_fix' => 'مدارک رد‌شده (نیاز به اصلاح)', 'partial' => 'مدارک ناقص',
+                            'not_started' => 'مدارک ارسال نشده', 'submitted' => 'مدارک در انتظار تایید',
+                        ][$docsSt] ?? 'مدارک ناقص';
+                    }
+                    if ($c['insurance_type'] === 'BODY' && $healthSt !== 'approved' && $healthSt !== 'not_applicable') {
+                        $missing['health_inspection'] = [
+                            'needs_fix' => 'بازدید سلامت رد شد', 'not_started' => 'بازدید سلامت انجام نشده',
+                            'submitted' => 'بازدید سلامت در انتظار تایید',
+                        ][$healthSt] ?? 'بازدید سلامت';
+                    }
+                    if (has_pending_health_report($pdo, $c['id'])) $missing['health_report'] = 'گزارش بازدید بارگذاری نشده';
+
+                    $isReady = empty($missing);
+                    if ($readyFilter === 'READY' && !$isReady) continue;
+                    if ($readyFilter === 'WAITING' && $isReady) continue;
+                    if ($missingFilter !== '' && !array_key_exists($missingFilter, $missing)) continue;
+                    $isReady ? $ready++ : $waiting++;
+
+                    $stmtD = $pdo->prepare("SELECT id, doc_key, doc_label, file_path, status FROM case_documents WHERE case_id = ? ORDER BY id DESC");
+                    $stmtD->execute([$c['id']]);
+                    $caseDocs = [];
+                    foreach ($stmtD->fetchAll() as $d) {
+                        $caseDocs[] = ['id' => $d['id'], 'doc_type' => $d['doc_key'],
+                                       'label' => $d['doc_label'] ?: $d['doc_key'],
+                                       'file_path' => $d['file_path'], 'status' => $d['status'], 'is_dir' => false];
+                    }
+
+                    $out[] = [
+                        'source' => 'PERSONNEL', 'source_fa' => 'کارکنان',
+                        'id' => intval($c['id']), 'request_id' => intval($c['introduction_id'] ?? 0),
+                        'company_name' => $c['company_name'], 'company_phone' => $c['company_phone'],
+                        'economic_code' => null, 'company_address' => null,
+                        'insured_name' => $c['insured_name'] ?: $c['holder_name'],
+                        'holder_name' => $c['holder_name'],
+                        'personnel_code' => $c['personnel_code'],
+                        'national_id' => $c['insured_national_id'] ?: $c['holder_national_code'],
+                        'relationship' => $c['insured_relationship'] ?? null,
+                        'period_title' => $period['title'] ?? null,
+                        'plate_display' => $c['plate'] ?: 'بدون‌پلاک',
+                        'plate_p1' => null, 'plate_p2' => null, 'plate_letter' => null, 'plate_p4' => null,
+                        'chassis_no' => $c['chassis_num'] ?? null, 'engine_no' => $c['engine_num'] ?? null,
+                        'is_new_vehicle' => 0, 'car_name' => trim(($c['car_system'] ?? '') . ' ' . ($c['car_type'] ?? '')) ?: null,
+                        'car_value' => $c['car_value'] ?? null, 'liability_limit' => null,
+                        'ref_policy_number' => null, 'endorsement_request' => null, 'cancellation_reason' => null,
+                        'insurance_type' => $c['insurance_type'], 'insurance_type_fa' => insurance_type_fa($c['insurance_type']),
+                        'request_kind' => 'NEW_POLICY', 'request_kind_fa' => 'صدور بیمه‌نامه‌ی جدید',
+                        'request_text' => null, 'insurer' => 'PASARGAD',
+                        'unique_code' => $c['unique_code'] ?? null,
+                        'letter_file_path' => $c['intro_file_path'] ?? null,
+                        'letter_date_jalali' => !empty($c['letter_date']) ? jd(strtotime($c['letter_date'])) : null,
+                        'quota' => (isset($c['max_quota']) ? (intval($c['used_quota']) . ' از ' . intval($c['max_quota'])) : null),
+                        'expiry_date' => null, 'expiry_date_jalali' => null, 'days_to_expiry' => null,
+                        'request_created_at' => $c['created_at'], 'request_date_jalali' => jd(strtotime($c['created_at'])),
+                        'status' => $c['status'], 'status_fa' => case_status_fa($c['status']),
+                        'is_ready' => $isReady, 'missing_docs' => $missing,
+                        'checklist' => [], 'all_docs' => $caseDocs,
+                        'skip_health_inspection' => 0, 'has_prev_body' => null,
+                    ];
+                }
+            } catch (Throwable $e) {
+                error_log('[issue_queue personnel] ' . $e->getMessage());
+            }
         }
 
         echo json_encode(['ok' => true, 'rows' => $out,
@@ -357,7 +483,8 @@ try {
         }
 
         // ---------- صادره‌های پرسنلی ----------
-        if ($src !== 'COMPANY') {
+        // مثل فهرست صدور: بیمه‌ی کارکنان را فقط مدیر کل می‌بیند.
+        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN') {
             $w = ["pc.status = 'ISSUED'"]; $p = [];
             if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }

@@ -573,6 +573,17 @@ function body_coverage_options() {
 // =====================================================================
 // وضعیت «بازدید مدارک» یک پرونده را از روی مدارک واقعاً ارسال‌شده محاسبه می‌کند (نه از یک فیلد ثابت)
 // خروجی: not_applicable | not_started | partial | submitted | needs_fix | approved
+// برچسبِ فارسیِ وضعیتِ پرونده‌ی کارکنان (همان چیزی که در پنل نشان داده می‌شود)
+function case_status_fa($status) {
+    $map = [
+        'REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک',
+        'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
+        'ISSUING' => 'در حال صدور', 'ISSUED' => 'صادر شده', 'REJECTED' => 'رد شده',
+        'CANCELLED' => 'لغو شده',
+    ];
+    return $map[$status] ?? $status;
+}
+
 function compute_docs_status($pdo, $case) {
     $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
     if (!$required) return 'not_applicable';

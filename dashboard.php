@@ -1471,12 +1471,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if ($canSeeCompanies): ?>
         <!-- ======================= تب درخواست‌های شرکتی ======================= -->
-        <!-- ======================= لیست صدور (شرکتی) ======================= -->
+        <!-- ============ لیست صدور (جامع: ردیف‌های شرکتی + پرونده‌های کارکنان) ============ -->
         <div id="tab-issue-queue" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-check text-teal-500 ml-2"></i>لیست صدور</h1>
-                    <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند. با صدور هر ردیف، از این فهرست بیرون می‌رود.</p>
+                    <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند - شرکتی و کارکنان. با صدور هر ردیف، از این فهرست بیرون می‌رود. ستون‌هایی که به آن نوع مربوط نیستند با — نشان داده می‌شوند.</p>
                 </div>
                 <button onclick="loadIssueQueue()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
             </div>
@@ -1489,6 +1489,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <div class="card p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
                 <input type="search" id="iq-q" oninput="debouncedIssueQueue()" placeholder="جستجو..." class="border rounded-lg px-3 py-2 text-xs col-span-2">
+                <select id="iq-source" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs font-bold">
+                    <?php if ($isLiaison): ?>
+                    <!-- همکار شرکت‌ها به بیمه‌ی کارکنان دسترسی ندارد -->
+                    <option value="COMPANY">فقط شرکتی</option>
+                    <?php else: ?>
+                    <option value="ALL">شرکتی و کارکنان</option>
+                    <option value="COMPANY">فقط شرکتی</option>
+                    <option value="PERSONNEL">فقط کارکنان</option>
+                    <?php endif; ?>
+                </select>
                 <select id="iq-company" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
                 <select id="iq-readiness" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">آماده و غیرآماده</option>
@@ -1503,6 +1513,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="health_report">گزارش بازدید</option>
                     <option value="policy_doc">بیمه‌نامه</option>
                     <option value="new_car_card_or_title">کارت یا سند جدید</option>
+                    <option value="case_docs">مدارک پرونده (کارکنان)</option>
                 </select>
                 <select id="iq-type" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
@@ -1513,8 +1524,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </select>
                 <select id="iq-stage" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">همه‌ی مرحله‌ها</option>
-                    <option value="PENDING">در انتظار مدارک</option><option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
-                    <option value="WITH_BOSS">ارسال‌شده برای رئیس</option><option value="IN_ISSUANCE">در حال صدور</option>
+                    <optgroup label="ردیف‌های شرکتی">
+                        <option value="PENDING">در انتظار مدارک</option><option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
+                        <option value="WITH_BOSS">ارسال‌شده برای رئیس</option><option value="IN_ISSUANCE">در حال صدور</option>
+                    </optgroup>
+                    <optgroup label="پرونده‌های کارکنان">
+                        <option value="REGISTERED">ثبت شده</option><option value="AWAITING_DOCS">در انتظار بارگذاری مدارک</option>
+                        <option value="DOCS_PENDING">در انتظار مدارک</option><option value="DOCS_REVIEW">در انتظار تایید مدارک</option>
+                        <option value="ISSUING">در حال صدور</option>
+                    </optgroup>
                 </select>
                 <input type="text" id="iq-exp-from" oninput="debouncedIssueQueue()" placeholder="انقضا از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="iq-exp-to" oninput="debouncedIssueQueue()" placeholder="انقضا تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
@@ -1522,13 +1540,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <div class="card overflow-hidden">
                 <div class="overflow-x-auto max-h-[62vh]">
-                    <table class="w-full text-right text-xs">
+                    <table class="w-full text-right text-xs whitespace-nowrap">
                         <thead class="bg-teal-50 text-teal-800 font-bold sticky top-0 z-10"><tr>
-                            <th class="p-3">#</th><th class="p-3">شرکت</th><th class="p-3">پلاک / شماره شاسی</th>
-                            <th class="p-3">نوع</th><th class="p-3">درخواست</th><th class="p-3">انقضا</th>
+                            <th class="p-3">#</th><th class="p-3">منبع</th><th class="p-3">شرکت / کارفرما</th>
+                            <th class="p-3">بیمه‌گذار</th><th class="p-3">پرسنل</th><th class="p-3">کد پرسنلی</th>
+                            <th class="p-3">پلاک / شماره شاسی</th><th class="p-3">نوع</th>
+                            <th class="p-3">دوره مالی</th><th class="p-3">تاریخ درخواست</th><th class="p-3">انقضا</th>
                             <th class="p-3">مدارک</th><th class="p-3">مرحله</th><th class="p-3"></th>
                         </tr></thead>
-                        <tbody id="iq-body"><tr><td colspan="9" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                        <tbody id="iq-body"><tr><td colspan="14" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1558,9 +1578,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="card p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                 <input type="search" id="il-q" oninput="debouncedIssuedList()" placeholder="جستجو در همه‌ی ستون‌ها..." class="border rounded-lg px-3 py-2 text-xs lg:col-span-2">
                 <select id="il-source" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
+                    <?php if ($isLiaison): ?>
+                    <option value="COMPANY">فقط شرکتی</option>
+                    <?php else: ?>
                     <option value="ALL">شرکتی و کارکنان</option>
                     <option value="COMPANY">فقط شرکتی</option>
                     <option value="PERSONNEL">فقط کارکنان</option>
+                    <?php endif; ?>
                 </select>
                 <select id="il-type" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
@@ -3790,10 +3814,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         async function loadIssueQueue() {
             const tbody = document.getElementById('iq-body');
-            tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
             const payload = {
                 action: 'issue_queue',
                 q: document.getElementById('iq-q').value.trim(),
+                source: document.getElementById('iq-source').value,
                 company_id: document.getElementById('iq-company').value,
                 readiness: document.getElementById('iq-readiness').value,
                 missing_doc: document.getElementById('iq-missing').value,
@@ -3806,15 +3831,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             let data;
             try {
                 data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
-            } catch (e) { tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
-            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
 
             issueQueueCache = data.rows || [];
             document.getElementById('iq-c-total').textContent = e2pNum(data.counts.total);
             document.getElementById('iq-c-ready').textContent = e2pNum(data.counts.ready);
             document.getElementById('iq-c-waiting').textContent = e2pNum(data.counts.waiting);
 
-            if (!issueQueueCache.length) { tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400">ردیفی با این فیلترها پیدا نشد.</td></tr>'; return; }
+            if (!issueQueueCache.length) { tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-slate-400">ردیفی با این فیلترها پیدا نشد.</td></tr>'; return; }
 
             tbody.innerHTML = issueQueueCache.map((r, i) => {
                 const missing = Object.values(r.missing_docs || {});
@@ -3822,29 +3847,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const d = r.days_to_expiry;
                 const expCls = d === null ? 'text-slate-400' : (d < 0 ? 'text-red-600 font-bold' : (d <= 7 ? 'text-amber-600 font-bold' : 'text-slate-600'));
                 const expNote = d === null ? '' : (d < 0 ? `(${e2pNum(Math.abs(d))} روز گذشته)` : `(${e2pNum(d)} روز مانده)`);
+                const isP = r.source === 'PERSONNEL';
+                // وضعیتِ پرونده‌ی کارکنان با همان برچسب‌های بخش «صدور بیمه‌نامه» نوشته می‌شود
+                const statusFa = isP ? (CASE_STATUS_FA[r.status] || r.status) : r.status_fa;
+                const statusCls = isP ? 'bg-slate-100 text-slate-600' : (ROW_STATUS_COLOR[r.status] || 'bg-slate-100 text-slate-600');
+                const dash = '<span class="text-slate-300">—</span>';
                 return `
-                <tr class="border-t border-slate-100 hover:bg-teal-50/40 cursor-pointer" onclick="openIssueQueueDetail(${r.id})">
+                <tr class="border-t border-slate-100 hover:bg-teal-50/40 cursor-pointer" onclick="openIssueQueueDetail('${r.source}', ${r.id})">
                     <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
-                    <td class="p-3 font-bold">${r.company_name}</td>
-                    <td class="p-3">${rowIdentityHtml(r)}${r.car_name ? `<p class="text-[10px] text-slate-400">${r.car_name}</p>` : ''}</td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${isP ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'}">${r.source_fa}</span></td>
+                    <td class="p-3 font-bold">${r.company_name || dash}</td>
+                    <td class="p-3">${r.insured_name || dash}${r.relationship && r.relationship !== 'خودم' ? `<p class="text-[9px] text-slate-400">${r.relationship}</p>` : ''}</td>
+                    <td class="p-3">${r.holder_name || dash}</td>
+                    <td class="p-3" dir="ltr">${r.personnel_code ? e2p(r.personnel_code) : dash}</td>
+                    <td class="p-3">${isP ? `<span class="plate-display font-bold">${formatPlateHtml(r.plate_display)}</span>` : rowIdentityHtml(r)}
+                        ${r.car_name ? `<p class="text-[10px] text-slate-400">${r.car_name}</p>` : ''}</td>
                     <td class="p-3">${r.insurance_type_fa}
                         ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
+                    <td class="p-3 text-slate-500">${r.period_title || dash}</td>
                     <td class="p-3 text-slate-500">${r.request_date_jalali}</td>
-                    <td class="p-3 ${expCls}">${r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : '—')}
+                    <td class="p-3 ${expCls}">${r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : dash)}
                         ${expNote ? `<span class="block text-[9px]">${expNote}</span>` : ''}</td>
                     <td class="p-3">${r.is_ready
                         ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">✓ مدارک کامل</span>'
                         : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">کم دارد</span>
                            <p class="text-[9px] text-amber-600 mt-1">${missing.join('، ')}</p>`}</td>
-                    <td class="p-3"><span class="status-badge ${ROW_STATUS_COLOR[r.status] || 'bg-slate-100 text-slate-600'} text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
+                    <td class="p-3"><span class="status-badge ${statusCls} text-[10px] font-bold px-2 py-1 rounded-full">${statusFa}</span></td>
                     <td class="p-3"><span class="text-blue-600 font-bold">مشاهده و صدور</span></td>
                 </tr>`;
             }).join('');
         }
 
-        function openIssueQueueDetail(rowId) {
-            const r = issueQueueCache.find(x => String(x.id) === String(rowId));
+        function openIssueQueueDetail(source, rowId) {
+            const r = issueQueueCache.find(x => String(x.id) === String(rowId) && x.source === source);
             if (!r) { showToast('ردیف پیدا نشد.', 'error'); return; }
+            // پرونده‌ی کارکنان ستون‌ها و مسیرِ صدورِ خودش را دارد، پس پاپ‌آپش هم جداست
+            if (source === 'PERSONNEL') { openIssueQueuePersonnelDetail(r); return; }
             // برای اینکه دکمه‌های آپلود و صدور همان توابع موجود را صدا بزنند
             currentRequestId = r.request_id;
             currentRequestKind = r.request_kind || 'NEW_POLICY';
@@ -3930,6 +3968,100 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>`;
             document.getElementById('iq-detail-modal').classList.add('active');
+        }
+
+        // پاپ‌آپِ ردیفِ «کارکنان» در همین فهرستِ جامعِ صدور. ستون‌ها و مدارکش با شرکتی
+        // فرق دارد (کد پرسنلی، نام پرسنل، بیمه‌گذار و نسبتش، معرفی‌نامه، دوره‌ی مالی)،
+        // ولی دکمه‌ها همان کارها را می‌کنند و صدور را به همان مسیرِ پرونده‌ی کارکنان می‌برد.
+        function openIssueQueuePersonnelDetail(r) {
+            const CASE_DOC_ST = {
+                APPROVED: '<span class="text-[10px] font-bold text-emerald-600">✓ تایید شده</span>',
+                REJECTED: '<span class="text-[10px] font-bold text-red-500">✗ رد شده</span>',
+                PENDING:  '<span class="text-[10px] font-bold text-amber-500">در انتظار تایید</span>',
+            };
+            const docsHtml = (r.all_docs || []).length
+                ? r.all_docs.map(d => `
+                    <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-lg p-2">
+                        <span class="text-[11px] font-bold text-slate-600">${d.label}</span>
+                        <span class="flex items-center gap-2">
+                            ${CASE_DOC_ST[d.status] || ''}
+                            ${d.file_path ? `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>` : ''}
+                        </span>
+                    </div>`).join('')
+                : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این پرونده ثبت نشده.</p>';
+
+            const dash = '';
+            document.getElementById('iq-detail-body').innerHTML = `
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-user-tie ml-1 text-slate-300"></i>پرسنل و بیمه‌گذار</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('نام پرسنل', r.holder_name)}
+                            ${infoCell('کد پرسنلی', r.personnel_code ? e2p(r.personnel_code) : '', {ltr: true})}
+                            ${infoCell('نام بیمه‌گذار', r.insured_name)}
+                            ${infoCell('نسبت با پرسنل', r.relationship)}
+                            ${infoCell('کد ملی بیمه‌گذار', r.national_id ? e2p(r.national_id) : '', {ltr: true})}
+                            ${infoCell('کد پیگیری', r.unique_code, {ltr: true})}
+                        </div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building ml-1 text-slate-300"></i>شرکت / کارفرما و درخواست</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('شرکت', r.company_name)}
+                            ${infoCell('تلفن شرکت', r.company_phone, {ltr: true})}
+                            ${infoCell('تاریخ ثبت درخواست', r.request_date_jalali)}
+                            ${infoCell('تاریخ معرفی‌نامه', r.letter_date_jalali)}
+                            ${infoCell('سهمیه‌ی معرفی‌نامه', r.quota ? e2p(r.quota) : '')}
+                            ${infoCell('دوره‌ی مالی', r.period_title)}
+                        </div>
+                        ${r.letter_file_path
+                            ? `<a href="/${encodeFilePath(r.letter_file_path)}" target="_blank" class="inline-block mt-2 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg"><i class="fas fa-file-pdf ml-1"></i>معرفی‌نامه‌ی این پرونده</a>`
+                            : '<p class="text-[10px] text-amber-600 mt-2">فایلی برای معرفی‌نامه ثبت نشده.</p>'}
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl p-3 mb-4">
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات خودرو</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                        <div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+                            <p class="text-[9px] text-slate-400">پلاک</p>
+                            <p class="plate-display text-[11px] font-bold text-slate-700">${formatPlateHtml(r.plate_display)}
+                                <button onclick="copyValue('${String(r.plate_display || '').replace(/'/g, "")}', 'پلاک')" title="کپی پلاک" class="text-slate-300 hover:text-blue-500 mr-1">
+                                    <i class="far fa-copy text-[10px]"></i></button>
+                            </p>
+                        </div>
+                        ${infoCell('نوع بیمه', r.insurance_type_fa)}
+                        ${infoCell('خودرو', r.car_name)}
+                        ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
+                        ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
+                        ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : dash)}
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl p-3 mb-4">
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارک ثبت‌شده (تک‌به‌تک)</h4>
+                    <div class="grid md:grid-cols-2 gap-1.5">${docsHtml}</div>
+                </div>
+
+                <div class="border-2 ${r.is_ready ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'} rounded-xl p-3">
+                    <h4 class="text-xs font-bold ${r.is_ready ? 'text-emerald-700' : 'text-amber-700'} mb-2">
+                        <i class="fas fa-stamp ml-1"></i>${r.is_ready ? 'مدارک کامل است - آماده‌ی صدور' : 'هنوز مدارک کامل نیست'}</h4>
+                    ${!r.is_ready ? `<p class="text-[11px] text-amber-700 mb-2">کم دارد: ${Object.values(r.missing_docs || {}).join('، ')}</p>` : ''}
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="iqOpenCase(${r.id}, 'issue')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-check ml-1"></i>صدور بیمه‌نامه</button>
+                        <button onclick="iqOpenCase(${r.id}, 'review')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">بررسی و تایید مدارک</button>
+                        ${r.missing_docs && r.missing_docs.health_report
+                            ? `<button onclick="document.getElementById('iq-detail-modal').classList.remove('active'); switchTab('health');" class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-4 py-2 rounded-xl text-xs">بارگذاری گزارش بازدید</button>`
+                            : ''}
+                    </div>
+                </div>`;
+            document.getElementById('iq-detail-modal').classList.add('active');
+        }
+
+        // از پاپ‌آپِ فهرست صدور به پرونده‌ی کارکنان
+        function iqOpenCase(caseId, mode) {
+            document.getElementById('iq-detail-modal').classList.remove('active');
+            openCase(caseId, mode);
         }
 
         // ===================== صادره‌ها =====================
