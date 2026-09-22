@@ -175,6 +175,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         /* چک‌لیستِ مدارکِ هر ردیف: خانه‌ها کنارِ هم و در یک ردیف پخش می‌شوند، نه
            زیر هم. عرضِ خانه‌ها با auto-fit تنظیم می‌شود تا در پنجره‌ی پهن چند‌تایی
            در یک سطر جا بگیرند و در پنجره‌ی باریک خودشان بشکنند. */
+        /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها (مثلاً فیلدهای مخصوصِ
+           الحاقیه و فسخ) به این کلاس وابسته است و اگر CDNِ Tailwind نیاید، بدون این
+           قاعده همه‌ی فیلدها با هم دیده می‌شوند. !important دارد تا ترتیبِ تزریقِ
+           استایلِ Tailwind در زمان اجرا هم مشکلی نسازد. */
+        .hidden { display: none !important; }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -1614,6 +1619,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label>بیمه‌گر</label>
             </div>
             <label class="text-xs font-bold text-slate-500 block mb-2">توضیح / متن نامه (اختیاری)</label>
+            <div class="float-input">
+                <select id="ancr-kind" onchange="onAncrKindChange()">
+                    <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
+                    <option value="ENDORSEMENT">صدور الحاقیه</option>
+                    <option value="CANCELLATION">فسخ بیمه‌نامه</option>
+                </select>
+                <label>نوع درخواست</label>
+            </div>
+            <p id="ancr-kind-hint" class="text-[11px] text-slate-400 mb-2"></p>
             <textarea id="ancr-text" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
             <label class="text-xs font-bold text-slate-500 block mb-2">فایل نامه (اختیاری)</label>
             <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full border rounded-xl p-2 text-xs mb-4">
@@ -1648,6 +1662,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input"><input type="text" id="aap-carvalue" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
                 <div class="float-input"><input type="text" id="aap-liability" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
+            </div>
+            <div class="float-input"><input type="text" id="aap-refpolicy" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه (اختیاری - برای الحاقیه و فسخ لازم است)</label></div>
+            <div class="float-input"><input type="text" id="aap-endorse" placeholder=" "><label>خواسته‌ی الحاقیه (چه تغییری می‌خواهند؟)</label></div>
+            <div class="float-input">
+                <select id="aap-cancelreason">
+                    <option value="">دلیل فسخ (اگر درخواست فسخ است)</option>
+                </select>
+                <label>دلیل فسخ</label>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input">
@@ -1701,6 +1723,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="prev_body_policy">بیمه بدنه قبل</option>
                     <option value="health_inspection">بازدید سلامت (زیپ/عکس)</option>
                     <option value="health_report">گزارش بازدید</option>
+                    <option value="policy_doc">بیمه‌نامه (برای الحاقیه و فسخ)</option>
+                    <option value="new_car_card">کارت ماشین جدید (برای الحاقیه)</option>
+                    <option value="new_ownership_doc">سند جدید (برای الحاقیه)</option>
                     <option value="letter">نامه‌ی درخواست (روی خودِ درخواست می‌نشیند، نه یک پلاک)</option>
                     <option value="other">سایر مدارک</option>
                 </select>
@@ -1795,6 +1820,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input"><input type="text" id="cre-carvalue" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
                 <div class="float-input"><input type="text" id="cre-liability" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
+            </div>
+            <div class="float-input"><input type="text" id="cre-refpolicy" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه (اختیاری - برای الحاقیه و فسخ لازم است)</label></div>
+            <div class="float-input"><input type="text" id="cre-endorse" placeholder=" "><label>خواسته‌ی الحاقیه (چه تغییری می‌خواهند؟)</label></div>
+            <div class="float-input">
+                <select id="cre-cancelreason">
+                    <option value="">دلیل فسخ (اگر درخواست فسخ است)</option>
+                </select>
+                <label>دلیل فسخ</label>
             </div>
             <div class="float-input"><input type="text" id="cre-car-name" placeholder=" "><label>نام/تیپ خودرو</label></div>
             <div class="float-input"><input type="text" id="cre-note" placeholder=" "><label>توضیح این ردیف</label></div>
@@ -2982,7 +3015,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <tr class="border-t border-slate-100 hover:bg-slate-50">
                     <td class="p-3">#${r.id}</td>
                     <td class="p-3 font-bold">${r.company_name}</td>
-                    <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</td>
+                    <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}
+                        ${r.request_kind && r.request_kind !== 'NEW_POLICY'
+                            ? `<span class="block text-[10px] font-bold ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</span>` : ''}</td>
                     <td class="p-3 text-[11px] whitespace-nowrap">
                         <span class="inline-block bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5 ml-1">بدنه ${e2pNum(r.body_count)} / ${e2pNum(r.body_issued)}</span>
                         <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث ${e2pNum(r.third_count)} / ${e2pNum(r.third_issued)}</span>
@@ -3001,6 +3036,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </tr>`).join('');
         }
 
+        // نوعِ درخواست، متنِ راهنما و برچسبِ توضیح را عوض می‌کند
+        function onAncrKindChange() {
+            const k = document.getElementById('ancr-kind').value;
+            const hint = document.getElementById('ancr-kind-hint');
+            if (hint) hint.textContent = k === 'ENDORSEMENT'
+                ? 'برای هر ردیف، شماره‌ی بیمه‌نامه‌ی فعلی و اینکه چه تغییری می‌خواهند را بنویسید.'
+                : (k === 'CANCELLATION'
+                    ? 'برای هر ردیف، شماره‌ی بیمه‌نامه و دلیل فسخ را مشخص کنید.'
+                    : 'درخواست صدور بیمه‌نامه‌ی جدید برای خودروهای این نامه.');
+        }
+
         // ---------- ثبت دستی درخواست شرکتی توسط خودمان (همین مودال برای ویرایش هم استفاده می‌شود) ----------
         let ancrCompaniesCache = [];
         async function loadAncrCompanies() {
@@ -3016,6 +3062,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('ancr-request-id').value = '';
             document.getElementById('ancr-text').value = '';
             document.getElementById('ancr-letter-file').value = '';
+            document.getElementById('ancr-kind').value = 'NEW_POLICY';
+            onAncrKindChange();
             document.getElementById('ancr-company').disabled = false;
             await loadAncrCompanies();
             ancrUpdateInsurerOptions();
@@ -3033,6 +3081,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('ancr-company').disabled = true;
             ancrUpdateInsurerOptions();
             document.getElementById('ancr-insurer').value = data.request.insurer;
+            document.getElementById('ancr-kind').value = data.request.request_kind || 'NEW_POLICY';
+            onAncrKindChange();
             document.getElementById('ancr-text').value = data.request.request_text || '';
             openModal('admin-new-creq-modal');
         }
@@ -3058,9 +3108,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const payload = requestId
                 ? { action: 'edit_request', request_id: requestId,
                     insurer: document.getElementById('ancr-insurer').value,
+                    request_kind: document.getElementById('ancr-kind').value,
                     request_text: document.getElementById('ancr-text').value.trim() }
                 : { action: 'admin_create_request', company_id: companyId,
                     insurer: document.getElementById('ancr-insurer').value,
+                    request_kind: document.getElementById('ancr-kind').value,
                     request_text: document.getElementById('ancr-text').value.trim() };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
@@ -3085,6 +3137,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ---------- افزودن دستیِ پلاک به یک درخواست ----------
         function openAdminAddPlateModal(requestId) {
+            fillCancelReasons('aap', '');
+            ['aap-refpolicy', 'aap-endorse'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+            // فیلدهای بی‌ربط به نوعِ این درخواست پنهان می‌شوند تا فرم شلوغ نشود
+            applyKindFieldVisibility('aap');
             document.getElementById('aap-request-id').value = requestId;
             ['aap-p1','aap-p2','aap-letter','aap-p4','aap-expiry'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('aap-insurance-type').value = '';
@@ -3099,6 +3155,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 plate_p2: document.getElementById('aap-p2').value.trim(),
                 plate_letter: document.getElementById('aap-letter').value.trim(),
                 plate_p4: document.getElementById('aap-p4').value.trim(),
+                ref_policy_number: document.getElementById('aap-refpolicy').value.trim(),
+                endorsement_request: document.getElementById('aap-endorse').value.trim(),
+                cancellation_reason: document.getElementById('aap-cancelreason').value,
                 chassis_no: document.getElementById('aap-chassis').value.trim(),
                 engine_no: document.getElementById('aap-engine').value.trim(),
                 is_new_vehicle: document.getElementById('aap-isnew').checked ? 1 : 0,
@@ -3122,6 +3181,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند',
             prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
+            policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
             other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست',
         };
         const ROW_STATUS_COLOR = {
@@ -3132,6 +3192,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const FOLDER_STATUS_FA = {PENDING: ['در انتظار صدور', 'text-slate-400'], TRANSFERRED: ['منتقل شد', 'text-emerald-600'], FAILED: ['ناموفق - نیاز به تلاش دوباره', 'text-red-600']};
         let currentRequestId = null;
         let currentRequestRows = [];
+        let currentRequestKind = 'NEW_POLICY';
+        let cancellationReasons = [];
+
+        // پرکردنِ کشویِ «دلیل فسخ» در مودال‌های افزودن/ویرایش ردیف
+        function fillCancelReasons(prefix, selected) {
+            const el = document.getElementById(prefix + '-cancelreason');
+            if (!el) return;
+            el.innerHTML = '<option value="">- انتخاب کنید -</option>'
+                + cancellationReasons.map(r => `<option value="${r}">${r}</option>`).join('');
+            if (selected) el.value = selected;
+        }
 
         // یک خانه‌ی چک‌لیست: تیک اگر داریم، ضربدر اگر نداریم (و اگر اجباری بود قرمز).
         // وقتی نداریم، همان‌جا دکمه‌ی آپلود هست؛ وقتی داریم، لینکِ بازکردنِ خودِ فایل.
@@ -3205,6 +3276,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const r = data.request;
             const isAdmin = <?php echo $isLiaison ? 'false' : 'true'; ?>;
             currentRequestRows = data.plates || [];
+            currentRequestKind = data.request_kind || 'NEW_POLICY';
+            if (data.cancellation_reasons) cancellationReasons = data.cancellation_reasons;
             const c = data.counts || {body: 0, third: 0, body_issued: 0, third_issued: 0};
 
             // ---- مدارکِ سطحِ درخواست (نامه و هر چیزی که به ردیف خاصی وصل نیست) ----
@@ -3228,6 +3301,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.car_name ? `<p class="text-[10px] text-slate-400 mt-0.5">${p.car_name}</p>` : ''}
                         ${p.engine_no ? `<p class="text-[10px] text-slate-400" dir="ltr">موتور: ${p.engine_no}</p>` : ''}
                         ${p.row_note ? `<p class="text-[10px] text-slate-400">${p.row_note}</p>` : ''}
+                        ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
+                        ${p.endorsement_request ? `<p class="text-[10px] text-violet-600 mt-0.5">خواسته: ${p.endorsement_request}</p>` : ''}
+                        ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600 mt-0.5">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
                     </td>
                     <td class="p-2 text-[11px] whitespace-nowrap">${p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—')}
                         ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500">ارزش: ${money(p.car_value)} ریال</p>` : ''}
@@ -3260,6 +3336,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('creq-detail-body').innerHTML = `
                 <div class="flex items-center gap-2 mb-3 flex-wrap">
                     <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
+                    ${r.request_kind && r.request_kind !== 'NEW_POLICY'
+                        ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
                     <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                 </div>
                 <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
@@ -3347,6 +3425,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- ویرایش یک ردیف ----
+        // بسته به نوعِ درخواست، فقط فیلدهای مربوط به همان نوع نشان داده می‌شوند:
+        // «خواسته‌ی الحاقیه» فقط برای الحاقیه، «دلیل فسخ» فقط برای فسخ، و مبالغ و
+        // بازدید سلامت فقط برای صدور بیمه‌نامه‌ی جدید.
+        function applyKindFieldVisibility(prefix) {
+            const k = currentRequestKind;
+            const box = id => document.getElementById(id)?.closest('.float-input');
+            const show = (id, on) => { const b = box(id); if (b) b.classList.toggle('hidden', !on); };
+            show(prefix + '-endorse', k === 'ENDORSEMENT');
+            show(prefix + '-cancelreason', k === 'CANCELLATION');
+            show(prefix + '-carvalue', k === 'NEW_POLICY');
+            show(prefix + '-liability', k === 'NEW_POLICY');
+        }
+
         // «پلاک ندارد»: خانه‌های پلاک غیرفعال می‌شوند و به‌جایش شماره شاسی/موتور گرفته می‌شود
         function toggleNoPlate(prefix) {
             const on = document.getElementById(prefix + '-isnew').checked;
@@ -3372,6 +3463,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cre-expiry').value = p.expiry_date_jalali || '';
             document.getElementById('cre-has-prev-body').value = p.has_prev_body || '';
             document.getElementById('cre-skip-health').checked = !!Number(p.skip_health_inspection);
+            fillCancelReasons('cre', p.cancellation_reason || '');
+            document.getElementById('cre-refpolicy').value = p.ref_policy_number || '';
+            document.getElementById('cre-endorse').value = p.endorsement_request || '';
+            applyKindFieldVisibility('cre');
             document.getElementById('cre-chassis').value = p.chassis_no || '';
             document.getElementById('cre-engine').value = p.engine_no || '';
             document.getElementById('cre-carvalue').value = p.car_value || '';
@@ -3395,6 +3490,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 expiry_date: document.getElementById('cre-expiry').value.trim(),
                 has_prev_body: document.getElementById('cre-has-prev-body').value,
                 skip_health_inspection: document.getElementById('cre-skip-health').checked ? 1 : 0,
+                ref_policy_number: document.getElementById('cre-refpolicy').value.trim(),
+                endorsement_request: document.getElementById('cre-endorse').value.trim(),
+                cancellation_reason: document.getElementById('cre-cancelreason').value,
                 chassis_no: document.getElementById('cre-chassis').value.trim(),
                 engine_no: document.getElementById('cre-engine').value.trim(),
                 is_new_vehicle: document.getElementById('cre-isnew').checked ? 1 : 0,
@@ -3757,7 +3855,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === doc.request_id ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
 
             renderCitPreview(doc);
-            const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy','health_inspection','health_report','other','car_card_or_title'];
+            const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
+                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title'];
             document.getElementById('cit-doc-type').value = KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title'
                 ? doc.doc_type : (doc.doc_type ? 'other' : 'ownership_doc');
             document.getElementById('cit-doc-type-other').value = document.getElementById('cit-doc-type').value === 'other' ? (doc.doc_type || '') : '';

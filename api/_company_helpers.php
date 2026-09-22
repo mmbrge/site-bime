@@ -11,6 +11,53 @@ function company_plate_display($p1, $p2, $letter, $p4) {
     return "{$p1}ایران - {$p2} {$letter} {$p4}";
 }
 
+// =====================================================================
+//  نوعِ درخواست: صدور جدید / الحاقیه / فسخ
+// =====================================================================
+function company_request_kinds() {
+    return [
+        'NEW_POLICY'   => 'صدور بیمه‌نامه‌ی جدید',
+        'ENDORSEMENT'  => 'صدور الحاقیه',
+        'CANCELLATION' => 'فسخ بیمه‌نامه',
+    ];
+}
+
+function company_request_kind_fa($kind) {
+    return company_request_kinds()[$kind] ?? company_request_kinds()['NEW_POLICY'];
+}
+
+function company_valid_kind($kind) {
+    return array_key_exists((string)$kind, company_request_kinds()) ? $kind : 'NEW_POLICY';
+}
+
+// دلیل‌های فسخ که ثبت‌کننده از میانشان انتخاب می‌کند
+function company_cancellation_reasons() {
+    return [
+        'فروش خودرو / انتقال مالکیت',
+        'تعویض یا فک پلاک',
+        'اسقاط خودرو',
+        'سرقت خودرو',
+        'صدور بیمه‌نامه‌ی جدید به‌جای این بیمه‌نامه',
+        'درخواست بیمه‌گذار',
+        'سایر (در توضیح بنویسید)',
+    ];
+}
+
+// برچسبی که در نامِ پوشه‌ها و نامِ نامه استفاده می‌شود:
+//   صدور جدید => «بدنه» یا «ثالث»   |   الحاقیه => «الحاقیه بدنه»   |   فسخ => «فسخ ثالث»
+function company_kind_folder_label($kind, $insuranceTypeEnum = null) {
+    $typeFa = $insuranceTypeEnum ? insurance_type_fa($insuranceTypeEnum) : '';
+    if ($kind === 'ENDORSEMENT')  return trim('الحاقیه ' . $typeFa);
+    if ($kind === 'CANCELLATION') return trim('فسخ ' . $typeFa);
+    return $typeFa ?: 'ثالث';
+}
+
+// الحاقیه و فسخ هرگز به «بایگانی صادره» کپی نمی‌شوند؛ فقط داخل بایگانی شرکتی
+// می‌مانند (خواسته‌ی صریح کارفرما). بایگانی صادره مخصوصِ بیمه‌نامه‌های صادرشده است.
+function company_kind_goes_to_sadere($kind) {
+    return $kind === 'NEW_POLICY';
+}
+
 // شناسه‌ی نمایشیِ یک ردیف: اگر پلاک دارد پلاک، وگرنه شماره شاسی (لیفتراک‌ها و
 // خودروهای صفرکیلومتر پلاک ندارند و فقط با شماره شاسی شناخته می‌شوند). همه‌جا -
 // جدول‌ها، نام پوشه، نام فایل و فهرست متنی - از همین استفاده می‌شود.
@@ -55,36 +102,45 @@ function company_unassigned_temp_path($siteRoot, $companyName) {
 // (و نامه‌ی همان نوع) داخلِ آن می‌نشیند - طبق ساختار خواسته‌شده:
 //   {تاریخ}/بدنه/(نامه‌ی درخواست) ....pdf
 //   {تاریخ}/بدنه/{۳۰}(بدنه) ۲۱ایران - ۹۸۹ ع ۴۱/
-function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null) {
+function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null, $kind = 'NEW_POLICY') {
     return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName)
-        . '/' . insurance_type_fa($insuranceTypeEnum);
+        . '/' . sanitize_folder_name(company_kind_folder_label($kind, $insuranceTypeEnum));
 }
 
 // نام پوشه‌ی هر ردیف، پیش از صدور: «{روزِ ماهِ تاریخ انقضا}(بدنه|ثالث) پلاک»
 // روزِ انقضا داخلِ آکولاد نوشته می‌شود: «{30}(بدنه) 21ایران - 515 ع 44».
 // خودروهای صفرکیلومتر تاریخ انقضا ندارند، پس آکولاد هم ندارند و با شماره شاسی
 // نوشته می‌شوند: «(بدنه) SGG10197IRF553».
-function company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay) {
+function company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay, $kind = 'NEW_POLICY') {
     $dayPart = '';
     if ($expiryDate) {
         $ts = is_numeric($expiryDate) ? $expiryDate : strtotime($expiryDate);
         if ($ts) { [, , $jd] = jalali_from_gregorian_ts($ts); $dayPart = '{' . sprintf('%02d', intval($jd)) . '}'; }
     }
-    $prefix = $dayPart . '(' . insurance_type_fa($insuranceTypeEnum) . ')';
+    $prefix = $dayPart . '(' . company_kind_folder_label($kind, $insuranceTypeEnum) . ')';
     return sanitize_folder_name($prefix . ' ' . ($plateDisplay ?: 'بدون‌پلاک'));
 }
 
 // مسیر کامل پوشه‌ی یک پلاک پیش از صدور (بدون نیاز به دانستن insurance_type دوباره،
 // چون از خودِ رکورد پلاک گرفته می‌شود - نگاه کنید به فراخوانی‌ها در company_actions.php)
-function build_company_plate_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $expiryDate, $plateDisplay) {
-    return company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum)
-        . '/' . company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay);
+function build_company_plate_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $expiryDate, $plateDisplay, $kind = 'NEW_POLICY') {
+    return company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $kind)
+        . '/' . company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay, $kind);
 }
 
 // پوشه‌ی نهایی پس از صدور: «پلاک - نام شرکت - شماره بیمه‌نامه - VIN»،
 // دقیقاً هم‌الگو با build_case_folder_name_issued پرسنلی ولی با نام شرکت به‌جای بیمه‌گذار
 function build_company_issued_folder_name($plateDisplay, $companyName, $policyNum, $vin) {
     return sanitize_folder_name(name_join([plate_for_filename($plateDisplay) ?: 'بدون‌پلاک', $companyName, policy_number_for_filename($policyNum), $vin]));
+}
+
+// نامِ نهاییِ پوشه‌ی یک ردیف پس از صدور. برای الحاقیه و فسخ، برچسبِ نوع هم جلویش
+// می‌آید تا در پوشه با یک نگاه معلوم باشد چه چیزی صادر شده:
+//   «(الحاقیه بدنه) 21ایران 989 ع 41 - دیلی مارکت - الحاقیه-۱۲۳»
+function company_issued_folder_name_for_kind($kind, $insuranceTypeEnum, $plateDisplay, $companyName, $policyNum, $vin) {
+    $name = build_company_issued_folder_name($plateDisplay, $companyName, $policyNum, $vin);
+    if ($kind === 'NEW_POLICY') return $name;
+    return sanitize_folder_name('(' . company_kind_folder_label($kind, $insuranceTypeEnum) . ')') . ' ' . $name;
 }
 
 // پس از صدور، علاوه بر تغییرِ نامِ پوشه‌ی خودِ بایگانی شرکتی، یک *کپی* (نه انتقال)
@@ -114,6 +170,10 @@ function company_doc_types() {
         'prev_body_policy'  => 'بیمه بدنه قبل',
         'health_inspection' => 'بازدید سلامت',
         'health_report'     => 'گزارش بازدید',
+        // مخصوصِ الحاقیه و فسخ: خودِ بیمه‌نامه‌ی فعلی، و کارت/سندِ تازه‌ی خودرو
+        'policy_doc'        => 'بیمه‌نامه',
+        'new_car_card'      => 'کارت ماشین جدید',
+        'new_ownership_doc' => 'سند جدید',
         'other'             => 'سایر مدارک',
         // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
         'car_card_or_title' => 'کارت ماشین یا سند',
@@ -139,9 +199,47 @@ function company_doc_type_is_folder($key) {
 //     اجباری (با has_prev_body مشخص می‌شود)؛ «بازدید سلامت» برای بعضی خودروها
 //     اجباری است و برای بعضی نه (skip_health_inspection)؛ و «گزارش بازدید» در
 //     صورت وجودِ بازدید سلامت اجباری است.
-function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null) {
+function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY') {
     $has = fn($k) => in_array($k, $assignedDocTypes, true);
     $items = [];
+
+    // ---- الحاقیه: خودِ بیمه‌نامه‌ی فعلی + کارت یا سندِ جدیدِ خودرو ----
+    if ($kind === 'ENDORSEMENT') {
+        return [
+            [
+                'key' => 'policy_doc', 'label' => 'بیمه‌نامه',
+                'required' => true, 'satisfied' => $has('policy_doc'),
+                'upload_types' => ['policy_doc'],
+                'hint' => 'همان بیمه‌نامه‌ای که می‌خواهید برایش الحاقیه صادر شود',
+            ],
+            [
+                'key' => 'new_car_card_or_title', 'label' => 'کارت ماشین یا سند جدید',
+                'required' => true,
+                'satisfied' => $has('new_car_card') || $has('new_ownership_doc'),
+                'upload_types' => ['new_car_card', 'new_ownership_doc'],
+                'hint' => 'مدرکِ تازه‌ای که تغییر را نشان می‌دهد',
+            ],
+        ];
+    }
+
+    // ---- فسخ: خودِ بیمه‌نامه اجباری، مدرکِ اثباتِ دلیل اختیاری ----
+    if ($kind === 'CANCELLATION') {
+        return [
+            [
+                'key' => 'policy_doc', 'label' => 'بیمه‌نامه',
+                'required' => true, 'satisfied' => $has('policy_doc'),
+                'upload_types' => ['policy_doc'],
+                'hint' => 'بیمه‌نامه‌ای که می‌خواهید فسخ شود',
+            ],
+            [
+                'key' => 'cancellation_proof', 'label' => 'مدرک مربوط به دلیل فسخ',
+                'required' => false,
+                'satisfied' => $has('new_ownership_doc') || $has('new_car_card') || $has('other'),
+                'upload_types' => ['new_ownership_doc', 'new_car_card', 'other'],
+                'hint' => 'مثلاً سند فروش یا مدرک فک پلاک - اگر دارید',
+            ],
+        ];
+    }
 
     // ---- گروه ۱: کارت ماشین (پشت و رو) یا سند - همیشه اجباری ----
     $cardOk = ($has('car_card_front') && $has('car_card_back')) || $has('ownership_doc') || $has('car_card_or_title');
@@ -203,9 +301,9 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
 }
 
 // فهرستِ «چه چیزی کم دارد» - فقط آیتم‌های اجباریِ تکمیل‌نشده
-function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null) {
+function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY') {
     $missing = [];
-    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody) as $it) {
+    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody, $kind) as $it) {
         if ($it['required'] && !$it['satisfied']) $missing[$it['key']] = $it['label'];
     }
     return $missing;
@@ -222,22 +320,30 @@ function company_plate_present_labels(array $assignedDocTypes) {
 }
 
 // برچسب فارسیِ وضعیت هر ردیف
-function company_plate_status_fa($status) {
-    return [
+function company_plate_status_fa($status, $kind = 'NEW_POLICY') {
+    $map = [
         'PENDING'         => 'در انتظار مدارک',
         'READY_FOR_ISSUE' => 'مدارک کامل - آماده‌ی صدور',
         'WITH_BOSS'       => 'ارسال‌شده برای رئیس',
         'IN_ISSUANCE'     => 'در حال صدور',
         'ISSUED'          => 'صادر شد',
         'CANCELLED'       => 'لغو شد',
-    ][$status] ?? $status;
+    ];
+    // «صادر شد» برای الحاقیه و فسخ معنیِ دیگری دارد
+    if ($kind === 'ENDORSEMENT')  { $map['READY_FOR_ISSUE'] = 'مدارک کامل - آماده‌ی الحاقیه'; $map['IN_ISSUANCE'] = 'در حال صدور الحاقیه'; $map['ISSUED'] = 'الحاقیه صادر شد'; }
+    if ($kind === 'CANCELLATION') { $map['READY_FOR_ISSUE'] = 'مدارک کامل - آماده‌ی فسخ';   $map['IN_ISSUANCE'] = 'در حال فسخ';        $map['ISSUED'] = 'فسخ انجام شد'; }
+    return $map[$status] ?? $status;
 }
 
 // وضعیت هر ردیف بر اساس کامل‌بودن مدارک به‌طور خودکار بین «در انتظار مدارک» و
 // «آماده‌ی صدور» جابه‌جا می‌شود؛ مرحله‌های دستی (ارسال به رئیس / در حال صدور /
 // صادر شد / لغو) دست‌نخورده می‌مانند.
 function company_sync_plate_status($pdo, $plateId) {
-    $stmt = $pdo->prepare("SELECT insurance_type, skip_health_inspection, has_prev_body, status FROM company_request_plates WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT crp.insurance_type, crp.skip_health_inspection, crp.has_prev_body, crp.status,
+                                  cr.request_kind
+                             FROM company_request_plates crp
+                             JOIN company_requests cr ON cr.id = crp.request_id
+                            WHERE crp.id = ?");
     $stmt->execute([$plateId]);
     $plate = $stmt->fetch();
     if (!$plate) return null;
@@ -246,7 +352,8 @@ function company_sync_plate_status($pdo, $plateId) {
     $stmt = $pdo->prepare("SELECT doc_type FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED'");
     $stmt->execute([$plateId]);
     $types = array_filter(array_column($stmt->fetchAll(), 'doc_type'));
-    $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types, $plate['has_prev_body']);
+    $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types,
+                                          $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY');
     $newStatus = $missing ? 'PENDING' : 'READY_FOR_ISSUE';
     if ($newStatus !== $plate['status']) {
         $pdo->prepare("UPDATE company_request_plates SET status = ? WHERE id = ?")->execute([$newStatus, $plateId]);
@@ -265,11 +372,17 @@ function company_letter_filename($companyName, $requestCreatedTs, $typesFa, $ext
 
 // نوع(های) بیمه‌ی یک درخواست به فارسی: «بدنه»، «ثالث» یا «بدنه و ثالث»
 function company_request_types_fa($pdo, $requestId) {
-    $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ?");
+    $stmt = $pdo->prepare("SELECT cr.request_kind, GROUP_CONCAT(DISTINCT crp.insurance_type) AS types
+                             FROM company_requests cr
+                             LEFT JOIN company_request_plates crp ON crp.request_id = cr.id
+                            WHERE cr.id = ? GROUP BY cr.id");
     $stmt->execute([$requestId]);
-    $types = array_filter(array_column($stmt->fetchAll(), 'insurance_type'));
-    if (!$types) return '';
-    $fa = array_map('insurance_type_fa', $types);
+    $row = $stmt->fetch();
+    if (!$row) return '';
+    $kind = $row['request_kind'] ?? 'NEW_POLICY';
+    $types = array_filter(explode(',', (string)$row['types']));
+    if (!$types) return $kind === 'NEW_POLICY' ? '' : company_kind_folder_label($kind);
+    $fa = array_map(fn($t) => company_kind_folder_label($kind, $t), $types);
     sort($fa);
     return implode(' و ', array_unique($fa));
 }
@@ -297,6 +410,7 @@ function company_request_rows_text_report($pdo, $requestId) {
     $stmt->execute([$requestId]);
     $req = $stmt->fetch();
     if (!$req) return null;
+    $kind = $req['request_kind'] ?? 'NEW_POLICY';
 
     $stmt = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
     $stmt->execute([$requestId]);
@@ -311,16 +425,20 @@ function company_request_rows_text_report($pdo, $requestId) {
     }
 
     $lines = [];
-    $lines[] = 'شرکت ' . $req['company_name'] . ' - نامه‌ی ' . jalali_from_gregorian_ts_dotted(strtotime($req['created_at']));
+    $lines[] = 'شرکت ' . $req['company_name'] . ' - نامه‌ی ' . jalali_from_gregorian_ts_dotted(strtotime($req['created_at']))
+             . ' - ' . company_request_kind_fa($kind);
     $lines[] = '';
     foreach ($plates as $p) {
         $types = array_values(array_filter($byPlate[$p['id']] ?? []));
         $display = company_row_label($p);
         $present = company_plate_present_labels($types);
-        $line = $display . ' (' . insurance_type_fa($p['insurance_type']) . ')';
+        $line = $display . ' (' . company_kind_folder_label($kind, $p['insurance_type']) . ')';
+        if (!empty($p['ref_policy_number'])) $line .= ' [بیمه‌نامه ' . $p['ref_policy_number'] . ']';
         $line .= $present ? ' ( ' . implode(' ، ', $present) . ' )' : ' ( بدون مدرک )';
         $lines[] = $line;
-        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null);
+        if ($kind === 'ENDORSEMENT' && !empty($p['endorsement_request'])) $lines[] = '    خواسته: ' . $p['endorsement_request'];
+        if ($kind === 'CANCELLATION' && !empty($p['cancellation_reason'])) $lines[] = '    دلیل فسخ: ' . $p['cancellation_reason'];
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind);
         if ($missing) $lines[] = '    ناموجود: ' . implode('، ', array_values($missing));
     }
 
@@ -331,7 +449,8 @@ function company_request_rows_text_report($pdo, $requestId) {
         if ($p['status'] === 'ISSUED') $issued++;
     }
     $lines[] = '';
-    $lines[] = "جمع: {$total} ردیف ({$body} بدنه، {$third} ثالث) - صادرشده: {$issued}";
+    $doneFa = $kind === 'CANCELLATION' ? 'فسخ‌شده' : ($kind === 'ENDORSEMENT' ? 'الحاقیه‌ی صادرشده' : 'صادرشده');
+    $lines[] = "جمع: {$total} ردیف ({$body} بدنه، {$third} ثالث) - {$doneFa}: {$issued}";
     return implode("\n", $lines);
 }
 
@@ -353,7 +472,7 @@ function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyNa
 // جای دیگری بود (مثلاً چون insurance_type بعداً عوض شده) آن را به مسیر جدید
 // منتقل می‌کند - خودترمیم‌گر، هم برای اولین بار و هم برای اصلاحات بعدی مناسب است.
 function ensure_plate_folder($pdo, $siteRoot, $plateId) {
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, c.name AS company_name
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, cr.request_kind, c.name AS company_name
                             FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id
                             JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
@@ -371,7 +490,9 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
     }
 
     $plateDisplay = company_row_label($plate);
-    $desired = build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'], $plate['insurance_type'], $plate['expiry_date'], $plateDisplay);
+    $desired = build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'],
+                                          $plate['insurance_type'], $plate['expiry_date'], $plateDisplay,
+                                          $plate['request_kind'] ?? 'NEW_POLICY');
 
     if ($plate['folder_path'] && $plate['folder_path'] !== $desired && is_dir($plate['folder_path'])) {
         if (!is_dir(dirname($desired))) @mkdir(dirname($desired), 0755, true);
@@ -622,6 +743,10 @@ function company_parse_letter_rows($raw) {
             'expiry_date_jalali' => $expiry ? jalali_from_gregorian_ts_dotted(strtotime($expiry)) : null,
             'car_name' => trim((string)($r['car_name'] ?? ($r['car'] ?? ''))) ?: null,
             'row_note' => trim((string)($r['note'] ?? '')) ?: null,
+            // مخصوصِ الحاقیه و فسخ (برای صدور جدید هم شماره‌ی مرجع اختیاری است)
+            'ref_policy_number' => trim((string)($r['ref_policy_number'] ?? ($r['policy_number'] ?? ''))) ?: null,
+            'endorsement_request' => trim((string)($r['endorsement_request'] ?? '')) ?: null,
+            'cancellation_reason' => trim((string)($r['cancellation_reason'] ?? '')) ?: null,
             'has_prev_body' => company_parse_yes_no($r['has_prev_body'] ?? ''),
             // «بازدید سلامت لازم نیست» => skip_health_inspection = 1.
             // خودروی صفرکیلومتر هم طبعاً بازدید سلامت نمی‌خواهد.
@@ -656,6 +781,9 @@ function company_excel_column_map() {
         'has_prev_body'  => ['بیمه بدنه قبل', 'بدنه قبل', 'بیمه قبلی'],
         'health_inspection' => ['بازدید سلامت', 'بازدید'],
         'is_new_vehicle' => ['صفر کیلومتر', 'صفرکیلومتر', 'خودرو صفر', 'صفر'],
+        'ref_policy_number' => ['شماره بیمه نامه', 'شماره بیمه‌نامه', 'بیمه نامه', 'شماره بیمهنامه', 'policy', 'policy no'],
+        'endorsement_request' => ['خواسته', 'درخواست الحاقیه', 'موضوع الحاقیه', 'شرح الحاقیه'],
+        'cancellation_reason' => ['دلیل فسخ', 'علت فسخ', 'دلیل'],
         'note'           => ['توضیح', 'توضیحات', 'ملاحظات', 'note'],
     ];
 }
@@ -753,13 +881,14 @@ function company_read_import_input($data, $file) {
 // پوشه‌ی تاریخ می‌ماند و بارِ بعد که ردیف اضافه شد سرِ جایش می‌رود.
 // خروجی: مسیرِ نسبیِ اولین نسخه (همان که در دیتابیس ذخیره می‌شود).
 function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
-    $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr
+    $stmt = $pdo->prepare("SELECT cr.created_at, cr.request_kind, c.name AS company_name FROM company_requests cr
                             JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
     $stmt->execute([$requestId]);
     $req = $stmt->fetch();
     if (!$req || !is_file($absSource)) return null;
 
     $ts = strtotime($req['created_at']);
+    $kind = $req['request_kind'] ?? 'NEW_POLICY';
     $dateDir = company_request_date_folder($siteRoot, $ts, $req['company_name']);
 
     $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IS NOT NULL");
@@ -769,9 +898,12 @@ function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
     $typesFa = company_request_types_fa($pdo, $requestId);
     $fileName = company_letter_filename($req['company_name'], $ts, $typesFa, $ext);
 
-    // مقصدها: پوشه‌ی هر نوعِ بیمه؛ و اگر هنوز ردیفی نیست، خودِ پوشه‌ی تاریخ
+    // مقصدها: پوشه‌ی هر نوعی که این درخواست دارد. اگر یک نامه هم بدنه خواسته هم
+    // ثالث، در هر دو پوشه یک نسخه می‌نشیند؛ اگر فقط یکی را خواسته، فقط همان‌جا.
+    // و اگر هنوز ردیفی ثبت نشده، فعلاً در خودِ پوشه‌ی تاریخ می‌ماند.
     $targets = [];
-    foreach ($types as $t) $targets[] = $dateDir . '/' . insurance_type_fa($t);
+    foreach ($types as $t) $targets[] = $dateDir . '/' . sanitize_folder_name(company_kind_folder_label($kind, $t));
+    $targets = array_values(array_unique($targets));
     if (!$targets) $targets[] = $dateDir;
 
     $firstRel = null;
@@ -784,6 +916,41 @@ function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
         if ($firstRel === null) $firstRel = ltrim(str_replace($siteRoot, '', $dest), '/');
     }
     return $firstRel;
+}
+
+// بررسیِ یک‌باره‌ی اینکه مایگریشن‌های لازم روی دیتابیس اجرا شده‌اند یا نه.
+// اگر فایل‌های PHP جایگزین شوند ولی مایگریشن اجرا نشده باشد، کوئری‌ها روی ستونِ
+// نبوده می‌شکنند و کاربر فقط «خطای سرور» می‌بیند و نمی‌داند چرا. این تابع به‌جای
+// آن پیامِ روشن می‌دهد که کدام فایل را باید در phpMyAdmin اجرا کند.
+function company_schema_problem($pdo) {
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $need = [
+        'company_requests'       => ['request_kind' => '010_request_kinds.sql'],
+        'company_request_plates' => [
+            'has_prev_body'     => '008_company_rows_checklist.sql',
+            'chassis_no'        => '009_vin_rows_and_values.sql',
+            'ref_policy_number' => '010_request_kinds.sql',
+        ],
+    ];
+    foreach ($need as $table => $cols) {
+        try {
+            $have = [];
+            foreach ($pdo->query("SHOW COLUMNS FROM `$table`")->fetchAll() as $c) {
+                $have[] = $c['Field'] ?? ($c[0] ?? '');
+            }
+            foreach ($cols as $col => $file) {
+                if (!in_array($col, $have, true)) {
+                    return $cached = 'مایگریشن اجرا نشده است: لطفاً فایل migrations/' . $file
+                        . ' را در phpMyAdmin اجرا کنید (ستون «' . $col . '» در جدول «' . $table . '» وجود ندارد).';
+                }
+            }
+        } catch (Throwable $e) {
+            // اگر SHOW COLUMNS کار نکرد (مثلاً SQLite در تست‌ها)، مانعِ کار نشو
+            return $cached = null;
+        }
+    }
+    return $cached = null;
 }
 
 // =====================================================================

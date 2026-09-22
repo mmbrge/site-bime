@@ -11,6 +11,10 @@ require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments
 
 $actor = require_admin_or_liaison();
 
+// اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
+$schemaProblem = company_schema_problem($pdo);
+if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem], JSON_UNESCAPED_UNICODE); exit; }
+
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
 
@@ -376,6 +380,7 @@ try {
             $r['created_at_jalali'] = jd(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jd(strtotime($r['updated_at']));
             foreach (['pending_docs_count', 'body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
+            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -398,8 +403,9 @@ try {
             echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($allowedInsurers === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.']); exit;
         }
 
-        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, status) VALUES (?, NULL, ?, ?, 'NEW')");
-        $stmt->execute([$companyId, $requestText ?: null, $insurer]);
+        $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
+        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, status) VALUES (?, NULL, ?, ?, ?, 'NEW')");
+        $stmt->execute([$companyId, $requestText ?: null, $insurer, $kind]);
         echo json_encode(['ok' => true, 'request_id' => $pdo->lastInsertId()]);
         exit;
     }
@@ -418,8 +424,13 @@ try {
             echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($req['allowed_insurers'] === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.']); exit;
         }
 
-        $pdo->prepare("UPDATE company_requests SET request_text = ?, insurer = ? WHERE id = ?")
-            ->execute([$requestText ?: null, $insurer, $requestId]);
+        $kind = isset($data['request_kind']) ? company_valid_kind($data['request_kind']) : ($req['request_kind'] ?? 'NEW_POLICY');
+        $pdo->prepare("UPDATE company_requests SET request_text = ?, insurer = ?, request_kind = ? WHERE id = ?")
+            ->execute([$requestText ?: null, $insurer, $kind, $requestId]);
+        // نوعِ درخواست در نامِ پوشه‌ها هست، پس اگر عوض شد پوشه‌ی ردیف‌ها هم باید جابه‌جا شود
+        $stmt = $pdo->prepare("SELECT id FROM company_request_plates WHERE request_id = ? AND status <> 'ISSUED'");
+        $stmt->execute([$requestId]);
+        foreach ($stmt->fetchAll() as $row) ensure_plate_folder($pdo, dirname(__DIR__), $row['id']);
         echo json_encode(['ok' => true]);
         exit;
     }
@@ -456,11 +467,15 @@ try {
 
         $stmt = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
-             car_value, liability_limit, insurance_type, expiry_date, skip_health_inspection, car_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+             car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
+             insurance_type, expiry_date, skip_health_inspection, car_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([$requestId, $p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null,
                         $chassis ?: null, trim($data['engine_no'] ?? '') ?: null, $isNew,
                         company_parse_money($data['car_value'] ?? ''), company_parse_money($data['liability_limit'] ?? ''),
+                        trim($data['ref_policy_number'] ?? '') ?: null,
+                        trim($data['endorsement_request'] ?? '') ?: null,
+                        trim($data['cancellation_reason'] ?? '') ?: null,
                         $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null]);
         $newPlateId = $pdo->lastInsertId();
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
@@ -547,6 +562,8 @@ try {
         if (!$request) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
         $request['created_at_jalali'] = jd(strtotime($request['created_at']));
         $request['updated_at_jalali'] = jd(strtotime($request['updated_at']));
+        $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
+        $request['request_kind_fa'] = company_request_kind_fa($reqKind);
 
         $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
@@ -564,10 +581,10 @@ try {
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $p['plate_display'] = company_row_label($p);
-            $p['status_fa'] = company_plate_status_fa($p['status']);
+            $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             // چک‌لیستِ کاملِ همین ردیف: هر آیتم با تیک/ضربدر، اجباری یا اختیاری، و
             // مدرکِ متناظرش (اگر موجود است) تا در جدول قابل باز کردن باشد
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null);
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind);
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -578,7 +595,7 @@ try {
             }
             unset($item);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null);
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind);
             $p['expiry_date_jalali'] = $p['expiry_date'] ? jd(strtotime($p['expiry_date'])) : null;
             $p['issued_at_jalali'] = $p['issued_at'] ? jd(strtotime($p['issued_at'])) : null;
             $stmtInst = $pdo->prepare("SELECT * FROM company_installments WHERE plate_id = ? ORDER BY inst_number");
@@ -598,7 +615,8 @@ try {
         }
 
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
-                          'counts' => $counts, 'doc_types' => company_doc_types()], JSON_UNESCAPED_UNICODE);
+                          'counts' => $counts, 'doc_types' => company_doc_types(),
+                          'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -812,10 +830,14 @@ try {
             ]);
         // شناسه‌های خودروی بدونِ پلاک و مبالغ، جدا بروز می‌شوند (رشته‌ی خالی یعنی «پاک کن»)
         $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, engine_no = ?, is_new_vehicle = ?,
-                          car_value = ?, liability_limit = ? WHERE id = ?")
+                          car_value = ?, liability_limit = ?, ref_policy_number = ?,
+                          endorsement_request = ?, cancellation_reason = ? WHERE id = ?")
             ->execute([trim($data['chassis_no'] ?? '') ?: null, trim($data['engine_no'] ?? '') ?: null,
                        !empty($data['is_new_vehicle']) ? 1 : 0,
                        company_parse_money($data['car_value'] ?? ''), company_parse_money($data['liability_limit'] ?? ''),
+                       trim($data['ref_policy_number'] ?? '') ?: null,
+                       trim($data['endorsement_request'] ?? '') ?: null,
+                       trim($data['cancellation_reason'] ?? '') ?: null,
                        $plateId]);
 
         // نوع بیمه/انقضا در نامِ پوشه‌ی ردیف هست، پس پوشه هم باید هم‌نام شود
@@ -880,9 +902,10 @@ try {
                                 AND chassis_no <=> ? AND insurance_type <=> ?");
         $ins = $pdo->prepare("INSERT INTO company_request_plates
                               (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no,
-                               is_new_vehicle, car_value, liability_limit, insurance_type, expiry_date,
+                               is_new_vehicle, car_value, liability_limit, ref_policy_number, endorsement_request,
+                               cancellation_reason, insurance_type, expiry_date,
                                skip_health_inspection, has_prev_body, car_name, row_note)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
         foreach ($parsed['rows'] as $r) {
             $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
@@ -890,6 +913,7 @@ try {
             if ($find->fetchColumn()) { $skipped++; continue; } // ردیفِ تکراری دوباره ساخته نمی‌شود
             $ins->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
                            $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
+                           $r['ref_policy_number'], $r['endorsement_request'], $r['cancellation_reason'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
                            $r['has_prev_body'], $r['car_name'], $r['row_note']]);
             $newIds[] = $pdo->lastInsertId();
@@ -928,7 +952,7 @@ try {
         require_admin_only();
         $plateId = intval($_POST['plate_id'] ?? 0);
 
-        $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, c.name AS company_name FROM company_request_plates crp
+        $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, c.name AS company_name FROM company_request_plates crp
                                 JOIN company_requests cr ON cr.id = crp.request_id
                                 JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
         $stmt->execute([$plateId]);
@@ -963,14 +987,16 @@ try {
 
         // ---- اعتبارسنجی: فایل باید مربوط به همین ردیف باشد ----
         $expectedPlate = company_row_label($plate);
+        $kind = $plate['request_kind'] ?? 'NEW_POLICY';
         if ($ocrData && ($ocrData['ins_type'] ?? '') !== 'ناشناخته' && ($ocrData['ins_type'] ?? '') !== 'معرفی‌نامه') {
             if (!empty($ocrData['plate']) && $expectedPlate && plate_core($ocrData['plate']) !== plate_core($expectedPlate)) {
                 @unlink($tempPath);
                 echo json_encode(['ok' => false, 'error' => "⚠️ پلاک این ردیف «{$expectedPlate}» است، ولی پلاک شناسایی‌شده از فایل «{$ocrData['plate']}» است. این بیمه‌نامه مربوط به این ردیف نیست."]);
                 exit;
             }
+            // فایلِ الحاقیه/فسخ نوعش «بدنه/ثالث» خوانده نمی‌شود، پس فقط پلاک ملاک است
             $expectedTypeFa = insurance_type_fa($plate['insurance_type']);
-            if ($ocrData['ins_type'] !== $expectedTypeFa) {
+            if ($kind === 'NEW_POLICY' && $ocrData['ins_type'] !== $expectedTypeFa) {
                 @unlink($tempPath);
                 echo json_encode(['ok' => false, 'error' => "⚠️ این ردیف «{$expectedTypeFa}» است، ولی فایلی که بارگذاری کردید «{$ocrData['ins_type']}» تشخیص داده شد. فایل درست را بارگذاری کنید."]);
                 exit;
@@ -1001,18 +1027,20 @@ try {
         $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
         if (!$baseDir) { echo json_encode(['ok' => false, 'error' => 'ردیف یافت نشد.']); exit; }
 
-        $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, c.name AS company_name FROM company_request_plates crp
+        $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, c.name AS company_name FROM company_request_plates crp
                                 JOIN company_requests cr ON cr.id = crp.request_id
                                 JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
         $stmt->execute([$plateId]);
         $plate = $stmt->fetch();
+        $kind = $plate['request_kind'] ?? 'NEW_POLICY';
 
         $plateDisplay = company_row_label($plate);
         // همان قاعده‌ی نام‌گذاری پرسنلی: پلاک بدون خط‌تیره‌ی داخلی، و «/» شماره‌ی
         // بیمه‌نامه با «∕» جایگزین می‌شود (چون در نام فایل/پوشه‌ی ویندوز مجاز نیست)
         $plateForName = plate_for_filename($plateDisplay);
         $policyNumForName = policy_number_for_filename($policyNumber);
-        $issuedFolderName = build_company_issued_folder_name($plateDisplay, $plate['company_name'], $policyNumber, $vin);
+        $issuedFolderName = company_issued_folder_name_for_kind($kind, $plate['insurance_type'], $plateDisplay,
+                                                                 $plate['company_name'], $policyNumber, $vin);
         $issuedDir = dirname($baseDir) . '/' . $issuedFolderName;
 
         // ابتدا پوشه‌ی قبل از صدور (با مدارک تگ‌گذاری‌شده‌ی احتمالی) به نام نهایی تغییر
@@ -1049,8 +1077,12 @@ try {
         }
 
         $issuedAt = time();
+        // الحاقیه و فسخ فقط در بایگانی شرکتی می‌مانند و به «بایگانی صادره» نمی‌روند؛
+        // بایگانی صادره مخصوصِ بیمه‌نامه‌های صادرشده است (خواسته‌ی صریح کارفرما).
         $folderStatus = 'FAILED';
-        if (is_dir($issuedDir)) {
+        if (!company_kind_goes_to_sadere($kind)) {
+            $folderStatus = is_dir($issuedDir) ? 'TRANSFERRED' : 'FAILED';
+        } elseif (is_dir($issuedDir)) {
             $copied = company_copy_to_shared_sadere($siteRoot, $issuedDir, $issuedAt, $plate['insurance_type'], $issuedFolderName);
             $folderStatus = $copied ? 'TRANSFERRED' : 'FAILED';
         }

@@ -71,6 +71,11 @@ if (!$companies) {
     /* مودالِ جزئیاتِ درخواست پهن‌تر است تا چک‌لیستِ مدارک در یک ردیف جا شود */
     .modal-content.wide { max-width: 1100px; }
     /* چک‌لیستِ هر ردیف: خانه‌ها کنارِ هم پخش می‌شوند، نه زیرِ هم */
+    /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها (مثلاً فیلدهای مخصوصِ
+       الحاقیه و فسخ) به این کلاس وابسته است و اگر CDNِ Tailwind نیاید، بدون این
+       قاعده همه‌ی فیلدها با هم دیده می‌شوند. !important دارد تا ترتیبِ تزریقِ
+       استایلِ Tailwind در زمان اجرا هم مشکلی نسازد. */
+    .hidden { display: none !important; }
     .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; align-items: start; }
     .modal-overlay.active .modal-content { transform: scale(1); }
     .status-badge { font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; }
@@ -165,6 +170,15 @@ if (!$companies) {
         <?php else: ?>
         <input type="hidden" id="nr-company" value="<?php echo $companies[0]['id']; ?>">
         <?php endif; ?>
+        <div class="float-input">
+            <label>نوع درخواست</label>
+            <select id="nr-kind" onchange="onNrKindChange()">
+                <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
+                <option value="ENDORSEMENT">صدور الحاقیه</option>
+                <option value="CANCELLATION">فسخ بیمه‌نامه</option>
+            </select>
+            <p id="nr-kind-hint" class="text-[11px] text-slate-400 mt-1.5"></p>
+        </div>
         <div class="float-input">
             <label>بیمه‌گر</label>
             <select id="nr-insurer"></select>
@@ -308,6 +322,8 @@ function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openNewRequestModal() {
     document.getElementById('nr-plates-list').innerHTML = '';
+    document.getElementById('nr-kind').value = 'NEW_POLICY';
+    onNrKindChange();
     updateInsurerOptions();
     openModal('new-request-modal');
 }
@@ -330,7 +346,11 @@ async function loadRequests() {
         <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick="openRequestDetail(${r.id})">
             <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-sm">درخواست #${faNum(r.id)}${r.company_name ? ' - ' + r.company_name : ''}</span>
-                <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
+                <span class="flex items-center gap-1.5">
+                    ${r.request_kind && r.request_kind !== 'NEW_POLICY'
+                        ? `<span class="status-badge ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-600' : 'bg-rose-50 text-rose-600'}">${r.request_kind_fa}</span>` : ''}
+                    <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
+                </span>
             </div>
             <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
             <div class="flex flex-wrap gap-1 mt-2">
@@ -393,9 +413,36 @@ function addPlateRow(containerId) {
             <input class="plate-carvalue border rounded-lg p-2 text-xs hidden" placeholder="ارزش خودرو (ریال)" inputmode="numeric">
             <input class="plate-liability border rounded-lg p-2 text-xs" placeholder="سقف تعهد مالی (ریال)" inputmode="numeric">
         </div>
+        <input class="plate-refpolicy border rounded-lg p-2 text-xs w-full mt-1.5" placeholder="شماره بیمه‌نامه (اختیاری)" dir="ltr">
+        <input class="plate-endorse border rounded-lg p-2 text-xs w-full mt-1.5 hidden" placeholder="چه تغییری می‌خواهید؟ (خواسته‌ی الحاقیه)">
+        <select class="plate-cancelreason border rounded-lg p-2 text-xs w-full mt-1.5 hidden">
+            <option value="">دلیل فسخ را انتخاب کنید</option>
+            <?php foreach (company_cancellation_reasons() as $r): ?>
+            <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
+            <?php endforeach; ?>
+        </select>
     `;
     container.appendChild(row);
     togglePlateValueBox(row.querySelector('.plate-instype'));
+    applyKindToPlateRow(row);
+}
+
+// بسته به نوعِ درخواست، فقط فیلدهای مربوط به همان نوع در هر ردیف دیده می‌شوند
+function applyKindToPlateRow(row) {
+    const k = document.getElementById('nr-kind')?.value || 'NEW_POLICY';
+    row.querySelector('.plate-endorse').classList.toggle('hidden', k !== 'ENDORSEMENT');
+    row.querySelector('.plate-cancelreason').classList.toggle('hidden', k !== 'CANCELLATION');
+    row.querySelector('.plate-value-box').classList.toggle('hidden', k !== 'NEW_POLICY');
+}
+
+function onNrKindChange() {
+    const k = document.getElementById('nr-kind').value;
+    document.getElementById('nr-kind-hint').textContent = k === 'ENDORSEMENT'
+        ? 'برای هر خودرو، شماره‌ی بیمه‌نامه‌ی فعلی و تغییری که می‌خواهید را بنویسید.'
+        : (k === 'CANCELLATION'
+            ? 'برای هر خودرو، شماره‌ی بیمه‌نامه و دلیل فسخ را مشخص کنید.'
+            : 'صدور بیمه‌نامه‌ی جدید برای خودروهای این درخواست.');
+    document.querySelectorAll('#nr-plates-list .plate-row').forEach(applyKindToPlateRow);
 }
 
 // «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود
@@ -428,6 +475,9 @@ function collectPlateRows(containerId) {
         is_new_vehicle: row.querySelector('.plate-isnew')?.checked ? 1 : 0,
         car_value: (row.querySelector('.plate-carvalue')?.value || '').trim(),
         liability_limit: (row.querySelector('.plate-liability')?.value || '').trim(),
+        ref_policy_number: (row.querySelector('.plate-refpolicy')?.value || '').trim(),
+        endorsement_request: (row.querySelector('.plate-endorse')?.value || '').trim(),
+        cancellation_reason: (row.querySelector('.plate-cancelreason')?.value || '').trim(),
         insurance_type: row.querySelector('.plate-instype').value,
     // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
     })).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
@@ -447,6 +497,7 @@ async function submitNewRequest() {
     fd.append('action', 'submit_request');
     fd.append('company_id', document.getElementById('nr-company').value);
     fd.append('insurer', document.getElementById('nr-insurer').value);
+    fd.append('request_kind', document.getElementById('nr-kind').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
     fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list')));
     const fileInput = document.getElementById('nr-letter');
@@ -508,6 +559,7 @@ const PORTAL_DOC_TYPE_FA = {
     car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند',
     prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
     health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
+    policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
     other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست',
 };
 
@@ -565,6 +617,9 @@ async function openRequestDetail(id) {
             </div>
             ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
             ${p.engine_no ? `<p class="text-[10px] text-slate-400 mb-1" dir="ltr">شماره موتور: ${p.engine_no}</p>` : ''}
+            ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500 mb-1" dir="ltr">شماره بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
+            ${p.endorsement_request ? `<p class="text-[10px] text-violet-600 mb-1">خواسته: ${p.endorsement_request}</p>` : ''}
+            ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600 mb-1">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
             <div class="checklist-grid">${chips}</div>
             ${missing.length
                 ? `<p class="text-[10px] text-amber-600 mt-2"><i class="fas fa-triangle-exclamation ml-1"></i>مدارک ناموجود: ${missing.join('، ')}</p>`
@@ -583,7 +638,11 @@ async function openRequestDetail(id) {
             <div class="absolute -left-6 -top-6 w-28 h-28 bg-white/10 rounded-full"></div>
             <div class="absolute -left-2 -bottom-8 w-20 h-20 bg-white/10 rounded-full"></div>
             <div class="relative flex items-center justify-between mb-3">
-                <span class="status-badge bg-white/20 backdrop-blur-sm">${STATUS_FA[r.status] || r.status}</span>
+                <span class="flex items-center gap-1.5">
+                    <span class="status-badge bg-white/20 backdrop-blur-sm">${STATUS_FA[r.status] || r.status}</span>
+                    ${r.request_kind && r.request_kind !== 'NEW_POLICY'
+                        ? `<span class="status-badge bg-white/30">${r.request_kind_fa}</span>` : ''}
+                </span>
                 <span class="text-xs font-bold opacity-90">${INSURER_FA[r.insurer] ? 'بیمه ' + INSURER_FA[r.insurer] : ''}</span>
             </div>
             <p class="relative text-sm leading-relaxed font-bold">${r.request_text || '(بدون توضیح متنی)'}</p>
@@ -658,6 +717,9 @@ const DOC_TYPE_OPTIONS = [
     ['prev_body_policy', 'بیمه بدنه قبل'],
     ['health_inspection', 'بازدید سلامت (زیپ/عکس)'],
     ['health_report', 'گزارش بازدید'],
+    ['policy_doc', 'بیمه‌نامه (برای الحاقیه و فسخ)'],
+    ['new_car_card', 'کارت ماشین جدید (برای الحاقیه)'],
+    ['new_ownership_doc', 'سند جدید (برای الحاقیه)'],
     ['other', 'سایر مدارک'],
 ];
 

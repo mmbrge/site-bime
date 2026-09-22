@@ -11,6 +11,10 @@ require __DIR__ . '/_company_helpers.php';
 $session = require_company_portal_session($pdo);
 $allowedCompanyIds = $session['company_ids'];
 
+// اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
+$schemaProblem = company_schema_problem($pdo);
+if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem], JSON_UNESCAPED_UNICODE); exit; }
+
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
@@ -58,6 +62,7 @@ try {
             $r['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['updated_at']));
             foreach (['body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
+            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -73,6 +78,8 @@ try {
         if (!$request) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
         $request['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['created_at']));
         $request['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['updated_at']));
+        $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
+        $request['request_kind_fa'] = company_request_kind_fa($reqKind);
 
         // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به
         // ../undefined می‌خورد و کاربر نمی‌تواند فایلی که خودش فرستاده را ببیند
@@ -88,7 +95,8 @@ try {
         unset($d);
 
         $stmt = $pdo->prepare("SELECT id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
-                                       car_value, liability_limit, insurance_type, status, expiry_date,
+                                       car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
+                                       insurance_type, status, expiry_date,
                                        skip_health_inspection, has_prev_body, car_name, row_note, policy_number, issued_at,
                                        issued_file_path, issued_file_path IS NOT NULL AS has_issued_file
                                 FROM company_request_plates WHERE request_id = ? ORDER BY id");
@@ -101,8 +109,8 @@ try {
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $p['plate_display'] = company_row_label($p);
-            $p['status_fa'] = company_plate_status_fa($p['status']);
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body']);
+            $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind);
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -112,7 +120,7 @@ try {
             }
             unset($item);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body']);
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind);
             if ($p['expiry_date']) $p['expiry_date_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['expiry_date']));
             if ($p['issued_at']) $p['issued_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['issued_at']));
         }
@@ -126,7 +134,8 @@ try {
         }
 
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
-                          'counts' => $counts, 'doc_types' => company_doc_types()], JSON_UNESCAPED_UNICODE);
+                          'counts' => $counts, 'doc_types' => company_doc_types(),
+                          'request_kind' => $reqKind], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -263,8 +272,10 @@ try {
             exit;
         }
 
-        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, status) VALUES (?, ?, ?, ?, 'NEW')");
-        $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer]);
+        // نوعِ درخواست: صدور بیمه‌نامه‌ی جدید، صدور الحاقیه، یا فسخ بیمه‌نامه
+        $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
+        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, status) VALUES (?, ?, ?, ?, ?, 'NEW')");
+        $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind]);
         $requestId = $pdo->lastInsertId();
 
         // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز؛ برای هر پلاک هم نوع بیمه‌ی
@@ -276,8 +287,9 @@ try {
             // شماره شاسی. ارزش خودرو (بدنه) و سقف تعهد مالی (ثالث) هم همین‌جا گرفته می‌شود.
             $insPlate = $pdo->prepare("INSERT INTO company_request_plates
                 (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
-                 car_value, liability_limit, insurance_type, skip_health_inspection)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                 car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
+                 insurance_type, skip_health_inspection)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             foreach ($plates as $p) {
                 $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');
                 $pletter = trim($p['letter'] ?? ''); $pp4 = trim($p['p4'] ?? '');
@@ -288,6 +300,9 @@ try {
                 $insPlate->execute([$requestId, $pp1 ?: null, $pp2 ?: null, $pletter ?: null, $pp4 ?: null,
                                     $chassis ?: null, trim($p['engine_no'] ?? '') ?: null, $isNew,
                                     company_parse_money($p['car_value'] ?? ''), company_parse_money($p['liability_limit'] ?? ''),
+                                    trim($p['ref_policy_number'] ?? '') ?: null,
+                                    trim($p['endorsement_request'] ?? '') ?: null,
+                                    trim($p['cancellation_reason'] ?? '') ?: null,
                                     $pInsType, $isNew ? 1 : 0]);
             }
         }
