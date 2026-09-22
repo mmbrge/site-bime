@@ -307,6 +307,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <?php endif; ?>
 
+                <?php if ($canSeeCompanies): ?>
+                <!-- ===== صدور و صادره‌ها: لیست صدورِ شرکتی، و فهرست یکپارچه‌ی
+                     صادره‌های شرکتی و کارکنان ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-stamp ml-1"></i> صدور و صادره‌ها
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> لیست صدور</a>
+                        <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <!-- ===== حسابداری: همه‌ی مالی یک‌جا، «تنظیمات مالی» هم که قبلاً زیر «سامانه» بود
                      به همین‌جا آمد تا کنارِ بقیه‌ی مالی باشد (فقط مدیر کل می‌بیند) ===== -->
                 <div class="menu-group">
@@ -1456,6 +1471,120 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if ($canSeeCompanies): ?>
         <!-- ======================= تب درخواست‌های شرکتی ======================= -->
+        <!-- ======================= لیست صدور (شرکتی) ======================= -->
+        <div id="tab-issue-queue" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-check text-teal-500 ml-2"></i>لیست صدور</h1>
+                    <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند. با صدور هر ردیف، از این فهرست بیرون می‌رود.</p>
+                </div>
+                <button onclick="loadIssueQueue()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center"><p class="text-[11px] text-slate-500">کل ردیف‌ها</p><p id="iq-c-total" class="font-black text-xl text-slate-700">۰</p></div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><p class="text-[11px] text-emerald-700">آماده‌ی صدور</p><p id="iq-c-ready" class="font-black text-xl text-emerald-700">۰</p></div>
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center"><p class="text-[11px] text-amber-700">منتظر مدارک</p><p id="iq-c-waiting" class="font-black text-xl text-amber-700">۰</p></div>
+            </div>
+
+            <div class="card p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                <input type="search" id="iq-q" oninput="debouncedIssueQueue()" placeholder="جستجو..." class="border rounded-lg px-3 py-2 text-xs col-span-2">
+                <select id="iq-company" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="iq-readiness" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">آماده و غیرآماده</option>
+                    <option value="READY">فقط آماده‌ی صدور</option>
+                    <option value="WAITING">فقط منتظر مدارک</option>
+                </select>
+                <select id="iq-missing" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">کمبودِ هر مدرکی</option>
+                    <option value="car_card_or_title">کارت ماشین یا سند</option>
+                    <option value="prev_body_policy">بیمه بدنه قبل</option>
+                    <option value="health_inspection">بازدید سلامت</option>
+                    <option value="health_report">گزارش بازدید</option>
+                    <option value="policy_doc">بیمه‌نامه</option>
+                    <option value="new_car_card_or_title">کارت یا سند جدید</option>
+                </select>
+                <select id="iq-type" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
+                </select>
+                <select id="iq-kind" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">همه‌ی انواع درخواست</option>
+                    <option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option>
+                </select>
+                <select id="iq-stage" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">همه‌ی مرحله‌ها</option>
+                    <option value="PENDING">در انتظار مدارک</option><option value="READY_FOR_ISSUE">آماده‌ی صدور</option>
+                    <option value="WITH_BOSS">ارسال‌شده برای رئیس</option><option value="IN_ISSUANCE">در حال صدور</option>
+                </select>
+                <input type="text" id="iq-exp-from" oninput="debouncedIssueQueue()" placeholder="انقضا از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+                <input type="text" id="iq-exp-to" oninput="debouncedIssueQueue()" placeholder="انقضا تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+            </div>
+
+            <div class="card overflow-hidden">
+                <div class="overflow-x-auto max-h-[62vh]">
+                    <table class="w-full text-right text-xs">
+                        <thead class="bg-teal-50 text-teal-800 font-bold sticky top-0 z-10"><tr>
+                            <th class="p-3">#</th><th class="p-3">شرکت</th><th class="p-3">پلاک / شماره شاسی</th>
+                            <th class="p-3">نوع</th><th class="p-3">درخواست</th><th class="p-3">انقضا</th>
+                            <th class="p-3">مدارک</th><th class="p-3">مرحله</th><th class="p-3"></th>
+                        </tr></thead>
+                        <tbody id="iq-body"><tr><td colspan="9" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================= صادره‌ها (شرکتی + کارکنان) ======================= -->
+        <div id="tab-issued-list" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-file-circle-check text-emerald-500 ml-2"></i>صادره‌ها</h1>
+                    <p class="text-xs text-slate-400 mt-1">همه‌ی بیمه‌نامه‌های صادرشده - شرکتی و کارکنان - با همه‌ی اطلاعاتی که داریم.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="exportIssuedExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-file-excel ml-1"></i> خروجی اکسل</button>
+                    <button onclick="loadIssuedList()" class="bg-slate-100 text-slate-600 hover:bg-slate-200 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt"></i></button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center"><p class="text-[11px] text-slate-500">کل صادره</p><p id="il-c-total" class="font-black text-xl text-slate-700">۰</p></div>
+                <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center"><p class="text-[11px] text-indigo-700">شرکتی</p><p id="il-c-company" class="font-black text-xl text-indigo-700">۰</p></div>
+                <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><p class="text-[11px] text-blue-700">کارکنان</p><p id="il-c-personnel" class="font-black text-xl text-blue-700">۰</p></div>
+                <div class="bg-cyan-50 border border-cyan-200 rounded-xl p-3 text-center"><p class="text-[11px] text-cyan-700">بدنه / ثالث</p><p id="il-c-types" class="font-black text-xl text-cyan-700">۰ / ۰</p></div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><p class="text-[11px] text-emerald-700">جمع حق بیمه (ریال)</p><p id="il-c-premium" class="font-black text-lg text-emerald-700">۰</p></div>
+            </div>
+
+            <div class="card p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                <input type="search" id="il-q" oninput="debouncedIssuedList()" placeholder="جستجو در همه‌ی ستون‌ها..." class="border rounded-lg px-3 py-2 text-xs lg:col-span-2">
+                <select id="il-source" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="ALL">شرکتی و کارکنان</option>
+                    <option value="COMPANY">فقط شرکتی</option>
+                    <option value="PERSONNEL">فقط کارکنان</option>
+                </select>
+                <select id="il-type" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
+                </select>
+                <input type="text" id="il-from" oninput="debouncedIssuedList()" placeholder="صدور از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+                <input type="text" id="il-to" oninput="debouncedIssuedList()" placeholder="صدور تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+            </div>
+
+            <div class="card overflow-hidden">
+                <div class="overflow-x-auto max-h-[62vh]">
+                    <table class="w-full text-right text-xs whitespace-nowrap">
+                        <thead class="bg-emerald-50 text-emerald-800 font-bold sticky top-0 z-10"><tr>
+                            <th class="p-3">#</th><th class="p-3">منبع</th><th class="p-3">نوع درخواست</th>
+                            <th class="p-3">بیمه‌گذار</th><th class="p-3">شرکت</th><th class="p-3">پلاک / شاسی</th>
+                            <th class="p-3">نوع</th><th class="p-3">شماره بیمه‌نامه</th><th class="p-3">خودرو</th>
+                            <th class="p-3">حق بیمه</th><th class="p-3">تاریخ درخواست</th><th class="p-3">انقضا</th>
+                            <th class="p-3">تاریخ صدور</th><th class="p-3">وضعیت</th><th class="p-3">فایل</th>
+                        </tr></thead>
+                        <tbody id="il-body"><tr><td colspan="15" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">درخواست‌های بیمه‌ی شرکتی</h1>
@@ -1776,6 +1905,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="cis-vin" dir="ltr" placeholder=" "><label>شماره شاسی (VIN)</label></div>
             <div class="float-input"><input type="number" id="cis-premium" dir="ltr" placeholder=" "><label>حق بیمه (ریال)</label></div>
             <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
+        </div>
+    </div>
+
+    <!-- مودال جزئیاتِ یک ردیفِ لیست صدور -->
+    <div id="iq-detail-modal" class="modal-overlay">
+        <div class="modal-content creq-wide-modal p-6 relative max-h-[92vh] overflow-y-auto">
+            <button type="button" onclick="document.getElementById('iq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1">پرونده‌ی صدور</h3>
+            <p class="text-[11px] text-slate-400 mb-4">اطلاعات شرکت و ردیف، مدارک، و خودِ صدور - همه یک‌جا.</p>
+            <div id="iq-detail-body"></div>
+        </div>
+    </div>
+
+    <!-- مودال جزئیاتِ یک بیمه‌نامه‌ی صادرشده -->
+    <div id="il-detail-modal" class="modal-overlay">
+        <div class="modal-content creq-wide-modal p-6 relative max-h-[92vh] overflow-y-auto">
+            <button type="button" onclick="document.getElementById('il-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-4">جزئیات بیمه‌نامه‌ی صادرشده</h3>
+            <div id="il-detail-body"></div>
         </div>
     </div>
 
@@ -3602,6 +3750,316 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             openCompanyRequestDetail(requestId);
         }
 
+        // ===================== لیست صدور =====================
+        let issueQueueCache = [];
+        let iqTimer = null;
+        function debouncedIssueQueue() { clearTimeout(iqTimer); iqTimer = setTimeout(loadIssueQueue, 350); }
+
+        // کپیِ یک مقدار با یک کلیک - کارفرما خواسته بتواند اطلاعات را سریع بردارد
+        function copyValue(text, label) {
+            navigator.clipboard.writeText(String(text))
+                .then(() => showToast((label || 'مقدار') + ' کپی شد.', 'success'))
+                .catch(() => showToast('کپی نشد.', 'error'));
+        }
+        // یک «خانه‌ی اطلاعات» با دکمه‌ی کپی
+        function infoCell(label, value, opts = {}) {
+            if (value === null || value === undefined || value === '') return '';
+            const safe = String(value).replace(/'/g, "\\'");
+            return `<div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+                <p class="text-[9px] text-slate-400">${label}</p>
+                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${value}
+                    <button onclick="copyValue('${safe}', '${label}')" title="کپی ${label}" class="text-slate-300 hover:text-blue-500 mr-1">
+                        <i class="far fa-copy text-[10px]"></i></button>
+                </p></div>`;
+        }
+
+        // کشویِ «همه‌ی شرکت‌ها» یک‌بار پر می‌شود
+        let iqCompaniesLoaded = false;
+        async function loadIssueQueueCompanies() {
+            if (iqCompaniesLoaded) return;
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'list_companies'})})).json();
+                if (!data.ok) return;
+                const sel = document.getElementById('iq-company');
+                sel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>'
+                    + (data.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                iqCompaniesLoaded = true;
+            } catch (e) { /* بی‌خیال؛ فیلترِ شرکت اختیاری است */ }
+        }
+
+        async function loadIssueQueue() {
+            const tbody = document.getElementById('iq-body');
+            tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
+            const payload = {
+                action: 'issue_queue',
+                q: document.getElementById('iq-q').value.trim(),
+                company_id: document.getElementById('iq-company').value,
+                readiness: document.getElementById('iq-readiness').value,
+                missing_doc: document.getElementById('iq-missing').value,
+                insurance_type: document.getElementById('iq-type').value,
+                request_kind: document.getElementById('iq-kind').value,
+                stage: document.getElementById('iq-stage').value,
+                expiry_from: document.getElementById('iq-exp-from').value.trim(),
+                expiry_to: document.getElementById('iq-exp-to').value.trim(),
+            };
+            let data;
+            try {
+                data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+
+            issueQueueCache = data.rows || [];
+            document.getElementById('iq-c-total').textContent = e2pNum(data.counts.total);
+            document.getElementById('iq-c-ready').textContent = e2pNum(data.counts.ready);
+            document.getElementById('iq-c-waiting').textContent = e2pNum(data.counts.waiting);
+
+            if (!issueQueueCache.length) { tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400">ردیفی با این فیلترها پیدا نشد.</td></tr>'; return; }
+
+            tbody.innerHTML = issueQueueCache.map((r, i) => {
+                const missing = Object.values(r.missing_docs || {});
+                // رنگِ هشدارِ نزدیکیِ انقضا
+                const d = r.days_to_expiry;
+                const expCls = d === null ? 'text-slate-400' : (d < 0 ? 'text-red-600 font-bold' : (d <= 7 ? 'text-amber-600 font-bold' : 'text-slate-600'));
+                const expNote = d === null ? '' : (d < 0 ? `(${e2pNum(Math.abs(d))} روز گذشته)` : `(${e2pNum(d)} روز مانده)`);
+                return `
+                <tr class="border-t border-slate-100 hover:bg-teal-50/40 cursor-pointer" onclick="openIssueQueueDetail(${r.id})">
+                    <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
+                    <td class="p-3 font-bold">${r.company_name}</td>
+                    <td class="p-3">${rowIdentityHtml(r)}${r.car_name ? `<p class="text-[10px] text-slate-400">${r.car_name}</p>` : ''}</td>
+                    <td class="p-3">${r.insurance_type_fa}
+                        ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
+                    <td class="p-3 text-slate-500">${r.request_date_jalali}</td>
+                    <td class="p-3 ${expCls}">${r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : '—')}
+                        ${expNote ? `<span class="block text-[9px]">${expNote}</span>` : ''}</td>
+                    <td class="p-3">${r.is_ready
+                        ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">✓ مدارک کامل</span>'
+                        : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">کم دارد</span>
+                           <p class="text-[9px] text-amber-600 mt-1">${missing.join('، ')}</p>`}</td>
+                    <td class="p-3"><span class="status-badge ${ROW_STATUS_COLOR[r.status] || 'bg-slate-100 text-slate-600'} text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
+                    <td class="p-3"><span class="text-blue-600 font-bold">مشاهده و صدور</span></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openIssueQueueDetail(rowId) {
+            const r = issueQueueCache.find(x => String(x.id) === String(rowId));
+            if (!r) { showToast('ردیف پیدا نشد.', 'error'); return; }
+            // برای اینکه دکمه‌های آپلود و صدور همان توابع موجود را صدا بزنند
+            currentRequestId = r.request_id;
+            currentRequestKind = r.request_kind || 'NEW_POLICY';
+            currentRequestRows = [r];
+
+            const docsHtml = (r.all_docs || []).length
+                ? r.all_docs.map(d => `
+                    <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-lg p-2">
+                        <span class="text-[11px] font-bold text-slate-600">${d.label}</span>
+                        <span class="flex items-center gap-2">
+                            ${d.is_dir
+                                ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="text-blue-600 hover:underline text-[11px]">دانلود پوشه</a>`
+                                : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>`}
+                            <button onclick="rejectDocument(${d.id})" class="text-red-500 hover:underline text-[11px]">رد</button>
+                        </span>
+                    </div>`).join('')
+                : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این ردیف ثبت نشده.</p>';
+
+            const chips = (r.checklist || []).map(it => checklistChip(r, it, true)).join('');
+
+            document.getElementById('iq-detail-body').innerHTML = `
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building ml-1 text-slate-300"></i>شرکت درخواست‌دهنده</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('نام شرکت', r.company_name)}
+                            ${infoCell('کد اقتصادی', r.economic_code, {ltr: true})}
+                            ${infoCell('تلفن', r.company_phone, {ltr: true})}
+                            ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                        </div>
+                        ${r.company_address ? `<p class="text-[10px] text-slate-400 mt-2">${r.company_address}</p>` : ''}
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-file-lines ml-1 text-slate-300"></i>درخواست</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('شماره درخواست', '#' + e2pNum(r.request_id))}
+                            ${infoCell('نوع درخواست', r.request_kind_fa)}
+                            ${infoCell('تاریخ ثبت', r.request_date_jalali)}
+                            ${infoCell('مرحله', r.status_fa)}
+                        </div>
+                        ${r.request_text ? `<p class="text-[10px] text-slate-500 mt-2">${r.request_text}</p>` : ''}
+                        ${r.letter_file_path
+                            ? `<a href="../${r.letter_file_path}" target="_blank" class="inline-block mt-2 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg"><i class="fas fa-file-pdf ml-1"></i>نامه‌ی این درخواست</a>`
+                            : '<p class="text-[10px] text-amber-600 mt-2">نامه‌ای برای این درخواست ثبت نشده.</p>'}
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl p-3 mb-4">
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات این ردیف</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                        ${infoCell('پلاک / شماره شاسی', r.plate_display, {ltr: true})}
+                        ${infoCell('نوع بیمه', r.insurance_type_fa)}
+                        ${infoCell('تاریخ انقضا', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''))}
+                        ${infoCell('خودرو', r.car_name)}
+                        ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
+                        ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : '')}
+                        ${infoCell('تعهد مالی', r.liability_limit ? money(r.liability_limit) + ' ریال' : '')}
+                        ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
+                    </div>
+                    ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mt-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
+                    ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mt-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-list-check ml-1 text-slate-300"></i>چک‌لیست مدارک</h4>
+                        <div class="checklist-grid">${chips}</div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارک ثبت‌شده (تک‌به‌تک)</h4>
+                        <div class="space-y-1.5">${docsHtml}</div>
+                    </div>
+                </div>
+
+                <div class="border-2 ${r.is_ready ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'} rounded-xl p-3">
+                    <h4 class="text-xs font-bold ${r.is_ready ? 'text-emerald-700' : 'text-amber-700'} mb-2">
+                        <i class="fas fa-stamp ml-1"></i>${r.is_ready ? 'مدارک کامل است - آماده‌ی صدور' : 'هنوز مدارک کامل نیست'}</h4>
+                    ${!r.is_ready ? `<p class="text-[11px] text-amber-700 mb-2">کم دارد: ${Object.values(r.missing_docs).join('، ')}</p>` : ''}
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openMarkIssued(${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-check ml-1"></i>ثبت صدور</button>
+                        <button onclick="openRowEdit(${r.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">ویرایش اطلاعات ردیف</button>
+                        <button onclick="openCompanyRequestDetail(${r.request_id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن کلِ درخواست</button>
+                    </div>
+                </div>`;
+            document.getElementById('iq-detail-modal').classList.add('active');
+        }
+
+        // ===================== صادره‌ها =====================
+        let issuedListCache = [];
+        let ilTimer = null;
+        function debouncedIssuedList() { clearTimeout(ilTimer); ilTimer = setTimeout(loadIssuedList, 350); }
+
+        function issuedFilters() {
+            return {
+                q: document.getElementById('il-q').value.trim(),
+                source: document.getElementById('il-source').value,
+                insurance_type: document.getElementById('il-type').value,
+                issued_from: document.getElementById('il-from').value.trim(),
+                issued_to: document.getElementById('il-to').value.trim(),
+            };
+        }
+
+        async function loadIssuedList() {
+            const tbody = document.getElementById('il-body');
+            tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
+            let data;
+            try {
+                data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'issued_list', ...issuedFilters()})})).json();
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="15" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+
+            issuedListCache = data.rows || [];
+            const c = data.counts;
+            document.getElementById('il-c-total').textContent = e2pNum(c.total);
+            document.getElementById('il-c-company').textContent = e2pNum(c.company);
+            document.getElementById('il-c-personnel').textContent = e2pNum(c.personnel);
+            document.getElementById('il-c-types').textContent = e2pNum(c.body) + ' / ' + e2pNum(c.third);
+            document.getElementById('il-c-premium').textContent = money(c.premium);
+
+            if (!issuedListCache.length) { tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-slate-400">با این فیلترها بیمه‌نامه‌ای پیدا نشد.</td></tr>'; return; }
+
+            tbody.innerHTML = issuedListCache.map((r, i) => `
+                <tr class="border-t border-slate-100 hover:bg-emerald-50/40 cursor-pointer" onclick="openIssuedDetail(${i})">
+                    <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${r.source_fa}</span></td>
+                    <td class="p-3">${r.request_kind_fa}</td>
+                    <td class="p-3 font-bold">${r.insured_name || '—'}</td>
+                    <td class="p-3">${r.company_name || '—'}</td>
+                    <td class="p-3" dir="ltr">${r.plate || r.chassis_no || '—'}</td>
+                    <td class="p-3">${r.insurance_type_fa}</td>
+                    <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
+                    <td class="p-3">${r.car_name || '—'}</td>
+                    <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}</td>
+                    <td class="p-3 text-slate-500">${r.request_date_jalali || '—'}</td>
+                    <td class="p-3 text-slate-500">${r.expiry_date_jalali || '—'}</td>
+                    <td class="p-3 text-slate-500">${r.issued_at_jalali || '—'}</td>
+                    <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
+                    <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a>` : '<span class="text-slate-300">—</span>'}</td>
+                </tr>`).join('');
+        }
+
+        function openIssuedDetail(idx) {
+            const r = issuedListCache[idx];
+            if (!r) return;
+            document.getElementById('il-detail-body').innerHTML = `
+                <div class="flex items-center gap-2 mb-3 flex-wrap">
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${r.source_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">${r.request_kind_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌گذار و شرکت</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('بیمه‌گذار', r.insured_name)}
+                    ${infoCell('شرکت / کارفرما', r.company_name)}
+                    ${infoCell('کد ملی / اقتصادی', r.national_id, {ltr: true})}
+                    ${infoCell('تلفن', r.phone, {ltr: true})}
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌نامه</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('شماره بیمه‌نامه', r.policy_number, {ltr: true})}
+                    ${infoCell('نوع بیمه', r.insurance_type_fa)}
+                    ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                    ${infoCell('حق بیمه (ریال)', r.total_premium ? money(r.total_premium) : '')}
+                    ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
+                    ${infoCell('کد یکتای مرکزی', r.central_unique_code, {ltr: true})}
+                    ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
+                    ${infoCell('وضعیت بایگانی', r.folder_status === 'TRANSFERRED' ? 'منتقل شد' : (r.folder_status === 'FAILED' ? 'ناموفق' : ''))}
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">خودرو</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('پلاک', r.plate, {ltr: true})}
+                    ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
+                    ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
+                    ${infoCell('VIN', r.vin, {ltr: true})}
+                    ${infoCell('خودرو', r.car_name)}
+                    ${infoCell('سیستم', r.car_system)}
+                    ${infoCell('تیپ', r.car_type)}
+                    ${infoCell('مدل', r.car_model_year, {ltr: true})}
+                    ${infoCell('رنگ', r.car_color)}
+                    ${infoCell('کاربری', r.car_usage)}
+                    ${infoCell('ارزش خودرو (ریال)', r.car_value ? money(r.car_value) : '')}
+                    ${infoCell('تعهد مالی (ریال)', r.liability_limit ? money(r.liability_limit) : '')}
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">تاریخ‌ها و درخواست</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('تاریخ درخواست', r.request_date_jalali)}
+                    ${infoCell('تاریخ انقضا', r.expiry_date_jalali)}
+                    ${infoCell('تاریخ صدور', r.issued_at_jalali)}
+                    ${infoCell('تاریخ صدور روی بیمه‌نامه', r.policy_issue_date, {ltr: true})}
+                </div>
+                ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mb-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
+                ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mb-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
+                ${r.request_text ? `<p class="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mb-2">${r.request_text}</p>` : ''}
+
+                <div class="flex flex-wrap gap-2 mt-3">
+                    ${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-pdf ml-1"></i>مشاهده‌ی فایل بیمه‌نامه</a>` : ''}
+                    ${r.source === 'COMPANY' ? `<button onclick="openCompanyRequestDetail(${r.request_id}); document.getElementById('il-detail-modal').classList.remove('active');" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن درخواست و مدارکش</button>` : ''}
+                    ${r.source === 'COMPANY' ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.request_id}" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-zipper ml-1"></i>دانلود صادره‌های این درخواست</a>` : ''}
+                </div>`;
+            document.getElementById('il-detail-modal').classList.add('active');
+        }
+
+        // خروجی اکسل، دقیقاً با همان فیلترهایی که الان روی جدول اعمال شده
+        function exportIssuedExcel() {
+            const f = issuedFilters();
+            const qs = new URLSearchParams({action: 'issued_list', export: '1', ...f}).toString();
+            window.location.href = COMPANY_API + '?' + qs;
+            showToast('فایل اکسل در حال آماده‌سازی است...', 'success');
+        }
+
         const CINST_STATUS_FA = {0: 'وصول‌نشده', 1: 'تسویه با پاسارگاد'};
 
         function toggleCreqFinance(requestId) {
@@ -4381,6 +4839,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId.startsWith('fin-')) initFinance(tabId);
+            if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
+            if (tabId === 'issued-list') loadIssuedList();
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

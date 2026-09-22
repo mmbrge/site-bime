@@ -199,6 +199,264 @@ try {
         exit;
     }
 
+    // =================================================================
+    //  «لیست صدور»: همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند، از همه‌ی شرکت‌ها،
+    //  با اطلاعات کامل و وضعیتِ چک‌لیستِ هرکدام. ردیف پس از صدور خودبه‌خود از
+    //  این فهرست بیرون می‌رود (چون فقط status <> 'ISSUED' می‌آید).
+    // =================================================================
+    if ($action === 'issue_queue') {
+        $where = ["crp.status <> 'ISSUED'", "crp.status <> 'CANCELLED'"];
+        $params = [];
+
+        if (!empty($data['company_id']))     { $where[] = "cr.company_id = ?";   $params[] = intval($data['company_id']); }
+        if (!empty($data['insurance_type'])) { $where[] = "crp.insurance_type = ?"; $params[] = $data['insurance_type']; }
+        if (!empty($data['request_kind']))   { $where[] = "cr.request_kind = ?";  $params[] = $data['request_kind']; }
+        if (!empty($data['insurer']))        { $where[] = "cr.insurer = ?";       $params[] = $data['insurer']; }
+        if (!empty($data['stage']))          { $where[] = "crp.status = ?";       $params[] = $data['stage']; }
+
+        // بازه‌ی تاریخ انقضا (شمسی داده می‌شود، میلادی مقایسه می‌شود)
+        $expFrom = fin_jalali_to_date($data['expiry_from'] ?? '');
+        $expTo   = fin_jalali_to_date($data['expiry_to'] ?? '');
+        if ($expFrom) { $where[] = "crp.expiry_date >= ?"; $params[] = $expFrom; }
+        if ($expTo)   { $where[] = "crp.expiry_date <= ?"; $params[] = $expTo; }
+
+        $q = trim($data['q'] ?? '');
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $where[] = "(c.name LIKE ? OR crp.chassis_no LIKE ? OR crp.car_name LIKE ? OR crp.ref_policy_number LIKE ?
+                         OR CONCAT_WS(' ', crp.plate_p4, crp.plate_letter, crp.plate_p2, crp.plate_p1) LIKE ?
+                         OR cr.request_text LIKE ? OR cr.id = ?)";
+            array_push($params, $like, $like, $like, $like, $like, $like, intval($q));
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS request_created_at,
+                   cr.letter_file_path, c.name AS company_name, c.phone AS company_phone, c.economic_code, c.address AS company_address
+              FROM company_request_plates crp
+              JOIN company_requests cr ON cr.id = crp.request_id
+              JOIN companies c ON c.id = cr.company_id
+             WHERE " . implode(' AND ', $where) . "
+             ORDER BY crp.expiry_date IS NULL, crp.expiry_date ASC, crp.id ASC
+             LIMIT 1000");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+        if (!$rows) {
+            echo json_encode(['ok' => true, 'rows' => [], 'counts' => ['total' => 0, 'ready' => 0, 'waiting' => 0]], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        // مدارکِ تخصیص‌یافته‌ی همه‌ی این ردیف‌ها را یک‌جا می‌گیریم (نه یک کوئری به ازای هر ردیف)
+        $ids = array_column($rows, 'id');
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, orig_name, status FROM company_documents WHERE plate_id IN ($ph)");
+        $stmt->execute($ids);
+        $docsByPlate = [];
+        $siteRoot = dirname(__DIR__);
+        foreach ($stmt->fetchAll() as $d) {
+            $d['label'] = company_doc_type_label($d['doc_type']);
+            $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
+            $docsByPlate[$d['plate_id']][] = $d;
+        }
+
+        $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
+        $missingFilter = trim($data['missing_doc'] ?? '');
+        $out = []; $ready = 0; $waiting = 0;
+        foreach ($rows as $r) {
+            $rowDocs = array_values(array_filter($docsByPlate[$r['id']] ?? [], fn($d) => $d['status'] === 'ASSIGNED'));
+            $types = array_values(array_filter(array_column($rowDocs, 'doc_type')));
+            $kind = $r['request_kind'] ?? 'NEW_POLICY';
+
+            $r['checklist'] = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind);
+            foreach ($r['checklist'] as &$item) {
+                $item['docs'] = array_values(array_filter($rowDocs,
+                    fn($d) => in_array($d['doc_type'], $item['upload_types'], true) || $d['doc_type'] === $item['key']));
+            }
+            unset($item);
+            $r['missing_docs'] = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind);
+            $r['is_ready'] = empty($r['missing_docs']);
+            $r['all_docs'] = $rowDocs;
+
+            if ($readyFilter === 'READY' && !$r['is_ready']) continue;
+            if ($readyFilter === 'WAITING' && $r['is_ready']) continue;
+            if ($missingFilter !== '' && !array_key_exists($missingFilter, $r['missing_docs'])) continue;
+
+            $r['is_ready'] ? $ready++ : $waiting++;
+            $r['plate_display']       = company_row_label($r);
+            $r['status_fa']           = company_plate_status_fa($r['status'], $kind);
+            $r['request_kind_fa']     = company_request_kind_fa($kind);
+            $r['insurance_type_fa']   = insurance_type_fa($r['insurance_type']);
+            $r['expiry_date_jalali']  = $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null;
+            $r['request_date_jalali'] = jd(strtotime($r['request_created_at']));
+            $r['days_to_expiry']      = $r['expiry_date'] ? (int)floor((strtotime($r['expiry_date']) - strtotime('today')) / 86400) : null;
+            $out[] = $r;
+        }
+
+        echo json_encode(['ok' => true, 'rows' => $out,
+                          'counts' => ['total' => count($out), 'ready' => $ready, 'waiting' => $waiting],
+                          'doc_types' => company_doc_types()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // =================================================================
+    //  «صادره‌ها»: یک جدولِ یکپارچه از بیمه‌نامه‌های صادرشده‌ی شرکتی *و* پرسنلی.
+    //  با source می‌شود فقط شرکتی، فقط پرسنلی، یا هر دو را دید. همه‌ی اطلاعاتی
+    //  که داریم - از جمله چیزهایی که از خودِ فایل بیمه‌نامه شناسایی شده - می‌آید.
+    //  همین اکشن خروجی اکسل هم می‌دهد (export=1).
+    // =================================================================
+    if ($action === 'issued_list' || ($_GET['action'] ?? '') === 'issued_list') {
+        $src = $data['source'] ?? ($_GET['source'] ?? 'ALL');       // ALL | COMPANY | PERSONNEL
+        $q   = trim($data['q'] ?? ($_GET['q'] ?? ''));
+        $from = fin_jalali_to_date($data['issued_from'] ?? ($_GET['issued_from'] ?? ''));
+        $to   = fin_jalali_to_date($data['issued_to'] ?? ($_GET['issued_to'] ?? ''));
+        $typeF = $data['insurance_type'] ?? ($_GET['insurance_type'] ?? '');
+        $kindF = $data['request_kind'] ?? ($_GET['request_kind'] ?? '');
+        $isExport = !empty($data['export']) || !empty($_GET['export']);
+
+        $rows = [];
+
+        // ---------- صادره‌های شرکتی ----------
+        if ($src !== 'PERSONNEL') {
+            $w = ["crp.status = 'ISSUED'"]; $p = [];
+            if ($from)  { $w[] = "DATE(crp.issued_at) >= ?"; $p[] = $from; }
+            if ($to)    { $w[] = "DATE(crp.issued_at) <= ?"; $p[] = $to; }
+            if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
+            if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
+            $stmt = $pdo->prepare("
+                SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text,
+                       c.name AS company_name, c.economic_code, c.phone AS company_phone
+                  FROM company_request_plates crp
+                  JOIN company_requests cr ON cr.id = crp.request_id
+                  JOIN companies c ON c.id = cr.company_id
+                 WHERE " . implode(' AND ', $w) . " ORDER BY crp.issued_at DESC LIMIT 5000");
+            $stmt->execute($p);
+            foreach ($stmt->fetchAll() as $r) {
+                $kind = $r['request_kind'] ?? 'NEW_POLICY';
+                $rows[] = [
+                    'source' => 'COMPANY', 'source_fa' => 'شرکتی',
+                    'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']),
+                    'holder' => $r['company_name'], 'insured_name' => $r['company_name'],
+                    'national_id' => $r['economic_code'], 'phone' => $r['company_phone'],
+                    'company_name' => $r['company_name'],
+                    'plate' => company_row_label($r), 'chassis_no' => $r['chassis_no'], 'engine_no' => $r['engine_no'],
+                    'insurance_type' => $r['insurance_type'], 'insurance_type_fa' => insurance_type_fa($r['insurance_type']),
+                    'request_kind' => $kind, 'request_kind_fa' => company_request_kind_fa($kind),
+                    'request_text' => $r['request_text'], 'ref_policy_number' => $r['ref_policy_number'],
+                    'endorsement_request' => $r['endorsement_request'], 'cancellation_reason' => $r['cancellation_reason'],
+                    'policy_number' => $r['policy_number'], 'vin' => $r['vin'],
+                    'car_name' => $r['car_name'], 'car_system' => null, 'car_type' => null,
+                    'car_model_year' => null, 'car_color' => null, 'car_usage' => null,
+                    'car_value' => $r['car_value'], 'liability_limit' => $r['liability_limit'],
+                    'total_premium' => $r['total_premium'], 'insurer' => $r['insurer'],
+                    'request_date' => $r['request_created_at'], 'request_date_jalali' => jd(strtotime($r['request_created_at'])),
+                    'expiry_date_jalali' => $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null,
+                    'issued_at' => $r['issued_at'], 'issued_at_jalali' => $r['issued_at'] ? jd(strtotime($r['issued_at'])) : null,
+                    'status_fa' => company_plate_status_fa('ISSUED', $kind),
+                    'folder_status' => $r['folder_status'], 'issued_file_path' => $r['issued_file_path'],
+                ];
+            }
+        }
+
+        // ---------- صادره‌های پرسنلی ----------
+        if ($src !== 'COMPANY') {
+            $w = ["pc.status = 'ISSUED'"]; $p = [];
+            if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
+            if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
+            if ($typeF) { $w[] = "pc.insurance_type = ?";   $p[] = $typeF; }
+            // نوع درخواست برای پرسنلی همیشه «صدور بیمه‌نامه‌ی جدید» است
+            if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }
+            try {
+                $stmt = $pdo->prepare("
+                    SELECT pc.*, per.full_name AS holder_name, per.national_id AS holder_nid, per.mobile_number,
+                           co.name AS employer_name
+                      FROM policy_cases pc
+                      LEFT JOIN persons per ON per.id = pc.person_id
+                      LEFT JOIN companies co ON co.id = per.company_id
+                     WHERE " . implode(' AND ', $w) . " ORDER BY pc.issued_at DESC LIMIT 5000");
+                $stmt->execute($p);
+                foreach ($stmt->fetchAll() as $r) {
+                    $rows[] = [
+                        'source' => 'PERSONNEL', 'source_fa' => 'کارکنان',
+                        'row_id' => intval($r['id']), 'request_id' => intval($r['introduction_id'] ?? 0),
+                        'holder' => $r['holder_name'], 'insured_name' => $r['insured_name'] ?: $r['holder_name'],
+                        'national_id' => $r['insured_national_id'] ?: $r['holder_nid'], 'phone' => $r['ocr_phone'] ?: $r['mobile_number'],
+                        'company_name' => $r['employer_name'],
+                        'plate' => $r['plate'], 'chassis_no' => $r['chassis_num'], 'engine_no' => $r['engine_num'],
+                        'insurance_type' => $r['insurance_type'], 'insurance_type_fa' => insurance_type_fa($r['insurance_type']),
+                        'request_kind' => 'NEW_POLICY', 'request_kind_fa' => 'صدور بیمه‌نامه‌ی جدید',
+                        'request_text' => null, 'ref_policy_number' => null,
+                        'endorsement_request' => null, 'cancellation_reason' => null,
+                        'policy_number' => $r['policy_number'], 'vin' => $r['vin'],
+                        'car_name' => trim(($r['car_system'] ?? '') . ' ' . ($r['car_type'] ?? '')) ?: null,
+                        'car_system' => $r['car_system'], 'car_type' => $r['car_type'],
+                        'car_model_year' => $r['car_model_year'], 'car_color' => $r['car_color'], 'car_usage' => $r['car_usage'],
+                        'car_value' => $r['car_value'], 'liability_limit' => null,
+                        'total_premium' => $r['total_premium'], 'insurer' => 'PASARGAD',
+                        'request_date' => $r['created_at'], 'request_date_jalali' => jd(strtotime($r['created_at'])),
+                        'expiry_date_jalali' => null,
+                        'issued_at' => $r['issued_at'], 'issued_at_jalali' => $r['issued_at'] ? jd(strtotime($r['issued_at'])) : null,
+                        'status_fa' => 'صادر شد',
+                        'folder_status' => null, 'issued_file_path' => $r['issued_file_path'],
+                        'unique_code' => $r['unique_code'] ?? null, 'central_unique_code' => $r['central_unique_code'] ?? null,
+                        'policy_issue_date' => $r['policy_issue_date'] ?? null,
+                    ];
+                }
+            } catch (Throwable $e) { /* اگر ستونی نبود، دست‌کم شرکتی‌ها نمایش داده شوند */ }
+        }
+
+        // ---------- جستجوی آزاد روی همه‌ی ستون‌ها ----------
+        if ($q !== '') {
+            $needle = mb_strtolower(p2e_digits($q));
+            $rows = array_values(array_filter($rows, function ($r) use ($needle) {
+                foreach ($r as $v) {
+                    if ($v === null || is_array($v)) continue;
+                    if (mb_strpos(mb_strtolower(p2e_digits((string)$v)), $needle) !== false) return true;
+                }
+                return false;
+            }));
+        }
+
+        usort($rows, fn($a, $b) => strcmp((string)$b['issued_at'], (string)$a['issued_at']));
+
+        // ---------- شمارش‌ها روی همین فیلترها ----------
+        $counts = ['total' => count($rows), 'company' => 0, 'personnel' => 0, 'body' => 0, 'third' => 0, 'premium' => 0];
+        foreach ($rows as $r) {
+            $r['source'] === 'COMPANY' ? $counts['company']++ : $counts['personnel']++;
+            $r['insurance_type'] === 'BODY' ? $counts['body']++ : $counts['third']++;
+            $counts['premium'] += intval($r['total_premium']);
+        }
+
+        // ---------- خروجی اکسل ----------
+        if ($isExport) {
+            require_once __DIR__ . '/_xlsx_writer.php';
+            $headers = ['ردیف', 'منبع', 'نوع درخواست', 'شرکت / کارفرما', 'بیمه‌گذار', 'کد ملی / اقتصادی', 'تلفن',
+                        'پلاک', 'شماره شاسی', 'شماره موتور', 'نوع بیمه', 'بیمه‌گر', 'شماره بیمه‌نامه',
+                        'شماره بیمه‌نامه مرجع', 'خودرو', 'سیستم', 'تیپ', 'مدل', 'رنگ', 'کاربری', 'VIN',
+                        'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'حق بیمه (ریال)',
+                        'تاریخ درخواست', 'تاریخ انقضا', 'تاریخ صدور', 'وضعیت', 'توضیح درخواست'];
+            $out = [];
+            foreach ($rows as $i => $r) {
+                $out[] = [
+                    $i + 1, $r['source_fa'], $r['request_kind_fa'], $r['company_name'], $r['insured_name'],
+                    $r['national_id'], $r['phone'], $r['plate'], $r['chassis_no'], $r['engine_no'],
+                    $r['insurance_type_fa'], ($r['insurer'] === 'IRAN' ? 'ایران' : 'پاسارگاد'),
+                    $r['policy_number'], $r['ref_policy_number'], $r['car_name'], $r['car_system'], $r['car_type'],
+                    $r['car_model_year'], $r['car_color'], $r['car_usage'], $r['vin'],
+                    $r['car_value'], $r['liability_limit'], $r['total_premium'],
+                    $r['request_date_jalali'], $r['expiry_date_jalali'], $r['issued_at_jalali'], $r['status_fa'],
+                    $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
+                ];
+            }
+            $rangeFa = ($data['issued_from'] ?? ($_GET['issued_from'] ?? '')) ?: 'ابتدا';
+            $rangeTo = ($data['issued_to'] ?? ($_GET['issued_to'] ?? '')) ?: 'امروز';
+            $path = xlsx_build($headers, $out, 'صادره‌ها', [0, 21, 22, 23]);
+            xlsx_send($path, 'بیمه‌نامه‌های صادره ' . $rangeFa . ' تا ' . $rangeTo . '.xlsx');
+            exit;
+        }
+
+        echo json_encode(['ok' => true, 'rows' => $rows, 'counts' => $counts], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- گروه‌های بله‌ای که ربات دیده (برای انتخابگر «گروه مرتبط با شرکت») ----
     if ($action === 'list_bot_groups') {
         $stmt = $pdo->query("SELECT chat_id, title FROM bot_known_groups ORDER BY last_seen_at DESC LIMIT 200");
