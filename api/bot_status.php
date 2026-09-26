@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // ۲. درخواست روشن/خاموش کردن ربات از پنل
         if ($action === 'toggle_power') {
             session_start();
-            if (!isset($_SESSION['user_id'])) {
+            if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
                 echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
                 exit;
             }

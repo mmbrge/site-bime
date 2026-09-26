@@ -142,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <!-- پیکربندی Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
+        if (window.tailwind) tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: { sans: ['Vazir', 'sans-serif'], },
@@ -640,6 +640,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // ۴. ذرات پس‌زمینه
         window.addEventListener('load', () => {
+            if (!window.tsParticles) return; // CDN نیامد؛ پس‌زمینه‌ی ذره‌ای اختیاری است
             tsParticles.load("tsparticles", {
                 fullScreen: { enable: false },
                 particles: {

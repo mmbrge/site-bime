@@ -494,7 +494,7 @@ try {
             if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }
             try {
                 $stmt = $pdo->prepare("
-                    SELECT pc.*, per.full_name AS holder_name, per.national_id AS holder_nid, per.mobile_number,
+                    SELECT pc.*, per.full_name AS holder_name, per.national_code AS holder_nid, per.mobile_number,
                            co.name AS employer_name
                       FROM policy_cases pc
                       LEFT JOIN persons per ON per.id = pc.person_id
@@ -743,7 +743,8 @@ try {
                               FROM company_portal_users cpu
                               LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
                               LEFT JOIN companies c ON c.id = cpuc.company_id
-                              GROUP BY cpu.id ORDER BY cpu.created_at DESC");
+                              GROUP BY cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at
+                              ORDER BY cpu.created_at DESC");
         echo json_encode(['ok' => true, 'users' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;
     }

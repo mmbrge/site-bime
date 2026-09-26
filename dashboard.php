@@ -272,7 +272,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
+                <?php if (!$isLiaison): ?>
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
+                <?php endif; ?>
 
                 <?php if (!$isLiaison): ?>
                 <!-- ===== عملیات بیمه: خطِ کارِ پرسنلی، از پرونده تا صدور ===== -->
@@ -2659,9 +2661,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
+        <?php if (!$isLiaison): ?>
+        // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» به این بخش دسترسی ندارد
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
         loadStats();
+        <?php endif; ?>
         <?php if ($canSeeCompanies): ?>
         loadCompanyInbox();
         setInterval(loadCompanyInbox, 30000);
@@ -7552,6 +7557,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         window.addEventListener('load', () => {
+            // اگر CDNِ tsParticles نیامد (شبکه‌ی ضعیف)، بی‌صدا رد شو؛ خطایش نباید چیزی را خراب کند
+            if (!window.tsParticles || !document.getElementById('tsparticles')) return;
             tsParticles.load("tsparticles", {
                 fullScreen: { enable: false },
                 particles: { number: { value: 30 }, color: { value: "#ffffff" }, opacity: { value: 0.5, random: true }, size: { value: 3 }, links: { enable: true, distance: 150, color: "#ffffff", opacity: 0.3 }, move: { enable: true, speed: 1 } }

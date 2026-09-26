@@ -8,10 +8,23 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// «همکار شرکت‌ها» (COMPANY_LIAISON) فقط به شرکت‌ها، بایگانی و مالی دسترسی دارد؛
+// منوی این بخش برایش پنهان است و اینجا هم مستقیم جلویش گرفته می‌شود.
+if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $data = json_decode(file_get_contents('php://input'), true);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $data['action'] ?? '';
+    // تغییرِ توکن ربات و تنظیمات فقط کارِ مدیر است (صفحه‌ی تنظیمات هم فقط برای مدیر است)
+    if (($_SESSION['role'] ?? '') !== 'ADMIN') {
+        echo json_encode(['ok' => false, 'error' => 'فقط مدیر دسترسی دارد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     
     // عملیات ذخیره توکن ربات
     if ($action === 'save_token') {

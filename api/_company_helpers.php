@@ -372,7 +372,7 @@ function company_letter_filename($companyName, $requestCreatedTs, $typesFa, $ext
 
 // نوع(های) بیمه‌ی یک درخواست به فارسی: «بدنه»، «ثالث» یا «بدنه و ثالث»
 function company_request_types_fa($pdo, $requestId) {
-    $stmt = $pdo->prepare("SELECT cr.request_kind, GROUP_CONCAT(DISTINCT crp.insurance_type) AS types
+    $stmt = $pdo->prepare("SELECT MAX(cr.request_kind) AS request_kind, GROUP_CONCAT(DISTINCT crp.insurance_type) AS types
                              FROM company_requests cr
                              LEFT JOIN company_request_plates crp ON crp.request_id = cr.id
                             WHERE cr.id = ? GROUP BY cr.id");

@@ -9,10 +9,25 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// «همکار شرکت‌ها» (COMPANY_LIAISON) فقط به شرکت‌ها، بایگانی و مالی دسترسی دارد؛
+// منوی این بخش برایش پنهان است و اینجا هم مستقیم جلویش گرفته می‌شود.
+if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $data = json_decode(file_get_contents('php://input'), true);
 $action = $_GET['action'] ?? ($data['action'] ?? '');
 
 require_once __DIR__ . '/otp_core.php';
+
+// تغییرِ هر تنظیمی فقط کارِ مدیر است (قبلاً save_quota / save_site_url / save_admin_chat_id /
+// save_premium_settings برای هر کاربرِ واردشده‌ای باز بود)
+if (strpos($action, 'save_') === 0 && ($_SESSION['role'] ?? '') !== 'ADMIN') {
+    echo json_encode(['ok' => false, 'error' => 'فقط مدیر دسترسی دارد.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 try {
     // =================================================================
