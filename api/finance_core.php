@@ -913,10 +913,18 @@ function fin_build_docx_table($kind, array $rows) {
 // تبدیل تاریخ شمسی «۱۴۰۵/۰۶/۲۱» به تاریخ میلادیِ Y-m-d برای ذخیره در ستون DATE
 function fin_jalali_to_date($s) {
     $s = (string)$s;
-    $fa = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
-    $s = str_replace($fa, ['0','1','2','3','4','5','6','7','8','9'], $s);
+    $en = ['0','1','2','3','4','5','6','7','8','9'];
+    $s = str_replace(['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'], $en, $s);
+    $s = str_replace(['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'], $en, $s);
     if (!preg_match('/(\d{4})\D(\d{1,2})\D(\d{1,2})/', $s, $m)) return null;
     return date('Y-m-d', jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])));
+}
+
+// [سال، ماه، روز]ِ شمسی از رشته‌ای که کاربر تایپ کرده (رقم فارسی/عربی/لاتین، هر جداکننده‌ای).
+// اگر خالی یا نامعتبر بود، امروز. (قبلاً intval روی رقم فارسی صفر می‌داد و فیش در دوره‌ی «سال ۰» می‌نشست.)
+function fin_jalali_parts($s) {
+    $d = fin_jalali_to_date($s);
+    return jalali_from_gregorian_ts($d ? strtotime($d) : time());
 }
 
 // اعتبارسنجی نوع صورتحساب (سه نوع پشتیبانی می‌شود)

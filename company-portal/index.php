@@ -71,11 +71,12 @@ if (!$companies) {
     /* مودالِ جزئیاتِ درخواست پهن‌تر است تا چک‌لیستِ مدارک در یک ردیف جا شود */
     .modal-content.wide { max-width: 1100px; }
     /* چک‌لیستِ هر ردیف: خانه‌ها کنارِ هم پخش می‌شوند، نه زیرِ هم */
-    /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها (مثلاً فیلدهای مخصوصِ
-       الحاقیه و فسخ) به این کلاس وابسته است و اگر CDNِ Tailwind نیاید، بدون این
-       قاعده همه‌ی فیلدها با هم دیده می‌شوند. !important دارد تا ترتیبِ تزریقِ
-       استایلِ Tailwind در زمان اجرا هم مشکلی نسازد. */
-    .hidden { display: none !important; }
+    /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها به این کلاس وابسته است و اگر
+       CDNِ Tailwind نیاید، بدون این قاعده همه‌ی فیلدها با هم دیده می‌شوند.
+       مهم: المان‌هایی که «hidden» را با یک نمایشِ واکنش‌گرا جفت کرده‌اند (مثلاً منوی
+       اصلی: hidden lg:flex) از این قاعده بیرون‌اند؛ وگرنه !important جلوی lg:flex را
+       می‌گیرد و منو در دسکتاپ اصلاً دیده نمی‌شود. آن‌ها را خودِ Tailwind مدیریت می‌کند. */
+    .hidden:not([class~="sm:flex"], [class~="sm:inline-flex"], [class~="sm:block"], [class~="sm:inline-block"], [class~="sm:inline"], [class~="sm:grid"], [class~="sm:inline-grid"], [class~="sm:table"], [class~="sm:table-cell"], [class~="sm:table-row"], [class~="sm:contents"], [class~="md:flex"], [class~="md:inline-flex"], [class~="md:block"], [class~="md:inline-block"], [class~="md:inline"], [class~="md:grid"], [class~="md:inline-grid"], [class~="md:table"], [class~="md:table-cell"], [class~="md:table-row"], [class~="md:contents"], [class~="lg:flex"], [class~="lg:inline-flex"], [class~="lg:block"], [class~="lg:inline-block"], [class~="lg:inline"], [class~="lg:grid"], [class~="lg:inline-grid"], [class~="lg:table"], [class~="lg:table-cell"], [class~="lg:table-row"], [class~="lg:contents"], [class~="xl:flex"], [class~="xl:inline-flex"], [class~="xl:block"], [class~="xl:inline-block"], [class~="xl:inline"], [class~="xl:grid"], [class~="xl:inline-grid"], [class~="xl:table"], [class~="xl:table-cell"], [class~="xl:table-row"], [class~="xl:contents"], [class~="2xl:flex"], [class~="2xl:inline-flex"], [class~="2xl:block"], [class~="2xl:inline-block"], [class~="2xl:inline"], [class~="2xl:grid"], [class~="2xl:inline-grid"], [class~="2xl:table"], [class~="2xl:table-cell"], [class~="2xl:table-row"], [class~="2xl:contents"]) { display: none !important; }
     .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; align-items: start; }
     .modal-overlay.active .modal-content { transform: scale(1); }
     .status-badge { font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; }
@@ -357,7 +358,7 @@ async function loadRequests() {
                 ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${faNum(r.body_count)} درخواستی / ${faNum(r.body_issued)} صادره</span>` : ''}
                 ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${faNum(r.third_count)} درخواستی / ${faNum(r.third_issued)} صادره</span>` : ''}
             </div>
-            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
+            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${faNum(r.created_at_jalali)} · آخرین ویرایش: ${faNum(r.updated_at_jalali)}</p>
         </div>
     `).join('');
 }
@@ -588,7 +589,7 @@ async function openRequestDetail(id) {
                 <div class="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors"><i class="fas ${icon} ${color}"></i></div>
                 <div class="min-w-0">
                     <span class="text-xs font-bold text-slate-700 truncate block">${d.orig_name || 'فایل'}</span>
-                    <span class="text-[10px] text-slate-400">${d.doc_type_label || ''}${d.uploaded_at_jalali ? ' · ' + d.uploaded_at_jalali : ''}</span>
+                    <span class="text-[10px] text-slate-400">${d.doc_type_label || ''}${faNum(d.uploaded_at_jalali) ? ' · ' + faNum(d.uploaded_at_jalali) : ''}</span>
                 </div>
             </div>
             <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${assigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}">${assigned ? '✓ بررسی‌شده' : 'در انتظار بررسی'}</span>
@@ -608,7 +609,7 @@ async function openRequestDetail(id) {
                         ? `<div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateHtml(p)}</div>`
                         : `<div class="border-2 border-dashed border-slate-400 rounded-md px-2.5 py-1 font-black text-xs text-slate-600" dir="ltr" title="شماره شاسی">${p.chassis_no || 'بدون شناسه'}</div>`}
                     <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
-                    ${p.expiry_date_jalali ? `<span class="text-[10px] text-slate-400">انقضا: ${p.expiry_date_jalali}</span>`
+                    ${faNum(p.expiry_date_jalali) ? `<span class="text-[10px] text-slate-400">انقضا: ${faNum(p.expiry_date_jalali)}</span>`
                         : (Number(p.is_new_vehicle) ? '<span class="text-[10px] text-slate-400">صفر کیلومتر</span>' : '')}
                     ${p.insurance_type === 'BODY' && p.car_value ? `<span class="text-[10px] text-slate-500">ارزش: ${faMoney(p.car_value)}</span>` : ''}
                     ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<span class="text-[10px] text-slate-500">تعهد: ${faMoney(p.liability_limit)}</span>` : ''}
@@ -626,7 +627,7 @@ async function openRequestDetail(id) {
                 : '<p class="text-[10px] text-emerald-600 mt-2"><i class="fas fa-check ml-1"></i>مدارک این ردیف کامل است</p>'}
             ${p.status === 'ISSUED' ? `
                 <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                    <span class="text-[10px] text-slate-500">${p.policy_number ? 'شماره بیمه‌نامه: ' + p.policy_number : ''}${p.issued_at_jalali ? ' · ' + p.issued_at_jalali : ''}</span>
+                    <span class="text-[10px] text-slate-500">${p.policy_number ? 'شماره بیمه‌نامه: ' + p.policy_number : ''}${faNum(p.issued_at_jalali) ? ' · ' + faNum(p.issued_at_jalali) : ''}</span>
                     ${p.has_issued_file ? `<a href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${p.id}"
                         class="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded-lg">دانلود بیمه‌نامه</a>` : ''}
                 </div>` : ''}
@@ -647,8 +648,8 @@ async function openRequestDetail(id) {
             </div>
             <p class="relative text-sm leading-relaxed font-bold">${r.request_text || '(بدون توضیح متنی)'}</p>
             <div class="relative flex gap-4 mt-3 text-[10.5px] opacity-80">
-                <span><i class="far fa-calendar-plus ml-1"></i>ثبت: ${r.created_at_jalali}</span>
-                <span><i class="far fa-clock ml-1"></i>ویرایش: ${r.updated_at_jalali}</span>
+                <span><i class="far fa-calendar-plus ml-1"></i>ثبت: ${faNum(r.created_at_jalali)}</span>
+                <span><i class="far fa-clock ml-1"></i>ویرایش: ${faNum(r.updated_at_jalali)}</span>
             </div>
         </div>
 

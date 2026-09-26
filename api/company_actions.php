@@ -402,7 +402,8 @@ try {
                         'request_text' => null, 'insurer' => 'PASARGAD',
                         'unique_code' => $c['unique_code'] ?? null,
                         'letter_file_path' => $c['intro_file_path'] ?? null,
-                        'letter_date_jalali' => !empty($c['letter_date']) ? jd(strtotime($c['letter_date'])) : null,
+                        // introductions.letter_date خودش شمسی است (مثلاً 1405-06-10 در ستون DATE)؛ تبدیل نمی‌خواهد
+                        'letter_date_jalali' => !empty($c['letter_date']) ? str_replace('-', '.', $c['letter_date']) : null,
                         'quota' => (isset($c['max_quota']) ? (intval($c['used_quota']) . ' از ' . intval($c['max_quota'])) : null),
                         'expiry_date' => null, 'expiry_date_jalali' => null, 'days_to_expiry' => null,
                         'request_created_at' => $c['created_at'], 'request_date_jalali' => jd(strtotime($c['created_at'])),
@@ -569,13 +570,15 @@ try {
                     $r['policy_number'], $r['ref_policy_number'], $r['car_name'], $r['car_system'], $r['car_type'],
                     $r['car_model_year'], $r['car_color'], $r['car_usage'], $r['vin'],
                     $r['car_value'], $r['liability_limit'], $r['total_premium'],
-                    $r['request_date_jalali'], $r['expiry_date_jalali'], $r['issued_at_jalali'], $r['status_fa'],
+                    fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits($r['issued_at_jalali']), $r['status_fa'],
                     $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
                 ];
             }
             $rangeFa = ($data['issued_from'] ?? ($_GET['issued_from'] ?? '')) ?: 'ابتدا';
             $rangeTo = ($data['issued_to'] ?? ($_GET['issued_to'] ?? '')) ?: 'امروز';
             $path = xlsx_build($headers, $out, 'صادره‌ها', [0, 21, 22, 23]);
+            // اسمِ فایل نمی‌تواند «/» داشته باشد؛ تاریخ‌ها با خط تیره و رقم فارسی
+            $rangeFa = fa_digits(str_replace('/', '-', $rangeFa)); $rangeTo = fa_digits(str_replace('/', '-', $rangeTo));
             xlsx_send($path, 'بیمه‌نامه‌های صادره ' . $rangeFa . ' تا ' . $rangeTo . '.xlsx');
             exit;
         }
@@ -1050,7 +1053,9 @@ try {
         $docType = trim($data['doc_type'] ?? '');
         $p1 = trim($data['plate_p1'] ?? ''); $p2 = trim($data['plate_p2'] ?? '');
         $letter = trim($data['plate_letter'] ?? ''); $p4 = trim($data['plate_p4'] ?? '');
+        // تاریخ انقضا شمسی وارد می‌شود (با رقم فارسی یا لاتین)؛ پیش از ذخیره میلادی می‌شود
         $expiryDate = trim($data['expiry_date'] ?? '') ?: null;
+        if ($expiryDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryDate)) $expiryDate = fin_jalali_to_date($expiryDate);
         $insuranceType = in_array($data['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $data['insurance_type'] : null;
         $skipHealth = !empty($data['skip_health_inspection']) ? 1 : 0;
 

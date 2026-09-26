@@ -539,7 +539,10 @@ try {
         $carColor = trim($data['car_color'] ?? '');
         $carUsage = trim($data['car_usage'] ?? '');
         $ocrPhone = trim($data['phone'] ?? '');
-        $policyIssueDate = trim($data['issue_date'] ?? '');
+        // تاریخ صدورِ روی بیمه‌نامه شمسی است؛ رقمش را لاتین ذخیره می‌کنیم تا همه‌جا یکدست باشد (نمایش با رقم فارسی است)
+        $policyIssueDate = str_replace(['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹','٠','١','٢','٣','٤','٥','٦','٧','٨','٩'],
+                                       ['0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9'],
+                                       trim($data['issue_date'] ?? ''));
         $carValue = !empty($data['car_value']) ? intval(preg_replace('/\D/', '', $data['car_value'])) : null;
 
         $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");

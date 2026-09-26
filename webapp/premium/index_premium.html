@@ -468,7 +468,7 @@ function updateLiveSummary() {
     let html = `🚗 خودرو: <b>${carText}</b><br>📅 سال ساخت: <b>${yearText}</b><br>🛡 سقف تعهد: <b>${tierText}</b><br>`;
     if (!hasPrevPolicy) {
         const pdate = document.getElementById('purchase-date').value || 'وارد نشده';
-        html += `📋 سابقه: <b>خودرو صفر کیلومتر (تخفیف صفر کیلومتر ۵٪)</b><br>📅 تاریخ خرید: <b>${pdate}</b>`;
+        html += `📋 سابقه: <b>خودرو صفر کیلومتر (تخفیف صفر کیلومتر ۵٪)</b><br>📅 تاریخ خرید: <b>${toFa(pdate)}</b>`;
     } else {
         const tpY = parseInt(document.getElementById('tp-years').value)||0;
         const tpM = parseInt(document.getElementById('tp-mali').value)||0;

@@ -639,8 +639,7 @@ try {
         // فیش‌ها - در پوشه‌ی سال/ماه/شرکت/«فیش‌های کارگزاری» (هم‌ساختار با پوشه‌ی صورتحساب‌ها)
         $receipts = [];
         if (!empty($_FILES['receipts'])) {
-            $paidJalaliParts = array_map('intval', explode('/', str_replace('-', '/', trim($_POST['paid_jalali'] ?? ''))));
-            [$py, $pm, $pd] = $paidJalaliParts + [0 => intval(date('Y')) - 621, 1 => 1, 2 => 1];
+            [$py, $pm, $pd] = fin_jalali_parts($_POST['paid_jalali'] ?? '');
             $period = fin_resolve_period_for_date($pdo, $py, $pm, $pd);
             $stmtCompanyName = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
             $stmtCompanyName->execute([$companyId]);
@@ -803,8 +802,7 @@ try {
 
         $receipts = [];
         if (!empty($_FILES['pasargad_receipts'])) {
-            $paidJalaliParts = array_map('intval', explode('/', str_replace('-', '/', trim($_POST['paid_jalali'] ?? ''))));
-            [$py, $pm, $pd] = $paidJalaliParts + [0 => intval(date('Y')) - 621, 1 => 1, 2 => 1];
+            [$py, $pm, $pd] = fin_jalali_parts($_POST['paid_jalali'] ?? '');
             $period = fin_resolve_period_for_date($pdo, $py, $pm, $pd);
             $companyName = null;
             if ($companyId) {

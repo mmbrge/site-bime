@@ -154,7 +154,9 @@ function xlsx_send($path, $downloadName) {
         return;
     }
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . str_replace('"', '', $downloadName) . '"');
+    // اسمِ فارسی: filename* (RFC 5987) تا همه‌ی مرورگرها درست نشانش بدهند، و یک اسمِ لاتینِ پشتیبان
+    $name = str_replace(['"', '/', '\\'], ['', '-', '-'], $downloadName);
+    header("Content-Disposition: attachment; filename=\"report.xlsx\"; filename*=UTF-8''" . rawurlencode($name));
     header('Content-Length: ' . filesize($path));
     readfile($path);
     @unlink($path);

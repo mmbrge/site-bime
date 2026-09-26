@@ -215,7 +215,11 @@ try {
             }
 
             // letter_date به شکل جلالی «۱۴۰۵/۱۲/۰۶» می‌آید؛ فقط جداکننده را برای ستون DATE عوض می‌کنیم
-            $letter_date_sql = $letter_date !== '' ? str_replace('/', '-', $letter_date) : null;
+            // رقم فارسی/عربی را لاتین می‌کنیم وگرنه ستون DATE آن را رد می‌کند
+            $ld = str_replace(['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹','٠','١','٢','٣','٤','٥','٦','٧','٨','٩'],
+                              ['0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9'], $letter_date);
+            $letter_date_sql = preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $ldm)
+                ? sprintf('%04d-%02d-%02d', $ldm[1], $ldm[2], $ldm[3]) : null;
 
             // سقف سهمیه از تنظیمات پنل خوانده می‌شود (پیش‌فرض ۴، ولی قابل تغییر است)
             $quotaStmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'default_intro_quota'");

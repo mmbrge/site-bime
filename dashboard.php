@@ -175,11 +175,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         /* چک‌لیستِ مدارکِ هر ردیف: خانه‌ها کنارِ هم و در یک ردیف پخش می‌شوند، نه
            زیر هم. عرضِ خانه‌ها با auto-fit تنظیم می‌شود تا در پنجره‌ی پهن چند‌تایی
            در یک سطر جا بگیرند و در پنجره‌ی باریک خودشان بشکنند. */
-        /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها (مثلاً فیلدهای مخصوصِ
-           الحاقیه و فسخ) به این کلاس وابسته است و اگر CDNِ Tailwind نیاید، بدون این
-           قاعده همه‌ی فیلدها با هم دیده می‌شوند. !important دارد تا ترتیبِ تزریقِ
-           استایلِ Tailwind در زمان اجرا هم مشکلی نسازد. */
-        .hidden { display: none !important; }
+        /* پشتیبانِ محلیِ .hidden: نشان‌دادن/پنهان‌کردنِ فیلدها به این کلاس وابسته است و اگر
+           CDNِ Tailwind نیاید، بدون این قاعده همه‌ی فیلدها با هم دیده می‌شوند.
+           مهم: المان‌هایی که «hidden» را با یک نمایشِ واکنش‌گرا جفت کرده‌اند (مثلاً منوی
+           اصلی: hidden lg:flex) از این قاعده بیرون‌اند؛ وگرنه !important جلوی lg:flex را
+           می‌گیرد و منو در دسکتاپ اصلاً دیده نمی‌شود. آن‌ها را خودِ Tailwind مدیریت می‌کند. */
+        .hidden:not([class~="sm:flex"], [class~="sm:inline-flex"], [class~="sm:block"], [class~="sm:inline-block"], [class~="sm:inline"], [class~="sm:grid"], [class~="sm:inline-grid"], [class~="sm:table"], [class~="sm:table-cell"], [class~="sm:table-row"], [class~="sm:contents"], [class~="md:flex"], [class~="md:inline-flex"], [class~="md:block"], [class~="md:inline-block"], [class~="md:inline"], [class~="md:grid"], [class~="md:inline-grid"], [class~="md:table"], [class~="md:table-cell"], [class~="md:table-row"], [class~="md:contents"], [class~="lg:flex"], [class~="lg:inline-flex"], [class~="lg:block"], [class~="lg:inline-block"], [class~="lg:inline"], [class~="lg:grid"], [class~="lg:inline-grid"], [class~="lg:table"], [class~="lg:table-cell"], [class~="lg:table-row"], [class~="lg:contents"], [class~="xl:flex"], [class~="xl:inline-flex"], [class~="xl:block"], [class~="xl:inline-block"], [class~="xl:inline"], [class~="xl:grid"], [class~="xl:inline-grid"], [class~="xl:table"], [class~="xl:table-cell"], [class~="xl:table-row"], [class~="xl:contents"], [class~="2xl:flex"], [class~="2xl:inline-flex"], [class~="2xl:block"], [class~="2xl:inline-block"], [class~="2xl:inline"], [class~="2xl:grid"], [class~="2xl:inline-grid"], [class~="2xl:table"], [class~="2xl:table-cell"], [class~="2xl:table-row"], [class~="2xl:contents"]) { display: none !important; }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -1829,7 +1830,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="aap-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
                     <label>نوع بیمه</label>
                 </div>
-                <div class="float-input"><input type="date" id="aap-expiry" placeholder=" "><label>تاریخ انقضا</label></div>
+                <div class="float-input"><input type="text" id="aap-expiry" dir="ltr" inputmode="numeric" placeholder=" "><label>تاریخ انقضا (شمسی، مثلاً ۱۴۰۵/۰۷/۳۰)</label></div>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="aap-skip-health"> این پلاک نیاز به بازدید سلامت ندارد
@@ -1902,7 +1903,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="cit-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
                     <label>نوع بیمه</label>
                 </div>
-                <div class="float-input"><input type="date" id="cit-expiry" placeholder=" "><label>تاریخ انقضا</label></div>
+                <div class="float-input"><input type="text" id="cit-expiry" dir="ltr" inputmode="numeric" placeholder=" "><label>تاریخ انقضا (شمسی، مثلاً ۱۴۰۵/۰۷/۳۰)</label></div>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="cit-skip-health"> این پلاک نیاز به بازدید سلامت ندارد (طبق روال این شرکت)
@@ -2496,6 +2497,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const e2p = s => s ? s.toString().replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]) : '-';
         // برای شمارش‌ها، صفر باید «۰» نشان داده شود نه «-» (e2p صفر را falsy می‌گیرد)
         const e2pNum = n => e2p(String(Number(n) || 0));
+        // مثل e2p ولی برای مقدارِ خالی رشته‌ی خالی برمی‌گرداند (نه «-») تا با `|| '—'` جفت شود.
+        // برای نمایشِ تاریخ‌های شمسی‌ای که سرور با رقم لاتین می‌فرستد.
+        const faDigits = v => (v === null || v === undefined || v === '') ? '' : String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
         // قالب‌بندی مبلغ: همیشه سه‌رقم‌سه‌رقم جداشده و با ارقام فارسی - برای همه‌ی مبالغ پنل
         // (حق بیمه، ارزش خودرو، سقف تعهد مالی و هر مبلغ دیگر) از همین تابع استفاده می‌شود
         const money = v => {
@@ -2961,7 +2965,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('review-national-code').value = json.national_id || '';
             document.getElementById('review-personnel-code').value = json.personnel_id || '';
             document.getElementById('review-company').value = json.company_name || '';
-            document.getElementById('review-letterdate').value = json.letter_date || '';
+            document.getElementById('review-letterdate').value = faDigits(json.letter_date);
             document.getElementById('review-policy').value = json.policy_num || '';
             document.getElementById('review-uniquecode').value = json.unique_code || '';
             document.getElementById('review-plate').value = json.plate || '';
@@ -3482,7 +3486,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500">تعهد: ${money(p.liability_limit)} ریال</p>` : ''}
                         ${p.insurance_type === 'BODY' && Number(p.skip_health_inspection) ? '<p class="text-[9px] text-slate-400">بدون بازدید</p>' : ''}
                     </td>
-                    <td class="p-2 text-[11px] whitespace-nowrap">${p.expiry_date_jalali || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر کیلومتر</span>' : '—')}</td>
+                    <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر کیلومتر</span>' : '—')}</td>
                     <td class="p-2 col-checklist"><div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
                     <td class="p-2 whitespace-nowrap">
                         <span class="status-badge ${ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600'} text-[10px] font-bold px-2 py-1 rounded-full">${p.status_fa || p.status}</span>
@@ -3512,7 +3516,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
                     <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                 </div>
-                <p class="text-[10px] text-slate-400 mb-2">ثبت: ${r.created_at_jalali} · آخرین ویرایش: ${r.updated_at_jalali}</p>
+                <p class="text-[10px] text-slate-400 mb-2">ثبت: ${faDigits(r.created_at_jalali)} · آخرین ویرایش: ${faDigits(r.updated_at_jalali)}</p>
 
                 <!-- شمارشِ خواسته‌شده: چند بدنه و چند ثالث درخواست شده و چند تا صادر شده -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
@@ -3632,7 +3636,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cre-p2').value = p.plate_p2 || '';
             document.getElementById('cre-p1').value = p.plate_p1 || '';
             document.getElementById('cre-insurance-type').value = p.insurance_type || '';
-            document.getElementById('cre-expiry').value = p.expiry_date_jalali || '';
+            document.getElementById('cre-expiry').value = faDigits(p.expiry_date_jalali);
             document.getElementById('cre-has-prev-body').value = p.has_prev_body || '';
             document.getElementById('cre-skip-health').checked = !!Number(p.skip_health_inspection);
             fillCancelReasons('cre', p.cancellation_reason || '');
@@ -3738,7 +3742,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <tbody>${rows.map(x => `<tr class="border-t border-slate-100">
                             <td class="p-1.5">${rowIdentityHtml(x)}</td>
                             <td class="p-1.5">${x.insurance_type_fa}</td>
-                            <td class="p-1.5">${x.expiry_date_jalali || '—'}</td>
+                            <td class="p-1.5">${faDigits(x.expiry_date_jalali) || '—'}</td>
                             <td class="p-1.5">${x.car_name || '—'}</td>
                             <td class="p-1.5">${x.has_prev_body === 'YES' ? 'دارد' : (x.has_prev_body === 'NO' ? 'ندارد' : '—')}</td>
                             <td class="p-1.5">${Number(x.skip_health_inspection) ? 'لازم نیست' : 'لازم'}</td>
@@ -3791,7 +3795,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const safe = String(value).replace(/'/g, "\\'");
             return `<div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
                 <p class="text-[9px] text-slate-400">${label}</p>
-                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${value}
+                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${opts.date ? faDigits(value) : value}
                     <button onclick="copyValue('${safe}', '${label}')" title="کپی ${label}" class="text-slate-300 hover:text-blue-500 mr-1">
                         <i class="far fa-copy text-[10px]"></i></button>
                 </p></div>`;
@@ -3864,9 +3868,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${r.car_name ? `<p class="text-[10px] text-slate-400">${r.car_name}</p>` : ''}</td>
                     <td class="p-3">${r.insurance_type_fa}
                         ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
-                    <td class="p-3 text-slate-500">${r.period_title || dash}</td>
-                    <td class="p-3 text-slate-500">${r.request_date_jalali}</td>
-                    <td class="p-3 ${expCls}">${r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : dash)}
+                    <td class="p-3 text-slate-500">${faDigits(r.period_title) || dash}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali)}</td>
+                    <td class="p-3 ${expCls}">${faDigits(r.expiry_date_jalali) || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : dash)}
                         ${expNote ? `<span class="block text-[9px]">${expNote}</span>` : ''}</td>
                     <td class="p-3">${r.is_ready
                         ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">✓ مدارک کامل</span>'
@@ -3920,7 +3924,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="grid grid-cols-2 gap-1.5">
                             ${infoCell('شماره درخواست', '#' + e2pNum(r.request_id))}
                             ${infoCell('نوع درخواست', r.request_kind_fa)}
-                            ${infoCell('تاریخ ثبت', r.request_date_jalali)}
+                            ${infoCell('تاریخ ثبت', r.request_date_jalali, {date: true})}
                             ${infoCell('مرحله', r.status_fa)}
                         </div>
                         ${r.request_text ? `<p class="text-[10px] text-slate-500 mt-2">${r.request_text}</p>` : ''}
@@ -3935,7 +3939,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
                         ${infoCell('پلاک / شماره شاسی', r.plate_display, {ltr: true})}
                         ${infoCell('نوع بیمه', r.insurance_type_fa)}
-                        ${infoCell('تاریخ انقضا', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''))}
+                        ${infoCell('تاریخ انقضا', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {date: true})}
                         ${infoCell('خودرو', r.car_name)}
                         ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
                         ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : '')}
@@ -4009,10 +4013,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="grid grid-cols-2 gap-1.5">
                             ${infoCell('شرکت', r.company_name)}
                             ${infoCell('تلفن شرکت', r.company_phone, {ltr: true})}
-                            ${infoCell('تاریخ ثبت درخواست', r.request_date_jalali)}
-                            ${infoCell('تاریخ معرفی‌نامه', r.letter_date_jalali)}
+                            ${infoCell('تاریخ ثبت درخواست', r.request_date_jalali, {date: true})}
+                            ${infoCell('تاریخ معرفی‌نامه', r.letter_date_jalali, {date: true})}
                             ${infoCell('سهمیه‌ی معرفی‌نامه', r.quota ? e2p(r.quota) : '')}
-                            ${infoCell('دوره‌ی مالی', r.period_title)}
+                            ${infoCell('دوره‌ی مالی', r.period_title, {date: true})}
                         </div>
                         ${r.letter_file_path
                             ? `<a href="/${encodeFilePath(r.letter_file_path)}" target="_blank" class="inline-block mt-2 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg"><i class="fas fa-file-pdf ml-1"></i>معرفی‌نامه‌ی این پرونده</a>`
@@ -4111,9 +4115,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
                     <td class="p-3">${r.car_name || '—'}</td>
                     <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}</td>
-                    <td class="p-3 text-slate-500">${r.request_date_jalali || '—'}</td>
-                    <td class="p-3 text-slate-500">${r.expiry_date_jalali || '—'}</td>
-                    <td class="p-3 text-slate-500">${r.issued_at_jalali || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.issued_at_jalali) || '—'}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
                     <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a>` : '<span class="text-slate-300">—</span>'}</td>
                 </tr>`).join('');
@@ -4167,10 +4171,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">تاریخ‌ها و درخواست</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
-                    ${infoCell('تاریخ درخواست', r.request_date_jalali)}
-                    ${infoCell('تاریخ انقضا', r.expiry_date_jalali)}
-                    ${infoCell('تاریخ صدور', r.issued_at_jalali)}
-                    ${infoCell('تاریخ صدور روی بیمه‌نامه', r.policy_issue_date, {ltr: true})}
+                    ${infoCell('تاریخ درخواست', r.request_date_jalali, {date: true})}
+                    ${infoCell('تاریخ انقضا', r.expiry_date_jalali, {date: true})}
+                    ${infoCell('تاریخ صدور', r.issued_at_jalali, {date: true})}
+                    ${infoCell('تاریخ صدور روی بیمه‌نامه', r.policy_issue_date, {ltr: true, date: true})}
                 </div>
                 ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mb-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
                 ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mb-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
@@ -4337,7 +4341,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div>
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
-                        <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${d.uploaded_at_jalali}
+                        <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlate(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
@@ -4362,7 +4366,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div>
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
-                        <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${d.uploaded_at_jalali}
+                        <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlate(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
@@ -4692,7 +4696,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${PAY_FA[c.payment_terms] || '—'}</td>
                     <td class="p-3 text-slate-500">${c.installment_count ? c.installment_count + ' قسط' : '—'}</td>
                     <td class="p-3 text-slate-500">${CM_INSURER_FA[c.allowed_insurers] || 'پاسارگاد و ایران'}</td>
-                    <td class="p-3 text-slate-400 font-mono">${c.created_at_jalali || '—'}</td>
+                    <td class="p-3 text-slate-400 font-mono">${faDigits(c.created_at_jalali) || '—'}</td>
                     <td class="p-3 flex gap-2">
                         <button onclick="editCompany(${c.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
                         <button onclick="deleteCompanyRow(${c.id}, '${(c.name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
@@ -4996,7 +5000,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!finBoot.ok) { showToast(finBoot.error || 'خطا در بارگذاری بخش مالی', 'error'); return null; }
             // پرکردن همه‌ی کشویی‌های دوره و شرکت
             const periodOpts = finBoot.periods.map(p =>
-                `<option value="${p.id}">${p.title}${p.status === 'CLOSED' ? ' (بسته)' : ''}</option>`).join('');
+                `<option value="${p.id}">${faDigits(p.title)}${p.status === 'CLOSED' ? ' (بسته)' : ''}</option>`).join('');
             const companyOpts = '<option value="">همه شرکت‌ها</option>' +
                 finBoot.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             ['fin-dash-period','inst-f-period','rec-period','inv-f-period','psg-f-period'].forEach(id => {
@@ -5223,7 +5227,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-2 text-center font-bold" dir="ltr">${r.invoice_no}</td>
                             <td class="p-2 text-center">${INV_KIND[r.kind] || r.kind}</td>
                             <td class="p-2">${r.company_name || '—'}</td>
-                            <td class="p-2 text-center">${r.period_title || '-'}</td>
+                            <td class="p-2 text-center">${faDigits(r.period_title) || '-'}</td>
                             <td class="p-2 text-center">${e2p(r.line_count)}</td>
                             <td class="p-2 text-center font-bold">${money(r.total_amount)}</td>
                             <td class="p-2 text-center text-emerald-600">${money(r.paid_amount)}</td>
@@ -5350,7 +5354,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('inv-detail-body').innerHTML = `
                     <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 rounded-xl p-3 mb-3">
                         <div>نوع: <b>${INV_KIND[i.kind]}</b></div>
-                        <div>دوره: <b>${i.period_title || '-'}</b></div>
+                        <div>دوره: <b>${faDigits(i.period_title) || '-'}</b></div>
                         <div>شرکت: <b>${i.company_name || 'کل دوره'}</b></div>
                         <div>تاریخ صدور: <b dir="ltr">${toJalali(i.created_at)}</b></div>
                         <div>جمع کل: <b>${money(i.total_amount)}</b> ریال</div>
@@ -5481,7 +5485,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const res = await fetch(`${FIN_API}?action=invoices&company_id=${cid}`);
                 const d = await res.json();
                 if (d.ok) sel.innerHTML += d.data.map(i =>
-                    `<option value="${i.id}">${i.invoice_no} — ${i.period_title || ''} — مانده ${Number(i.total_amount - i.paid_amount).toLocaleString('en-US')}</option>`).join('');
+                    `<option value="${i.id}">${i.invoice_no} — ${faDigits(i.period_title) || ''} — مانده ${money(i.total_amount - i.paid_amount)}</option>`).join('');
             } catch(e) {}
         }
 
@@ -5494,8 +5498,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const res = await fetch(FIN_API, { method:'POST', body: fd });
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error, 'error'); return; }
-                let msg = `دریافت ثبت شد.\nتخصیص‌یافته به اقساط: ${Number(d.allocated).toLocaleString('en-US')} ریال`;
-                if (d.unallocated > 0) msg += `\n⚠️ تخصیص‌نیافته: ${Number(d.unallocated).toLocaleString('en-US')} ریال (قسط بازی برای تخصیص نمانده یا قانون تسویه‌ی پیوسته مانع شده)`;
+                let msg = `دریافت ثبت شد.\nتخصیص‌یافته به اقساط: ${money(d.allocated)} ریال`;
+                if (d.unallocated > 0) msg += `\n⚠️ تخصیص‌نیافته: ${money(d.unallocated)} ریال (قسط بازی برای تخصیص نمانده یا قانون تسویه‌ی پیوسته مانع شده)`;
                 alert(msg);
                 document.getElementById('pay-new-modal').classList.add('hidden');
                 loadPayments(); loadCheques();
@@ -5559,7 +5563,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             psgPendingIds = Array.from(document.querySelectorAll('.psg-cb:checked')).map(cb => Number(cb.value));
             if (!psgPendingIds.length) { showToast('قسطی انتخاب نشده است.', 'error'); return; }
             const total = Array.from(document.querySelectorAll('.psg-cb:checked')).reduce((s, cb) => s + Number(cb.dataset.amount), 0);
-            document.getElementById('psg-settle-summary').textContent = `${psgPendingIds.length} قسط به مبلغ ${total.toLocaleString('en-US')} ریال`;
+            document.getElementById('psg-settle-summary').textContent = `${psgPendingIds.length} قسط به مبلغ ${money(total)} ریال`;
             ['psg-settle-ref','psg-settle-note'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('psg-settle-jalali').value = todayJalali();
             document.getElementById('psg-settle-files').value = '';
@@ -5582,7 +5586,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error, 'error'); return; }
                 closeModal('psg-settle-modal');
-                let msg = `${d.settled} قسط تسویه شد (${Number(d.total).toLocaleString('en-US')} ریال).`;
+                let msg = `${d.settled} قسط تسویه شد (${money(d.total)} ریال).`;
                 if (d.blocked) msg += ` ${d.blocked} قسط به‌دلیل وصول‌نشدن، تسویه نشد.`;
                 showToast(msg, 'success');
                 loadPasargad();
@@ -5590,7 +5594,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         function todayJalali() {
-            try { return new Intl.DateTimeFormat('fa-IR-u-nu-latn', {year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replace(/\//g, '/'); }
+            try { return new Intl.DateTimeFormat('fa-IR-u-nu-arabext', {year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
             catch(e) { return ''; }
         }
 
@@ -5607,7 +5611,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     d.data.map(r => `<tr class="border-b">
                         <td class="p-2 text-center" dir="ltr">${e2p(r.paid_jalali) || toJalali(r.created_at)}</td>
                         <td class="p-2">${r.company_name || 'همه'}</td>
-                        <td class="p-2 text-center">${r.period_title || '-'}</td>
+                        <td class="p-2 text-center">${faDigits(r.period_title) || '-'}</td>
                         <td class="p-2 text-center">${e2p(r.line_count)}</td>
                         <td class="p-2 text-center font-bold">${money(r.amount)}</td>
                         <td class="p-2 text-center" dir="ltr">${r.reference_no || '-'}</td></tr>`).join('') + '</tbody></table>';
@@ -6159,7 +6163,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     document.getElementById('final-car-color').value = o.car_color || '';
                     document.getElementById('final-car-usage').value = o.car_usage || '';
                     document.getElementById('final-ocr-phone').value = o.phone || '';
-                    document.getElementById('final-issue-date').value = o.issue_date || '';
+                    document.getElementById('final-issue-date').value = faDigits(o.issue_date);
                     document.getElementById('final-car-value').value = o.car_value || '';
                 } else {
                     statusEl.innerHTML = `⚠️ فایل شناسایی نشد - فیلدها را دستی پر کنید.<br><span class="text-[10px] text-slate-400">علت: ${data.ocr_debug || 'نامشخص'}</span>`;
