@@ -64,6 +64,14 @@ function approve_case_document_and_maybe_finalize($pdo, $docId) {
 }
 
 try {
+    // ---- حذف یک درخواست (پرونده) - فقط مدیر کل؛ صادرشده‌ها حذف نمی‌شوند ----
+    if ($action === 'delete_case') {
+        if (($_SESSION['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند درخواست را حذف کند.'], JSON_UNESCAPED_UNICODE); exit; }
+        $res = delete_policy_case($pdo, dirname(__DIR__), intval($data['case_id'] ?? 0), $_SESSION['user_id']);
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ۱. لیست پرونده‌های صدور
     if ($action === 'list') {
         $introFilter = intval($_GET['introduction_id'] ?? 0);
@@ -256,7 +264,8 @@ try {
     // دانلود زیپ عکس‌های یک بازدید سلامت (موقت؛ بعد از دانلود از سرور حذف می‌شود)
     if ($action === 'download_health_zip') {
         $inspectionId = intval($_GET['inspection_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT hi.*, pc.plate FROM health_inspections hi JOIN policy_cases pc ON hi.case_id = pc.id WHERE hi.id = ?");
+        // LEFT JOIN: بازدیدِ «آزاد» (بدون پرونده) هم باید دانلود شود - قبلاً 404 می‌داد
+        $stmt = $pdo->prepare("SELECT hi.*, COALESCE(pc.plate, hi.free_plate) AS plate FROM health_inspections hi LEFT JOIN policy_cases pc ON hi.case_id = pc.id WHERE hi.id = ?");
         $stmt->execute([$inspectionId]);
         $insp = $stmt->fetch();
         if (!$insp) { http_response_code(404); exit; }
@@ -264,7 +273,7 @@ try {
         $photos = json_decode($insp['photos'] ?: '{}', true);
         $files = [];
         foreach ($photos as $stepKey => $relPath) {
-            $abs = dirname(__DIR__) . '/' . $relPath;
+            $abs = health_abs_path(dirname(__DIR__), $relPath);
             $files[] = ['path' => $abs, 'name' => basename($relPath)];
         }
         $zipName = sanitize_folder_name(($insp['plate'] ?: 'بدون‌پلاک') . ' - بازدید سلامت ' . $insp['inspection_number']) . '.zip';
@@ -357,7 +366,63 @@ try {
             LEFT JOIN persons p2 ON hi.person_id = p2.id
             ORDER BY (hi.status = 'PENDING') DESC, hi.created_at DESC
         ");
-        echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()]);
+        $rows = $stmt->fetchAll();
+        // شمارِ عکس‌های تاییدشده / ردشده / در انتظارِ هر بازدید (برای کارتِ فهرست)
+        foreach ($rows as &$r) {
+            $c = ['APPROVED' => 0, 'REJECTED' => 0, 'PENDING' => 0];
+            foreach (health_photo_reviews($r) as $rv) $c[$rv['status']]++;
+            $r['review_counts'] = $c;
+        }
+        unset($r);
+        echo json_encode(['ok' => true, 'data' => $rows, 'per_photo' => health_review_columns_ready($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- جزئیاتِ یک بازدید برای نمایشگرِ بزرگِ عکس‌ها (بررسیِ تک‌تک) ----
+    if ($action === 'health_detail') {
+        $id = intval($_GET['id'] ?? ($data['id'] ?? 0));
+        $stmt = $pdo->prepare("SELECT hi.*, COALESCE(pc.plate, hi.free_plate) AS plate, COALESCE(pc.unique_code, CONCAT('آزاد-', hi.id)) AS unique_code,
+                                      COALESCE(p1.full_name, p2.full_name) AS holder_name, pc.insurance_type
+                                 FROM health_inspections hi
+                                 LEFT JOIN policy_cases pc ON hi.case_id = pc.id
+                                 LEFT JOIN persons p1 ON pc.person_id = p1.id
+                                 LEFT JOIN persons p2 ON hi.person_id = p2.id
+                                WHERE hi.id = ?");
+        $stmt->execute([$id]);
+        $insp = $stmt->fetch();
+        if (!$insp) { echo json_encode(['ok' => false, 'error' => 'بازدید یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $steps = health_inspection_steps();
+        $photos = json_decode($insp['photos'] ?: '{}', true) ?: [];
+        $list = [];
+        foreach (health_photo_reviews($insp) as $k => $rv) {
+            $parts = explode('-', (string)$k);
+            $label = ($steps[$parts[0]]['label'] ?? $k) . (isset($parts[1]) ? ' ' . $parts[1] : '');
+            $list[] = ['key' => (string)$k, 'label' => $label, 'path' => ltrim(str_replace(dirname(__DIR__), '', health_abs_path(dirname(__DIR__), $photos[$k])), '/'),
+                       'status' => $rv['status'], 'note' => $rv['note']];
+        }
+        // به ترتیبِ مراحل
+        $order = array_flip(array_map('strval', array_keys($steps)));
+        usort($list, function ($a, $b) use ($order) {
+            [$sa, $ia] = array_pad(explode('-', $a['key']), 2, 0); [$sb, $ib] = array_pad(explode('-', $b['key']), 2, 0);
+            return (($order[$sa] ?? 99) <=> ($order[$sb] ?? 99)) ?: (intval($ia) <=> intval($ib));
+        });
+        echo json_encode(['ok' => true, 'per_photo' => health_review_columns_ready($pdo),
+                          'inspection' => ['id' => intval($insp['id']), 'number' => intval($insp['inspection_number']), 'status' => $insp['status'],
+                                           'plate' => $insp['plate'], 'holder_name' => $insp['holder_name'], 'unique_code' => $insp['unique_code'],
+                                           'insurance_type' => $insp['insurance_type'], 'reject_reason' => $insp['reject_reason']],
+                          'photos' => $list], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- تصمیمِ کارشناس برای یک عکس: تایید / رد / برگرداندن به «در انتظار» + توضیح ----
+    if ($action === 'review_health_photo') {
+        if (!health_review_columns_ready($pdo)) {
+            echo json_encode(['ok' => false, 'error' => 'مایگریشن اجرا نشده است: لطفاً فایل migrations/013_health_photo_review.sql را در phpMyAdmin اجرا کنید.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $res = health_review_photo($pdo, dirname(__DIR__), intval($data['id'] ?? 0), (string)($data['key'] ?? ''),
+                                   (string)($data['decision'] ?? ''), (string)($data['note'] ?? ''), $_SESSION['user_id'] ?? null);
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }
 

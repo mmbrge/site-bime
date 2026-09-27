@@ -185,6 +185,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            اصلی: hidden lg:flex) از این قاعده بیرون‌اند؛ وگرنه !important جلوی lg:flex را
            می‌گیرد و منو در دسکتاپ اصلاً دیده نمی‌شود. آن‌ها را خودِ Tailwind مدیریت می‌کند. */
         .hidden:not([class~="sm:flex"], [class~="sm:inline-flex"], [class~="sm:block"], [class~="sm:inline-block"], [class~="sm:inline"], [class~="sm:grid"], [class~="sm:inline-grid"], [class~="sm:table"], [class~="sm:table-cell"], [class~="sm:table-row"], [class~="sm:contents"], [class~="md:flex"], [class~="md:inline-flex"], [class~="md:block"], [class~="md:inline-block"], [class~="md:inline"], [class~="md:grid"], [class~="md:inline-grid"], [class~="md:table"], [class~="md:table-cell"], [class~="md:table-row"], [class~="md:contents"], [class~="lg:flex"], [class~="lg:inline-flex"], [class~="lg:block"], [class~="lg:inline-block"], [class~="lg:inline"], [class~="lg:grid"], [class~="lg:inline-grid"], [class~="lg:table"], [class~="lg:table-cell"], [class~="lg:table-row"], [class~="lg:contents"], [class~="xl:flex"], [class~="xl:inline-flex"], [class~="xl:block"], [class~="xl:inline-block"], [class~="xl:inline"], [class~="xl:grid"], [class~="xl:inline-grid"], [class~="xl:table"], [class~="xl:table-cell"], [class~="xl:table-row"], [class~="xl:contents"], [class~="2xl:flex"], [class~="2xl:inline-flex"], [class~="2xl:block"], [class~="2xl:inline-block"], [class~="2xl:inline"], [class~="2xl:grid"], [class~="2xl:inline-grid"], [class~="2xl:table"], [class~="2xl:table-cell"], [class~="2xl:table-row"], [class~="2xl:contents"]) { display: none !important; }
+        /* ---- نمایشگرِ بزرگِ عکس‌های بازدید سلامت: چیدمانِ اصلی با CSS خودمان (مستقل از CDNِ Tailwind) ---- */
+        #hv-modal { position: fixed; inset: 0; z-index: 9999980; background: #020617; color: #fff; flex-direction: column; }
+        #hv-modal:not(.hidden) { display: flex; }
+        #hv-modal .hv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.1); }
+        #hv-modal .hv-main { flex: 1; display: flex; min-height: 0; }
+        #hv-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+        #hv-img { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; }
+        #hv-modal .hv-side { width: 320px; flex-shrink: 0; background: #0f172a; padding: 16px; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid rgba(255,255,255,.1); overflow-y: auto; }
+        #hv-modal .hv-side textarea { width: 100%; background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px; font-family: inherit; }
+        #hv-modal .hv-btn { border-radius: 12px; padding: 10px; font-weight: 700; font-size: 13px; color: #fff; }
+        #hv-modal .hv-ok { background: #059669; } #hv-modal .hv-ok:hover { background: #047857; }
+        #hv-modal .hv-no { background: #e11d48; } #hv-modal .hv-no:hover { background: #be123c; }
+        #hv-modal .hv-ctrl { background: rgba(0,0,0,.6); color: #fff; border-radius: 10px; }
+        #hv-strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; border-top: 1px solid rgba(255,255,255,.1); background: #020617; }
+        @media (max-width: 767px) { #hv-modal .hv-main { flex-direction: column; } #hv-modal .hv-side { width: auto; max-height: 45vh; border-right: 0; border-top: 1px solid rgba(255,255,255,.1); } }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -238,6 +253,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <div class="hero-bg"></div>
     <div id="tsparticles"></div>
     <div id="notif-stack" aria-live="polite"></div>
+    <datalist id="plate-letters-dl"><?php foreach (['الف','ب','پ','ت','ث','ج','د','ز','ژ','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'] as $pl) echo '<option value="' . $pl . '">'; ?></datalist>
     <div class="cursor-dot"></div>
     <div class="cursor-outline"></div>
     <div id="toast-container" class="fixed top-6 left-1/2 -translate-x-1/2 z-[99999999] flex flex-col gap-3 pointer-events-none"></div>
@@ -766,15 +782,78 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button onclick="loadHealthTab(); loadDocsReviewList();" class="bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
             </div>
 
+            <!-- خلاصه -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center"><p class="text-[11px] text-indigo-700">مدارک در انتظار بررسی</p><p id="hs-docs" class="font-black text-xl text-indigo-700">۰</p></div>
+                <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center"><p class="text-[11px] text-amber-700">بازدیدِ در انتظار بررسی</p><p id="hs-pending" class="font-black text-xl text-amber-700">۰</p></div>
+                <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center"><p class="text-[11px] text-rose-700">ناقص (منتظر ارسالِ دوباره)</p><p id="hs-rejected" class="font-black text-xl text-rose-700">۰</p></div>
+                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center"><p class="text-[11px] text-emerald-700">تایید نهایی</p><p id="hs-approved" class="font-black text-xl text-emerald-700">۰</p></div>
+            </div>
+
             <div class="card p-4 border-indigo-100">
-                <h2 class="font-bold text-indigo-700 text-sm mb-3"><i class="fas fa-file-lines ml-1"></i>مدارک در انتظار بررسی</h2>
-                <div id="docs-review-body" class="space-y-2"></div>
+                <h2 class="font-bold text-indigo-700 text-sm mb-3"><i class="fas fa-file-lines ml-1"></i>مدارک در انتظار بررسی <span class="text-[11px] font-normal text-slate-400">(هر مدرک جداگانه تایید یا رد می‌شود)</span></h2>
+                <div id="docs-review-body" class="grid md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
             </div>
 
             <div class="card p-4 border-rose-100">
-                <h2 class="font-bold text-rose-700 text-sm mb-3"><i class="fas fa-car ml-1"></i>بازدیدهای سلامت خودرو</h2>
-                <div id="health-tab-body" class="space-y-3"></div>
+                <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                    <h2 class="font-bold text-rose-700 text-sm"><i class="fas fa-car ml-1"></i>بازدیدهای سلامت خودرو</h2>
+                    <select id="health-filter" onchange="renderHealthList()" class="border rounded-lg px-3 py-1.5 text-xs">
+                        <option value="">همه</option>
+                        <option value="PENDING" selected>در انتظار بررسی</option>
+                        <option value="REJECTED">ناقص - منتظر ارسالِ دوباره</option>
+                        <option value="APPROVED">تایید نهایی</option>
+                    </select>
+                </div>
+                <div id="health-tab-body" class="grid md:grid-cols-2 gap-3"></div>
             </div>
+        </div>
+
+        <!-- ======================= نمایشگرِ بزرگِ عکس‌های بازدید (بررسیِ تک‌تک) ======================= -->
+        <div id="hv-modal" class="fixed inset-0 z-[1000] bg-slate-950/95 hidden flex-col text-white" dir="rtl">
+            <div class="hv-head">
+                <div class="min-w-0">
+                    <p class="font-bold text-sm truncate" id="hv-title"></p>
+                    <p class="text-[11px] text-slate-400" id="hv-sub"></p>
+                </div>
+                <div class="flex items-center gap-2 text-[11px]">
+                    <span id="hv-counts" class="hidden md:inline"></span>
+                    <label class="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 cursor-pointer"><input type="checkbox" id="hv-only-pending" checked onchange="hvRenderStrip(); hvGo(0, true)"> فقط در انتظار</label>
+                    <button onclick="hvClose()" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="hv-main">
+                <!-- تصویر + زوم -->
+                <div class="relative flex-1 min-h-0 overflow-hidden bg-black" id="hv-stage" style="touch-action:none;">
+                    <img id="hv-img" class="absolute inset-0 m-auto max-w-full max-h-full select-none" style="transform-origin:0 0;will-change:transform;" draggable="false" alt="">
+                    <div class="absolute flex gap-1.5" style="bottom:12px;left:12px;">
+                        <button onclick="hvZoomBy(1.4)" class="hv-ctrl w-9 h-9" title="بزرگ‌نمایی"><i class="fas fa-plus"></i></button>
+                        <button onclick="hvZoomBy(1/1.4)" class="hv-ctrl w-9 h-9" title="کوچک‌نمایی"><i class="fas fa-minus"></i></button>
+                        <button onclick="hvResetZoom()" class="hv-ctrl w-9 h-9" title="اندازه‌ی اصلی"><i class="fas fa-compress"></i></button>
+                        <a id="hv-open" target="_blank" class="hv-ctrl w-9 h-9 flex items-center justify-center" title="باز کردن فایل"><i class="fas fa-up-right-from-square"></i></a>
+                    </div>
+                    <button onclick="hvGo(-1)" class="hv-ctrl absolute w-10 h-14" style="right:8px;top:50%;transform:translateY(-50%)" title="قبلی"><i class="fas fa-chevron-right"></i></button>
+                    <button onclick="hvGo(1)" class="hv-ctrl absolute w-10 h-14" style="left:8px;top:50%;transform:translateY(-50%)" title="بعدی"><i class="fas fa-chevron-left"></i></button>
+                </div>
+                <!-- پنلِ تصمیم -->
+                <div class="hv-side">
+                    <div>
+                        <p class="text-[11px] text-slate-400" id="hv-pos"></p>
+                        <p class="font-black text-base" id="hv-label"></p>
+                        <span id="hv-status" class="inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
+                    </div>
+                    <label class="text-[11px] text-slate-300">توضیح (خسارتِ دیده‌شده، یا علتِ رد)
+                        <textarea id="hv-note" rows="3" class="mt-1 w-full rounded-lg bg-slate-800 border border-white/10 p-2 text-sm text-white" placeholder="مثلاً: خط‌وخش روی درب جلو راست"></textarea></label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="hvDecide('APPROVED')" class="hv-btn hv-ok"><i class="fas fa-check ml-1"></i>تایید</button>
+                        <button onclick="hvDecide('REJECTED')" class="hv-btn hv-no"><i class="fas fa-xmark ml-1"></i>رد (دوباره بگیرد)</button>
+                    </div>
+                    <button onclick="hvDecide('PENDING')" class="text-[11px] text-slate-400 hover:text-white underline self-start">برگرداندن به «در انتظار»</button>
+                    <div id="hv-summary" class="text-[11px] leading-relaxed rounded-lg p-2 hidden"></div>
+                    <p class="text-[10px] text-slate-500 mt-auto">کلیدهای ← و → برای عکس بعدی/قبلی. با چرخِ موس یا دو انگشت زوم کنید و با کشیدن جابه‌جا شوید. عکسِ تاییدشده همان لحظه با نامِ درست بایگانی می‌شود.</p>
+                </div>
+            </div>
+            <div id="hv-strip" class="flex gap-1.5 overflow-x-auto px-3 py-2 border-t border-white/10 bg-slate-950"></div>
         </div>
 
         <!-- ======================= مودال جزئیات/بررسی پرونده ======================= -->
@@ -782,7 +861,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
                 <div class="p-4 border-b flex justify-between items-center bg-indigo-50">
                     <h3 class="font-bold text-indigo-700"><i class="fas fa-folder-open ml-1"></i> پرونده <span id="case-detail-code"></span></h3>
-                    <button onclick="document.getElementById('case-detail-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
+                    <span class="flex items-center gap-3">
+                        <button id="case-delete-btn" type="button" class="hidden text-xs font-bold text-red-500 hover:text-red-700 bg-white border border-red-100 rounded-lg px-2.5 py-1"><i class="fas fa-trash-alt ml-1"></i>حذف این درخواست</button>
+                        <button onclick="document.getElementById('case-detail-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
+                    </span>
                 </div>
                 <div id="case-detail-body" class="flex-1 overflow-y-auto p-5 space-y-4"></div>
             </div>
@@ -2057,22 +2139,55 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('letter-import-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-1">ورود ردیف‌ها از نامه</h3>
-            <p class="text-[11px] text-slate-400 mb-3">نامه را به هوش مصنوعی بدهید و بگویید با یکی از این دو قالب خروجی بدهد، بعد خروجی را اینجا بچسبانید (یا فایلش را انتخاب کنید).</p>
+            <p class="text-[11px] text-slate-400 mb-3">نامه را به هوش مصنوعی بدهید و بگویید با یکی از این قالب‌ها خروجی بدهد، بعد خروجی را اینجا بچسبانید (یا فایلش را انتخاب کنید).</p>
+            <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-3">
+                <div class="flex items-center justify-between mb-1">
+                    <p class="text-[11px] font-bold text-indigo-800">متنِ آماده برای هوش مصنوعی (همراهِ فایل نامه بفرستید):</p>
+                    <button type="button" onclick="copyValue(document.getElementById('cli-ai-prompt').innerText, 'متن')" class="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 rounded-lg px-2 py-0.5"><i class="far fa-copy ml-1"></i>کپی</button>
+                </div>
+                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با این ساختار برگردان: در «letter.counts» تعدادِ درخواستی از هر نوع را بنویس با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ». در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)، plate (پلاک دقیقاً مثل نامه؛ اگر پلاک ندارد خالی بگذار و chassis_no و engine_no را بنویس)، insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخ انقضا به شمسی مثل 1405/07/30)، car_name، car_value (ارزش خودرو برای بدنه)، liability_limit (سقف تعهد برای ثالث)، has_prev_body («بله»/«خیر»)، policy_number (برای تغییر اطلاعات و فسخ)، change_request (برای تغییر اطلاعات: چه تغییری)، cancellation_reason (برای فسخ: دلیل) و note. هر فیلدی که در نامه نیست را خالی بگذار؛ چیزی حدس نزن.</p>
+            </div>
             <input type="hidden" id="cli-request-id">
 
             <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
                 <summary class="text-xs font-bold text-slate-600 cursor-pointer">قالبِ خروجی که باید به هوش مصنوعی بگویید (کلیک کنید)</summary>
                 <p class="text-[11px] font-bold text-slate-600 mt-2 mb-1">قالب ۱ - JSON (دقیق‌تر، پیشنهاد می‌شود):</p>
 <pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto" dir="ltr">{
+  "letter": {
+    "counts": { "ثالث": 3, "بدنه": 2, "تغییر اطلاعات": 1, "فسخ": 1 }
+  },
   "rows": [
     {
+      "request": "صدور",
       "plate": "31 ع 693 ایران 21",
       "insurance_type": "بدنه",
       "expiry_date": "1405/07/30",
       "car_name": "پژو 206",
+      "car_value": "5,000,000,000",
       "has_prev_body": "بله",
       "health_inspection": "لازم",
       "note": ""
+    },
+    {
+      "request": "صدور",
+      "plate": "12 ن 152 ایران 77",
+      "insurance_type": "ثالث",
+      "expiry_date": "1405/08/12",
+      "liability_limit": "1,000,000,000"
+    },
+    {
+      "request": "تغییر اطلاعات",
+      "plate": "44 ج 321 ایران 12",
+      "insurance_type": "بدنه",
+      "policy_number": "1405/123456",
+      "change_request": "افزایش سرمایه به ۶ میلیارد"
+    },
+    {
+      "request": "فسخ",
+      "plate": "53 ب 128 ایران 74",
+      "insurance_type": "ثالث",
+      "policy_number": "1405/654321",
+      "cancellation_reason": "فروش خودرو"
     }
   ]
 }</pre>
@@ -2081,7 +2196,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     کافی است فایل اکسل را همین‌جا بدهید. ستون‌ها با <b>نامِ سرستون</b> شناخته می‌شوند،
                     پس ترتیبشان مهم نیست و ستون‌های اضافه نادیده گرفته می‌شوند. این نام‌ها شناخته می‌شوند:
                 </p>
-<pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto">پلاک | شماره شاسی | شماره موتور | ارزش خودرو | تعهد مالی | نوع بیمه نامه | تاریخ انقضا | خودرو | بیمه بدنه قبل | بازدید سلامت | توضیحات</pre>
+<pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto">نوع درخواست | پلاک | شماره شاسی | شماره موتور | ارزش خودرو | تعهد مالی | نوع بیمه نامه | تاریخ انقضا | خودرو | بیمه بدنه قبل | بازدید سلامت | شماره بیمه نامه | خواسته | دلیل فسخ | توضیحات</pre>
                 <p class="text-[10px] text-slate-500 mt-1">
                     برای لیفتراک و خودروی صفرکیلومتر که پلاک ندارند، ستونِ «پلاک» را خالی بگذارید و فقط
                     «شماره شاسی» را پر کنید؛ تاریخ انقضا هم لازم نیست.
@@ -2090,6 +2205,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto" dir="ltr">31 ع 693 ایران 21 | بدنه | 1405/07/30 | پژو 206
 12 ن 152 ایران 77 | هردو | 1406/01/05 | پراید</pre>
                 <p class="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                    • <b>letter.counts</b>: نوعِ نامه و تعدادِ درخواستی از هر نوع - «ثالث»، «بدنه»، «تغییر اطلاعات» (الحاقیه) و «فسخ». اگر نیاید، سیستم از روی ردیف‌ها خودش می‌شمارد.<br>
+                    • <b>request</b> برای هر ردیف: «صدور» (بیمه‌نامه‌ی جدید)، «تغییر اطلاعات» (الحاقیه) یا «فسخ». برای «تغییر اطلاعات» <b>change_request</b> (چه تغییری) و برای «فسخ» <b>cancellation_reason</b> (دلیل) را بنویسد؛ در هر دو <b>policy_number</b> (شماره بیمه‌نامه‌ی فعلی) لازم است.<br>
+                    • <b>car_value</b> (ارزش خودرو، برای بدنه) و <b>liability_limit</b> (سقف تعهد مالی، برای ثالث) به ریال - با یا بدون جداکننده.<br>
                     • <b>insurance_type</b> می‌تواند «بدنه»، «ثالث» یا «هردو» باشد؛ «هردو» خودش به دو ردیف جدا تبدیل می‌شود.<br>
                     • تاریخ‌ها شمسی‌اند (۱۴۰۵/۰۷/۳۰ یا ۱۴۰۵.۰۷.۳۰).<br>
                     • <b>has_prev_body</b>: «بله» یا «خیر» — برای بدنه، اگر بیمه بدنه قبلی دارد، بارگذاریش اجباری می‌شود.<br>
@@ -2266,38 +2384,77 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
-    <!-- مودال ثبت دستی پرونده جدید -->
+    <!-- مودال ثبت دستیِ درخواست کارکنان: پرسنل و معرفی‌نامه -> اطلاعات درخواست -> چک‌لیست مدارک -->
     <div id="manual-create-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-8 relative">
-            <button type="button" onclick="document.getElementById('manual-create-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h2 class="text-xl font-black mb-6 text-slate-800 text-center border-b border-slate-100 pb-3"><i class="fas fa-user-plus text-blue-500 ml-2"></i>ثبت دستی پرونده جدید</h2>
-            
-            <p class="text-[11px] text-slate-500 mb-5 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                برای زمانی که تشخیص خودکار PDF انجام نشده یا درخواست فیزیکی است.
-            </p>
+        <div class="modal-content w-full max-w-3xl p-6 relative max-h-[92vh] overflow-y-auto">
+            <button type="button" onclick="closeManualCreateModal()" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h2 class="text-lg font-black mb-1 text-slate-800"><i class="fas fa-user-plus text-blue-500 ml-2"></i><span id="mc-title">ثبت دستی درخواست کارکنان</span></h2>
+            <p class="text-[11px] text-slate-400 mb-4">برای درخواست‌های حضوری یا وقتی تشخیص خودکار انجام نشده. اطلاعات درخواست همین‌جا گرفته می‌شود و بعد از ثبت، مدارک لازم را تک‌تک بارگذاری می‌کنید.</p>
+            <input type="hidden" id="mc-intro-id">
+            <input type="hidden" id="mc-case-id">
 
-            <div class="float-input">
-                <input type="text" id="mc-full-name" placeholder=" " autocomplete="off">
-                <label>نام و نام خانوادگی</label>
+            <!-- ۱. پرسنل و معرفی‌نامه -->
+            <div id="mc-person-section" class="border border-slate-200 rounded-xl p-3 mb-3">
+                <h4 class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-id-badge ml-1 text-slate-300"></i>پرسنل و معرفی‌نامه</h4>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <label class="text-[11px] font-bold text-slate-500 block">نام و نام خانوادگی *<input type="text" id="mc-full-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" autocomplete="off"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">کد ملی (۱۰ رقم) *<input type="text" id="mc-national-code" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10" autocomplete="off"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">کد پرسنلی<input type="text" id="mc-personnel-code" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" autocomplete="off"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">شرکت / کارفرما<input type="text" id="mc-company-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" list="mc-companies-dl" placeholder="مثلاً ماموت" autocomplete="off"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">موبایل پرسنل<input type="text" id="mc-mobile" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="11" placeholder="۰۹۱۲..." autocomplete="off"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">تاریخ معرفی‌نامه (شمسی)<input type="text" id="mc-letter-date" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="۱۴۰۵/۰۷/۰۱"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">سهمیه‌ی معرفی‌نامه<input type="text" id="mc-quota" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="پیش‌فرض تنظیمات"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block md:col-span-2">فایل معرفی‌نامه (اختیاری)<input type="file" id="mc-intro-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="mt-1 w-full text-xs"></label>
+                </div>
+                <datalist id="mc-companies-dl"></datalist>
             </div>
-            <div class="float-input">
-                <input type="text" id="mc-national-code" placeholder=" " dir="ltr" maxlength="10" autocomplete="off">
-                <label>کد ملی (۱۰ رقم)</label>
-            </div>
-            <div class="float-input">
-                <input type="text" id="mc-personnel-code" placeholder=" " dir="ltr" autocomplete="off">
-                <label>کد پرسنلی</label>
-            </div>
-            <div class="float-input">
-                <input type="text" id="mc-company-name" placeholder=" " autocomplete="off">
-                <label>شرکت (مثال: ماموت)</label>
-            </div>
-            
-            <p class="text-[11px] text-slate-400 mb-5 text-center">
-                نوع بیمه‌نامه اینجا مشخص نمی‌شود؛ بعد از ثبت، از داخل جزئیات معرفی‌نامه‌ی همین شخص، برای هر درخواست/پرونده به‌طور جداگانه نوع بیمه (ثالث یا بدنه) انتخاب می‌شود.
-            </p>
+            <div id="mc-intro-summary" class="hidden text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"></div>
 
-            <button onclick="submitManualCreate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors">ثبت و ایجاد معرفی‌نامه</button>
+            <!-- ۲. اطلاعات درخواست -->
+            <div id="mc-request-section" class="border border-slate-200 rounded-xl p-3 mb-3">
+                <h4 class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات درخواست</h4>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+                    <label class="text-[11px] font-bold text-slate-500 block">نوع بیمه *
+                        <select id="mc-insurance-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcOnTypeChange()"><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">نسبت بیمه‌گذار با پرسنل *
+                        <select id="mc-relationship" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcOnRelChange()"><option>خودم</option><option>پدر</option><option>مادر</option><option>همسر</option><option>فرزند</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">مدرک مالکیت *
+                        <select id="mc-ownership" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="کارت ماشین">کارت ماشین</option><option value="سند">سند</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">نام بیمه‌گذار *<input type="text" id="mc-insured-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">کد ملی بیمه‌گذار *<input type="text" id="mc-insured-nid" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
+                </div>
+                <label class="text-[11px] font-bold text-slate-500 block mb-1">پلاک *</label>
+                <div id="mc-plate-mount" class="mb-2 max-w-md"></div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+                    <label class="text-[11px] font-bold text-slate-500 block mc-third-only">سقف تعهد مالی
+                        <select id="mc-liability" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="">انتخاب کنید</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-body-only hidden">ارزش خودرو (ریال)<input type="text" id="mc-car-value" class="money-input mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-body-only hidden">بیمه بدنه قبل دارد؟
+                        <select id="mc-prev-body" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="خیر">خیر</option><option value="بله">بله</option></select></label>
+                </div>
+                <details class="mt-1">
+                    <summary class="text-[11px] font-bold text-slate-500 cursor-pointer">اطلاعات تماس بیمه‌گذار (اختیاری)</summary>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+                        <label class="text-[11px] font-bold text-slate-500 block">تاریخ تولد (شمسی)<input type="text" id="mc-birth" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="۱۳۷۰/۰۵/۱۲"></label>
+                        <label class="text-[11px] font-bold text-slate-500 block">موبایل بیمه‌گذار<input type="text" id="mc-phone" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="11"></label>
+                        <label class="text-[11px] font-bold text-slate-500 block">کد پستی<input type="text" id="mc-postal" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
+                        <label class="text-[11px] font-bold text-slate-500 block col-span-2 md:col-span-3">آدرس<input type="text" id="mc-address" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
+                    </div>
+                </details>
+            </div>
+
+            <!-- ۳. چک‌لیستِ مدارک (بعد از ثبت) -->
+            <div id="mc-docs-section" class="hidden border-2 border-emerald-100 bg-emerald-50/30 rounded-xl p-3 mb-3">
+                <h4 class="text-xs font-bold text-emerald-700 mb-1"><i class="fas fa-list-check ml-1"></i>مدارک لازم <span id="mc-case-code" class="text-slate-500 font-normal"></span></h4>
+                <p class="text-[10px] text-slate-500 mb-2">هر مدرک را بارگذاری کنید؛ با همان نام‌گذاریِ مسیرِ عادی ذخیره و تایید می‌شود و وقتی همه کامل شد، پرونده به مرحله‌ی صدور می‌رود.</p>
+                <div id="mc-docs-list" class="checklist-grid"></div>
+            </div>
+
+            <div class="flex gap-2">
+                <button id="mc-submit-btn" onclick="submitManualRequest()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors"><i class="fas fa-check ml-1"></i>ثبت درخواست</button>
+                <button id="mc-open-case-btn" onclick="mcOpenCreatedCase()" class="hidden flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl">باز کردن پرونده</button>
+                <button onclick="closeManualCreateModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl">بستن</button>
+            </div>
         </div>
     </div>
 
@@ -2470,7 +2627,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <!-- فیلدهای مشترک بیمه‌نامه (بدنه/ثالث) -->
                 <div class="float-input" id="rbox-policy"><input type="text" id="review-policy" placeholder=" " dir="ltr" autocomplete="off"><label>شماره بیمه‌نامه</label></div>
                 <div class="float-input" id="rbox-uniquecode"><input type="text" id="review-uniquecode" placeholder=" " dir="ltr" autocomplete="off"><label>شماره یکتا بیمه مرکزی</label></div>
-                <div class="float-input" id="rbox-plate"><input type="text" id="review-plate" placeholder=" " dir="ltr" autocomplete="off" class="plate-display"><label>پلاک خودرو</label></div>
+                <div class="mb-4" id="rbox-plate"><label class="text-xs font-bold text-slate-500 block mb-1.5">پلاک خودرو</label><div id="review-plate-mount"></div></div>
                 <div class="float-input" id="rbox-phone"><input type="text" id="review-phone" placeholder=" " dir="ltr" autocomplete="off"><label>شماره تماس بیمه‌گذار</label></div>
                 <div class="float-input" id="rbox-issuedate"><input type="text" id="review-issuedate" placeholder=" " dir="ltr" autocomplete="off"><label>تاریخ صدور بیمه‌نامه</label></div>
                 <div class="float-input" id="rbox-renewal"><input type="text" id="review-renewal" placeholder=" " autocomplete="off"><label>وضعیت تمدید</label></div>
@@ -2518,6 +2675,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         let currentRecordsData = [];
         let activeRowId = null;
+        const IS_ADMIN = <?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? 'true' : 'false'; ?>;
         let activeRowNational = '';
         let isBotEnabledState = true;
         let currentQueueData = [];
@@ -2548,6 +2706,64 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         };
         // پلاک را با چیدمان DOM (اسپن‌های جدا داخل فلکس) می‌سازیم، نه صرفاً با CSS bidi-override؛
         // چون bidi-override به‌تنهایی می‌تواند شکل حروف فارسی/عربی را هم به‌هم بریزد.
+        // ---- ورودیِ پلاکِ چهارخانه، دقیقاً مثل فرم درخواست شرکت‌ها ----
+        // چیدمان چپ‌به‌راست مثل خودِ پلاک: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقم]، و ترتیبِ تایپ هم
+        // همین است (با پُر شدنِ هر خانه مکان‌نما خودش به خانه‌ی بعد می‌رود). مقدارِ کامل با همان
+        // قالبِ ذخیره‌ی سیستم («68ایران - 711 ب 16») در یک input مخفی با شناسه‌ی قبلی می‌نشیند،
+        // پس هر کدی که قبلاً ‎.value‎ آن شناسه را می‌خواند بدون تغییر کار می‌کند.
+        const PLATE_LETTERS_FA = ['الف','ب','پ','ت','ث','ج','د','ز','ژ','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+        const plateToEn = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        function parseStoredPlate(v) {
+            const m = plateToEn(v).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
+            return m ? {p1: m[1], p2: m[2], letter: m[3], p4: m[4]} : {p1: '', p2: '', letter: '', p4: ''};
+        }
+        function plateSplitHtml(id, value) {
+            const v = parseStoredPlate(value);
+            const fa = x => x ? e2p(x) : '';
+            const cls = 'psplit-part text-center border border-slate-300 rounded-lg p-2 text-sm bg-white w-full';
+            return `<div class="psplit grid gap-1.5 items-center" style="grid-template-columns:1fr 1fr 1.3fr 1.4fr" dir="ltr" data-target="${id}">
+                <input type="text" inputmode="numeric" maxlength="2" data-part="p4" placeholder="۱۲" value="${fa(v.p4)}" class="${cls}">
+                <input type="text" maxlength="3" data-part="letter" placeholder="الف" value="${v.letter}" list="plate-letters-dl" class="${cls}">
+                <input type="text" inputmode="numeric" maxlength="3" data-part="p2" placeholder="۳۴۵" value="${fa(v.p2)}" class="${cls}">
+                <div class="flex items-center gap-1 border border-slate-300 rounded-lg px-1 bg-white">
+                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
+                    <input type="text" inputmode="numeric" maxlength="2" data-part="p1" placeholder="۶۷" value="${fa(v.p1)}" class="psplit-part text-center text-sm w-full outline-none p-2 bg-transparent">
+                </div>
+                <input type="hidden" id="${id}" value="${value ? String(value).replace(/"/g, '') : ''}">
+            </div>`;
+        }
+        function syncPlateSplit(box) {
+            const get = k => plateToEn(box.querySelector(`[data-part="${k}"]`).value.trim());
+            const p = {p1: get('p1'), p2: get('p2'), letter: box.querySelector('[data-part="letter"]').value.trim().replace(/ي/g, 'ی').replace(/ك/g, 'ک'), p4: get('p4')};
+            const hidden = document.getElementById(box.dataset.target);
+            if (hidden) hidden.value = (p.p1 || p.p2 || p.letter || p.p4) ? `${p.p1}ایران - ${p.p2} ${p.letter} ${p.p4}` : '';
+        }
+        function setPlateSplit(id, value) {
+            const hidden = document.getElementById(id);
+            const box = hidden && hidden.closest('.psplit');
+            if (!box) { if (hidden) hidden.value = value || ''; return; }
+            const v = parseStoredPlate(value);
+            ['p1', 'p2', 'p4'].forEach(k => { box.querySelector(`[data-part="${k}"]`).value = v[k] ? e2p(v[k]) : ''; });
+            box.querySelector('[data-part="letter"]').value = v.letter;
+            hidden.value = value || '';
+        }
+        document.addEventListener('input', e => {
+            const el = e.target;
+            if (!el.classList || !el.classList.contains('psplit-part')) return;
+            const box = el.closest('.psplit');
+            const part = el.dataset.part;
+            if (part !== 'letter') {
+                const digits = plateToEn(el.value).replace(/\D/g, '');
+                el.value = digits.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+            }
+            syncPlateSplit(box);
+            // خانه که پُر شد، برو خانه‌ی بعد: ۲ رقم -> حرف -> ۳ رقم -> ایران
+            const order = ['p4', 'letter', 'p2', 'p1'];
+            const full = part === 'letter' ? PLATE_LETTERS_FA.includes(el.value.trim()) : el.value.length >= Number(el.maxLength);
+            const next = order[order.indexOf(part) + 1];
+            if (full && next) box.querySelector(`[data-part="${next}"]`).focus();
+        });
+
         function formatPlateHtml(plate) {
             if (!plate) return '-';
             const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
@@ -2740,13 +2956,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             tbody.innerHTML = '';
             list.forEach((row, index) => {
                 tbody.innerHTML += `
-                    <tr class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
+                    <tr data-id="${row.id}" class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
                         <td class="p-4 font-mono text-slate-400">${e2p(index + 1)}</td>
                         <td class="p-4 text-slate-700">${row.full_name || '-'}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.personnel_code) || '-'}</td>
                         <td class="p-4 text-blue-600 text-xs">${row.issued_summary || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span><br><span class="text-[10px] text-slate-400">${row.relationship_summary || ''}</span></td>
-                        <td class="p-4"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(row.total_cases)} بیمه‌نامه)</button></td>
+                        <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(row.total_cases)} بیمه‌نامه)</button>
+                            ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
                     </tr>
                 `;
             });
@@ -3009,7 +3226,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('review-letterdate').value = faDigits(json.letter_date);
             document.getElementById('review-policy').value = json.policy_num || '';
             document.getElementById('review-uniquecode').value = json.unique_code || '';
-            document.getElementById('review-plate').value = json.plate || '';
+            document.getElementById('review-plate-mount').innerHTML = plateSplitHtml('review-plate', json.plate || '');
             document.getElementById('review-phone').value = json.phone || '';
             document.getElementById('review-issuedate').value = json.issue_date || '';
             document.getElementById('review-renewal').value = json.renewal_status || '';
@@ -3104,10 +3321,34 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // روی اعلان، مستقیم به همان بخش می‌رویم.
         let notifSince = null;
         // زنگوله‌ی کنارِ دکمه‌ی خروج: هر اعلانی که گوشه‌ی صفحه می‌آید، آن‌جا هم می‌ماند
+        let notifAfterId = null;   // آخرین اعلانی که دیده شده (حالتِ ماندگار)
+        async function notifFetch(extra) {
+            const res = await fetch('api/notifications_feed.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(Object.assign({since: notifSince, after_id: notifAfterId}, extra || {}))});
+            return res.json();
+        }
+        // پاسخِ فید را اعمال می‌کند و رویدادهای تازه (برای نمایشِ گوشه‌ی صفحه) را برمی‌گرداند
+        function applyNotifResponse(data) {
+            if (!data || !data.ok) return [];
+            if (data.persisted) {
+                if (window.NotifBell) NotifBell.setServerItems(data.items || []);
+                const fresh = notifAfterId === null ? [] : (data.new || []);
+                notifAfterId = data.max_id;
+                return fresh;
+            }
+            notifSince = data.now;
+            return data.events || [];
+        }
         if (window.NotifBell) NotifBell.init({
             mount: document.getElementById('notif-bell-mount'),
             storageKey: 'notif:admin:<?php echo intval($_SESSION['user_id']); ?>',
             onOpenItem: it => { if (it.tab) switchTab(it.tab); },
+            // حذف/خواندن در حالتِ ماندگار روی سرور انجام می‌شود تا در همه‌ی مرورگرها یکی باشد
+            onServerAction: async (act, id) => {
+                const data = await notifFetch({notif_action: act, id});
+                applyNotifResponse(data).forEach(pushNotification);
+                return data && data.persisted ? data.items : null;
+            },
         });
         function pushNotification(ev) {
             if (window.NotifBell) NotifBell.add(ev);
@@ -3126,14 +3367,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function pollNotifications() {
             try {
                 // فیدِ جدا برای همه‌ی نقش‌ها (قبلاً داخلِ API شرکت‌ها بود و اپراتور/مالی اعلانی نمی‌گرفتند)
-                const res = await fetch('api/notifications_feed.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({since: notifSince})});
-                const data = await res.json();
+                const data = await notifFetch();
                 if (!data.ok) return;
-                (data.events || []).forEach(pushNotification);
-                notifSince = data.now;
+                const events = applyNotifResponse(data);
+                events.forEach(pushNotification);
                 // اگر مدرک یا درخواستِ تازه‌ای آمد، شمارنده‌ها و فهرست‌ها هم تازه شوند
-                if ((data.events || []).some(e => e.type === 'company_doc' || e.type === 'company_request')) {
+                if (events.some(e => e.type === 'company_doc' || e.type === 'company_request')) {
                     if (typeof loadCompanyInbox === 'function') loadCompanyInbox();
                     const t = document.getElementById('tab-companies-requests');
                     if (t && !t.classList.contains('hidden')) loadCompanyRequests();
@@ -3786,11 +4025,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const rows = data.rows || [];
             box.innerHTML = `
                 ${(data.errors || []).length ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2 text-[10px] text-amber-700">${data.errors.map(x => '• ' + x).join('<br>')}</div>` : ''}
+                ${data.counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 mb-2">تعدادِ درخواستیِ نامه: ${data.counts_fa}</p>` : ''}
                 <p class="text-xs font-bold text-slate-600 mb-1">${e2pNum(rows.length)} ردیف شناسایی شد:</p>
                 <div class="max-h-52 overflow-y-auto border border-slate-100 rounded-lg">
                     <table class="w-full text-right text-[10px]">
-                        <thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5">پلاک</th><th class="p-1.5">نوع</th><th class="p-1.5">انقضا</th><th class="p-1.5">خودرو</th><th class="p-1.5">بدنه قبل</th><th class="p-1.5">بازدید</th></tr></thead>
+                        <thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5">درخواست</th><th class="p-1.5">پلاک</th><th class="p-1.5">نوع</th><th class="p-1.5">انقضا</th><th class="p-1.5">خودرو</th><th class="p-1.5">بدنه قبل</th><th class="p-1.5">بازدید</th></tr></thead>
                         <tbody>${rows.map(x => `<tr class="border-t border-slate-100">
+                            <td class="p-1.5">${x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')}</td>
                             <td class="p-1.5">${rowIdentityHtml(x)}</td>
                             <td class="p-1.5">${x.insurance_type_fa}</td>
                             <td class="p-1.5">${faDigits(x.expiry_date_jalali) || '—'}</td>
@@ -5816,7 +6057,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-4 text-xs">${e2p(c.docs_approved)}/${e2p(c.docs_total)} تایید${c.docs_rejected > 0 ? ` <span class="text-red-500">(${e2p(c.docs_rejected)} رد)</span>` : ''}</td>
                             <td class="p-4 text-xs font-bold ${CASE_STATUS_COLOR[c.status] || ''}">${CASE_STATUS_FA[c.status] || c.status}</td>
                             <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(c.created_at, false)}</td>
-                            <td class="p-4"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button></td>
+                            <td class="p-4 whitespace-nowrap"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button>
+                                ${IS_ADMIN && c.status !== 'ISSUED' ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
                         </tr>`;
                 });
             } else {
@@ -5874,12 +6116,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>`;
 
                 const addCaseHtml = `
-                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center gap-2">
-                        <select id="intro-new-case-type" class="border rounded-lg px-2 py-1.5 text-xs flex-1">
-                            <option value="THIRDPARTY">ثالث</option>
-                            <option value="BODY">بدنه</option>
-                        </select>
-                        <button onclick="createCaseForIntro(${introId})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن پرونده‌ی جدید</button>
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center justify-between gap-2">
+                        <span class="text-[11px] text-blue-800">درخواستِ تازه برای همین معرفی‌نامه، با همه‌ی اطلاعات و مدارکش:</span>
+                        <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
                     </div>`;
 
                 if (data.data.length === 0) {
@@ -5897,7 +6136,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-[10px] text-slate-400">شناسه: ${c.unique_code} — ${e2p(c.docs_approved)}/${e2p(c.docs_total)} مدرک تایید‌شده ${pendingBadge} ${rejectedBadge}</p>
                             <b class="text-xs ${CASE_STATUS_COLOR[c.status]||''}">${CASE_STATUS_FA[c.status]||c.status}</b>
                         </div>
-                        <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-arrow-left ml-1"></i>جزئیات و عملیات</button>
+                        <span class="flex items-center gap-1.5">
+                            <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-arrow-left ml-1"></i>جزئیات و عملیات</button>
+                            ${IS_ADMIN && c.status !== 'ISSUED' ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}
+                        </span>
                     </div>`;
                 }).join('');
 
@@ -5906,21 +6148,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function insurance_type_fa_js(t) { return t === 'BODY' ? 'بدنه' : 'ثالث'; }
 
-        async function createCaseForIntro(introId) {
-            const insuranceType = document.getElementById('intro-new-case-type').value;
-            try {
-                const res = await fetch('api/record_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action: 'create_case_for_intro', introduction_id: introId, insurance_type: insuranceType })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    showToast('پرونده‌ی جدید ایجاد شد.', 'success');
-                    openIntroDetail(introId, document.getElementById('intro-detail-name').textContent);
+        // حذفِ یک درخواستِ کارکنان (چه دستی ثبت شده، چه خودِ پرسنل از ربات). صادرشده‌ها حذف نمی‌شوند.
+        function deleteCase(caseId, introId) {
+            showConfirm('حذف درخواست', 'این درخواست با مدارک و بازدیدهایش حذف می‌شود و یک واحد به سهمیه‌ی معرفی‌نامه برمی‌گردد. مطمئنید؟', async () => {
+                try {
+                    const res = await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({action: 'delete_case', case_id: caseId})});
+                    const data = await res.json();
+                    if (!data.ok) { showToast(data.error || 'خطا در حذف.', 'error'); return; }
+                    showToast('درخواست حذف شد.', 'success');
+                    const cm = document.getElementById('case-detail-modal');
+                    if (cm && !cm.classList.contains('hidden')) { cm.classList.add('hidden'); cm.classList.remove('flex'); }
+                    if (introId) openIntroDetail(introId, document.getElementById('intro-detail-name').textContent);
                     loadRecords();
-                } else showToast(data.error || 'خطا در ایجاد پرونده.', 'error');
-            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+                    if (typeof loadCases === 'function' && !document.getElementById('tab-cases').classList.contains('hidden')) loadCases();
+                } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            });
         }
+
 
         async function openCase(caseId, mode) {
             currentCaseId = caseId;
@@ -5935,6 +6180,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!data.ok) { body.innerHTML = `<p class="text-red-500 text-sm">${data.error}</p>`; return; }
                 const c = data.case;
                 const isIssueMode = currentCaseMode === 'issue';
+                const delBtn = document.getElementById('case-delete-btn');
+                delBtn.classList.toggle('hidden', !(IS_ADMIN && c.status !== 'ISSUED'));
+                delBtn.onclick = () => deleteCase(c.id, c.introduction_id || null);
                 document.getElementById('case-detail-code').innerText = c.unique_code + (isIssueMode ? ' — صدور بیمه‌نامه' : ' — بررسی مدارک');
 
                 // در حالت «صدور»، فقط مدارکِ تایید‌شده نمایش داده می‌شود و هیچ دکمه‌ی تایید/ردی نیست
@@ -6054,7 +6302,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="bg-amber-50 border border-amber-100 rounded-xl p-4">
                         <p class="text-xs font-bold text-amber-700 mb-3"><i class="fas fa-pen ml-1"></i> فیلدهای نام‌گذاری (اختیاری، دستی) - اگر خالی بماند بعد از دریافت فایل بیمه‌نامه به‌صورت خودکار تکمیل می‌شود</p>
                         <div class="grid grid-cols-2 gap-2">
-                            <input type="text" id="naming-plate" placeholder="پلاک" value="${c.plate || ''}" class="border rounded-lg px-2 py-1.5 text-xs plate-display" dir="ltr">
+                            <div class="col-span-2">${plateSplitHtml('naming-plate', c.plate || '')}</div>
                             <input type="text" id="naming-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
                         </div>
                         <button onclick="saveNaming()" class="mt-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره</button>
@@ -6177,7 +6425,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
                         <p class="text-xs font-bold text-indigo-700 mb-3"><i class="fas fa-user-pen ml-1"></i>تکمیل/ویرایش دستیِ اطلاعات (برای پرونده‌های ثبتِ دستی - چون خودمان وارد می‌کنیم)</p>
                         <div class="grid grid-cols-2 gap-2">
-                            <input type="text" id="adm-plate" placeholder="پلاک" value="${c.plate || ''}" class="border rounded-lg px-2 py-1.5 text-xs plate-display" dir="ltr">
+                            <div class="col-span-2">${plateSplitHtml('adm-plate', c.plate || '')}</div>
                             <input type="text" id="adm-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
                             <input type="text" id="adm-insured-nid" placeholder="کد ملی بیمه‌گذار" value="${c.insured_national_id || ''}" class="border rounded-lg px-2 py-1.5 text-xs" dir="ltr">
                             <select id="adm-ownership" class="border rounded-lg px-2 py-1.5 text-xs">
@@ -6480,68 +6728,237 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // فهرست پرونده‌هایی که مدرکِ در انتظار بررسی یا رد‌شده دارند - این‌جا (نه در تب صدور) تایید/رد می‌شوند
         async function loadDocsReviewList() {
             const box = document.getElementById('docs-review-body');
-            box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4"><i class="fas fa-spinner fa-spin"></i></p>';
+            box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4 col-span-full"><i class="fas fa-spinner fa-spin"></i></p>';
             try {
                 const res = await fetch('api/case_actions.php?action=list');
                 const data = await res.json();
-                if (!data.ok) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4">خطا در اتصال به سرور.</p>'; return; }
+                if (!data.ok) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4 col-span-full">خطا در اتصال به سرور.</p>'; return; }
                 const needsReview = data.data.filter(c => (c.docs_pending > 0 || c.docs_rejected > 0) && c.status !== 'ISSUED');
-                if (needsReview.length === 0) { box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4">مدرکی در انتظار بررسی نیست.</p>'; return; }
-                box.innerHTML = needsReview.map(c => {
-                    const pendingBadge = c.docs_pending > 0 ? `<span class="text-amber-600 text-[10px] font-bold">${e2p(c.docs_pending)} در انتظار</span>` : '';
-                    const rejectedBadge = c.docs_rejected > 0 ? `<span class="text-red-500 text-[10px] font-bold">${e2p(c.docs_rejected)} نیاز به اصلاح کاربر</span>` : '';
-                    return `<div class="border rounded-xl p-3 flex justify-between items-center">
-                        <div>
-                            <p class="font-bold text-xs">${c.insured_name || c.holder_name} — ${insurance_type_fa_js(c.insurance_type)} — <span dir="ltr">${formatPlateHtml(c.plate)}</span></p>
-                            <p class="text-[10px] text-slate-400 mt-1" dir="ltr">${c.unique_code}</p>
-                            <div class="flex gap-2 mt-1">${pendingBadge}${rejectedBadge}</div>
+                document.getElementById('hs-docs').textContent = e2pNum(needsReview.filter(c => c.docs_pending > 0).length);
+                if (needsReview.length === 0) { box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4 col-span-full">مدرکی در انتظار بررسی نیست.</p>'; return; }
+                box.innerHTML = needsReview.map(c => `
+                    <div class="border border-slate-200 rounded-xl p-3 flex flex-col gap-2 bg-white">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="font-bold text-xs truncate">${c.insured_name || c.holder_name}</p>
+                                <p class="text-[10px] text-slate-400" dir="ltr">${c.unique_code}</p>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${c.insurance_type === 'BODY' ? 'bg-cyan-50 text-cyan-700' : 'bg-blue-50 text-blue-700'}">${insurance_type_fa_js(c.insurance_type)}</span>
                         </div>
-                        <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-file-lines ml-1"></i>بررسی مدارک</button>
-                    </div>`;
-                }).join('');
-            } catch(e) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4">خطا در اتصال به سرور.</p>'; }
+                        <div class="plate-display text-xs">${c.plate ? formatPlateHtml(c.plate) : '<span class="text-slate-400">بدون پلاک</span>'}</div>
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex gap-1.5 flex-wrap">
+                                ${c.docs_pending > 0 ? `<span class="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">${e2p(c.docs_pending)} در انتظار</span>` : ''}
+                                ${c.docs_rejected > 0 ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">${e2p(c.docs_rejected)} منتظر اصلاحِ کاربر</span>` : ''}
+                                <span class="bg-slate-50 text-slate-500 text-[10px] px-2 py-0.5 rounded-full">${e2p(c.docs_approved)}/${e2p(c.docs_total)} تایید</span>
+                            </div>
+                            <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-file-lines ml-1"></i>بررسی مدارک</button>
+                        </div>
+                    </div>`).join('');
+            } catch(e) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4 col-span-full">خطا در اتصال به سرور.</p>'; }
         }
 
+        // ===================== بازدید سلامت: فهرست + بررسیِ تک‌تکِ عکس‌ها =====================
+        let healthListCache = [], healthPerPhoto = true;
         async function loadHealthTab() {
             const body = document.getElementById('health-tab-body');
-            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8"><i class="fas fa-spinner fa-spin"></i></p>';
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8 col-span-full"><i class="fas fa-spinner fa-spin"></i></p>';
             try {
                 const res = await fetch('api/case_actions.php?action=health_list');
                 const data = await res.json();
-                if (!data.ok || data.data.length === 0) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8">بازدیدی ثبت نشده است.</p>'; return; }
-                const stepLabels = {'1':'نمای جلو','2':'جلو راست ۴۵','3':'جلو چپ ۴۵','4':'نمای عقب','5':'عقب راست ۴۵','6':'عقب چپ ۴۵','7':'کاپوت باز','8':'صندوق باز','9':'داخل کابین','10':'سقف','11':'لاستیک زاپاس','12':'شماره شاسی','13':'سانروف','14':'آسیب‌دیدگی'};
-                body.innerHTML = data.data.map(h => {
-                    const photos = JSON.parse(h.photos || '{}');
-                    const photosHtml = Object.entries(photos).map(([step, p]) => {
-                        const stepKey = step.split('-')[0];
-                        return `<div class="text-center"><img src="/${encodeFilePath(p)}" onclick="openImageZoom('/${encodeFilePath(p)}')" class="w-16 h-16 object-cover rounded-lg border cursor-zoom-in"><p class="text-[9px] text-slate-400">${stepLabels[stepKey]||step}</p></div>`;
-                    }).join('');
-                    const statusBadge = h.status === 'APPROVED' ? '<span class="text-emerald-600 text-xs font-bold">✅ تایید شده</span>'
-                        : h.status === 'REJECTED' ? `<span class="text-red-500 text-xs font-bold">❌ رد شده - ${h.reject_reason||''}</span>`
-                        : '<span class="text-amber-500 text-xs font-bold">⏳ در انتظار بررسی</span>';
-                    const actions = h.status === 'PENDING'
-                        ? `<div class="flex gap-2 mt-2">
-                             <button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs hover:bg-emerald-600">تایید</button>
-                             <button onclick="rejectHealth(${h.id})" class="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-xs hover:bg-red-200">رد</button>
-                           </div>` : '';
-                    const reportHtml = h.status !== 'APPROVED' ? '' : (h.report_file_path
-                        ? `<a href="/${h.report_file_path}" target="_blank" class="text-blue-600 underline text-xs">مشاهده گزارش کارشناس</a>`
-                        : `<label class="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش کارشناس (برای رفتن به مرحله‌ی صدور لازم است)<input type="file" class="hidden" onchange="uploadHealthReport(${h.id}, this)"></label>`);
-                    return `<div class="card border-rose-100 p-4">
-                        <div class="flex justify-between items-start">
-                            <p class="font-bold text-sm">${h.holder_name} — ${h.plate ? formatPlateHtml(h.plate) : h.unique_code} — بازدید شماره ${e2p(h.inspection_number)}</p>
-                            <a href="api/case_actions.php?action=download_health_zip&inspection_id=${h.id}" class="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg text-xs font-bold hover:bg-rose-100"><i class="fas fa-file-zipper ml-1"></i>دانلود زیپ</a>
-                        </div>
-                        <div class="flex gap-2 flex-wrap my-3">${photosHtml}</div>
-                        <div class="flex justify-between items-center">
-                            ${statusBadge}
-                            ${reportHtml}
-                        </div>
-                        ${actions}
-                    </div>`;
-                }).join('');
-            } catch(e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8">خطا در دریافت اطلاعات.</p>'; }
+                if (!data.ok) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8 col-span-full">خطا در دریافت اطلاعات.</p>'; return; }
+                healthListCache = data.data || [];
+                healthPerPhoto = data.per_photo !== false;
+                const cnt = st => healthListCache.filter(h => h.status === st).length;
+                document.getElementById('hs-pending').textContent = e2pNum(cnt('PENDING'));
+                document.getElementById('hs-rejected').textContent = e2pNum(cnt('REJECTED'));
+                document.getElementById('hs-approved').textContent = e2pNum(cnt('APPROVED'));
+                renderHealthList();
+            } catch(e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8 col-span-full">خطا در دریافت اطلاعات.</p>'; }
         }
+
+        function renderHealthList() {
+            const body = document.getElementById('health-tab-body');
+            const f = document.getElementById('health-filter').value;
+            const list = healthListCache.filter(h => !f || h.status === f);
+            if (!list.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8 col-span-full">بازدیدی با این فیلتر نیست.</p>'; return; }
+            body.innerHTML = list.map(h => {
+                const photos = Object.values(JSON.parse(h.photos || '{}'));
+                const c = h.review_counts || {APPROVED: 0, REJECTED: 0, PENDING: photos.length};
+                const pill = h.status === 'APPROVED' ? ['bg-emerald-100 text-emerald-700', 'تایید نهایی']
+                           : h.status === 'REJECTED' ? ['bg-rose-100 text-rose-700', 'ناقص - منتظر ارسالِ دوباره']
+                           : ['bg-amber-100 text-amber-700', 'در انتظار بررسی'];
+                const thumbs = photos.slice(0, 7).map(p => `<img src="/${encodeFilePath(p)}" loading="lazy" class="w-12 h-12 object-cover rounded-lg border border-slate-200">`).join('')
+                    + (photos.length > 7 ? `<span class="w-12 h-12 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">+${e2p(photos.length - 7)}</span>` : '');
+                const reportHtml = h.status !== 'APPROVED' ? '' : (h.report_file_path
+                    ? `<a href="/${encodeFilePath(h.report_file_path)}" target="_blank" class="text-blue-600 underline text-[11px]">گزارش کارشناس</a>`
+                    : `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش کارشناس<input type="file" class="hidden" onchange="uploadHealthReport(${h.id}, this)"></label>`);
+                const legacy = !healthPerPhoto && h.status === 'PENDING'
+                    ? `<button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">تایید کل</button>
+                       <button onclick="rejectHealth(${h.id})" class="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[11px] font-bold">رد کل</button>` : '';
+                return `<div class="border border-slate-200 rounded-xl p-3 bg-white flex flex-col gap-2">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="font-bold text-sm truncate">${h.holder_name || '-'}</p>
+                            <p class="text-[10px] text-slate-400"><span dir="ltr">${h.unique_code}</span> · بازدید شماره ${e2p(h.inspection_number)} · ${toJalali(h.created_at)}</p>
+                        </div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${pill[0]}">${pill[1]}</span>
+                    </div>
+                    <div class="plate-display text-xs">${h.plate ? formatPlateHtml(h.plate) : ''}</div>
+                    <div class="flex gap-1.5 flex-wrap">${thumbs}</div>
+                    <div class="flex gap-1.5 flex-wrap text-[10px] font-bold">
+                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">✓ ${e2pNum(c.APPROVED)} تایید</span>
+                        <span class="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full">✗ ${e2pNum(c.REJECTED)} رد</span>
+                        <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">${e2pNum(c.PENDING)} در انتظار</span>
+                    </div>
+                    ${h.status === 'REJECTED' && h.reject_reason ? `<p class="text-[10px] text-rose-600 bg-rose-50 rounded-lg p-2">${h.reject_reason}</p>` : ''}
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button onclick="hvOpen(${h.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold"><i class="fas fa-magnifying-glass-plus ml-1"></i>${c.PENDING > 0 ? 'بررسی عکس‌ها' : 'مشاهده‌ی عکس‌ها'}</button>
+                        <a href="api/case_actions.php?action=download_health_zip&inspection_id=${h.id}" class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-slate-200"><i class="fas fa-file-zipper ml-1"></i>زیپ</a>
+                        ${legacy}${reportHtml}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // ---- نمایشگر ----
+        let hvData = null, hvIdx = 0, hvZ = 1, hvX = 0, hvY = 0;
+        const HV_STATUS = {APPROVED: ['bg-emerald-600', 'تایید شده'], REJECTED: ['bg-rose-600', 'رد شده'], PENDING: ['bg-amber-500', 'در انتظار بررسی']};
+        function hvVisible() {
+            if (!hvData) return [];
+            const only = document.getElementById('hv-only-pending').checked;
+            const all = hvData.photos.map((p, i) => ({...p, i}));
+            const f = all.filter(p => !only || p.status === 'PENDING');
+            return f.length ? f : all;
+        }
+        async function hvOpen(id) {
+            try {
+                const res = await fetch('api/case_actions.php?action=health_detail&id=' + id);
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                hvData = data;
+                if (!data.per_photo) showToast('برای بررسیِ تک‌تک، مایگریشن ۰۱۳ را اجرا کنید؛ فعلاً فقط مشاهده ممکن است.', 'warning');
+                const ins = data.inspection;
+                document.getElementById('hv-title').textContent = `${ins.holder_name || '-'} — بازدید شماره ${e2p(ins.number)}`;
+                document.getElementById('hv-sub').innerHTML = `<span dir="ltr">${ins.unique_code}</span> · <span class="plate-display">${ins.plate ? formatPlateHtml(ins.plate) : ''}</span>`;
+                document.getElementById('hv-only-pending').checked = data.photos.some(p => p.status === 'PENDING');
+                const m = document.getElementById('hv-modal');
+                // داخلِ محتوای صفحه، لایه‌ی هدر رویش می‌افتاد؛ مستقیم زیرِ body می‌رود تا تمام‌صفحه باشد
+                if (m.parentElement !== document.body) document.body.appendChild(m);
+                m.classList.remove('hidden'); m.classList.add('flex');
+                hvRenderStrip();
+                hvGo(0, true);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+        function hvClose() {
+            const m = document.getElementById('hv-modal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+            hvData = null;
+            loadHealthTab();
+        }
+        function hvRenderStrip() {
+            const vis = hvVisible();
+            document.getElementById('hv-strip').innerHTML = vis.map(p => `
+                <button onclick="hvShow(${p.i})" class="shrink-0 relative rounded-lg overflow-hidden border-2 ${p.status === 'APPROVED' ? 'border-emerald-500' : p.status === 'REJECTED' ? 'border-rose-500' : 'border-amber-400'} ${p.i === hvIdx ? 'ring-2 ring-white' : ''}" title="${p.label}">
+                    <img src="/${encodeFilePath(p.path)}" loading="lazy" class="w-16 h-12 object-cover">
+                </button>`).join('');
+            const c = {APPROVED: 0, REJECTED: 0, PENDING: 0};
+            hvData.photos.forEach(p => c[p.status]++);
+            document.getElementById('hv-counts').textContent = `✓ ${e2pNum(c.APPROVED)} · ✗ ${e2pNum(c.REJECTED)} · در انتظار ${e2pNum(c.PENDING)}`;
+            const sum = document.getElementById('hv-summary');
+            if (c.PENDING === 0) {
+                sum.classList.remove('hidden');
+                sum.className = 'text-[11px] leading-relaxed rounded-lg p-2 ' + (c.REJECTED ? 'bg-rose-900/60 text-rose-100' : 'bg-emerald-900/60 text-emerald-100');
+                sum.textContent = c.REJECTED
+                    ? `بررسی تمام شد: ${e2pNum(c.REJECTED)} عکس رد شد. بازدید «ناقص» است و از کاربر خواسته شد فقط همین‌ها را دوباره بفرستد.`
+                    : 'بررسی تمام شد: همه‌ی عکس‌ها تایید شد و بازدید نهایی و بایگانی شد.';
+            } else sum.classList.add('hidden');
+        }
+        function hvShow(i) {
+            if (!hvData || !hvData.photos[i]) return;
+            hvIdx = i;
+            const p = hvData.photos[i];
+            const img = document.getElementById('hv-img');
+            img.src = '/' + encodeFilePath(p.path);
+            document.getElementById('hv-open').href = '/' + encodeFilePath(p.path);
+            document.getElementById('hv-label').textContent = p.label;
+            document.getElementById('hv-pos').textContent = `عکس ${e2p(i + 1)} از ${e2p(hvData.photos.length)}`;
+            const st = document.getElementById('hv-status');
+            st.className = 'inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full ' + HV_STATUS[p.status][0];
+            st.textContent = HV_STATUS[p.status][1];
+            document.getElementById('hv-note').value = p.note || '';
+            hvResetZoom();
+            hvRenderStrip();
+        }
+        // حرکت در عکس‌های قابلِ‌نمایش (با فیلترِ «فقط در انتظار»)
+        function hvGo(step, fromStart = false) {
+            const vis = hvVisible();
+            if (!vis.length) return;
+            let pos = fromStart ? 0 : vis.findIndex(p => p.i === hvIdx);
+            if (!fromStart) pos = (pos < 0 ? 0 : pos + step + vis.length) % vis.length;
+            hvShow(vis[pos].i);
+        }
+        async function hvDecide(decision) {
+            if (!hvData) return;
+            const p = hvData.photos[hvIdx];
+            const note = document.getElementById('hv-note').value.trim();
+            if (decision === 'REJECTED' && !note) { showToast('علتِ رد را بنویسید تا کاربر بداند چه چیزی را درست کند.', 'warning'); document.getElementById('hv-note').focus(); return; }
+            try {
+                const res = await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'review_health_photo', id: hvData.inspection.id, key: p.key, decision, note})});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                p.status = decision; p.note = note; if (data.photo) p.path = data.photo;
+                hvData.inspection.status = data.status;
+                // برو سراغِ عکسِ بعدیِ در انتظار
+                const next = hvData.photos.findIndex((x, i) => i > hvIdx && x.status === 'PENDING');
+                const first = hvData.photos.findIndex(x => x.status === 'PENDING');
+                if (next >= 0) hvShow(next); else if (first >= 0) hvShow(first); else hvShow(hvIdx);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+        // ---- زوم و جابه‌جایی (چرخِ موس، دو انگشت، کشیدن، دابل‌کلیک) ----
+        function hvApply() { document.getElementById('hv-img').style.transform = `translate(${hvX}px, ${hvY}px) scale(${hvZ})`; }
+        function hvResetZoom() { hvZ = 1; hvX = 0; hvY = 0; hvApply(); }
+        function hvZoomAt(factor, cx, cy) {
+            const img = document.getElementById('hv-img');
+            const r = img.getBoundingClientRect();
+            const nz = Math.min(8, Math.max(1, hvZ * factor));
+            // نقطه‌ی زیرِ مکان‌نما ثابت بماند
+            const ox = (cx - r.left) / hvZ, oy = (cy - r.top) / hvZ;
+            hvX += (cx - r.left) - ox * nz; hvY += (cy - r.top) - oy * nz;
+            hvZ = nz;
+            if (hvZ === 1) { hvX = 0; hvY = 0; }
+            hvApply();
+        }
+        function hvZoomBy(f) { const st = document.getElementById('hv-stage').getBoundingClientRect(); hvZoomAt(f, st.left + st.width / 2, st.top + st.height / 2); }
+        (function hvBindGestures() {
+            const stage = document.getElementById('hv-stage');
+            if (!stage) return;
+            const pts = new Map(); let last = null, pinch = null;
+            stage.addEventListener('wheel', e => { e.preventDefault(); hvZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, {passive: false});
+            stage.addEventListener('dblclick', e => { if (hvZ > 1) hvResetZoom(); else hvZoomAt(2.5, e.clientX, e.clientY); });
+            stage.addEventListener('pointerdown', e => { if (e.target.closest('button,a')) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY}); last = {x: e.clientX, y: e.clientY}; });
+            stage.addEventListener('pointermove', e => {
+                if (!pts.has(e.pointerId)) return;
+                pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+                if (pts.size === 2) {
+                    const [a, b] = [...pts.values()];
+                    const d = Math.hypot(a.x - b.x, a.y - b.y);
+                    if (pinch) hvZoomAt(d / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+                    pinch = d;
+                } else if (last && hvZ > 1) {
+                    hvX += e.clientX - last.x; hvY += e.clientY - last.y; hvApply();
+                }
+                last = {x: e.clientX, y: e.clientY};
+            });
+            const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) last = null; };
+            stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+            document.addEventListener('keydown', e => {
+                const m = document.getElementById('hv-modal');
+                if (!m || m.classList.contains('hidden') || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 'ArrowLeft') hvGo(1); else if (e.key === 'ArrowRight') hvGo(-1); else if (e.key === 'Escape') hvClose();
+            });
+        })();
 
         async function uploadHealthReport(inspectionId, input) {
             if (!input.files[0]) return;
@@ -7442,45 +7859,153 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
-        /* مودال ثبت دستی پرونده */
-        function openManualCreateModal() {
-            document.getElementById('mc-full-name').value = '';
-            document.getElementById('mc-national-code').value = '';
-            document.getElementById('mc-personnel-code').value = '';
-            document.getElementById('mc-company-name').value = '';
+        /* ===== ثبت دستیِ درخواست کارکنان (یک مرحله: پرسنل + درخواست + مدارک) ===== */
+        // سقف‌های تعهد مالی - هم‌خوان با liability_limit_options() در api/_case_helpers.php
+        const MC_LIABILITY_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
+                                      4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
+        let mcCreated = null;
+
+        // introId: اگر داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود و بخش پرسنل پنهان است
+        function openManualCreateModal(introId = null, holderName = '') {
+            mcCreated = null;
+            document.getElementById('mc-intro-id').value = introId || '';
+            document.getElementById('mc-case-id').value = '';
+            ['mc-full-name','mc-national-code','mc-personnel-code','mc-company-name','mc-mobile','mc-letter-date','mc-quota',
+             'mc-insured-name','mc-insured-nid','mc-car-value','mc-birth','mc-phone','mc-postal','mc-address'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('mc-intro-file').value = '';
+            document.getElementById('mc-insurance-type').value = 'THIRDPARTY';
+            document.getElementById('mc-relationship').value = 'خودم';
+            document.getElementById('mc-ownership').value = 'کارت ماشین';
+            document.getElementById('mc-prev-body').value = 'خیر';
+            document.getElementById('mc-liability').innerHTML = '<option value="">انتخاب کنید</option>'
+                + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
+            document.getElementById('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', '');
+            document.getElementById('mc-person-section').classList.toggle('hidden', !!introId);
+            const sum = document.getElementById('mc-intro-summary');
+            sum.classList.toggle('hidden', !introId);
+            sum.innerHTML = introId ? `<i class="fas fa-folder-plus ml-1"></i>افزودن درخواستِ تازه به معرفی‌نامه‌ی ${holderName || ('#' + e2p(introId))}` : '';
+            document.getElementById('mc-title').textContent = introId ? 'افزودن درخواست به معرفی‌نامه' : 'ثبت دستی درخواست کارکنان';
+            document.getElementById('mc-docs-section').classList.add('hidden');
+            document.getElementById('mc-request-section').classList.remove('opacity-60', 'pointer-events-none');
+            document.getElementById('mc-submit-btn').classList.remove('hidden');
+            document.getElementById('mc-open-case-btn').classList.add('hidden');
+            mcOnTypeChange(); mcOnRelChange();
+            // پیشنهادِ نام شرکت‌ها
+            fetch('api/finance_actions.php?action=bootstrap').then(r => r.json()).then(d => {
+                const names = [...new Set((d.companies || []).map(c => c.name))];
+                document.getElementById('mc-companies-dl').innerHTML = names.map(n => `<option value="${n}">`).join('');
+            }).catch(() => {});
             document.getElementById('manual-create-modal').classList.add('active');
         }
 
-        async function submitManualCreate() {
-            const payload = {
-                action: 'create_manual',
-                full_name: document.getElementById('mc-full-name').value.trim(),
-                national_code: p2e(document.getElementById('mc-national-code').value.trim()),
-                personnel_code: p2e(document.getElementById('mc-personnel-code').value.trim()),
-                company_name: document.getElementById('mc-company-name').value.trim(),
-            };
-
-            if (!payload.full_name || !/^\d{10}$/.test(payload.national_code)) {
-                showToast('نام و کد ملی معتبر (۱۰ رقمی) را وارد کنید.', 'warning');
-                return;
-            }
-
-            try {
-                const res = await fetch('api/record_actions.php', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    showToast('معرفی‌نامه ثبت شد؛ حالا نوع اولین پرونده را انتخاب کنید.', 'success');
-                    document.getElementById('manual-create-modal').classList.remove('active');
-                    loadRecords();
-                    if (data.intro_id) openIntroDetail(data.intro_id, payload.full_name);
-                } else {
-                    showToast(data.error || 'خطا در ثبت پرونده.', 'error');
+        function closeManualCreateModal() {
+            document.getElementById('manual-create-modal').classList.remove('active');
+            if (mcCreated) {
+                loadRecords();
+                if (document.getElementById('intro-detail-modal').classList.contains('flex')) {
+                    openIntroDetail(mcCreated.intro_id, document.getElementById('intro-detail-name').textContent);
                 }
+            }
+        }
+
+        function mcOnTypeChange() {
+            const body = document.getElementById('mc-insurance-type').value === 'BODY';
+            document.querySelectorAll('#manual-create-modal .mc-body-only').forEach(el => el.classList.toggle('hidden', !body));
+            document.querySelectorAll('#manual-create-modal .mc-third-only').forEach(el => el.classList.toggle('hidden', body));
+        }
+        function mcOnRelChange() {
+            const self = document.getElementById('mc-relationship').value === 'خودم';
+            document.querySelectorAll('#manual-create-modal .mc-rel-only').forEach(el => el.classList.toggle('hidden', self));
+        }
+
+        async function submitManualRequest() {
+            const v = id => document.getElementById(id).value.trim();
+            const introId = v('mc-intro-id');
+            if (!introId && (!v('mc-full-name') || !/^\d{10}$/.test(p2e(v('mc-national-code'))))) {
+                showToast('نام و کد ملیِ ۱۰ رقمیِ پرسنل را وارد کنید.', 'warning'); return;
+            }
+            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate'))) { showToast('پلاک را کامل وارد کنید (همه‌ی خانه‌ها).', 'warning'); return; }
+            const fd = new FormData();
+            fd.append('action', 'create_manual_request');
+            if (introId) fd.append('intro_id', introId);
+            else {
+                fd.append('full_name', v('mc-full-name')); fd.append('national_code', v('mc-national-code'));
+                fd.append('personnel_code', v('mc-personnel-code')); fd.append('company_name', v('mc-company-name'));
+                fd.append('mobile', v('mc-mobile')); fd.append('letter_date', v('mc-letter-date')); fd.append('max_quota', v('mc-quota'));
+                const f = document.getElementById('mc-intro-file').files[0];
+                if (f) fd.append('intro_file', f);
+            }
+            ['insurance_type:mc-insurance-type', 'relationship:mc-relationship', 'ownership_choice:mc-ownership', 'plate:mc-plate',
+             'insured_name:mc-insured-name', 'insured_national_id:mc-insured-nid', 'liability_limit:mc-liability', 'car_value:mc-car-value',
+             'prev_body_insurance:mc-prev-body', 'insured_birth_date:mc-birth', 'insured_phone:mc-phone', 'insured_postal_code:mc-postal',
+             'insured_address:mc-address'].forEach(pair => { const [k, id] = pair.split(':'); fd.append(k, v(id)); });
+            const btn = document.getElementById('mc-submit-btn');
+            btn.disabled = true;
+            try {
+                const res = await fetch('api/record_actions.php', {method: 'POST', body: fd});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا در ثبت.', 'error'); return; }
+                mcCreated = data;
+                document.getElementById('mc-case-id').value = data.case_id;
+                showToast(data.note || `درخواست ${data.unique_code} ثبت شد؛ حالا مدارک را بارگذاری کنید.`, data.note ? 'warning' : 'success');
+                // اطلاعاتِ ثبت‌شده قفل می‌شود و چک‌لیستِ مدارک ظاهر می‌شود
+                document.getElementById('mc-request-section').classList.add('opacity-60', 'pointer-events-none');
+                document.getElementById('mc-person-section').classList.add('hidden');
+                btn.classList.add('hidden');
+                document.getElementById('mc-open-case-btn').classList.remove('hidden');
+                document.getElementById('mc-docs-section').classList.remove('hidden');
+                document.getElementById('mc-case-code').textContent = '(' + data.unique_code + ')';
+                renderMcChecklist();
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            finally { btn.disabled = false; }
+        }
+
+        // چک‌لیستِ مدارکِ لازمِ همین پرونده - هر خانه: تیک اگر هست، ضربدر و دکمه‌ی بارگذاری اگر نیست
+        async function renderMcChecklist() {
+            const caseId = document.getElementById('mc-case-id').value;
+            const box = document.getElementById('mc-docs-list');
+            if (!caseId) return;
+            box.innerHTML = '<p class="text-[11px] text-slate-400">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/case_actions.php?action=detail&case_id=' + caseId);
+                const data = await res.json();
+                if (!data.ok) { box.innerHTML = `<p class="text-[11px] text-red-500">${data.error || 'خطا'}</p>`; return; }
+                const docs = data.documents || [];
+                box.innerHTML = Object.entries(data.required_docs || {}).map(([key, label]) => {
+                    const have = docs.filter(d => d.doc_key === key && d.status !== 'REJECTED');
+                    const ok = have.length > 0;
+                    return `<div class="rounded-lg border p-2 text-[11px] ${ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}">
+                        <div class="font-bold">${ok ? '✓' : '✗'} ${label}</div>
+                        ${ok ? have.map(d => `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a>`).join(' ')
+                             : `<label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">بارگذاری
+                                    <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="mcUploadDoc('${key}', '${label.replace(/'/g, '')}', this)"></label>`}
+                    </div>`;
+                }).join('') + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
+                        <div class="font-bold">سایر مدارک (اختیاری)</div>
+                        <label class="inline-block mt-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer">بارگذاری
+                            <input type="file" class="hidden" onchange="mcUploadDoc('other', 'سایر مدارک', this)"></label></div>`;
+            } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500">خطا در ارتباط با سرور.</p>'; }
+        }
+
+        async function mcUploadDoc(key, label, input) {
+            if (!input.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_case_doc');
+            fd.append('case_id', document.getElementById('mc-case-id').value);
+            fd.append('doc_key', key); fd.append('doc_label', label);
+            fd.append('file', input.files[0]);
+            try {
+                const res = await fetch('api/case_actions.php', {method: 'POST', body: fd});
+                const data = await res.json();
+                showToast(data.ok ? `«${label}» بارگذاری و تایید شد.` : (data.error || 'خطا در بارگذاری.'), data.ok ? 'success' : 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            renderMcChecklist();
+        }
+
+        function mcOpenCreatedCase() {
+            const id = document.getElementById('mc-case-id').value;
+            closeManualCreateModal();
+            if (id) openCase(Number(id), 'review');
         }
 
         /* ذخیره تنظیمات توکن بات */

@@ -186,36 +186,53 @@ try {
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM company_chat_messages WHERE sender_type = 'ADMIN' AND is_read = 0 AND company_id IN ($ph)");
         $stmt->execute($allowedCompanyIds);
         $unreadChat = intval($stmt->fetchColumn());
+
+        // رویدادهای بازه‌ی (since, until] برای شرکت‌های همین کاربر
+        $collect = function ($since, $until) use ($pdo, $ph, $allowedCompanyIds) {
+            $events = [];
+            $stmt = $pdo->prepare("SELECT message, created_at FROM company_chat_messages
+                                    WHERE created_at > ? AND created_at <= ? AND sender_type = 'ADMIN' AND company_id IN ($ph)
+                                    ORDER BY created_at DESC LIMIT 20");
+            $stmt->execute(array_merge([$since, $until], $allowedCompanyIds));
+            foreach ($stmt->fetchAll() as $r) {
+                $events[] = ['type' => 'chat', 'title' => 'پیام جدید از بیمه با ما',
+                             'body' => mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), 'at' => $r['created_at']];
+            }
+            $stmt = $pdo->prepare("SELECT crp.policy_number, crp.insurance_type, crp.issued_at,
+                                          crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no
+                                     FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id
+                                    WHERE crp.issued_at > ? AND crp.issued_at <= ? AND cr.company_id IN ($ph)
+                                    ORDER BY crp.issued_at DESC LIMIT 20");
+            $stmt->execute(array_merge([$since, $until], $allowedCompanyIds));
+            foreach ($stmt->fetchAll() as $r) {
+                $events[] = ['type' => 'issued', 'title' => 'بیمه‌نامه صادر شد',
+                             'body' => insurance_type_fa($r['insurance_type']) . ' ' . company_row_label($r)
+                                       . ($r['policy_number'] ? ' - شماره ' . $r['policy_number'] : ''),
+                             'at' => $r['issued_at']];
+            }
+            usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
+            return $events;
+        };
+
+        // حالتِ ماندگار (مایگریشن ۰۱۲): فهرستِ اعلان‌ها در دیتابیس، مشترک بین مرورگرهای همین کاربر
+        if (notif_tables_ready($pdo)) {
+            $uid = intval($session['company_user_id']);
+            $act = $data['notif_action'] ?? '';
+            if ($act !== '') notif_apply_action($pdo, 'PORTAL', $uid, $act, $data['id'] ?? 0);
+            notif_sync($pdo, 'PORTAL', $uid, $collect);
+            $afterId = array_key_exists('after_id', $data) ? $data['after_id'] : null;
+            echo json_encode(['ok' => true, 'persisted' => true, 'unread_chat' => $unreadChat]
+                             + notif_list($pdo, 'PORTAL', $uid, $afterId), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        // حالتِ قدیمی (مایگریشن ۰۱۲ هنوز اجرا نشده)
         if ($since === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $since)) {
             echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => [], 'unread_chat' => $unreadChat], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $events = [];
-
-        $stmt = $pdo->prepare("SELECT message, created_at FROM company_chat_messages
-                                WHERE created_at > ? AND sender_type = 'ADMIN' AND company_id IN ($ph)
-                                ORDER BY created_at DESC LIMIT 20");
-        $stmt->execute(array_merge([$since], $allowedCompanyIds));
-        foreach ($stmt->fetchAll() as $r) {
-            $events[] = ['type' => 'chat', 'title' => 'پیام جدید از بیمه با ما',
-                         'body' => mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), 'at' => $r['created_at']];
-        }
-
-        $stmt = $pdo->prepare("SELECT crp.policy_number, crp.insurance_type, crp.issued_at,
-                                      crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no
-                                 FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id
-                                WHERE crp.issued_at > ? AND cr.company_id IN ($ph)
-                                ORDER BY crp.issued_at DESC LIMIT 20");
-        $stmt->execute(array_merge([$since], $allowedCompanyIds));
-        foreach ($stmt->fetchAll() as $r) {
-            $events[] = ['type' => 'issued', 'title' => 'بیمه‌نامه صادر شد',
-                         'body' => insurance_type_fa($r['insurance_type']) . ' ' . company_row_label($r)
-                                   . ($r['policy_number'] ? ' - شماره ' . $r['policy_number'] : ''),
-                         'at' => $r['issued_at']];
-        }
-
-        usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
-        echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => array_slice($events, -25),
+        $now = date('Y-m-d H:i:s');
+        echo json_encode(['ok' => true, 'now' => $now, 'events' => array_slice($collect($since, $now), -25),
                           'unread_chat' => $unreadChat], JSON_UNESCAPED_UNICODE);
         exit;
     }

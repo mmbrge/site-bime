@@ -321,7 +321,7 @@ function handle_callback_query($pdo, $callback, $bot_token) {
         return;
     }
     if ($data === 'menu:help') {
-        send_msg($chatId, "ℹ️ راهنما:\nهمه‌ی امکانات (ثبت درخواست بیمه، بازدید سلامت، بیمه‌نامه‌های من، پلاک‌های من، استعلام حق بیمه و ارتباط با کارشناس) از طریق دکمه‌ی «🚀 ورود به مینی‌اپ» در دسترس است.", $bot_token, main_menu_kb($pdo, $chatId));
+        send_msg($chatId, "ℹ️ راهنما:\nهمه‌ی امکانات (ثبت درخواست بیمه، بازدید سلامت، بیمه‌نامه‌های من، پلاک‌های من، استعلام حق بیمه و ارتباط با کارشناس) از طریق دکمه‌ی «🚀 ورود به پنل کاربری» در دسترس است.", $bot_token, main_menu_kb($pdo, $chatId));
         return;
     }
 }
@@ -361,7 +361,7 @@ function main_menu_kb($pdo, $chat_id) {
     $siteUrl = get_site_url($pdo);
     if ($personId && $siteUrl) {
         $token = get_or_create_main_app_token($pdo, $personId);
-        $row1[] = ['text' => '🚀 ورود به مینی‌اپ', 'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token]];
+        $row1[] = ['text' => '🚀 ورود به پنل کاربری', 'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token]];
         $rows = [$row1, [['text' => '📝 ثبت درخواست بیمه', 'web_app' => ['url' => $siteUrl . '/webapp/order/index_order.html?t=' . $token]]]];
         // دکمه‌ی معمولیِ url (نه web_app) عمداً است: در مرورگر داخلیِ بله باز می‌شود، نه WebView
         // محدودِ مینی‌اپ - چون دوربین واقعی آنجا کار می‌کند (تایید شده)
@@ -555,7 +555,7 @@ function identify_and_route($pdo, $chat_id, $national_code, $mobile, $bot_token)
             $pdo->prepare("UPDATE persons SET conversation_state = 'MAIN_MENU' WHERE id = ?")->execute([$person_id]);
             set_chat_menu_button($pdo, $chat_id, $person_id, $bot_token);
             send_msg($chat_id, "{$greetName}✅ هویت شما تایید شد، خوش آمدید!\nاز منوی زیر می‌توانید سفارش خود را ثبت کنید.", $bot_token, main_menu_kb($pdo, $chat_id));
-            send_msg($chat_id, "برای استفاده از امکانات ربات، از دکمه‌ی «🚀 ورود به مینی‌اپ» در پیام بالا استفاده کنید.", $bot_token, kb_remove());
+            send_msg($chat_id, "برای استفاده از امکانات ربات، از دکمه‌ی «🚀 ورود به پنل کاربری» در پیام بالا استفاده کنید.", $bot_token, kb_remove());
         } else {
             $pdo->prepare("UPDATE persons SET conversation_state = 'LIMITED_MENU' WHERE id = ?")->execute([$person_id]);
             send_msg($chat_id, "{$greetName}سقف صدور بیمه‌نامه با معرفی‌نامه فعلی شما تکمیل شده است.\nبرای معرفی‌نامه جدید با واحد منابع انسانی هماهنگ کنید.", $bot_token, limited_menu_kb());

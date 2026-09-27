@@ -19,6 +19,8 @@ if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
 
 $data = json_decode(file_get_contents('php://input'), true);
 $action = $data['action'] ?? ($_GET['action'] ?? '');
+// فرم‌هایی که فایل دارند (ثبت دستی با فایل معرفی‌نامه) multipart می‌آیند، نه JSON
+if (!$data && !empty($_POST)) { $data = $_POST; $action = $_POST['action'] ?? $action; }
 $userId = $_SESSION['user_id'];
 
 try {
@@ -32,18 +34,38 @@ try {
         exit;
     }
 
-    // ---- ۲. حذف پرونده ----
+    // ---- ۲. حذفِ کاملِ یک معرفی‌نامه (با همه‌ی درخواست‌هایش) - فقط مدیر کل ----
+    // قبلاً فقط وضعیت را CANCELLED می‌کرد ولی فهرست اصلاً وضعیت را فیلتر نمی‌کرد، پس
+    // «حذف» هیچ اثری نداشت. حالا واقعاً حذف می‌شود؛ اگر یکی از درخواست‌هایش صادر شده
+    // باشد، هیچ‌چیز حذف نمی‌شود و پیام می‌دهد.
     if ($action === 'delete') {
-        $id = intval($data['id'] ?? 0);
-        $stmt = $pdo->prepare("UPDATE insurance_requests SET status = 'CANCELLED' WHERE id = ?"); // در دیتابیس شما وضعیت لغو شده CANCELLED است
+        if (($_SESSION['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند حذف کند.'], JSON_UNESCAPED_UNICODE); exit; }
+        $id = intval($data['id'] ?? 0);   // شناسه‌ی insurance_requests
+        $stmt = $pdo->prepare("SELECT introduction_id FROM insurance_requests WHERE id = ?");
         $stmt->execute([$id]);
+        $introId = intval($stmt->fetchColumn());
+        if (!$introId) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
 
+        $stmt = $pdo->prepare("SELECT id, status, is_invoiced FROM policy_cases WHERE introduction_id = ?");
+        $stmt->execute([$introId]);
+        $cases = $stmt->fetchAll();
+        foreach ($cases as $c) {
+            if ($c['status'] === 'ISSUED' || !empty($c['is_invoiced'])) {
+                echo json_encode(['ok' => false, 'error' => 'این معرفی‌نامه بیمه‌نامه‌ی صادرشده دارد و حذف نمی‌شود. فقط درخواست‌های صادرنشده را تک‌تک حذف کنید.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+        foreach ($cases as $c) {
+            $r = delete_policy_case($pdo, dirname(__DIR__), intval($c['id']), $userId);
+            if (!$r['ok']) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+        }
+        $pdo->prepare("DELETE FROM insurance_requests WHERE introduction_id = ?")->execute([$introId]);
+        $pdo->prepare("DELETE FROM introductions WHERE id = ?")->execute([$introId]);
         try {
-            $stmtLog = $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'DELETE', 'insurance_requests', ?, 'CANCELLED')");
-            $stmtLog->execute([$userId, $id]);
+            $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'DELETE', 'introductions', ?, 'DELETED')")
+                ->execute([$userId, $introId]);
         } catch (Exception $e) {}
-
-        echo json_encode(['ok' => true, 'message' => 'پرونده با موفقیت حذف (لغو) شد.']);
+        echo json_encode(['ok' => true, 'message' => 'معرفی‌نامه و درخواست‌هایش حذف شد.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -163,6 +185,144 @@ try {
 
         $pdo->commit();
         echo json_encode(['ok' => true, 'intro_id' => $intro_id, 'person_id' => $person_id]);
+        exit;
+    }
+
+    // ---- ۵الف. ثبت دستیِ کاملِ یک درخواست در یک مرحله ----
+    // همان لحظه‌ی ثبت، اطلاعات درخواست هم گرفته می‌شود (مثل فرم درخواست شرکت‌ها) و پرونده
+    // با همه‌ی فیلدهایش ساخته می‌شود؛ بعد در همان پنجره چک‌لیستِ مدارکِ لازم نشان داده
+    // می‌شود تا مدارک تک‌تک بارگذاری شوند (نام‌گذاری و بایگانی مثل مسیر عادی انجام می‌شود).
+    // اگر intro_id داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود (بخش پرسنل لازم نیست).
+    if ($action === 'create_manual_request') {
+        $siteRoot = dirname(__DIR__);
+        $introId = intval($data['intro_id'] ?? 0);
+        $insuranceType = in_array($data['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $data['insurance_type'] : null;
+        $relationship = trim($data['relationship'] ?? 'خودم');
+        $plate = trim(p2e_digits($data['plate'] ?? ''));
+        $ownership = ($data['ownership_choice'] ?? '') === 'سند' ? 'سند' : 'کارت ماشین';
+        $nid10 = function ($v) { $d = preg_replace('/\D/', '', p2e_digits((string)$v)); return $d === '' ? '' : str_pad($d, 10, '0', STR_PAD_LEFT); };
+
+        if (!$insuranceType) { echo json_encode(['ok' => false, 'error' => 'نوع بیمه (ثالث یا بدنه) را انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (!in_array($relationship, relationship_options(), true)) { echo json_encode(['ok' => false, 'error' => 'نسبت بیمه‌گذار نامعتبر است.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (!preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', $plate)) { echo json_encode(['ok' => false, 'error' => 'پلاک را کامل وارد کنید (همه‌ی خانه‌ها).'], JSON_UNESCAPED_UNICODE); exit; }
+
+        $pdo->beginTransaction();
+        try {
+            $note = null;
+            if ($introId) {
+                $stmt = $pdo->prepare("SELECT i.*, p.full_name, p.national_code FROM introductions i JOIN persons p ON p.id = i.person_id WHERE i.id = ?");
+                $stmt->execute([$introId]);
+                $intro = $stmt->fetch();
+                if (!$intro) throw new RuntimeException('معرفی‌نامه یافت نشد.');
+                $personId = intval($intro['person_id']);
+                $holderName = $intro['full_name']; $holderNid = $intro['national_code'];
+            } else {
+                $fullName = trim($data['full_name'] ?? '');
+                $nationalCode = $nid10($data['national_code'] ?? '');
+                $personnelCode = trim(p2e_digits($data['personnel_code'] ?? ''));
+                $companyName = trim($data['company_name'] ?? '');
+                $mobile = preg_replace('/\D/', '', p2e_digits($data['mobile'] ?? ''));
+                if (mb_strlen($fullName) < 3 || strlen($nationalCode) !== 10) throw new RuntimeException('نام و کد ملیِ ۱۰ رقمیِ پرسنل الزامی است.');
+
+                $companyId = null;
+                if ($companyName !== '') {
+                    $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+                    $stmt->execute([$companyName]);
+                    $companyId = $stmt->fetchColumn() ?: null;
+                    if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+                }
+                $stmt = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
+                $stmt->execute([$nationalCode]);
+                $personId = intval($stmt->fetchColumn());
+                if (!$personId) {
+                    $pdo->prepare("INSERT INTO persons (national_code, personnel_code, full_name, company_id, mobile_number) VALUES (?, ?, ?, ?, ?)")
+                        ->execute([$nationalCode, $personnelCode, $fullName, $companyId, $mobile ?: null]);
+                    $personId = intval($pdo->lastInsertId());
+                } else {
+                    $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = COALESCE(NULLIF(?, ''), personnel_code), company_id = COALESCE(?, company_id), mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")
+                        ->execute([$fullName, $personnelCode, $companyId, $mobile, $personId]);
+                }
+                $holderName = $fullName; $holderNid = $nationalCode;
+
+                // اگر همین شخص معرفی‌نامه‌ای با سهمیه‌ی خالی دارد، درخواست به همان اضافه می‌شود
+                $stmt = $pdo->prepare("SELECT * FROM introductions WHERE person_id = ? AND COALESCE(used_quota, 0) < COALESCE(max_quota, 4) ORDER BY id DESC LIMIT 1");
+                $stmt->execute([$personId]);
+                $intro = $stmt->fetch();
+                if ($intro) {
+                    $introId = intval($intro['id']);
+                    $note = 'این شخص از قبل معرفی‌نامه داشت؛ درخواست به همان معرفی‌نامه اضافه شد.';
+                } else {
+                    $quota = intval(p2e_digits($data['max_quota'] ?? 0));
+                    if ($quota <= 0) {
+                        $q = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'default_intro_quota'");
+                        $quota = intval($q->fetchColumn() ?: 4);
+                    }
+                    // تاریخ معرفی‌نامه در این جدول به‌صورت شمسی نگه داشته می‌شود (مثل مسیر صف)
+                    $ld = p2e_digits(trim($data['letter_date'] ?? ''));
+                    $letterDate = preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+                    $pdo->prepare("INSERT INTO introductions (person_id, file_path, letter_date, max_quota) VALUES (?, 'ثبت_دستی', ?, ?)")
+                        ->execute([$personId, $letterDate, $quota]);
+                    $introId = intval($pdo->lastInsertId());
+                    $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, NULL, 'NEW')")
+                        ->execute([$personId, $introId]);
+                    $intro = ['used_quota' => 0, 'max_quota' => $quota];
+
+                    // فایل معرفی‌نامه (اختیاری) - با همان نام‌گذاری و پوشه‌ی مسیرِ عادی
+                    if (!empty($_FILES['intro_file']['tmp_name']) && is_uploaded_file($_FILES['intro_file']['tmp_name'])) {
+                        $introFolder = sync_intro_folder($pdo, $siteRoot, $introId);
+                        $dir = $introFolder . '/معرفی‌نامه';
+                        if (!is_dir($dir)) @mkdir($dir, 0777, true);
+                        $ext = strtolower(pathinfo($_FILES['intro_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+                        $dest = unique_dest_path($dir . '/' . build_intro_folder_name($fullName, $nationalCode, $personnelCode, $companyName) . '.' . $ext);
+                        if (move_uploaded_file($_FILES['intro_file']['tmp_name'], $dest)) {
+                            $pdo->prepare("UPDATE introductions SET file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $dest), '/'), $introId]);
+                        }
+                    }
+                }
+            }
+            if (intval($intro['used_quota'] ?? 0) >= intval($intro['max_quota'] ?: 4)) throw new RuntimeException('سقف صدور بیمه‌نامه با این معرفی‌نامه تکمیل شده است.');
+
+            // بیمه‌گذار: خودِ پرسنل یا یکی از بستگان
+            if ($relationship === 'خودم') { $insuredName = $holderName; $insuredNid = $holderNid; }
+            else {
+                $insuredName = trim($data['insured_name'] ?? '');
+                $insuredNid = $nid10($data['insured_national_id'] ?? '');
+                if (mb_strlen($insuredName) < 3 || strlen($insuredNid) !== 10) throw new RuntimeException('نام و کد ملیِ ۱۰ رقمیِ بیمه‌گذار (' . $relationship . ') الزامی است.');
+            }
+            $liability = $insuranceType === 'THIRDPARTY' ? money_to_int($data['liability_limit'] ?? '') : null;
+            $carValue = $insuranceType === 'BODY' ? money_to_int($data['car_value'] ?? '') : null;
+            $prevBody = $insuranceType === 'BODY' ? (($data['prev_body_insurance'] ?? '') === 'بله' ? 'بله' : 'خیر') : null;
+            $bd = trim(p2e_digits($data['insured_birth_date'] ?? ''));
+            $bd = preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $bd, $m) ? sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]) : null;
+            $phone = preg_replace('/\D/', '', p2e_digits($data['insured_phone'] ?? '')) ?: null;
+            $postal = preg_replace('/\D/', '', p2e_digits($data['insured_postal_code'] ?? '')) ?: null;
+            $address = trim($data['insured_address'] ?? '') ?: null;
+
+            $pdo->prepare("INSERT INTO policy_cases (introduction_id, person_id, insurance_type, unique_code, status, insured_relationship, insured_name,
+                                insured_national_id, plate, ownership_choice, liability_limit, estimated_car_value, prev_body_insurance,
+                                insured_birth_date, insured_phone, insured_postal_code, insured_address)
+                           VALUES (?, ?, ?, '', 'AWAITING_DOCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                ->execute([$introId, $personId, $insuranceType, $relationship, $insuredName, $insuredNid, $plate, $ownership,
+                           $liability, $carValue, $prevBody, $bd, $phone, $postal, $address]);
+            $caseId = intval($pdo->lastInsertId());
+            $uniqueCode = generate_case_unique_code($caseId);
+            $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([$uniqueCode, $caseId]);
+            $pdo->prepare("UPDATE introductions SET used_quota = COALESCE(used_quota, 0) + 1 WHERE id = ?")->execute([$introId]);
+            $stmt = $pdo->prepare("SELECT id FROM person_vehicles WHERE person_id = ? AND plate = ?");
+            $stmt->execute([$personId, $plate]);
+            if (!$stmt->fetchColumn()) $pdo->prepare("INSERT INTO person_vehicles (person_id, plate) VALUES (?, ?)")->execute([$personId, $plate]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $msg = $e instanceof RuntimeException ? $e->getMessage() : 'خطا در ثبت درخواست.';
+            if (!($e instanceof RuntimeException)) error_log('[create_manual_request] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        echo json_encode(['ok' => true, 'case_id' => $caseId, 'intro_id' => $introId, 'unique_code' => $uniqueCode,
+                          'required_docs' => get_required_docs_v2($insuranceType, $ownership, $prevBody, $relationship),
+                          'note' => $note], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

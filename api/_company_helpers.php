@@ -674,9 +674,15 @@ function company_parse_letter_rows($raw) {
     if ($raw === '') return ['rows' => [], 'errors' => ['متنی برای تبدیل داده نشد.']];
 
     $parsed = null;
+    $givenCounts = null;
     if ($raw[0] === '{' || $raw[0] === '[') {
         $json = json_decode($raw, true);
-        if (is_array($json)) $parsed = isset($json['rows']) && is_array($json['rows']) ? $json['rows'] : $json;
+        if (is_array($json)) {
+            $parsed = isset($json['rows']) && is_array($json['rows']) ? $json['rows'] : $json;
+            // نوعِ نامه و تعدادِ درخواستی از هر نوع: {"letter": {"counts": {"ثالث": 3, "بدنه": 2, "تغییر اطلاعات": 1, "فسخ": 0}}}
+            $cIn = $json['letter']['counts'] ?? ($json['counts'] ?? null);
+            if (is_array($cIn)) $givenCounts = company_counts_from_labels($cIn);
+        }
         else $errors[] = 'فایل JSON خوانده نشد (ساختارش درست نیست)؛ به‌عنوان متنِ خط‌به‌خط بررسی می‌شود.';
     }
 
@@ -728,6 +734,13 @@ function company_parse_letter_rows($raw) {
         // اگر پلاک ندارد و تاریخ انقضا هم ندارد، عملاً خودروی صفرکیلومتر است
         if (!$plate && !$expiry) $isNew = true;
 
+        // نوعِ درخواستِ این ردیف: صدورِ جدید، الحاقیه‌ی تغییر اطلاعات، یا فسخ
+        $reqKind = company_parse_row_request($r['request'] ?? ($r['request_type'] ?? ($r['نوع درخواست'] ?? '')));
+        $endorseText = trim((string)($r['endorsement_request'] ?? ($r['change_request'] ?? '')));
+        $cancelReason = trim((string)($r['cancellation_reason'] ?? ''));
+        if ($reqKind === 'CANCELLATION' && $cancelReason === '') $cancelReason = trim((string)($r['note'] ?? '')) ?: 'سایر';
+        if ($reqKind === 'ENDORSEMENT' && $endorseText === '') $endorseText = trim((string)($r['note'] ?? '')) ?: 'تغییر اطلاعات بیمه‌نامه';
+
         $base = [
             'plate_p1' => $plate ? $plate['p1'] : null, 'plate_p2' => $plate ? $plate['p2'] : null,
             'plate_letter' => $plate ? $plate['letter'] : null, 'plate_p4' => $plate ? $plate['p4'] : null,
@@ -743,8 +756,8 @@ function company_parse_letter_rows($raw) {
             'row_note' => trim((string)($r['note'] ?? '')) ?: null,
             // مخصوصِ الحاقیه و فسخ (برای صدور جدید هم شماره‌ی مرجع اختیاری است)
             'ref_policy_number' => trim((string)($r['ref_policy_number'] ?? ($r['policy_number'] ?? ''))) ?: null,
-            'endorsement_request' => trim((string)($r['endorsement_request'] ?? '')) ?: null,
-            'cancellation_reason' => trim((string)($r['cancellation_reason'] ?? '')) ?: null,
+            'endorsement_request' => $endorseText ?: null,
+            'cancellation_reason' => $cancelReason ?: null,
             'has_prev_body' => company_parse_yes_no($r['has_prev_body'] ?? ''),
             // «بازدید سلامت لازم نیست» => skip_health_inspection = 1.
             // خودروی صفرکیلومتر هم طبعاً بازدید سلامت نمی‌خواهد.
@@ -757,7 +770,42 @@ function company_parse_letter_rows($raw) {
         }
     }
 
-    return ['rows' => $rows, 'errors' => $errors];
+    // تعدادها: اگر خودِ متن داده بود همان، وگرنه از روی ردیف‌ها شمرده می‌شود
+    $counts = $givenCounts;
+    if (!$counts && $rows) {
+        $c = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
+        foreach ($rows as $row) {
+            if (!empty($row['cancellation_reason'])) $c['CANCELLATION']++;
+            elseif (!empty($row['endorsement_request'])) $c['ENDORSEMENT']++;
+            else $c[$row['insurance_type']]++;
+        }
+        $counts = company_normalize_requested_counts($c);
+    }
+    return ['rows' => $rows, 'errors' => $errors, 'counts' => $counts, 'counts_fa' => company_requested_counts_fa($counts)];
+}
+
+// «صدور» / «تغییر اطلاعات» / «الحاقیه» / «فسخ» => NEW_POLICY / ENDORSEMENT / CANCELLATION
+function company_parse_row_request($text) {
+    $t = str_replace(['ي', 'ك', '‌', ' '], ['ی', 'ک', '', ''], mb_strtolower(trim((string)$text)));
+    if ($t === '') return 'NEW_POLICY';
+    if (mb_strpos($t, 'فسخ') !== false || $t === 'cancellation' || $t === 'cancel') return 'CANCELLATION';
+    if (mb_strpos($t, 'الحاق') !== false || mb_strpos($t, 'تغییر') !== false || $t === 'endorsement') return 'ENDORSEMENT';
+    return 'NEW_POLICY';
+}
+
+// کلیدهای فارسی یا انگلیسیِ تعدادها => کلیدهای داخلی
+function company_counts_from_labels($in) {
+    $out = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
+    foreach ($in as $k => $v) {
+        $kk = str_replace(['ي', 'ك', '‌', ' ', '_', '-'], ['ی', 'ک', '', '', '', ''], mb_strtolower((string)$k));
+        $key = null;
+        if (in_array($kk, ['thirdparty', 'third', 'ثالث', 'شخصثالث'], true)) $key = 'THIRDPARTY';
+        elseif (in_array($kk, ['body', 'بدنه'], true)) $key = 'BODY';
+        elseif (mb_strpos($kk, 'فسخ') !== false || $kk === 'cancellation') $key = 'CANCELLATION';
+        elseif (mb_strpos($kk, 'الحاق') !== false || mb_strpos($kk, 'تغییر') !== false || $kk === 'endorsement') $key = 'ENDORSEMENT';
+        if ($key) $out[$key] += intval(money_to_int($v) ?? 0);
+    }
+    return company_normalize_requested_counts($out);
 }
 
 // =====================================================================
@@ -782,6 +830,7 @@ function company_excel_column_map() {
         'ref_policy_number' => ['شماره بیمه نامه', 'شماره بیمه‌نامه', 'بیمه نامه', 'شماره بیمهنامه', 'policy', 'policy no'],
         'endorsement_request' => ['خواسته', 'درخواست الحاقیه', 'موضوع الحاقیه', 'شرح الحاقیه'],
         'cancellation_reason' => ['دلیل فسخ', 'علت فسخ', 'دلیل'],
+        'request'        => ['نوع درخواست', 'درخواست', 'request'],
         'note'           => ['توضیح', 'توضیحات', 'ملاحظات', 'note'],
     ];
 }

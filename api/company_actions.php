@@ -1194,7 +1194,7 @@ try {
         $parsed = company_read_import_input($data, $_FILES['import_file'] ?? null);
         if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
         echo json_encode(['ok' => true, 'rows' => $parsed['rows'], 'errors' => $parsed['errors'],
-                          'source' => $parsed['source']], JSON_UNESCAPED_UNICODE);
+                          'source' => $parsed['source'], 'counts_fa' => $parsed['counts_fa'] ?? ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -1216,6 +1216,9 @@ try {
         $raw = $parsed['raw'];
 
         $pdo->beginTransaction();
+        $stmtCnt = $pdo->prepare("SELECT COUNT(*) FROM company_request_plates WHERE request_id = ?" . ($replace ? " AND status = 'ISSUED'" : ''));
+        $stmtCnt->execute([$requestId]);
+        $hadRows = intval($stmtCnt->fetchColumn()) > 0;
         if ($replace) {
             // فقط ردیف‌هایی که هنوز صادر نشده‌اند پاک می‌شوند؛ ردیفِ صادرشده هرگز حذف نمی‌شود
             $pdo->prepare("DELETE FROM company_request_plates WHERE request_id = ? AND status <> 'ISSUED'")->execute([$requestId]);
@@ -1248,6 +1251,16 @@ try {
         // متنِ مرجعِ استخراج‌شده نگه داشته می‌شود تا بعداً بشود با خودِ نامه مقایسه کرد
         $pdo->prepare("UPDATE company_requests SET letter_parsed_json = ?, status = IF(status = 'NEW', 'DOCS_PENDING', status) WHERE id = ?")
             ->execute([mb_substr($raw, 0, 60000), $requestId]);
+        // تعدادِ درخواستی از هر نوع (از متن یا شمرده‌شده از ردیف‌ها). نوعِ درخواست فقط وقتی از روی
+        // تعدادها تعیین می‌شود که درخواست پیش از این ردیفی نداشته، تا پوشه‌های موجود جابه‌جا نشوند.
+        if (!empty($parsed['counts'])) {
+            $stmtK = $pdo->prepare("SELECT request_kind FROM company_requests WHERE id = ?");
+            $stmtK->execute([$requestId]);
+            $curKind = $stmtK->fetchColumn() ?: 'NEW_POLICY';
+            $newKind = $hadRows ? $curKind : company_kind_from_counts($parsed['counts'], $curKind);
+            $pdo->prepare("UPDATE company_requests SET requested_counts = ?, request_kind = ? WHERE id = ?")
+                ->execute([json_encode($parsed['counts']), $newKind, $requestId]);
+        }
         $pdo->commit();
 
         // پوشه‌ی هر ردیفِ تازه ساخته می‌شود و وضعیتش بر اساس چک‌لیست تعیین می‌گردد
@@ -1258,7 +1271,7 @@ try {
         }
 
         echo json_encode(['ok' => true, 'created' => $created, 'duplicates' => $skipped,
-                          'errors' => $parsed['errors']], JSON_UNESCAPED_UNICODE);
+                          'errors' => $parsed['errors'], 'counts_fa' => $parsed['counts_fa'] ?? ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

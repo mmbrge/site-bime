@@ -4,13 +4,16 @@
 // هر اعلانی که گوشه‌ی صفحه ظاهر می‌شود، این‌جا هم ثبت می‌شود. با کلیک روی زنگوله، پنجره‌ی
 // کوچکی زیرِ همان باز می‌شود با فهرست اعلان‌ها: حذفِ تکی، پاک‌کردنِ همه، و «همه خوانده شد».
 //
-// فهرست در مرورگرِ همین کاربر نگه داشته می‌شود (localStorage، جدا برای هر کاربر و هر پنل)،
-// پس با تازه‌کردنِ صفحه نمی‌پرد. اگر مرورگر اجازه‌ی ذخیره ندهد (حالتِ خصوصی و ...)، فهرست
-// فقط تا بسته‌شدنِ صفحه در حافظه می‌ماند و چیزی خراب نمی‌شود.
+// دو حالت دارد:
+//  - «سرور» (وقتی مایگریشن ۰۱۲ اجرا شده): فهرست در دیتابیس است و با هر بار پرسیدنِ اعلان‌ها
+//    از سرور می‌آید (setServerItems)؛ حذف/خواندن هم روی سرور انجام می‌شود (onServerAction)،
+//    پس همان کاربر در هر مرورگر و دستگاهی همان فهرست را می‌بیند.
+//  - «محلی» (پشتیبان): فهرست در localStorage همین مرورگر، جدا برای هر کاربر و هر پنل.
 //
 // استفاده:
-//   NotifBell.init({ mount: el, storageKey: 'notif:admin:12', onOpenItem: item => ... });
-//   NotifBell.add({ title, body, type, tab });
+//   NotifBell.init({ mount: el, storageKey: 'notif:admin:12', onOpenItem: item => ..., onServerAction: (act, id) => Promise<items> });
+//   NotifBell.setServerItems(items)   // حالتِ سرور
+//   NotifBell.add({ title, body, type, tab })   // حالتِ محلی
 (function () {
     const MAX_ITEMS = 60;
     const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -20,6 +23,8 @@
     let items = [];
     let storageKey = null;
     let onOpenItem = null;
+    let onServerAction = null;
+    let mode = 'local';   // 'local' | 'server'
     let root, btn, badge, panel, list;
 
     function load() {
@@ -27,7 +32,19 @@
         if (!Array.isArray(items)) items = [];
     }
     function save() {
+        if (mode === 'server') return;
         try { localStorage.setItem(storageKey, JSON.stringify(items.slice(0, MAX_ITEMS))); } catch (e) { /* فقط در حافظه */ }
+    }
+    // در حالتِ سرور، هر تغییر به سرور هم می‌رود و فهرستِ تازه از همان‌جا جایگزین می‌شود
+    function server(act, id) {
+        if (mode !== 'server' || !onServerAction) return;
+        Promise.resolve(onServerAction(act, id)).then(list => { if (Array.isArray(list)) setServerItems(list); }).catch(() => {});
+    }
+    function setServerItems(list) {
+        mode = 'server';
+        items = (list || []).map(i => ({ id: String(i.id), title: i.title, body: i.body || '', type: i.type || 'info', tab: i.tab || null,
+                                          at: (Number(i.at_ts) || 0) * 1000 || Date.now(), read: !!i.read }));
+        render();
     }
 
     // زمانِ اعلان به شمسی و با رقم فارسی: «همین الان»، «۵ دقیقه پیش»، یا «۴ مهر، ۱۰:۲۰»
@@ -110,6 +127,7 @@
     function init(opts) {
         storageKey = opts.storageKey || 'notif:default';
         onOpenItem = opts.onOpenItem || null;
+        onServerAction = opts.onServerAction || null;
         load();
         injectStyles();
 
@@ -141,17 +159,18 @@
         panel.addEventListener('click', e => {
             e.stopPropagation();
             const del = e.target.closest('[data-del]');
-            if (del) { items = items.filter(i => String(i.id) !== del.dataset.del); save(); render(); return; }
+            if (del) { items = items.filter(i => String(i.id) !== del.dataset.del); save(); render(); server('delete', del.dataset.del); return; }
             const act = e.target.closest('[data-nb]');
             if (act) {
-                if (act.dataset.nb === 'read') items.forEach(i => { i.read = true; });
-                if (act.dataset.nb === 'clear') items = [];
+                if (act.dataset.nb === 'read') { items.forEach(i => { i.read = true; }); server('read_all'); }
+                if (act.dataset.nb === 'clear') { items = []; server('clear'); }
                 save(); render(); return;
             }
             const row = e.target.closest('.nb-item');
             if (row) {
                 const it = items.find(i => String(i.id) === row.dataset.id);
                 if (!it) return;
+                if (!it.read) server('read', it.id);
                 it.read = true; save(); render();
                 if (onOpenItem) { toggle(false); onOpenItem(it); }
             }
@@ -159,11 +178,12 @@
         document.addEventListener('click', () => { if (root.classList.contains('open')) toggle(false); });
         document.addEventListener('keydown', e => { if (e.key === 'Escape' && root.classList.contains('open')) toggle(false); });
         // اگر پنل در چند تب باز است، فهرست همه‌جا یکی بماند
-        window.addEventListener('storage', e => { if (e.key === storageKey) { load(); render(); } });
+        window.addEventListener('storage', e => { if (mode === 'local' && e.key === storageKey) { load(); render(); } });
         render();
     }
 
     function add(ev) {
+        if (mode === 'server') return; // فهرست از سرور می‌آید
         items.unshift({
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
             title: ev.title || 'اعلان', body: ev.body || '', type: ev.type || 'info', tab: ev.tab || null,
@@ -173,5 +193,5 @@
         save(); render();
     }
 
-    window.NotifBell = { init, add };
+    window.NotifBell = { init, add, setServerItems };
 })();

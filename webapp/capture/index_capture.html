@@ -74,6 +74,7 @@
 
 <canvas id="canvas"></canvas>
 
+<script src="../camera-lib.js?v=1"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -82,45 +83,7 @@
 //  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
 // ============================================================
 async function openMainCameraStream() {
-    let probe = null;
-    try {
-        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    } catch (e) {}
-
-    let chosenId = null;
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cams = devices.filter(d => d.kind === 'videoinput');
-        const backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
-        const pool = backCams.length ? backCams : cams;
-        const nonWide = pool.filter(d => !/ultra|wide|0\.5|tele|zoom|depth|macro/i.test(d.label));
-        const chosen = nonWide[0] || pool[0];
-        if (chosen) chosenId = chosen.deviceId;
-    } catch (e) {}
-
-    if (probe) probe.getTracks().forEach(t => t.stop());
-
-    let stream;
-    if (chosenId) {
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: chosenId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-            });
-        } catch (e) {}
-    }
-    if (!stream) {
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-        });
-    }
-    try {
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : null;
-        if (caps && caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
-            await track.applyConstraints({ advanced: [{ zoom: 1 }] });
-        }
-    } catch (e) {}
-    return stream;
+    return CameraLib.openMain();   // لنزِ اصلی با وضوحِ بالا (نه واید) - webapp/camera-lib.js
 }
 
 const params = new URLSearchParams(location.search);
@@ -160,11 +123,20 @@ async function initCamera() {
   }
 }
 
-function takeShot() {
+async function takeShot() {
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  const vw = video.videoWidth, vh = video.videoHeight;
+  // عکسِ واقعی با وضوحِ کامل (اگر مرورگر پشتیبانی کند)، وگرنه همان فریمِ ویدیو
+  const bmp = window.CameraLib ? await CameraLib.still(stream) : null;
+  const src = (bmp && ((bmp.width > bmp.height) === (vw > vh))) ? bmp : video;
+  const sw = src === video ? vw : bmp.width, sh = src === video ? vh : bmp.height;
+  const sc = sw > 4000 ? 4000 / sw : 1;
+  canvas.width = Math.round(sw * sc); canvas.height = Math.round(sh * sc);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+  if (bmp && bmp.close) bmp.close();
   canvas.toBlob(blob => {
     capturedBlob = blob;
     document.getElementById('shot-img').src = URL.createObjectURL(blob);

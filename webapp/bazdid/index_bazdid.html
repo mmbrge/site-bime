@@ -531,6 +531,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="../camera-lib.js?v=1"></script>
 <script>
 // ============================================================
 //  اتصال به Bale WebApp (در صورت وجود) - برای تجربه‌ی بهتر (رنگ هدر و ...)
@@ -592,8 +593,8 @@ async function init() {
     const data = await res.json();
     if (!data.ok) { showError(data.error); return; }
     appData = data;
-    stepOrder = data.steps.map(s => s.key);
-    data.steps.forEach(s => stepsMap[s.key] = s);
+    stepOrder = data.steps.map(s => String(s.key));   // کلیدها همیشه متن (سرور ممکن است عدد یا متن بفرستد)
+    data.steps.forEach(s => stepsMap[String(s.key)] = s);
 
     document.getElementById('rules-name').textContent = data.person_name || '';
     document.getElementById('rules-plate').innerHTML = formatPlateHtml(data.plate);
@@ -609,6 +610,14 @@ async function init() {
       <li>لطفاً گوشی را به‌صورت افقی (خوابیده) نگه دارید تا کل خودرو در کادر عکس جا شود.</li>
       <li>لطفاً در محیطی با نور کافی و دسترسی کامل به خودرو باشید.</li>
     `;
+    // بازدیدِ قبلی ناقص بوده: فقط عکس‌های ردشده دوباره خواسته می‌شوند
+    if (data.retake && data.retake.items && data.retake.items.length) {
+      document.getElementById('rules-list-content').innerHTML = `
+        <li><b>بازدید شماره‌ی ${toFa(data.retake.inspection_number)} شما ناقص بود.</b> لازم نیست همه‌ی عکس‌ها را دوباره بگیرید؛ فقط این ${toFa(data.steps.length)} مورد:</li>
+        ${data.retake.items.map(it => `<li>📸 ${it.label}${it.note ? ` — <span style="color:#fca5a5">${it.note}</span>` : ''}</li>`).join('')}
+        <li>برای هر مرحله ${toFa(stepMin)} دقیقه فرصت دارید. گوشی را افقی نگه دارید و در نور کافی عکس بگیرید.</li>
+      `;
+    }
     const remaining = data.max_attempts_per_day - data.attempts_today;
     if (remaining <= 0) {
       document.getElementById('attempts-warning').textContent = 'شما امروز سهمیه‌ی تلاش خود را استفاده کرده‌اید؛ فردا دوباره تلاش کنید.';
@@ -697,7 +706,7 @@ async function startAttempt() {
 }
 
 function resumeFromState(state) {
-  currentStepKey = state.current_step;
+  currentStepKey = state.current_step == null ? null : String(state.current_step);
   if (!currentStepKey) {
     // همه‌ی مراحل قبلاً تمام شده ولی ثبت نهایی کامل نشده بود (مثلاً به‌خاطر قطعی ارتباط)
     showScreen('screen-review');
@@ -722,7 +731,7 @@ async function goBackStep() {
     const data = await res.json();
     if (data.expired) { showExpired(data.error); return; }
     if (!data.ok) { showToast(data.error || 'مرحله‌ی قبلی وجود ندارد.'); return; }
-    currentStepKey = data.step; stepDeadline = data.step_deadline; multiCount = data.multi_count || 0;
+    currentStepKey = data.step == null ? null : String(data.step); stepDeadline = data.step_deadline; multiCount = data.multi_count || 0;
     renderStep();
     showScreen('screen-step');
   } catch(e) { showToast('خطا در اتصال.'); }
@@ -872,100 +881,9 @@ let liveCapturedBlob = null;
 //  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
 // ============================================================
 async function openMainCameraStream() {
-    // مجوز را یک‌بار می‌گیریم تا نامِ دوربین‌ها در enumerateDevices قابل خواندن شود
-    let probe = null;
-    try {
-        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    } catch (e) {}
-
-    let backCams = [];
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cams = devices.filter(d => d.kind === 'videoinput');
-        backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
-        if (!backCams.length) backCams = cams;
-    } catch (e) {}
-    if (probe) probe.getTracks().forEach(t => t.stop());
-
-    // کیفیت بالا می‌خواهیم؛ اگر دوربین پشتیبانی نکند مرورگر خودش پایین می‌آورد
-    const quality = { width: { ideal: 4096 }, height: { ideal: 2160 }, frameRate: { ideal: 30 }, resizeMode: 'none' };
-
-    // ---------------------------------------------------------------
-    //  انتخاب لنز اصلی به روشِ «اندازه‌گیری میدان دید»:
-    //  تکیه بر نامِ دستگاه قابل‌اعتماد نیست (روی خیلی از گوشی‌ها نام‌ها عمومی‌اند). اما
-    //  لنز اولترا-واید همیشه بزرگ‌ترین میدان دید را دارد. پس هر دوربین پشت را باز می‌کنیم،
-    //  مقدار واقعی zoom.min و میدان دید را می‌خوانیم و دوربینی را نگه می‌داریم که
-    //  اولترا-واید نباشد (بزرگ‌ترین FOV را نداشته باشد) و بالاترین رزولوشن را بدهد.
-    // ---------------------------------------------------------------
-    const candidates = [];
-    for (const cam of backCams) {
-        try {
-            const s = await navigator.mediaDevices.getUserMedia({
-                video: Object.assign({ deviceId: { exact: cam.deviceId } }, quality), audio: false
-            });
-            const track = s.getVideoTracks()[0];
-            const caps = track.getCapabilities ? track.getCapabilities() : {};
-            const settings = track.getSettings ? track.getSettings() : {};
-            candidates.push({
-                stream: s, track, caps,
-                // zoom.min کمتر از ۱ نشانه‌ی قطعیِ لنز اولترا-واید است
-                isUltraWide: !!(caps.zoom && caps.zoom.min < 1),
-                pixels: (settings.width || 0) * (settings.height || 0),
-            });
-        } catch (e) {}
-    }
-
-    let chosen = null;
-    if (candidates.length) {
-        const normal = candidates.filter(c2 => !c2.isUltraWide);
-        const pool = normal.length ? normal : candidates;
-        // میان لنزهای غیر-اولترا-واید، بالاترین رزولوشن را انتخاب کن
-        pool.sort((a, b) => b.pixels - a.pixels);
-        chosen = pool[0];
-        candidates.forEach(c2 => { if (c2 !== chosen) c2.stream.getTracks().forEach(t => t.stop()); });
-    }
-
-    let stream = chosen ? chosen.stream : null;
-    if (!stream) {
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: Object.assign({ facingMode: { ideal: 'environment' } }, quality), audio: false
-        });
-    }
-
-    // ---------------------------------------------------------------
-    //  تنظیم زوم روی «۱ برابر» (بدون زوم)
-    //  نکته‌ی مهم: روی بعضی دستگاه‌ها applyConstraints خطا نمی‌دهد ولی عملاً اثر هم نمی‌کند.
-    //  پس بعد از هر تلاش، مقدار واقعی را با getSettings می‌خوانیم و چند روشِ مختلف را
-    //  یکی‌یکی امتحان می‌کنیم تا یکی واقعاً بنشیند.
-    // ---------------------------------------------------------------
-    try {
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : null;
-
-        if (caps && caps.zoom) {
-            const target = Math.min(Math.max(1, caps.zoom.min), caps.zoom.max);
-            const attempts = [
-                () => track.applyConstraints({ advanced: [{ zoom: target }] }),
-                () => track.applyConstraints({ zoom: target }),
-                () => track.applyConstraints({ advanced: [{ zoom: { exact: target } }] }),
-                () => track.applyConstraints({ advanced: [{ zoom: { ideal: target } }] }),
-            ];
-            for (const attempt of attempts) {
-                try {
-                    await attempt();
-                    const cur = track.getSettings ? (track.getSettings().zoom) : undefined;
-                    // اگر مقدار واقعی خوانده شد و به هدف رسیدیم، کار تمام است
-                    if (cur === undefined || Math.abs(cur - target) < 0.05) break;
-                } catch (e) { /* روش بعدی */ }
-            }
-        }
-
-        if (caps && caps.focusMode && caps.focusMode.includes('continuous')) {
-            try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
-        }
-    } catch (e) {}
-
-    return stream;
+    // اگر عکسِ قبلی هنوز در حالِ گرفته‌شدن است، اول تمام شود (دو دوربینِ هم‌زمان روی خیلی از گوشی‌ها باز نمی‌شود)
+    if (window._stillPending) { try { await window._stillPending; } catch (e) {} window._stillPending = null; }
+    return CameraLib.openMain();   // لنزِ اصلی با وضوحِ بالا - webapp/camera-lib.js
 }
 
 // ============================================================
@@ -1210,8 +1128,10 @@ function takeLiveShot(ev) {
     // پس قبل از ساختن فایل، تصویر را به این اندازه کوچک می‌کنیم (حجم تا حدود یک‌دهم کم می‌شود).
     // رزولوشن: ۲۴۰۰ پیکسل برای دیدن جزئیات خودرو کاملاً کافی است و نسبت به ۴۰۰۰
     // چند برابر سریع‌تر رمزگذاری می‌شود (رمزگذاری با مربعِ ابعاد سنگین‌تر می‌شود).
-    const MAX_W = 2400;
+    const MAX_W = 3200;
     const vw = video.videoWidth, vh = video.videoHeight;
+    // عکسِ واقعی با وضوحِ کاملِ سنسور (اگر مرورگر پشتیبانی کند) - پیش از بستنِ دوربین شروع می‌شود
+    const stillP = window.CameraLib ? CameraLib.still(liveStream) : Promise.resolve(null);
     const scale = vw > MAX_W ? (MAX_W / vw) : 1;
     const w = Math.round(vw * scale), h = Math.round(vh * scale);
 
@@ -1249,7 +1169,9 @@ function takeLiveShot(ev) {
     //  ۱۰-۲۰ ثانیه طول می‌کشید. حالا خودِ canvas که همین الان آماده است مستقیم روی
     //  صفحه نشان داده می‌شود و رمزگذاری در پس‌زمینه ادامه پیدا می‌کند.
     // ------------------------------------------------------------------
-    stopLiveStream();
+    // دوربین بعد از گرفته‌شدنِ عکسِ واقعی بسته می‌شود
+    const streamToStop = liveStream; liveStream = null;
+    window._stillPending = stillP.finally(() => { if (streamToStop) streamToStop.getTracks().forEach(t => t.stop()); });
     video.style.display = 'none';
     const shot = document.getElementById('fs-shot');
     shot.style.display = 'none';
@@ -1267,7 +1189,7 @@ function takeLiveShot(ev) {
     //  رمزگذاری در پس‌زمینه با حداکثر دو پاس. دکمه‌ی «تایید و ارسال» تا آماده‌شدن فایل
     //  غیرفعال می‌ماند، ولی کاربر بلافاصله عکس را می‌بیند و می‌تواند «دوباره» بزند.
     // ------------------------------------------------------------------
-    const MAX_BYTES = 2 * 1024 * 1024;
+    const MAX_BYTES = 2.5 * 1024 * 1024;
     const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
 
     const confirmBtn = document.querySelector('#fs-preview-bar .fs-confirm');
@@ -1275,6 +1197,26 @@ function takeLiveShot(ev) {
 
     liveCapturedBlob = null;
     liveEncodePromise = (async () => {
+        // اگر عکسِ واقعی آمد و جهتش با کادرِ دیده‌شده یکی بود، به‌جای فریمِ ویدیو همان استفاده می‌شود
+        const bmp = await stillP;
+        if (bmp && ((bmp.width > bmp.height) === (vw > vh))) {
+            const sc = bmp.width > MAX_W ? MAX_W / bmp.width : 1;
+            const bw = Math.round(bmp.width * sc), bh = Math.round(bmp.height * sc);
+            if (rotated) {
+                canvas.width = bh; canvas.height = bw;
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.drawImage(bmp, -bw / 2, -bh / 2, bw, bh);
+            } else {
+                canvas.width = bw; canvas.height = bh;
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(bmp, 0, 0, bw, bh);
+            }
+            if (bmp.close) bmp.close();
+        }
         let blob = await encodeAt(0.92);
         if (blob && blob.size > MAX_BYTES) {
             const ratio = MAX_BYTES / blob.size;
@@ -1401,7 +1343,7 @@ document.addEventListener('visibilitychange', async () => {
     const data = await res.json();
     if (!data.ok) return;
     if (data.status !== 'IN_PROGRESS') { showExpired('این بازدید دیگر فعال نیست.'); return; }
-    const newStep = data.state.current_step;
+    const newStep = data.state.current_step == null ? null : String(data.state.current_step);
     if (newStep !== currentStepKey) {
       currentStepKey = newStep;
       if (!currentStepKey) { showScreen('screen-review'); return; }
@@ -1479,7 +1421,7 @@ async function uploadPhoto(file) {
       resetCaptureUI();
       showToast(`عکس ${toFa(multiCount)} ثبت شد.`);
     } else if (data.next_step) {
-      currentStepKey = data.next_step;
+      currentStepKey = String(data.next_step);
       stepDeadline = data.step_deadline;
       multiCount = 0;
       renderStep();
@@ -1498,7 +1440,7 @@ async function finishMultiStep() {
     if (data.expired) { showExpired(data.error); return; }
     if (!data.ok) { showToast(data.error); return; }
     if (data.next_step) {
-      currentStepKey = data.next_step; stepDeadline = data.step_deadline; multiCount = 0;
+      currentStepKey = String(data.next_step); stepDeadline = data.step_deadline; multiCount = 0;
       renderStep();
       const cam = document.getElementById('fs-camera');
       if (cam && cam.style.display === 'block') {
@@ -1518,7 +1460,7 @@ async function skipStep() {
     if (data.expired) { showExpired(data.error); return; }
     if (!data.ok) { showToast(data.error); return; }
     if (data.next_step) {
-      currentStepKey = data.next_step; stepDeadline = data.step_deadline; multiCount = 0;
+      currentStepKey = String(data.next_step); stepDeadline = data.step_deadline; multiCount = 0;
       renderStep();
       const cam = document.getElementById('fs-camera');
       if (cam && cam.style.display === 'block') {

@@ -1090,3 +1090,296 @@ function format_file_size($bytes) {
     if ($bytes >= 1024) return round($bytes / 1024, 1) . ' KB';
     return $bytes . ' B';
 }
+
+// =====================================================================
+//  حذفِ کاملِ یک درخواست (پرونده‌ی بیمه‌ی کارکنان) - چه دستی ثبت شده باشد چه خودِ
+//  پرسنل از ربات/پنل کاربری ثبت کرده باشد.
+//  - پرونده‌ی صادرشده یا دارای قسط/صورتحساب حذف نمی‌شود (مالی و بایگانی صادره به آن
+//    وابسته‌اند)؛ پیامِ خطا برمی‌گردد.
+//  - مدارک و عکس‌های بازدیدش فقط اگر در «موقت بایگانی» باشند پاک می‌شوند (بایگانیِ
+//    نهایی هرگز از این‌جا دست نمی‌خورد).
+//  - اگر پرسنل همین حالا در ربات وسطِ همین پرونده بود، به منوی اصلی برمی‌گردد.
+//  - یک واحد به سهمیه‌ی معرفی‌نامه برمی‌گردد.
+//  خروجی: ['ok' => bool, 'error' => ?string]
+// =====================================================================
+function delete_policy_case($pdo, $siteRoot, $caseId, $userId = null) {
+    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+    $stmt->execute([$caseId]);
+    $case = $stmt->fetch();
+    if (!$case) return ['ok' => false, 'error' => 'درخواست یافت نشد.'];
+    if ($case['status'] === 'ISSUED' || !empty($case['is_invoiced'])) {
+        return ['ok' => false, 'error' => 'این درخواست صادر شده (یا صورتحساب دارد) و حذف نمی‌شود؛ مالی و بایگانیِ صادره به آن وابسته است.'];
+    }
+    try {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM policy_installments WHERE case_id = ?");
+        $st->execute([$caseId]);
+        if (intval($st->fetchColumn()) > 0) return ['ok' => false, 'error' => 'برای این درخواست قسط ثبت شده و حذف نمی‌شود.'];
+    } catch (Throwable $e) { /* جدولِ اقساط نبود => مانعی نیست */ }
+
+    // فایل‌هایی که باید پاک شوند (فقط داخلِ موقت بایگانی)
+    $files = [];
+    $dirs = [];
+    try {
+        $st = $pdo->prepare("SELECT file_path FROM case_documents WHERE case_id = ?");
+        $st->execute([$caseId]);
+        foreach ($st->fetchAll() as $r) if (!empty($r['file_path'])) $files[] = $r['file_path'];
+    } catch (Throwable $e) {}
+    try {
+        $st = $pdo->prepare("SELECT photos, photos_folder_path, report_file_path FROM health_inspections WHERE case_id = ?");
+        $st->execute([$caseId]);
+        foreach ($st->fetchAll() as $r) {
+            if (!empty($r['photos_folder_path'])) $dirs[] = $r['photos_folder_path'];
+            if (!empty($r['report_file_path'])) $files[] = $r['report_file_path'];
+            $ph = json_decode((string)($r['photos'] ?? ''), true);
+            if (is_array($ph)) array_walk_recursive($ph, function ($v) use (&$files) { if (is_string($v) && $v !== '') $files[] = $v; });
+        }
+    } catch (Throwable $e) {}
+
+    $pdo->beginTransaction();
+    try {
+        foreach (['case_documents', 'health_inspections', 'health_attempts', 'webapp_sessions'] as $t) {
+            try { $pdo->prepare("DELETE FROM `$t` WHERE case_id = ?")->execute([$caseId]); } catch (Throwable $e) { /* جدول/ستون نبود */ }
+        }
+        try { $pdo->prepare("UPDATE app_notifications SET related_case_id = NULL WHERE related_case_id = ?")->execute([$caseId]); } catch (Throwable $e) {}
+        try {
+            $pdo->prepare("UPDATE persons SET active_case_id = NULL, flow_temp = NULL, conversation_state = 'MAIN_MENU' WHERE active_case_id = ?")->execute([$caseId]);
+        } catch (Throwable $e) {}
+        $pdo->prepare("DELETE FROM policy_cases WHERE id = ?")->execute([$caseId]);
+        if (!empty($case['introduction_id'])) {
+            $pdo->prepare("UPDATE introductions SET used_quota = GREATEST(COALESCE(used_quota, 0) - 1, 0) WHERE id = ?")->execute([$case['introduction_id']]);
+        }
+        try {
+            $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'DELETE', 'policy_cases', ?, ?)")
+                ->execute([$userId, $caseId, (string)($case['unique_code'] ?? '')]);
+        } catch (Throwable $e) {}
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        error_log('[delete_policy_case] ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'خطا در حذف درخواست.'];
+    }
+
+    // پاک‌کردنِ فایل‌ها بعد از commit، و فقط وقتی واقعاً زیرِ «موقت بایگانی» باشند
+    $tempRoot = realpath(temp_archive_root($siteRoot));
+    $inTemp = function ($rel) use ($siteRoot, $tempRoot) {
+        if (!$tempRoot) return false;
+        $abs = realpath($siteRoot . '/' . ltrim($rel, '/'));
+        return $abs && strpos($abs, $tempRoot . DIRECTORY_SEPARATOR) === 0 ? $abs : false;
+    };
+    foreach (array_unique($files) as $rel) { if (($abs = $inTemp($rel)) && is_file($abs)) @unlink($abs); }
+    foreach (array_unique($dirs) as $rel) {
+        if (!($abs = $inTemp($rel)) || !is_dir($abs)) continue;
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($it as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); }
+        @rmdir($abs);
+    }
+    return ['ok' => true];
+}
+
+// =====================================================================
+//  اعلان‌های ماندگار (مایگریشن ۰۱۲) - مشترک بین پنل مدیریت و پنل شرکت‌ها
+// =====================================================================
+function notif_tables_ready($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try { $pdo->query("SELECT 1 FROM user_notifications LIMIT 1"); $pdo->query("SELECT 1 FROM notification_cursors LIMIT 1"); $ok = true; }
+    catch (Throwable $e) { $ok = false; }
+    return $ok;
+}
+
+// رویدادهای تازه را (فقط یک‌بار، حتی با چند مرورگرِ هم‌زمان) به اعلانِ این کاربر تبدیل می‌کند.
+// $collect($since, $until) باید آرایه‌ی رویدادها را برگرداند (هر کدام title/body/type/tab/at).
+function notif_sync($pdo, $scope, $userId, callable $collect) {
+    // یک ثانیه عقب‌تر از «الان»، تا رویدادی که در همین ثانیه ثبت می‌شود دفعه‌ی بعد جا نماند
+    $now = date('Y-m-d H:i:s', time() - 1);
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare("SELECT last_at FROM notification_cursors WHERE scope = ? AND user_id = ? FOR UPDATE");
+        $st->execute([$scope, $userId]);
+        $last = $st->fetchColumn();
+        if ($last === false) {
+            // اولین بار: از همین لحظه به بعد، تا انبوهی از اعلانِ قدیمی نریزد
+            $pdo->prepare("INSERT INTO notification_cursors (scope, user_id, last_at) VALUES (?, ?, ?)")->execute([$scope, $userId, $now]);
+        } elseif ($last < $now) {
+            $ins = $pdo->prepare("INSERT INTO user_notifications (scope, user_id, type, title, body, tab, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            foreach ($collect($last, $now) as $ev) {
+                $ins->execute([$scope, $userId, mb_substr((string)($ev['type'] ?? ''), 0, 40), mb_substr((string)($ev['title'] ?? 'اعلان'), 0, 200),
+                               $ev['body'] ?? null, $ev['tab'] ?? null, $ev['at'] ?? $now]);
+            }
+            $pdo->prepare("UPDATE notification_cursors SET last_at = ? WHERE scope = ? AND user_id = ?")->execute([$now, $scope, $userId]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[notif_sync] ' . $e->getMessage());
+    }
+}
+
+// فهرستِ اعلان‌ها برای زنگوله (جدیدترین بالا) + آن‌هایی که از after_id به بعد آمده‌اند (برای نمایشِ گوشه‌ی صفحه)
+function notif_list($pdo, $scope, $userId, $afterId) {
+    $st = $pdo->prepare("SELECT id, type, title, body, tab, is_read, created_at FROM user_notifications
+                          WHERE scope = ? AND user_id = ? ORDER BY id DESC LIMIT 60");
+    $st->execute([$scope, $userId]);
+    $items = [];
+    foreach ($st->fetchAll() as $r) {
+        $items[] = ['id' => intval($r['id']), 'type' => $r['type'], 'title' => $r['title'], 'body' => $r['body'], 'tab' => $r['tab'],
+                    'read' => (bool)$r['is_read'], 'at_ts' => strtotime($r['created_at'])];
+    }
+    $maxId = $items ? $items[0]['id'] : intval($afterId);
+    $new = ($afterId === null || $afterId === '') ? [] : array_values(array_reverse(array_filter($items, fn($i) => $i['id'] > intval($afterId))));
+    return ['items' => $items, 'new' => $new, 'max_id' => $maxId];
+}
+
+// کارهای زنگوله: خواندن همه، حذف یکی، پاک‌کردن همه، خواندن یکی
+function notif_apply_action($pdo, $scope, $userId, $action, $id = 0) {
+    if ($action === 'read_all') $pdo->prepare("UPDATE user_notifications SET is_read = 1 WHERE scope = ? AND user_id = ?")->execute([$scope, $userId]);
+    elseif ($action === 'clear') $pdo->prepare("DELETE FROM user_notifications WHERE scope = ? AND user_id = ?")->execute([$scope, $userId]);
+    elseif ($action === 'delete') $pdo->prepare("DELETE FROM user_notifications WHERE scope = ? AND user_id = ? AND id = ?")->execute([$scope, $userId, intval($id)]);
+    elseif ($action === 'read') $pdo->prepare("UPDATE user_notifications SET is_read = 1 WHERE scope = ? AND user_id = ? AND id = ?")->execute([$scope, $userId, intval($id)]);
+    // فقط ۲۰۰ اعلانِ آخرِ هر کاربر نگه داشته می‌شود
+    $pdo->prepare("DELETE FROM user_notifications WHERE scope = ? AND user_id = ? AND id < COALESCE((SELECT m FROM (SELECT id AS m FROM user_notifications WHERE scope = ? AND user_id = ? ORDER BY id DESC LIMIT 1 OFFSET 199) x), 0)")
+        ->execute([$scope, $userId, $scope, $userId]);
+}
+
+// =====================================================================
+//  بررسیِ تک‌تکِ عکس‌های بازدید سلامت (مایگریشن ۰۱۳)
+// =====================================================================
+function health_review_columns_ready($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try { $pdo->query("SELECT photo_reviews, retake_steps FROM health_inspections LIMIT 1"); $ok = true; } catch (Throwable $e) { $ok = false; }
+    return $ok;
+}
+
+// مسیرِ مطلقِ یک مسیرِ ذخیره‌شده (بعضی مسیرها نسبی‌اند، بعضی - مثل photos_folder_path - مطلق)
+function health_abs_path($siteRoot, $p) {
+    if (!$p) return '';
+    if (strpos($p, $siteRoot . '/') === 0) return $p;
+    if ($p[0] === '/' && file_exists($p)) return $p;
+    return $siteRoot . '/' . ltrim($p, '/');
+}
+
+// وضعیتِ همه‌ی عکس‌های یک بازدید: [کلیدِ عکس => ['status' => ..., 'note' => ...]]
+function health_photo_reviews($insp) {
+    $photos = json_decode($insp['photos'] ?? '{}', true) ?: [];
+    $rev = json_decode($insp['photo_reviews'] ?? '{}', true) ?: [];
+    $out = [];
+    foreach ($photos as $k => $p) {
+        $r = $rev[$k] ?? [];
+        // بازدیدی که کلش قبلاً (به روشِ قدیم) تایید شده، عکس‌هایش هم تاییدشده حساب می‌شوند
+        $st = $r['status'] ?? (($insp['status'] ?? '') === 'APPROVED' ? 'APPROVED' : 'PENDING');
+        $out[$k] = ['status' => $st, 'note' => $r['note'] ?? ''];
+    }
+    return $out;
+}
+
+// پوشه‌ی نهاییِ عکس‌های تاییدشده‌ی یک بازدید (کنارِ پوشه‌ی «در انتظار تایید»)
+function health_final_folder($siteRoot, $insp, $approvedDate) {
+    $pending = health_abs_path($siteRoot, $insp['photos_folder_path'] ?? '');
+    return dirname($pending) . '/' . build_health_photos_folder_name($approvedDate, $insp['plate'] ?? '');
+}
+
+// ثبتِ تصمیمِ کارشناس برای یک عکس (APPROVED / REJECTED / PENDING) + توضیح (خسارت یا علتِ رد).
+// عکسِ تاییدشده همان لحظه با نامِ درست به پوشه‌ی نهاییِ بایگانی می‌رود. وقتی همه‌ی عکس‌ها بررسی شدند:
+//   - همه تایید => بازدید نهایی (APPROVED) و یادداشت‌های خسارت کنارِ عکس‌ها ذخیره می‌شود
+//   - حتی یکی رد => بازدید ناقص (REJECTED + retake_steps) تا کاربر فقط همان‌ها را دوباره بفرستد
+function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $userId = null) {
+    $stmt = $pdo->prepare("SELECT hi.*, COALESCE(pc.plate, hi.free_plate) AS plate FROM health_inspections hi
+                            LEFT JOIN policy_cases pc ON pc.id = hi.case_id WHERE hi.id = ?");
+    $stmt->execute([$inspId]);
+    $insp = $stmt->fetch();
+    if (!$insp) return ['ok' => false, 'error' => 'بازدید یافت نشد.'];
+    if (!in_array($decision, ['APPROVED', 'REJECTED', 'PENDING'], true)) return ['ok' => false, 'error' => 'تصمیم نامعتبر است.'];
+    $photos = json_decode($insp['photos'] ?: '{}', true) ?: [];
+    if (!isset($photos[$key])) return ['ok' => false, 'error' => 'این عکس در بازدید نیست.'];
+
+    $reviews = health_photo_reviews($insp);
+    $approvedDate = $insp['approved_jalali_date'] ?: jalali_from_gregorian_ts_dotted(time());
+    $pendingDir = health_abs_path($siteRoot, $insp['photos_folder_path']);
+    if (!is_dir($pendingDir)) @mkdir($pendingDir, 0777, true);
+    $finalDir = health_final_folder($siteRoot, $insp, $approvedDate);
+
+    // جای فایل: تاییدشده در پوشه‌ی نهایی، بقیه در پوشه‌ی «در انتظار تایید»
+    $abs = health_abs_path($siteRoot, $photos[$key]);
+    $targetDir = $decision === 'APPROVED' ? $finalDir : $pendingDir;
+    if (is_file($abs) && dirname($abs) !== $targetDir) {
+        if (!is_dir($targetDir)) @mkdir($targetDir, 0777, true);
+        $dest = unique_dest_path($targetDir . '/' . basename($abs));
+        if (@rename($abs, $dest)) $photos[$key] = ltrim(str_replace($siteRoot, '', $dest), '/');
+    }
+    $reviews[$key] = ['status' => $decision, 'note' => mb_substr(trim((string)$note), 0, 500), 'at' => date('Y-m-d H:i:s'), 'by' => $userId];
+
+    $counts = ['APPROVED' => 0, 'REJECTED' => 0, 'PENDING' => 0];
+    foreach ($reviews as $r) $counts[$r['status']]++;
+    $steps = health_inspection_steps();
+
+    $status = 'PENDING'; $retake = null; $reason = null; $folderPath = $insp['photos_folder_path'];
+    if ($counts['PENDING'] === 0 && $counts['REJECTED'] > 0) {
+        $status = 'REJECTED';
+        $retakeKeys = []; $lines = [];
+        foreach ($reviews as $k => $r) {
+            if ($r['status'] !== 'REJECTED') continue;
+            $sk = explode('-', (string)$k)[0];
+            $retakeKeys[$sk] = true;
+            $lines[] = ($steps[$sk]['label'] ?? $k) . ($r['note'] !== '' ? ' (' . $r['note'] . ')' : '');
+        }
+        $retake = json_encode(array_keys($retakeKeys));
+        $reason = 'عکس‌های ناقص: ' . implode('، ', $lines);
+    } elseif ($counts['PENDING'] === 0) {
+        $status = 'APPROVED';
+        $folderPath = $finalDir;
+        // یادداشت‌های کارشناس (خسارت‌ها) کنارِ عکس‌ها
+        $notes = [];
+        foreach ($reviews as $k => $r) if ($r['note'] !== '') $notes[] = '• ' . ($steps[explode('-', (string)$k)[0]]['label'] ?? $k) . ': ' . $r['note'];
+        if ($notes) {
+            if (!is_dir($finalDir)) @mkdir($finalDir, 0777, true);
+            @file_put_contents($finalDir . '/' . sanitize_folder_name('(یادداشت کارشناس) ' . ($insp['plate'] ?: 'بدون‌پلاک')) . '.txt',
+                               "یادداشت‌های کارشناس بازدید - {$approvedDate}\n\n" . implode("\n", $notes) . "\n");
+        }
+        if (is_dir($pendingDir) && count(scandir($pendingDir)) <= 2) @rmdir($pendingDir);
+    }
+
+    $pdo->prepare("UPDATE health_inspections SET photos = ?, photo_reviews = ?, retake_steps = ?, status = ?, reject_reason = ?,
+                          photos_folder_path = ?, approved_jalali_date = ?, reviewed_at = NOW() WHERE id = ?")
+        ->execute([json_encode($photos, JSON_UNESCAPED_UNICODE), json_encode($reviews, JSON_UNESCAPED_UNICODE), $retake, $status, $reason,
+                   $folderPath, $counts['APPROVED'] > 0 ? $approvedDate : $insp['approved_jalali_date'], $inspId]);
+
+    // خبر به کاربر فقط وقتی بررسیِ همه‌ی عکس‌ها تمام شد
+    if ($status !== 'PENDING' && $insp['status'] !== $status) {
+        $st = $pdo->prepare("SELECT COALESCE(pc.person_id, hi.person_id) AS person_id, p.bale_chat_id, pc.insurance_type
+                               FROM health_inspections hi LEFT JOIN policy_cases pc ON hi.case_id = pc.id
+                               JOIN persons p ON p.id = COALESCE(pc.person_id, hi.person_id) WHERE hi.id = ?");
+        $st->execute([$inspId]);
+        if ($row = $st->fetch()) {
+            $ctx = ($row['insurance_type'] ? 'بیمه ' . insurance_type_fa($row['insurance_type']) . ' ' : '') . 'پلاک ' . ($insp['plate'] ?: 'بدون پلاک');
+            if ($status === 'APPROVED') {
+                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت تایید شد', "✅ بازدید سلامت مربوط به {$ctx} تایید شد.", 'success');
+            } else {
+                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت ناقص است',
+                    "⚠️ بازدید سلامت مربوط به {$ctx} ناقص است.\n{$reason}\nلطفاً از «بازدید سلامت خودرو» فقط همین عکس‌ها را دوباره بگیرید و بفرستید.", 'error');
+            }
+        }
+    }
+    return ['ok' => true, 'status' => $status, 'counts' => $counts, 'photo' => $photos[$key], 'review' => $reviews[$key]];
+}
+
+// بازدیدِ ناقصی که منتظرِ ارسالِ دوباره‌ی چند عکس است (برای پرونده یا پلاکِ آزاد)
+function health_retake_target($pdo, $session) {
+    if (!health_review_columns_ready($pdo)) return null;
+    if (($session['mode'] ?? '') === 'case') {
+        $st = $pdo->prepare("SELECT * FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+        $st->execute([$session['case_id']]);
+    } else {
+        $st = $pdo->prepare("SELECT * FROM health_inspections WHERE person_id = ? AND free_plate = ? ORDER BY id DESC LIMIT 1");
+        $st->execute([$session['person_id'], $session['free_plate']]);
+    }
+    $insp = $st->fetch();
+    if (!$insp || $insp['status'] !== 'REJECTED') return null;
+    $keys = json_decode($insp['retake_steps'] ?? '', true);
+    if (!is_array($keys) || !$keys) return null;
+    $all = health_inspection_steps();
+    $keys = array_values(array_filter(array_keys($all), fn($k) => in_array((string)$k, array_map('strval', $keys), true)));
+    if (!$keys) return null;
+    $insp['_retake_keys'] = $keys;
+    return $insp;
+}

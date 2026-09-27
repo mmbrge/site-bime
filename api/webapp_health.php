@@ -109,9 +109,27 @@ try {
         $active = get_active_attempt($pdo, $session);
         $state = $active ? json_decode($active['state'] ?: '{}', true) : null;
 
+        // اگر بازدیدِ قبلی ناقص بوده (بعضی عکس‌ها رد شده‌اند)، فقط همان مرحله‌ها دوباره خواسته می‌شوند
+        $retake = $active ? null : health_retake_target($pdo, $session);
+        $allowed = null;
+        if ($active && !empty($state['steps'])) $allowed = array_map('strval', $state['steps']);
+        elseif ($retake) $allowed = array_map('strval', $retake['_retake_keys']);
+        $retakeInfo = null;
+        if ($retake) {
+            $rev = health_photo_reviews($retake);
+            $items = [];
+            foreach ($rev as $k => $r) {
+                if ($r['status'] !== 'REJECTED') continue;
+                $sk = explode('-', (string)$k)[0];
+                $items[] = ['step' => $sk, 'label' => health_inspection_steps()[$sk]['label'] ?? $k, 'note' => $r['note']];
+            }
+            $retakeInfo = ['inspection_id' => intval($retake['id']), 'inspection_number' => intval($retake['inspection_number']), 'items' => $items];
+        }
+
         $steps = [];
         foreach (health_inspection_steps() as $key => $s) {
-            $steps[] = ['key' => $key, 'label' => $s['label'], 'required' => $s['required'], 'multi' => $s['multi']];
+            if ($allowed !== null && !in_array((string)$key, $allowed, true)) continue;
+            $steps[] = ['key' => (string)$key, 'label' => $s['label'], 'required' => $s['required'], 'multi' => $s['multi']];
         }
 
         echo json_encode([
@@ -124,6 +142,7 @@ try {
             'total_seconds' => health_total_seconds(),
             'max_attempts_per_day' => HEALTH_MAX_ATTEMPTS_PER_DAY,
             'attempts_today' => $attemptsToday,
+            'retake' => $retakeInfo,
             'active_attempt' => $active ? [
                 'id' => $active['id'],
                 'started_at' => strtotime($active['started_at']),
@@ -147,8 +166,15 @@ try {
             echo json_encode(['ok' => false, 'error' => 'امروز ۲ بار برای این پلاک تلاش کرده‌اید. لطفاً فردا دوباره امتحان کنید.']); exit;
         }
 
-        $steps = array_keys(health_inspection_steps());
+        $steps = array_map('strval', array_keys(health_inspection_steps()));
         $state = ['current_step' => $steps[0], 'step_started_at' => null, 'photos' => []];
+        // ارسالِ دوباره‌ی عکس‌های ردشده: فقط همان مرحله‌ها، و نتیجه به همان بازدیدِ قبلی اضافه می‌شود
+        $retake = health_retake_target($pdo, $session);
+        if ($retake) {
+            $state['steps'] = array_map('strval', $retake['_retake_keys']);
+            $state['current_step'] = $state['steps'][0];
+            $state['retake_inspection_id'] = intval($retake['id']);
+        }
 
         $stmt = $pdo->prepare("INSERT INTO health_attempts (case_id, person_id, free_plate, plate, attempt_date, status, state) VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS', ?)");
         $stmt->execute([
@@ -186,7 +212,8 @@ try {
 
     $state = json_decode($attempt['state'] ?: '{}', true) ?: [];
     $steps = health_inspection_steps();
-    $stepKeys = array_keys($steps);
+    // ترتیبِ مرحله‌های *همین* تلاش (در ارسالِ دوباره فقط مرحله‌های ردشده)
+    $stepKeys = !empty($state['steps']) ? array_map('strval', $state['steps']) : array_map('strval', array_keys($steps));
 
     // بررسی انقضای زمان (کل و مرحله) - هر بار قبل از پردازش هر اکشن
     $now = time();
@@ -234,7 +261,7 @@ try {
 
         // نام فایل بر اساس عنوانِ فارسیِ همان مرحله ذخیره می‌شود (نه timestamp)، تا در بایگانی
         // مشخص باشد هر عکس مربوط به کدام نمای خودرو است - مثلاً «۰۳ - نمای جلو راست ۴۵ درجه.jpg»
-        $stepIndex = array_search($stepKey, array_keys($steps), true);
+        $stepIndex = array_search((string)$stepKey, array_map('strval', array_keys($steps)), true);
         $stepNum = str_pad((string)(($stepIndex === false ? 0 : $stepIndex) + 1), 2, '0', STR_PAD_LEFT);
         $stepLabel = sanitize_folder_name($steps[$stepKey]['label'] ?? $stepKey);
         // کد ملی به نام فایل اضافه می‌شود تا اگر چند شخص همزمان در پوشه‌ی موقت فایل داشتند، قاطی نشود
@@ -260,7 +287,7 @@ try {
         }
 
         $state['photos'][$stepKey] = $relPath;
-        $idx = array_search($stepKey, $stepKeys);
+        $idx = array_search((string)$stepKey, $stepKeys, true);
         $next = $stepKeys[$idx + 1] ?? null;
         $state['current_step'] = $next;
         // مهم: تایمر مرحله‌ی جدید هنوز شروع نمی‌شود - فقط وقتی کاربر روی «ثبت بازدید این مرحله»
@@ -276,10 +303,9 @@ try {
     //  بازگشت به مرحله‌ی قبل (برای بازبینی/گرفتن دوباره‌ی عکس)
     // =====================================================================
     if ($action === 'go_back_step') {
-        $stepKeys = array_keys($steps);
         $curKey = $state['current_step'] ?? null;
         // اگر همه‌ی مراحل تمام شده بود (در حال بازبینی نهایی)، از آخرین مرحله شروع به بازگشت می‌کنیم
-        $curIdx = $curKey ? array_search($curKey, $stepKeys) : count($stepKeys);
+        $curIdx = $curKey ? array_search((string)$curKey, $stepKeys, true) : count($stepKeys);
         $prevIdx = $curIdx - 1;
         if ($prevIdx < 0) { echo json_encode(['ok' => false, 'error' => 'مرحله‌ی قبلی وجود ندارد.']); exit; }
 
@@ -305,9 +331,13 @@ try {
     if ($action === 'finish_multi_step' || $action === 'skip_step') {
         $stepKey = $state['current_step'] ?? null;
         if (!$stepKey) { echo json_encode(['ok' => false, 'error' => 'مرحله‌ای فعال نیست.']); exit; }
+        // مرحله‌ی اجباری را نمی‌شود بدون عکس رد کرد (قبلاً سرور این را چک نمی‌کرد)
+        if (!empty($steps[$stepKey]['required']) && empty($state['photos'][$stepKey])) {
+            echo json_encode(['ok' => false, 'error' => 'این مرحله اجباری است و باید عکسش گرفته شود.'], JSON_UNESCAPED_UNICODE); exit;
+        }
         if (empty($state['photos'][$stepKey])) $state['photos'][$stepKey] = [];
 
-        $idx = array_search($stepKey, $stepKeys);
+        $idx = array_search((string)$stepKey, $stepKeys, true);
         $next = $stepKeys[$idx + 1] ?? null;
         $state['current_step'] = $next;
         $state['step_started_at'] = null;
@@ -326,8 +356,65 @@ try {
     // =====================================================================
     if ($action === 'finalize') {
         if (!empty($state['current_step'])) { echo json_encode(['ok' => false, 'error' => 'هنوز همه‌ی مراحل تکمیل نشده‌اند.']); exit; }
+        // همه‌ی مرحله‌های اجباریِ این تلاش باید عکس داشته باشند
+        foreach ($stepKeys as $sk) {
+            if (!empty($steps[$sk]['required']) && empty($state['photos'][$sk])) {
+                echo json_encode(['ok' => false, 'error' => 'عکسِ «' . $steps[$sk]['label'] . '» گرفته نشده است.'], JSON_UNESCAPED_UNICODE); exit;
+            }
+        }
 
         $plate = resolve_plate($pdo, $session);
+
+        // ---- ارسالِ دوباره‌ی عکس‌های ردشده: به همان بازدیدِ قبلی اضافه می‌شود ----
+        if (!empty($state['retake_inspection_id'])) {
+            $stmt = $pdo->prepare("SELECT * FROM health_inspections WHERE id = ?");
+            $stmt->execute([$state['retake_inspection_id']]);
+            $insp = $stmt->fetch();
+            if (!$insp) { echo json_encode(['ok' => false, 'error' => 'بازدیدِ قبلی یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+            $photos = json_decode($insp['photos'] ?: '{}', true) ?: [];
+            $reviews = json_decode($insp['photo_reviews'] ?: '{}', true) ?: [];
+            $pendingFolder = health_abs_path($siteRoot, $insp['photos_folder_path']);
+            if (!is_dir($pendingFolder)) @mkdir($pendingFolder, 0777, true);
+            $tempDirsTouched = [];
+            foreach ($state['photos'] as $stepKey => $val) {
+                $paths = array_values(array_filter(is_array($val) ? $val : [$val]));
+                if (!$paths) continue;
+                $stepLabel = $steps[$stepKey]['label'] ?? $stepKey;
+                // عکس‌های ردشده‌ی همین مرحله کنار می‌روند (فایلشان هم پاک می‌شود)
+                $maxIdx = 0;
+                foreach (array_keys($photos) as $k) {
+                    $parts = explode('-', (string)$k);
+                    if ($parts[0] !== (string)$stepKey) continue;
+                    if (($reviews[$k]['status'] ?? '') === 'REJECTED') {
+                        $old = health_abs_path($siteRoot, $photos[$k]);
+                        if (is_file($old)) @unlink($old);
+                        unset($photos[$k], $reviews[$k]);
+                    } else {
+                        $maxIdx = max($maxIdx, intval($parts[1] ?? 1));
+                    }
+                }
+                $isMulti = !empty($steps[$stepKey]['multi']);
+                foreach ($paths as $i => $tempRelPath) {
+                    $absTemp = $siteRoot . '/' . $tempRelPath;
+                    $tempDirsTouched[] = dirname($absTemp);
+                    $ext = pathinfo($absTemp, PATHINFO_EXTENSION) ?: 'jpg';
+                    $sub = $isMulti ? ($maxIdx + $i + 1) : null;
+                    $destAbs = unique_dest_path($pendingFolder . '/' . health_step_filename($stepLabel, $plate, $ext, $sub));
+                    if (file_exists($absTemp)) @rename($absTemp, $destAbs);
+                    $key = $isMulti ? "{$stepKey}-{$sub}" : (string)$stepKey;
+                    $photos[$key] = ltrim(str_replace($siteRoot, '', $destAbs), '/');
+                    $reviews[$key] = ['status' => 'PENDING', 'note' => ''];
+                }
+            }
+            foreach (array_unique($tempDirsTouched) as $d) cleanup_empty_dirs_upward($d, temp_archive_root($siteRoot));
+            $pdo->prepare("UPDATE health_inspections SET photos = ?, photo_reviews = ?, retake_steps = NULL, status = 'PENDING', reject_reason = NULL WHERE id = ?")
+                ->execute([json_encode($photos, JSON_UNESCAPED_UNICODE), json_encode($reviews, JSON_UNESCAPED_UNICODE), $insp['id']]);
+            $pdo->prepare("UPDATE health_attempts SET status = 'COMPLETED' WHERE id = ?")->execute([$attemptId]);
+            if (!empty($insp['case_id'])) maybe_advance_case_status($pdo, $insp['case_id']);
+            notify_admin($pdo, "📸 عکس‌های اصلاحیِ بازدید سلامت شماره {$insp['inspection_number']} (پلاک " . ($plate ?: '-') . ") رسید و منتظر بررسی است.");
+            echo json_encode(['ok' => true, 'inspection_number' => intval($insp['inspection_number']), 'retake' => true]);
+            exit;
+        }
 
         if ($session['mode'] === 'case') {
             $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");

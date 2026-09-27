@@ -179,6 +179,7 @@
 <canvas id="canvas"></canvas>
 <div class="toast" id="toast"></div>
 
+<script src="../camera-lib.js?v=1"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -187,45 +188,7 @@
 //  دوربین‌ها گرفته شود و لنز اصلی بر اساس نامش انتخاب و با deviceId مستقیم باز شود.
 // ============================================================
 async function openMainCameraStream() {
-    let probe = null;
-    try {
-        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    } catch (e) {}
-
-    let chosenId = null;
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cams = devices.filter(d => d.kind === 'videoinput');
-        const backCams = cams.filter(d => /back|rear|environment|پشت/i.test(d.label));
-        const pool = backCams.length ? backCams : cams;
-        const nonWide = pool.filter(d => !/ultra|wide|0\.5|tele|zoom|depth|macro/i.test(d.label));
-        const chosen = nonWide[0] || pool[0];
-        if (chosen) chosenId = chosen.deviceId;
-    } catch (e) {}
-
-    if (probe) probe.getTracks().forEach(t => t.stop());
-
-    let stream;
-    if (chosenId) {
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: chosenId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-            });
-        } catch (e) {}
-    }
-    if (!stream) {
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-        });
-    }
-    try {
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : null;
-        if (caps && caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
-            await track.applyConstraints({ advanced: [{ zoom: 1 }] });
-        }
-    } catch (e) {}
-    return stream;
+    return CameraLib.openMain();   // لنزِ اصلی با وضوحِ بالا (نه واید) - webapp/camera-lib.js
 }
 
 const params = new URLSearchParams(location.search);
@@ -396,6 +359,8 @@ function takeShot(ev) {
     const fsOpen = document.getElementById('fs-doc').style.display === 'block';
     const video = document.getElementById(fsOpen ? 'fs-doc-video' : 'video');
     const canvas = document.getElementById('canvas');
+    // عکسِ واقعی با وضوحِ کاملِ سنسور (اگر مرورگر پشتیبانی کند)؛ متنِ سند خواناتر می‌شود
+    const stillP = window.CameraLib ? CameraLib.still(stream) : Promise.resolve(null);
 
     // مدارک باید با بالاترین کیفیت ذخیره شوند چون قرار است اطلاعاتِ روی سند از آن‌ها
     // خوانده شود؛ پس رزولوشن کامل نگه داشته می‌شود و فقط اگر از سقفِ حجم رد شد کمی فشرده می‌شود.
@@ -419,6 +384,16 @@ function takeShot(ev) {
     const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
 
     (async () => {
+        const bmp = await stillP;
+        if (bmp && ((bmp.width > bmp.height) === (canvas.width > canvas.height))) {
+            const MAX_W = 4000;   // بیشتر از این فقط حجم را بالا می‌برد، نه خوانایی
+            const sc = bmp.width > MAX_W ? MAX_W / bmp.width : 1;
+            canvas.width = Math.round(bmp.width * sc); canvas.height = Math.round(bmp.height * sc);
+            const c2 = canvas.getContext('2d');
+            c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = 'high';
+            c2.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            if (bmp.close) bmp.close();
+        }
         let blob = await encodeAt(0.97);
         if (blob && blob.size > MAX_BYTES) {
             const ratio = MAX_BYTES / blob.size;

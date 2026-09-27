@@ -301,10 +301,33 @@ function debouncedRequestSearch() {
 //      نشان داده می‌شود و بعد از ۵ ثانیه خودش می‌رود ----
 let notifSince = null;
 // زنگوله‌ی کنارِ دکمه‌ی خروج: اعلان‌هایی که گوشه‌ی صفحه می‌آیند، آن‌جا هم می‌مانند
+let notifAfterId = null;   // آخرین اعلانی که دیده شده (حالتِ ماندگار)
+async function notifFetch(extra) {
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(Object.assign({action: 'notifications_feed', since: notifSince, after_id: notifAfterId}, extra || {}))});
+    return res.json();
+}
+function applyNotifResponse(data) {
+    if (!data || !data.ok) return [];
+    setChatUnread(data.unread_chat);
+    if (data.persisted) {
+        if (window.NotifBell) NotifBell.setServerItems(data.items || []);
+        const fresh = notifAfterId === null ? [] : (data.new || []);
+        notifAfterId = data.max_id;
+        return fresh;
+    }
+    notifSince = data.now;
+    return data.events || [];
+}
 if (window.NotifBell) NotifBell.init({
     mount: document.getElementById('notif-bell-mount'),
     storageKey: 'notif:portal:<?php echo intval($_SESSION['company_user_id']); ?>',
     onOpenItem: it => { if (it.type === 'chat') openChatModal(); },
+    onServerAction: async (act, id) => {
+        const data = await notifFetch({notif_action: act, id});
+        applyNotifResponse(data).forEach(e => pushNotification(e.title, e.body, e.type));
+        return data && data.persisted ? data.items : null;
+    },
 });
 function pushNotification(title, body, type) {
     if (window.NotifBell) NotifBell.add({title, body, type});
@@ -322,15 +345,12 @@ function pushNotification(title, body, type) {
 
 async function pollNotifications() {
     try {
-        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'notifications_feed', since: notifSince})});
-        const data = await res.json();
+        const data = await notifFetch();
         if (!data.ok) return;
-        (data.events || []).forEach(e => pushNotification(e.title, e.body, e.type));
-        notifSince = data.now;
-        setChatUnread(data.unread_chat);
+        const events = applyNotifResponse(data);
+        events.forEach(e => pushNotification(e.title, e.body, e.type));
         // اگر پیام تازه‌ای آمد و مودال چت باز است، همان‌جا هم تازه شود
-        if ((data.events || []).some(e => e.type === 'chat')
+        if (events.some(e => e.type === 'chat')
             && document.getElementById('chat-modal').classList.contains('active')) loadChatMessages();
     } catch (e) { /* قطعیِ لحظه‌ای نباید چیزی را خراب کند */ }
 }
