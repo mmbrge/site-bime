@@ -63,6 +63,7 @@ try {
             $r['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['updated_at']));
             foreach (['body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
             $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
+            $r['requested_counts_fa'] = company_requested_counts_fa($r['requested_counts'] ?? null);
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -80,6 +81,7 @@ try {
         $request['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['updated_at']));
         $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
         $request['request_kind_fa'] = company_request_kind_fa($reqKind);
+        $request['requested_counts_fa'] = company_requested_counts_fa($request['requested_counts'] ?? null);
 
         // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به
         // ../undefined می‌خورد و کاربر نمی‌تواند فایلی که خودش فرستاده را ببیند
@@ -179,11 +181,15 @@ try {
     // ---- فیدِ اعلان‌های پنل شرکت: پیام تازه از ما، و بیمه‌نامه‌ی تازه صادرشده ----
     if ($action === 'notifications_feed') {
         $since = trim($data['since'] ?? '');
+        $ph = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        // شمارِ پیام‌های خوانده‌نشده‌ی ما (برای عددِ روی آیکن گفتگو) - در هر پاسخ، حتی بارِ اول
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM company_chat_messages WHERE sender_type = 'ADMIN' AND is_read = 0 AND company_id IN ($ph)");
+        $stmt->execute($allowedCompanyIds);
+        $unreadChat = intval($stmt->fetchColumn());
         if ($since === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $since)) {
-            echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => []], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => [], 'unread_chat' => $unreadChat], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $ph = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
         $events = [];
 
         $stmt = $pdo->prepare("SELECT message, created_at FROM company_chat_messages
@@ -209,18 +215,8 @@ try {
         }
 
         usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
-        echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => array_slice($events, -25)], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    // ---- فهرست متنیِ ریزِ یک درخواست (همان قالبی که ما هم می‌بینیم) ----
-    if ($action === 'request_rows_text') {
-        $requestId = intval($data['request_id'] ?? ($_GET['request_id'] ?? 0));
-        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
-        $stmt = $pdo->prepare("SELECT id FROM company_requests WHERE id = ? AND company_id IN ($placeholders)");
-        $stmt->execute(array_merge([$requestId], $allowedCompanyIds));
-        if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
-        echo json_encode(['ok' => true, 'text' => company_request_rows_text_report($pdo, $requestId)], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => array_slice($events, -25),
+                          'unread_chat' => $unreadChat], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -250,6 +246,55 @@ try {
         exit;
     }
 
+    // ---- دانلودِ دسته‌جمعیِ همه‌ی بیمه‌نامه‌های صادرشده‌ی یک درخواست (تا همین لحظه) ----
+    // فقط خودِ فایل‌های بیمه‌نامه داخل زیپ می‌روند (نه مدارک). زیپ در پوشه‌ی موقتِ سیستم
+    // ساخته می‌شود و بلافاصله بعد از فرستادن پاک می‌شود - در بایگانی ما چیزی نمی‌ماند.
+    if (($action === 'download_issued_zip') || ($_GET['action'] ?? '') === 'download_issued_zip') {
+        $requestId = intval($data['request_id'] ?? ($_GET['request_id'] ?? 0));
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $stmt = $pdo->prepare("SELECT cr.id, cr.created_at, c.name AS company_name FROM company_requests cr
+                                 JOIN companies c ON c.id = cr.company_id
+                                WHERE cr.id = ? AND cr.company_id IN ($placeholders)");
+        $stmt->execute(array_merge([$requestId], $allowedCompanyIds));
+        $req = $stmt->fetch();
+        if (!$req) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+
+        $stmt = $pdo->prepare("SELECT issued_file_path, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, policy_number, insurance_type
+                                 FROM company_request_plates WHERE request_id = ? AND status = 'ISSUED' AND issued_file_path IS NOT NULL ORDER BY id");
+        $stmt->execute([$requestId]);
+        $siteRoot = dirname(__DIR__);
+        $files = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $abs = $siteRoot . '/' . $row['issued_file_path'];
+            if (!is_file($abs)) continue;
+            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $base = sanitize_folder_name(insurance_type_fa($row['insurance_type']) . ' - ' . company_row_label($row)
+                     . ($row['policy_number'] ? ' - ' . policy_number_for_filename($row['policy_number']) : ''));
+            $name = $base . '.' . $ext;
+            for ($n = 2; isset($files[$name]); $n++) $name = $base . " ($n)." . $ext;
+            $files[$name] = $abs;
+        }
+        if (!$files) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'هنوز بیمه‌نامه‌ی صادرشده‌ای برای این درخواست نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (!class_exists('ZipArchive')) { echo json_encode(['ok' => false, 'error' => 'ساخت زیپ روی سرور ممکن نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'pzip_');
+        register_shutdown_function(function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); }); // حتی اگر دانلود نیمه‌کاره قطع شد
+        $zip = new ZipArchive();
+        $zip->open($tmp, ZipArchive::OVERWRITE);
+        foreach ($files as $name => $abs) $zip->addFile($abs, $name);
+        $zip->close();
+
+        $zipName = 'بیمه‌نامه‌های صادره - ' . $req['company_name'] . ' - درخواست ' . $req['id'] . ' - '
+                 . jalali_from_gregorian_ts_dotted(time()) . '.zip';
+        $zipName = str_replace(['"', '/', '\\'], ['', '-', '-'], $zipName);
+        header('Content-Type: application/zip');
+        header("Content-Disposition: attachment; filename=\"policies.zip\"; filename*=UTF-8''" . rawurlencode($zipName));
+        header('Content-Length: ' . filesize($tmp));
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
+
     // ---- ثبت درخواست جدید (متن + نامه‌ی اختیاری) ----
     if ($action === 'submit_request') {
         $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null);
@@ -272,10 +317,27 @@ try {
             exit;
         }
 
-        // نوعِ درخواست: صدور بیمه‌نامه‌ی جدید، صدور الحاقیه، یا فسخ بیمه‌نامه
+        // نوعِ درخواست: «صدور بیمه‌نامه‌ی جدید» یا «الحاقیه». الحاقیه خودش دو جور است -
+        // تغییر اطلاعات بیمه‌نامه یا فسخ - و ثبت‌کننده تعدادِ هرکدام را می‌گوید. نوعی که روی
+        // درخواست ذخیره می‌شود از همین تعدادها (و اگر نبود، از ردیف‌ها) درمی‌آید.
         $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
-        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, status) VALUES (?, ?, ?, ?, ?, 'NEW')");
-        $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind]);
+        $counts = company_normalize_requested_counts($data['requested_counts'] ?? null);
+        if ($kind !== 'NEW_POLICY') {
+            // فقط تعدادهای مربوط به الحاقیه معنا دارند
+            if ($counts) { $counts['THIRDPARTY'] = 0; $counts['BODY'] = 0; $counts = array_sum($counts) ? $counts : null; }
+            $kind = company_kind_from_counts($counts, '');
+            if ($kind === '') {
+                $rowsIn = json_decode($data['plates'] ?? '[]', true) ?: [];
+                $hasEndorse = (bool)array_filter($rowsIn, fn($r) => trim($r['endorsement_request'] ?? '') !== '');
+                $hasCancel  = (bool)array_filter($rowsIn, fn($r) => trim($r['cancellation_reason'] ?? '') !== '');
+                $kind = (!$hasEndorse && $hasCancel) ? 'CANCELLATION' : 'ENDORSEMENT';
+            }
+        } elseif ($counts) {
+            $counts['ENDORSEMENT'] = 0; $counts['CANCELLATION'] = 0; $counts = array_sum($counts) ? $counts : null;
+        }
+        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, ?, ?, ?, ?, ?, 'NEW')");
+        $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind,
+                        $counts ? json_encode($counts) : null]);
         $requestId = $pdo->lastInsertId();
 
         // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز؛ برای هر پلاک هم نوع بیمه‌ی

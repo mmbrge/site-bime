@@ -106,105 +106,14 @@ try {
         exit;
     }
 
-    // ---- فیدِ اعلان‌ها: هر چیزِ تازه‌ای که از آخرین بررسی تا حالا اتفاق افتاده ----
-    //  عمداً جدولِ جدیدی برای رویدادها ساخته نشده؛ همه‌چیز از روی created_at خودِ
-    //  جدول‌های موجود خوانده می‌شود تا نه مهاجرتِ تازه‌ای لازم باشد و نه داده‌ی اضافه
-    //  انباشته شود. کلاینت آخرین زمانِ دیده‌شده را می‌فرستد و همان را دوباره می‌گیرد.
-    if ($action === 'notifications_feed') {
-        $since = trim($data['since'] ?? '');
-        // اولین بار: فقط از همین لحظه به بعد، تا انبوهی از اعلانِ قدیمی نریزد
-        if ($since === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $since)) {
-            echo json_encode(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'events' => []], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        $now = date('Y-m-d H:i:s');
-        $events = [];
-
-        $add = function ($type, $title, $body, $at, $tab = null, $extra = []) use (&$events) {
-            $events[] = array_merge(['type' => $type, 'title' => $title, 'body' => $body,
-                                     'at' => $at, 'at_jalali' => jd(strtotime($at)), 'tab' => $tab], $extra);
-        };
-
-        // درخواست‌های تازه‌ی شرکت‌ها
-        $stmt = $pdo->prepare("SELECT cr.id, cr.created_at, c.name AS company_name FROM company_requests cr
-                                JOIN companies c ON c.id = cr.company_id
-                                WHERE cr.created_at > ? ORDER BY cr.created_at DESC LIMIT 20");
-        $stmt->execute([$since]);
-        foreach ($stmt->fetchAll() as $r) {
-            $add('company_request', 'درخواست جدید شرکتی', $r['company_name'] . ' یک درخواست تازه ثبت کرد.',
-                 $r['created_at'], 'companies-requests', ['request_id' => intval($r['id'])]);
-        }
-
-        // مدارکِ تازه‌ای که شرکت‌ها فرستاده‌اند و هنوز تگ نخورده‌اند
-        $stmt = $pdo->prepare("SELECT cd.id, cd.request_id, cd.orig_name, cd.doc_type, cd.uploaded_at, c.name AS company_name
-                                FROM company_documents cd JOIN companies c ON c.id = cd.company_id
-                                WHERE cd.uploaded_at > ? AND cd.uploaded_by IS NOT NULL
-                                ORDER BY cd.uploaded_at DESC LIMIT 20");
-        $stmt->execute([$since]);
-        foreach ($stmt->fetchAll() as $r) {
-            $add('company_doc', 'مدرک جدید از شرکت',
-                 $r['company_name'] . ' یک «' . company_doc_type_label($r['doc_type']) . '» فرستاد.',
-                 $r['uploaded_at'], 'companies-inbox', ['request_id' => intval($r['request_id'])]);
-        }
-
-        // پیام‌های تازه‌ی شرکت‌ها در چت
-        $stmt = $pdo->prepare("SELECT ccm.id, ccm.company_id, ccm.message, ccm.created_at, c.name AS company_name
-                                FROM company_chat_messages ccm JOIN companies c ON c.id = ccm.company_id
-                                WHERE ccm.created_at > ? AND ccm.sender_type = 'COMPANY'
-                                ORDER BY ccm.created_at DESC LIMIT 20");
-        $stmt->execute([$since]);
-        foreach ($stmt->fetchAll() as $r) {
-            $add('company_chat', 'پیام جدید از ' . $r['company_name'],
-                 mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'companies-requests',
-                 ['company_id' => intval($r['company_id'])]);
-        }
-
-        // پرونده‌های تازه‌ی بیمه‌ی کارکنان
-        try {
-            $stmt = $pdo->prepare("SELECT pc.id, pc.plate, pc.insurance_type, pc.created_at, p.full_name
-                                    FROM policy_cases pc LEFT JOIN persons p ON p.id = pc.person_id
-                                    WHERE pc.created_at > ? ORDER BY pc.created_at DESC LIMIT 20");
-            $stmt->execute([$since]);
-            foreach ($stmt->fetchAll() as $r) {
-                $add('case', 'درخواست جدید بیمه کارکنان',
-                     ($r['full_name'] ?: 'کاربر') . ' - ' . insurance_type_fa($r['insurance_type']) . ' ' . ($r['plate'] ?: ''),
-                     $r['created_at'], 'records', ['case_id' => intval($r['id'])]);
-            }
-        } catch (Throwable $e) { /* اگر ستونی نبود، بقیه‌ی اعلان‌ها نباید بخوابند */ }
-
-        // پیام‌های داخلیِ تازه برای خودم
-        try {
-            $stmt = $pdo->prepare("SELECT scm.id, scm.message, scm.created_at, u.full_name
-                                    FROM staff_chat_messages scm LEFT JOIN users u ON u.id = scm.from_user_id
-                                    WHERE scm.created_at > ? AND scm.to_user_id = ? ORDER BY scm.created_at DESC LIMIT 20");
-            $stmt->execute([$since, $actor['user_id']]);
-            foreach ($stmt->fetchAll() as $r) {
-                $add('staff_chat', 'پیام داخلی از ' . ($r['full_name'] ?: 'همکار'),
-                     mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'tickets');
-            }
-        } catch (Throwable $e) { /* ... */ }
-
-        // تیکت‌های تازه‌ی مشتری‌ها
-        try {
-            $stmt = $pdo->prepare("SELECT tm.id, tm.message, tm.created_at FROM ticket_messages tm
-                                    WHERE tm.created_at > ? AND tm.sender_type <> 'ADMIN' ORDER BY tm.created_at DESC LIMIT 10");
-            $stmt->execute([$since]);
-            foreach ($stmt->fetchAll() as $r) {
-                $add('ticket', 'پیام جدید در گفتگوها', mb_substr((string)($r['message'] ?: 'پیام تازه'), 0, 90), $r['created_at'], 'tickets');
-            }
-        } catch (Throwable $e) { /* ... */ }
-
-        usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
-        echo json_encode(['ok' => true, 'now' => $now, 'events' => array_slice($events, -25)], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
     // =================================================================
     //  «لیست صدور»: همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند، از همه‌ی شرکت‌ها،
     //  با اطلاعات کامل و وضعیتِ چک‌لیستِ هرکدام. ردیف پس از صدور خودبه‌خود از
     //  این فهرست بیرون می‌رود (چون فقط status <> 'ISSUED' می‌آید).
     // =================================================================
     if ($action === 'issue_queue') {
+        // «لیست صدور» کارِ مدیر است؛ همکار بیمه با ما فقط صادره‌ها را می‌بیند
+        if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE); exit; }
         $src = $data['source'] ?? 'ALL';   // ALL | COMPANY | PERSONNEL
         $out = []; $ready = 0; $waiting = 0;
         $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
@@ -770,6 +679,7 @@ try {
             $r['updated_at_jalali'] = jd(strtotime($r['updated_at']));
             foreach (['pending_docs_count', 'body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
             $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
+            $r['requested_counts_fa'] = company_requested_counts_fa($r['requested_counts'] ?? null);
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
@@ -953,6 +863,8 @@ try {
         $request['updated_at_jalali'] = jd(strtotime($request['updated_at']));
         $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
         $request['request_kind_fa'] = company_request_kind_fa($reqKind);
+        $request['requested_counts_fa'] = company_requested_counts_fa($request['requested_counts'] ?? null);
+        $request['requested_counts_obj'] = json_decode((string)($request['requested_counts'] ?? ''), true) ?: null;
 
         $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
@@ -1075,15 +987,38 @@ try {
         $absOld = $siteRoot . '/' . $doc['file_path'];
 
         // ---- حالت «نامه»: به پوشه‌ی سطح-درخواست می‌رود، نه پوشه‌ی یک پلاک ----
-        if ($doc['file_kind'] === 'LETTER') {
+        // (چه شرکت خودش به‌عنوانِ نامه فرستاده باشد، چه ما در تگ‌گذاری نوعش را «نامه» بزنیم)
+        if ($doc['file_kind'] === 'LETTER' || $docType === 'letter') {
+            // نوعِ نامه و تعدادِ درخواستی از هر نوع (ثالث، بدنه، الحاقیه‌ی تغییر اطلاعات، فسخ).
+            // اگر تعدادی داده شد، نوعِ درخواست هم از روی همان تعیین می‌شود.
+            $counts = company_normalize_requested_counts($data['requested_counts'] ?? null);
+            $kindNote = null;
+            if ($counts) {
+                // نوعِ درخواست فقط وقتی از روی تعدادها عوض می‌شود که هنوز ردیفی ندارد؛ وگرنه
+                // پوشه‌های بایگانی و چک‌لیستِ ردیف‌های موجود جابه‌جا می‌شدند. تعدادها همیشه ذخیره می‌شوند.
+                $stmtN = $pdo->prepare("SELECT COUNT(*) FROM company_request_plates WHERE request_id = ?");
+                $stmtN->execute([$requestId]);
+                $stmtK = $pdo->prepare("SELECT request_kind FROM company_requests WHERE id = ?");
+                $stmtK->execute([$requestId]);
+                $curKind = $stmtK->fetchColumn() ?: 'NEW_POLICY';
+                $newKind = company_kind_from_counts($counts, $curKind);
+                if (intval($stmtN->fetchColumn()) > 0 && $newKind !== $curKind) {
+                    $kindNote = 'تعدادها ذخیره شد، ولی چون این درخواست از قبل ردیف دارد نوعش («' . company_request_kind_fa($curKind)
+                              . '») عوض نشد. اگر لازم است، نوع را از ویرایشِ درخواست تغییر دهید.';
+                    $newKind = $curKind;
+                }
+                $pdo->prepare("UPDATE company_requests SET requested_counts = ?, request_kind = ? WHERE id = ?")
+                    ->execute([json_encode($counts), $newKind, $requestId]);
+            }
             $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
             $newRelPath = company_place_letter($pdo, $siteRoot, $requestId, $absOld, $ext) ?: $doc['file_path'];
-            $pdo->prepare("UPDATE company_documents SET request_id = ?, doc_type = 'letter', status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), file_path = ? WHERE id = ?")
+            $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = NULL, file_kind = 'LETTER', doc_type = 'letter', status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), file_path = ? WHERE id = ?")
                 ->execute([$requestId, $actor['user_id'], $newRelPath, $docId]);
             $pdo->prepare("UPDATE company_requests SET letter_file_path = ?, status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")
                 ->execute([$newRelPath, $requestId]);
             $pdo->commit();
-            echo json_encode(['ok' => true]);
+            echo json_encode(['ok' => true, 'is_letter' => true, 'requested_counts_fa' => company_requested_counts_fa($counts),
+                              'note' => $kindNote], JSON_UNESCAPED_UNICODE);
             exit;
         }
 
@@ -1411,7 +1346,7 @@ try {
         $plateId = intval($data['plate_id'] ?? 0);
         $policyNumber = trim($data['policy_number'] ?? '');
         $vin = trim($data['vin'] ?? '');
-        $totalPremium = !empty($data['total_premium']) ? intval(preg_replace('/\D/', '', (string)$data['total_premium'])) : null;
+        $totalPremium = money_to_int($data['total_premium'] ?? '');
         if (!$plateId || $policyNumber === '') { echo json_encode(['ok' => false, 'error' => 'شماره‌ی بیمه‌نامه الزامی است.']); exit; }
 
         $siteRoot = dirname(__DIR__);
@@ -1540,7 +1475,7 @@ try {
     // ---- ثبت دریافت از شرکت (مرحله‌ی اول) + فیش، تخصیص خودکار به اقساط این درخواست ----
     if (isset($_FILES['company_receipts']) || ($_POST['action'] ?? '') === 'create_company_payment') {
         $requestId = intval($_POST['request_id'] ?? 0);
-        $amount = intval(preg_replace('/\D/', '', $_POST['amount'] ?? '0'));
+        $amount = intval(money_to_int($_POST['amount'] ?? '0'));
         $method = in_array($_POST['method'] ?? '', ['TRANSFER','CHEQUE','CASH','PAYROLL'], true) ? $_POST['method'] : 'TRANSFER';
         if (!$requestId || $amount <= 0) { echo json_encode(['ok' => false, 'error' => 'درخواست و مبلغ الزامی است.']); exit; }
 
@@ -1559,7 +1494,7 @@ try {
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
                 $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
-                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
+                $base = sanitize_folder_name(p2e_digits(trim($_POST['paid_jalali'] ?? date('Y-m-d'))) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
                     if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
@@ -1570,7 +1505,7 @@ try {
 
         $pdo->prepare("INSERT INTO company_payments (request_id, target, amount, method, paid_jalali, paid_at, reference_no, receipts, note, created_by)
                        VALUES (?, 'US', ?, ?, ?, ?, ?, ?, ?, ?)")
-            ->execute([$requestId, $amount, $method, trim($_POST['paid_jalali'] ?? ''),
+            ->execute([$requestId, $amount, $method, p2e_digits(trim($_POST['paid_jalali'] ?? '')),
                        fin_jalali_to_date($_POST['paid_jalali'] ?? ''),
                        trim($_POST['reference_no'] ?? ''), $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null,
                        trim($_POST['note'] ?? ''), $actor['user_id']]);
@@ -1639,7 +1574,7 @@ try {
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
                 $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
-                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
+                $base = sanitize_folder_name(p2e_digits(trim($_POST['paid_jalali'] ?? date('Y-m-d'))) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
                     if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
@@ -1650,7 +1585,7 @@ try {
 
         $pdo->prepare("INSERT INTO company_payments (request_id, target, amount, method, paid_jalali, paid_at, reference_no, receipts, note, created_by)
                        VALUES (?, 'PASARGAD', ?, 'TRANSFER', ?, ?, ?, ?, ?, ?)")
-            ->execute([$requestId, $total, trim($_POST['paid_jalali'] ?? ''),
+            ->execute([$requestId, $total, p2e_digits(trim($_POST['paid_jalali'] ?? '')),
                        fin_jalali_to_date($_POST['paid_jalali'] ?? ''),
                        trim($_POST['reference_no'] ?? ''), $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null,
                        trim($_POST['note'] ?? ''), $actor['user_id']]);

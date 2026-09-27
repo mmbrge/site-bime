@@ -10,6 +10,10 @@ if (!isset($_SESSION['user_id'])) {
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
+// نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
+function role_fa($role) {
+    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما'][$role] ?? $role;
+}
 
 $toast_message = '';
 $toast_type = '';
@@ -319,7 +323,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
                     <div class="menu-panel">
+                        <?php if (!$isLiaison): // همکار بیمه با ما فقط «صادره‌ها» را می‌بیند، نه لیست صدور ?>
                         <a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> لیست صدور</a>
+                        <?php endif; ?>
                         <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
                     </div>
                 </div>
@@ -394,12 +400,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <div class="flex items-center gap-3 lg:gap-5">
+            <span id="notif-bell-mount" class="inline-flex"></span>
             <a href="logout.php" class="text-red-400 hover:text-red-600 transition-colors hover-target text-xl" title="خروج از سیستم"><i class="fas fa-power-off"></i></a>
             <div class="flex items-center gap-3 border-r border-slate-300 pr-5">
                 <button onclick="document.getElementById('profile-modal').classList.add('active')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
                     <p class="text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5" dir="ltr"><?php echo htmlspecialchars($_SESSION['role']); ?></p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></p>
                 </div>
                 <div class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></div>
             </div>
@@ -849,7 +856,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         <div>
                             <label class="text-[10px] text-slate-500 block mb-1">مبلغ (ریال) *</label>
-                            <input type="text" name="amount" class="border rounded-lg px-3 py-2 text-xs w-full" dir="ltr" placeholder="مثلاً 50000000">
+                            <input type="text" name="amount" class="money-input border rounded-lg px-3 py-2 text-xs w-full" dir="ltr" inputmode="numeric" placeholder="مثلاً ۵۰,۰۰۰,۰۰۰">
                         </div>
                         <div>
                             <label class="text-[10px] text-slate-500 block mb-1">روش پرداخت</label>
@@ -1453,7 +1460,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
-                    <p class="text-xs text-slate-400 mt-1">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار شرکت‌ها) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
+                    <p class="text-xs text-slate-400 mt-1">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار بیمه با ما) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
@@ -1816,8 +1823,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="aap-engine" dir="ltr" placeholder=" "><label>شماره موتور</label></div>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <div class="float-input"><input type="text" id="aap-carvalue" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
-                <div class="float-input"><input type="text" id="aap-liability" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
+                <div class="float-input"><input type="text" id="aap-carvalue" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
+                <div class="float-input"><input type="text" id="aap-liability" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
             </div>
             <div class="float-input"><input type="text" id="aap-refpolicy" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه (اختیاری - برای الحاقیه و فسخ لازم است)</label></div>
             <div class="float-input"><input type="text" id="aap-endorse" placeholder=" "><label>خواسته‌ی الحاقیه (چه تغییری می‌خواهند؟)</label></div>
@@ -1863,15 +1870,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <div class="float-input"><select id="cit-request" onchange="onCitRequestChange()"></select><label>درخواست مربوطه</label></div>
 
-            <!-- فهرستِ خودروهای همین درخواست، برای انتخابِ سریع -->
-            <div id="cit-plate-chips" class="flex flex-wrap gap-1 mb-3"></div>
-
             <div class="float-input">
-                <select id="cit-existing-plate" onchange="onCitPlateSelectChange()"><option value="">-- پلاک جدید --</option></select>
-                <label>پلاک</label>
-            </div>
-            <div class="float-input">
-                <select id="cit-doc-type" onchange="document.getElementById('cit-doc-type-other').classList.toggle('hidden', this.value !== 'other')">
+                <select id="cit-doc-type" onchange="onCitDocTypeChange()">
+                    <option value="">-- اول نوع فایل را انتخاب کنید --</option>
+                    <option value="letter">نامه‌ی درخواست (روی خودِ درخواست می‌نشیند، نه یک پلاک)</option>
                     <option value="ownership_doc">سند</option>
                     <option value="car_card_front">کارت ماشین رو</option>
                     <option value="car_card_back">کارت ماشین پشت</option>
@@ -1882,11 +1884,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="policy_doc">بیمه‌نامه (برای الحاقیه و فسخ)</option>
                     <option value="new_car_card">کارت ماشین جدید (برای الحاقیه)</option>
                     <option value="new_ownership_doc">سند جدید (برای الحاقیه)</option>
-                    <option value="letter">نامه‌ی درخواست (روی خودِ درخواست می‌نشیند، نه یک پلاک)</option>
                     <option value="other">سایر مدارک</option>
                 </select>
-                <label>نوع مدرک</label>
+                <label>نوع فایل</label>
                 <input type="text" id="cit-doc-type-other" placeholder="نوع مدرک را بنویسید" class="mt-2 hidden">
+            </div>
+            <!-- فیلدهای خودرو: فقط وقتی نوعِ فایل یکی از مدارکِ خودرو باشد -->
+            <div id="cit-vehicle-fields" class="hidden">
+            <!-- فهرستِ خودروهای همین درخواست، برای انتخابِ سریع -->
+            <div id="cit-plate-chips" class="flex flex-wrap gap-1 mb-3"></div>
+
+            <div class="float-input">
+                <select id="cit-existing-plate" onchange="onCitPlateSelectChange()"><option value="">-- پلاک جدید --</option></select>
+                <label>پلاک</label>
             </div>
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک (اگر «پلاک جدید» را انتخاب کرده‌اید)</label>
             <!-- ترتیبِ نمایشی چپ‌به‌راست: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقمِ کد شهر].
@@ -1910,6 +1920,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="cit-skip-health"> این پلاک نیاز به بازدید سلامت ندارد (طبق روال این شرکت)
             </label>
+            </div>
+
+            <!-- نامه‌ی درخواست: نوعِ نامه و تعدادِ درخواستی از هر نوع (به‌جای پلاک و ...) -->
+            <div id="cit-letter-fields" class="hidden mb-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                <p class="text-xs font-bold text-indigo-800 mb-1">این نامه چه درخواستی دارد و از هر نوع چند تا؟</p>
+                <p class="text-[10px] text-slate-500 mb-3">نوعِ درخواست از روی همین تعدادها تعیین می‌شود. اگر نامه هم صدور جدید و هم الحاقیه دارد، بهتر است الحاقیه‌ها درخواستِ جدا باشند.</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="text-[11px] font-bold text-slate-600">ثالث
+                        <input type="text" inputmode="numeric" id="cit-cnt-THIRDPARTY" class="cit-cnt mt-1 w-full border rounded-lg p-2 text-sm text-center" placeholder="۰"></label>
+                    <label class="text-[11px] font-bold text-slate-600">بدنه
+                        <input type="text" inputmode="numeric" id="cit-cnt-BODY" class="cit-cnt mt-1 w-full border rounded-lg p-2 text-sm text-center" placeholder="۰"></label>
+                    <label class="text-[11px] font-bold text-violet-700">الحاقیه - تغییر اطلاعات بیمه‌نامه
+                        <input type="text" inputmode="numeric" id="cit-cnt-ENDORSEMENT" class="cit-cnt mt-1 w-full border rounded-lg p-2 text-sm text-center" placeholder="۰"></label>
+                    <label class="text-[11px] font-bold text-rose-700">الحاقیه - فسخ بیمه‌نامه
+                        <input type="text" inputmode="numeric" id="cit-cnt-CANCELLATION" class="cit-cnt mt-1 w-full border rounded-lg p-2 text-sm text-center" placeholder="۰"></label>
+                </div>
+            </div>
+
             <div class="flex gap-2">
                 <button onclick="submitAssignDocument()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت اطلاعات (تگ‌گذاری)</button>
                 <button onclick="rejectDocument(document.getElementById('cit-doc-id').value)" class="bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2.5 px-4 rounded-xl text-sm whitespace-nowrap">رد کردن</button>
@@ -1930,7 +1958,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div id="cis-ocr-note" class="hidden text-[11px] rounded-lg p-2 mb-2"></div>
             <div class="float-input"><input type="text" id="cis-policy-number" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه</label></div>
             <div class="float-input"><input type="text" id="cis-vin" dir="ltr" placeholder=" "><label>شماره شاسی (VIN)</label></div>
-            <div class="float-input"><input type="number" id="cis-premium" dir="ltr" placeholder=" "><label>حق بیمه (ریال)</label></div>
+            <div class="float-input"><input type="text" id="cis-premium" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>حق بیمه (ریال)</label></div>
             <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
         </div>
     </div>
@@ -1993,8 +2021,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="cre-engine" dir="ltr" placeholder=" "><label>شماره موتور</label></div>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <div class="float-input"><input type="text" id="cre-carvalue" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
-                <div class="float-input"><input type="text" id="cre-liability" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
+                <div class="float-input"><input type="text" id="cre-carvalue" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
+                <div class="float-input"><input type="text" id="cre-liability" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
             </div>
             <div class="float-input"><input type="text" id="cre-refpolicy" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه (اختیاری - برای الحاقیه و فسخ لازم است)</label></div>
             <div class="float-input"><input type="text" id="cre-endorse" placeholder=" "><label>خواسته‌ی الحاقیه (چه تغییری می‌خواهند؟)</label></div>
@@ -2169,7 +2197,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="su-role">
                     <option value="OPERATOR">اپراتور</option>
                     <option value="FINANCE">مالی</option>
-                    <option value="COMPANY_LIAISON">همکار بخش شرکت‌ها</option>
+                    <option value="COMPANY_LIAISON">همکار بیمه با ما</option>
                     <option value="ADMIN">مدیر کل</option>
                 </select>
                 <label>نقش</label>
@@ -2194,7 +2222,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="closeModal('cpay-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">ثبت دریافت از شرکت</h3>
             <input type="hidden" id="cpay-request-id">
-            <div class="float-input"><input type="text" id="cpay-amount" dir="ltr" placeholder=" "><label>مبلغ (ریال)</label></div>
+            <div class="float-input"><input type="text" id="cpay-amount" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>مبلغ (ریال)</label></div>
             <div class="float-input">
                 <select id="cpay-method"><option value="TRANSFER">انتقال بانکی</option><option value="CHEQUE">چک</option><option value="CASH">نقد</option><option value="PAYROLL">کسر از حقوق</option></select>
                 <label>روش پرداخت</label>
@@ -2290,7 +2318,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <label>رمز عبور جدید (اختیاری)</label>
                 </div>
                 <div class="text-[11px] text-slate-500 mb-5 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <i class="fas fa-info-circle text-blue-500"></i> سطح دسترسی شما (<strong class="text-blue-600" dir="ltr"><?php echo htmlspecialchars($_SESSION['role']); ?></strong>) غیرقابل تغییر است.
+                    <i class="fas fa-info-circle text-blue-500"></i> سطح دسترسی شما (<strong class="text-blue-600"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></strong>) غیرقابل تغییر است.
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-colors hover-target">ذخیره تغییرات</button>
             </form>
@@ -2452,8 +2480,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input" id="rbox-engine"><input type="text" id="review-engine" placeholder=" " dir="ltr" autocomplete="off"><label>شماره موتور</label></div>
                 <div class="float-input" id="rbox-chassis"><input type="text" id="review-chassis" placeholder=" " dir="ltr" autocomplete="off"><label>شماره شاسی</label></div>
                 <div class="float-input" id="rbox-vin"><input type="text" id="review-vin" placeholder=" " dir="ltr" autocomplete="off"><label>شماره شاسی (VIN)</label></div>
-                <div class="float-input" id="rbox-carvalue"><input type="text" id="review-carvalue" placeholder=" " dir="ltr" autocomplete="off"><label>ارزش خودرو (ریال)</label></div>
-                <div class="float-input" id="rbox-premium"><input type="text" id="review-premium" placeholder=" " dir="ltr" autocomplete="off"><label>حق بیمه کل (ریال)</label></div>
+                <div class="float-input" id="rbox-carvalue"><input type="text" id="review-carvalue" class="money-input" placeholder=" " dir="ltr" inputmode="numeric" autocomplete="off"><label>ارزش خودرو (ریال)</label></div>
+                <div class="float-input" id="rbox-premium"><input type="text" id="review-premium" class="money-input" placeholder=" " dir="ltr" inputmode="numeric" autocomplete="off"><label>حق بیمه کل (ریال)</label></div>
 
                 <div class="flex gap-3 mt-6">
                     <button onclick="approveOcrData()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3.5 rounded-xl shadow-lg shadow-emerald-500/30 transition-colors hover-target">تایید نهایی و بایگانی</button>
@@ -2478,6 +2506,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+    <script src="notif-bell.js?v=1"></script>
+    <script src="money-input.js?v=1"></script>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
         // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
@@ -2501,12 +2531,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const e2pNum = n => e2p(String(Number(n) || 0));
         // مثل e2p ولی برای مقدارِ خالی رشته‌ی خالی برمی‌گرداند (نه «-») تا با `|| '—'` جفت شود.
         // برای نمایشِ تاریخ‌های شمسی‌ای که سرور با رقم لاتین می‌فرستد.
+        // مقداردهیِ برنامه‌ای به فیلدهای مبلغ: سه‌رقم‌سه‌رقم با رقم فارسی (money-input.js)
+        const mfmt = v => {
+            if (!window.MoneyInput) return v ? String(v) : '';
+            const d = MoneyInput.digits(v);
+            return d && d !== '0' ? MoneyInput.format(d) : '';
+        };
         const faDigits = v => (v === null || v === undefined || v === '') ? '' : String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
         // قالب‌بندی مبلغ: همیشه سه‌رقم‌سه‌رقم جداشده و با ارقام فارسی - برای همه‌ی مبالغ پنل
         // (حق بیمه، ارزش خودرو، سقف تعهد مالی و هر مبلغ دیگر) از همین تابع استفاده می‌شود
         const money = v => {
             if (v === null || v === undefined || v === '') return '-';
-            const n = Number(String(v).replace(/[^\d.-]/g, ''));
+            const n = Number(String(v).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[^\d.-]/g, ''));
             if (isNaN(n)) return e2p(v);
             return e2p(n.toLocaleString('en-US'));
         };
@@ -2983,8 +3019,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('review-engine').value = json.engine_num || '';
             document.getElementById('review-chassis').value = json.chassis_num || '';
             document.getElementById('review-vin').value = json.vin || '';
-            document.getElementById('review-carvalue').value = json.car_value || '';
-            document.getElementById('review-premium').value = json.total_premium || '';
+            document.getElementById('review-carvalue').value = mfmt(json.car_value);
+            document.getElementById('review-premium').value = mfmt(json.total_premium);
 
             applyReviewFieldVisibility();
             document.getElementById('ocr-review-modal').classList.add('active');
@@ -3067,7 +3103,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // گوشه‌ی پایینِ راست نشان داده می‌شود و بعد از ۵ ثانیه خودش می‌رود. با کلیک
         // روی اعلان، مستقیم به همان بخش می‌رویم.
         let notifSince = null;
+        // زنگوله‌ی کنارِ دکمه‌ی خروج: هر اعلانی که گوشه‌ی صفحه می‌آید، آن‌جا هم می‌ماند
+        if (window.NotifBell) NotifBell.init({
+            mount: document.getElementById('notif-bell-mount'),
+            storageKey: 'notif:admin:<?php echo intval($_SESSION['user_id']); ?>',
+            onOpenItem: it => { if (it.tab) switchTab(it.tab); },
+        });
         function pushNotification(ev) {
+            if (window.NotifBell) NotifBell.add(ev);
             const box = document.getElementById('notif-stack');
             if (!box) return;
             const el = document.createElement('div');
@@ -3082,8 +3125,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         async function pollNotifications() {
             try {
-                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'notifications_feed', since: notifSince})});
+                // فیدِ جدا برای همه‌ی نقش‌ها (قبلاً داخلِ API شرکت‌ها بود و اپراتور/مالی اعلانی نمی‌گرفتند)
+                const res = await fetch('api/notifications_feed.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({since: notifSince})});
                 const data = await res.json();
                 if (!data.ok) return;
                 (data.events || []).forEach(pushNotification);
@@ -3200,6 +3244,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${r.request_kind && r.request_kind !== 'NEW_POLICY'
                             ? `<span class="block text-[10px] font-bold ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</span>` : ''}</td>
                     <td class="p-3 text-[11px] whitespace-nowrap">
+                        ${r.requested_counts_fa ? `<span class="block text-[10px] text-indigo-600 font-bold mb-1">درخواستیِ نامه: ${r.requested_counts_fa}</span>` : ''}
                         <span class="inline-block bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5 ml-1">بدنه ${e2pNum(r.body_count)} / ${e2pNum(r.body_issued)}</span>
                         <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث ${e2pNum(r.third_count)} / ${e2pNum(r.third_issued)}</span>
                     </td>
@@ -3522,6 +3567,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                 </div>
                 <p class="text-[10px] text-slate-400 mb-2">ثبت: ${faDigits(r.created_at_jalali)} · آخرین ویرایش: ${faDigits(r.updated_at_jalali)}</p>
+                ${r.requested_counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-3"><i class="fas fa-envelope-open-text ml-1"></i>تعدادِ درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}
 
                 <!-- شمارشِ خواسته‌شده: چند بدنه و چند ثالث درخواست شده و چند تا صادر شده -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
@@ -3650,8 +3696,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             applyKindFieldVisibility('cre');
             document.getElementById('cre-chassis').value = p.chassis_no || '';
             document.getElementById('cre-engine').value = p.engine_no || '';
-            document.getElementById('cre-carvalue').value = p.car_value || '';
-            document.getElementById('cre-liability').value = p.liability_limit || '';
+            document.getElementById('cre-carvalue').value = mfmt(p.car_value);
+            document.getElementById('cre-liability').value = mfmt(p.liability_limit);
             document.getElementById('cre-isnew').checked = !!Number(p.is_new_vehicle);
             toggleNoPlate('cre');
             document.getElementById('cre-car-name').value = p.car_name || '';
@@ -4250,7 +4296,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const fd = new FormData();
             fd.append('action', 'create_company_payment');
             fd.append('request_id', document.getElementById('cpay-request-id').value);
-            fd.append('amount', document.getElementById('cpay-amount').value.replace(/\D/g, ''));
+            fd.append('amount', document.getElementById('cpay-amount').value.trim());
             fd.append('method', document.getElementById('cpay-method').value);
             fd.append('paid_jalali', document.getElementById('cpay-jalali').value.trim());
             fd.append('reference_no', document.getElementById('cpay-ref').value.trim());
@@ -4409,6 +4455,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})});
             const data = await res.json();
             if (!data.ok) return;
+            fillCitCounts(data.request && data.request.requested_counts_obj);
             data.plates.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
@@ -4434,6 +4481,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         function onCitRequestChange() { loadPlatesForCitRequest(document.getElementById('cit-request').value, null); }
 
+        // فیلدهای مودال به نوعِ فایل بستگی دارند: مدارکِ خودرو => پلاک و نوع بیمه و انقضا؛
+        // «نامه‌ی درخواست» => نوعِ نامه و تعدادِ درخواستی از هر نوع. تا نوع انتخاب نشده، هیچ‌کدام.
+        function onCitDocTypeChange() {
+            const t = document.getElementById('cit-doc-type').value;
+            document.getElementById('cit-doc-type-other').classList.toggle('hidden', t !== 'other');
+            document.getElementById('cit-vehicle-fields').classList.toggle('hidden', !t || t === 'letter');
+            document.getElementById('cit-letter-fields').classList.toggle('hidden', t !== 'letter');
+        }
+
+        function fillCitCounts(counts) {
+            ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => {
+                const v = counts && Number(counts[k]) ? Number(counts[k]) : '';
+                document.getElementById('cit-cnt-' + k).value = v ? e2p(v) : '';
+            });
+        }
+
         function onCitPlateSelectChange() {
             const usingExisting = !!document.getElementById('cit-existing-plate').value;
             ['cit-p1','cit-p2','cit-letter','cit-p4'].forEach(id => { document.getElementById(id).disabled = usingExisting; if (usingExisting) document.getElementById(id).value = ''; });
@@ -4456,10 +4519,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             renderCitPreview(doc);
             const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
                                 'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title'];
-            document.getElementById('cit-doc-type').value = KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title'
-                ? doc.doc_type : (doc.doc_type ? 'other' : 'ownership_doc');
+            // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
+            // تا اول نوعِ فایل انتخاب شود و بعد فیلدهای مربوط به همان نوع ظاهر شوند
+            document.getElementById('cit-doc-type').value = (doc.file_kind === 'LETTER' || doc.doc_type === 'letter') ? 'letter'
+                : (KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title' ? doc.doc_type : (doc.doc_type ? 'other' : ''));
             document.getElementById('cit-doc-type-other').value = document.getElementById('cit-doc-type').value === 'other' ? (doc.doc_type || '') : '';
-            document.getElementById('cit-doc-type-other').classList.toggle('hidden', document.getElementById('cit-doc-type').value !== 'other');
+            fillCitCounts(null);
+            onCitDocTypeChange();
             document.getElementById('cit-p1').value = doc.plate_p1 || '';
             document.getElementById('cit-p2').value = doc.plate_p2 || '';
             document.getElementById('cit-letter').value = doc.plate_letter || '';
@@ -4508,11 +4574,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 skip_health_inspection: document.getElementById('cit-skip-health').checked ? 1 : 0,
             };
             if (!payload.request_id) { showToast('یک درخواست انتخاب کنید.', 'error'); return; }
+            if (!docTypeSel) { showToast('اول نوع فایل را انتخاب کنید.', 'error'); return; }
+            if (docTypeSel === 'letter') {
+                // برای نامه، پلاک و ... فرستاده نمی‌شود؛ به‌جایش تعدادِ درخواستی از هر نوع
+                ['plate_id', 'plate_p1', 'plate_p2', 'plate_letter', 'plate_p4', 'insurance_type', 'expiry_date'].forEach(k => delete payload[k]);
+                payload.requested_counts = {};
+                ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => {
+                    payload.requested_counts[k] = document.getElementById('cit-cnt-' + k).value.trim();
+                });
+            } else if (!payload.plate_id && !(payload.plate_p1 || payload.plate_p2 || payload.plate_p4)) {
+                showToast('پلاکِ این مدرک را انتخاب یا وارد کنید.', 'error'); return;
+            }
             try {
                 const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
                 const data = await res.json();
                 if (data.ok) {
-                    showToast('اطلاعات ثبت شد.', 'success');
+                    showToast(data.note || (data.is_letter && data.requested_counts_fa ? 'نامه ثبت شد: ' + data.requested_counts_fa : 'اطلاعات ثبت شد.'),
+                              data.note ? 'warning' : 'success');
                     document.getElementById('cinbox-tag-modal').classList.remove('active');
                     if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
                     else loadCompanyInbox();
@@ -4558,7 +4636,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const o = data.ocr || {};
             if (o.policy_number) document.getElementById('cis-policy-number').value = o.policy_number;
             if (o.vin) document.getElementById('cis-vin').value = o.vin;
-            if (o.total_premium) document.getElementById('cis-premium').value = String(o.total_premium).replace(/\D/g, '');
+            if (o.total_premium) document.getElementById('cis-premium').value = mfmt(o.total_premium);
             note.className = 'text-[11px] rounded-lg p-2 mb-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
                 ? `✓ فایل با این ردیف مطابقت دارد (پلاک ${o.plate || data.expected_plate || ''} · ${o.ins_type || ''}). فیلدهای شناسایی‌شده پر شدند؛ بررسی کنید و ثبت کنید.`
@@ -4876,7 +4954,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'اپراتور', FINANCE: 'مالی', COMPANY_LIAISON: 'همکار شرکت‌ها'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'اپراتور', FINANCE: 'مالی', COMPANY_LIAISON: 'همکار بیمه با ما'};
 
         async function loadStaffUsers() {
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list'})});
@@ -6044,7 +6122,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                     </div>
                                     <div class="col-span-2">
                                         <label class="text-[10px] text-slate-500 block mb-1">حق بیمه کل (ریال)</label>
-                                        <input type="text" id="final-total-premium" placeholder="حق بیمه کل" class="border rounded-lg px-2 py-1.5 text-xs w-full" dir="ltr">
+                                        <input type="text" id="final-total-premium" placeholder="حق بیمه کل" class="money-input border rounded-lg px-2 py-1.5 text-xs w-full" dir="ltr" inputmode="numeric">
                                     </div>
                                     <div>
                                         <label class="text-[10px] text-slate-500 block mb-1">سیستم خودرو</label>
@@ -6076,7 +6154,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                     </div>
                                     <div>
                                         <label class="text-[10px] text-slate-500 block mb-1">ارزش خودرو (ریال) - بدنه</label>
-                                        <input type="text" id="final-car-value" placeholder="ارزش خودرو" class="border rounded-lg px-2 py-1.5 text-xs w-full" dir="ltr">
+                                        <input type="text" id="final-car-value" placeholder="ارزش خودرو" class="money-input border rounded-lg px-2 py-1.5 text-xs w-full" dir="ltr" inputmode="numeric">
                                     </div>
                                 </div>
                                 <div id="policy-mismatch-warning" class="hidden text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2"></div>
@@ -6161,7 +6239,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     document.getElementById('final-chassis-num').value = o.chassis_num || '';
                     document.getElementById('final-engine-num').value = o.engine_num || '';
                     document.getElementById('final-unique-code').value = o.unique_code || '';
-                    document.getElementById('final-total-premium').value = o.total_premium || '';
+                    document.getElementById('final-total-premium').value = mfmt(o.total_premium);
                     document.getElementById('final-car-system').value = o.car_system || '';
                     document.getElementById('final-car-type').value = o.car_type || '';
                     document.getElementById('final-car-model-year').value = o.model_year || '';
@@ -6169,7 +6247,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     document.getElementById('final-car-usage').value = o.car_usage || '';
                     document.getElementById('final-ocr-phone').value = o.phone || '';
                     document.getElementById('final-issue-date').value = faDigits(o.issue_date);
-                    document.getElementById('final-car-value').value = o.car_value || '';
+                    document.getElementById('final-car-value').value = mfmt(o.car_value);
                 } else {
                     statusEl.innerHTML = `⚠️ فایل شناسایی نشد - فیلدها را دستی پر کنید.<br><span class="text-[10px] text-slate-400">علت: ${data.ocr_debug || 'نامشخص'}</span>`;
                     document.getElementById('final-ins-type').value = 'شناسایی نشد';
@@ -6502,7 +6580,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="border rounded-lg p-2.5 flex items-center gap-2">
                         <div class="flex-1">
                             <p class="text-[11.5px] font-bold">${u.full_name || u.username}</p>
-                            <p class="text-[10px] text-slate-400" dir="ltr">${u.role}</p>
+                            <p class="text-[10px] text-slate-400">${ROLE_FA[u.role] || u.role}</p>
                         </div>
                         <input type="text" value="${u.mobile_number || ''}" placeholder="09..."
                                onchange="saveUserOtp(${u.id}, this.value, null)"
@@ -7104,7 +7182,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span class="font-bold text-sm">${u.full_name}</span>
                         ${u.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${u.unread}</span>` : ''}
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-1">${u.role} ${u.last_message ? '· ' + u.last_message.slice(0, 30) : ''}</p>
+                    <p class="text-[10px] text-slate-400 mt-1">${ROLE_FA[u.role] || u.role} ${u.last_message ? '· ' + u.last_message.slice(0, 30) : ''}</p>
                 </div>`).join('') || '<p class="text-center text-xs text-slate-400 p-4">همکاری یافت نشد.</p>';
         }
 

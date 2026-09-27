@@ -447,6 +447,15 @@ function send_or_edit_group_status($chatId, $messageId, $text, $bot_token) {
 }
 
 // تبدیل ارقام فارسی/عربی به انگلیسی، برای اینکه ورودی کاربر همیشه قابل پردازش باشد
+// مبلغی که کاربر وارد کرده (با رقم فارسی/عربی/لاتین و جداکننده‌ی سه‌رقمی مثل «۱۲,۵۰۰,۰۰۰»
+// یا «۱۲٬۵۰۰٬۰۰۰») را به عدد صحیح تبدیل می‌کند؛ خالی => null. همه‌ی مبالغ همین‌طور ذخیره می‌شوند.
+function money_to_int($v) {
+    if (is_int($v)) return $v;
+    if (is_float($v)) return (int)round($v);
+    $digits = preg_replace('/\D/', '', p2e_digits(trim((string)$v)));
+    return $digits === '' ? null : intval($digits);
+}
+
 function p2e_digits($str) {
     $persian = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
     $arabic  = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];

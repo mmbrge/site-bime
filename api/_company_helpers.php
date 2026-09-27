@@ -381,6 +381,7 @@ function company_request_types_fa($pdo, $requestId) {
     if (!$row) return '';
     $kind = $row['request_kind'] ?? 'NEW_POLICY';
     $types = array_filter(explode(',', (string)$row['types']));
+    if (!$types) $types = company_types_from_requested_counts($pdo, $requestId);
     if (!$types) return $kind === 'NEW_POLICY' ? '' : company_kind_folder_label($kind);
     $fa = array_map(fn($t) => company_kind_folder_label($kind, $t), $types);
     sort($fa);
@@ -645,10 +646,7 @@ function company_parse_insurance_type($text) {
 // می‌شوند، وگرنه «لازم نیست» به‌خاطر وجودِ «لازم» اشتباهاً «بله» خوانده می‌شود.
 // مبلغ (ریال) را از هر نوشتاری بیرون می‌کشد: «۴۰,۰۰۰,۰۰۰,۰۰۰ ریال» یا «40000000000»
 function company_parse_money($text) {
-    if (is_int($text) || is_float($text)) return intval($text) ?: null;
-    $t = p2e_digits(trim((string)$text));
-    $digits = preg_replace('/\D/', '', $t);
-    return $digits === '' ? null : intval($digits);
+    return money_to_int($text) ?: null;
 }
 
 function company_parse_yes_no($text) {
@@ -894,6 +892,9 @@ function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
     $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IS NOT NULL");
     $stmt->execute([$requestId]);
     $types = array_column($stmt->fetchAll(), 'insurance_type');
+    // هنوز ردیفی ثبت نشده؟ نوع‌ها را از «تعداد درخواستی» (ثالث/بدنه) بگیر تا نامه همین حالا
+    // سرِ جایش بنشیند - مثلاً نامه‌ی ۳ ثالث و ۲ بدنه در هر دو پوشه‌ی ثالث و بدنه
+    if (!$types) $types = company_types_from_requested_counts($pdo, $requestId);
 
     $typesFa = company_request_types_fa($pdo, $requestId);
     $fileName = company_letter_filename($req['company_name'], $ts, $typesFa, $ext);
@@ -918,6 +919,55 @@ function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
     return $firstRel;
 }
 
+// ---- تعدادِ درخواستی از هر نوع (ستون requested_counts، مایگریشن ۰۱۱) ----
+// کلیدها: THIRDPARTY (ثالث)، BODY (بدنه)، ENDORSEMENT (الحاقیه‌ی تغییر اطلاعات)، CANCELLATION (فسخ)
+function company_requested_count_labels() {
+    return ['THIRDPARTY' => 'ثالث', 'BODY' => 'بدنه', 'ENDORSEMENT' => 'الحاقیه (تغییر اطلاعات بیمه‌نامه)', 'CANCELLATION' => 'فسخ بیمه‌نامه'];
+}
+
+// ورودیِ کاربر (آرایه یا JSON) را تمیز می‌کند؛ اگر همه صفر بود null برمی‌گرداند
+function company_normalize_requested_counts($input) {
+    if (is_string($input)) $input = json_decode($input, true);
+    if (!is_array($input)) return null;
+    $out = [];
+    foreach (array_keys(company_requested_count_labels()) as $k) {
+        $out[$k] = max(0, min(9999, intval(money_to_int($input[$k] ?? 0) ?? 0)));
+    }
+    return array_sum($out) > 0 ? $out : null;
+}
+
+// نوعِ درخواست از روی تعدادها: صدورِ جدید اگر ثالث/بدنه دارد، وگرنه الحاقیه، وگرنه فسخ.
+// (نوع روی کلِ درخواست است؛ نامه‌ای که هم صدور جدید و هم الحاقیه دارد «صدور جدید» حساب می‌شود.)
+function company_kind_from_counts($counts, $fallback = 'NEW_POLICY') {
+    if (!$counts) return $fallback;
+    if (($counts['THIRDPARTY'] ?? 0) + ($counts['BODY'] ?? 0) > 0) return 'NEW_POLICY';
+    if (($counts['ENDORSEMENT'] ?? 0) > 0) return 'ENDORSEMENT';
+    if (($counts['CANCELLATION'] ?? 0) > 0) return 'CANCELLATION';
+    return $fallback;
+}
+
+// نوع‌های بیمه (THIRDPARTY/BODY) که در «تعداد درخواستی» یک درخواست آمده‌اند
+function company_types_from_requested_counts($pdo, $requestId) {
+    try {
+        $stmt = $pdo->prepare("SELECT requested_counts FROM company_requests WHERE id = ?");
+        $stmt->execute([$requestId]);
+        $c = json_decode((string)$stmt->fetchColumn(), true);
+    } catch (Throwable $e) { return []; }
+    if (!is_array($c)) return [];
+    return array_values(array_filter(['THIRDPARTY', 'BODY'], fn($t) => !empty($c[$t])));
+}
+
+// متنِ خوانا: «۳ ثالث، ۲ بدنه، ۱ فسخ بیمه‌نامه»
+function company_requested_counts_fa($json) {
+    $c = is_array($json) ? $json : json_decode((string)$json, true);
+    if (!is_array($c)) return '';
+    $parts = [];
+    foreach (company_requested_count_labels() as $k => $label) {
+        if (!empty($c[$k])) $parts[] = fa_digits((string)intval($c[$k])) . ' ' . $label;
+    }
+    return implode('، ', $parts);
+}
+
 // بررسیِ یک‌باره‌ی اینکه مایگریشن‌های لازم روی دیتابیس اجرا شده‌اند یا نه.
 // اگر فایل‌های PHP جایگزین شوند ولی مایگریشن اجرا نشده باشد، کوئری‌ها روی ستونِ
 // نبوده می‌شکنند و کاربر فقط «خطای سرور» می‌بیند و نمی‌داند چرا. این تابع به‌جای
@@ -926,7 +976,7 @@ function company_schema_problem($pdo) {
     static $cached = null;
     if ($cached !== null) return $cached;
     $need = [
-        'company_requests'       => ['request_kind' => '010_request_kinds.sql'],
+        'company_requests'       => ['request_kind' => '010_request_kinds.sql', 'requested_counts' => '011_requested_counts.sql'],
         'company_request_plates' => [
             'has_prev_body'     => '008_company_rows_checklist.sql',
             'chassis_no'        => '009_vin_rows_and_values.sql',

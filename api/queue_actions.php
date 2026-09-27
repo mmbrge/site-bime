@@ -157,8 +157,9 @@ try {
             'car_system'      => trim($data['car_system'] ?? ''),
             'car_type'        => trim($data['car_type'] ?? ''),
             'car_color'       => trim($data['car_color'] ?? ''),
-            'car_value'       => trim($data['car_value'] ?? ''),
-            'total_premium'   => trim($data['total_premium'] ?? ''),
+            // مبالغ بدون جداکننده و با رقم لاتین ذخیره می‌شوند (نمایششان سه‌رقم‌سه‌رقم است)
+            'car_value'       => (string)(money_to_int($data['car_value'] ?? '') ?? ''),
+            'total_premium'   => (string)(money_to_int($data['total_premium'] ?? '') ?? ''),
             'renewal_status'  => trim($data['renewal_status'] ?? ''),
             'prev_policy'     => trim($data['prev_policy'] ?? ''),
             'coverages'       => $data['coverages'] ?? new stdClass(),

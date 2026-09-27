@@ -36,6 +36,8 @@ if (!$companies) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="../notif-bell.js?v=1"></script>
+<script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
@@ -102,7 +104,10 @@ if (!$companies) {
             <h1 class="font-black text-lg"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'چند شرکت'; ?></h1>
             <p class="text-xs text-slate-400"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?></p>
         </div>
-        <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target">خروج</button>
+        <div class="flex items-center gap-3">
+            <span id="notif-bell-mount" class="inline-flex"></span>
+            <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target">خروج</button>
+        </div>
     </div>
 
     <button onclick="openNewRequestModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-blue-500/20 mb-6 transition-colors">
@@ -124,6 +129,8 @@ if (!$companies) {
 </div>
 
 <button onclick="openChatModal()" title="گفتگو با پشتیبانی" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center z-50">
+    <!-- شمارِ پیام‌های خوانده‌نشده؛ وقتی صفر است پنهان می‌ماند -->
+    <span id="chat-unread-badge" class="hidden absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 rounded-full bg-red-500 text-white text-[11px] font-black flex items-center justify-center ring-2 ring-white"></span>
     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
     </svg>
@@ -175,10 +182,25 @@ if (!$companies) {
             <label>نوع درخواست</label>
             <select id="nr-kind" onchange="onNrKindChange()">
                 <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
-                <option value="ENDORSEMENT">صدور الحاقیه</option>
-                <option value="CANCELLATION">فسخ بیمه‌نامه</option>
+                <option value="ENDORSEMENT">الحاقیه (تغییر اطلاعات بیمه‌نامه یا فسخ)</option>
             </select>
             <p id="nr-kind-hint" class="text-[11px] text-slate-400 mt-1.5"></p>
+        </div>
+        <!-- تعدادِ درخواستی از هر نوع - برای صدورِ جدید ثالث/بدنه، برای الحاقیه تغییر اطلاعات/فسخ -->
+        <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-xs font-bold text-slate-600 mb-2">تعداد درخواستی از هر نوع</p>
+            <div id="nr-counts-new" class="grid grid-cols-2 gap-2">
+                <label class="text-[11px] font-bold text-slate-600">ثالث
+                    <input type="text" inputmode="numeric" id="nr-cnt-THIRDPARTY" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
+                <label class="text-[11px] font-bold text-slate-600">بدنه
+                    <input type="text" inputmode="numeric" id="nr-cnt-BODY" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
+            </div>
+            <div id="nr-counts-endorse" class="grid grid-cols-2 gap-2 hidden">
+                <label class="text-[11px] font-bold text-violet-700">تغییر اطلاعات بیمه‌نامه
+                    <input type="text" inputmode="numeric" id="nr-cnt-ENDORSEMENT" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
+                <label class="text-[11px] font-bold text-rose-700">فسخ بیمه‌نامه
+                    <input type="text" inputmode="numeric" id="nr-cnt-CANCELLATION" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
+            </div>
         </div>
         <div class="float-input">
             <label>بیمه‌گر</label>
@@ -205,19 +227,6 @@ if (!$companies) {
 </div>
 
 <!-- مودال جزئیات درخواست -->
-<!-- مودال فهرست متنیِ ریزِ درخواست -->
-<div id="prows-text-modal" class="modal-overlay">
-    <div class="modal-content w-full max-w-lg p-5 relative">
-        <button type="button" onclick="closeModal('prows-text-modal')" aria-label="بستن" title="بستن" class="absolute top-4 left-4 text-slate-400 hover:text-red-500">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-        <h3 class="font-black text-base mb-1">فهرست متنی ریز درخواست</h3>
-        <p class="text-[11px] text-slate-400 mb-3">هر ردیف با مدارکی که دارد، و زیرش مدارکِ ناموجودش.</p>
-        <textarea id="prows-text-content" rows="14" dir="rtl" class="w-full text-[11px] font-mono border rounded-xl p-3 bg-slate-50" readonly></textarea>
-        <button onclick="copyPortalRowsText()" class="w-full mt-3 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-xl text-sm">کپی کردن</button>
-    </div>
-</div>
-
 <div id="request-detail-modal" class="modal-overlay">
     <div class="modal-content wide p-6" style="max-height: 88vh; overflow-y: auto;">
         <div class="flex items-center justify-between mb-4">
@@ -291,7 +300,14 @@ function debouncedRequestSearch() {
 // ---- اعلان‌ها: هر پیام تازه از ما یا بیمه‌نامه‌ی تازه صادرشده، گوشه‌ی پایین
 //      نشان داده می‌شود و بعد از ۵ ثانیه خودش می‌رود ----
 let notifSince = null;
-function pushNotification(title, body) {
+// زنگوله‌ی کنارِ دکمه‌ی خروج: اعلان‌هایی که گوشه‌ی صفحه می‌آیند، آن‌جا هم می‌مانند
+if (window.NotifBell) NotifBell.init({
+    mount: document.getElementById('notif-bell-mount'),
+    storageKey: 'notif:portal:<?php echo intval($_SESSION['company_user_id']); ?>',
+    onOpenItem: it => { if (it.type === 'chat') openChatModal(); },
+});
+function pushNotification(title, body, type) {
+    if (window.NotifBell) NotifBell.add({title, body, type});
     const box = document.getElementById('notif-stack');
     if (!box) return;
     const el = document.createElement('div');
@@ -310,12 +326,29 @@ async function pollNotifications() {
             body: JSON.stringify({action: 'notifications_feed', since: notifSince})});
         const data = await res.json();
         if (!data.ok) return;
-        (data.events || []).forEach(e => pushNotification(e.title, e.body));
+        (data.events || []).forEach(e => pushNotification(e.title, e.body, e.type));
         notifSince = data.now;
+        setChatUnread(data.unread_chat);
         // اگر پیام تازه‌ای آمد و مودال چت باز است، همان‌جا هم تازه شود
         if ((data.events || []).some(e => e.type === 'chat')
             && document.getElementById('chat-modal').classList.contains('active')) loadChatMessages();
     } catch (e) { /* قطعیِ لحظه‌ای نباید چیزی را خراب کند */ }
+}
+// فقط شمارِ خوانده‌نشده‌ها (بدون رویداد) - since خالی یعنی «رویداد نفرست»
+async function refreshChatUnread() {
+    try {
+        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'notifications_feed', since: ''})});
+        const data = await res.json();
+        if (data.ok) setChatUnread(data.unread_chat);
+    } catch (e) {}
+}
+function setChatUnread(n) {
+    const badge = document.getElementById('chat-unread-badge');
+    if (!badge) return;
+    n = Number(n) || 0;
+    badge.textContent = n > 99 ? '+۹۹' : faNum(n);
+    badge.classList.toggle('hidden', n === 0);
 }
 pollNotifications();
 setInterval(pollNotifications, 15000);
@@ -354,6 +387,7 @@ async function loadRequests() {
                 </span>
             </div>
             <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
+            ${r.requested_counts_fa ? `<p class="text-[11px] font-bold text-indigo-600 mt-1">درخواستی: ${r.requested_counts_fa}</p>` : ''}
             <div class="flex flex-wrap gap-1 mt-2">
                 ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${faNum(r.body_count)} درخواستی / ${faNum(r.body_issued)} صادره</span>` : ''}
                 ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${faNum(r.third_count)} درخواستی / ${faNum(r.third_issued)} صادره</span>` : ''}
@@ -411,9 +445,13 @@ function addPlateRow(containerId) {
             <option value="BOTH">بیمه‌ی درخواستی: ثالث و بدنه (هردو)</option>
         </select>
         <div class="plate-value-box grid grid-cols-2 gap-1.5 mt-1.5">
-            <input class="plate-carvalue border rounded-lg p-2 text-xs hidden" placeholder="ارزش خودرو (ریال)" inputmode="numeric">
-            <input class="plate-liability border rounded-lg p-2 text-xs" placeholder="سقف تعهد مالی (ریال)" inputmode="numeric">
+            <input class="plate-carvalue money-input border rounded-lg p-2 text-xs hidden" placeholder="ارزش خودرو (ریال)" inputmode="numeric" dir="ltr">
+            <input class="plate-liability money-input border rounded-lg p-2 text-xs" placeholder="سقف تعهد مالی (ریال)" inputmode="numeric" dir="ltr">
         </div>
+        <select class="plate-endorsetype border rounded-lg p-2 text-xs w-full mt-1.5 hidden" onchange="applyKindToPlateRow(this.closest('.plate-row'))">
+            <option value="ENDORSEMENT">نوع الحاقیه‌ی این خودرو: تغییر اطلاعات بیمه‌نامه</option>
+            <option value="CANCELLATION">نوع الحاقیه‌ی این خودرو: فسخ بیمه‌نامه</option>
+        </select>
         <input class="plate-refpolicy border rounded-lg p-2 text-xs w-full mt-1.5" placeholder="شماره بیمه‌نامه (اختیاری)" dir="ltr">
         <input class="plate-endorse border rounded-lg p-2 text-xs w-full mt-1.5 hidden" placeholder="چه تغییری می‌خواهید؟ (خواسته‌ی الحاقیه)">
         <select class="plate-cancelreason border rounded-lg p-2 text-xs w-full mt-1.5 hidden">
@@ -431,19 +469,30 @@ function addPlateRow(containerId) {
 // بسته به نوعِ درخواست، فقط فیلدهای مربوط به همان نوع در هر ردیف دیده می‌شوند
 function applyKindToPlateRow(row) {
     const k = document.getElementById('nr-kind')?.value || 'NEW_POLICY';
-    row.querySelector('.plate-endorse').classList.toggle('hidden', k !== 'ENDORSEMENT');
-    row.querySelector('.plate-cancelreason').classList.toggle('hidden', k !== 'CANCELLATION');
-    row.querySelector('.plate-value-box').classList.toggle('hidden', k !== 'NEW_POLICY');
+    const isEndorse = k !== 'NEW_POLICY';
+    // در الحاقیه، هر خودرو یا «تغییر اطلاعات» است (خواسته‌اش نوشته می‌شود) یا «فسخ» (دلیلش انتخاب می‌شود)
+    const sub = row.querySelector('.plate-endorsetype')?.value || 'ENDORSEMENT';
+    row.querySelector('.plate-endorsetype')?.classList.toggle('hidden', !isEndorse);
+    row.querySelector('.plate-endorse').classList.toggle('hidden', !(isEndorse && sub === 'ENDORSEMENT'));
+    row.querySelector('.plate-cancelreason').classList.toggle('hidden', !(isEndorse && sub === 'CANCELLATION'));
+    row.querySelector('.plate-value-box').classList.toggle('hidden', isEndorse);
 }
 
 function onNrKindChange() {
     const k = document.getElementById('nr-kind').value;
     document.getElementById('nr-kind-hint').textContent = k === 'ENDORSEMENT'
-        ? 'برای هر خودرو، شماره‌ی بیمه‌نامه‌ی فعلی و تغییری که می‌خواهید را بنویسید.'
-        : (k === 'CANCELLATION'
-            ? 'برای هر خودرو، شماره‌ی بیمه‌نامه و دلیل فسخ را مشخص کنید.'
-            : 'صدور بیمه‌نامه‌ی جدید برای خودروهای این درخواست.');
+        ? 'تعدادِ هر نوع الحاقیه را بنویسید. برای هر خودرو هم مشخص کنید تغییر اطلاعات است یا فسخ، با شماره‌ی بیمه‌نامه‌ی فعلی.'
+        : 'صدور بیمه‌نامه‌ی جدید برای خودروهای این درخواست.';
+    document.getElementById('nr-counts-new').classList.toggle('hidden', k !== 'NEW_POLICY');
+    document.getElementById('nr-counts-endorse').classList.toggle('hidden', k === 'NEW_POLICY');
     document.querySelectorAll('#nr-plates-list .plate-row').forEach(applyKindToPlateRow);
+}
+
+// تعدادها (رقم فارسی هم قبول است؛ سرور تمیزش می‌کند)
+function collectNrCounts() {
+    const out = {};
+    ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => { out[k] = document.getElementById('nr-cnt-' + k).value.trim(); });
+    return out;
 }
 
 // «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود
@@ -477,8 +526,9 @@ function collectPlateRows(containerId) {
         car_value: (row.querySelector('.plate-carvalue')?.value || '').trim(),
         liability_limit: (row.querySelector('.plate-liability')?.value || '').trim(),
         ref_policy_number: (row.querySelector('.plate-refpolicy')?.value || '').trim(),
-        endorsement_request: (row.querySelector('.plate-endorse')?.value || '').trim(),
-        cancellation_reason: (row.querySelector('.plate-cancelreason')?.value || '').trim(),
+        // فقط فیلدِ همان نوعِ الحاقیه‌ای که برای این خودرو انتخاب شده فرستاده می‌شود
+        endorsement_request: !row.querySelector('.plate-endorse').classList.contains('hidden') ? (row.querySelector('.plate-endorse')?.value || '').trim() : '',
+        cancellation_reason: !row.querySelector('.plate-cancelreason').classList.contains('hidden') ? (row.querySelector('.plate-cancelreason')?.value || '').trim() : '',
         insurance_type: row.querySelector('.plate-instype').value,
     // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
     })).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
@@ -500,6 +550,7 @@ async function submitNewRequest() {
     fd.append('insurer', document.getElementById('nr-insurer').value);
     fd.append('request_kind', document.getElementById('nr-kind').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
+    fd.append('requested_counts', JSON.stringify(collectNrCounts()));
     fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list')));
     const fileInput = document.getElementById('nr-letter');
     if (fileInput.files[0]) fd.append('letter_file', fileInput.files[0]);
@@ -510,6 +561,7 @@ async function submitNewRequest() {
             showToast('درخواست با موفقیت ثبت شد.');
             closeModal('new-request-modal');
             document.getElementById('nr-text').value = ''; fileInput.value = '';
+            ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => { document.getElementById('nr-cnt-' + k).value = ''; });
             document.getElementById('nr-plates-list').innerHTML = '';
             loadRequests();
         } else { showToast(data.error || 'خطا در ثبت درخواست.'); }
@@ -647,6 +699,7 @@ async function openRequestDetail(id) {
                 <span class="text-xs font-bold opacity-90">${INSURER_FA[r.insurer] ? 'بیمه ' + INSURER_FA[r.insurer] : ''}</span>
             </div>
             <p class="relative text-sm leading-relaxed font-bold">${r.request_text || '(بدون توضیح متنی)'}</p>
+            ${r.requested_counts_fa ? `<p class="relative text-[11px] font-bold mt-2 opacity-90">درخواستی: ${r.requested_counts_fa}</p>` : ''}
             <div class="relative flex gap-4 mt-3 text-[10.5px] opacity-80">
                 <span><i class="far fa-calendar-plus ml-1"></i>ثبت: ${faNum(r.created_at_jalali)}</span>
                 <span><i class="far fa-clock ml-1"></i>ویرایش: ${faNum(r.updated_at_jalali)}</span>
@@ -660,7 +713,10 @@ async function openRequestDetail(id) {
             <div class="bg-teal-50 border border-teal-100 rounded-xl p-2 text-center"><p class="text-[10px] text-teal-700">ثالث صادرشده</p><p class="font-black text-teal-800">${faNum(c.third_issued || 0)}</p></div>
         </div>
 
-        <button onclick="showPortalRowsText(${r.id})" class="w-full mb-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
+        ${((c.body_issued || 0) + (c.third_issued || 0)) > 0
+            ? `<a href="../api/company_portal_actions.php?action=download_issued_zip&request_id=${r.id}" class="flex items-center justify-center gap-2 w-full mb-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs">
+                   <i class="fas fa-file-zipper"></i>دانلود دسته‌جمعی بیمه‌نامه‌های صادرشده (${faNum((c.body_issued || 0) + (c.third_issued || 0))} صادرشده تا این لحظه، زیپ)</a>`
+            : ''}
 
         <h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>ریز درخواست و مدارک هر ردیف</h4>
         ${rowsHtml}
@@ -689,24 +745,6 @@ async function portalUploadRowDoc(plateId, typeElId, input) {
         if (data.ok && activeRequestId) openRequestDetail(activeRequestId);
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
     input.value = '';
-}
-
-// فهرست متنیِ ریزِ درخواست - همان چیزی که ما هم می‌بینیم
-async function showPortalRowsText(requestId) {
-    const box = document.getElementById('prows-text-content');
-    box.value = 'در حال آماده‌سازی...';
-    openModal('prows-text-modal');
-    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_rows_text', request_id: requestId})});
-    const data = await res.json();
-    box.value = data.ok ? data.text : (data.error || 'خطا');
-}
-
-function copyPortalRowsText() {
-    const box = document.getElementById('prows-text-content');
-    box.select();
-    navigator.clipboard.writeText(box.value)
-        .then(() => showToast('فهرست کپی شد.'))
-        .catch(() => showToast('کپی نشد؛ متن انتخاب شده، دستی کپی کنید.'));
 }
 
 const DOC_TYPE_OPTIONS = [
@@ -862,6 +900,7 @@ async function deleteMyChatMessage(msgId) {
 async function loadChatMessages() {
     const companyId = document.getElementById('chat-company').value;
     const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'chat_get_messages', company_id: companyId})});
+    refreshChatUnread(); // با باز شدنِ گفتگو پیام‌ها خوانده می‌شوند؛ عددِ روی آیکن هم به‌روز شود
     const data = await res.json();
     const body = document.getElementById('chat-body');
     if (!data.ok) { body.innerHTML = `<p class="text-center text-red-500 text-xs">${data.error || 'خطا'}</p>`; return; }

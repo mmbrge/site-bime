@@ -621,7 +621,7 @@ try {
     if (isset($_FILES['receipts']) || ($_POST['action'] ?? '') === 'create_payment') {
         $companyId = intval($_POST['company_id'] ?? 0);
         $invoiceId = !empty($_POST['invoice_id']) ? intval($_POST['invoice_id']) : null;
-        $amount = intval(preg_replace('/\D/', '', $_POST['amount'] ?? '0'));
+        $amount = intval(money_to_int($_POST['amount'] ?? '0'));
         $method = in_array($_POST['method'] ?? '', ['TRANSFER','CHEQUE','CASH','PAYROLL'], true) ? $_POST['method'] : 'TRANSFER';
         if (!$companyId || $amount <= 0) { echo json_encode(['ok' => false, 'error' => 'شرکت و مبلغ الزامی است.']); exit; }
 
@@ -632,7 +632,7 @@ try {
             $pdo->prepare("INSERT INTO cheques (company_id, cheque_no, bank_name, amount, due_jalali, due_date, status, note)
                            VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)")
                 ->execute([$companyId, trim($_POST['cheque_no'] ?? ''), trim($_POST['bank_name'] ?? ''), $amount,
-                           trim($_POST['cheque_due'] ?? ''), fin_jalali_to_date($_POST['cheque_due'] ?? ''), trim($_POST['note'] ?? '')]);
+                           p2e_digits(trim($_POST['cheque_due'] ?? '')), fin_jalali_to_date($_POST['cheque_due'] ?? ''), trim($_POST['note'] ?? '')]);
             $chequeId = $pdo->lastInsertId();
         }
 
@@ -651,7 +651,7 @@ try {
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
                 $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
-                $base = sanitize_folder_name(($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . ($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
+                $base = sanitize_folder_name(p2e_digits($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . ($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
                     if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
@@ -663,7 +663,7 @@ try {
         $pdo->prepare("INSERT INTO payments (company_id, invoice_id, amount, method, paid_jalali, paid_at, reference_no, cheque_id, receipts, note, created_by)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?)")
             ->execute([$companyId, $invoiceId, $amount, $method,
-                       trim($_POST['paid_jalali'] ?? ''), fin_jalali_to_date($_POST['paid_jalali'] ?? ''),
+                       p2e_digits(trim($_POST['paid_jalali'] ?? '')), fin_jalali_to_date($_POST['paid_jalali'] ?? ''),
                        trim($_POST['reference_no'] ?? ''), $chequeId,
                        $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null,
                        trim($_POST['note'] ?? ''), $_SESSION['user_id']]);
@@ -817,7 +817,7 @@ try {
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
                 $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
-                $base = sanitize_folder_name(trim($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
+                $base = sanitize_folder_name(trimp2e_digits($_POST['paid_jalali'] ?? date('Y-m-d')) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
                     if (in_array($ext, ['jpg','jpeg','png','webp'])) compress_image_if_needed($dest);
@@ -828,7 +828,7 @@ try {
 
         $pdo->prepare("INSERT INTO pasargad_settlements (period_id, company_id, invoice_id, amount, paid_jalali, reference_no, receipts, note, created_by)
                        VALUES (?,?,?,?,?,?,?,?,?)")
-            ->execute([$periodId, $companyId, null, $total, trim($_POST['paid_jalali'] ?? ''), trim($_POST['reference_no'] ?? ''),
+            ->execute([$periodId, $companyId, null, $total, p2e_digits(trim($_POST['paid_jalali'] ?? '')), trim($_POST['reference_no'] ?? ''),
                        $receipts ? json_encode($receipts, JSON_UNESCAPED_UNICODE) : null, trim($_POST['note'] ?? ''), $_SESSION['user_id']]);
         $sid = $pdo->lastInsertId();
 
@@ -870,7 +870,7 @@ try {
                        VALUES (?,?,?,?,?,?,?,?)")
             ->execute([!empty($data['period_id']) ? intval($data['period_id']) : null,
                        !empty($data['company_id']) ? intval($data['company_id']) : null,
-                       null, $total, trim($data['paid_jalali'] ?? ''), trim($data['reference_no'] ?? ''),
+                       null, $total, p2e_digits(trim($data['paid_jalali'] ?? '')), trim($data['reference_no'] ?? ''),
                        trim($data['note'] ?? ''), $_SESSION['user_id']]);
         $sid = $pdo->lastInsertId();
 
