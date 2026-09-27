@@ -427,8 +427,8 @@
 
     <!-- قبل از شروع عکس‌برداری این مرحله -->
     <div id="pre-capture-actions">
-      <button class="btn btn-primary" onclick="revealCaptureOptions()">📸 بازکردن دوربین</button>
-      <p style="font-size:11px;color:#94a3b8;margin-top:8px;">عکس‌برداری در صفحه‌ی دوربینِ تمام‌صفحه انجام می‌شود.</p>
+      <button class="btn btn-primary" id="btn-open-camera" onclick="revealCaptureOptions()">📸 بازکردن دوربین</button>
+      <p id="pre-capture-hint" style="font-size:11px;color:#94a3b8;margin-top:8px;">عکس‌برداری در صفحه‌ی دوربینِ تمام‌صفحه انجام می‌شود.</p>
     </div>
 
     <!-- دوربین زنده (اگر مرورگر اجازه بدهد - مثلاً وقتی از «هاب بازدید» وارد شده باشیم) -->
@@ -531,7 +531,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="../camera-lib.js?v=1"></script>
+<script src="../camera-lib.js?v=2"></script>
 <script>
 // ============================================================
 //  اتصال به Bale WebApp (در صورت وجود) - برای تجربه‌ی بهتر (رنگ هدر و ...)
@@ -893,7 +893,45 @@ async function openMainCameraStream() {
 // ============================================================
 let rotateHintTimer = null, rotateHintCancelled = false;
 
+// ------------------------------------------------------------------
+//  آیفون: به‌جای دوربینِ داخلِ صفحه، مستقیم دوربینِ خودِ آیفون باز می‌شود (با هر لمسِ دکمه).
+//  عکس بعد از «Use Photo» کوچک و خودکار ارسال می‌شود و مرحله‌ی بعد روی صفحه می‌آید.
+// ------------------------------------------------------------------
+const IS_IOS = !!(window.CameraLib && CameraLib.isIOS());
+const IOS_BTN_LABEL = '📸 بازکردن دوربین آیفون';
+function setIosBusy(busy) {
+    const b = document.getElementById('btn-open-camera');
+    if (!b) return;
+    b.disabled = busy;
+    b.textContent = busy ? '⏳ در حال ارسال عکس...' : IOS_BTN_LABEL;
+}
+if (IS_IOS) {
+    // دوربینِ تمام‌صفحه‌ی داخلِ صفحه روی آیفون استفاده نمی‌شود، پس صفحه‌ی معمولیِ مرحله (عنوان،
+    // تصویرِ راهنما، دکمه‌ی دوربین، رد/قبلی) همیشه نمایش داده می‌شود
+    document.getElementById('screen-step').classList.add('fallback');
+    document.getElementById('btn-open-camera').textContent = IOS_BTN_LABEL;
+    document.getElementById('pre-capture-hint').textContent = 'دوربینِ خودِ آیفون باز می‌شود؛ گوشی را افقی بگیرید، عکس بگیرید و روی Use Photo بزنید تا خودکار ارسال شود.';
+}
+async function waitForAttempt() {
+    for (let i = 0; i < 100 && !attemptId; i++) await new Promise(r => setTimeout(r, 100));
+    return !!attemptId;
+}
+function openIosCamera() {
+    // باید هم‌زمان با لمسِ کاربر باشد (پیش از هر await)
+    CameraLib.nativeCapture(async file => {
+        if (!(await waitForAttempt())) { showToast('شروع بازدید انجام نشد؛ دوباره تلاش کنید.'); return; }
+        setIosBusy(true);
+        try {
+            const blob = await CameraLib.shrink(file, 3200, CameraLib.UPLOAD_MAX);
+            await uploadPhoto(blob);
+        } finally { setIosBusy(false); }
+    });
+    // تایمرِ این مرحله از لحظه‌ی بازشدنِ دوربین شروع می‌شود
+    waitForAttempt().then(ok => { if (ok) startCaptureTimer(); });
+}
+
 async function revealCaptureOptions() {
+    if (IS_IOS) { openIosCamera(); return; }
     rotateHintCancelled = false;
     const hint = document.getElementById('rotate-hint');
     hint.style.display = 'flex';
@@ -1189,7 +1227,7 @@ function takeLiveShot(ev) {
     //  رمزگذاری در پس‌زمینه با حداکثر دو پاس. دکمه‌ی «تایید و ارسال» تا آماده‌شدن فایل
     //  غیرفعال می‌ماند، ولی کاربر بلافاصله عکس را می‌بیند و می‌تواند «دوباره» بزند.
     // ------------------------------------------------------------------
-    const MAX_BYTES = 2.5 * 1024 * 1024;
+    const MAX_BYTES = window.CameraLib ? CameraLib.UPLOAD_MAX : 1.9 * 1024 * 1024;
     const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
 
     const confirmBtn = document.querySelector('#fs-preview-bar .fs-confirm');
@@ -1399,6 +1437,8 @@ function uploadWithProgress(url, formData) {
 async function uploadPhoto(file) {
   document.getElementById('capture-choice').classList.remove('active');
   document.getElementById('upload-progress-note').style.display = 'block';
+  // عکسِ بزرگ‌تر از سقفِ ارسالِ سرور (مثلاً از گالری) پیش از ارسال کوچک می‌شود
+  if (window.CameraLib) file = await CameraLib.fitForUpload(file, 3200);
 
   const fd = new FormData();
   fd.append('action', 'upload_step');

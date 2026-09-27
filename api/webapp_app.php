@@ -54,7 +54,7 @@ try {
         $ourToken = $token;
         if (!$ourToken) $ourToken = get_or_create_main_app_token($pdo, $person['id']);
 
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM policy_cases WHERE person_id = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM policy_cases WHERE person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
         $stmt->execute([$person['id']]);
         $policiesCount = intval($stmt->fetchColumn());
 
@@ -121,7 +121,7 @@ try {
         $person = resolve_main_session($pdo, $token);
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY created_at DESC");
         $stmt->execute([$person['id']]);
         echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;
@@ -133,7 +133,7 @@ try {
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
         $caseId = intval($_GET['case_id'] ?? 0);
 
-        $stmt = $pdo->prepare("SELECT id, plate, insurance_type, total_premium FROM policy_cases WHERE id = ? AND person_id = ?");
+        $stmt = $pdo->prepare("SELECT id, plate, insurance_type, total_premium FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
         $stmt->execute([$caseId, $person['id']]);
         $case = $stmt->fetch();
         if (!$case) { echo json_encode(['ok' => false, 'error' => 'بیمه‌نامه یافت نشد.']); exit; }
@@ -258,7 +258,7 @@ try {
         $freePlate = $mode === 'free' ? trim($data['plate'] ?? '') : null;
 
         if ($mode === 'case' && $caseId) {
-            $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ? AND person_id = ?");
+            $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
             $stmt->execute([$caseId, $person['id']]);
             if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
         }

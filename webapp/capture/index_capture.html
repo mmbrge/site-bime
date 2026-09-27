@@ -42,7 +42,7 @@
 <div id="stage-live" class="stage" style="display:none;">
   <p class="desc" id="live-label"></p>
   <video id="video" autoplay playsinline muted></video>
-  <button class="btn btn-primary" onclick="takeShot()">📸 گرفتن عکس</button>
+  <button class="btn btn-primary" id="btn-shot" onclick="takeShot()">📸 گرفتن عکس</button>
 </div>
 
 <div id="stage-preview" class="stage" style="display:none;">
@@ -74,7 +74,7 @@
 
 <canvas id="canvas"></canvas>
 
-<script src="../camera-lib.js?v=1"></script>
+<script src="../camera-lib.js?v=2"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -112,6 +112,15 @@ async function initCamera() {
     return;
   }
   document.getElementById('live-label').textContent = STEP_LABEL ? `در حال ثبت: ${STEP_LABEL}` : 'دوربین را رو به خودرو بگیرید';
+  // آیفون: دوربینِ داخلِ صفحه باز نمی‌شود؛ با لمسِ دکمه دوربینِ خودِ آیفون باز می‌شود
+  if (IS_IOS) {
+    document.getElementById('video').style.display = 'none';
+    const b = document.getElementById('btn-shot');
+    b.textContent = '📸 بازکردن دوربین آیفون';
+    b.onclick = iosShot;
+    showStage('live');
+    return;
+  }
   try {
     stream = await openMainCameraStream();
     document.getElementById('video').srcObject = stream;
@@ -121,6 +130,16 @@ async function initCamera() {
     document.getElementById('error-text').textContent = 'لطفاً از تنظیمات مرورگر به این صفحه اجازه‌ی دسترسی به دوربین بدهید و دوباره امتحان کنید.';
     showStage('error');
   }
+}
+
+const IS_IOS = !!(window.CameraLib && CameraLib.isIOS());
+function iosShot() {
+  CameraLib.nativeCapture(async file => {
+    showStage('loading');
+    capturedBlob = await CameraLib.shrink(file, 4000, CameraLib.UPLOAD_MAX);
+    document.getElementById('shot-img').src = URL.createObjectURL(capturedBlob);
+    showStage('preview');
+  });
 }
 
 async function takeShot() {
@@ -145,11 +164,15 @@ async function takeShot() {
   }, 'image/jpeg', 0.9);
 }
 function stopStream() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
-async function retake() { showStage('loading'); await initCamera(); }
+async function retake() {
+  if (IS_IOS) { capturedBlob = null; showStage('live'); return; }
+  showStage('loading'); await initCamera();
+}
 
 async function confirmUpload() {
   if (!capturedBlob) return;
   showStage('uploading');
+  if (window.CameraLib) capturedBlob = await CameraLib.fitForUpload(capturedBlob, 4000);
   const fd = new FormData();
   let url;
   if (MODE === 'health') {

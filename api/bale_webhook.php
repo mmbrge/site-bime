@@ -302,7 +302,7 @@ function handle_callback_query($pdo, $callback, $bot_token) {
     if (strpos($data, 'mypolicy:') === 0) {
         $parts = explode(':', $data);
         $subAction = $parts[1]; $caseId = intval($parts[2]);
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
         $stmt->execute([$caseId, $person['id']]);
         $caseRow = $stmt->fetch();
         if ($caseRow && $subAction === 'file') {
@@ -772,7 +772,7 @@ function display_plate_compact($plate) {
 }
 
 function list_my_policies($pdo, $chat_id, $person, $bot_token) {
-    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY created_at DESC");
     $stmt->execute([$person['id']]);
     $cases = $stmt->fetchAll();
     if (!$cases) { send_msg($chat_id, "شما هنوز درخواست بیمه‌ای ثبت نکرده‌اید.", $bot_token, main_menu_kb($pdo, $chat_id)); return; }
@@ -1775,7 +1775,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                     // کد یکتا را از داخل پرانتزِ متن دکمه‌ی انتخابی استخراج می‌کنیم
                     preg_match('/\(([^)]+)\)$/', $text, $m);
                     $code = $m[1] ?? $text;
-                    $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE person_id = ? AND unique_code = ?");
+                    $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE person_id = ? AND unique_code = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
                     $stmt->execute([$person['id'], $code]);
                     $caseId = $stmt->fetchColumn();
                     if ($caseId) {

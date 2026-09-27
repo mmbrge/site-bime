@@ -263,7 +263,7 @@ function render_intro_status_message($pdo, $introId) {
     $msg .= "📄 تعداد بیمه‌نامه صادر شده: " . get_issued_counts_label($pdo, $introId);
 
     // به‌جای یک «وضعیت» کلی و گمراه‌کننده برای کل معرفی‌نامه، وضعیت هر بیمه‌نامه جداگانه نشان داده می‌شود
-    $stmt = $pdo->prepare("SELECT insurance_type, plate, status FROM policy_cases WHERE introduction_id = ? ORDER BY created_at ASC");
+    $stmt = $pdo->prepare("SELECT insurance_type, plate, status FROM policy_cases WHERE introduction_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY created_at ASC");
     $stmt->execute([$introId]);
     $cases = $stmt->fetchAll();
     if ($cases) {
@@ -466,7 +466,7 @@ function p2e_digits($str) {
 // =====================================================================
 //  کاهش حجم عکس‌های ورودی بزرگ (بدون افت محسوس کیفیت) برای مدیریت فضای سرور
 // =====================================================================
-function compress_image_if_needed($absolutePath, $maxBytes = 1048576) {
+function compress_image_if_needed($absolutePath, $maxBytes = 1048576, $maxDim = 2000) {
     if (!function_exists('imagecreatefromjpeg') || !file_exists($absolutePath)) return;
     if (filesize($absolutePath) <= $maxBytes) return;
 
@@ -483,7 +483,6 @@ function compress_image_if_needed($absolutePath, $maxBytes = 1048576) {
         // اگر ابعاد خیلی بزرگ بود (مثلاً عکس ۱۲ مگاپیکسلی)، کمی کوچک می‌کنیم؛
         // این افت کیفیت محسوسی برای نمایش/چاپ مدارک ایجاد نمی‌کند
         $w = imagesx($img); $h = imagesy($img);
-        $maxDim = 2000;
         if ($w > $maxDim || $h > $maxDim) {
             $ratio = min($maxDim / $w, $maxDim / $h);
             $newImg = imagecreatetruecolor((int)($w * $ratio), (int)($h * $ratio));
@@ -594,7 +593,7 @@ function case_status_fa($status) {
         'REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک',
         'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
         'ISSUING' => 'در حال صدور', 'ISSUED' => 'صادر شده', 'REJECTED' => 'رد شده',
-        'CANCELLED' => 'لغو شده',
+        'CANCELLED' => 'لغو شده', 'WITHDRAWN' => 'خارج از فاز عملیاتی',
     ];
     return $map[$status] ?? $status;
 }
@@ -715,7 +714,7 @@ function relationship_addressee($relationship, $possessive = true) {
 //  (نه از یک ستون ثابت که بعد از ثبت هرگز بروزرسانی نمی‌شد)
 // =====================================================================
 function get_intro_status_label($pdo, $introduction_id) {
-    $stmt = $pdo->prepare("SELECT status FROM policy_cases WHERE introduction_id = ? ORDER BY updated_at DESC");
+    $stmt = $pdo->prepare("SELECT status FROM policy_cases WHERE introduction_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY updated_at DESC");
     $stmt->execute([$introduction_id]);
     $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
     if (!$rows) {
@@ -1115,6 +1114,11 @@ function delete_policy_case($pdo, $siteRoot, $caseId, $userId = null) {
         $st->execute([$caseId]);
         if (intval($st->fetchColumn()) > 0) return ['ok' => false, 'error' => 'برای این درخواست قسط ثبت شده و حذف نمی‌شود.'];
     } catch (Throwable $e) { /* جدولِ اقساط نبود => مانعی نیست */ }
+    if ($case['status'] === 'WITHDRAWN') return ['ok' => false, 'error' => 'این درخواست قبلاً از فاز عملیاتی خارج شده است.'];
+
+    // اگر حتی یک مدرک (یا عکسِ بازدید) تایید شده باشد، آن مدرک در بایگانی رفته و سابقه دارد؛
+    // پس درخواست حذف نمی‌شود، فقط از فاز عملیاتی خارج می‌شود (withdraw_policy_case).
+    if (case_has_approved_item($pdo, $caseId)) return withdraw_policy_case($pdo, $case, $userId);
 
     // فایل‌هایی که باید پاک شوند (فقط داخلِ موقت بایگانی)
     $files = [];
@@ -1173,7 +1177,76 @@ function delete_policy_case($pdo, $siteRoot, $caseId, $userId = null) {
         foreach ($it as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); }
         @rmdir($abs);
     }
-    return ['ok' => true];
+    return ['ok' => true, 'mode' => 'deleted'];
+}
+
+// آیا برای این درخواست دست‌کم یک مدرک یا یک عکسِ بازدیدِ سلامت تایید شده است؟
+function case_has_approved_item($pdo, $caseId) {
+    try {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
+        $st->execute([$caseId]);
+        if (intval($st->fetchColumn()) > 0) return true;
+    } catch (Throwable $e) {}
+    try {
+        $st = $pdo->prepare("SELECT * FROM health_inspections WHERE case_id = ?");
+        $st->execute([$caseId]);
+        foreach ($st->fetchAll() as $hi) {
+            if (($hi['status'] ?? '') === 'APPROVED') return true;
+            foreach (health_photo_reviews($hi) as $rv) if (($rv['status'] ?? '') === 'APPROVED') return true;
+        }
+    } catch (Throwable $e) {}
+    return false;
+}
+
+// خارج‌کردنِ درخواست از فاز عملیاتی: پرونده و مدارکِ بایگانی‌شده‌اش می‌مانند (برای سابقه)،
+// ولی دیگر در لیست صدور، صادره‌ها، صف‌ها، شمارِ معرفی‌نامه و مینی‌اپِ کاربر نمی‌آید و
+// سهمیه‌ی معرفی‌نامه آزاد می‌شود. هیچ فایلی پاک نمی‌شود.
+function withdraw_policy_case($pdo, $case, $userId = null) {
+    $caseId = intval($case['id']);
+    $by = '';
+    try {
+        $st = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+        $st->execute([$userId]);
+        $by = (string)$st->fetchColumn();
+    } catch (Throwable $e) {}
+    $note = 'خارج از فاز عملیاتی' . ($by !== '' ? ' توسط ' . $by : '') . ' - ' . jalali_from_gregorian_ts_dotted(time());
+
+    $pdo->beginTransaction();
+    try {
+        // اگر ستونِ status در دیتابیسِ سرور ENUM باشد، مقدارِ تازه ذخیره نمی‌شود (یا خطا می‌دهد) => مایگریشن ۰۱۴
+        $saved = true;
+        try { $pdo->prepare("UPDATE policy_cases SET status = 'WITHDRAWN', last_status_note = ? WHERE id = ?")->execute([$note, $caseId]); }
+        catch (PDOException $e) { $saved = false; }
+        if ($saved) {
+            $st = $pdo->prepare("SELECT status FROM policy_cases WHERE id = ?");
+            $st->execute([$caseId]);
+            $saved = $st->fetchColumn() === 'WITHDRAWN';
+        }
+        if (!$saved) {
+            $pdo->rollBack();
+            return ['ok' => false, 'error' => 'ثبتِ وضعیتِ «خارج از فاز عملیاتی» ممکن نشد. لطفاً مایگریشن migrations/014_case_withdrawn.sql را اجرا کنید.'];
+        }
+        // لینک‌های مینی‌اپ و تلاش‌های بازدیدِ نیمه‌کاره‌ی همین درخواست باطل شوند
+        try { $pdo->prepare("DELETE FROM webapp_sessions WHERE case_id = ?")->execute([$caseId]); } catch (Throwable $e) {}
+        try { $pdo->prepare("UPDATE health_attempts SET status = 'CANCELLED' WHERE case_id = ? AND status = 'IN_PROGRESS'")->execute([$caseId]); } catch (Throwable $e) {}
+        try {
+            $pdo->prepare("UPDATE persons SET active_case_id = NULL, flow_temp = NULL, conversation_state = 'MAIN_MENU' WHERE active_case_id = ?")->execute([$caseId]);
+        } catch (Throwable $e) {}
+        if (!empty($case['introduction_id'])) {
+            $pdo->prepare("UPDATE introductions SET used_quota = GREATEST(COALESCE(used_quota, 0) - 1, 0) WHERE id = ?")->execute([$case['introduction_id']]);
+        }
+        try {
+            $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'WITHDRAW', 'policy_cases', ?, ?)")
+                ->execute([$userId, $caseId, (string)($case['unique_code'] ?? '') . ' (' . $case['status'] . ' -> WITHDRAWN)']);
+        } catch (Throwable $e) {}
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[withdraw_policy_case] ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'خطا در خارج‌کردنِ درخواست از فاز عملیاتی.'];
+    }
+    return ['ok' => true, 'mode' => 'withdrawn',
+            'message' => 'چون برای این درخواست مدرکِ تاییدشده وجود داشت، حذف نشد و فقط از فاز عملیاتی خارج شد (مدارکِ بایگانی‌شده سر جایشان ماندند).'];
 }
 
 // =====================================================================

@@ -51,7 +51,7 @@ try {
         $person = resolve_visit_person($pdo, $_GET['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY created_at DESC");
         $stmt->execute([$person['id']]);
         $cases = $stmt->fetchAll();
 
@@ -80,7 +80,7 @@ try {
         $person = resolve_visit_person($pdo, $_GET['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
         $caseId = intval($_GET['case_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
         $stmt->execute([$caseId, $person['id']]);
         $case = $stmt->fetch();
         if (!$case) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
@@ -124,7 +124,7 @@ try {
             $person = resolve_visit_person($pdo, $_POST['token'] ?? '');
             if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
             $caseId = intval($_POST['case_id'] ?? 0);
-            $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ?");
+            $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
             $stmt->execute([$caseId, $person['id']]);
             $case = $stmt->fetch();
             if (!$case) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
@@ -178,7 +178,7 @@ try {
         if ($mode === 'case') {
             if (!$person) { echo json_encode(['ok' => false, 'error' => 'برای بازدید روی یک درخواست مشخص باید وارد شده باشید.']); exit; }
             $caseId = intval($jsonBody['case_id'] ?? 0);
-            $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ? AND person_id = ?");
+            $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
             $stmt->execute([$caseId, $person['id']]);
             if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
             $healthToken = create_webapp_session($pdo, $person['id'], $caseId, 'case', null);

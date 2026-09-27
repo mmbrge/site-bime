@@ -746,6 +746,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="DOCS_REVIEW">در انتظار تایید مدارک</option>
                     <option value="ISSUING">در حال صدور</option>
                     <option value="ISSUED">صادر شده</option>
+                    <option value="WITHDRAWN">خارج از فاز عملیاتی</option>
                 </select>
             </div>
 
@@ -6022,12 +6023,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // ======================= صدور بیمه‌نامه =======================
         const CASE_STATUS_FA = {
             REGISTERED: 'ثبت شده', AWAITING_DOCS: 'در انتظار بارگذاری مدارک', DOCS_PENDING: 'در انتظار مدارک', DOCS_REVIEW: 'در انتظار تایید مدارک',
-            ISSUING: 'در حال صدور', ISSUED: 'صادر شده', REJECTED: 'رد شده'
+            ISSUING: 'در حال صدور', ISSUED: 'صادر شده', REJECTED: 'رد شده', WITHDRAWN: 'خارج از فاز عملیاتی'
         };
         const CASE_STATUS_COLOR = {
             REGISTERED: 'text-slate-500', AWAITING_DOCS: 'text-amber-500', DOCS_PENDING: 'text-amber-500', DOCS_REVIEW: 'text-blue-500',
-            ISSUING: 'text-indigo-500', ISSUED: 'text-emerald-600', REJECTED: 'text-red-500'
+            ISSUING: 'text-indigo-500', ISSUED: 'text-emerald-600', REJECTED: 'text-red-500', WITHDRAWN: 'text-slate-400'
         };
+        // دکمه‌ی حذف برای صادرشده‌ها و درخواست‌هایی که قبلاً از فاز عملیاتی خارج شده‌اند نمایش داده نمی‌شود
+        const caseDeletable = c => IS_ADMIN && c.status !== 'ISSUED' && c.status !== 'WITHDRAWN';
 
         let allCasesData = [];
 
@@ -6049,16 +6052,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 tbody.innerHTML = '';
                 list.forEach(c => {
                     tbody.innerHTML += `
-                        <tr class="hover:bg-indigo-50/30">
+                        <tr class="hover:bg-indigo-50/30 ${c.status === 'WITHDRAWN' ? 'opacity-60' : ''}">
                             <td class="p-4 font-mono text-indigo-600" dir="ltr">${c.unique_code}</td>
                             <td class="p-4">${c.insured_name || c.holder_name}</td>
                             <td class="p-4">${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</td>
                             <td class="p-4 font-mono">${formatPlateHtml(c.plate)}</td>
-                            <td class="p-4 text-xs">${e2p(c.docs_approved)}/${e2p(c.docs_total)} تایید${c.docs_rejected > 0 ? ` <span class="text-red-500">(${e2p(c.docs_rejected)} رد)</span>` : ''}</td>
+                            <td class="p-4 text-xs">${e2pNum(c.docs_approved)}/${e2pNum(c.docs_total)} تایید${c.docs_rejected > 0 ? ` <span class="text-red-500">(${e2p(c.docs_rejected)} رد)</span>` : ''}</td>
                             <td class="p-4 text-xs font-bold ${CASE_STATUS_COLOR[c.status] || ''}">${CASE_STATUS_FA[c.status] || c.status}</td>
                             <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(c.created_at, false)}</td>
                             <td class="p-4 whitespace-nowrap"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button>
-                                ${IS_ADMIN && c.status !== 'ISSUED' ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
+                                ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
                         </tr>`;
                 });
             } else {
@@ -6130,15 +6133,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     const pendingBadge = c.docs_pending > 0 ? `<span class="text-amber-500 text-[10px]">(${e2p(c.docs_pending)} مدرک در انتظار)</span>` : '';
                     const rejectedBadge = c.docs_rejected > 0 ? `<span class="text-red-500 text-[10px]">(${e2p(c.docs_rejected)} مدرک رد‌شده)</span>` : '';
                     return `
-                    <div class="border rounded-xl p-3 flex justify-between items-center">
+                    <div class="border rounded-xl p-3 flex justify-between items-center ${c.status === 'WITHDRAWN' ? 'bg-slate-50 opacity-70' : ''}">
                         <div>
                             <p class="font-bold text-sm">${insurance_type_fa_js(c.insurance_type)} — ${c.plate ? formatPlateHtml(c.plate) : 'بدون پلاک'}</p>
-                            <p class="text-[10px] text-slate-400">شناسه: ${c.unique_code} — ${e2p(c.docs_approved)}/${e2p(c.docs_total)} مدرک تایید‌شده ${pendingBadge} ${rejectedBadge}</p>
+                            <p class="text-[10px] text-slate-400">شناسه: ${c.unique_code} — ${e2pNum(c.docs_approved)}/${e2pNum(c.docs_total)} مدرک تایید‌شده ${pendingBadge} ${rejectedBadge}</p>
                             <b class="text-xs ${CASE_STATUS_COLOR[c.status]||''}">${CASE_STATUS_FA[c.status]||c.status}</b>
+                            ${c.status === 'WITHDRAWN' && c.last_status_note ? `<span class="text-[10px] text-slate-400 mr-1">(${e2p(c.last_status_note)})</span>` : ''}
                         </div>
                         <span class="flex items-center gap-1.5">
                             <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-arrow-left ml-1"></i>جزئیات و عملیات</button>
-                            ${IS_ADMIN && c.status !== 'ISSUED' ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}
+                            ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}
                         </span>
                     </div>`;
                 }).join('');
@@ -6150,13 +6154,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // حذفِ یک درخواستِ کارکنان (چه دستی ثبت شده، چه خودِ پرسنل از ربات). صادرشده‌ها حذف نمی‌شوند.
         function deleteCase(caseId, introId) {
-            showConfirm('حذف درخواست', 'این درخواست با مدارک و بازدیدهایش حذف می‌شود و یک واحد به سهمیه‌ی معرفی‌نامه برمی‌گردد. مطمئنید؟', async () => {
+            showConfirm('حذف درخواست', 'اگر هنوز هیچ مدرکی از این درخواست تایید نشده باشد، با مدارک و بازدیدهایش کامل حذف می‌شود. اگر حتی یک مدرک تایید شده باشد، حذف نمی‌شود و فقط از فاز عملیاتی خارج می‌شود (در لیست صدور، صادره‌ها و شمارِ معرفی‌نامه نمی‌آید و مدارکِ بایگانی‌شده سر جایشان می‌مانند). در هر دو حالت یک واحد به سهمیه‌ی معرفی‌نامه برمی‌گردد. ادامه می‌دهید؟', async () => {
                 try {
                     const res = await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({action: 'delete_case', case_id: caseId})});
                     const data = await res.json();
                     if (!data.ok) { showToast(data.error || 'خطا در حذف.', 'error'); return; }
-                    showToast('درخواست حذف شد.', 'success');
+                    showToast(data.mode === 'withdrawn' ? (data.message || 'درخواست از فاز عملیاتی خارج شد.') : 'درخواست حذف شد.', data.mode === 'withdrawn' ? 'info' : 'success');
                     const cm = document.getElementById('case-detail-modal');
                     if (cm && !cm.classList.contains('hidden')) { cm.classList.add('hidden'); cm.classList.remove('flex'); }
                     if (introId) openIntroDetail(introId, document.getElementById('intro-detail-name').textContent);
@@ -6181,7 +6185,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const c = data.case;
                 const isIssueMode = currentCaseMode === 'issue';
                 const delBtn = document.getElementById('case-delete-btn');
-                delBtn.classList.toggle('hidden', !(IS_ADMIN && c.status !== 'ISSUED'));
+                delBtn.classList.toggle('hidden', !caseDeletable(c));
                 delBtn.onclick = () => deleteCase(c.id, c.introduction_id || null);
                 document.getElementById('case-detail-code').innerText = c.unique_code + (isIssueMode ? ' — صدور بیمه‌نامه' : ' — بررسی مدارک');
 
@@ -6263,7 +6267,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         : `<div><span class="text-slate-400">ارزش خودرو:</span> <b class="text-amber-500">محاسبه‌ی خودکار توسط کارشناس</b></div>`;
                 }
 
-                body.innerHTML = `
+                body.innerHTML = (c.status === 'WITHDRAWN' ? `
+                    <div class="bg-slate-100 border border-slate-300 text-slate-600 rounded-xl p-3 mb-3 text-xs leading-6">
+                        <i class="fas fa-box-archive ml-1"></i><b>این درخواست از فاز عملیاتی خارج شده است</b> و فقط برای سابقه نگه داشته می‌شود؛
+                        در لیست صدور، صادره‌ها و شمارِ معرفی‌نامه نمی‌آید و عملیاتی روی آن انجام نمی‌شود.
+                        ${c.last_status_note ? `<div class="text-[11px] text-slate-500 mt-1">${e2p(c.last_status_note)}</div>` : ''}
+                    </div>` : '') + `
                     <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 rounded-xl p-4">
                         <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-user ml-1"></i>اطلاعات شخص / بیمه‌گذار</p>
                         <div><span class="text-slate-400">بیمه‌گذار:</span> <b>${c.insured_name || '-'}</b> ${copyBtn(c.insured_name,'نام بیمه‌گذار')}</div>
@@ -6455,6 +6464,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button onclick="uploadAdminCaseDoc(${caseId})" class="mt-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
                     </div>` : ''}
                 `;
+                // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
+                if (c.status === 'WITHDRAWN') {
+                    body.querySelectorAll('button[onclick], input[type="file"], select, textarea').forEach(el => {
+                        const oc = el.getAttribute('onclick') || '';
+                        if (el.tagName === 'BUTTON' && /openUserChat|downloadSelectedDocs|openImageZoom|copy/i.test(oc)) return;
+                        el.tagName === 'BUTTON' || el.type === 'file' ? el.remove() : (el.disabled = true);
+                    });
+                }
             } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm">خطا در دریافت اطلاعات پرونده.</p>'; }
         }
 

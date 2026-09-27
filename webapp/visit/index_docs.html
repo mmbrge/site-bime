@@ -179,7 +179,7 @@
 <canvas id="canvas"></canvas>
 <div class="toast" id="toast"></div>
 
-<script src="../camera-lib.js?v=1"></script>
+<script src="../camera-lib.js?v=2"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -300,7 +300,20 @@ function syncDocInfo(doc) {
     else { g.style.display = 'none'; }
 }
 
+// آیفون: به‌جای دوربینِ داخلِ صفحه، مستقیم دوربینِ خودِ آیفون باز می‌شود؛ عکس بعد از
+// «Use Photo» کوچک و خودکار ارسال می‌شود (باید هم‌زمان با لمسِ کاربر صدا زده شود)
+const IS_IOS = !!(window.CameraLib && CameraLib.isIOS());
+function openIosDocCamera(doc) {
+    CameraLib.nativeCapture(async file => {
+        activeDocKey = doc.key;
+        showToast('⏳ در حال ارسال «' + doc.label + '»...');
+        capturedBlob = await CameraLib.shrink(file, 4000, CameraLib.UPLOAD_MAX);
+        await confirmUpload();
+    });
+}
+
 async function openDocFullscreen(doc) {
+    if (IS_IOS) { openIosDocCamera(doc); return; }
     document.getElementById('doc-curtain').style.display = 'flex';
     try {
         stopStream();
@@ -380,7 +393,7 @@ function takeShot(ev) {
     }
 
     // رمزگذاری سریع با حداکثر دو پاس (مدارک سقف بالاتری دارند تا متنِ سند خوانا بماند)
-    const MAX_BYTES = 3 * 1024 * 1024;
+    const MAX_BYTES = window.CameraLib ? CameraLib.UPLOAD_MAX : 1.9 * 1024 * 1024;
     const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
 
     (async () => {
@@ -470,6 +483,8 @@ function uploadDocWithProgress(url, formData) {
 
 async function confirmUpload() {
     if (!capturedBlob || !activeDocKey) return;
+    // عکسِ بزرگ‌تر از سقفِ ارسالِ سرور پیش از ارسال کوچک می‌شود (PDF دست نمی‌خورد)
+    if (window.CameraLib) capturedBlob = await CameraLib.fitForUpload(capturedBlob, 4000);
     const fd = new FormData();
     fd.append('token', TOKEN); fd.append('case_id', CASE_ID); fd.append('doc_key', activeDocKey); fd.append('file', capturedBlob, 'doc.jpg');
     try {
@@ -486,6 +501,10 @@ async function confirmUpload() {
             else { exitDocCam(); activeDocKey = null; showToast('همه‌ی مدارک ارسال شد.'); }
         } else {
             cancelCapture();
+            // آیفون: دوربین فقط با لمس باز می‌شود، پس کاربر مدرکِ بعدی را از فهرست انتخاب می‌کند
+            if (IS_IOS && docsData.some(d => d.status !== 'APPROVED' && d.status !== 'PENDING')) {
+                setTimeout(() => showToast('✅ ثبت شد؛ روی مدرکِ بعدی بزنید تا دوربین باز شود.'), 900);
+            }
         }
     } catch(e) { showToast('خطا در اتصال به سرور.'); }
 }
@@ -494,6 +513,8 @@ async function confirmUpload() {
 (async () => {
     await loadDocs();
     const first = docsData.find(d => d.status !== 'APPROVED' && d.status !== 'PENDING');
+    // روی آیفون دوربین بدون لمسِ کاربر باز نمی‌شود؛ کاربر روی مدرک می‌زند
+    if (first && IS_IOS) { showToast('روی هر مدرک بزنید تا دوربینِ آیفون باز شود.'); return; }
     if (first) { activeDocKey = first.key; await openDocFullscreen(first); }
 })();
 </script>

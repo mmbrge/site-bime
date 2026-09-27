@@ -248,6 +248,11 @@ try {
             echo json_encode(['ok' => false, 'error' => 'این بازدید به پایان رسیده یا نامعتبر است.']); exit;
         }
         if (empty($_FILES['photo'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.']); exit; }
+        // اگر فایل به سرور نرسید (مثلاً بزرگ‌تر از upload_max_filesize)، نباید به‌عنوانِ عکسِ ثبت‌شده حساب شود
+        if (($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $big = in_array($_FILES['photo']['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
+            echo json_encode(['ok' => false, 'error' => $big ? 'حجم عکس بیش از حد مجاز است؛ لطفاً دوباره عکس بگیرید.' : 'عکس کامل دریافت نشد؛ لطفاً دوباره تلاش کنید.']); exit;
+        }
 
         $plate = resolve_plate($pdo, $session);
         $stmt = $pdo->prepare("SELECT national_code FROM persons WHERE id = ?");
@@ -274,8 +279,11 @@ try {
         }
         $baseName = "{$stepNum} - {$stepLabel}{$seqSuffix} - " . sanitize_folder_name($nationalId ?: 'نامشخص');
         $destPath = unique_dest_path($tmpDir . '/' . $baseName . '.' . $ext);
-        move_uploaded_file($_FILES['photo']['tmp_name'], $destPath);
-        compress_image_if_needed($destPath);
+        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $destPath)) {
+            echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی عکس روی سرور. لطفاً دوباره تلاش کنید.']); exit;
+        }
+        // عکس‌های بازدید برای دیدنِ جزئیاتِ خسارت با وضوحِ بالا (تا ۳۲۰۰ پیکسل، ۲.۵ مگابایت) نگه داشته می‌شوند
+        compress_image_if_needed($destPath, 2621440, 3200);
         $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
 
         $step = $steps[$stepKey];

@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $row['quota_summary'] = ($row['used_quota'] ?? 0) . ' / ' . ($row['max_quota'] ?? 4);
             // به‌جای یک «وضعیت» واحد و گمراه‌کننده برای کل پرونده، فقط تعداد بیمه‌نامه‌های ثبت‌شده را می‌دهیم؛
             // وضعیت واقعی مال هر بیمه‌نامه به‌طور جداگانه است و در پاپ‌آپ جزئیات نمایش داده می‌شود
-            $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM policy_cases WHERE introduction_id = ?");
+            $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM policy_cases WHERE introduction_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
             $stmt2->execute([$row['introduction_id']]);
             $row['total_cases'] = intval($stmt2->fetchColumn());
         }

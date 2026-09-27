@@ -224,7 +224,7 @@ try {
         // ---------- پرونده‌های صدورِ کارکنان، در همین فهرست ----------
         // بیمه‌ی کارکنان بخشِ «همکارِ شرکت‌ها» نیست؛ فقط مدیر کل آن را می‌بیند.
         if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN') {
-            $pw = ["pc.status <> 'ISSUED'", "pc.status <> 'CANCELLED'"]; $pp = [];
+            $pw = ["pc.status <> 'ISSUED'", "pc.status <> 'CANCELLED'", "COALESCE(pc.status, '') <> 'WITHDRAWN'"]; $pp = [];
             if ($typeF) { $pw[] = "pc.insurance_type = ?"; $pp[] = $typeF; }
             // «نوع درخواست» برای کارکنان همیشه صدور جدید است؛ اگر فیلترِ دیگری خورده، چیزی نیاید
             if (!empty($data['request_kind']) && $data['request_kind'] !== 'NEW_POLICY') $pw[] = "1=0";

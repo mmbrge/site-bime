@@ -55,9 +55,22 @@ try {
                 exit;
             }
         }
+        // درخواستی که مدرکِ تاییدشده دارد حذف نمی‌شود و فقط از فاز عملیاتی خارج می‌شود؛
+        // در این صورت خودِ معرفی‌نامه هم برای سابقه می‌ماند (پرونده به آن وابسته است).
+        $kept = 0;
         foreach ($cases as $c) {
+            if ($c['status'] === 'WITHDRAWN') { $kept++; continue; }
             $r = delete_policy_case($pdo, dirname(__DIR__), intval($c['id']), $userId);
             if (!$r['ok']) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+            if (($r['mode'] ?? '') === 'withdrawn') $kept++;
+        }
+        if ($kept > 0) {
+            $done = count($cases) - $kept;
+            echo json_encode(['ok' => true, 'mode' => 'withdrawn', 'message' =>
+                fa_digits($kept) . ' درخواستِ این معرفی‌نامه مدرکِ تاییدشده داشت و فقط از فاز عملیاتی خارج شد' .
+                ($done ? '، ' . fa_digits($done) . ' درخواستِ دیگر کامل حذف شد' : '') .
+                '. خودِ معرفی‌نامه برای سابقه باقی ماند.'], JSON_UNESCAPED_UNICODE);
+            exit;
         }
         $pdo->prepare("DELETE FROM insurance_requests WHERE introduction_id = ?")->execute([$introId]);
         $pdo->prepare("DELETE FROM introductions WHERE id = ?")->execute([$introId]);

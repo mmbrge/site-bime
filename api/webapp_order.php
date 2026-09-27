@@ -23,7 +23,7 @@ function resolve_order_session($pdo, $token) {
 }
 
 function get_owned_case($pdo, $personId, $caseId) {
-    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ?");
+    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
     $stmt->execute([$caseId, $personId]);
     return $stmt->fetch();
 }

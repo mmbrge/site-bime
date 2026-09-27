@@ -72,6 +72,34 @@ try {
         exit;
     }
 
+    // ---- درخواستِ «خارج از فاز عملیاتی» فقط قابلِ دیدن است؛ هیچ کارِ عملیاتی روی آن انجام نمی‌شود ----
+    $mutating = ['approve_all_docs', 'approve_doc', 'reject_doc', 'request_fix', 'review_health_photo', 'approve_health',
+                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy'];
+    $postAction = $_POST['action'] ?? '';
+    $guardAction = in_array($action, $mutating, true) ? $action : (in_array($postAction, $mutating, true) ? $postAction : '');
+    if ($guardAction !== '') {
+        $gCase = 0;
+        if (!empty($data['case_id']) || !empty($_POST['case_id'])) {
+            $gCase = intval($data['case_id'] ?? $_POST['case_id']);
+        } elseif (!empty($data['doc_id'])) {
+            $st = $pdo->prepare("SELECT case_id FROM case_documents WHERE id = ?");
+            $st->execute([intval($data['doc_id'])]);
+            $gCase = intval($st->fetchColumn());
+        } elseif (!empty($data['id']) && in_array($guardAction, ['review_health_photo', 'approve_health', 'reject_health'], true)) {
+            $st = $pdo->prepare("SELECT case_id FROM health_inspections WHERE id = ?");
+            $st->execute([intval($data['id'])]);
+            $gCase = intval($st->fetchColumn());
+        }
+        if ($gCase) {
+            $st = $pdo->prepare("SELECT status FROM policy_cases WHERE id = ?");
+            $st->execute([$gCase]);
+            if ($st->fetchColumn() === 'WITHDRAWN') {
+                echo json_encode(['ok' => false, 'error' => 'این درخواست از فاز عملیاتی خارج شده و فقط برای سابقه نگه داشته می‌شود.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+    }
+
     // ۱. لیست پرونده‌های صدور
     if ($action === 'list') {
         $introFilter = intval($_GET['introduction_id'] ?? 0);
@@ -87,7 +115,7 @@ try {
         ";
         $params = [];
         if ($introFilter) { $sql .= " WHERE pc.introduction_id = ?"; $params[] = $introFilter; }
-        $sql .= " ORDER BY (pc.status = 'DOCS_REVIEW') DESC, pc.created_at DESC";
+        $sql .= " ORDER BY (pc.status = 'WITHDRAWN') ASC, (pc.status = 'DOCS_REVIEW') DESC, pc.created_at DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()]);
@@ -364,6 +392,7 @@ try {
             LEFT JOIN policy_cases pc ON hi.case_id = pc.id
             LEFT JOIN persons p1 ON pc.person_id = p1.id
             LEFT JOIN persons p2 ON hi.person_id = p2.id
+            WHERE pc.id IS NULL OR COALESCE(pc.status, '') <> 'WITHDRAWN'
             ORDER BY (hi.status = 'PENDING') DESC, hi.created_at DESC
         ");
         $rows = $stmt->fetchAll();
