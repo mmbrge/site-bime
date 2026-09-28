@@ -463,7 +463,7 @@ try {
             // و حساب‌های کاربری ثبت‌کننده‌ی شرکت‌ها - قبلاً پاک نمی‌شدند
             'company_payment_allocations', 'company_payments', 'company_installments',
             'company_documents', 'company_request_plates', 'company_requests',
-            'company_portal_user_companies', 'company_portal_users',
+            'company_portal_user_companies',
             'staff_chat_messages', 'company_chat_messages', 'bot_known_groups',
             // مالی پرسنلی: اقساط، دریافتی‌ها و تخصیص‌هایشان، چک‌ها، صورتحساب‌ها،
             // تسویه‌های پاسارگاد، مغایرت‌گیری و دوره‌های صورتحساب - این‌ها هم قبلاً
@@ -475,37 +475,54 @@ try {
             'reconciliations', 'billing_periods',
             // وضعیت گفتگوی ربات و کدهای یک‌بارمصرف ورود
             'conversation_state', 'login_otps',
+            // تاریخچه‌ی بررسیِ مدارک/بازدیدها و اعلان‌ها (زنگوله‌ی پنل‌ها و اعلان‌های مدیر در ربات)
+            'review_log', 'user_notifications', 'notification_cursors', 'admin_notifications',
+            // ورود و کاربران: لاگ ورود و خروج، کدهای ورود با بله، درخواست‌های بازیابی رمز
+            // و وضعیتِ گفتگوی ربات شرکت‌ها
+            'login_logs', 'phone_otps', 'password_reset_requests', 'company_bot_state',
         ] as $table) {
             try { $pdo->exec("TRUNCATE TABLE `$table`;"); } catch (Exception $e) { /* اگر جدولی وجود نداشت، رد شو */ }
         }
+        // کاربرانِ شرکت‌ها با DELETE (نه TRUNCATE) پاک می‌شوند تا شماره‌ی شناسه از اول شروع نشود؛
+        // وگرنه نشستِ بازِ یک کاربرِ پاک‌شده روی کاربرِ تازه‌ای با همان شناسه می‌نشست
+        try { $pdo->exec("DELETE FROM `company_portal_users`;"); } catch (Exception $e) { /* ... */ }
         // کاربران داخلی «همکار» (اپراتور/مالی/همکار شرکت‌ها) هم پاک می‌شوند؛ فقط
-        // حساب‌های ADMIN دست‌نخورده می‌مانند تا کسی از پنل بیرون نماند
+        // حساب‌های ADMIN دست‌نخورده می‌مانند تا کسی از پنل بیرون نماند (مدیرِ حذف‌شده هم پاک می‌شود)
         try { $pdo->exec("DELETE FROM `users` WHERE `role` <> 'ADMIN';"); } catch (Exception $e) { /* ... */ }
+        try { $pdo->exec("DELETE FROM `users` WHERE COALESCE(`is_deleted`, 0) = 1 AND `id` <> " . intval($userId) . ";"); } catch (Exception $e) { /* ستون هنوز نیست */ }
         $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
-        $pdo->commit();
+        if ($pdo->inTransaction()) $pdo->commit();   // TRUNCATE در MySQL خودش commit می‌کند
+
+        // خودِ پاکسازی ثبت می‌شود تا معلوم باشد چه کسی و کِی انجام داده
+        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'RESET_ALL', 'system', 0, 'پاکسازی کامل اطلاعات')")->execute([$userId]); } catch (Exception $e) {}
 
         // پاکسازی کامل فایل‌ها: بایگانی، پرونده‌های موقت، صف انتظار و لاگ‌ها
         function rrmdir_contents($dir) {
             if (!is_dir($dir)) return;
             foreach (scandir($dir) as $item) {
-                if ($item === '.' || $item === '..') continue;
+                if ($item === '.' || $item === '..' || $item === '.gitkeep') continue;
                 $path = $dir . '/' . $item;
                 if (is_dir($path)) { rrmdir_contents($path); @rmdir($path); }
                 else { @unlink($path); }
             }
         }
         $siteRoot = dirname(__DIR__);
-        foreach (['/Archive/بایگانی/بایگانی کسر از حقوق', '/Archive/بایگانی/بایگانی صادره', '/Archive/بایگانی/سایر مدارک',
-                  '/Archive/بایگانی/بایگانی شرکتی',
-                  // بایگانی مالی (فیش‌ها/صورتحساب‌ها) و پوشه‌های موقتِ مالی و OCR هم
-                  // باید پاک شوند، وگرنه فیش و PDF مشتری‌های پاک‌شده روی سرور می‌ماند
-                  '/Archive/مالی', '/موقت/موقت مالی', '/tmp_ocr', '/tmp_recon',
-                  '/موقت/موقت بایگانی', '/queue/pending', '/queue/case_uploads', '/queue/attachments'] as $rel) {
+        // کلِ بایگانی (همه‌ی زیرپوشه‌ها: صادره، کسر از حقوق، شرکتی، شرکت‌ها، چت‌ها، مدارک دستی، ...)،
+        // بایگانی و موقتِ مالی، همه‌ی موقت‌ها، صف OCR و فایل‌های رسیده از ربات و مینی‌اپ.
+        // قالب‌های Word صورتحساب (tmpl_invoice) تنظیمات‌اند و دست‌نخورده می‌مانند.
+        foreach (['/Archive/بایگانی', '/Archive/مالی', '/موقت', '/بایگانی', '/tmp_ocr', '/tmp_recon',
+                  '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) {
             rrmdir_contents($siteRoot . $rel);
+        }
+        // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا بایگانی فایل‌ها خالی ولی مرتب دیده شود
+        foreach ([archive_root($siteRoot) . '/بایگانی صادره', archive_root($siteRoot) . '/بایگانی کسر از حقوق',
+                  archive_root($siteRoot) . '/سایر مدارک', archive_root($siteRoot) . '/بایگانی شرکتی',
+                  temp_archive_root($siteRoot), temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) {
+            @mkdir($dir, 0775, true);
         }
         @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
 
-        echo json_encode(['ok' => true, 'message' => 'همه‌ی اطلاعات، پرونده‌ها، بایگانی و چت‌های ذخیره‌شده کاملاً پاک شدند. سایت به حالت اولیه بازگشت.']);
+        echo json_encode(['ok' => true, 'message' => 'همه‌ی اطلاعات، پرونده‌ها، بایگانی، چت‌ها، لاگ‌های ورود و خروج و اعلان‌ها کاملاً پاک شدند. سایت به حالت اولیه بازگشت.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 } catch (Exception $e) {

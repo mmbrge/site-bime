@@ -2891,7 +2891,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('reset-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <div class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-lg shadow-red-500/30"><i class="fas fa-radiation-alt"></i></div>
             <h3 class="text-lg font-black text-red-600 mb-2">هشدار پاکسازی کامل</h3>
-            <p class="text-xs text-slate-500 mb-4 leading-relaxed">تمام معرفی‌نامه‌ها، پرونده‌ها، مدارک، تیکت‌ها، اعلان‌های اپ، نشست‌های ورود به مینی‌اپ، چت‌های ذخیره‌شده‌ی بات و کل بایگانی فایل‌های هاست برای همیشه پاک می‌شوند (سایت دقیقاً مثل روز اول می‌شود). حساب‌های مدیر و تنظیمات بات دست‌نخورده می‌مانند.</p>
+            <p class="text-xs text-slate-500 mb-4 leading-relaxed text-right">برای همیشه پاک می‌شود (سایت دقیقاً مثل روز اول می‌شود):<br>
+                • معرفی‌نامه‌ها، پرونده‌ها، مدارک، بازدیدها و تاریخچه‌ی بررسی‌ها<br>
+                • شرکت‌ها، درخواست‌های شرکتی و کاربرانِ شرکت‌ها<br>
+                • همه‌ی اطلاعات مالی (اقساط، دریافت‌ها، چک‌ها، صورتحساب‌ها، تسویه‌ها)<br>
+                • تیکت‌ها و همه‌ی چت‌ها، اعلان‌ها و اعلان‌های مدیر<br>
+                • کاربران داخلی غیرمدیر، لاگ ورود و خروج، کدهای ورود و درخواست‌های بازیابی رمز<br>
+                • کل بایگانی و پوشه‌های موقت روی هاست<br>
+                <b class="text-slate-600">حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی و قالب‌های صورتحساب می‌مانند.</b></p>
             <input type="password" id="reset-password-input" placeholder="رمز تایید را وارد کنید" class="w-full border rounded-xl px-3 py-2.5 text-sm text-center mb-4" dir="ltr">
             <div class="flex gap-3">
                 <button type="button" onclick="executeResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، همه‌چیز پاک شود</button>
@@ -9299,11 +9306,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 });
                 const data = await res.json();
                 if (data.ok) {
-                    showToast(data.message, 'success');
                     document.getElementById('reset-modal').classList.remove('active');
                     document.getElementById('reset-password-input').value = '';
-                    loadRecords();
-                    switchTab('dashboard');
+                    // اعلان‌های ذخیره‌شده در همین مرورگر (زنگوله در حالتِ محلی) هم پاک شود
+                    try { Object.keys(localStorage).filter(k => k.startsWith('notif:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+                    showAlert('پاکسازی کامل انجام شد', data.message, 'success', () => location.reload());
                 } else {
                     showToast(data.error || 'خطا در بازنشانی سیستم', 'error');
                 }
