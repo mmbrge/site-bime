@@ -2835,30 +2835,40 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <!-- دیالوگ تایید حذف یک ردیف -->
-    <!-- دیالوگ تایید عمومی (جایگزین confirm() مرورگر) -->
-    <div id="generic-confirm-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-sm p-6 relative text-center">
-            <button type="button" onclick="document.getElementById('generic-confirm-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <div class="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fas fa-question"></i></div>
+    <!-- دیالوگ‌های عمومیِ سایت (جایگزینِ alert / confirm / prompt مرورگر) - بالاتر از بقیه‌ی مودال‌ها -->
+    <div id="generic-confirm-modal" class="modal-overlay" style="z-index:1000005">
+        <div class="modal-content w-full max-w-sm p-6 relative text-center" style="margin:0 12px;">
+            <button type="button" onclick="cancelGenericConfirm()" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <div id="generic-confirm-icon" class="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"><i class="fas fa-question"></i></div>
             <h3 id="generic-confirm-title" class="text-lg font-black text-slate-800 mb-2">تایید عملیات</h3>
-            <p id="generic-confirm-message" class="text-xs text-slate-500 mb-6"></p>
+            <p id="generic-confirm-message" class="text-xs text-slate-500 mb-6 leading-6" style="white-space:pre-line"></p>
             <div class="flex gap-3">
-                <button type="button" onclick="executeGenericConfirm()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، مطمئنم</button>
-                <button type="button" onclick="document.getElementById('generic-confirm-modal').classList.remove('active')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
+                <button type="button" id="generic-confirm-ok" onclick="executeGenericConfirm()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، مطمئنم</button>
+                <button type="button" onclick="cancelGenericConfirm()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
             </div>
         </div>
     </div>
 
-    <!-- دیالوگ ورودی متن (جایگزین prompt() مرورگر) -->
-    <div id="generic-prompt-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-sm p-6 relative">
-            <button type="button" onclick="document.getElementById('generic-prompt-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 id="generic-prompt-title" class="text-lg font-black text-slate-800 mb-4">ویرایش</h3>
-            <textarea id="generic-prompt-input" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
-            <div class="flex gap-3">
-                <button type="button" onclick="executeGenericPrompt()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">ذخیره</button>
-                <button type="button" onclick="document.getElementById('generic-prompt-modal').classList.remove('active')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
+    <div id="generic-prompt-modal" class="modal-overlay" style="z-index:1000005">
+        <div class="modal-content w-full max-w-sm p-6 relative" style="margin:0 12px;">
+            <button type="button" onclick="cancelGenericPrompt()" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
+            <h3 id="generic-prompt-title" class="text-lg font-black text-slate-800 mb-1 pl-8">ویرایش</h3>
+            <p id="generic-prompt-hint" class="hidden text-[11px] text-slate-400 mb-2 leading-5"></p>
+            <textarea id="generic-prompt-input" rows="3" class="w-full border rounded-xl p-3 text-sm mb-1 mt-2 outline-none focus:border-blue-400"></textarea>
+            <p id="generic-prompt-err" class="hidden text-[11px] text-red-600 font-bold mb-1"></p>
+            <div class="flex gap-3 mt-3">
+                <button type="button" id="generic-prompt-ok" onclick="executeGenericPrompt()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">ذخیره</button>
+                <button type="button" onclick="cancelGenericPrompt()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
             </div>
+        </div>
+    </div>
+
+    <div id="generic-alert-modal" class="modal-overlay" style="z-index:1000006">
+        <div class="modal-content w-full max-w-sm p-6 relative text-center" style="margin:0 12px;">
+            <div id="generic-alert-icon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner"></div>
+            <h3 id="generic-alert-title" class="text-lg font-black text-slate-800 mb-2"></h3>
+            <p id="generic-alert-message" class="text-xs text-slate-600 mb-6 leading-6 text-right" style="white-space:pre-line"></p>
+            <button type="button" id="generic-alert-ok" onclick="closeGenericAlert()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs">متوجه شدم</button>
         </div>
     </div>
 
@@ -3113,33 +3123,91 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return e2p(`${datePart} - ${timePart}`);
         }
 
-        // ---- مودال تایید عمومی (جایگزین confirm() مرورگر با استایل شیشه‌ای سایت) ----
-        let _confirmCallback = null;
-        function showConfirm(title, message, onConfirm) {
+        // ---- دیالوگ‌های عمومیِ سایت: جایگزینِ confirm / prompt / alert مرورگر ----
+        // showConfirm(title, message, onConfirm, opts)  opts: {ok, danger, onCancel}
+        // showPrompt(title, value, onSubmit, opts)       opts: {ok, placeholder, hint, required, danger, onCancel}
+        // showAlert(title, message, type)                 type: success | warning | error | info
+        // نسخه‌های Promise برای کدِ async: uiConfirm(...) => true/false ، uiPrompt(...) => متن یا null
+        let _confirmCallback = null, _confirmCancel = null;
+        function showConfirm(title, message, onConfirm, opts = {}) {
             document.getElementById('generic-confirm-title').innerText = title;
             document.getElementById('generic-confirm-message').innerText = message;
-            _confirmCallback = onConfirm;
+            const ok = document.getElementById('generic-confirm-ok');
+            ok.innerText = opts.ok || 'بله، مطمئنم';
+            ok.className = `flex-1 ${opts.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs`;
+            document.getElementById('generic-confirm-icon').className = `w-16 h-16 ${opts.danger ? 'bg-red-100 text-red-500' : 'bg-amber-100 text-amber-500'} rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner`;
+            _confirmCallback = onConfirm; _confirmCancel = opts.onCancel || null;
             document.getElementById('generic-confirm-modal').classList.add('active');
+            setTimeout(() => ok.focus(), 50);
         }
         function executeGenericConfirm() {
             document.getElementById('generic-confirm-modal').classList.remove('active');
-            if (typeof _confirmCallback === 'function') _confirmCallback();
+            const cb = _confirmCallback; _confirmCallback = _confirmCancel = null;
+            if (typeof cb === 'function') cb();
+        }
+        function cancelGenericConfirm() {
+            document.getElementById('generic-confirm-modal').classList.remove('active');
+            const cb = _confirmCancel; _confirmCallback = _confirmCancel = null;
+            if (typeof cb === 'function') cb();
         }
 
-        // ---- دیالوگ ورودی متن (جایگزین prompt() مرورگر) ----
-        let _promptCallback = null;
-        function showPrompt(title, currentValue, onSubmit) {
+        let _promptCallback = null, _promptCancel = null, _promptRequired = false;
+        function showPrompt(title, currentValue, onSubmit, opts = {}) {
             document.getElementById('generic-prompt-title').innerText = title;
-            document.getElementById('generic-prompt-input').value = currentValue || '';
-            _promptCallback = onSubmit;
+            const hint = document.getElementById('generic-prompt-hint');
+            hint.innerText = opts.hint || ''; hint.classList.toggle('hidden', !opts.hint);
+            const input = document.getElementById('generic-prompt-input');
+            input.value = currentValue || '';
+            input.placeholder = opts.placeholder || '';
+            document.getElementById('generic-prompt-err').classList.add('hidden');
+            const ok = document.getElementById('generic-prompt-ok');
+            ok.innerText = opts.ok || 'ذخیره';
+            ok.className = `flex-1 ${opts.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'} text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs`;
+            _promptCallback = onSubmit; _promptCancel = opts.onCancel || null; _promptRequired = !!opts.required;
             document.getElementById('generic-prompt-modal').classList.add('active');
-            setTimeout(() => document.getElementById('generic-prompt-input').focus(), 50);
+            setTimeout(() => input.focus(), 50);
         }
         function executeGenericPrompt() {
             const value = document.getElementById('generic-prompt-input').value;
+            if (_promptRequired && !value.trim()) {
+                const err = document.getElementById('generic-prompt-err');
+                err.innerText = 'این قسمت را پر کنید.'; err.classList.remove('hidden');
+                document.getElementById('generic-prompt-input').focus();
+                return;
+            }
             document.getElementById('generic-prompt-modal').classList.remove('active');
-            if (typeof _promptCallback === 'function') _promptCallback(value);
+            const cb = _promptCallback; _promptCallback = _promptCancel = null;
+            if (typeof cb === 'function') cb(value);
         }
+        function cancelGenericPrompt() {
+            document.getElementById('generic-prompt-modal').classList.remove('active');
+            const cb = _promptCancel; _promptCallback = _promptCancel = null;
+            if (typeof cb === 'function') cb();
+        }
+        // Ctrl+Enter = تایید در کادرِ متن
+        document.getElementById('generic-prompt-input').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) executeGenericPrompt(); });
+
+        const _alertIcons = { success: ['bg-emerald-100 text-emerald-600', 'fa-check'], warning: ['bg-amber-100 text-amber-500', 'fa-exclamation'],
+                              error: ['bg-red-100 text-red-500', 'fa-xmark'], info: ['bg-blue-100 text-blue-600', 'fa-info'] };
+        let _alertCallback = null;
+        function showAlert(title, message, type = 'info', onClose = null) {
+            const ic = _alertIcons[type] || _alertIcons.info;
+            document.getElementById('generic-alert-icon').className = `w-16 h-16 ${ic[0]} rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner`;
+            document.getElementById('generic-alert-icon').innerHTML = `<i class="fas ${ic[1]}"></i>`;
+            document.getElementById('generic-alert-title').innerText = title;
+            const msg = document.getElementById('generic-alert-message');
+            msg.innerText = message || ''; msg.classList.toggle('hidden', !message);
+            _alertCallback = onClose;
+            document.getElementById('generic-alert-modal').classList.add('active');
+            setTimeout(() => document.getElementById('generic-alert-ok').focus(), 50);
+        }
+        function closeGenericAlert() {
+            document.getElementById('generic-alert-modal').classList.remove('active');
+            const cb = _alertCallback; _alertCallback = null;
+            if (typeof cb === 'function') cb();
+        }
+        const uiConfirm = (title, message, opts = {}) => new Promise(res => showConfirm(title, message, () => res(true), {...opts, onCancel: () => res(false)}));
+        const uiPrompt = (title, value = '', opts = {}) => new Promise(res => showPrompt(title, value, v => res(v), {...opts, onCancel: () => res(null)}));
         const p2e = s => s ? s.toString().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)) : '';
 
         // رویدادهای مربوط به کپی ارقام
@@ -3155,6 +3223,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
             overlay.addEventListener('click', function(e) {
+                if (e.target !== this) return;
+                if (this.id === 'generic-confirm-modal') return cancelGenericConfirm();
+                if (this.id === 'generic-prompt-modal') return cancelGenericPrompt();
+                if (this.id === 'generic-alert-modal') return closeGenericAlert();
                 if (e.target === this) this.classList.remove('active');
             });
         });
@@ -5982,7 +6054,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 body.new_password = document.getElementById('rr-pass-' + id).value.trim();
                 if (body.new_password.length < 6) { showToast('رمزِ جدید حداقل ۶ کاراکتر.', 'warning'); return; }
             } else {
-                const note = prompt('علتِ رد (اختیاری؛ برای کاربر فرستاده می‌شود):', '');
+                const note = await uiPrompt('رد درخواست بازیابی رمز', '', {ok: 'رد درخواست', danger: true,
+                    hint: 'علتِ رد اختیاری است و در ربات بله برای کاربر فرستاده می‌شود.', placeholder: 'علتِ رد (اختیاری)'});
                 if (note === null) return;
                 body.note = note;
             }
@@ -6429,7 +6502,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function overrideReconcile(id) {
-            const reason = prompt('دلیل تایید دستی مغایرت را بنویسید:');
+            const reason = await uiPrompt('تایید دستی مغایرت', '', {ok: 'تایید دستی', required: true, placeholder: 'دلیل تایید دستی مغایرت را بنویسید...'});
             if (!reason || !reason.trim()) return;
             try {
                 const res = await fetch(FIN_API, { method:'POST', headers:{'Content-Type':'application/json'},
@@ -6452,9 +6525,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         manual_company: kind === 'DETAILED' ? null : (document.getElementById('inv-manual-company').value || null) }) });
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error, 'error'); return; }
-                let msg = `صورتحساب ${d.invoice_no} صادر شد.`;
-                if (d.generated && d.generated.note) msg += '\n' + d.generated.note;
-                alert(msg);
+                showAlert(`صورتحساب ${d.invoice_no} صادر شد.`, (d.generated && d.generated.note) || '', 'success');
                 document.getElementById('inv-new-modal').classList.add('hidden');
                 loadInvoices();
             } catch(e) { showToast('خطا در اتصال', 'error'); }
@@ -6615,9 +6686,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const res = await fetch(FIN_API, { method:'POST', body: fd });
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error, 'error'); return; }
-                let msg = `دریافت ثبت شد.\nتخصیص‌یافته به اقساط: ${money(d.allocated)} ریال`;
+                let msg = `تخصیص‌یافته به اقساط: ${money(d.allocated)} ریال`;
                 if (d.unallocated > 0) msg += `\n⚠️ تخصیص‌نیافته: ${money(d.unallocated)} ریال (قسط بازی برای تخصیص نمانده یا قانون تسویه‌ی پیوسته مانع شده)`;
-                alert(msg);
+                showAlert('دریافت ثبت شد', msg, d.unallocated > 0 ? 'warning' : 'success');
                 document.getElementById('pay-new-modal').classList.add('hidden');
                 loadPayments(); loadCheques();
             } catch(e) { showToast('خطا در اتصال', 'error'); }
@@ -8996,7 +9067,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const othersBad = mcOthers.find(o => o.file && !o.name.trim());
             if (othersBad) return warn('برای «سایر مدارک» نام مدرک را بنویسید.');
             const missing = Object.entries(mcRequiredDocs()).filter(([k]) => !mcFiles[k]).map(([, l]) => l);
-            if (missing.length && !confirm(`${e2p(missing.length)} مدرک هنوز انتخاب نشده:\n• ${missing.join('\n• ')}\n\nدرخواست ثبت شود و این مدارک را بعداً بارگذاری می‌کنید؟`)) return;
+            if (missing.length && !(await uiConfirm('مدارک ناقص', `${e2p(missing.length)} مدرک هنوز انتخاب نشده:\n• ${missing.join('\n• ')}\n\nدرخواست ثبت شود و این مدارک را بعداً بارگذاری می‌کنید؟`, {ok: 'بله، ثبت شود'}))) return;
 
             const fd = new FormData();
             fd.append('action', 'create_manual_request');

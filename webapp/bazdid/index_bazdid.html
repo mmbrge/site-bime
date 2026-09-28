@@ -1499,8 +1499,49 @@ async function finalizeInspection() {
   } catch (e) { showToast('خطا در اتصال.'); }
 }
 
+// ---- پنجره‌ی تاییدِ داخلِ صفحه (جایگزینِ confirm مرورگر؛ هم‌رنگِ خودِ مینی‌اپ) ----
+function uiConfirm(title, message, opts = {}) {
+  return new Promise(resolve => {
+    if (!document.getElementById('ui-confirm-style')) {
+      const st = document.createElement('style'); st.id = 'ui-confirm-style';
+      st.textContent = `
+        .uic-ov { position: fixed; inset: 0; z-index: 2147483000; background: rgba(2,6,23,.72); display: flex; align-items: center; justify-content: center;
+                  padding: 20px; opacity: 0; transition: opacity .2s; font-family: 'Vazir', Tahoma, sans-serif; direction: rtl; }
+        .uic-ov.on { opacity: 1; }
+        .uic-box { width: 100%; max-width: 340px; background: linear-gradient(160deg, #1e1b4b, #0f172a); border: 1px solid rgba(255,255,255,.14);
+                   border-radius: 22px; padding: 22px 18px 16px; color: #fff; text-align: center; transform: scale(.92); transition: transform .2s; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+        .uic-ov.on .uic-box { transform: scale(1); }
+        .uic-ic { width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 26px;
+                  background: rgba(245,158,11,.15); color: #f59e0b; }
+        .uic-ic.danger { background: rgba(239,68,68,.15); color: #ef4444; }
+        .uic-t { font-weight: 900; font-size: 16px; margin-bottom: 6px; }
+        .uic-m { font-size: 13px; color: #cbd5e1; line-height: 1.9; margin-bottom: 18px; white-space: pre-line; }
+        .uic-btns { display: flex; gap: 10px; }
+        .uic-btns button { flex: 1; border: 0; border-radius: 14px; padding: 12px 8px; font-weight: 700; font-size: 14px; font-family: inherit; cursor: pointer; }
+        .uic-ok { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+        .uic-ok.danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .uic-no { background: rgba(255,255,255,.1); color: #e2e8f0; }`;
+      document.head.appendChild(st);
+    }
+    const ov = document.createElement('div');
+    ov.className = 'uic-ov';
+    ov.innerHTML = `<div class="uic-box"><div class="uic-ic ${opts.danger ? 'danger' : ''}">${opts.danger ? '!' : '?'}</div>
+      <div class="uic-t"></div><div class="uic-m"></div>
+      <div class="uic-btns"><button type="button" class="uic-ok ${opts.danger ? 'danger' : ''}"></button><button type="button" class="uic-no"></button></div></div>`;
+    ov.querySelector('.uic-t').textContent = title;
+    ov.querySelector('.uic-m').textContent = message || '';
+    ov.querySelector('.uic-ok').textContent = opts.ok || 'بله';
+    ov.querySelector('.uic-no').textContent = opts.cancel || 'انصراف';
+    const done = v => { ov.classList.remove('on'); setTimeout(() => ov.remove(), 200); resolve(v); };
+    ov.querySelector('.uic-ok').onclick = () => done(true);
+    ov.querySelector('.uic-no').onclick = () => done(false);
+    ov.addEventListener('click', e => { if (e.target === ov) done(false); });
+    document.body.appendChild(ov);
+    requestAnimationFrame(() => ov.classList.add('on'));
+  });
+}
 async function cancelInspection() {
-  if (!confirm('آیا از انصراف مطمئن هستید؟ اطلاعات این بازدید ذخیره نمی‌شود.')) return;
+  if (!(await uiConfirm('انصراف از بازدید', 'آیا از انصراف مطمئن هستید؟ اطلاعات این بازدید ذخیره نمی‌شود.', {ok: 'بله، انصراف', cancel: 'ادامه‌ی بازدید', danger: true}))) return;
   try {
     await fetch(API, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
       body: `action=cancel&token=${encodeURIComponent(TOKEN)}&attempt_id=${attemptId}` });
