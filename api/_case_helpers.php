@@ -300,14 +300,32 @@ function get_site_url($pdo) {
     return rtrim($stmt->fetchColumn() ?: '', '/');
 }
 
-// اطلاع‌رسانی فعالیت‌های سامانه به مدیر، در صورتی که آیدی عددی‌اش در تنظیمات ثبت شده باشد
-// (و خودِ او هم قبلاً ربات را استارت کرده باشد؛ در غیر این صورت بله اجازه‌ی ارسال نمی‌دهد و بی‌صدا رد می‌شویم)
+// اطلاع‌رسانی فعالیت‌های پرسنل (ربات و مینی‌اپ) به همه‌ی «مدیر کل»ها.
+// دیگر پیامِ جداگانه برای هر رویداد فرستاده نمی‌شود: رویداد در «اعلان‌های» هر مدیر ذخیره می‌شود و
+// مدیر در ربات بله‌ی شرکت‌ها با دکمه‌ی «🔔 اعلان‌ها» همه را یک‌جا می‌بیند (و بعد از دیدن پاک می‌شوند).
+// فقط وقتی صفِ اعلان‌های مدیر خالی بوده و اولین اعلانِ تازه می‌رسد، یک پیامِ کوتاه «اعلان تازه دارید» می‌گیرد.
+// ($bot_token فقط برای سازگاری با فراخوانی‌های قبلی مانده و استفاده نمی‌شود.)
 function notify_admin($pdo, $text, $bot_token = null) {
-    $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'admin_bale_chat_id'");
-    $adminChatId = $stmt->fetchColumn();
-    if (!$adminChatId) return;
-    $bot_token = $bot_token ?: bale_get_token($pdo);
-    try { bale_curl_call('sendMessage', ['chat_id' => $adminChatId, 'text' => $text], $bot_token); } catch (Exception $e) {}
+    try {
+        require_once __DIR__ . '/_auth_helpers.php';
+        $text = mb_substr(trim(preg_replace('/\s*\n\s*/u', ' · ', (string)$text)), 0, 500);
+        if ($text === '') return;
+        $admins = $pdo->query("SELECT id, bale_chat_id, bot_linked_at FROM users WHERE role = 'ADMIN' AND COALESCE(is_deleted, 0) = 0")->fetchAll();
+        $count = $pdo->prepare("SELECT COUNT(*) FROM admin_notifications WHERE user_id = ?");
+        $ins = $pdo->prepare("INSERT INTO admin_notifications (user_id, text) VALUES (?, ?)");
+        foreach ($admins as $a) {
+            $count->execute([$a['id']]);
+            $wasEmpty = intval($count->fetchColumn()) === 0;
+            $ins->execute([$a['id'], $text]);
+            // سقفِ ۳۰۰ اعلانِ آخر برای هر مدیر
+            $pdo->prepare("DELETE FROM admin_notifications WHERE user_id = ? AND id < COALESCE((SELECT m FROM (SELECT id AS m FROM admin_notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1 OFFSET 299) x), 0)")
+                ->execute([$a['id'], $a['id']]);
+            if ($wasEmpty && $a['bale_chat_id'] && $a['bot_linked_at']) {
+                cbot_send($pdo, $a['bale_chat_id'], "🔔 اعلان تازه دارید.\nبرای دیدنِ همه، دکمه‌ی زیر یا «🔔 اعلان‌ها» در منو را بزنید.",
+                          ['inline_keyboard' => [[['text' => '🔔 دیدن اعلان‌ها', 'callback_data' => 'notifs']]]]);
+            }
+        }
+    } catch (Throwable $e) { error_log('[notify_admin] ' . $e->getMessage()); }   // بدون مایگریشن ۰۱۷ بی‌صدا رد می‌شود
 }
 
 // اطلاع‌رسانیِ رویدادهای مهم به مشتری - هم به‌صورت پیام بله (مثل قبل)، هم با ثبت در
@@ -675,7 +693,7 @@ function maybe_advance_case_status($pdo, $caseId, $bot_token = null) {
             $plateDisplay = $full['plate'] ?: 'بدون پلاک';
             notify_customer_app($pdo, $full['person_id'], $full['bale_chat_id'], 'مدارک تکمیل شد',
                 "✅ همه‌ی مدارک/بازدیدِ مربوط به بیمه‌نامه‌ی " . insurance_type_fa($full['insurance_type']) . " پلاک {$plateDisplay} تکمیل شد و برای بررسی نزد کارشناس ارسال شد.", 'success', $caseId, $bot_token);
-            notify_admin($pdo, "📋 مدارک/بازدید پرونده {$full['unique_code']} تکمیل شد و آماده‌ی بررسی است.", $bot_token);
+            notify_admin($pdo, "📋 پرونده {$full['unique_code']} کامل شد و آماده‌ی بررسی است");
         }
     }
 }

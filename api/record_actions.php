@@ -23,6 +23,13 @@ $action = $data['action'] ?? ($_GET['action'] ?? '');
 if (!$data && !empty($_POST)) { $data = $_POST; $action = $_POST['action'] ?? $action; }
 $userId = $_SESSION['user_id'];
 
+// ثبت دستی و ویرایشِ درخواست‌ها فقط کارِ مدیر کل است؛ بقیه‌ی نقش‌ها فقط می‌بینند
+if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro'], true)
+    && ($_SESSION['role'] ?? '') !== 'ADMIN') {
+    echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 try {
     // ---- ۱. آمار داشبورد ----
     if ($action === 'stats') {

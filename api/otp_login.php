@@ -8,7 +8,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
-require __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_auth_helpers.php';
 
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $data['action'] ?? '';

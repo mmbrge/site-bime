@@ -324,7 +324,7 @@ try {
             $stmt = $pdo->prepare("INSERT INTO tickets (chat_id, person_id, sender_name, last_message_at) VALUES (?, ?, ?, NOW())");
             $stmt->execute([$person['bale_chat_id'], $person['id'], $person['full_name']]);
             $ticketId = $pdo->lastInsertId();
-            notify_admin($pdo, "💬 تیکت پشتیبانی جدید از طرف {$person['full_name']} (از طریق اپ).");
+            notify_admin($pdo, "💬 تیکت پشتیبانی جدید (اپ) · {$person['full_name']}");
         }
 
         // پیام‌های مشتری به‌طور پیش‌فرض «خوانده‌نشده» ثبت می‌شوند تا در پنل مدیریت مشخص باشد کدام پیام‌ها هنوز دیده نشده‌اند
@@ -332,8 +332,8 @@ try {
         $stmt->execute([$ticketId, $text]);
         $pdo->prepare("UPDATE tickets SET last_message_at = NOW(), customer_typing_at = NULL WHERE id = ?")->execute([$ticketId]);
 
-        // اگر ادمین آیدی عددی ثبت کرده، برایش هم اطلاع می‌رود
-        notify_admin($pdo, "💬 پیام جدید از {$person['full_name']}:\n{$text}");
+        // در اعلان‌های مدیر کل (ربات شرکت‌ها) هم ثبت می‌شود
+        notify_admin($pdo, "💬 پیام از {$person['full_name']}: " . mb_substr($text, 0, 80) . (mb_strlen($text) > 80 ? '…' : ''));
 
         echo json_encode(['ok' => true, 'ticket_id' => $ticketId]);
         exit;
@@ -372,7 +372,7 @@ try {
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_type, message, file_path, is_read) VALUES (?, 'CUSTOMER', '', ?, 0)");
         $stmt->execute([$ticketId, $relPath]);
         $pdo->prepare("UPDATE tickets SET last_message_at = NOW(), customer_typing_at = NULL WHERE id = ?")->execute([$ticketId]);
-        notify_admin($pdo, "📎 فایل جدید از {$person['full_name']} در چت پشتیبانی ارسال شد.");
+        notify_admin($pdo, "📎 فایل از {$person['full_name']} در چت پشتیبانی");
 
         echo json_encode(['ok' => true, 'ticket_id' => $ticketId]);
         exit;

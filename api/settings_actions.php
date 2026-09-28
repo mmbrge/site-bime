@@ -59,20 +59,6 @@ try {
         exit;
     }
 
-    if ($action === 'get_admin_chat_id') {
-        $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'admin_bale_chat_id'");
-        echo json_encode(['ok' => true, 'admin_chat_id' => $stmt->fetchColumn() ?: '']);
-        exit;
-    }
-
-    if ($action === 'save_admin_chat_id') {
-        $id = trim($data['admin_chat_id'] ?? '');
-        $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('admin_bale_chat_id', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-        $stmt->execute([$id, $id]);
-        echo json_encode(['ok' => true, 'admin_chat_id' => $id]);
-        exit;
-    }
-
     // تنظیمات استعلام حق بیمه (ثالث) - قابل فعال/غیرفعال‌سازی و درصد قابل تغییر
     if ($action === 'get_premium_settings') {
         $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN

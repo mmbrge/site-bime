@@ -421,7 +421,7 @@ try {
                 ->execute([json_encode($photos, JSON_UNESCAPED_UNICODE), json_encode($reviews, JSON_UNESCAPED_UNICODE), $insp['id']]);
             $pdo->prepare("UPDATE health_attempts SET status = 'COMPLETED' WHERE id = ?")->execute([$attemptId]);
             if (!empty($insp['case_id'])) maybe_advance_case_status($pdo, $insp['case_id']);
-            notify_admin($pdo, "📸 عکس‌های اصلاحیِ بازدید سلامت شماره {$insp['inspection_number']} (پلاک " . ($plate ?: '-') . ") رسید و منتظر بررسی است.");
+            notify_admin($pdo, "📸 عکس‌های اصلاحیِ بازدید شماره {$insp['inspection_number']} رسید · پلاک " . ($plate ?: '-'));
             echo json_encode(['ok' => true, 'inspection_number' => intval($insp['inspection_number']), 'retake' => true]);
             exit;
         }

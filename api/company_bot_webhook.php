@@ -13,7 +13,7 @@
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
-require __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_auth_helpers.php';
 
 $update = json_decode(file_get_contents('php://input'), true);
 if (!$update) exit;
@@ -65,7 +65,56 @@ function is_company($acc) { return $acc && $acc['type'] === 'COMPANY'; }
 // همکار بیمه با ما و مدیرِ کل به بخشِ شرکت‌ها دسترسی دارند
 function is_liaison($acc) { return $acc && $acc['type'] === 'STAFF' && in_array($acc['user']['role'], ['COMPANY_LIAISON', 'ADMIN'], true); }
 
-function main_menu($acc, $multi = false) {
+function is_admin($acc) { return $acc && $acc['type'] === 'STAFF' && $acc['user']['role'] === 'ADMIN'; }
+
+// ---------------------------------------------------------------------
+//  اعلان‌های مدیر کل (فعالیت‌های پرسنل در ربات و مینی‌اپ - notify_admin)
+// ---------------------------------------------------------------------
+const NOTIF_BTN = '🔔 اعلان‌ها';
+function admin_notif_count($userId) {
+    global $pdo;
+    try { $st = $pdo->prepare("SELECT COUNT(*) FROM admin_notifications WHERE user_id = ?"); $st->execute([$userId]); return intval($st->fetchColumn()); }
+    catch (Throwable $e) { return 0; }   // مایگریشن ۰۱۷ هنوز اجرا نشده
+}
+// همه‌ی اعلان‌ها در یک پیامِ جمع‌وجور (گروه‌بندی بر اساس روز، تکراری‌های پشتِ‌هم یکی می‌شوند)؛ بعد از ارسال پاک می‌شوند
+function show_admin_notifs($chat, $acc, $multi) {
+    global $pdo;
+    try {
+        $st = $pdo->prepare("SELECT id, text, created_at FROM admin_notifications WHERE user_id = ? ORDER BY id");
+        $st->execute([$acc['user']['id']]);
+        $rows = $st->fetchAll();
+    } catch (Throwable $e) { say($chat, 'بخش اعلان‌ها هنوز راه‌اندازی نشده (مایگریشن ۰۱۷).', main_menu($acc, $multi)); return; }
+    if (!$rows) { say($chat, '✅ اعلانِ تازه‌ای ندارید.', main_menu($acc, $multi)); return; }
+
+    $lines = []; $day = null; $prev = null;
+    foreach ($rows as $r) {
+        $ts = strtotime($r['created_at']);
+        $d = jalali_from_gregorian_ts_dotted($ts);
+        if ($d !== $day) { $lines[] = ($day === null ? '' : "\n") . '📅 ' . fa($d); $day = $d; $prev = null; }
+        if ($prev !== null && $prev['text'] === $r['text']) { $prev['n']++; $lines[count($lines) - 1] = $prev['line'] . ' (×' . fa($prev['n']) . ')'; continue; }
+        $line = fa(date('H:i', $ts) . '  ' . $r['text']);
+        $lines[] = $line;
+        $prev = ['text' => $r['text'], 'line' => $line, 'n' => 1];
+    }
+    // هر پیامِ بله حداکثر ~۴۰۰۰ نویسه؛ اگر بیشتر بود چند تکه می‌شود
+    $head = '🔔 اعلان‌ها (' . fa(count($rows)) . ")\n";
+    $chunks = []; $cur = $head;
+    foreach ($lines as $l) {
+        if (mb_strlen($cur) + mb_strlen($l) + 1 > 3800) { $chunks[] = $cur; $cur = ''; }
+        $cur .= ($cur === '' || $cur === $head ? '' : "\n") . $l;
+    }
+    $chunks[] = $cur;
+    $maxId = end($rows)['id'];
+    $sent = true;
+    foreach ($chunks as $i => $c) {
+        $last = $i === count($chunks) - 1;
+        if (!say($chat, $last ? $c . "\n\n🗑 این اعلان‌ها از فهرستِ شما پاک شد." : $c, $last ? main_menu($acc, $multi, 0) : null)) $sent = false;
+    }
+    // فقط اگر واقعاً رسید پاک شود (اعلانی که همین حالا آمده و در این پیام نبود، می‌ماند)
+    if ($sent) $pdo->prepare("DELETE FROM admin_notifications WHERE user_id = ? AND id <= ?")->execute([$acc['user']['id'], $maxId]);
+}
+
+function main_menu($acc, $multi = false, $notifCount = null) {
     if (is_company($acc)) {
         $rows = [
             [['text' => '📋 درخواست‌های من'], ['text' => '➕ ثبت درخواست جدید']],
@@ -74,12 +123,14 @@ function main_menu($acc, $multi = false) {
             [['text' => '🔑 بازیابی رمز عبور'], ['text' => '🚪 خروج از حساب']],
         ];
     } elseif (is_liaison($acc)) {
-        $rows = [
+        $rows = [];
+        if (is_admin($acc)) { $n = $notifCount ?? admin_notif_count($acc['user']['id']); $rows[] = [['text' => NOTIF_BTN . ($n ? ' (' . fa($n) . ')' : '')]]; }
+        $rows = array_merge($rows, [
             [['text' => '📥 درخواست‌های شرکت‌ها'], ['text' => '🗂 مدارک تگ‌نشده']],
             [['text' => '💬 پیام‌های شرکت‌ها'], ['text' => '🔎 جستجوی صادره']],
             [['text' => '📊 خلاصه وضعیت'], ['text' => '👤 حساب من']],
             [['text' => '🔑 بازیابی رمز عبور'], ['text' => '🚪 خروج از حساب']],
-        ];
+        ]);
     } else {
         $rows = [
             [['text' => '👤 حساب من'], ['text' => '🔑 بازیابی رمز عبور']],
@@ -479,7 +530,7 @@ function li_list_requests($chat, $page = 0) {
     if (count($rows) === 10) $btns[] = [['text' => 'قبلی‌ها ◀️', 'callback_data' => 'lreqs:' . ($page + 1)]];
     say($chat, '📥 درخواست‌های باز شرکت‌ها:', ikb($btns));
 }
-function li_show_request($chat, $requestId) {
+function li_show_request($chat, $requestId, $acc = null) {
     global $pdo;
     $st = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
     $st->execute([$requestId]);
@@ -491,7 +542,9 @@ function li_show_request($chat, $requestId) {
     $st->execute([$requestId]);
     if ($n = intval($st->fetchColumn())) $btns[] = [['text' => '📎 مدارکِ تگ‌نشده (' . fa($n) . ')', 'callback_data' => 'ldocs:' . $requestId]];
     $btns[] = [['text' => '💬 پیام به ' . $req['company_name'], 'callback_data' => 'lchat:' . $req['company_id']]];
-    say($chat, request_detail_text($req, true) . "\n\n(تگ‌گذاریِ مدارک و صدور از پنلِ سایت انجام می‌شود.)", ikb($btns));
+    say($chat, request_detail_text($req, true) . "\n\n" . (is_admin($acc)
+        ? '(ثبت، ویرایش، تگ‌گذاریِ مدارک و صدور از پنلِ سایت انجام می‌شود.)'
+        : '(در ربات فقط مشاهده ممکن است؛ ثبت و ویرایشِ درخواست فقط با مدیر کل است.)'), ikb($btns));
 }
 function li_unassigned($chat, $requestId = null) {
     global $pdo;
@@ -572,6 +625,10 @@ if (!empty($update['callback_query'])) {
         foreach ($accounts as $x) if (auth_account_key($x) === "$a1:$a2") { st_set($chat, null, ['ctx' => "$a1:$a2"]); say($chat, "حساب فعال: {$x['user']['full_name']} (" . auth_role_fa($x['type'], $x['user']['role'] ?? null) . ")", main_menu($x, true)); }
         exit;
     }
+    if ($cmd === 'notifs') {   // دکمه‌ی زیرِ پیامِ «اعلان تازه دارید» - حتی اگر حسابِ فعالِ این گفتگو حسابِ دیگری باشد
+        foreach (array_merge([$acc], $accounts) as $x) if (is_admin($x)) { st_set($chat, null, ['ctx' => auth_account_key($x)]); show_admin_notifs($chat, $x, count($accounts) > 1); break; }
+        exit;
+    }
     if (is_company($acc)) {
         switch ($cmd) {
             case 'reqs': co_list_requests($chat, $acc, intval($a1)); break;
@@ -608,7 +665,7 @@ if (!empty($update['callback_query'])) {
     if (is_liaison($acc)) {
         switch ($cmd) {
             case 'lreqs': li_list_requests($chat, intval($a1)); break;
-            case 'lreq': li_show_request($chat, intval($a1)); break;
+            case 'lreq': li_show_request($chat, intval($a1), $acc); break;
             case 'lletter':
                 $st = $pdo->prepare("SELECT letter_file_path FROM company_requests WHERE id = ?");
                 $st->execute([intval($a1)]);
@@ -655,6 +712,12 @@ $s = st_get($chat);
 $menuButtons = ['📋 درخواست‌های من', '➕ ثبت درخواست جدید', '📎 ارسال مدرک', '💬 گفتگو با بیمه با ما', '🔎 جستجوی بیمه‌نامه',
                 '📥 درخواست‌های شرکت‌ها', '🗂 مدارک تگ‌نشده', '💬 پیام‌های شرکت‌ها', '🔎 جستجوی صادره', '📊 خلاصه وضعیت',
                 '👤 حساب من', '🔑 بازیابی رمز عبور', '🚪 خروج از حساب', '🔄 تغییر حساب', '🔙 منوی اصلی', '❌ انصراف', '/start', '/menu'];
+if (mb_strpos($text, NOTIF_BTN) === 0) {   // «🔔 اعلان‌ها» یا «🔔 اعلان‌ها (۳)»
+    st_reset($chat);
+    if (is_admin($acc)) show_admin_notifs($chat, $acc, $multi);
+    else say($chat, 'این گزینه فقط برای مدیر کل است.', main_menu($acc, $multi));
+    exit;
+}
 if (in_array($text, $menuButtons, true)) {
     if ($s['state'] === 'NR' && !empty($s['temp']['letter']) && is_file($s['temp']['letter'])) @unlink($s['temp']['letter']);
     st_reset($chat);

@@ -9,7 +9,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
-require __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_auth_helpers.php';
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'این بخش فقط برای مدیر کل است.'], JSON_UNESCAPED_UNICODE);

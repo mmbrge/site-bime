@@ -7,7 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
-require __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_auth_helpers.php';
 require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments (تابعی محض، بدون وابستگی)
 
 $actor = require_admin_or_liaison();
@@ -24,6 +24,15 @@ $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : 
 $action = $data['action'] ?? ($_GET['action'] ?? '');
 
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
+
+// ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
+$adminOnly = ['admin_create_request', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'update_row',
+              'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
+              'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user'];
+if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
+    echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 try {
     // ---- گزارش مالی خلاصه‌ی شرکت‌های درخواست‌کننده (فقط خواندنی - برای ADMIN و همکار) ----

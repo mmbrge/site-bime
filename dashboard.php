@@ -278,11 +278,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
         
         <div id="ctx-row-actions" class="hidden">
+            <?php $ctxAdmin = ($_SESSION['role'] ?? '') === 'ADMIN'; // ویرایش، تغییر وضعیت و حذف فقط برای مدیر کل ?>
+            <?php if ($ctxAdmin): ?>
             <div class="ctx-item text-blue-400 hover-target" onclick="openEditModal()"><i class="fas fa-edit w-4 text-center"></i> بررسی و ویرایش پرونده</div>
+            <?php endif; ?>
             <div class="ctx-item text-gray-300 hover-target" onclick="ctxExecuteRow('copy-national')"><i class="far fa-copy w-4 text-center"></i> کپی کد ملی</div>
+            <?php if ($ctxAdmin): ?>
             <div class="ctx-item text-emerald-400 hover-target" onclick="ctxExecuteRow('mark-issued')"><i class="fas fa-check-circle w-4 text-center"></i> علامت‌گذاری «صادر شده»</div>
             <div class="ctx-item text-amber-400 hover-target" onclick="ctxExecuteRow('mark-waiting')"><i class="fas fa-hourglass-half w-4 text-center"></i> علامت‌گذاری «منتظر مدارک»</div>
             <div class="ctx-item text-red-400 hover-target" onclick="confirmDeleteRow()"><i class="fas fa-trash-alt w-4 text-center"></i> حذف پرونده از سیستم</div>
+            <?php endif; ?>
             <div class="ctx-divider"></div>
         </div>
 
@@ -524,7 +529,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-xs text-slate-400 mt-1">با کلیک راست روی هر ردیف می‌توانید آن را مدیریت کنید.</p>
                 </div>
                 <div class="flex gap-2">
+                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
                     <button onclick="openManualCreateModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors hover-target"><i class="fas fa-plus ml-1"></i> ثبت دستی پرونده</button>
+                    <?php endif; ?>
                     <button onclick="loadRecords()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold text-sm hover-target transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی جدول</button>
                 </div>
             </div>
@@ -1397,15 +1404,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
 
                 <div class="card p-6 border-amber-100 bg-gradient-to-br from-white to-amber-50/30">
-                    <h3 class="font-bold text-slate-700 mb-2 border-b border-amber-100 pb-3"><i class="fas fa-bell text-amber-500 ml-2"></i>اطلاع‌رسانی فعالیت‌ها به مدیر</h3>
-                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">آیدی عددی چتِ شما در بله. برای فعال‌شدن، باید حتماً قبلاً ربات را استارت کرده باشید.</p>
-                    <div class="float-input">
-                        <input type="text" id="admin-chatid-input" placeholder=" " dir="ltr">
-                        <label>آیدی عددی مدیر</label>
-                    </div>
-                    <button onclick="saveAdminChatIdSetting()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-amber-500/20 hover-target transition-all text-xs">
-                        <i class="fas fa-save ml-2"></i> ذخیره آیدی مدیر
-                    </button>
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-amber-100 pb-3"><i class="fas fa-bell text-amber-500 ml-2"></i>اعلان‌های مدیر کل</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2">فعالیت‌های پرسنل (درخواست جدید، بازدید سلامت، تکمیل مدارک، تیکت و پیام پشتیبانی) برای همه‌ی کاربرانِ «مدیر کل» ذخیره می‌شود.</p>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2">مدیر در <strong>ربات بله‌ی شرکت‌ها</strong> (بعد از ورود با شماره‌ی خودش) دکمه‌ی <strong>«🔔 اعلان‌ها»</strong> را می‌زند و همه را در یک پیام می‌بیند؛ بعد از دیدن پاک می‌شوند. وقتی اعلانِ تازه برسد، یک پیامِ کوتاه «اعلان تازه دارید» هم می‌گیرد.</p>
                 </div>
 
                 <div class="card p-6 border-teal-100 bg-gradient-to-br from-white to-teal-50/30 md:col-span-2">
@@ -1816,7 +1817,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <option value="CANCELLED">لغو شده</option>
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
+                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
                     <button onclick="openAdminNewRequestModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواست</button>
+                    <?php endif; ?>
                 </div>
             </div>
             <div class="card overflow-x-auto">
@@ -3664,8 +3667,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             بررسی مدارک
                             ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
                         </button>
-                        <button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
-                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
+                        ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
+                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}
                     </td>
                 </tr>`).join('');
         }
@@ -6425,7 +6428,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="text-slate-400">تفکیک:</span> <b class="text-[11px]">${introRow.relationship_summary || ''}</b></div>
                     </div>`;
 
-                const addCaseHtml = `
+                const addCaseHtml = !IS_ADMIN ? '' : `
                     <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center justify-between gap-2">
                         <span class="text-[11px] text-blue-800">درخواستِ تازه برای همین معرفی‌نامه، با همه‌ی اطلاعات و مدارکش:</span>
                         <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
@@ -6763,7 +6766,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </div>`).join('')}</div>
                     </div>` : ''}
 
-                    ${!isIssueMode ? `
+                    ${!isIssueMode && IS_ADMIN ? `
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
                         <p class="text-xs font-bold text-indigo-700 mb-3"><i class="fas fa-user-pen ml-1"></i>تکمیل/ویرایش دستیِ اطلاعات (برای پرونده‌های ثبتِ دستی - چون خودمان وارد می‌کنیم)</p>
                         <div class="grid grid-cols-2 gap-2">
@@ -7572,11 +7575,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (data2.ok) document.getElementById('site-url-input').value = data2.site_url;
             } catch(e) {}
             try {
-                const res3 = await fetch('api/settings_actions.php?action=get_admin_chat_id');
-                const data3 = await res3.json();
-                if (data3.ok) document.getElementById('admin-chatid-input').value = data3.admin_chat_id;
-            } catch(e) {}
-            try {
                 const res4 = await fetch('api/settings_actions.php?action=get_premium_settings');
                 const data4 = await res4.json();
                 if (data4.ok) {
@@ -7616,17 +7614,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     body: JSON.stringify({ action: 'save_site_url', site_url })
                 });
                 showToast('آدرس سایت ذخیره شد.', 'success');
-            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
-        }
-
-        async function saveAdminChatIdSetting() {
-            const admin_chat_id = document.getElementById('admin-chatid-input').value.trim();
-            try {
-                await fetch('api/settings_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action: 'save_admin_chat_id', admin_chat_id })
-                });
-                showToast('آیدی مدیر ذخیره شد.', 'success');
             } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
         }
 

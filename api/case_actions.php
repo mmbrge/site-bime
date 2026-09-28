@@ -46,6 +46,15 @@ try {
         exit;
     }
 
+    // ---- بارگذاریِ مستقیمِ مدرک و تکمیل/ویرایشِ دستیِ اطلاعاتِ درخواست فقط برای مدیر کل ----
+    // (فیلدهای نام‌گذاریِ هنگامِ صدور - پلاک و نام بیمه‌گذار - برای کارشناسِ صدور آزاد می‌ماند)
+    if (($_SESSION['role'] ?? '') !== 'ADMIN'
+        && (($_POST['action'] ?? '') === 'admin_upload_case_doc'
+            || ($action === 'set_naming' && (($data['insured_national_id'] ?? '') !== '' || ($data['ownership_choice'] ?? '') !== '' || ($data['prev_body_insurance'] ?? '') !== '')))) {
+        echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- درخواستِ «خارج از فاز عملیاتی» فقط قابلِ دیدن است؛ هیچ کارِ عملیاتی روی آن انجام نمی‌شود ----
     $mutating = ['approve_all_docs', 'approve_doc', 'reject_doc', 'request_fix', 'review_health_photo', 'approve_health',
                  'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report'];

@@ -333,7 +333,7 @@ try {
         notify_customer_app($pdo, $person['id'], $person['bale_chat_id'], 'درخواست ثبت شد',
             "📝 اطلاعات اولیه‌ی درخواست بیمه {$case['unique_code']} ثبت شد.\nبرای بارگذاری مدارک و ثبت نهایی، لطفاً به بخش «بازدید مدارک و سلامت خودرو» مراجعه کنید.",
             'success', $caseId);
-        notify_admin($pdo, "📝 درخواست بیمه جدید (از اپ) - اطلاعات اولیه ثبت شد.\nشناسه: {$case['unique_code']}\nبیمه‌گذار: {$case['insured_name']}\nنوع: " . insurance_type_fa($case['insurance_type']) . "\nپلاک: " . ($case['plate'] ?: '-'));
+        notify_admin($pdo, "📝 درخواست جدید (اپ) · {$case['unique_code']} · {$case['insured_name']} · " . insurance_type_fa($case['insurance_type']) . " · پلاک " . ($case['plate'] ?: '-'));
 
         echo json_encode(['ok' => true, 'unique_code' => $case['unique_code']]);
         exit;

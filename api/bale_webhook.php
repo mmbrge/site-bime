@@ -503,7 +503,7 @@ function create_ticket($pdo, $chat_id, $person_id, $sender_name, $sender_usernam
     $stmt = $pdo->prepare("INSERT INTO tickets (chat_id, person_id, sender_name, sender_username, last_message_at) VALUES (?, ?, ?, ?, NOW())");
     $stmt->execute([$chat_id, $person_id, $sender_name ?: null, $sender_username]);
     $ticketId = $pdo->lastInsertId();
-    notify_admin($pdo, "💬 تیکت پشتیبانی جدید از طرف {$sender_name}.");
+    notify_admin($pdo, "💬 تیکت پشتیبانی جدید · {$sender_name}");
     return $ticketId;
 }
 
@@ -1138,7 +1138,7 @@ function finalize_health_inspection($pdo, $chat_id, $person, $ft, $bot_token) {
     $pdo->prepare("UPDATE persons SET conversation_state = 'MAIN_MENU', flow_temp = NULL WHERE id = ?")->execute([$person['id']]);
 
     send_msg($chat_id, "🎉 بازدید سلامت شماره {$num} با موفقیت ثبت شد و در انتظار بررسی کارشناس است.", $bot_token, main_menu_kb($pdo, $chat_id));
-    notify_admin($pdo, "🚗 بازدید سلامت جدید ثبت شد.\nپلاک: " . ($case['plate'] ?: '-') . "\nشماره بازدید: {$num}", $bot_token);
+    notify_admin($pdo, "🚗 بازدید سلامت جدید · شماره {$num} · پلاک " . ($case['plate'] ?: '-'));
 }
 
 function resume_case_flow($pdo, $chat_id, $person, $case, $bot_token) {
@@ -1706,7 +1706,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                     send_msg($chat_id, "🎉 درخواست شما با شناسه‌ی {$case['unique_code']} ثبت نهایی شد و به کارشناسان ارجاع شد.\nطی ساعات آینده نتیجه‌ی بررسی درخواست شما از طریق همین ربات به اطلاعتان می‌رسد.\nاز طریق «بیمه‌نامه‌های من» می‌توانید وضعیت آن را پیگیری کنید.", $bot_token, main_menu_kb($pdo, $chat_id));
                     $pdo->prepare("INSERT INTO app_notifications (person_id, title, message, type, related_case_id) VALUES (?, ?, ?, 'success', ?)")
                         ->execute([$person['id'], 'درخواست ثبت شد', "درخواست بیمه {$case['unique_code']} با موفقیت ثبت شد و در انتظار بررسی کارشناس است.", $person['active_case_id']]);
-                    notify_admin($pdo, "📝 درخواست بیمه جدید ثبت شد.\nشناسه: {$case['unique_code']}\nبیمه‌گذار: {$case['insured_name']}\nنوع: " . insurance_type_fa($case['insurance_type']) . "\nپلاک: " . ($case['plate'] ?: '-'), $bot_token);
+                    notify_admin($pdo, "📝 درخواست جدید (ربات) · {$case['unique_code']} · {$case['insured_name']} · " . insurance_type_fa($case['insurance_type']) . " · پلاک " . ($case['plate'] ?: '-'));
                 } elseif ($text === '✏️ ویرایش اطلاعات') {
                     $pdo->prepare("UPDATE persons SET conversation_state = 'AWAITING_EDIT_FIELD_SELECT' WHERE id = ?")->execute([$person['id']]);
                     send_msg($chat_id, "کدام مورد را می‌خواهید ویرایش کنید؟", $bot_token, edit_field_menu_kb());

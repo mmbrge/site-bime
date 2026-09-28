@@ -6,7 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
-require __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_auth_helpers.php';
 
 $actor = require_admin_or_liaison();
 
