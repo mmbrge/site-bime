@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
+require __DIR__ . '/_auth_helpers.php';
 
 $actor = require_admin_or_liaison();
 
@@ -79,6 +80,9 @@ try {
 
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_user_id, message, file_path) VALUES (?, 'ADMIN', ?, ?, ?)")
             ->execute([$companyId, $actor['user_id'], $message ?: null, $filePath]);
+        // کاربرانِ آن شرکت در ربات بله هم خبردار می‌شوند و از همان‌جا می‌توانند جواب بدهند
+        cbot_notify_company($pdo, $companyId, "💬 پیام تازه از «بیمه با ما»:\n" . ($message ?: '📎 یک فایل فرستاد'),
+            ['inline_keyboard' => [[['text' => '↩️ پاسخ', 'callback_data' => 'chatc:' . $companyId]]]]);
         echo json_encode(['ok' => true]);
         exit;
     }

@@ -12,116 +12,46 @@ if (isset($_SESSION['user_id'])) {
     exit;
 }
 
-require_once __DIR__ . '/api/otp_core.php';
+require_once __DIR__ . '/api/_case_helpers.php';
+require_once __DIR__ . '/api/_auth_helpers.php';
 
 $error = '';
 $notice = '';
+$authReady = auth_schema_ready($pdo);
 
-// مرحله‌ی دوم ورود: پس از تایید رمز، شناسه‌ی کاربر موقتاً در نشست نگه داشته می‌شود
-// تا کد یک‌بارمصرف بررسی شود. تا وقتی کد تایید نشده، user_id ست نمی‌شود.
-$otpStage  = !empty($_SESSION['otp_pending_user']);
-$otpMasked = $_SESSION['otp_masked'] ?? '';
-$otpTtl    = intval($_SESSION['otp_ttl'] ?? 120);
-
-function otp_finish_login($pdo, $userId) {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$userId]);
-    $u = $stmt->fetch();
-    if (!$u) return false;
-    session_regenerate_id(true);   // جلوگیری از تثبیت نشست
-    $_SESSION['user_id']   = $u['id'];
-    $_SESSION['full_name'] = $u['full_name'];
-    $_SESSION['role']      = $u['role'];
-    unset($_SESSION['otp_pending_user'], $_SESSION['otp_masked'], $_SESSION['otp_ttl']);
-    return true;
-}
-
+// ورود با نام کاربری و رمز. (ورود با کد، جدا و با api/otp_login.php انجام می‌شود.)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $step = $_POST['step'] ?? 'login';
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-    // ---------- انصراف از مرحله‌ی کد ----------
-    if ($step === 'cancel') {
-        unset($_SESSION['otp_pending_user'], $_SESSION['otp_masked'], $_SESSION['otp_ttl']);
-        header('Location: index.php');
-        exit;
-    }
+    if (empty($username) || empty($password)) {
+        $error = 'لطفاً کد ملی/نام کاربری و رمز عبور را وارد کنید.';
+    } else {
+        // کاربرِ حذف‌شده دیگر نمی‌تواند وارد شود (ولی نامش روی کارهای قبلی‌اش می‌ماند)
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?" . ($authReady ? " AND COALESCE(is_deleted, 0) = 0" : ''));
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
 
-    // ---------- ارسال دوباره‌ی کد ----------
-    if ($step === 'resend' && $otpStage) {
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-        $stmt->execute([$_SESSION['otp_pending_user']]);
-        $u = $stmt->fetch();
-        $res = $u ? otp_issue($pdo, $u, $_SERVER['REMOTE_ADDR'] ?? null) : ['ok' => false, 'error' => 'کاربر یافت نشد.'];
-        if ($res['ok']) {
-            $_SESSION['otp_masked'] = $res['masked'];
-            $_SESSION['otp_ttl']    = $res['ttl'];
-            $otpMasked = $res['masked'];
-            $otpTtl     = $res['ttl'];
-            $notice = 'کد جدید ارسال شد.';
+        // درگاهِ انتخاب‌شده باید با نقشِ واقعیِ حساب کاربری هم‌خوانی داشته باشد
+        $gate = $_POST['login_gate'] ?? 'STAFF';
+        $gateOk = $user && (
+            ($gate === 'LIAISON' && $user['role'] === 'COMPANY_LIAISON') ||
+            ($gate !== 'LIAISON' && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE'], true))
+        );
+
+        if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
+            $error = 'درگاه ورود را درست انتخاب کنید.';
+        } elseif ($user && password_verify($password, $user['password_hash'])) {
+            session_regenerate_id(true);   // جلوگیری از تثبیت نشست
+            $_SESSION['user_id']   = $user['id'];
+            $_SESSION['full_name'] = $user['full_name'];
+            $_SESSION['role']      = $user['role'];
+            auth_log_login($pdo, 'STAFF', $user, 'PASSWORD', true);
+            header("Location: dashboard.php");
+            exit;
         } else {
-            $error = $res['error'];
-        }
-    }
-
-    // ---------- بررسی کد ----------
-    elseif ($step === 'otp' && $otpStage) {
-        $code = trim($_POST['otp_code'] ?? '');
-        $res  = otp_verify($pdo, $_SESSION['otp_pending_user'], $code);
-        if ($res['ok']) {
-            if (otp_finish_login($pdo, $_SESSION['otp_pending_user'])) {
-                header('Location: dashboard.php');
-                exit;
-            }
-            $error = 'خطا در تکمیل ورود.';
-        } else {
-            $error = $res['error'];
-        }
-    }
-
-    // ---------- مرحله‌ی اول: نام کاربری و رمز ----------
-    else {
-        $username = trim($_POST['username'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if (empty($username) || empty($password)) {
-            $error = 'لطفاً کد ملی/نام کاربری و رمز عبور را وارد کنید.';
-        } else {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-            $stmt->execute([$username]);
-            $user = $stmt->fetch();
-
-            // درگاهِ انتخاب‌شده باید با نقشِ واقعیِ حساب کاربری هم‌خوانی داشته باشد
-            $gate = $_POST['login_gate'] ?? 'STAFF';
-            $gateOk = $user && (
-                ($gate === 'LIAISON' && $user['role'] === 'COMPANY_LIAISON') ||
-                ($gate !== 'LIAISON' && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE'], true))
-            );
-
-            if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
-                $error = 'درگاه ورود را درست انتخاب کنید.';
-            } elseif ($user && password_verify($password, $user['password_hash'])) {
-                if (otp_required($pdo, $user)) {
-                    $res = otp_issue($pdo, $user, $_SERVER['REMOTE_ADDR'] ?? null);
-                    if ($res['ok']) {
-                        $_SESSION['otp_pending_user'] = $user['id'];
-                        $_SESSION['otp_masked'] = $res['masked'];
-                        $_SESSION['otp_ttl']    = $res['ttl'];
-                        $otpStage  = true;
-                        $otpMasked = $res['masked'];
-                        $otpTtl    = $res['ttl'];
-                        $notice = 'کد ورود به بله‌ی شما ارسال شد.';
-                    } else {
-                        // اگر ارسال کد ممکن نشد، ورود انجام نمی‌شود تا امنیت حفظ بماند
-                        $error = $res['error'];
-                    }
-                } else {
-                    otp_finish_login($pdo, $user['id']);
-                    header("Location: dashboard.php");
-                    exit;
-                }
-            } else {
-                $error = 'نام کاربری یا رمز عبور اشتباه است.';
-            }
+            if ($user) auth_log_login($pdo, 'STAFF', $user, 'PASSWORD', false, 'رمز اشتباه');
+            $error = 'نام کاربری یا رمز عبور اشتباه است.';
         }
     }
 }
@@ -236,6 +166,62 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .toast-warning { background: rgba(234, 179, 8, 0.85); border-color: rgba(255,220,100,0.5); color: #111; }
         .toast-info { background: rgba(255, 255, 255, 0.9); border-color: rgba(255,255,255,0.5); color: #111; }
 
+
+        /* ================= ورود با کد (بله) ================= */
+        .mode-tab { color: #9ca3af; background: transparent; }
+        .mode-tab.on { background: rgba(255,255,255,.2); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+        .otp-wrap { animation: fadeIn .35s ease-out; }
+        .otp-hint { font-size: 12px; color: #cbd5e1; text-align: center; line-height: 1.9; margin-bottom: 14px; }
+        .phone-box { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; height: 64px; border-radius: 16px;
+                     background: rgba(0,0,0,.25); border: 2px solid rgba(255,255,255,.2); transition: border-color .25s, box-shadow .25s, background .25s; overflow: hidden; }
+        .phone-box.focus { border-color: #00d2ff; box-shadow: 0 0 0 4px rgba(0,210,255,.15), 0 0 24px rgba(0,210,255,.25); background: rgba(0,0,0,.4); }
+        .phone-box.err { animation: shakeError .5s; border-color: #ef4444; }
+        .phone-box.ok { border-color: #22c55e; box-shadow: 0 0 22px rgba(34,197,94,.35); }
+        .phone-ico { position: absolute; right: 16px; color: #94a3b8; font-size: 18px; transition: color .25s; }
+        .phone-box.focus .phone-ico { color: #00d2ff; }
+        .phone-box input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
+        .phone-digits { display: flex; gap: 3px; font: 900 24px/1 Vazir, sans-serif; letter-spacing: 1px; color: #fff; pointer-events: none; }
+        .phone-digits .d { display: inline-block; min-width: 15px; text-align: center; animation: digitIn .32s cubic-bezier(.2,1.4,.4,1) both; text-shadow: 0 0 12px rgba(0,210,255,.55); }
+        .phone-digits .gap { width: 8px; }
+        .phone-digits .ph { color: rgba(255,255,255,.22); animation: none; text-shadow: none; }
+        .phone-digits .caret { width: 2px; height: 26px; background: #00d2ff; border-radius: 2px; animation: blink 1s steps(2) infinite; align-self: center; }
+        @keyframes digitIn { 0% { opacity: 0; transform: translateY(14px) scale(.4) rotate(-12deg); filter: blur(4px); } 70% { transform: translateY(-3px) scale(1.18); } 100% { opacity: 1; transform: none; filter: none; } }
+        @keyframes blink { to { opacity: 0; } }
+        .otp-btn { margin-top: 14px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; border: 0; border-radius: 14px;
+                   background: linear-gradient(90deg, #2563eb, #06b6d4); color: #fff; font: 900 15px Vazir, sans-serif; cursor: pointer; transition: transform .2s, box-shadow .2s, opacity .2s; }
+        .otp-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(6,182,212,.3); }
+        .otp-btn:disabled { opacity: .6; transform: none; }
+        .otp-msg { margin-top: 12px; border-radius: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.9; text-align: center; animation: fadeIn .3s ease-out; }
+        .otp-msg.err { background: rgba(239,68,68,.18); border: 1px solid rgba(239,68,68,.5); color: #fecaca; }
+        .otp-msg.warn { background: rgba(234,179,8,.16); border: 1px solid rgba(234,179,8,.5); color: #fde68a; }
+        .otp-msg a { color: #67e8f9; font-weight: 900; text-decoration: underline; }
+        .otp-choose { margin-top: 12px; display: grid; gap: 8px; }
+        .otp-choose button { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2);
+                             background: rgba(0,0,0,.25); color: #fff; font: 700 13px Vazir, sans-serif; cursor: pointer; }
+        .otp-choose button:hover { border-color: #00d2ff; }
+        .otp-choose small { color: #67e8f9; font-weight: 900; }
+        .otp-who { text-align: center; margin-bottom: 16px; animation: fadeIn .35s ease-out; }
+        .otp-role { display: inline-block; font-size: 11px; font-weight: 900; color: #0f172a; background: #67e8f9; border-radius: 999px; padding: 2px 12px; }
+        .otp-name { font-size: 20px; font-weight: 900; color: #fff; margin-top: 8px; }
+        .otp-sub { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .otp-boxes { display: flex; justify-content: center; gap: 10px; }
+        .otp-boxes input { width: 52px; height: 60px; border-radius: 14px; text-align: center; font: 900 26px Vazir, sans-serif; color: #fff; background: rgba(0,0,0,.28);
+                           border: 2px solid rgba(255,255,255,.2); outline: none; transition: border-color .2s, box-shadow .2s, transform .2s, background .3s; caret-color: #00d2ff; }
+        .otp-boxes input:focus { border-color: #00d2ff; box-shadow: 0 0 0 4px rgba(0,210,255,.15); transform: translateY(-2px); }
+        .otp-boxes input.filled { animation: boxPop .25s ease-out; border-color: rgba(0,210,255,.7); }
+        .otp-boxes.ok input { border-color: #22c55e; background: rgba(34,197,94,.25); box-shadow: 0 0 18px rgba(34,197,94,.45); animation: boxOk .5s ease-out both; }
+        .otp-boxes.ok input:nth-child(2) { animation-delay: .06s; } .otp-boxes.ok input:nth-child(3) { animation-delay: .12s; }
+        .otp-boxes.ok input:nth-child(4) { animation-delay: .18s; } .otp-boxes.ok input:nth-child(5) { animation-delay: .24s; }
+        .otp-boxes.bad input { border-color: #ef4444; background: rgba(239,68,68,.22); box-shadow: 0 0 16px rgba(239,68,68,.45); }
+        .otp-boxes.bad { animation: shakeError .5s ease-in-out; }
+        .otp-boxes.busy input { opacity: .6; }
+        @keyframes boxPop { 50% { transform: scale(1.14); } }
+        @keyframes boxOk { 0% { transform: scale(1); } 40% { transform: scale(1.18) translateY(-4px); } 100% { transform: scale(1); } }
+        .otp-foot { display: flex; justify-content: space-between; margin-top: 16px; }
+        .otp-link { background: none; border: 0; color: #94a3b8; font: 700 12px Vazir, sans-serif; cursor: pointer; }
+        .otp-link:hover:not(:disabled) { color: #67e8f9; }
+        .otp-link:disabled { opacity: .5; }
+        @media (max-width: 380px) { .otp-boxes input { width: 46px; height: 54px; } }
         /* ================= کپچای هوشمند و انیمیشن خطا ================= */
         .captcha-line {
             position: absolute; top: 0; bottom: 0; width: 6px; border-radius: 3px; z-index: 5;
@@ -389,16 +375,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
             </div>
 
-            <div class="flex bg-black/30 rounded-xl p-1 mb-6 relative z-20">
-                <button class="flex-1 py-2 text-sm font-bold bg-white/20 text-white rounded-lg shadow-sm hover-target transition-all">رمز عبور</button>
-                <button type="button" class="flex-1 py-2 text-sm font-bold text-gray-400 cursor-not-allowed relative group hover-target" onclick="showToast('ورود با پیامک به زودی فعال می‌شود.', 'warning')">
-                    پیامک (OTP)
+            <div class="flex bg-black/30 rounded-xl p-1 mb-6 relative z-20" id="login-mode-tabs">
+                <button type="button" data-mode="pass" onclick="setLoginMode('pass')" class="mode-tab flex-1 py-2 text-sm font-bold rounded-lg transition-all hover-target">رمز عبور</button>
+                <button type="button" data-mode="otp" onclick="setLoginMode('otp')" class="mode-tab flex-1 py-2 text-sm font-bold rounded-lg transition-all hover-target">
+                    <i class="fas fa-paper-plane ml-1"></i>ورود با کد (بله)
                 </button>
             </div>
 
             <!-- فرم واقعی متصل به بک‌اند PHP (برای درگاه شرکتی، ارسالش با جاوااسکریپت
                  به سمت api/company_portal_auth.php تغییر مسیر داده می‌شود) -->
-            <form id="login-form" method="POST" action="" class="flex-col gap-4 w-full" style="display:<?= $otpStage ? 'none' : 'flex' ?>;">
+            <form id="login-form" method="POST" action="" class="flex-col gap-4 w-full" style="display:flex;">
                 <input type="hidden" name="login_gate" id="login-gate" value="STAFF">
                 <div class="relative group/input">
                     <input type="text" name="username" id="login-nid" placeholder=" " autocomplete="off" class="peer w-full bg-black/20 border-2 border-white/20 focus:border-brand-accent outline-none rounded-xl py-3.5 pr-12 pl-4 text-sm font-bold text-white transition-all hover-target shadow-inner focus:bg-black/40">
@@ -437,39 +423,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </button>
             </form>
 
-            <!-- ======================= مرحله‌ی دوم: کد یک‌بارمصرف ======================= -->
-            <form id="otp-form" method="POST" action="" class="flex-col gap-4 w-full" style="display:<?= $otpStage ? 'flex' : 'none' ?>;">
-                <input type="hidden" name="step" value="otp">
-
-                <div class="text-center">
-                    <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-blue-500/30 to-cyan-400/20 border border-white/20 flex items-center justify-center mb-3">
-                        <i class="fas fa-comment-dots text-2xl text-brand-accent"></i>
-                    </div>
-                    <p class="text-sm font-black text-white">کد ورود را وارد کنید</p>
-                    <p class="text-[12px] text-gray-400 mt-1">کد شش‌رقمی به بله‌ی شماره <b dir="ltr" class="text-brand-accent"><?= htmlspecialchars($otpMasked) ?></b> ارسال شد.</p>
-                </div>
-
-                <input type="text" name="otp_code" id="otp-code" inputmode="numeric" maxlength="6"
-                       autocomplete="one-time-code" placeholder="- - - - - -"
-                       class="w-full bg-black/25 border-2 border-white/20 focus:border-brand-accent outline-none rounded-xl py-3.5 text-center text-2xl font-black text-white tracking-[0.5em] transition-all shadow-inner focus:bg-black/40"
-                       dir="ltr">
-
-                <button type="submit" class="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black py-3.5 rounded-xl shadow-lg transition-all duration-300 hover-target transform hover:-translate-y-1">
-                    تایید و ورود
-                </button>
-
-                <div class="flex items-center justify-between text-[12px]">
-                    <button type="button" id="otp-resend" disabled
-                            class="text-gray-400 disabled:opacity-50 hover:text-brand-accent transition-colors font-bold">
-                        ارسال دوباره‌ی کد <span id="otp-timer" dir="ltr"></span>
+            <!-- ======================= ورود با کد (ربات بله‌ی شرکت‌ها) ======================= -->
+            <div id="otp-login" class="otp-wrap" style="display:none;">
+                <!-- ۱) شماره تلفن -->
+                <div id="otp-step-phone">
+                    <p class="otp-hint">شماره موبایلی که در پنل برای شما ثبت شده را وارد کنید؛ کد ورود در <b>ربات بله‌ی شرکت</b> برایتان فرستاده می‌شود.</p>
+                    <label class="phone-box" id="phone-box" for="otp-phone">
+                        <i class="fas fa-mobile-screen-button phone-ico"></i>
+                        <span class="phone-digits" id="phone-digits" dir="ltr"></span>
+                        <input id="otp-phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="14" dir="ltr" aria-label="شماره موبایل">
+                    </label>
+                    <div id="otp-msg" class="otp-msg" style="display:none;"></div>
+                    <div id="otp-choose" class="otp-choose" style="display:none;"></div>
+                    <button type="button" id="otp-send-btn" class="otp-btn" onclick="otpSend()">
+                        <span>ارسال کد</span><i class="fas fa-arrow-left"></i>
                     </button>
-                    <button type="button" onclick="document.getElementById('cancel-form').submit()"
-                            class="text-gray-400 hover:text-red-400 transition-colors font-bold">بازگشت</button>
                 </div>
-            </form>
-
-            <form id="resend-form" method="POST" action="" class="hidden"><input type="hidden" name="step" value="resend"></form>
-            <form id="cancel-form" method="POST" action="" class="hidden"><input type="hidden" name="step" value="cancel"></form>
+                <!-- ۲) کد ۵ رقمی -->
+                <div id="otp-step-code" style="display:none;">
+                    <div class="otp-who">
+                        <span class="otp-role" id="otp-role"></span>
+                        <div class="otp-name" id="otp-name"></div>
+                        <div class="otp-sub">کد ۵ رقمی که در ربات بله برایتان فرستاده شد را وارد کنید</div>
+                    </div>
+                    <div class="otp-boxes" id="otp-boxes" dir="ltr">
+                        <input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1">
+                    </div>
+                    <div id="otp-code-msg" class="otp-msg" style="display:none;"></div>
+                    <div class="otp-foot">
+                        <button type="button" id="otp-resend" class="otp-link" onclick="otpSend(true)" disabled>ارسال دوباره <span id="otp-timer" dir="ltr"></span></button>
+                        <button type="button" class="otp-link" onclick="otpBack()"><i class="fas fa-pen ml-1"></i>تغییر شماره</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -503,46 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             });
         <?php endif; ?>
 
-        // ======================= مرحله‌ی کد یک‌بارمصرف =======================
-        <?php if ($otpStage): ?>
-        (function () {
-            const input  = document.getElementById('otp-code');
-            const btn    = document.getElementById('otp-resend');
-            const timerEl= document.getElementById('otp-timer');
-            const form   = document.getElementById('otp-form');
 
-            if (input) {
-                input.focus();
-                // فقط رقم بپذیر (ارقام فارسی هم به لاتین تبدیل شوند) و با تکمیل شدن، خودکار ارسال کن
-                input.addEventListener('input', () => {
-                    const fa = '۰۱۲۳۴۵۶۷۸۹';
-                    let v = input.value.replace(/[۰-۹]/g, d => fa.indexOf(d)).replace(/\D/g, '');
-                    input.value = v.slice(0, 6);
-                    if (input.value.length === 6) form.submit();
-                });
-            }
-
-            // شمارش معکوس تا فعال‌شدن «ارسال دوباره»
-            let left = <?= max(30, (int)$otpTtl) ?>;
-            const tick = () => {
-                if (left <= 0) {
-                    btn.disabled = false;
-                    timerEl.textContent = '';
-                    return;
-                }
-                const m = String(Math.floor(left / 60)).padStart(2, '0');
-                const s = String(left % 60).padStart(2, '0');
-                timerEl.textContent = `(${m}:${s})`;
-                left--;
-                setTimeout(tick, 1000);
-            };
-            tick();
-
-            btn.addEventListener('click', () => {
-                if (!btn.disabled) document.getElementById('resend-form').submit();
-            });
-        })();
-        <?php endif; ?>
 
         // ۱. ساعت و تاریخ شمسی
         function updateDateTime() {
@@ -781,6 +728,193 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             document.querySelectorAll('.gate-btn').forEach(b => b.classList.toggle('active', b.dataset.gate === gate));
         }
         selectGate('STAFF');
+
+        // ======================= ورود با کد (ربات بله‌ی شرکت‌ها) =======================
+        // نقش و مقصد (پنل ما / پنل شرکت‌ها / همکار بیمه با ما) را خودِ سیستم از روی شماره تشخیص می‌دهد
+        const FA_D = '۰۱۲۳۴۵۶۷۸۹';
+        const toEnD = v => String(v || '').replace(/[۰-۹]/g, d => FA_D.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        const toFaD = v => String(v).replace(/\d/g, d => FA_D[d]);
+        let otpAccount = null, otpTimer = null;
+
+        function setLoginMode(mode) {
+            const otp = mode === 'otp';
+            document.querySelectorAll('.mode-tab').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+            document.getElementById('gate-selector').style.display = otp ? 'none' : '';
+            document.getElementById('login-form').style.display = otp ? 'none' : 'flex';
+            document.getElementById('otp-login').style.display = otp ? 'block' : 'none';
+            try { localStorage.setItem('login_mode', mode); } catch (e) {}
+            if (otp) setTimeout(() => document.getElementById('otp-phone').focus(), 50);
+        }
+
+        // نمایشِ انیمیشنیِ رقم‌های شماره (۰۹۱۲ ۳۴۵ ۶۷۸۹)
+        const phoneInput = document.getElementById('otp-phone');
+        const phoneBox = document.getElementById('phone-box');
+        let lastPhone = '';
+        function normPhoneInput(v) {
+            let d = toEnD(v).replace(/\D/g, '');
+            if (d.startsWith('0098')) d = d.slice(4); else if (d.startsWith('98') && d.length > 10) d = d.slice(2);
+            if (d.length && d[0] === '9') d = '0' + d;
+            return d.slice(0, 11);
+        }
+        function renderPhone() {
+            const d = normPhoneInput(phoneInput.value);
+            phoneInput.value = d;
+            const box = document.getElementById('phone-digits');
+            let html = '';
+            for (let i = 0; i < 11; i++) {
+                if (i === 4 || i === 7) html += '<span class="gap"></span>';
+                if (i < d.length) {
+                    // فقط رقمِ تازه انیمیشن می‌گیرد؛ بقیه ثابت می‌مانند
+                    const fresh = i >= lastPhone.length || lastPhone[i] !== d[i];
+                    html += `<span class="d" style="${fresh ? '' : 'animation:none'}">${toFaD(d[i])}</span>`;
+                } else {
+                    if (i === d.length && phoneBox.classList.contains('focus')) html += '<span class="caret"></span>';
+                    html += `<span class="d ph">${i === 0 ? '۰' : i === 1 ? '۹' : '•'}</span>`;
+                }
+            }
+            box.innerHTML = html;
+            lastPhone = d;
+            phoneBox.classList.remove('err', 'ok');
+            if (d.length === 11) phoneBox.classList.add('ok');
+        }
+        phoneInput.addEventListener('input', renderPhone);
+        phoneInput.addEventListener('focus', () => { phoneBox.classList.add('focus'); renderPhone(); });
+        phoneInput.addEventListener('blur', () => { phoneBox.classList.remove('focus'); renderPhone(); });
+        phoneInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); otpSend(); } });
+        renderPhone();
+
+        function otpMsg(id, text, kind = 'err', html = false) {
+            const el = document.getElementById(id);
+            if (!text) { el.style.display = 'none'; return; }
+            el.className = 'otp-msg ' + kind; el.style.display = 'block';
+            if (html) el.innerHTML = text; else el.textContent = text;
+        }
+
+        async function otpSend(resend = false, accountKey = null) {
+            const phone = normPhoneInput(phoneInput.value);
+            if (phone.length !== 11 || !phone.startsWith('09')) {
+                phoneBox.classList.remove('err'); void phoneBox.offsetWidth; phoneBox.classList.add('err');
+                otpMsg('otp-msg', 'شماره موبایل را کامل وارد کنید (۱۱ رقم، با ۰۹).'); return;
+            }
+            const btn = document.getElementById('otp-send-btn');
+            btn.disabled = true; btn.querySelector('span').textContent = 'در حال بررسی...';
+            otpMsg('otp-msg', ''); document.getElementById('otp-choose').style.display = 'none';
+            try {
+                const res = await fetch('api/otp_login.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'send', phone, account: accountKey || (resend && otpAccount ? otpAccount.key : '')})});
+                const d = await res.json();
+                if (d.choose) {
+                    // یک شماره با چند حساب (مثلاً هم کاربر پنل، هم کاربر شرکت)
+                    const box = document.getElementById('otp-choose');
+                    box.innerHTML = '<p class="otp-hint" style="margin:0">با این شماره چند حساب هست؛ کدام؟</p>' + d.choose.map(a =>
+                        `<button type="button" onclick="otpSend(false, '${a.key}')"><span>${a.name}</span><small>${a.role_fa}</small></button>`).join('');
+                    box.style.display = 'grid'; return;
+                }
+                if (!d.ok) {
+                    if (resend) { otpMsg('otp-code-msg', d.error); return; }
+                    phoneBox.classList.remove('err'); void phoneBox.offsetWidth; phoneBox.classList.add('err');
+                    if (d.code === 'NOT_LINKED') {
+                        otpMsg('otp-msg', `<b>${d.account.name}</b> عزیز، لطفاً ابتدا در <b>ربات بله‌ی شرکت</b> با شماره‌ی خود وارد شوید و سپس برای ورود اقدام کنید.` +
+                            (d.bot_url ? `<br><a href="${d.bot_url}" target="_blank">ورود به ربات بله</a>` : ''), 'warn', true);
+                    } else if (d.code === 'NOT_FOUND') {
+                        otpMsg('otp-msg', 'کاربری با این شماره یافت نشد.');
+                    } else otpMsg('otp-msg', d.error || 'خطا');
+                    return;
+                }
+                otpAccount = d.account;
+                document.getElementById('otp-role').textContent = d.account.role_fa;
+                document.getElementById('otp-name').textContent = d.account.name;
+                document.getElementById('otp-step-phone').style.display = 'none';
+                document.getElementById('otp-step-code').style.display = 'block';
+                otpMsg('otp-code-msg', '');
+                otpClearBoxes();
+                otpStartTimer(d.ttl || 120);
+                if (resend) showToast('کد تازه در ربات بله فرستاده شد.', 'success');
+            } catch (e) {
+                otpMsg(resend ? 'otp-code-msg' : 'otp-msg', 'خطا در ارتباط با سرور.');
+            } finally {
+                btn.disabled = false; btn.querySelector('span').textContent = 'ارسال کد';
+            }
+        }
+        function otpBack() {
+            clearInterval(otpTimer);
+            document.getElementById('otp-step-code').style.display = 'none';
+            document.getElementById('otp-step-phone').style.display = 'block';
+            phoneInput.focus();
+        }
+        function otpStartTimer(sec) {
+            const btn = document.getElementById('otp-resend'), t = document.getElementById('otp-timer');
+            clearInterval(otpTimer); btn.disabled = true;
+            let left = sec;
+            const tick = () => {
+                if (left <= 0) { clearInterval(otpTimer); btn.disabled = false; t.textContent = ''; return; }
+                t.textContent = '(' + toFaD(String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0')) + ')';
+                left--;
+            };
+            tick(); otpTimer = setInterval(tick, 1000);
+        }
+
+        // پنج خانه‌ی کد: جلو رفتنِ خودکار، پاک‌کردن با Backspace، و پیست که هر رقم را سرِ جایش می‌نشاند
+        const otpBoxWrap = document.getElementById('otp-boxes');
+        const otpBoxes = [...otpBoxWrap.querySelectorAll('input')];
+        function otpClearBoxes() {
+            otpBoxWrap.classList.remove('ok', 'bad', 'busy');
+            otpBoxes.forEach(b => { b.value = ''; b.classList.remove('filled'); b.disabled = false; });
+            setTimeout(() => otpBoxes[0].focus(), 60);
+        }
+        function otpFill(start, digits) {
+            let i = start;
+            for (const ch of digits) { if (i >= 5) break; otpBoxes[i].value = toFaD(ch); otpBoxes[i].classList.remove('filled'); void otpBoxes[i].offsetWidth; otpBoxes[i].classList.add('filled'); i++; }
+            otpBoxes[Math.min(i, 4)].focus();
+            const code = otpBoxes.map(b => toEnD(b.value)).join('');
+            if (/^\d{5}$/.test(code)) otpVerify(code);
+        }
+        otpBoxes.forEach((b, i) => {
+            b.addEventListener('input', () => {
+                const d = toEnD(b.value).replace(/\D/g, '');
+                otpBoxWrap.classList.remove('bad');
+                if (!d) { b.value = ''; b.classList.remove('filled'); return; }
+                otpFill(i, d);
+            });
+            b.addEventListener('keydown', e => {
+                if (e.key === 'Backspace' && !b.value && i > 0) { otpBoxes[i - 1].value = ''; otpBoxes[i - 1].classList.remove('filled'); otpBoxes[i - 1].focus(); e.preventDefault(); }
+                else if (e.key === 'ArrowLeft' && i < 4) otpBoxes[i + 1].focus();
+                else if (e.key === 'ArrowRight' && i > 0) otpBoxes[i - 1].focus();
+            });
+            b.addEventListener('paste', e => {
+                const d = toEnD((e.clipboardData || window.clipboardData).getData('text')).replace(/\D/g, '');
+                if (!d) return;
+                e.preventDefault(); otpBoxWrap.classList.remove('bad');
+                otpFill(d.length >= 5 ? 0 : i, d.slice(0, 5));
+            });
+            b.addEventListener('focus', () => b.select());
+        });
+
+        async function otpVerify(code) {
+            if (!otpAccount || otpBoxWrap.classList.contains('busy')) return;
+            otpBoxWrap.classList.add('busy'); otpMsg('otp-code-msg', '');
+            try {
+                const res = await fetch('api/otp_login.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'verify', phone: normPhoneInput(phoneInput.value), account: otpAccount.key, code})});
+                const d = await res.json();
+                otpBoxWrap.classList.remove('busy');
+                if (d.ok) {
+                    otpBoxWrap.classList.add('ok');
+                    otpBoxes.forEach(x => x.disabled = true);
+                    clearInterval(otpTimer);
+                    showToast(`${d.name} عزیز، خوش آمدید`, 'success');
+                    setTimeout(() => { location.href = d.redirect; }, 900);
+                } else {
+                    otpBoxWrap.classList.remove('bad'); void otpBoxWrap.offsetWidth; otpBoxWrap.classList.add('bad');
+                    otpMsg('otp-code-msg', d.error || 'کد اشتباه است.');
+                    if (d.expired) document.getElementById('otp-resend').disabled = false;
+                    setTimeout(() => { otpBoxes.forEach(x => { x.value = ''; x.classList.remove('filled'); }); otpBoxes[0].focus(); }, 650);
+                }
+            } catch (e) { otpBoxWrap.classList.remove('busy'); otpMsg('otp-code-msg', 'خطا در ارتباط با سرور.'); }
+        }
+        let savedMode = 'pass';
+        try { savedMode = localStorage.getItem('login_mode') === 'otp' ? 'otp' : 'pass'; } catch (e) {}
+        setLoginMode(savedMode);
 
         // ورود کاربرِ شرکتی از جدول جدایی (company_portal_users) می‌آید و OTP بله ندارد؛
         // به‌جای ارسال فرم اصلی، مستقیم به بک‌اندِ پنل شرکت‌ها وصل می‌شویم

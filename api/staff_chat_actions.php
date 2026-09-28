@@ -4,6 +4,7 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
+require_once __DIR__ . '/_auth_helpers.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
 
@@ -29,7 +30,7 @@ try {
                     WHERE (from_user_id = u.id AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = u.id)
                     ORDER BY created_at DESC LIMIT 1) AS last_at,
                    (SELECT COUNT(*) FROM staff_chat_messages WHERE from_user_id = u.id AND to_user_id = ? AND is_read = 0) AS unread
-            FROM users u WHERE u.id != ? ORDER BY last_at IS NULL, last_at DESC
+            FROM users u WHERE u.id != ?" . (auth_schema_ready($pdo) ? " AND COALESCE(u.is_deleted, 0) = 0" : '') . " ORDER BY last_at IS NULL, last_at DESC
         ");
         $stmt->execute([$myId, $myId, $myId, $myId, $myId, $myId]);
         echo json_encode(['ok' => true, 'conversations' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);

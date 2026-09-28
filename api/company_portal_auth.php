@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
+require __DIR__ . '/_auth_helpers.php';
 
 company_portal_session_start();
 
@@ -19,10 +20,11 @@ try {
             echo json_encode(['ok' => false, 'error' => 'نام کاربری و رمز عبور را وارد کنید.']);
             exit;
         }
-        $stmt = $pdo->prepare("SELECT * FROM company_portal_users WHERE username = ? AND is_active = 1");
+        $stmt = $pdo->prepare("SELECT * FROM company_portal_users WHERE username = ? AND is_active = 1" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         if (!$user || !password_verify($password, $user['password_hash'])) {
+            if ($user) auth_log_login($pdo, 'COMPANY', $user, 'PASSWORD', false, 'رمز اشتباه');
             echo json_encode(['ok' => false, 'error' => 'نام کاربری یا رمز عبور نادرست است.']);
             exit;
         }
@@ -39,6 +41,7 @@ try {
         session_regenerate_id(true); // جلوگیری از تثبیت نشست
         $_SESSION['company_user_id'] = $user['id'];
         $_SESSION['company_user_full_name'] = $user['full_name'];
+        auth_log_login($pdo, 'COMPANY', $user, 'PASSWORD', true);
         echo json_encode(['ok' => true, 'full_name' => $user['full_name'], 'companies' => $companies]);
         exit;
     }

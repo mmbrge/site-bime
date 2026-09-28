@@ -13,6 +13,16 @@ if (empty($_SESSION['company_user_id'])) {
     header('Location: ../index.php');
     exit;
 }
+// حسابِ غیرفعال یا حذف‌شده با نشستِ قبلی‌اش هم دیگر وارد نمی‌شود
+$stCu = $pdo->prepare("SELECT * FROM company_portal_users WHERE id = ?");
+$stCu->execute([$_SESSION['company_user_id']]);
+$cuRow = $stCu->fetch();
+if (!$cuRow || empty($cuRow['is_active']) || !empty($cuRow['is_deleted'])) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: ../index.php');
+    exit;
+}
 
 $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
                         JOIN companies c ON c.id = cpuc.company_id

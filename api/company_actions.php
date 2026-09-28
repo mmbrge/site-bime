@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
+require __DIR__ . '/_auth_helpers.php';
 require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments (تابعی محض، بدون وابستگی)
 
 $actor = require_admin_or_liaison();
@@ -574,9 +575,11 @@ try {
             echo json_encode(['ok' => false, 'error' => 'رمز عبور باید حداقل ۶ کاراکتر باشد.']);
             exit;
         }
+        $mobileIn = trim($data['mobile_number'] ?? '');
+        if ($mobileIn !== '' && auth_norm_phone($mobileIn) === '') { echo json_encode(['ok' => false, 'error' => 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۱۲۳۴۵۶۷).']); exit; }
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("INSERT INTO company_portal_users (company_id, username, password_hash, full_name, mobile_number) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$companyIds[0], $username, password_hash($password, PASSWORD_DEFAULT), $fullName, trim($data['mobile_number'] ?? '') ?: null]);
+        $stmt->execute([$companyIds[0], $username, password_hash($password, PASSWORD_DEFAULT), $fullName, $mobileIn !== '' ? auth_norm_phone($mobileIn) : null]);
         $portalUserId = $pdo->lastInsertId();
         $stmt = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $stmt->execute([$portalUserId, $cid]);
@@ -599,21 +602,32 @@ try {
         if ($password !== '' && strlen($password) < 6) {
             echo json_encode(['ok' => false, 'error' => 'رمز عبور باید حداقل ۶ کاراکتر باشد.']); exit;
         }
+        $mobileIn = trim($data['mobile_number'] ?? '');
+        $mobile = $mobileIn === '' ? null : auth_norm_phone($mobileIn);
+        if ($mobileIn !== '' && !$mobile) { echo json_encode(['ok' => false, 'error' => 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۱۲۳۴۵۶۷).']); exit; }
+        $stOld = $pdo->prepare("SELECT * FROM company_portal_users WHERE id = ?");
+        $stOld->execute([$id]);
+        $oldUser = $stOld->fetch();
 
         $pdo->beginTransaction();
         if ($password !== '') {
             $pdo->prepare("UPDATE company_portal_users SET username = ?, full_name = ?, mobile_number = ?, password_hash = ? WHERE id = ?")
-                ->execute([$username, $fullName, trim($data['mobile_number'] ?? '') ?: null, password_hash($password, PASSWORD_DEFAULT), $id]);
+                ->execute([$username, $fullName, $mobile, password_hash($password, PASSWORD_DEFAULT), $id]);
         } else {
             $pdo->prepare("UPDATE company_portal_users SET username = ?, full_name = ?, mobile_number = ? WHERE id = ?")
-                ->execute([$username, $fullName, trim($data['mobile_number'] ?? '') ?: null, $id]);
+                ->execute([$username, $fullName, $mobile, $id]);
         }
         $pdo->prepare("DELETE FROM company_portal_user_companies WHERE portal_user_id = ?")->execute([$id]);
         $stmt = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $stmt->execute([$id, $cid]);
         $pdo->commit();
-
-        echo json_encode(['ok' => true]);
+        // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره وارد شود
+        $unlinked = false;
+        if ($oldUser && !empty($oldUser['bale_chat_id']) && auth_norm_phone($oldUser['mobile_number']) !== (string)$mobile) {
+            auth_unlink_bot($pdo, 'COMPANY', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");
+            $unlinked = true;
+        }
+        echo json_encode(['ok' => true, 'bot_unlinked' => $unlinked]);
         exit;
     }
 
@@ -621,7 +635,14 @@ try {
     if ($action === 'delete_portal_user') {
         require_admin_only(); // مدیریت حساب‌های ورودِ پنل شرکتی فقط دست مدیر کل است
         $id = intval($data['id'] ?? 0);
-        $pdo->prepare("DELETE FROM company_portal_users WHERE id = ?")->execute([$id]);
+        // حذفِ نرم: دیگر وارد نمی‌شود، ولی نامش روی درخواست‌ها و پیام‌هایی که فرستاده باقی می‌ماند
+        if (auth_schema_ready($pdo)) {
+            auth_unlink_bot($pdo, 'COMPANY', $id, 'حساب کاربری شما در پنل «بیمه با ما» غیرفعال شد و این گفتگو قطع شد.');
+            $pdo->prepare("UPDATE company_portal_users SET is_active = 0, is_deleted = 1, deleted_at = NOW() WHERE id = ?")->execute([$id]);
+            $pdo->prepare("UPDATE password_reset_requests SET status = 'REJECTED', note = 'کاربر حذف شد', handled_at = NOW() WHERE user_type = 'COMPANY' AND user_id = ? AND status = 'PENDING'")->execute([$id]);
+        } else {
+            $pdo->prepare("UPDATE company_portal_users SET is_active = 0 WHERE id = ?")->execute([$id]);
+        }
         echo json_encode(['ok' => true]);
         exit;
     }
@@ -646,12 +667,15 @@ try {
     // ---- لیست کاربران ثبت‌کننده (برای مرور در پنل مدیریت) ----
     if ($action === 'list_portal_users') {
         require_admin_only(); // همکار شرکت‌ها نباید حتی فهرست حساب‌های ورود را ببیند
+        $ready = auth_schema_ready($pdo);
         $stmt = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active,
+                                     " . ($ready ? "(cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked," : "0 AS bot_linked,") . "
                                      GROUP_CONCAT(c.name SEPARATOR '، ') AS company_names,
                                      GROUP_CONCAT(c.id) AS company_ids
                               FROM company_portal_users cpu
                               LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
                               LEFT JOIN companies c ON c.id = cpuc.company_id
+                              " . ($ready ? "WHERE COALESCE(cpu.is_deleted, 0) = 0" : "WHERE cpu.is_active = 1") . "
                               GROUP BY cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at
                               ORDER BY cpu.created_at DESC");
         echo json_encode(['ok' => true, 'users' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
@@ -1446,6 +1470,15 @@ try {
         if ($counts && intval($counts['total']) > 0 && intval($counts['total']) === intval($counts['issued'])) {
             $pdo->prepare("UPDATE company_requests SET status = 'ISSUED' WHERE id = ?")->execute([$plate['request_id']]);
         }
+        // خبر به کاربرانِ همان شرکت در ربات بله، با دکمه‌ی دریافتِ فایل
+        try {
+            $stCo = $pdo->prepare("SELECT company_id FROM company_requests WHERE id = ?");
+            $stCo->execute([$plate['request_id']]);
+            cbot_notify_company($pdo, intval($stCo->fetchColumn()),
+                "✅ بیمه‌نامه‌ی " . insurance_type_fa($plate['insurance_type']) . " - " . company_row_label($plate) . " صادر شد"
+                . ($policyNumber ? " (شماره " . $policyNumber . ")" : '') . ".\nدرخواست #" . $plate['request_id'],
+                ['inline_keyboard' => [[['text' => '📥 دریافت بیمه‌نامه', 'callback_data' => 'pol:' . $plateId]]]]);
+        } catch (Throwable $e) {}
 
         echo json_encode(['ok' => true, 'folder_status' => $folderStatus, 'installments' => $installmentCount,
                           'issued_folder' => $issuedFolderName], JSON_UNESCAPED_UNICODE);

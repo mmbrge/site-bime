@@ -57,7 +57,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('company_bot_token', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
             $stmt->execute([$token, $token]);
-            echo json_encode(['ok' => true]);
+            // وب‌هوکِ ربات روی api/company_bot_webhook.php همین سایت تنظیم می‌شود، و نام کاربریِ
+            // ربات هم ذخیره می‌شود تا صفحه‌ی ورود بتواند لینکِ مستقیمِ ربات را نشان بدهد
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
+            $hookUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/company_bot_webhook.php';
+            $call = function ($method, $payload) use ($token) {
+                $ch = curl_init("https://tapi.bale.ai/bot{$token}/{$method}");
+                curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 15,
+                                        CURLOPT_POSTFIELDS => json_encode($payload), CURLOPT_HTTPHEADER => ['Content-Type: application/json']]);
+                $r = json_decode((string)curl_exec($ch), true);
+                curl_close($ch);
+                return is_array($r) ? $r : null;
+            };
+            $hook = $call('setWebhook', ['url' => $hookUrl]);
+            $me = $call('getMe', []);
+            if (!empty($me['result']['username'])) {
+                $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('company_bot_username', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                    ->execute([$me['result']['username'], $me['result']['username']]);
+            }
+            echo json_encode(['ok' => true, 'webhook' => !empty($hook['ok']), 'webhook_url' => $hookUrl,
+                              'bot_username' => $me['result']['username'] ?? null], JSON_UNESCAPED_UNICODE);
         } catch (Exception $e) {
             error_log('[settings] ' . $e->getMessage());
             echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس.']);

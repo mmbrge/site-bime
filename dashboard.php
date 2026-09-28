@@ -6,6 +6,14 @@ if (!isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit;
 }
+// کاربری که از پنل حذف شده، با نشستِ قبلی‌اش هم دیگر وارد نمی‌شود
+require_once __DIR__ . '/api/_auth_helpers.php';
+if (!auth_staff_is_active($pdo, $_SESSION['user_id'])) {
+    $_SESSION = [];
+    session_destroy();
+    header("Location: index.php");
+    exit;
+}
 
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
@@ -200,6 +208,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         #hv-modal .hv-ctrl { background: rgba(0,0,0,.6); color: #fff; border-radius: 10px; }
         #hv-strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; border-top: 1px solid rgba(255,255,255,.1); background: #020617; }
         @media (max-width: 767px) { #hv-modal .hv-main { flex-direction: column; } #hv-modal .hv-side { width: auto; max-height: 45vh; border-right: 0; border-top: 1px solid rgba(255,255,255,.1); } }
+        .bot-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.15); vertical-align: middle; margin-left: 4px; }
+        .bot-dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -395,6 +405,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران ربات بله</a>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران پنل (داخلی)</a>
+                        <a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1333,59 +1344,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                <!-- ورود دومرحله‌ای با کد بله -->
-                <div class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
-                    <h3 class="font-bold text-slate-700 mb-2 border-b border-blue-100 pb-3"><i class="fas fa-shield-halved text-blue-500 ml-2"></i>ورود دومرحله‌ای (کد بله)</h3>
-                    <p class="text-[11px] text-slate-500 mb-4">کد یک‌بارمصرف از طریق سرویس سفیر بله برای کاربران پنل ارسال می‌شود.</p>
-
-                    <div class="border rounded-xl p-4 flex items-center justify-between mb-3">
-                        <div>
-                            <span class="text-xs font-bold text-slate-700">فعال‌سازی کلی</span>
-                            <p class="text-[10px] text-slate-400 mt-1">اگر خاموش باشد، هیچ کدی ارسال نمی‌شود</p>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                            <input type="checkbox" id="otp-enabled" class="sr-only peer">
-                            <div class="w-10 h-5 bg-slate-200 peer-checked:bg-blue-500 rounded-full transition-all"></div>
-                            <div class="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-all peer-checked:-translate-x-5"></div>
-                        </label>
-                    </div>
-
-                    <div class="space-y-3">
-                        <div class="float-input">
-                            <input type="text" id="safir-key" placeholder=" " dir="ltr">
-                            <label>api-access-key سرویس سفیر</label>
-                        </div>
-                        <div class="float-input">
-                            <input type="text" id="safir-bot" placeholder=" " dir="ltr">
-                            <label>شناسه‌ی بات (bot_id)</label>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="float-input">
-                                <input type="number" id="otp-ttl" placeholder=" " dir="ltr" min="60" max="600">
-                                <label>اعتبار کد (ثانیه)</label>
-                            </div>
-                            <div class="float-input">
-                                <input type="number" id="otp-attempts" placeholder=" " dir="ltr" min="3" max="10">
-                                <label>حداکثر تلاش</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2 mt-4">
-                        <button onclick="saveOtpSettings()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs">
-                            <i class="fas fa-save ml-1"></i> ذخیره
-                        </button>
-                        <button onclick="testOtp()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs">
-                            <i class="fas fa-paper-plane ml-1"></i> ارسال کد آزمایشی
-                        </button>
-                    </div>
-
-                    <div class="mt-4 pt-4 border-t">
-                        <p class="text-xs font-bold text-slate-600 mb-2">کاربران پنل</p>
-                        <div id="otp-users" class="space-y-2"></div>
-                    </div>
-                </div>
-
                 <div class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-emerald-100 pb-3"><i class="fas fa-robot text-emerald-500 ml-2"></i>تنظیمات ربات بله</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای تغییر توکن متصل به سامانه می‌توانید از این بخش استفاده کنید.</p>
@@ -1637,24 +1595,69 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <!-- ======================= کاربران داخلیِ پنل (ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON) ======================= -->
-        <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+        <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
-                    <p class="text-xs text-slate-400 mt-1">این بخش برای حساب‌های کاربریِ خودمان (مدیر، اپراتور، مالی، همکار بیمه با ما) است - نه پرسنل یا شرکت‌های درخواست‌کننده.</p>
+                    <p class="text-xs text-slate-400 mt-1">حساب‌های خودمان (مدیر، کارشناس صدور، مالی، همکار بیمه با ما). ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود</button>
                     <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
                     <button onclick="openModal('add-staff-user-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن عضو</button>
                 </div>
             </div>
+            <p id="su-schema-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">برای ویرایش، حذف، لاگ ورود و ورود با ربات، مایگریشن migrations/016_users_bot_login.sql را اجرا کنید.</p>
+
+            <!-- درخواست‌های بازیابی رمز (از ربات بله‌ی شرکت‌ها) -->
+            <div id="su-resets-card" class="card p-4 border-amber-100 hidden">
+                <h2 class="font-bold text-amber-700 text-sm mb-2"><i class="fas fa-key ml-1"></i>درخواست‌های بازیابی رمز <span id="su-resets-count" class="text-[11px] bg-amber-100 rounded-full px-2 py-0.5"></span></h2>
+                <div id="su-resets" class="space-y-2"></div>
+            </div>
+
+            <div class="card overflow-x-auto">
+                <div class="flex items-center justify-between px-3 pt-3 text-[11px] text-slate-500">
+                    <span><span class="bot-dot on"></span> وصل به ربات بله &nbsp;&nbsp; <span class="bot-dot"></span> هنوز وارد ربات نشده</span>
+                    <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="su-show-deleted" onchange="loadStaffUsers()"> نمایش حذف‌شده‌ها</label>
+                </div>
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3 text-right">نام</th><th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نقش</th>
+                        <th class="p-3 text-right">کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین ورود</th><th class="p-3 text-right"></th>
+                    </tr></thead>
+                    <tbody id="su-body"><tr><td colspan="7" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ======================= لاگ ورود ======================= -->
+        <div id="tab-login-logs" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-right-to-bracket text-indigo-500 ml-2"></i>لاگ ورود</h1>
+                    <p class="text-xs text-slate-400 mt-1">هر ورود به پنل ما و پنل شرکت‌ها: تاریخ و ساعت، روش (رمز / کد بله)، مرورگر و دستگاه.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="switchTab('staff-users')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-shield ml-1"></i>کاربران پنل</button>
+                    <button onclick="loadLoginLogs()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt ml-1"></i>بروزرسانی</button>
+                </div>
+            </div>
+            <div class="card p-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+                <label class="text-[11px] font-bold text-slate-500 col-span-2">جستجو (نام، مرورگر، دستگاه، IP)<input id="ll-q" oninput="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-3 py-2 text-xs"></label>
+                <label class="text-[11px] font-bold text-slate-500">نوع کاربر
+                    <select id="ll-type" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="STAFF">کاربران پنل</option><option value="COMPANY">کاربران شرکت‌ها</option></select></label>
+                <label class="text-[11px] font-bold text-slate-500">روش
+                    <select id="ll-method" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="PASSWORD">رمز عبور</option><option value="OTP">کد بله</option></select></label>
+                <label class="text-[11px] font-bold text-slate-500">نتیجه
+                    <select id="ll-ok" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="1">موفق</option><option value="0">ناموفق</option></select></label>
+            </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نام</th>
-                        <th class="p-3 text-right">نقش</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right"></th>
+                        <th class="p-3 text-right">تاریخ و ساعت</th><th class="p-3 text-right">کاربر</th><th class="p-3 text-right">نقش</th><th class="p-3 text-right">روش</th>
+                        <th class="p-3 text-right">نتیجه</th><th class="p-3 text-right">مرورگر</th><th class="p-3 text-right">سیستم‌عامل</th><th class="p-3 text-right">دستگاه</th><th class="p-3 text-right">IP</th>
                     </tr></thead>
-                    <tbody id="su-body"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                    <tbody id="ll-body"><tr><td colspan="9" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -2409,17 +2412,53 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
             <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
             <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور</label></div>
-            <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" "><label>شماره موبایل (اختیاری)</label></div>
+            <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
+            <div class="float-input"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
             <div class="float-input">
                 <select id="su-role">
-                    <option value="OPERATOR">اپراتور</option>
-                    <option value="FINANCE">مالی</option>
+                    <option value="OPERATOR">کارشناس صدور</option>
+                    <option value="FINANCE">کارشناس مالی</option>
                     <option value="COMPANY_LIAISON">همکار بیمه با ما</option>
                     <option value="ADMIN">مدیر کل</option>
                 </select>
                 <label>نقش</label>
             </div>
             <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
+        </div>
+    </div>
+
+    <!-- ویرایش کاربر داخلی (همه‌چیز جز نام کاربری) - با رمزِ مدیر -->
+    <div id="edit-staff-user-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
+            <button type="button" onclick="closeModal('edit-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1">ویرایش کاربر</h3>
+            <p class="text-[11px] text-slate-400 mb-4">نام کاربری تغییر نمی‌کند. اگر شماره عوض شود، کاربر از ربات بیرون می‌آید و پیام می‌گیرد که با شماره‌ی جدید دوباره وارد شود.</p>
+            <input type="hidden" id="esu-id">
+            <div class="float-input"><input type="text" id="esu-username" dir="ltr" placeholder=" " disabled class="bg-slate-100"><label>نام کاربری (ثابت)</label></div>
+            <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
+            <div class="float-input">
+                <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="ADMIN">مدیر کل</option></select>
+                <label>نقش</label>
+            </div>
+            <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
+            <div class="float-input"><input type="text" id="esu-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل</label></div>
+            <div class="float-input"><input type="text" id="esu-password" dir="ltr" placeholder=" " autocomplete="new-password"><label>رمز عبورِ جدید (خالی = بدون تغییر)</label></div>
+            <div class="border-t pt-3 mt-2">
+                <div class="float-input"><input type="password" id="esu-admin-pass" dir="ltr" placeholder=" " autocomplete="current-password"><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
+            </div>
+            <button onclick="saveStaffUserEdit()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ذخیره‌ی تغییرات</button>
+        </div>
+    </div>
+
+    <!-- حذف کاربر داخلی - با رمزِ مدیر -->
+    <div id="delete-staff-user-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-sm p-6 relative" style="margin:0 12px;">
+            <button type="button" onclick="closeModal('delete-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-2 text-red-600"><i class="fas fa-user-slash ml-1"></i>حذف کاربر</h3>
+            <p class="text-xs text-slate-600 leading-6 mb-3">«<b id="dsu-name"></b>» دیگر نمی‌تواند وارد پنل یا ربات شود. <b>نامش روی همه‌ی کارهایی که قبلاً انجام داده باقی می‌ماند.</b></p>
+            <input type="hidden" id="dsu-id">
+            <div class="float-input"><input type="password" id="dsu-admin-pass" dir="ltr" placeholder=" "><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
+            <button onclick="confirmDeleteStaffUser()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">حذف کاربر</button>
         </div>
     </div>
 
@@ -5178,8 +5217,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const utbody = document.getElementById('cm-portal-users-body');
                 utbody.innerHTML = usersData.users.length ? usersData.users.map(u => `
                     <tr class="border-t border-slate-100">
-                        <td class="p-3 font-mono">${u.username}</td><td class="p-3">${u.full_name}</td>
-                        <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${u.mobile_number || '—'}</td>
+                        <td class="p-3 font-mono">${u.username}</td><td class="p-3">${botDot(u.bot_linked)} ${u.full_name}</td>
+                        <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${faDigits(u.mobile_number || '') || '—'}</td>
                         <td class="p-3 flex gap-2">
                             <button onclick="editPortalUser(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
                             <button onclick="deletePortalUserRow(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
@@ -5325,24 +5364,33 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'اپراتور', FINANCE: 'مالی', COMPANY_LIAISON: 'همکار بیمه با ما'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما'};
+        // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
+        function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
+        let staffUsersCache = [];
 
         async function loadStaffUsers() {
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list'})});
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'list', include_deleted: document.getElementById('su-show-deleted').checked})});
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
-            document.getElementById('su-body').innerHTML = data.users.map(u => `
-                <tr class="border-t border-slate-100">
+            staffUsersCache = data.users;
+            document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
+            document.getElementById('su-body').innerHTML = data.users.map(u => {
+                const del = Number(u.is_deleted) === 1;
+                return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
+                    <td class="p-3 font-bold">${del ? '' : botDot(u.bot_linked)} ${u.full_name}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</td>
                     <td class="p-3 font-mono">${u.username}</td>
-                    <td class="p-3">${u.full_name}</td>
-                    <td class="p-3">
-                        <select onchange="changeStaffRole(${u.id}, this.value)" class="border rounded-lg px-2 py-1 text-xs">
-                            ${Object.keys(ROLE_FA).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_FA[r]}</option>`).join('')}
-                        </select>
-                    </td>
-                    <td class="p-3 font-mono text-slate-400">${u.mobile_number || '—'}</td>
-                    <td class="p-3"><button onclick="openResetPasswordModal(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">تغییر رمز</button></td>
-                </tr>`).join('') || '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
+                    <td class="p-3">${ROLE_FA[u.role] || u.role}</td>
+                    <td class="p-3 font-mono text-slate-500">${faDigits(u.personnel_code || '') || '—'}</td>
+                    <td class="p-3 font-mono text-slate-500" dir="ltr">${faDigits(u.mobile_number || '') || '—'}</td>
+                    <td class="p-3 text-slate-400">${u.last_login_jalali ? faDigits(u.last_login_jalali) : '—'}</td>
+                    <td class="p-3 whitespace-nowrap">${del ? '' : `
+                        <button onclick="openEditStaffUser(${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        ${Number(u.id) !== Number(data.me) ? `<button onclick="openDeleteStaffUser(${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>` : ''}`}</td>
+                </tr>`;
+            }).join('') || '<tr><td colspan="7" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
+            loadResetRequests(data.pending_resets);
         }
 
         async function createStaffUser() {
@@ -5352,17 +5400,145 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 username: document.getElementById('su-username').value.trim(),
                 password: document.getElementById('su-password').value,
                 mobile_number: document.getElementById('su-mobile').value.trim(),
+                personnel_code: document.getElementById('su-personnel').value.trim(),
                 role: document.getElementById('su-role').value,
             };
-            if (!payload.full_name || !payload.username || !payload.password) { showToast('همه‌ی فیلدها الزامی هستند.', 'error'); return; }
+            if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
             if (data.ok) {
                 showToast('کاربر ثبت شد.', 'success');
-                ['su-fullname','su-username','su-password','su-mobile'].forEach(id => document.getElementById(id).value = '');
+                ['su-fullname','su-username','su-password','su-mobile','su-personnel'].forEach(id => document.getElementById(id).value = '');
                 closeModal('add-staff-user-modal');
                 loadStaffUsers();
             } else showToast(data.error || 'خطا', 'error');
+        }
+
+        function openEditStaffUser(id) {
+            const u = staffUsersCache.find(x => Number(x.id) === Number(id));
+            if (!u) return;
+            document.getElementById('esu-id').value = u.id;
+            document.getElementById('esu-username').value = u.username;
+            document.getElementById('esu-fullname').value = u.full_name || '';
+            document.getElementById('esu-role').value = u.role;
+            document.getElementById('esu-personnel').value = u.personnel_code || '';
+            document.getElementById('esu-mobile').value = u.mobile_number || '';
+            document.getElementById('esu-password').value = '';
+            document.getElementById('esu-admin-pass').value = '';
+            openModal('edit-staff-user-modal');
+        }
+        async function saveStaffUserEdit() {
+            const g = id => document.getElementById(id).value;
+            if (!g('esu-admin-pass')) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('esu-admin-pass').focus(); return; }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                action: 'update', id: Number(g('esu-id')), full_name: g('esu-fullname').trim(), role: g('esu-role'),
+                personnel_code: g('esu-personnel').trim(), mobile_number: g('esu-mobile').trim(), password: g('esu-password'), admin_password: g('esu-admin-pass')})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast(data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.', 'success');
+            closeModal('edit-staff-user-modal');
+            loadStaffUsers();
+        }
+        function openDeleteStaffUser(id) {
+            const u = staffUsersCache.find(x => Number(x.id) === Number(id));
+            if (!u) return;
+            document.getElementById('dsu-id').value = u.id;
+            document.getElementById('dsu-name').textContent = u.full_name;
+            document.getElementById('dsu-admin-pass').value = '';
+            openModal('delete-staff-user-modal');
+        }
+        async function confirmDeleteStaffUser() {
+            const pass = document.getElementById('dsu-admin-pass').value;
+            if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); return; }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'delete', id: Number(document.getElementById('dsu-id').value), admin_password: pass})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast('کاربر حذف شد؛ نامش روی کارهای قبلی‌اش باقی می‌ماند.', 'success');
+            closeModal('delete-staff-user-modal');
+            loadStaffUsers();
+        }
+
+        // ---- درخواست‌های بازیابی رمز (از ربات بله) ----
+        async function loadResetRequests(pendingCount) {
+            const card = document.getElementById('su-resets-card');
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_requests'})});
+                const data = await res.json();
+                if (!data.ok) { card.classList.add('hidden'); return; }
+                const rows = data.rows || [];
+                card.classList.toggle('hidden', rows.length === 0);
+                const pending = rows.filter(r => r.status === 'PENDING');
+                document.getElementById('su-resets-count').textContent = pending.length ? e2p(pending.length) + ' در انتظار' : 'بدون مورد در انتظار';
+                const st = {PENDING: ['در انتظار', 'bg-amber-100 text-amber-700'], APPROVED: ['تایید شد', 'bg-emerald-100 text-emerald-700'], REJECTED: ['رد شد', 'bg-red-100 text-red-600']};
+                document.getElementById('su-resets').innerHTML = rows.slice(0, 20).map(r => `
+                    <div class="border rounded-xl p-3 flex flex-wrap items-center gap-2 text-xs ${r.status === 'PENDING' ? 'bg-amber-50/40 border-amber-200' : 'bg-white'}">
+                        <div class="flex-1 min-w-[180px]">
+                            <b>${r.full_name || '—'}</b> <span class="text-[10px] text-slate-500">(${r.role_fa} · ${r.username || ''})</span>
+                            <div class="text-[10px] text-slate-400">درخواست: ${faDigits(r.requested_jalali || '')}${r.handled_jalali ? ' · بررسی: ' + faDigits(r.handled_jalali) + (r.handled_by_name ? ' توسط ' + r.handled_by_name : '') : ''}${r.note ? ' · ' + r.note : ''}</div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[r.status][1]}">${st[r.status][0]}</span>
+                        ${r.status === 'PENDING' ? `
+                            <input type="text" id="rr-pass-${r.id}" placeholder="رمز جدید (حداقل ۶)" dir="ltr" class="border rounded-lg px-2 py-1 text-xs w-36">
+                            <button onclick="genResetPass(${r.id})" class="bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg text-[11px]" title="ساختِ رمزِ تصادفی"><i class="fas fa-dice"></i></button>
+                            <button onclick="handleReset(${r.id}, true)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-[11px] font-bold">تایید و ارسال رمز</button>
+                            <button onclick="handleReset(${r.id}, false)" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded-lg text-[11px] font-bold">رد</button>` : ''}
+                    </div>`).join('');
+            } catch (e) { card.classList.add('hidden'); }
+        }
+        function genResetPass(id) {
+            const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+            let p = ''; const buf = new Uint32Array(8); crypto.getRandomValues(buf);
+            buf.forEach(n => p += chars[n % chars.length]);
+            document.getElementById('rr-pass-' + id).value = p;
+        }
+        async function handleReset(id, approve) {
+            const body = {action: 'handle_reset', id, approve};
+            if (approve) {
+                body.new_password = document.getElementById('rr-pass-' + id).value.trim();
+                if (body.new_password.length < 6) { showToast('رمزِ جدید حداقل ۶ کاراکتر.', 'warning'); return; }
+            } else {
+                const note = prompt('علتِ رد (اختیاری؛ برای کاربر فرستاده می‌شود):', '');
+                if (note === null) return;
+                body.note = note;
+            }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast((approve ? 'رمز تغییر کرد' : 'درخواست رد شد') + (data.sent ? ' و پیام در ربات برای کاربر فرستاده شد.' : '؛ ولی ارسالِ پیام در ربات ممکن نشد (کاربر به ربات وصل نیست).'), data.sent ? 'success' : 'warning');
+            loadStaffUsers();
+        }
+
+        // ---- لاگ ورود ----
+        let loginLogsCache = [];
+        async function loadLoginLogs() {
+            const tb = document.getElementById('ll-body');
+            tb.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'login_logs'})});
+                const data = await res.json();
+                if (!data.ok) { tb.innerHTML = `<tr><td colspan="9" class="text-center p-8 text-amber-600">${data.error || 'خطا'}</td></tr>`; return; }
+                loginLogsCache = data.rows || [];
+                renderLoginLogs();
+            } catch (e) { tb.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>'; }
+        }
+        function renderLoginLogs() {
+            const q = p2e(document.getElementById('ll-q').value.trim()).toLowerCase();
+            const type = document.getElementById('ll-type').value, method = document.getElementById('ll-method').value, ok = document.getElementById('ll-ok').value;
+            const list = loginLogsCache.filter(r => (!type || r.user_type === type) && (!method || r.method === method) && (ok === '' || String(r.success) === ok)
+                && (!q || [r.user_name, r.browser, r.os, r.device, r.ip, r.role_fa].join(' ').toLowerCase().includes(q)));
+            document.getElementById('ll-body').innerHTML = list.slice(0, 500).map(r => `
+                <tr class="border-t border-slate-100 ${Number(r.success) ? '' : 'bg-red-50/40'}">
+                    <td class="p-3 whitespace-nowrap">${faDigits(r.at_jalali || '')}</td>
+                    <td class="p-3 font-bold">${r.user_name || '—'}</td>
+                    <td class="p-3 text-slate-500">${r.role_fa}</td>
+                    <td class="p-3">${r.method === 'OTP' ? '<span class="text-cyan-700">کد بله</span>' : 'رمز عبور'}</td>
+                    <td class="p-3">${Number(r.success) ? '<span class="text-emerald-600 font-bold">✓ موفق</span>' : `<span class="text-red-500 font-bold">✗ ${r.note || 'ناموفق'}</span>`}</td>
+                    <td class="p-3" dir="ltr">${r.browser || '—'}</td>
+                    <td class="p-3" dir="ltr">${r.os || '—'}</td>
+                    <td class="p-3">${r.device || '—'}</td>
+                    <td class="p-3 font-mono text-slate-400" dir="ltr">${r.ip || '—'}</td>
+                </tr>`).join('') || '<tr><td colspan="9" class="text-center p-8 text-slate-400">موردی نیست.</td></tr>';
         }
 
         async function changeStaffRole(id, role) {
@@ -5425,7 +5601,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') loadTickets();
-            if (tabId === 'settings') { loadQuotaSetting(); loadOtpSettings(); }
+            if (tabId === 'settings') { loadQuotaSetting(); }
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId === 'approved-reviews') loadApprovedReviews();
@@ -5437,6 +5613,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'companies-finance') loadCompanyFinance();
             if (tabId === 'companies-manage') loadCompanyManage();
             if (tabId === 'staff-users') loadStaffUsers();
+            if (tabId === 'login-logs') loadLoginLogs();
         }
 
         // ======================= بخش مالی =======================
@@ -7383,77 +7560,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { body.innerHTML = '<p class="text-center text-red-500 p-6">خطا در اتصال به سرور.</p>'; }
         }
 
-        // ======================= ورود دومرحله‌ای =======================
-        async function loadOtpSettings() {
-            try {
-                const res = await fetch('api/settings_actions.php?action=get_otp');
-                const d = await res.json();
-                if (!d.ok) return;
-                document.getElementById('otp-enabled').checked = d.settings.otp_enabled === '1';
-                document.getElementById('safir-key').value  = d.settings.safir_api_key || '';
-                document.getElementById('safir-bot').value  = d.settings.safir_bot_id || '';
-                document.getElementById('otp-ttl').value    = d.settings.otp_ttl_seconds || 120;
-                document.getElementById('otp-attempts').value = d.settings.otp_max_attempts || 5;
-
-                document.getElementById('otp-users').innerHTML = d.users.map(u => `
-                    <div class="border rounded-lg p-2.5 flex items-center gap-2">
-                        <div class="flex-1">
-                            <p class="text-[11.5px] font-bold">${u.full_name || u.username}</p>
-                            <p class="text-[10px] text-slate-400">${ROLE_FA[u.role] || u.role}</p>
-                        </div>
-                        <input type="text" value="${u.mobile_number || ''}" placeholder="09..."
-                               onchange="saveUserOtp(${u.id}, this.value, null)"
-                               class="border rounded-lg px-2 py-1 text-[11px] w-28" dir="ltr">
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0" title="ورود دومرحله‌ای این کاربر">
-                            <input type="checkbox" ${u.otp_enabled == 1 ? 'checked' : ''}
-                                   onchange="saveUserOtp(${u.id}, null, this.checked)" class="sr-only peer">
-                            <div class="w-9 h-4.5 bg-slate-200 peer-checked:bg-blue-500 rounded-full transition-all" style="height:18px;width:34px;"></div>
-                            <div class="absolute right-0.5 top-0.5 w-3.5 h-3.5 bg-white rounded-full transition-all peer-checked:-translate-x-4"></div>
-                        </label>
-                    </div>`).join('') || '<p class="text-[11px] text-slate-400">کاربری یافت نشد.</p>';
-            } catch(e) {}
-        }
-
-        async function saveOtpSettings() {
-            try {
-                const res = await fetch('api/settings_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action: 'save_otp',
-                        otp_enabled: document.getElementById('otp-enabled').checked,
-                        safir_api_key: document.getElementById('safir-key').value.trim(),
-                        safir_bot_id: document.getElementById('safir-bot').value.trim(),
-                        otp_ttl_seconds: document.getElementById('otp-ttl').value,
-                        otp_max_attempts: document.getElementById('otp-attempts').value })
-                });
-                const d = await res.json();
-                showToast(d.ok ? 'تنظیمات ذخیره شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
-            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
-        }
-
-        async function saveUserOtp(userId, mobile, enabled) {
-            try {
-                const body = { action: 'save_user_otp', user_id: userId };
-                if (mobile !== null) body.mobile_number = mobile;
-                if (enabled !== null) body.otp_enabled = enabled;
-                const res = await fetch('api/settings_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-                const d = await res.json();
-                showToast(d.ok ? 'ذخیره شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
-                if (!d.ok) loadOtpSettings();
-            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
-        }
-
-        async function testOtp() {
-            try {
-                const res = await fetch('api/settings_actions.php', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action: 'test_otp' }) });
-                const d = await res.json();
-                if (d.ok) alert('کد آزمایشی به شماره ' + d.masked + ' ارسال شد.');
-                else showToast(d.error || 'خطا در ارسال', 'error');
-            } catch(e) { showToast('خطا در اتصال', 'error'); }
-        }
-
         async function loadQuotaSetting() {
             try {
                 const res = await fetch('api/settings_actions.php?action=get_quota');
@@ -8564,9 +8670,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 });
                 const data = await res.json();
                 if (data.ok) {
-                    showToast('توکن ربات شرکتی ذخیره شد.', 'success');
+                    showToast(data.webhook ? 'توکن ربات شرکتی ذخیره و ربات به سایت وصل شد' + (data.bot_username ? ` (@${data.bot_username})` : '') + '.'
+                                           : 'توکن ذخیره شد، ولی اتصالِ وب‌هوک ممکن نشد؛ توکن را بررسی کنید.', data.webhook ? 'success' : 'warning');
                     tokenInput.value = '';
-                    setTimeout(() => location.reload(), 1500);
+                    setTimeout(() => location.reload(), 2500);
                 } else { showToast(data.error || 'خطا در ذخیره تنظیمات.', 'error'); }
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }

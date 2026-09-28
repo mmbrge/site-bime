@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
+require __DIR__ . '/_auth_helpers.php';
 
 $session = require_company_portal_session($pdo);
 $allowedCompanyIds = $session['company_ids'];
@@ -399,6 +400,8 @@ try {
             }
         }
 
+        cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "🆕 درخواست جدید از «" . ($companyRow['name'] ?? '') . "» (#" . $requestId . ")",
+            ['inline_keyboard' => [[['text' => 'مشاهده', 'callback_data' => 'lreq:' . $requestId]]]]);
         echo json_encode(['ok' => true, 'request_id' => $requestId]);
         exit;
     }
@@ -451,6 +454,8 @@ try {
             }
             $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$relPath, $requestId]);
         }
+        cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "📎 مدرکِ تازه از «{$companyName}» برای درخواست #{$requestId}: " . ($isLetter ? 'نامه‌ی درخواست' : company_doc_type_label($suggestedType)),
+            ['inline_keyboard' => [[['text' => 'مشاهده', 'callback_data' => 'lreq:' . $requestId]]]]);
 
         echo json_encode(['ok' => true]);
         exit;
@@ -487,6 +492,10 @@ try {
 
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_portal_user_id, message, file_path) VALUES (?, 'COMPANY', ?, ?, ?)")
             ->execute([$companyId, $session['company_user_id'], $message ?: null, $filePath]);
+        $stCn = $pdo->prepare("SELECT name FROM companies WHERE id = ?");
+        $stCn->execute([$companyId]);
+        cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "💬 پیام تازه از «" . $stCn->fetchColumn() . "» ({$session['full_name']}):\n" . ($message ?: '📎 یک فایل فرستاد'),
+            ['inline_keyboard' => [[['text' => '↩️ پاسخ', 'callback_data' => 'lchat:' . $companyId]]]]);
         echo json_encode(['ok' => true]);
         exit;
     }

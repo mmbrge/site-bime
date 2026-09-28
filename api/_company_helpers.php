@@ -1073,6 +1073,16 @@ function require_company_portal_session($pdo) {
         echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز. لطفاً دوباره وارد شوید.']);
         exit;
     }
+    // حسابی که غیرفعال یا حذف شده، با نشستِ قبلی‌اش هم دیگر کار نمی‌کند
+    $st = $pdo->prepare("SELECT * FROM company_portal_users WHERE id = ?");
+    $st->execute([$_SESSION['company_user_id']]);
+    $cu = $st->fetch();
+    if (!$cu || empty($cu['is_active']) || !empty($cu['is_deleted'])) {
+        $_SESSION = [];
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => 'حساب کاربری شما غیرفعال شده است.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc
                             JOIN companies c ON c.id = cpuc.company_id
                             WHERE cpuc.portal_user_id = ? ORDER BY c.name");
