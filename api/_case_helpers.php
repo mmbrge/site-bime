@@ -1567,6 +1567,9 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
 // تاییدِ نهاییِ بازدید با فایلِ گزارشِ کارشناس. فایل کنارِ مدارکِ پرونده (یا برای بازدیدِ آزاد، کنارِ
 // عکس‌های تاییدشده) با نام‌گذاریِ استاندارد ذخیره می‌شود؛ اگر بازدید منتظرِ گزارش بود، تایید نهایی
 // می‌شود، به کاربر خبر داده می‌شود و پرونده (اگر مدارکش هم کامل است) «در حال صدور» می‌شود.
+// $file: فایلِ آپلودی ($_FILES[...]) یا ['local' => مسیرِ فایلی روی سرور] (مثلاً PDFِ گزارشی که
+// «ساخت گزارش بازدید» همین حالا ساخته؛ آن فایل کپی می‌شود و سرِ جایش می‌ماند).
+// اگر بازدید قبلاً گزارش داشته، فایلِ قبلی با پسوندِ (old) کنارش نگه داشته می‌شود.
 function health_attach_report_and_finalize($pdo, $siteRoot, $inspId, $file, $userId = null) {
     $st = $pdo->prepare("SELECT hi.*, COALESCE(pc.plate, hi.free_plate) AS plate FROM health_inspections hi LEFT JOIN policy_cases pc ON pc.id = hi.case_id WHERE hi.id = ?");
     $st->execute([$inspId]);
@@ -1575,7 +1578,8 @@ function health_attach_report_and_finalize($pdo, $siteRoot, $inspId, $file, $use
     if (!in_array($insp['status'], ['PHOTOS_APPROVED', 'APPROVED'], true)) {
         return ['ok' => false, 'error' => 'اول همه‌ی عکس‌های این بازدید باید تایید شوند، بعد فایل گزارش بارگذاری می‌شود.'];
     }
-    if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+    $isLocal = !empty($file['local']);
+    if ($isLocal ? !is_file($file['local']) : (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']))) {
         return ['ok' => false, 'error' => 'فایل گزارش دریافت نشد (شاید حجمش زیاد است).'];
     }
     $approvedDate = $insp['approved_jalali_date'] ?: jalali_from_gregorian_ts_dotted(time());
@@ -1586,11 +1590,19 @@ function health_attach_report_and_finalize($pdo, $siteRoot, $inspId, $file, $use
     } else {
         $dir = health_abs_path($siteRoot, $insp['photos_folder_path']);
     }
-    if (!$dir) return ['ok' => false, 'error' => 'پوشه‌ی بایگانیِ این بازدید پیدا نشد.'];
+    if (!$dir || strpos($dir, $siteRoot . '/') !== 0) return ['ok' => false, 'error' => 'پوشه‌ی بایگانیِ این بازدید پیدا نشد.'];
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
-    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'pdf';
-    $dest = unique_dest_path($dir . '/' . build_health_report_filename($approvedDate, $insp['plate'], $ext));
-    if (!move_uploaded_file($file['tmp_name'], $dest)) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل گزارش.'];
+    $ext = strtolower(pathinfo($isLocal ? $file['local'] : $file['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+    $target = $dir . '/' . build_health_report_filename($approvedDate, $insp['plate'], $ext);
+    if ($isLocal && is_file($target)) {
+        // گزارشِ جایگزین: نسخه‌ی قبلی با (old) کنارش می‌ماند
+        $n = 1;
+        do { $old = preg_replace('/\.' . preg_quote($ext, '/') . '$/', '', $target) . ($n > 1 ? " (old {$n})" : ' (old)') . '.' . $ext; $n++; } while (file_exists($old));
+        @rename($target, $old);
+    }
+    $dest = $isLocal ? $target : unique_dest_path($target);
+    $okSave = $isLocal ? @copy($file['local'], $dest) : move_uploaded_file($file['tmp_name'], $dest);
+    if (!$okSave) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل گزارش.'];
     $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
 
     $wasFinal = $insp['status'] === 'APPROVED';

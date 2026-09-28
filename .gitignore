@@ -43,3 +43,13 @@ Thumbs.db
 # کش پایتون
 __pycache__/
 *.pyc
+
+# گزارش بازدید: فایل‌هایی که روی هاست ساخته/آپلود می‌شوند
+report_assets/fonts/*
+!report_assets/fonts/.gitkeep
+report_assets/layouts/*
+!report_assets/layouts/.gitkeep
+report_assets/templates/cat*_*.docx
+report_assets/templates/*(old*
+report_assets/parsers/*(old*
+Archive/بایگانی/بایگانی گزارشات بازدید/

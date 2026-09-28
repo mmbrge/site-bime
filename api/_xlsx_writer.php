@@ -20,7 +20,8 @@ function xlsx_is_number($v) {
 // $headers: آرایه‌ی عنوان ستون‌ها
 // $rows: آرایه‌ای از آرایه‌های هم‌طولِ عنوان‌ها
 // $numericCols: اندیسِ ستون‌هایی که باید عدد باشند (برای جمع‌زدن در اکسل)
-function xlsx_build($headers, $rows, $sheetName = 'گزارش', $numericCols = []) {
+// $protectPassword: اگر داده شود، شیت قفل می‌شود (فقط خواندنی، مثل دفترِ گزارشاتِ برنامه‌ی ویندوزی)
+function xlsx_build($headers, $rows, $sheetName = 'گزارش', $numericCols = [], $protectPassword = null) {
     if (!class_exists('ZipArchive')) return null;
 
     $fontName = 'B Nazanin';
@@ -78,6 +79,8 @@ function xlsx_build($headers, $rows, $sheetName = 'گزارش', $numericCols = [
         . '<sheetFormatPr defaultRowHeight="18"/>'
         . $colsXml
         . '<sheetData>' . $sheetRows . '</sheetData>'
+        . ($protectPassword !== null ? '<sheetProtection' . ($protectPassword !== '' ? ' password="' . xlsx_legacy_password_hash($protectPassword) . '"' : '')
+            . ' sheet="1" objects="1" scenarios="1" autoFilter="0" sort="0"/>' : '')
         . '<autoFilter ref="A1:' . $lastCell . '"/>'
         . '</worksheet>';
 
@@ -144,6 +147,17 @@ function xlsx_build($headers, $rows, $sheetName = 'گزارش', $numericCols = [
     $zip->addFromString('xl/worksheets/sheet1.xml', $sheet);
     $zip->close();
     return $path;
+}
+
+// هشِ ۱۶ بیتیِ قدیمیِ اکسل برای رمزِ قفلِ شیت (همان که اکسل برای sheetProtection password می‌خواهد)
+function xlsx_legacy_password_hash($pwd) {
+    $hash = 0;
+    $chars = array_reverse(str_split((string)$pwd));
+    foreach ($chars as $ch) {
+        $hash = ((($hash >> 14) & 0x01) | (($hash << 1) & 0x7FFF)) ^ ord($ch);
+    }
+    $hash = ((($hash >> 14) & 0x01) | (($hash << 1) & 0x7FFF)) ^ strlen((string)$pwd) ^ 0xCE4B;
+    return strtoupper(dechex($hash));
 }
 
 // فرستادنِ فایل ساخته‌شده به مرورگر و پاک‌کردنش
