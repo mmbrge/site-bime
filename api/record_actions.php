@@ -480,12 +480,19 @@ try {
             // ورود و کاربران: لاگ ورود و خروج، کدهای ورود با بله، درخواست‌های بازیابی رمز
             // و وضعیتِ گفتگوی ربات شرکت‌ها
             'login_logs', 'phone_otps', 'password_reset_requests', 'company_bot_state',
+            // گزارش‌های بازدیدِ صادرشده (عکس‌ها و نسخه‌های قبلی)؛ تنظیماتِ گزارش (انواع، قالب‌ها، فیلدها،
+            // بازدیدکننده‌ها، بیمه‌گذارانِ آماده و قلم‌ها) دست‌نخورده می‌مانند
+            'visit_reports', 'visit_report_photos', 'visit_report_versions',
         ] as $table) {
             try { $pdo->exec("TRUNCATE TABLE `$table`;"); } catch (Exception $e) { /* اگر جدولی وجود نداشت، رد شو */ }
         }
         // کاربرانِ شرکت‌ها با DELETE (نه TRUNCATE) پاک می‌شوند تا شماره‌ی شناسه از اول شروع نشود؛
         // وگرنه نشستِ بازِ یک کاربرِ پاک‌شده روی کاربرِ تازه‌ای با همان شناسه می‌نشست
         try { $pdo->exec("DELETE FROM `company_portal_users`;"); } catch (Exception $e) { /* ... */ }
+        // بیمه‌گذارانِ آماده‌ی گزارش بازدید می‌مانند ولی پیوندشان به اشخاص/شرکت‌های پاک‌شده برداشته می‌شود
+        try { $pdo->exec("UPDATE `report_insureds` SET `source` = 'MANUAL', `source_id` = NULL WHERE `source` <> 'MANUAL';"); } catch (Exception $e) { /* جدول هنوز نیست */ }
+        // شماره‌گذاریِ گزارش‌های بازدید هم از اول شروع می‌شود
+        try { $pdo->exec("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%';"); } catch (Exception $e) { /* ... */ }
         // کاربران داخلی «همکار» (اپراتور/مالی/همکار شرکت‌ها) هم پاک می‌شوند؛ فقط
         // حساب‌های ADMIN دست‌نخورده می‌مانند تا کسی از پنل بیرون نماند (مدیرِ حذف‌شده هم پاک می‌شود)
         try { $pdo->exec("DELETE FROM `users` WHERE `role` <> 'ADMIN';"); } catch (Exception $e) { /* ... */ }
@@ -517,12 +524,13 @@ try {
         // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا بایگانی فایل‌ها خالی ولی مرتب دیده شود
         foreach ([archive_root($siteRoot) . '/بایگانی صادره', archive_root($siteRoot) . '/بایگانی کسر از حقوق',
                   archive_root($siteRoot) . '/سایر مدارک', archive_root($siteRoot) . '/بایگانی شرکتی',
+                  archive_root($siteRoot) . '/بایگانی گزارشات بازدید',
                   temp_archive_root($siteRoot), temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) {
             @mkdir($dir, 0775, true);
         }
         @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
 
-        echo json_encode(['ok' => true, 'message' => 'همه‌ی اطلاعات، پرونده‌ها، بایگانی، چت‌ها، لاگ‌های ورود و خروج و اعلان‌ها کاملاً پاک شدند. سایت به حالت اولیه بازگشت.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'message' => 'همه‌ی اطلاعات، پرونده‌ها، گزارش‌های بازدید، بایگانی، چت‌ها، لاگ‌های ورود و خروج و اعلان‌ها کاملاً پاک شدند. سایت به حالت اولیه بازگشت.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 } catch (Exception $e) {

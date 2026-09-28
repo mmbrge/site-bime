@@ -466,6 +466,29 @@ try {
                 'forms' => $forms, 'photos' => $list, 'damages' => $damages, 'existing' => $ex->fetch() ?: null]);
     }
 
+    // پیش‌نمایشِ PDF از روی فرمِ ذخیره‌نشده (بدونِ ثبت و بدونِ بایگانی)
+    if ($action === 'preview') {
+        $existing = !empty($data['id']) ? vr_load_visible($pdo, $data['id'], $user) : null;
+        $cat = vr_category($pdo, $existing ? $existing['category_id'] : ($data['category_id'] ?? 0));
+        if (!$cat || !vr_can_issue($cat, $user)) vr_fail('اجازه‌ی صدور این نوع گزارش را ندارید.');
+        $fields = vr_fields($pdo, $cat['id']);
+        $form = vr_clean_form(vr_input_form($data), $fields);
+        $date = vr_parse_jalali($data['report_date'] ?? '') ?: [jalali_from_gregorian_ts_dotted(time()), time()];
+        $values = vr_build_values($cat, $fields, $form, ['date' => $date[0], 'issuer_name' => $existing['issuer_name'] ?? $user['name'],
+                                                         'report_no' => $existing['report_no'] ?? 'پیش‌نمایش']);
+        [$layout, $assetDir] = vr_layout($pdo, $cat);
+        $opts = json_decode($cat['options_json'] ?? '', true) ?: [];
+        $tmp = sys_get_temp_dir() . '/vr_prev_' . bin2hex(random_bytes(6)) . '.pdf';
+        rpt_render_pdf($layout, $assetDir, $values, $tmp, ['fontMap' => vr_font_map($pdo), 'fontScale' => floatval($opts['font_scale'] ?? 1) ?: 1,
+                                                           'lineHeight' => floatval($opts['line_height'] ?? 1.1) ?: 1.1]);
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="preview.pdf"');
+        header('Content-Length: ' . filesize($tmp));
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
+
     if ($action === 'issue' || $action === 'edit') {
         $existing = null;
         if ($action === 'edit') {

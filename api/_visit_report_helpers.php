@@ -341,12 +341,14 @@ function vr_old_name($absPath) {
     return $cand;
 }
 
+// شماره‌ی یکتا و پشت‌سرِهم برای هر سال؛ شمارنده جدا نگه داشته می‌شود تا شماره‌ی گزارشی که برای همیشه
+// پاک شده هرگز دوباره داده نشود
 function vr_next_report_no($pdo, $dateDot) {
     $jy = explode('.', $dateDot)[0];
-    $st = $pdo->prepare("SELECT report_no FROM visit_reports WHERE report_no LIKE ? ORDER BY id DESC LIMIT 1");
-    $st->execute(["VR{$jy}-%"]);
-    $last = $st->fetchColumn();
-    $n = $last ? intval(substr($last, strpos($last, '-') + 1)) + 1 : 1;
+    $st = $pdo->prepare("SELECT MAX(CAST(SUBSTRING(report_no, ?) AS UNSIGNED)) FROM visit_reports WHERE report_no LIKE ?");
+    $st->execute([strlen("VR{$jy}-") + 1, "VR{$jy}-%"]);
+    $n = max(intval($st->fetchColumn()), intval(vr_setting($pdo, "report_no_last_{$jy}", 0))) + 1;
+    vr_set_setting($pdo, "report_no_last_{$jy}", (string)$n);
     return sprintf('VR%s-%05d', $jy, $n);
 }
 

@@ -1,6 +1,6 @@
 <?php
 // فایل: api/staff_users_actions.php
-// مدیریت یکپارچه‌ی حساب‌های کاربری: کاربرانِ داخلیِ پنل (users: ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON)
+// مدیریت یکپارچه‌ی حساب‌های کاربری: کاربرانِ داخلیِ پنل (users: ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON/PARSIAN)
 // و کاربرانِ شرکت‌ها (company_portal_users) - هر رکورد با type = STAFF | COMPANY مشخص می‌شود.
 // این فایل کاملاً جدا از api/user_actions.php است (آن یکی برای «کاربران ربات بله»/پرسنل است).
 //  - شماره‌ی موبایل بین همه‌ی کاربران (داخلی و شرکتی) تکراری نمی‌شود
@@ -21,7 +21,7 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
 
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $data['action'] ?? ($_GET['action'] ?? '');
-$validRoles = ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON'];
+$validRoles = ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN'];
 $me = intval($_SESSION['user_id']);
 $ready = auth_schema_ready($pdo);
 

@@ -18,9 +18,44 @@ if (!auth_staff_is_active($pdo, $_SESSION['user_id'])) {
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
+// نقش «کاربر پارسیان»: فقط ساخت/دیدن/ویرایشِ گزارش‌های بازدیدِ خودش (هیچ بخشِ دیگری از پنل را نمی‌بیند)
+$isParsian = ($_SESSION['role'] ?? '') === 'PARSIAN';
+// منوی «گزارش بازدید»: مدیر کل، کاربر پارسیان، و هر کسی که در «تنظیمات گزارش» اجازه‌ی صدورِ حداقل یک نوع را دارد
+$vrAccess = false;
+try {
+    if (($_SESSION['role'] ?? '') === 'ADMIN' || $isParsian) {
+        $pdo->query("SELECT 1 FROM report_categories LIMIT 1");
+        $vrAccess = true;
+    } else {
+        foreach ($pdo->query("SELECT access_json FROM report_categories WHERE is_active = 1")->fetchAll(PDO::FETCH_COLUMN) as $aj) {
+            $a = json_decode((string)$aj, true) ?: [];
+            if (in_array($_SESSION['role'] ?? '', (array)($a['roles'] ?? []), true) || in_array(intval($_SESSION['user_id']), array_map('intval', (array)($a['users'] ?? [])), true)) { $vrAccess = true; break; }
+        }
+    }
+} catch (Throwable $e) { $vrAccess = $isParsian; }
+// HTML منوی «گزارش بازدید» (برای کاربر پارسیان تنها منوی پنل است؛ برای بقیه کنارِ «عملیات بیمه»)
+$vrMenuHtml = '';
+if ($vrAccess) {
+    $vrMenuHtml = <<<'HTML'
+                <!-- ===== گزارش بازدید: ساخت گزارش، گزارش‌های صادرشده و (فقط مدیر کل) تنظیمات ===== -->
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-file-circle-check ml-1"></i> گزارش بازدید
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab('vr-build')" id="nav-vr-build" class="nav-item menu-link"><i class="fas fa-file-circle-plus ml-2"></i> ساخت گزارش بازدید</a>
+                        <a href="#" onclick="switchTab('vr-list')" id="nav-vr-list" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> گزارش‌های صادرشده</a>
+                        {{VR_SETTINGS}}
+                    </div>
+                </div>
+HTML;
+    $vrMenuHtml = str_replace('{{VR_SETTINGS}}', ($_SESSION['role'] ?? '') === 'ADMIN'
+        ? '<div class="menu-sep"></div><a href="#" onclick="switchTab(\'vr-settings\')" id="nav-vr-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات گزارش</a>' : '', $vrMenuHtml) . "\n";
+}
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'کاربر پارسیان'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -346,6 +381,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
+                <?php if ($isParsian) echo $vrMenuHtml; ?>
+                <?php if (!$isParsian): ?>
+
                 <?php if (!$isLiaison): ?>
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
                 <?php endif; ?>
@@ -366,6 +404,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
                 <?php endif; ?>
+
+                <?php if (!$isParsian) echo $vrMenuHtml; ?>
 
                 <?php if ($canSeeCompanies): ?>
                 <!-- ===== شرکت‌ها: خطِ کارِ شرکتی، کنارِ عملیات بیمه چون هر دو «مسیرِ رسیدن به صدور»اند ===== -->
@@ -468,6 +508,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
                 <?php endif; ?>
+                <?php endif; /* !$isParsian */ ?>
             </nav>
         </div>
 
@@ -488,6 +529,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <main class="flex-1 overflow-y-auto p-6 lg:p-8 flex flex-col z-10">
         
         <!-- ======================= تب داشبورد و آمار ======================= -->
+        <?php if ($vrAccess): ?>
+        <!-- ======================= گزارش بازدید (visit-reports*.js) ======================= -->
+        <div id="tab-vr-build" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden">
+            <div class="flex items-center gap-3 mb-4"><span class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30"><i class="fas fa-file-circle-plus"></i></span>
+                <div><h2 class="text-lg font-black text-slate-800">ساخت گزارش بازدید</h2><p class="text-[11px] font-bold text-slate-400">PDF و Word مستقیم روی همین سرور ساخته و بایگانی می‌شود</p></div></div>
+            <div id="vr-build-root"></div>
+        </div>
+        <div id="tab-vr-list" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden">
+            <div class="flex items-center gap-3 mb-4"><span class="w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-sky-500/30"><i class="fas fa-folder-open"></i></span>
+                <div><h2 class="text-lg font-black text-slate-800">گزارش‌های صادرشده</h2><p class="text-[11px] font-bold text-slate-400"><?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? 'همه‌ی گزارش‌های بازدید' : 'گزارش‌هایی که خودتان صادر کرده‌اید'; ?></p></div></div>
+            <div id="vr-list-root"></div>
+        </div>
+        <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+        <div id="tab-vr-settings" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden">
+            <div class="flex items-center gap-3 mb-4"><span class="w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-600 to-slate-900 text-white flex items-center justify-center shadow-lg"><i class="fas fa-sliders"></i></span>
+                <div><h2 class="text-lg font-black text-slate-800">تنظیمات گزارش</h2><p class="text-[11px] font-bold text-slate-400">انواع گزارش، قالب‌ها، الگوریتم‌های استخراج، فیلدها، بازدیدکننده‌ها و بیمه‌گذاران</p></div></div>
+            <div id="vr-settings-root"></div>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+
         <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -1716,7 +1778,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
                     <option value="">همه‌ی نقش‌ها</option><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option>
-                    <option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="COMPANY">کاربر شرکت</option>
+                    <option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="PARSIAN">کاربر پارسیان</option><option value="COMPANY">کاربر شرکت</option>
                 </select>
             </div>
 
@@ -2524,7 +2586,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button type="button" data-role="OPERATOR" onclick="pickNewUserRole('OPERATOR')"><i class="fas fa-file-signature"></i>کارشناس صدور</button>
                 <button type="button" data-role="FINANCE" onclick="pickNewUserRole('FINANCE')"><i class="fas fa-calculator"></i>کارشناس مالی</button>
                 <button type="button" data-role="COMPANY_LIAISON" onclick="pickNewUserRole('COMPANY_LIAISON')"><i class="fas fa-handshake"></i>همکار بیمه با ما</button>
-                <button type="button" data-role="COMPANY" onclick="pickNewUserRole('COMPANY')" class="col-span-2"><i class="fas fa-building"></i>کاربر شرکت</button>
+                <button type="button" data-role="PARSIAN" onclick="pickNewUserRole('PARSIAN')" title="فقط ساخت، دیدن و ویرایشِ گزارش‌های بازدیدِ خودش (انواعی که در «تنظیمات گزارش» به او داده شده)"><i class="fas fa-file-circle-check"></i>کاربر پارسیان</button>
+                <button type="button" data-role="COMPANY" onclick="pickNewUserRole('COMPANY')"><i class="fas fa-building"></i>کاربر شرکت</button>
             </div>
             <input type="hidden" id="su-role">
             <div id="su-fields" class="hidden mt-4">
@@ -2556,7 +2619,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
             <div id="esu-staff-box">
                 <div class="float-input">
-                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="ADMIN">مدیر کل</option></select>
+                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="PARSIAN">کاربر پارسیان</option><option value="ADMIN">مدیر کل</option></select>
                     <label>نقش</label>
                 </div>
                 <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
@@ -2892,13 +2955,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-lg shadow-red-500/30"><i class="fas fa-radiation-alt"></i></div>
             <h3 class="text-lg font-black text-red-600 mb-2">هشدار پاکسازی کامل</h3>
             <p class="text-xs text-slate-500 mb-4 leading-relaxed text-right">برای همیشه پاک می‌شود (سایت دقیقاً مثل روز اول می‌شود):<br>
-                • معرفی‌نامه‌ها، پرونده‌ها، مدارک، بازدیدها و تاریخچه‌ی بررسی‌ها<br>
+                • معرفی‌نامه‌ها، پرونده‌ها، مدارک، بازدیدها و تاریخچه‌ی بررسی‌ها<br>                • گزارش‌های بازدیدِ صادرشده (با عکس‌ها و نسخه‌های قبلی)<br>
                 • شرکت‌ها، درخواست‌های شرکتی و کاربرانِ شرکت‌ها<br>
                 • همه‌ی اطلاعات مالی (اقساط، دریافت‌ها، چک‌ها، صورتحساب‌ها، تسویه‌ها)<br>
                 • تیکت‌ها و همه‌ی چت‌ها، اعلان‌ها و اعلان‌های مدیر<br>
                 • کاربران داخلی غیرمدیر، لاگ ورود و خروج، کدهای ورود و درخواست‌های بازیابی رمز<br>
                 • کل بایگانی و پوشه‌های موقت روی هاست<br>
-                <b class="text-slate-600">حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی و قالب‌های صورتحساب می‌مانند.</b></p>
+                <b class="text-slate-600">حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی، قالب‌های صورتحساب و تنظیمات گزارش بازدید (انواع، قالب‌ها، فیلدها، بازدیدکننده‌ها و بیمه‌گذاران) می‌مانند.</b></p>
             <input type="password" id="reset-password-input" placeholder="رمز تایید را وارد کنید" class="w-full border rounded-xl px-3 py-2.5 text-sm text-center mb-4" dir="ltr">
             <div class="flex gap-3">
                 <button type="button" onclick="executeResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، همه‌چیز پاک شود</button>
@@ -2989,6 +3052,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
     <script src="money-input.js?v=1"></script>
+    <?php if ($vrAccess): ?>
+    <script src="visit-reports.js?v=1"></script>
+    <script src="visit-reports-list.js?v=1"></script>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=1"></script><?php endif; ?>
+    <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
         // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
@@ -3532,8 +3600,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
-        <?php if (!$isLiaison): ?>
-        // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» به این بخش دسترسی ندارد
+        <?php if (!$isLiaison && !$isParsian): ?>
+        // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» و «کاربر پارسیان» به این بخش دسترسی ندارند
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
         loadStats();
@@ -3553,6 +3621,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endif; ?>
         <?php if ($isLiaison): ?>
         switchTab('companies-requests');
+        <?php endif; ?>
+        <?php if ($isParsian): ?>
+        switchTab('vr-build');
         <?php endif; ?>
 
         async function loadRecords() {
@@ -5815,7 +5886,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما', PARSIAN: 'کاربر پارسیان'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
@@ -6179,6 +6250,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'companies-manage') loadCompanyManage();
             if (tabId === 'staff-users') loadStaffUsers();
             if (tabId === 'login-logs') loadLoginLogs();
+            if (tabId === 'vr-build' && window.VR) VR.initBuildTab();
+            if (tabId === 'vr-list' && window.VR) VR.initListTab();
+            if (tabId === 'vr-settings' && window.VR && VR.initSettingsTab) VR.initSettingsTab();
         }
 
         // ======================= بخش مالی =======================
@@ -7787,6 +7861,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     + (photos.length > 7 ? `<span class="w-12 h-12 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">+${e2p(photos.length - 7)}</span>` : '');
                 // همه‌ی عکس‌ها تایید شده: با بارگذاریِ فایلِ گزارش، بازدید تاییدِ نهایی می‌شود
                 const reportHtml = h.status !== 'PHOTOS_APPROVED' ? '' :
+                    (window.VR ? `<button type="button" onclick="buildHealthReport(${h.id})" class="text-[11px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-2.5 py-1.5 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : '') +
                     `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${h.id}, this)"></label>`;
                 const legacy = !healthPerPhoto && h.status === 'PENDING'
                     ? `<button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">تایید کل</button>
@@ -7866,10 +7941,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 sum.className = 'text-[11px] leading-relaxed rounded-lg p-2 ' + (c.REJECTED ? 'bg-rose-900/60 text-rose-100' : 'bg-emerald-900/60 text-emerald-100');
                 const st = hvData.inspection.status;
                 if (c.REJECTED) sum.textContent = `بررسی تمام شد: ${e2pNum(c.REJECTED)} عکس رد شد. بازدید «ناقص» است و از کاربر خواسته شد فقط همین‌ها را دوباره بفرستد.`;
-                else if (st === 'PHOTOS_APPROVED') sum.innerHTML = `<b>همه‌ی عکس‌ها تایید و بایگانی شد.</b><br>برای تاییدِ نهایی، فایلِ گزارشِ کارشناس را بارگذاری کنید؛ بعد از آن پرونده وارد «در حال صدور» می‌شود.
+                else if (st === 'PHOTOS_APPROVED') sum.innerHTML = `<b>همه‌ی عکس‌ها تایید و بایگانی شد.</b><br>برای تاییدِ نهایی، گزارش بازدید را همین‌جا بسازید یا فایلِ گزارشِ کارشناس را بارگذاری کنید؛ بعد از آن پرونده وارد «در حال صدور» می‌شود.
+                    ${window.VR ? `<button type="button" onclick="buildHealthReport(${hvData.inspection.id}, true)" class="mt-2 block w-full text-center text-[12px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-3 py-2 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : ''}
                     <label class="mt-2 block text-center text-[12px] text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی
                         <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${hvData.inspection.id}, this, true)"></label>`;
-                else sum.innerHTML = 'بازدید به‌طور نهایی تایید شده است.' + (hvData.inspection.report_file_path ? ` <a class="underline" target="_blank" href="/${encodeFilePath(hvData.inspection.report_file_path)}">فایل گزارش</a>` : '');
+                else sum.innerHTML = 'بازدید به‌طور نهایی تایید شده است.' + (hvData.inspection.report_file_path ? ` <a class="underline" target="_blank" href="/${encodeFilePath(hvData.inspection.report_file_path)}">فایل گزارش</a>` : '')
+                    + (window.VR ? ` · <button type="button" class="underline" onclick="buildHealthReport(${hvData.inspection.id}, true)">ساخت/ویرایش گزارش بازدید</button>` : '');
             } else sum.classList.add('hidden');
         }
         function hvShow(i) {
@@ -7957,6 +8034,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (e.key === 'ArrowLeft') hvGo(1); else if (e.key === 'ArrowRight') hvGo(-1); else if (e.key === 'Escape') hvClose();
             });
         })();
+
+        // «ساخت گزارش بازدید» از روی یک بازدید سلامت: همان فرمِ صدور در پاپ‌آپ؛ PDF مستقیم در همین بازدید می‌نشیند.
+        // اگر برای این بازدید قبلاً گزارش صادر شده، همان گزارش برای ویرایش باز می‌شود.
+        async function buildHealthReport(inspectionId, fromViewer = false) {
+            if (!window.VR) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            const done = () => {
+                if (fromViewer && hvData) { hvData.inspection.status = 'APPROVED'; hvRenderStrip(); }
+                loadHealthTab();
+            };
+            const pre = await VR.api('health_prefill', { id: inspectionId });
+            if (!pre.ok) { showToast(pre.error || 'خطا', 'error'); return; }
+            if (pre.existing) {
+                showToast(`برای این بازدید قبلاً گزارش ${pre.existing.report_no} صادر شده؛ همان برای ویرایش باز شد.`, 'info');
+                VR.openEditor(pre.existing.id, done);
+                return;
+            }
+            VR.openHealthBuilder(inspectionId, done);
+        }
 
         async function uploadHealthReport(inspectionId, input, fromViewer = false) {
             if (!input.files[0]) return;

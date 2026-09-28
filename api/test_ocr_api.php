@@ -9,7 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 
 // «همکار شرکت‌ها» (COMPANY_LIAISON) فقط به شرکت‌ها، بایگانی و مالی دسترسی دارد؛
 // منوی این بخش برایش پنهان است و اینجا هم مستقیم جلویش گرفته می‌شود.
-if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
+if (in_array($_SESSION['role'] ?? '', ['COMPANY_LIAISON', 'PARSIAN'], true)) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE);
     exit;

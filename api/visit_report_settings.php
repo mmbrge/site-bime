@@ -8,7 +8,7 @@
 //   بازدیدکننده‌ها و بیمه‌گذاران (برای هر نوع گزارش)، قلم‌ها، مسیرِ پایتون، رمزِ اکسل، تاریخچه
 if (!isset($pdo, $user) || !$user['is_admin']) exit;
 
-$ROLES = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'رابط شرکت‌ها', 'PARSIAN' => 'کاربر پارسیان'];
+$ROLES = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'کاربر پارسیان'];
 
 function vrs_template_info($pdo, $cat, $siteRoot) {
     $tpl = $cat['template_path'] ? $siteRoot . '/' . ltrim($cat['template_path'], '/') : null;

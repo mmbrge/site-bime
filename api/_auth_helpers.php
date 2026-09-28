@@ -32,7 +32,7 @@ function auth_norm_phone($p) {
 function auth_role_fa($type, $role = null) {
     if ($type === 'COMPANY') return 'کاربر شرکت';
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی',
-            'COMPANY_LIAISON' => 'همکار بیمه با ما'][$role] ?? 'کاربر پنل';
+            'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'کاربر پارسیان'][$role] ?? 'کاربر پنل';
 }
 
 // همه‌ی حساب‌هایی که با این شماره ثبت شده‌اند (کاربر حذف‌شده یا غیرفعال حساب نمی‌شود)
