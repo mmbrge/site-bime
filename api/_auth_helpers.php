@@ -187,6 +187,34 @@ function auth_digits($s) {
 }
 function auth_fa($s) { return strtr((string)$s, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']); }
 
+// ---------------- شماره‌ی تکراری ----------------
+// اولین کاربرِ دیگری (کاربر پنل یا کاربر شرکت، حذف‌نشده) که همین شماره را دارد؛ null یعنی آزاد است.
+// ($exceptType/$exceptId: خودِ کاربری که در حالِ ویرایش است حساب نمی‌شود)
+function auth_phone_owner($pdo, $phone, $exceptType = null, $exceptId = 0) {
+    $phone = auth_norm_phone($phone);
+    if ($phone === '') return null;
+    $notDeleted = auth_schema_ready($pdo) ? ' AND COALESCE(is_deleted, 0) = 0' : '';
+    $sources = [['STAFF', "SELECT id, full_name, role, mobile_number FROM users WHERE mobile_number IS NOT NULL AND mobile_number <> ''$notDeleted"],
+                ['COMPANY', "SELECT id, full_name, NULL AS role, mobile_number FROM company_portal_users WHERE mobile_number IS NOT NULL AND mobile_number <> ''$notDeleted"]];
+    foreach ($sources as [$type, $sql]) {
+        foreach ($pdo->query($sql)->fetchAll() as $u) {
+            if ($type === $exceptType && intval($u['id']) === intval($exceptId)) continue;
+            if (auth_norm_phone($u['mobile_number']) === $phone) return ['type' => $type, 'id' => intval($u['id']), 'name' => $u['full_name'], 'role_fa' => auth_role_fa($type, $u['role'])];
+        }
+    }
+    return null;
+}
+function auth_phone_conflict_msg($o) {
+    return "خطا: شماره تماس با کاربر «{$o['name']}» ({$o['role_fa']}) یکسان است؛ لطفاً شماره تماس دیگری وارد کنید.";
+}
+
+// درخواست‌های بازیابی رمز که تایید یا رد شده‌اند، ۳۰ روز بعد از بررسی خودکار پاک می‌شوند
+function auth_purge_old_resets($pdo) {
+    if (!auth_schema_ready($pdo)) return;
+    try { $pdo->exec("DELETE FROM password_reset_requests WHERE status IN ('APPROVED', 'REJECTED') AND COALESCE(handled_at, requested_at) < DATE_SUB(NOW(), INTERVAL 30 DAY)"); }
+    catch (Throwable $e) { error_log('[auth_purge_old_resets] ' . $e->getMessage()); }
+}
+
 // ---------------- لاگ ورود ----------------
 function auth_parse_ua($ua) {
     $ua = (string)$ua;

@@ -599,6 +599,7 @@ function show_account($chat, $acc, $accounts) {
 }
 function request_reset($chat, $acc) {
     global $pdo;
+    auth_purge_old_resets($pdo);
     $st = $pdo->prepare("SELECT COUNT(*) FROM password_reset_requests WHERE user_type = ? AND user_id = ? AND status = 'PENDING'");
     $st->execute([$acc['type'], $acc['user']['id']]);
     if (intval($st->fetchColumn())) { say($chat, '⏳ درخواستِ بازیابی رمزِ شما قبلاً ثبت شده و در انتظار بررسیِ مدیر است. نتیجه همین‌جا برایتان فرستاده می‌شود.'); return; }

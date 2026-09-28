@@ -47,6 +47,11 @@ try {
     }
 
     if ($action === 'logout') {
+        if (!empty($_SESSION['company_user_id'])) {
+            $st = $pdo->prepare("SELECT id, full_name, username FROM company_portal_users WHERE id = ?");
+            $st->execute([intval($_SESSION['company_user_id'])]);
+            if ($u = $st->fetch()) auth_log_login($pdo, 'COMPANY', $u, 'LOGOUT', true);
+        }
         $_SESSION = [];
         session_destroy();
         echo json_encode(['ok' => true]);

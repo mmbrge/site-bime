@@ -586,6 +586,7 @@ try {
         }
         $mobileIn = trim($data['mobile_number'] ?? '');
         if ($mobileIn !== '' && auth_norm_phone($mobileIn) === '') { echo json_encode(['ok' => false, 'error' => 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۱۲۳۴۵۶۷).']); exit; }
+        if ($mobileIn !== '' && ($o = auth_phone_owner($pdo, $mobileIn))) { echo json_encode(['ok' => false, 'error' => auth_phone_conflict_msg($o)], JSON_UNESCAPED_UNICODE); exit; }
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("INSERT INTO company_portal_users (company_id, username, password_hash, full_name, mobile_number) VALUES (?, ?, ?, ?, ?)");
         $stmt->execute([$companyIds[0], $username, password_hash($password, PASSWORD_DEFAULT), $fullName, $mobileIn !== '' ? auth_norm_phone($mobileIn) : null]);
@@ -617,6 +618,9 @@ try {
         $stOld = $pdo->prepare("SELECT * FROM company_portal_users WHERE id = ?");
         $stOld->execute([$id]);
         $oldUser = $stOld->fetch();
+        if ($mobile && auth_norm_phone($oldUser['mobile_number'] ?? '') !== $mobile && ($o = auth_phone_owner($pdo, $mobile, 'COMPANY', $id))) {
+            echo json_encode(['ok' => false, 'error' => auth_phone_conflict_msg($o)], JSON_UNESCAPED_UNICODE); exit;
+        }
 
         $pdo->beginTransaction();
         if ($password !== '') {

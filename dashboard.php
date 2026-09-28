@@ -210,6 +210,45 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         @media (max-width: 767px) { #hv-modal .hv-main { flex-direction: column; } #hv-modal .hv-side { width: auto; max-height: 45vh; border-right: 0; border-top: 1px solid rgba(255,255,255,.1); } }
         .bot-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.15); vertical-align: middle; margin-left: 4px; }
         .bot-dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+        /* صفحه‌ی کاربران: فیلترِ نوع، چیپِ نقش، انتخابِ نقش در فرمِ افزودن */
+        .su-seg { display: inline-flex; background: #f1f5f9; border-radius: 12px; padding: 3px; gap: 2px; }
+        .su-seg button { font-size: 11px; font-weight: 700; color: #64748b; padding: 6px 12px; border-radius: 9px; transition: all .2s; }
+        .su-seg button.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+        .su-chip { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; }
+        .su-chip.ad { background: #eef2ff; color: #4338ca; }
+        .su-chip.co { background: #ecfdf5; color: #047857; }
+        .su-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .su-role-grid button { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 700; color: #475569;
+            border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 8px; background: #fff; transition: all .2s; }
+        .su-role-grid button:hover { border-color: #93c5fd; background: #f8fafc; }
+        .su-role-grid button.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+        .su-role-grid .col-span-2 { grid-column: span 2; }
+        .su-fade { animation: suFade .3s ease; }
+        /* نمودارهای داشبورد */
+        .dc-wrap { background: linear-gradient(180deg, #ffffff 0%, #fafbff 100%); }
+        .dc-seg { display: inline-flex; flex-wrap: wrap; background: #f1f5f9; border-radius: 12px; padding: 3px; gap: 2px; }
+        .dc-seg button { font-size: 11px; font-weight: 700; color: #64748b; padding: 6px 11px; border-radius: 9px; transition: all .25s; display: inline-flex; align-items: center; gap: 5px; }
+        .dc-seg button:hover { color: #334155; }
+        .dc-seg button.active { background: #fff; color: #4338ca; box-shadow: 0 1px 4px rgba(15,23,42,.12); }
+        .dc-sw { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+        .dc-sw.p { background: linear-gradient(135deg, #3b82f6, #6366f1); }
+        .dc-sw.c { background: linear-gradient(135deg, #10b981, #14b8a6); }
+        .dc-pop { display: none; }
+        .dc-pop.show { display: inline-flex; animation: suFade .25s ease; }
+        .dc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+        @media (min-width: 1024px) { .dc-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+        .dc-panel { border: 1px solid #eef2f7; border-radius: 18px; padding: 16px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.03); }
+        .dc-legend { display: flex; gap: 12px; font-size: 10px; font-weight: 700; color: #64748b; margin: 8px 0 2px; min-height: 14px; }
+        .dc-legend span { display: inline-flex; align-items: center; gap: 4px; }
+        .dc-chart { position: relative; height: 230px; }
+        .dc-chart svg { width: 100%; height: 100%; overflow: visible; }
+        .dc-chart .dc-tip { position: absolute; pointer-events: none; background: #0f172a; color: #fff; font-size: 11px; line-height: 1.7; border-radius: 10px;
+            padding: 6px 10px; white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; transition: opacity .15s; z-index: 5; box-shadow: 0 8px 20px rgba(15,23,42,.25); }
+        .dc-chart .dc-tip.on { opacity: 1; }
+        .dc-delta { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+        .dc-delta.up { background: #ecfdf5; color: #047857; } .dc-delta.down { background: #fef2f2; color: #b91c1c; } .dc-delta.flat { background: #f1f5f9; color: #64748b; }
+        .dc-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #94a3b8; pointer-events: none; }
+        @keyframes suFade { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -409,8 +448,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('tickets')" id="nav-tickets" class="nav-item menu-link"><i class="fas fa-comments ml-2"></i> گفتگوها</a>
                         <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران ربات بله</a>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
-                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران پنل (داخلی)</a>
-                        <a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود</a>
+                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a>
+                        <a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -504,6 +543,60 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                     <h3 class="text-2xl font-black text-slate-800 mt-2" id="stat-issued">۰</h3>
                     <p class="text-[11px] text-slate-400 mt-1">فرآیند صدور نهایی شده</p>
+                </div>
+            </div>
+
+            <!-- ===== نمودارهای صدور و فروش (بازه‌ی شمسی + منبع) ===== -->
+            <div class="card p-4 md:p-5 dc-wrap">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="font-black text-slate-800 text-base"><i class="fas fa-chart-column text-indigo-500 ml-1"></i>گزارش صدور و فروش</h2>
+                        <p id="dc-range" class="text-[11px] text-slate-400 mt-0.5">&nbsp;</p>
+                    </div>
+                    <div class="dc-seg" id="dc-source" <?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? '' : 'style="display:none"'; ?>>
+                        <button type="button" data-v="ALL" class="active" onclick="setDcSource('ALL')">همه</button>
+                        <button type="button" data-v="PERSONNEL" onclick="setDcSource('PERSONNEL')"><span class="dc-sw p"></span>پرسنلی</button>
+                        <button type="button" data-v="COMPANY" onclick="setDcSource('COMPANY')"><span class="dc-sw c"></span>شرکتی</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 mb-4">
+                    <div class="dc-seg dc-period" id="dc-period">
+                        <button type="button" data-v="TODAY" onclick="setDcPeriod('TODAY')">امروز</button>
+                        <button type="button" data-v="MONTH" onclick="setDcPeriod('MONTH')">یک ماه</button>
+                        <button type="button" data-v="3M" onclick="setDcPeriod('3M')">سه ماه</button>
+                        <button type="button" data-v="6M" class="active" onclick="setDcPeriod('6M')">شش ماه</button>
+                        <button type="button" data-v="YEAR" onclick="setDcPeriod('YEAR')">یک سال</button>
+                        <button type="button" data-v="JYEAR" onclick="setDcPeriod('JYEAR')"><i class="far fa-calendar ml-1"></i>سال شمسی</button>
+                        <button type="button" data-v="RANGE" onclick="setDcPeriod('RANGE')"><i class="fas fa-sliders ml-1"></i>بازه‌ی دلخواه</button>
+                    </div>
+                    <div id="dc-jyear-box" class="dc-pop">
+                        <select id="dc-year" onchange="loadDashCharts()" class="border rounded-lg px-2 py-1.5 text-xs font-bold"></select>
+                    </div>
+                    <div id="dc-range-box" class="dc-pop flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500">
+                        از <select id="dc-fm" class="border rounded-lg px-1.5 py-1 text-xs"></select><select id="dc-fy" class="border rounded-lg px-1.5 py-1 text-xs"></select>
+                        تا <select id="dc-tm" class="border rounded-lg px-1.5 py-1 text-xs"></select><select id="dc-ty" class="border rounded-lg px-1.5 py-1 text-xs"></select>
+                        <button type="button" onclick="loadDashCharts()" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3 py-1 text-xs">نمایش</button>
+                    </div>
+                </div>
+                <div class="dc-grid">
+                    <div class="dc-panel">
+                        <div class="flex items-start justify-between gap-2">
+                            <div><p class="text-xs font-bold text-slate-500">تعداد بیمه‌نامه‌های صادره</p>
+                                <p class="text-2xl font-black text-slate-800 mt-1"><span id="dc-count-total">۰</span> <span class="text-xs text-slate-400 font-bold">فقره</span></p></div>
+                            <span id="dc-count-delta" class="dc-delta"></span>
+                        </div>
+                        <div class="dc-legend" id="dc-count-legend"></div>
+                        <div class="dc-chart" id="dc-count-chart"></div>
+                    </div>
+                    <div class="dc-panel">
+                        <div class="flex items-start justify-between gap-2">
+                            <div><p class="text-xs font-bold text-slate-500">مبلغ فروش حق بیمه</p>
+                                <p class="text-2xl font-black text-slate-800 mt-1"><span id="dc-amount-total">۰</span> <span class="text-xs text-slate-400 font-bold">ریال</span></p></div>
+                            <span id="dc-amount-delta" class="dc-delta"></span>
+                        </div>
+                        <div class="dc-legend" id="dc-amount-legend"></div>
+                        <div class="dc-chart" id="dc-amount-chart"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1599,35 +1692,53 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران پنل (داخلی)</h1>
-                    <p class="text-xs text-slate-400 mt-1">حساب‌های خودمان (مدیر، کارشناس صدور، مالی، همکار بیمه با ما). ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران</h1>
+                    <p class="text-xs text-slate-400 mt-1">کاربرانِ داخلیِ پنل (مدیر، کارشناس صدور، مالی، همکار بیمه با ما) و کاربرانِ شرکت‌ها. ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
                 </div>
                 <div class="flex gap-2 flex-wrap">
-                    <button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود</button>
+                    <button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود و خروج</button>
                     <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
-                    <button onclick="openModal('add-staff-user-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن عضو</button>
+                    <button onclick="openAddUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن کاربر</button>
                 </div>
             </div>
             <p id="su-schema-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">برای ویرایش، حذف، لاگ ورود و ورود با ربات، مایگریشن migrations/016_users_bot_login.sql را اجرا کنید.</p>
 
-            <!-- درخواست‌های بازیابی رمز (از ربات بله‌ی شرکت‌ها) -->
-            <div id="su-resets-card" class="card p-4 border-amber-100 hidden">
-                <h2 class="font-bold text-amber-700 text-sm mb-2"><i class="fas fa-key ml-1"></i>درخواست‌های بازیابی رمز <span id="su-resets-count" class="text-[11px] bg-amber-100 rounded-full px-2 py-0.5"></span></h2>
-                <div id="su-resets" class="space-y-2"></div>
+            <!-- جستجو و فیلتر -->
+            <div class="card p-3 flex flex-wrap items-center gap-2">
+                <div class="relative flex-1 min-w-[220px]">
+                    <i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                    <input type="search" id="su-q" oninput="renderStaffUsers()" placeholder="جستجو: نام، نام کاربری، موبایل، شرکت، نقش..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs">
+                </div>
+                <div class="su-seg" id="su-type-seg">
+                    <button type="button" data-v="" class="active" onclick="setUserTypeFilter('')">همه <span id="su-n-all"></span></button>
+                    <button type="button" data-v="STAFF" onclick="setUserTypeFilter('STAFF')"><i class="fas fa-user-tie ml-1"></i>داخلی <span id="su-n-staff"></span></button>
+                    <button type="button" data-v="COMPANY" onclick="setUserTypeFilter('COMPANY')"><i class="fas fa-building ml-1"></i>شرکتی <span id="su-n-company"></span></button>
+                </div>
+                <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
+                    <option value="">همه‌ی نقش‌ها</option><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option>
+                    <option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="COMPANY">کاربر شرکت</option>
+                </select>
             </div>
 
             <div class="card overflow-x-auto">
-                <div class="flex items-center justify-between px-3 pt-3 text-[11px] text-slate-500">
+                <div class="flex items-center justify-between px-3 pt-3 text-[11px] text-slate-500 flex-wrap gap-2">
                     <span><span class="bot-dot on"></span> وصل به ربات بله &nbsp;&nbsp; <span class="bot-dot"></span> هنوز وارد ربات نشده</span>
                     <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="su-show-deleted" onchange="loadStaffUsers()"> نمایش حذف‌شده‌ها</label>
                 </div>
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
                         <th class="p-3 text-right">نام</th><th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نقش</th>
-                        <th class="p-3 text-right">کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین ورود</th><th class="p-3 text-right"></th>
+                        <th class="p-3 text-right">شرکت / کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین ورود</th><th class="p-3 text-right"></th>
                     </tr></thead>
                     <tbody id="su-body"><tr><td colspan="7" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
+            </div>
+
+            <!-- درخواست‌های بازیابی رمز (از ربات بله‌ی شرکت‌ها) - تاییدشده/ردشده‌ها ۳۰ روز بعد خودکار پاک می‌شوند -->
+            <div id="su-resets-card" class="card p-4 border-amber-100 hidden">
+                <h2 class="font-bold text-amber-700 text-sm mb-1"><i class="fas fa-key ml-1"></i>درخواست‌های بازیابی رمز <span id="su-resets-count" class="text-[11px] bg-amber-100 rounded-full px-2 py-0.5"></span></h2>
+                <p class="text-[10px] text-slate-400 mb-2">درخواست‌های تاییدشده یا ردشده، ۳۰ روز بعد از بررسی خودکار پاک می‌شوند.</p>
+                <div id="su-resets" class="space-y-2"></div>
             </div>
         </div>
 
@@ -1635,20 +1746,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-login-logs" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-right-to-bracket text-indigo-500 ml-2"></i>لاگ ورود</h1>
-                    <p class="text-xs text-slate-400 mt-1">هر ورود به پنل ما و پنل شرکت‌ها: تاریخ و ساعت، روش (رمز / کد بله)، مرورگر و دستگاه.</p>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-right-to-bracket text-indigo-500 ml-2"></i>لاگ ورود و خروج</h1>
+                    <p class="text-xs text-slate-400 mt-1">هر ورود و خروجِ پنل ما و پنل شرکت‌ها: تاریخ و ساعت، روش (رمز / کد بله / خروج)، مرورگر و دستگاه.</p>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="switchTab('staff-users')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-shield ml-1"></i>کاربران پنل</button>
+                    <button onclick="switchTab('staff-users')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-shield ml-1"></i>کاربران</button>
                     <button onclick="loadLoginLogs()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt ml-1"></i>بروزرسانی</button>
                 </div>
             </div>
             <div class="card p-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-                <label class="text-[11px] font-bold text-slate-500 col-span-2">جستجو (نام، مرورگر، دستگاه، IP)<input id="ll-q" oninput="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-3 py-2 text-xs"></label>
+                <label class="text-[11px] font-bold text-slate-500 col-span-2">جستجو (نام، نقش، تاریخ، مرورگر، دستگاه، IP)<input id="ll-q" type="search" oninput="renderLoginLogs()" placeholder="مثلاً نام کاربر یا ۱۴۰۵.۰۷" class="mt-1 w-full border rounded-lg px-3 py-2 text-xs"></label>
                 <label class="text-[11px] font-bold text-slate-500">نوع کاربر
                     <select id="ll-type" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="STAFF">کاربران پنل</option><option value="COMPANY">کاربران شرکت‌ها</option></select></label>
                 <label class="text-[11px] font-bold text-slate-500">روش
-                    <select id="ll-method" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="PASSWORD">رمز عبور</option><option value="OTP">کد بله</option></select></label>
+                    <select id="ll-method" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="IN">فقط ورودها</option><option value="PASSWORD">ورود با رمز عبور</option><option value="OTP">ورود با کد بله</option><option value="LOGOUT">فقط خروج‌ها</option></select></label>
                 <label class="text-[11px] font-bold text-slate-500">نتیجه
                     <select id="ll-ok" onchange="renderLoginLogs()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"><option value="">همه</option><option value="1">موفق</option><option value="0">ناموفق</option></select></label>
             </div>
@@ -1906,7 +2017,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex gap-2">
                     <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
                     <button onclick="resetCompanyForm(); openModal('add-company-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن شرکت</button>
-                    <button onclick="openAddPortalUserModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-user-plus ml-1"></i>افزودن عضو</button>
+                    <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-users ml-1"></i>کاربرانِ شرکت‌ها</button>
                 </div>
             </div>
             <div class="card overflow-x-auto">
@@ -1920,14 +2031,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <tbody id="cm-companies-body"><tr><td colspan="4" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
             </div>
-            <div class="card overflow-x-auto">
-                <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نام</th>
-                        <th class="p-3 text-right">شرکت(ها)</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right"></th>
-                    </tr></thead>
-                    <tbody id="cm-portal-users-body"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
-                </table>
+            <div class="card p-4 flex items-center justify-between gap-3 flex-wrap bg-emerald-50/40 border-emerald-100">
+                <p class="text-xs text-slate-600"><i class="fas fa-circle-info text-emerald-600 ml-1"></i>افزودن، ویرایش، حذف و پیام به کاربرانِ شرکت‌ها حالا در صفحه‌ی «کاربران» انجام می‌شود.</p>
+                <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold">رفتن به کاربرانِ شرکت‌ها</button>
             </div>
         </div>
         <?php endif; ?>
@@ -2407,44 +2513,61 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
-    <!-- مودال افزودن عضو داخلی جدید -->
+    <!-- افزودن کاربر: اول نقش انتخاب می‌شود، بعد فیلدهای همان نقش -->
     <div id="add-staff-user-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative">
+        <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
             <button type="button" onclick="closeModal('add-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-4">افزودن کاربر داخلی جدید</h3>
-            <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
-            <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
-            <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور</label></div>
-            <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
-            <div class="float-input"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
-            <div class="float-input">
-                <select id="su-role">
-                    <option value="OPERATOR">کارشناس صدور</option>
-                    <option value="FINANCE">کارشناس مالی</option>
-                    <option value="COMPANY_LIAISON">همکار بیمه با ما</option>
-                    <option value="ADMIN">مدیر کل</option>
-                </select>
-                <label>نقش</label>
+            <h3 class="font-black text-lg mb-1">افزودن کاربر</h3>
+            <p class="text-[11px] text-slate-400 mb-4">ابتدا نقش را انتخاب کنید؛ فیلدهای مخصوصِ همان نقش نمایش داده می‌شود.</p>
+            <div class="su-role-grid" id="su-role-grid">
+                <button type="button" data-role="ADMIN" onclick="pickNewUserRole('ADMIN')"><i class="fas fa-crown"></i>مدیر کل</button>
+                <button type="button" data-role="OPERATOR" onclick="pickNewUserRole('OPERATOR')"><i class="fas fa-file-signature"></i>کارشناس صدور</button>
+                <button type="button" data-role="FINANCE" onclick="pickNewUserRole('FINANCE')"><i class="fas fa-calculator"></i>کارشناس مالی</button>
+                <button type="button" data-role="COMPANY_LIAISON" onclick="pickNewUserRole('COMPANY_LIAISON')"><i class="fas fa-handshake"></i>همکار بیمه با ما</button>
+                <button type="button" data-role="COMPANY" onclick="pickNewUserRole('COMPANY')" class="col-span-2"><i class="fas fa-building"></i>کاربر شرکت</button>
             </div>
-            <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
+            <input type="hidden" id="su-role">
+            <div id="su-fields" class="hidden mt-4">
+                <div id="su-company-box" class="hidden mb-4">
+                    <label class="text-xs font-bold text-slate-500 block mb-1">شرکت(ها)ی این کاربر *</label>
+                    <input type="search" id="su-company-q" oninput="filterCompanyPicker('su')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1">
+                    <div id="su-company-list" class="border rounded-xl p-2 max-h-40 overflow-y-auto text-xs"></div>
+                    <p class="text-[10px] text-slate-400 mt-1">اگر چند شرکت انتخاب شود، کاربر در پنلش بین آن‌ها جابه‌جا می‌شود.</p>
+                </div>
+                <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی *</label></div>
+                <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری *</label></div>
+                <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور * (حداقل ۶)</label></div>
+                <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
+                <p id="su-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
+                <div class="float-input" id="su-personnel-box"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
+                <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
+            </div>
         </div>
     </div>
 
-    <!-- ویرایش کاربر داخلی (همه‌چیز جز نام کاربری) - با رمزِ مدیر -->
+    <!-- ویرایش کاربر (همه‌چیز جز نام کاربری) - با رمزِ مدیر -->
     <div id="edit-staff-user-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
             <button type="button" onclick="closeModal('edit-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">ویرایش کاربر</h3>
+            <h3 class="font-black text-lg mb-1">ویرایش کاربر <span id="esu-type-badge" class="text-[11px] font-bold bg-slate-100 text-slate-600 rounded-full px-2 py-0.5 align-middle"></span></h3>
             <p class="text-[11px] text-slate-400 mb-4">نام کاربری تغییر نمی‌کند. اگر شماره عوض شود، کاربر از ربات بیرون می‌آید و پیام می‌گیرد که با شماره‌ی جدید دوباره وارد شود.</p>
-            <input type="hidden" id="esu-id">
+            <input type="hidden" id="esu-id"><input type="hidden" id="esu-type">
             <div class="float-input"><input type="text" id="esu-username" dir="ltr" placeholder=" " disabled class="bg-slate-100"><label>نام کاربری (ثابت)</label></div>
             <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
-            <div class="float-input">
-                <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="ADMIN">مدیر کل</option></select>
-                <label>نقش</label>
+            <div id="esu-staff-box">
+                <div class="float-input">
+                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="ADMIN">مدیر کل</option></select>
+                    <label>نقش</label>
+                </div>
+                <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
             </div>
-            <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
+            <div id="esu-company-box" class="hidden mb-4">
+                <label class="text-xs font-bold text-slate-500 block mb-1">شرکت(ها)ی این کاربر</label>
+                <input type="search" id="esu-company-q" oninput="filterCompanyPicker('esu')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1">
+                <div id="esu-company-list" class="border rounded-xl p-2 max-h-40 overflow-y-auto text-xs"></div>
+            </div>
             <div class="float-input"><input type="text" id="esu-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل</label></div>
+            <p id="esu-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
             <div class="float-input"><input type="text" id="esu-password" dir="ltr" placeholder=" " autocomplete="new-password"><label>رمز عبورِ جدید (خالی = بدون تغییر)</label></div>
             <div class="border-t pt-3 mt-2">
                 <div class="float-input"><input type="password" id="esu-admin-pass" dir="ltr" placeholder=" " autocomplete="current-password"><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
@@ -2453,15 +2576,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
-    <!-- حذف کاربر داخلی - با رمزِ مدیر -->
+    <!-- حذف کاربر - با رمزِ مدیر -->
     <div id="delete-staff-user-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-sm p-6 relative" style="margin:0 12px;">
             <button type="button" onclick="closeModal('delete-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-2 text-red-600"><i class="fas fa-user-slash ml-1"></i>حذف کاربر</h3>
             <p class="text-xs text-slate-600 leading-6 mb-3">«<b id="dsu-name"></b>» دیگر نمی‌تواند وارد پنل یا ربات شود. <b>نامش روی همه‌ی کارهایی که قبلاً انجام داده باقی می‌ماند.</b></p>
-            <input type="hidden" id="dsu-id">
+            <input type="hidden" id="dsu-id"><input type="hidden" id="dsu-type">
             <div class="float-input"><input type="password" id="dsu-admin-pass" dir="ltr" placeholder=" "><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
             <button onclick="confirmDeleteStaffUser()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">حذف کاربر</button>
+        </div>
+    </div>
+
+    <!-- پیام مستقیم به یک کاربر -->
+    <div id="dm-user-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-md p-6 relative" style="margin:0 12px;">
+            <button type="button" onclick="closeModal('dm-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1"><i class="fas fa-paper-plane text-blue-500 ml-1"></i>پیام مستقیم به <span id="dm-name"></span></h3>
+            <p id="dm-channel" class="text-[11px] text-slate-500 mb-3 leading-5"></p>
+            <input type="hidden" id="dm-id"><input type="hidden" id="dm-type">
+            <textarea id="dm-text" rows="5" maxlength="3000" placeholder="متن پیام..." class="w-full border rounded-xl p-3 text-sm outline-none focus:border-blue-400"></textarea>
+            <button id="dm-send-btn" onclick="sendUserDM()" class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm"><i class="fas fa-paper-plane ml-1"></i>ارسال</button>
         </div>
     </div>
 
@@ -3067,6 +3202,239 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) {}
         }
 
+        // ======================= نمودارهای داشبورد =======================
+        // دو نمودارِ SVG بدونِ کتابخانه: ستونیِ انباشته (تعداد صادره) و ناحیه‌ایِ انباشته (مبلغ فروش).
+        // با هر تغییرِ فیلتر، مقدارها از حالتِ قبلی به حالتِ جدید «جابه‌جا» می‌شوند (انیمیشن).
+        // محورِ زمان راست‌به‌چپ است: قدیمی‌ترین دسته سمتِ راست.
+        const DC = { period: '6M', source: 'ALL', data: null, shown: null, anim: 0, reqId: 0, inited: false, totC: 0, totA: 0 };
+        const DC_MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+        const DC_COL = { p: ['#3b82f6', '#6366f1'], c: ['#10b981', '#14b8a6'] };
+
+        function setDcPeriod(v) {
+            DC.period = v;
+            document.querySelectorAll('#dc-period button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            document.getElementById('dc-jyear-box').classList.toggle('show', v === 'JYEAR');
+            document.getElementById('dc-range-box').classList.toggle('show', v === 'RANGE');
+            if (v !== 'RANGE') loadDashCharts();
+        }
+        function setDcSource(v) {
+            DC.source = v;
+            document.querySelectorAll('#dc-source button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            loadDashCharts();
+        }
+        function dcFillYearSelects(years, cur) {
+            if (DC.inited) return;
+            DC.inited = true;
+            const yOpts = years.map(y => `<option value="${y}">${e2p(y)}</option>`).join('');
+            const mOpts = DC_MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+            ['dc-year', 'dc-fy', 'dc-ty'].forEach(id => document.getElementById(id).innerHTML = yOpts);
+            ['dc-fm', 'dc-tm'].forEach(id => document.getElementById(id).innerHTML = mOpts);
+            document.getElementById('dc-year').value = cur.y;
+            document.getElementById('dc-fy').value = cur.y; document.getElementById('dc-fm').value = 1;
+            document.getElementById('dc-ty').value = cur.y; document.getElementById('dc-tm').value = cur.m;
+        }
+        async function loadDashCharts() {
+            if (!document.getElementById('dc-count-chart')) return;
+            const body = {period: DC.period, source: DC.source};
+            if (DC.inited) {
+                body.year = +document.getElementById('dc-year').value;
+                body.from_y = +document.getElementById('dc-fy').value; body.from_m = +document.getElementById('dc-fm').value;
+                body.to_y = +document.getElementById('dc-ty').value; body.to_m = +document.getElementById('dc-tm').value;
+            }
+            const my = ++DC.reqId;
+            try {
+                const res = await fetch('api/dashboard_charts.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const data = await res.json();
+                if (my !== DC.reqId) return;          // پاسخِ یک درخواستِ قدیمی‌تر
+                if (!data.ok) { showToast(data.error || 'خطا در دریافت نمودار', 'error'); return; }
+                dcFillYearSelects(data.years, data.current);
+                document.getElementById('dc-range').textContent = data.range_label;
+                dcAnimateTo(data);
+            } catch (e) {}
+        }
+
+        // اعدادِ کوتاه برای محور (۱٫۲ میلیارد، ۳۵۰ میلیون، ...)
+        function dcShort(n) {
+            n = Number(n) || 0;
+            const f = (v, u) => e2p((Math.round(v * 10) / 10).toString().replace('.', '٫')) + ' ' + u;
+            if (n >= 1e12) return f(n / 1e12, 'هزار میلیارد');
+            if (n >= 1e9) return f(n / 1e9, 'میلیارد');
+            if (n >= 1e6) return f(n / 1e6, 'میلیون');
+            if (n >= 1e3) return f(n / 1e3, 'هزار');
+            return e2p(Math.round(n));
+        }
+        function dcNiceMax(v) {
+            if (v <= 0) return 4;
+            const e = Math.pow(10, Math.floor(Math.log10(v))), m = v / e;
+            const nice = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10;
+            return Math.max(4, nice * e);
+        }
+        function dcDelta(elId, now, prev) {
+            const el = document.getElementById(elId);
+            if (!prev && !now) { el.className = 'dc-delta flat'; el.textContent = 'بدون تغییر'; return; }
+            if (!prev) { el.className = 'dc-delta up'; el.textContent = '▲ دوره‌ی قبل صفر بود'; return; }
+            const pct = Math.round((now - prev) / prev * 100);
+            el.className = 'dc-delta ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat');
+            el.textContent = (pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '') + e2p(Math.abs(pct)) + '٪ نسبت به دوره‌ی قبل';
+        }
+
+        // انیمیشن: از مقدارهای نمایش‌داده‌شده‌ی فعلی به مقدارهای جدید (ease-out)
+        function dcAnimateTo(data) {
+            const n = data.buckets.length;
+            const pick = (arr, i, k) => (arr && arr[i] ? Number(arr[i][k]) || 0 : 0);
+            const from = DC.shown && DC.shown.length ? DC.shown : null;
+            const target = data.buckets.map(b => ({p_count: +b.p_count, c_count: +b.c_count, p_amount: +b.p_amount, c_amount: +b.c_amount}));
+            // اگر تعدادِ دسته‌ها عوض شد، مقدارِ قبلی را روی دسته‌های جدید نگاشت می‌کنیم تا حرکت نرم بماند
+            const start = target.map((_, i) => {
+                if (!from) return {p_count: 0, c_count: 0, p_amount: 0, c_amount: 0};
+                const j = Math.min(from.length - 1, Math.round(i * (from.length - 1) / Math.max(1, n - 1)));
+                return {p_count: pick(from, j, 'p_count'), c_count: pick(from, j, 'c_count'), p_amount: pick(from, j, 'p_amount'), c_amount: pick(from, j, 'c_amount')};
+            });
+            const tot = data.totals, prevTot = data.prev;
+            const showP = data.source !== 'COMPANY', showC = data.source !== 'PERSONNEL';
+            const cNow = (showP ? +tot.p_count : 0) + (showC ? +tot.c_count : 0);
+            const aNow = (showP ? +tot.p_amount : 0) + (showC ? +tot.c_amount : 0);
+            const cPrev = (showP ? +prevTot.p_count : 0) + (showC ? +prevTot.c_count : 0);
+            const aPrev = (showP ? +prevTot.p_amount : 0) + (showC ? +prevTot.c_amount : 0);
+            dcDelta('dc-count-delta', cNow, cPrev);
+            dcDelta('dc-amount-delta', aNow, aPrev);
+            const leg = (showP ? `<span><i class="dc-sw p"></i>پرسنلی</span>` : '') + (showC ? `<span><i class="dc-sw c"></i>شرکتی</span>` : '');
+            document.getElementById('dc-count-legend').innerHTML = leg;
+            document.getElementById('dc-amount-legend').innerHTML = leg;
+
+            const cFrom = DC.totC, aFrom = DC.totA;
+            DC.data = data; DC.totC = cNow; DC.totA = aNow;
+            cancelAnimationFrame(DC.anim);
+            const t0 = performance.now(), dur = 750;
+            const step = now => {
+                const k = Math.min(1, Math.max(0, (now - t0) / dur)), e = 1 - Math.pow(1 - k, 3);
+                const cur = target.map((t, i) => {
+                    const s = start[i], o = {};
+                    for (const key in t) o[key] = s[key] + (t[key] - s[key]) * e;
+                    return o;
+                });
+                DC.shown = cur;
+                document.getElementById('dc-count-total').textContent = e2p(Math.round(cFrom + (cNow - cFrom) * e).toLocaleString('en-US'));
+                document.getElementById('dc-amount-total').textContent = money(Math.round(aFrom + (aNow - aFrom) * e));
+                dcRenderBars(cur, data, showP, showC);
+                dcRenderArea(cur, data, showP, showC);
+                if (k < 1) DC.anim = requestAnimationFrame(step);
+            };
+            DC.anim = requestAnimationFrame(step);
+        }
+
+        // ابعادِ واقعیِ کادر (پیکسل) - تا متن‌ها کش نیایند و در موبایل ریز نشوند
+        function dcFrame(n, box, L = 62) {
+            const W = Math.max(280, Math.round(box.clientWidth || 560)), H = 230, R = 8, T = 12, B = 34;
+            const pw = W - L - R, ph = H - T - B, slot = pw / Math.max(1, n);
+            const xAt = i => W - R - slot * (i + 0.5);            // مرکزِ دسته‌ی i (از راست)
+            return {W, H, L, R, T, B, pw, ph, slot, xAt};
+        }
+        function dcAxis(f, max, fmt, data) {
+            let g = '';
+            for (let i = 0; i <= 4; i++) {
+                const v = max * i / 4, y = f.T + f.ph - f.ph * i / 4;
+                g += `<line x1="${f.L}" x2="${f.W - f.R}" y1="${y}" y2="${y}" stroke="${i ? '#eef2f7' : '#e2e8f0'}" ${i ? 'stroke-dasharray="3 4"' : ''}/>`;
+                g += `<text x="${f.L - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#94a3b8">${fmt(v)}</text>`;
+            }
+            const n = data.buckets.length, every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(f.pw / (data.bucket === 'month' ? 58 : 34)))));
+            let lastSub = null;
+            data.buckets.forEach((b, i) => {
+                if (i % every !== 0 && i !== n - 1) return;
+                const x = f.xAt(i);
+                g += `<text x="${x}" y="${f.H - f.B + 14}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#64748b">${b.label}</text>`;
+                if (b.sub && (b.sub !== lastSub || data.bucket === 'month'))
+                    g += `<text x="${x}" y="${f.H - f.B + 26}" text-anchor="middle" font-size="8.5" fill="#94a3b8">${b.sub}</text>`;
+                lastSub = b.sub;
+            });
+            return g;
+        }
+        function dcGrad(id, c) { return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c[1]}"/><stop offset="1" stop-color="${c[0]}"/></linearGradient>`; }
+
+        function dcRenderBars(cur, data, showP, showC) {
+            const box = document.getElementById('dc-count-chart');
+            const f = dcFrame(cur.length, box, 34);
+            const tgtMax = Math.max(0, ...data.buckets.map(b => (showP ? +b.p_count : 0) + (showC ? +b.c_count : 0)));
+            const max = dcNiceMax(tgtMax);
+            const bw = Math.max(3, Math.min(30, f.slot * 0.6));
+            let bars = '';
+            cur.forEach((v, i) => {
+                const pv = showP ? v.p_count : 0, cv = showC ? v.c_count : 0;
+                const x = f.xAt(i) - bw / 2, base = f.T + f.ph;
+                const hp = f.ph * Math.min(1, pv / max), hc = f.ph * Math.min(1, cv / max);
+                if (hp > 0.2) bars += `<rect x="${x}" y="${base - hp}" width="${bw}" height="${hp}" rx="${hc > 0.2 ? 0 : Math.min(6, bw / 2)}" fill="url(#dcgP)"/>`;
+                if (hc > 0.2) bars += `<rect x="${x}" y="${base - hp - hc}" width="${bw}" height="${hc}" rx="${Math.min(6, bw / 2)}" fill="url(#dcgC)"/>`;
+                if (hp > 0.2 && hc > 0.2) bars += `<rect x="${x}" y="${base - hp - 1}" width="${bw}" height="2" fill="#fff" opacity=".7"/>`;
+            });
+            const empty = tgtMax === 0 ? '<div class="dc-empty">در این بازه صدوری ثبت نشده</div>' : '';
+            box.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}"><defs>${dcGrad('dcgP', DC_COL.p)}${dcGrad('dcgC', DC_COL.c)}</defs>
+                ${dcAxis(f, max, v => e2p(Math.round(v)), data)}${bars}${dcHoverZones(f, cur.length)}</svg><div class="dc-tip"></div>${empty}`;
+            dcBindHover(box, f, data, 'count', showP, showC);
+        }
+
+        function dcRenderArea(cur, data, showP, showC) {
+            const box = document.getElementById('dc-amount-chart');
+            const f = dcFrame(cur.length, box, 70);
+            const tgtMax = Math.max(0, ...data.buckets.map(b => (showP ? +b.p_amount : 0) + (showC ? +b.c_amount : 0)));
+            const max = dcNiceMax(tgtMax);
+            const base = f.T + f.ph, yOf = v => base - f.ph * Math.min(1, v / max);
+            const lower = cur.map((v, i) => [f.xAt(i), yOf(showP ? v.p_amount : 0)]);
+            const upper = cur.map((v, i) => [f.xAt(i), yOf((showP ? v.p_amount : 0) + (showC ? v.c_amount : 0))]);
+            // منحنیِ نرم با نقاطِ کنترلِ افقی (از بالا و پایینِ داده بیرون نمی‌زند)
+            const curve = (pts, lead) => pts.map((p, i) => i === 0 ? `${lead}${p[0]},${p[1]}` : `C${(pts[i - 1][0] + p[0]) / 2},${pts[i - 1][1]} ${(pts[i - 1][0] + p[0]) / 2},${p[1]} ${p[0]},${p[1]}`).join(' ');
+            const first = lower.length ? lower[0][0] : f.W - f.R, last = lower.length ? lower[lower.length - 1][0] : f.L;
+            let g = '';
+            if (cur.length === 1) {   // فقط یک دسته: یک ستونِ پهن
+                const w = 40, x = f.xAt(0) - w / 2;
+                if (showP) g += `<rect x="${x}" y="${lower[0][1]}" width="${w}" height="${base - lower[0][1]}" rx="6" fill="url(#dcaP)"/>`;
+                if (showC) g += `<rect x="${x}" y="${upper[0][1]}" width="${w}" height="${lower[0][1] - upper[0][1]}" rx="6" fill="url(#dcaC)"/>`;
+            } else {
+                if (showP) g += `<path d="${curve(lower, 'M')} L${last},${base} L${first},${base} Z" fill="url(#dcaP)"/>`;
+                if (showC) g += `<path d="${curve(upper, 'M')} ${curve(lower.slice().reverse(), 'L')} Z" fill="url(#dcaC)"/>`;
+                if (showC) g += `<path d="${curve(upper, 'M')}" fill="none" stroke="${DC_COL.c[0]}" stroke-width="2.2" stroke-linecap="round"/>`;
+                if (showP) g += `<path d="${curve(lower, 'M')}" fill="none" stroke="${DC_COL.p[0]}" stroke-width="2.2" stroke-linecap="round"/>`;
+            }
+            const area = (id, c) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".45"/><stop offset="1" stop-color="${c}" stop-opacity=".04"/></linearGradient>`;
+            const empty = tgtMax === 0 ? '<div class="dc-empty">در این بازه فروشی ثبت نشده</div>' : '';
+            box.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}"><defs>${area('dcaP', DC_COL.p[0])}${area('dcaC', DC_COL.c[0])}</defs>
+                ${dcAxis(f, max, dcShort, data)}${g}<line class="dc-cursor" x1="0" x2="0" y1="${f.T}" y2="${base}" stroke="#94a3b8" stroke-dasharray="3 3" opacity="0"/>${dcHoverZones(f, cur.length)}</svg><div class="dc-tip"></div>${empty}`;
+            dcBindHover(box, f, data, 'amount', showP, showC);
+        }
+
+        let dcResizeT = 0;
+        window.addEventListener('resize', () => {
+            clearTimeout(dcResizeT);
+            dcResizeT = setTimeout(() => {
+                if (!DC.data || !DC.shown) return;
+                const showP = DC.data.source !== 'COMPANY', showC = DC.data.source !== 'PERSONNEL';
+                dcRenderBars(DC.shown, DC.data, showP, showC); dcRenderArea(DC.shown, DC.data, showP, showC);
+            }, 150);
+        });
+
+        function dcHoverZones(f, n) {
+            let z = '';
+            for (let i = 0; i < n; i++) z += `<rect class="dc-hz" data-i="${i}" x="${f.xAt(i) - f.slot / 2}" y="${f.T}" width="${f.slot}" height="${f.ph}" fill="transparent"/>`;
+            return z;
+        }
+        function dcBindHover(box, f, data, kind, showP, showC) {
+            const tip = box.querySelector('.dc-tip'), svg = box.querySelector('svg'), cursor = box.querySelector('.dc-cursor');
+            box.querySelectorAll('.dc-hz').forEach(z => {
+                z.addEventListener('mouseenter', () => {
+                    const i = +z.dataset.i, b = data.buckets[i];
+                    const fmt = kind === 'count' ? (v => e2p(v) + ' فقره') : (v => money(v) + ' ریال');
+                    const pv = kind === 'count' ? b.p_count : b.p_amount, cv = kind === 'count' ? b.c_count : b.c_amount;
+                    tip.innerHTML = `<b>${b.full || b.label}</b>` + (showP ? `<br><i class="dc-sw p"></i> پرسنلی: ${fmt(pv)}` : '') + (showC ? `<br><i class="dc-sw c"></i> شرکتی: ${fmt(cv)}` : '')
+                        + (showP && showC ? `<br>جمع: ${fmt(Number(pv) + Number(cv))}` : '');
+                    const r = svg.getBoundingClientRect(), sx = r.width / f.W;
+                    tip.style.left = Math.min(r.width - 80, Math.max(80, f.xAt(i) * sx)) + 'px';
+                    tip.style.top = (f.T * (r.height / f.H) + 4) + 'px';
+                    tip.classList.add('on');
+                    if (cursor) { cursor.setAttribute('x1', f.xAt(i)); cursor.setAttribute('x2', f.xAt(i)); cursor.setAttribute('opacity', '1'); }
+                });
+                z.addEventListener('mouseleave', () => { tip.classList.remove('on'); if (cursor) cursor.setAttribute('opacity', '0'); });
+            });
+        }
+
         async function toggleBotPower() {
             try {
                 const nextState = !isBotEnabledState;
@@ -3090,6 +3458,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
         loadStats();
+        loadDashCharts();
         <?php endif; ?>
         <?php if ($canSeeCompanies): ?>
         loadCompanyInbox();
@@ -5218,7 +5587,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (usersData.ok) {
                 portalUsersCache = usersData.users;
                 const utbody = document.getElementById('cm-portal-users-body');
-                utbody.innerHTML = usersData.users.length ? usersData.users.map(u => `
+                if (utbody) utbody.innerHTML = usersData.users.length ? usersData.users.map(u => `
                     <tr class="border-t border-slate-100">
                         <td class="p-3 font-mono">${u.username}</td><td class="p-3">${botDot(u.bot_linked)} ${u.full_name}</td>
                         <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${faDigits(u.mobile_number || '') || '—'}</td>
@@ -5372,80 +5741,163 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
 
+        let staffCompanies = [];      // فهرست شرکت‌ها برای انتخابگرِ کاربرانِ شرکتی
+        let staffMeId = 0;
+        let userTypeFilter = '';
+        const userKey = u => u.type + ':' + u.id;
+        const findUser = (type, id) => staffUsersCache.find(x => x.type === type && Number(x.id) === Number(id));
+
         async function loadStaffUsers() {
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({action: 'list', include_deleted: document.getElementById('su-show-deleted').checked})});
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
             staffUsersCache = data.users;
+            staffCompanies = data.companies || [];
+            staffMeId = Number(data.me);
             document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
-            document.getElementById('su-body').innerHTML = data.users.map(u => {
-                const del = Number(u.is_deleted) === 1;
+            renderStaffUsers();
+            loadResetRequests(data.pending_resets);
+        }
+        function setUserTypeFilter(v) {
+            userTypeFilter = v;
+            document.querySelectorAll('#su-type-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            if (staffUsersCache.length) renderStaffUsers();
+        }
+        function renderStaffUsers() {
+            const q = p2e(document.getElementById('su-q').value.trim()).toLowerCase();
+            const role = document.getElementById('su-role-filter').value;
+            const alive = staffUsersCache.filter(u => Number(u.is_deleted) !== 1);
+            document.getElementById('su-n-all').textContent = '(' + e2p(alive.length) + ')';
+            document.getElementById('su-n-staff').textContent = '(' + e2p(alive.filter(u => u.type === 'STAFF').length) + ')';
+            document.getElementById('su-n-company').textContent = '(' + e2p(alive.filter(u => u.type === 'COMPANY').length) + ')';
+            const list = staffUsersCache.filter(u => (!userTypeFilter || u.type === userTypeFilter) && (!role || u.role === role)
+                && (!q || [u.full_name, u.username, u.mobile_number, u.personnel_code, u.company_names, ROLE_FA[u.role]].join(' ').toLowerCase().includes(q)));
+            document.getElementById('su-body').innerHTML = list.map(u => {
+                const del = Number(u.is_deleted) === 1, co = u.type === 'COMPANY';
+                const roleChip = co ? '<span class="su-chip co"><i class="fas fa-building ml-1"></i>کاربر شرکت</span>'
+                                    : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
+                const isMe = !co && Number(u.id) === staffMeId;
                 return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
-                    <td class="p-3 font-bold">${del ? '' : botDot(u.bot_linked)} ${u.full_name}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</td>
+                    <td class="p-3 font-bold">${del ? '' : botDot(u.bot_linked)} ${u.full_name}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</td>
                     <td class="p-3 font-mono">${u.username}</td>
-                    <td class="p-3">${ROLE_FA[u.role] || u.role}</td>
-                    <td class="p-3 font-mono text-slate-500">${faDigits(u.personnel_code || '') || '—'}</td>
+                    <td class="p-3">${roleChip}</td>
+                    <td class="p-3 text-slate-500">${co ? (u.company_names || '—') : `<span class="font-mono">${faDigits(u.personnel_code || '') || '—'}</span>`}</td>
                     <td class="p-3 font-mono text-slate-500" dir="ltr">${faDigits(u.mobile_number || '') || '—'}</td>
                     <td class="p-3 text-slate-400">${u.last_login_jalali ? faDigits(u.last_login_jalali) : '—'}</td>
                     <td class="p-3 whitespace-nowrap">${del ? '' : `
-                        <button onclick="openEditStaffUser(${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
-                        ${Number(u.id) !== Number(data.me) ? `<button onclick="openDeleteStaffUser(${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>` : ''}`}</td>
+                        ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
+                        <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
                 </tr>`;
-            }).join('') || '<tr><td colspan="7" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
-            loadResetRequests(data.pending_resets);
+            }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
         }
 
+        // انتخابگرِ شرکت (چندتایی، با جستجو)
+        function renderCompanyPicker(prefix, selectedIds = []) {
+            const sel = new Set(selectedIds.map(Number));
+            document.getElementById(prefix + '-company-q').value = '';
+            document.getElementById(prefix + '-company-list').innerHTML = staffCompanies.map(c => `
+                <label class="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50 cursor-pointer" data-name="${(c.name || '').toLowerCase()}">
+                    <input type="checkbox" class="${prefix}-company-cb" value="${c.id}" ${sel.has(Number(c.id)) ? 'checked' : ''}> ${c.name}</label>`).join('')
+                || '<p class="text-slate-400 p-2">هنوز شرکتی ثبت نشده؛ اول از «مدیریت شرکت‌ها» یک شرکت بسازید.</p>';
+        }
+        function filterCompanyPicker(prefix) {
+            const q = document.getElementById(prefix + '-company-q').value.trim().toLowerCase();
+            document.querySelectorAll(`#${prefix}-company-list label`).forEach(l => l.style.display = !q || l.dataset.name.includes(q) ? '' : 'none');
+        }
+        const pickedCompanies = prefix => [...document.querySelectorAll(`.${prefix}-company-cb:checked`)].map(cb => Number(cb.value));
+        function showMobileErr(prefix, msg) {
+            const el = document.getElementById(prefix + '-mobile-err');
+            el.textContent = msg || ''; el.classList.toggle('hidden', !msg);
+            if (msg) document.getElementById(prefix + '-mobile').focus();
+        }
+
+        function openAddUserModal() {
+            ['su-fullname','su-username','su-password','su-mobile','su-personnel'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('su-role').value = '';
+            document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.remove('active'));
+            document.getElementById('su-fields').classList.add('hidden');
+            showMobileErr('su', '');
+            openModal('add-staff-user-modal');
+        }
+        function pickNewUserRole(role) {
+            document.getElementById('su-role').value = role;
+            document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+            const co = role === 'COMPANY';
+            document.getElementById('su-company-box').classList.toggle('hidden', !co);
+            document.getElementById('su-personnel-box').classList.toggle('hidden', co);
+            if (co) renderCompanyPicker('su');
+            const f = document.getElementById('su-fields');
+            f.classList.remove('hidden'); f.classList.remove('su-fade'); void f.offsetWidth; f.classList.add('su-fade');
+            document.getElementById('su-fullname').focus();
+        }
         async function createStaffUser() {
+            const role = document.getElementById('su-role').value;
+            if (!role) { showToast('اول نقش را انتخاب کنید.', 'warning'); return; }
             const payload = {
-                action: 'create',
+                action: 'create', role,
                 full_name: document.getElementById('su-fullname').value.trim(),
                 username: document.getElementById('su-username').value.trim(),
                 password: document.getElementById('su-password').value,
-                mobile_number: document.getElementById('su-mobile').value.trim(),
+                mobile_number: p2e(document.getElementById('su-mobile').value.trim()),
                 personnel_code: document.getElementById('su-personnel').value.trim(),
-                role: document.getElementById('su-role').value,
             };
+            if (role === 'COMPANY') payload.company_ids = pickedCompanies('su');
             if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
+            if (role === 'COMPANY' && !payload.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
+            showMobileErr('su', '');
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
             if (data.ok) {
                 showToast('کاربر ثبت شد.', 'success');
-                ['su-fullname','su-username','su-password','su-mobile','su-personnel'].forEach(id => document.getElementById(id).value = '');
                 closeModal('add-staff-user-modal');
                 loadStaffUsers();
-            } else showToast(data.error || 'خطا', 'error');
+            } else { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('su', data.error); }
         }
 
-        function openEditStaffUser(id) {
-            const u = staffUsersCache.find(x => Number(x.id) === Number(id));
+        function openEditStaffUser(type, id) {
+            const u = findUser(type, id);
             if (!u) return;
+            const co = type === 'COMPANY';
             document.getElementById('esu-id').value = u.id;
+            document.getElementById('esu-type').value = type;
+            document.getElementById('esu-type-badge').textContent = co ? 'کاربر شرکت' : 'کاربر داخلی';
             document.getElementById('esu-username').value = u.username;
             document.getElementById('esu-fullname').value = u.full_name || '';
-            document.getElementById('esu-role').value = u.role;
-            document.getElementById('esu-personnel').value = u.personnel_code || '';
+            document.getElementById('esu-staff-box').classList.toggle('hidden', co);
+            document.getElementById('esu-company-box').classList.toggle('hidden', !co);
+            if (co) renderCompanyPicker('esu', u.company_ids || []);
+            else { document.getElementById('esu-role').value = u.role; document.getElementById('esu-personnel').value = u.personnel_code || ''; }
             document.getElementById('esu-mobile').value = u.mobile_number || '';
             document.getElementById('esu-password').value = '';
             document.getElementById('esu-admin-pass').value = '';
+            showMobileErr('esu', '');
             openModal('edit-staff-user-modal');
         }
         async function saveStaffUserEdit() {
             const g = id => document.getElementById(id).value;
             if (!g('esu-admin-pass')) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('esu-admin-pass').focus(); return; }
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-                action: 'update', id: Number(g('esu-id')), full_name: g('esu-fullname').trim(), role: g('esu-role'),
-                personnel_code: g('esu-personnel').trim(), mobile_number: g('esu-mobile').trim(), password: g('esu-password'), admin_password: g('esu-admin-pass')})});
+            const type = g('esu-type');
+            const body = {action: 'update', type, id: Number(g('esu-id')), full_name: g('esu-fullname').trim(),
+                mobile_number: p2e(g('esu-mobile').trim()), password: g('esu-password'), admin_password: g('esu-admin-pass')};
+            if (type === 'COMPANY') {
+                body.company_ids = pickedCompanies('esu');
+                if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
+            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); }
+            showMobileErr('esu', '');
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             const data = await res.json();
-            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('esu', data.error); return; }
             showToast(data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.', 'success');
             closeModal('edit-staff-user-modal');
             loadStaffUsers();
         }
-        function openDeleteStaffUser(id) {
-            const u = staffUsersCache.find(x => Number(x.id) === Number(id));
+        function openDeleteStaffUser(type, id) {
+            const u = findUser(type, id);
             if (!u) return;
             document.getElementById('dsu-id').value = u.id;
+            document.getElementById('dsu-type').value = type;
             document.getElementById('dsu-name').textContent = u.full_name;
             document.getElementById('dsu-admin-pass').value = '';
             openModal('delete-staff-user-modal');
@@ -5454,12 +5906,41 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const pass = document.getElementById('dsu-admin-pass').value;
             if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); return; }
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: 'delete', id: Number(document.getElementById('dsu-id').value), admin_password: pass})});
+                body: JSON.stringify({action: 'delete', type: document.getElementById('dsu-type').value, id: Number(document.getElementById('dsu-id').value), admin_password: pass})});
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
             showToast('کاربر حذف شد؛ نامش روی کارهای قبلی‌اش باقی می‌ماند.', 'success');
             closeModal('delete-staff-user-modal');
             loadStaffUsers();
+        }
+
+        // ---- پیام مستقیم ----
+        function openUserDM(type, id) {
+            const u = findUser(type, id);
+            if (!u) return;
+            document.getElementById('dm-id').value = u.id;
+            document.getElementById('dm-type').value = type;
+            document.getElementById('dm-name').textContent = u.full_name;
+            document.getElementById('dm-text').value = '';
+            document.getElementById('dm-channel').innerHTML = type === 'COMPANY'
+                ? (u.bot_linked ? `${botDot(true)} پیام در <b>ربات بله‌ی شرکت‌ها</b> برای کاربر فرستاده می‌شود.` : `${botDot(false)} <span class="text-red-600">این کاربر هنوز وارد ربات بله نشده؛ تا وارد نشود پیام به دستش نمی‌رسد.</span>`)
+                : `پیام در <b>چتِ داخلیِ پنل</b> ثبت می‌شود${u.bot_linked ? ' و در <b>ربات بله</b> هم برایش فرستاده می‌شود.' : ' (در ربات بله وارد نشده، پس فقط در پنل می‌بیند).'}`;
+            openModal('dm-user-modal');
+            setTimeout(() => document.getElementById('dm-text').focus(), 50);
+        }
+        async function sendUserDM() {
+            const text = document.getElementById('dm-text').value.trim();
+            if (!text) { showToast('متن پیام را بنویسید.', 'warning'); return; }
+            const btn = document.getElementById('dm-send-btn'); btn.disabled = true;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'send_message', type: document.getElementById('dm-type').value, id: Number(document.getElementById('dm-id').value), message: text})});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                showToast(data.bot && data.panel ? 'پیام در پنل ثبت و در ربات بله هم فرستاده شد.' : data.bot ? 'پیام در ربات بله فرستاده شد.' : 'پیام در چتِ داخلیِ پنل ثبت شد.', 'success');
+                closeModal('dm-user-modal');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            finally { btn.disabled = false; }
         }
 
         // ---- درخواست‌های بازیابی رمز (از ربات بله) ----
@@ -5528,15 +6009,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function renderLoginLogs() {
             const q = p2e(document.getElementById('ll-q').value.trim()).toLowerCase();
             const type = document.getElementById('ll-type').value, method = document.getElementById('ll-method').value, ok = document.getElementById('ll-ok').value;
-            const list = loginLogsCache.filter(r => (!type || r.user_type === type) && (!method || r.method === method) && (ok === '' || String(r.success) === ok)
-                && (!q || [r.user_name, r.browser, r.os, r.device, r.ip, r.role_fa].join(' ').toLowerCase().includes(q)));
+            const list = loginLogsCache.filter(r => (!type || r.user_type === type)
+                && (!method || (method === 'IN' ? r.method !== 'LOGOUT' : r.method === method)) && (ok === '' || String(r.success) === ok)
+                && (!q || [r.user_name, r.browser, r.os, r.device, r.ip, r.role_fa, r.at_jalali, faDigits(r.at_jalali || ''), r.method === 'LOGOUT' ? 'خروج' : 'ورود'].join(' ').toLowerCase().includes(q)));
             document.getElementById('ll-body').innerHTML = list.slice(0, 500).map(r => `
-                <tr class="border-t border-slate-100 ${Number(r.success) ? '' : 'bg-red-50/40'}">
+                <tr class="border-t border-slate-100 ${Number(r.success) ? (r.method === 'LOGOUT' ? 'bg-slate-50/70' : '') : 'bg-red-50/40'}">
                     <td class="p-3 whitespace-nowrap">${faDigits(r.at_jalali || '')}</td>
                     <td class="p-3 font-bold">${r.user_name || '—'}</td>
                     <td class="p-3 text-slate-500">${r.role_fa}</td>
-                    <td class="p-3">${r.method === 'OTP' ? '<span class="text-cyan-700">کد بله</span>' : 'رمز عبور'}</td>
-                    <td class="p-3">${Number(r.success) ? '<span class="text-emerald-600 font-bold">✓ موفق</span>' : `<span class="text-red-500 font-bold">✗ ${r.note || 'ناموفق'}</span>`}</td>
+                    <td class="p-3">${r.method === 'LOGOUT' ? '<span class="text-slate-500 font-bold"><i class="fas fa-right-from-bracket ml-1"></i>خروج</span>' : r.method === 'OTP' ? '<span class="text-cyan-700">ورود · کد بله</span>' : 'ورود · رمز عبور'}</td>
+                    <td class="p-3">${r.method === 'LOGOUT' ? '<span class="text-slate-500">↩ خارج شد</span>' : Number(r.success) ? '<span class="text-emerald-600 font-bold">✓ موفق</span>' : `<span class="text-red-500 font-bold">✗ ${r.note || 'ناموفق'}</span>`}</td>
                     <td class="p-3" dir="ltr">${r.browser || '—'}</td>
                     <td class="p-3" dir="ltr">${r.os || '—'}</td>
                     <td class="p-3">${r.device || '—'}</td>
@@ -5599,7 +6081,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // با اکسل»، «تسویه با پاسارگاد» و «تنظیمات مالی» با ReferenceError متوقف
             // شوند و هیچ‌وقت داده‌شان بار نشود؛ چهار تبِ دیگر هم دو بار بار می‌شدند.
             if (tabId === 'records') loadRecords();
-            if (tabId === 'dashboard') loadStats();
+            if (tabId === 'dashboard') { loadStats(); loadDashCharts(); }
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
