@@ -169,8 +169,7 @@
   .fs-badge-req.opt { background: rgba(255,255,255,.25); color: #fff; }
 
   /* اسلایدر زوم دستی */
-  .fs-zoom { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px;
-             background: rgba(0,0,0,.35); padding: 6px 12px; border-radius: 20px; }
+  .fs-zoom { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; }
   .fs-zoom input { width: 110px; }
   .fs-zoom-lbl { color: #fff; font-size: 11px; font-weight: 800; min-width: 28px; }
 
@@ -342,10 +341,7 @@
 
   <!-- دکمه‌های پایین: مرحله قبل سمت راست، شاتر وسط -->
   <!-- زوم دستی (اگر دوربین پشتیبانی کند) -->
-  <div class="fs-zoom" id="fs-zoom-wrap" style="display:none;">
-    <span class="fs-zoom-lbl" id="fs-zoom-val">۱x</span>
-    <input type="range" id="fs-zoom" min="1" max="3" step="0.1" value="1" oninput="setZoomManual(this.value)">
-  </div>
+  <div class="fs-zoom" id="fs-zoom-wrap" style="display:none;"></div>
 
   <!-- نوار پیشرفت ارسال عکس -->
   <div id="fs-upload" style="display:none;">
@@ -531,7 +527,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="../camera-lib.js?v=2"></script>
+<script src="../camera-lib.js?v=3"></script>
 <script>
 // ============================================================
 //  اتصال به Bale WebApp (در صورت وجود) - برای تجربه‌ی بهتر (رنگ هدر و ...)
@@ -744,7 +740,7 @@ function nav_myInspections() {
   showScreen('screen-my-inspections');
   loadMyInspections();
 }
-const MI_STATUS = {PENDING:['⏳ در انتظار بررسی','#fbbf24'], APPROVED:['✅ تایید شده','#6ee7b7'], REJECTED:['❌ رد شده','#fca5a5']};
+const MI_STATUS = {PENDING:['⏳ در انتظار بررسی','#fbbf24'], PHOTOS_APPROVED:['⏳ در انتظار تایید نهایی','#93c5fd'], APPROVED:['✅ تایید شده','#6ee7b7'], REJECTED:['❌ رد شده','#fca5a5']};
 async function loadMyInspections() {
   const box = document.getElementById('my-inspections-list');
   box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
@@ -1099,41 +1095,23 @@ window.addEventListener('resize', applyForcedLandscape);
 window.addEventListener('orientationchange', () => setTimeout(applyForcedLandscape, 250));
 
 // روشن/خاموش‌کردن چراغ دوربین (torch) - روی مرورگرهایی که پشتیبانی می‌کنند
-// ---------------- زوم دستی ----------------
-// اگر تنظیم خودکارِ زوم روی بعضی دستگاه‌ها اثر نکند، کاربر می‌تواند خودش تنظیم کند
-async function setZoomManual(v) {
-    document.getElementById('fs-zoom-val').textContent = toFa(Number(v).toFixed(1)) + 'x';
-    if (!liveStream) return;
-    const track = liveStream.getVideoTracks()[0];
-    if (!track) return;
-    const val = Number(v);
-    const tries = [
-        () => track.applyConstraints({ advanced: [{ zoom: val }] }),
-        () => track.applyConstraints({ zoom: val }),
-        () => track.applyConstraints({ advanced: [{ zoom: { exact: val } }] }),
-    ];
-    for (const t of tries) { try { await t(); return; } catch (e) {} }
-}
-
-// اسلایدر را بر اساس توانایی واقعی دوربین آماده می‌کند (اگر زوم پشتیبانی نشود، پنهان می‌ماند)
+// ---------------- پنلِ زوم (۰.۵x تا ۴x) - webapp/camera-lib.js ----------------
+// زومِ واقعیِ دوربین اگر پشتیبانی شود، وگرنه دیجیتال (عکس هم از همان ناحیه بریده می‌شود)؛
+// زیرِ ۱x فقط وقتی گوشی لنزِ واید دارد، و فقط تا وقتی زیرِ ۱x هستیم.
+let fsZoom = null;
 function setupZoomSlider() {
     const wrap = document.getElementById('fs-zoom-wrap');
-    if (!wrap || !liveStream) return;
-    const track = liveStream.getVideoTracks()[0];
-    const caps = (track && track.getCapabilities) ? track.getCapabilities() : null;
-    if (!caps || !caps.zoom) { wrap.style.display = 'none'; return; }
-    const slider = document.getElementById('fs-zoom');
-    slider.min = caps.zoom.min;
-    // سقف زوم را حداکثر ۲.۵ برابر می‌گذاریم؛ بالاتر از آن زومِ دیجیتال تصویر را برفکی می‌کند
-    slider.max = Math.min(caps.zoom.max, Math.max(caps.zoom.min + 0.1, 2.5));
-    slider.step = caps.zoom.step || 0.1;
-    const cur = (track.getSettings && track.getSettings().zoom) || Math.max(1, caps.zoom.min);
-    slider.value = cur;
-    document.getElementById('fs-zoom-val').textContent = toFa(Number(cur).toFixed(1)) + 'x';
+    if (!wrap || !liveStream || !window.CameraLib || !CameraLib.createZoom) { if (wrap) wrap.style.display = 'none'; return; }
+    if (!fsZoom) {
+        fsZoom = CameraLib.createZoom({
+            mount: wrap, video: document.getElementById('fs-video'), gestureEl: document.getElementById('fs-camera'),
+            getStream: () => liveStream,
+            setStream: s => { liveStream = s; document.getElementById('fs-video').srcObject = s; watchCameraTrack(); },
+        });
+    }
     wrap.style.display = 'flex';
+    fsZoom.refresh();
 }
-
-
 
 function exitFullscreenCamera() {
     document.getElementById('cam-curtain').style.display = 'none';
@@ -1167,9 +1145,10 @@ function takeLiveShot(ev) {
     // رزولوشن: ۲۴۰۰ پیکسل برای دیدن جزئیات خودرو کاملاً کافی است و نسبت به ۴۰۰۰
     // چند برابر سریع‌تر رمزگذاری می‌شود (رمزگذاری با مربعِ ابعاد سنگین‌تر می‌شود).
     const MAX_W = 3200;
-    const vw = video.videoWidth, vh = video.videoHeight;
-    // عکسِ واقعی با وضوحِ کاملِ سنسور (اگر مرورگر پشتیبانی کند) - پیش از بستنِ دوربین شروع می‌شود
-    const stillP = window.CameraLib ? CameraLib.still(liveStream) : Promise.resolve(null);
+    // عکس «همان لحظه‌ی لمسِ شاتر» از فریمِ زنده گرفته می‌شود؛ اگر گوشی بعدش تکان بخورد، عکس خراب نمی‌شود.
+    // (قبلاً یک عکسِ جداگانه با تأخیر از سنسور گرفته می‌شد که با تکانِ بعد از شاتر تار می‌شد.)
+    const cr = fsZoom ? fsZoom.crop(video.videoWidth, video.videoHeight) : {sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight};
+    const vw = cr.sw, vh = cr.sh;
     const scale = vw > MAX_W ? (MAX_W / vw) : 1;
     const w = Math.round(vw * scale), h = Math.round(vh * scale);
 
@@ -1188,10 +1167,10 @@ function takeLiveShot(ev) {
         canvas.width = h; canvas.height = w;
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate(-Math.PI / 2);
-        ctx.drawImage(video, -w / 2, -h / 2, w, h);
+        ctx.drawImage(video, cr.sx, cr.sy, cr.sw, cr.sh, -w / 2, -h / 2, w, h);
     } else {
         canvas.width = w; canvas.height = h;
-        ctx.drawImage(video, 0, 0, w, h);
+        ctx.drawImage(video, cr.sx, cr.sy, cr.sw, cr.sh, 0, 0, w, h);
     }
 
     // بازخورد بصری فوری
@@ -1209,7 +1188,7 @@ function takeLiveShot(ev) {
     // ------------------------------------------------------------------
     // دوربین بعد از گرفته‌شدنِ عکسِ واقعی بسته می‌شود
     const streamToStop = liveStream; liveStream = null;
-    window._stillPending = stillP.finally(() => { if (streamToStop) streamToStop.getTracks().forEach(t => t.stop()); });
+    if (streamToStop) streamToStop.getTracks().forEach(t => t.stop());
     video.style.display = 'none';
     const shot = document.getElementById('fs-shot');
     shot.style.display = 'none';
@@ -1222,6 +1201,7 @@ function takeLiveShot(ev) {
 
     document.getElementById('fs-capture-bar').style.display = 'none';
     document.getElementById('fs-preview-bar').style.display = 'flex';
+    document.getElementById('fs-zoom-wrap').style.display = 'none';
 
     // ------------------------------------------------------------------
     //  رمزگذاری در پس‌زمینه با حداکثر دو پاس. دکمه‌ی «تایید و ارسال» تا آماده‌شدن فایل
@@ -1235,26 +1215,6 @@ function takeLiveShot(ev) {
 
     liveCapturedBlob = null;
     liveEncodePromise = (async () => {
-        // اگر عکسِ واقعی آمد و جهتش با کادرِ دیده‌شده یکی بود، به‌جای فریمِ ویدیو همان استفاده می‌شود
-        const bmp = await stillP;
-        if (bmp && ((bmp.width > bmp.height) === (vw > vh))) {
-            const sc = bmp.width > MAX_W ? MAX_W / bmp.width : 1;
-            const bw = Math.round(bmp.width * sc), bh = Math.round(bmp.height * sc);
-            if (rotated) {
-                canvas.width = bh; canvas.height = bw;
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-                ctx.translate(canvas.width / 2, canvas.height / 2);
-                ctx.rotate(-Math.PI / 2);
-                ctx.drawImage(bmp, -bw / 2, -bh / 2, bw, bh);
-            } else {
-                canvas.width = bw; canvas.height = bh;
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(bmp, 0, 0, bw, bh);
-            }
-            if (bmp.close) bmp.close();
-        }
         let blob = await encodeAt(0.92);
         if (blob && blob.size > MAX_BYTES) {
             const ratio = MAX_BYTES / blob.size;

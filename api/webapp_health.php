@@ -413,6 +413,8 @@ try {
                     $photos[$key] = ltrim(str_replace($siteRoot, '', $destAbs), '/');
                     $reviews[$key] = ['status' => 'PENDING', 'note' => ''];
                 }
+                review_log($pdo, 'HEALTH_PHOTO', 'RESUBMITTED', ['case_id' => $insp['case_id'] ?: null, 'inspection_id' => $insp['id'],
+                           'key' => $stepKey, 'label' => $steps[$stepKey]['label'] ?? $stepKey, 'note' => 'عکسِ اصلاحی توسط کاربر']);
             }
             foreach (array_unique($tempDirsTouched) as $d) cleanup_empty_dirs_upward($d, temp_archive_root($siteRoot));
             $pdo->prepare("UPDATE health_inspections SET photos = ?, photo_reviews = ?, retake_steps = NULL, status = 'PENDING', reject_reason = NULL WHERE id = ?")

@@ -41,6 +41,7 @@
   /* ===== دوربین تمام‌صفحه‌ی مدارک (عمودی) ===== */
   #fs-doc { position: fixed; inset: 0; z-index: 9000; background: #000; }
   #fs-doc-video, #fs-doc-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .fsd-zoom { position: absolute; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 5; display: none; }
   .fsd-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: 10px;
              padding: 12px 14px; background: linear-gradient(180deg, rgba(0,0,0,.8), transparent); z-index: 3; }
   .fsd-info { flex: 1; }
@@ -124,6 +125,9 @@
 
   <img id="fsd-guide" class="fsd-guide" onclick="this.classList.toggle('big')">
 
+  <!-- پنلِ زوم (۰.۵x تا ۴x) -->
+  <div class="fsd-zoom" id="fsd-zoom-wrap"></div>
+
   <div class="fsd-bottom" id="fsd-capture-bar">
     <button class="fsd-gallery" onclick="pickFromGallery()" title="گالری">🖼</button>
     <button class="fsd-shutter" id="fsd-shutter" onpointerdown="takeShot(event)" title="گرفتن عکس"></button>
@@ -179,7 +183,7 @@
 <canvas id="canvas"></canvas>
 <div class="toast" id="toast"></div>
 
-<script src="../camera-lib.js?v=2"></script>
+<script src="../camera-lib.js?v=3"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -321,6 +325,8 @@ async function openDocFullscreen(doc) {
         const v = document.getElementById('fs-doc-video');
         v.srcObject = stream;
         v.style.display = 'block';
+        try { v.play(); } catch (e) {}
+        setupDocZoom();
         document.getElementById('fs-doc-shot').style.display = 'none';
         document.getElementById('fsd-capture-bar').style.display = 'flex';
         document.getElementById('fsd-preview-bar').style.display = 'none';
@@ -334,6 +340,22 @@ async function openDocFullscreen(doc) {
         document.getElementById('capture-area').scrollIntoView({behavior:'smooth'});
         showToast('دسترسی به دوربین ممکن نشد؛ از «انتخاب فایل» استفاده کنید.');
     }
+}
+
+// پنلِ زوم - webapp/camera-lib.js (زومِ واقعی یا دیجیتال، و لنزِ واید فقط زیرِ ۱x)
+let docZoom = null;
+function setupDocZoom() {
+    const wrap = document.getElementById('fsd-zoom-wrap');
+    if (!wrap || !stream || !window.CameraLib || !CameraLib.createZoom) return;
+    if (!docZoom) {
+        docZoom = CameraLib.createZoom({
+            mount: wrap, video: document.getElementById('fs-doc-video'), gestureEl: document.getElementById('fs-doc'),
+            getStream: () => stream,
+            setStream: s => { stream = s; const v = document.getElementById('fs-doc-video'); v.srcObject = s; try { v.play(); } catch (e) {} },
+        });
+    }
+    wrap.style.display = 'block';
+    docZoom.refresh();
 }
 
 function exitDocCam() {
@@ -372,17 +394,16 @@ function takeShot(ev) {
     const fsOpen = document.getElementById('fs-doc').style.display === 'block';
     const video = document.getElementById(fsOpen ? 'fs-doc-video' : 'video');
     const canvas = document.getElementById('canvas');
-    // عکسِ واقعی با وضوحِ کاملِ سنسور (اگر مرورگر پشتیبانی کند)؛ متنِ سند خواناتر می‌شود
-    const stillP = window.CameraLib ? CameraLib.still(stream) : Promise.resolve(null);
-
-    // مدارک باید با بالاترین کیفیت ذخیره شوند چون قرار است اطلاعاتِ روی سند از آن‌ها
-    // خوانده شود؛ پس رزولوشن کامل نگه داشته می‌شود و فقط اگر از سقفِ حجم رد شد کمی فشرده می‌شود.
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // عکس «همان لحظه‌ی لمسِ شاتر» از فریمِ زنده گرفته می‌شود و تصویر همان‌جا ثابت می‌شود؛
+    // تکانِ گوشی بعد از شاتر دیگر عکس را خراب نمی‌کند. (با زومِ دیجیتال، همان ناحیه بریده می‌شود)
+    const cr = (fsOpen && docZoom) ? docZoom.crop(video.videoWidth, video.videoHeight) : {sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight};
+    canvas.width = Math.round(cr.sw);
+    canvas.height = Math.round(cr.sh);
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, cr.sx, cr.sy, cr.sw, cr.sh, 0, 0, canvas.width, canvas.height);
+    try { video.pause(); } catch (e) {}
 
     if (fsOpen) {
         const camEl = document.getElementById('fs-doc');
@@ -397,16 +418,6 @@ function takeShot(ev) {
     const encodeAt = (q) => new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
 
     (async () => {
-        const bmp = await stillP;
-        if (bmp && ((bmp.width > bmp.height) === (canvas.width > canvas.height))) {
-            const MAX_W = 4000;   // بیشتر از این فقط حجم را بالا می‌برد، نه خوانایی
-            const sc = bmp.width > MAX_W ? MAX_W / bmp.width : 1;
-            canvas.width = Math.round(bmp.width * sc); canvas.height = Math.round(bmp.height * sc);
-            const c2 = canvas.getContext('2d');
-            c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = 'high';
-            c2.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-            if (bmp.close) bmp.close();
-        }
         let blob = await encodeAt(0.97);
         if (blob && blob.size > MAX_BYTES) {
             const ratio = MAX_BYTES / blob.size;
@@ -423,6 +434,7 @@ function takeShot(ev) {
             shot.style.display = 'block';
             document.getElementById('fsd-capture-bar').style.display = 'none';
             document.getElementById('fsd-preview-bar').style.display = 'flex';
+            document.getElementById('fsd-zoom-wrap').style.display = 'none';
         } else {
             document.getElementById('video').style.display = 'none';
             document.getElementById('live-controls').style.display = 'none';

@@ -302,21 +302,50 @@ try {
                 $insuredNid = $nid10($data['insured_national_id'] ?? '');
                 if (mb_strlen($insuredName) < 3 || strlen($insuredNid) !== 10) throw new RuntimeException('نام و کد ملیِ ۱۰ رقمیِ بیمه‌گذار (' . $relationship . ') الزامی است.');
             }
-            $liability = $insuranceType === 'THIRDPARTY' ? money_to_int($data['liability_limit'] ?? '') : null;
-            $carValue = $insuranceType === 'BODY' ? money_to_int($data['car_value'] ?? '') : null;
-            $prevBody = $insuranceType === 'BODY' ? (($data['prev_body_insurance'] ?? '') === 'بله' ? 'بله' : 'خیر') : null;
+            // اطلاعاتِ بیمه‌گذار - همان قواعدِ ربات/مینی‌اپ
             $bd = trim(p2e_digits($data['insured_birth_date'] ?? ''));
-            $bd = preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $bd, $m) ? sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]) : null;
-            $phone = preg_replace('/\D/', '', p2e_digits($data['insured_phone'] ?? '')) ?: null;
-            $postal = preg_replace('/\D/', '', p2e_digits($data['insured_postal_code'] ?? '')) ?: null;
-            $address = trim($data['insured_address'] ?? '') ?: null;
+            $bd = preg_match('/^(1[34]\d{2})\D+(\d{1,2})\D+(\d{1,2})$/', $bd, $m) && $m[2] >= 1 && $m[2] <= 12 && $m[3] >= 1 && $m[3] <= 31
+                ? sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]) : null;
+            $phone = preg_replace('/\D/', '', p2e_digits($data['insured_phone'] ?? ''));
+            $postal = preg_replace('/\D/', '', p2e_digits($data['insured_postal_code'] ?? ''));
+            $address = trim($data['insured_address'] ?? '');
+            if (!$bd) throw new RuntimeException('تاریخ تولد بیمه‌گذار را درست وارد کنید (مثل ۱۳۷۰/۰۵/۱۲).');
+            if (!preg_match('/^09\d{9}$/', $phone)) throw new RuntimeException('موبایل بیمه‌گذار باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (strlen($postal) !== 10) throw new RuntimeException('کد پستی باید دقیقاً ۱۰ رقم باشد.');
+            if (mb_strlen($address) < 10) throw new RuntimeException('آدرس بیمه‌گذار را کامل‌تر وارد کنید.');
+
+            $liability = null; $carValue = null; $prevBody = null; $prevClaim = null; $noClaimYears = null; $coverages = null;
+            if ($insuranceType === 'THIRDPARTY') {
+                $liability = money_to_int($data['liability_limit'] ?? '');
+                if (!in_array($liability, liability_limit_options(), true)) throw new RuntimeException('سقف تعهد مالیِ بیمه‌ی ثالث را انتخاب کنید.');
+            } else {
+                $prevBody = ($data['prev_body_insurance'] ?? '') === 'بله' ? 'بله' : 'خیر';
+                if ($prevBody === 'بله') {
+                    $prevClaim = ($data['prev_body_claim'] ?? '') === 'بله' ? 'بله' : 'خیر';
+                    if ($prevClaim === 'خیر') {
+                        $noClaimYears = intval(p2e_digits((string)($data['no_claim_years'] ?? '')));
+                        if ($noClaimYears < 0 || $noClaimYears > 50 || trim((string)($data['no_claim_years'] ?? '')) === '') throw new RuntimeException('تعداد سال‌های عدم خسارت را وارد کنید.');
+                    }
+                }
+                $cov = json_decode((string)($data['coverages'] ?? '{}'), true);
+                $opts = body_coverage_options(); $clean = [];
+                foreach ((is_array($cov) ? $cov : []) as $k => $v) {
+                    if (!isset($opts[$k])) continue;
+                    $clean[$k] = $opts[$k]['tiers'] ? (isset($opts[$k]['tiers'][(string)$v]) ? (string)$v : array_key_first($opts[$k]['tiers'])) : true;
+                }
+                $coverages = json_encode((object)$clean, JSON_UNESCAPED_UNICODE);
+                // ۰ یعنی «محاسبه‌ی خودکار توسط کارشناس» (مثل مینی‌اپ)
+                $carValue = !empty($data['car_value_auto']) && $data['car_value_auto'] !== '0' ? 0 : money_to_int($data['car_value'] ?? '');
+                if ($carValue === null || $carValue < 0 || (empty($data['car_value_auto']) && $carValue <= 0)) throw new RuntimeException('ارزش خودرو را وارد کنید یا «محاسبه توسط کارشناس» را بزنید.');
+            }
 
             $pdo->prepare("INSERT INTO policy_cases (introduction_id, person_id, insurance_type, unique_code, status, insured_relationship, insured_name,
                                 insured_national_id, plate, ownership_choice, liability_limit, estimated_car_value, prev_body_insurance,
+                                prev_body_claim, no_claim_years, selected_coverages,
                                 insured_birth_date, insured_phone, insured_postal_code, insured_address)
-                           VALUES (?, ?, ?, '', 'AWAITING_DOCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                           VALUES (?, ?, ?, '', 'AWAITING_DOCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 ->execute([$introId, $personId, $insuranceType, $relationship, $insuredName, $insuredNid, $plate, $ownership,
-                           $liability, $carValue, $prevBody, $bd, $phone, $postal, $address]);
+                           $liability, $carValue, $prevBody, $prevClaim, $noClaimYears, $coverages, $bd, $phone, $postal, $address]);
             $caseId = intval($pdo->lastInsertId());
             $uniqueCode = generate_case_unique_code($caseId);
             $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([$uniqueCode, $caseId]);
@@ -333,9 +362,38 @@ try {
             exit;
         }
 
+        // مدارکی که همان‌جا انتخاب شده‌اند: با همان نام‌گذاریِ مسیرِ عادی ذخیره و (چون خودمان دیده‌ایم) تایید می‌شوند
+        $required = get_required_docs_v2($insuranceType, $ownership, $prevBody, $relationship);
+        $docErrors = []; $uploaded = 0;
+        foreach ($required as $key => $label) {
+            if (empty($_FILES['doc_' . $key]['name'])) continue;
+            $r = admin_store_case_doc($pdo, $siteRoot, $caseId, $key, $label, $_FILES['doc_' . $key], $userId);
+            $r['ok'] ? $uploaded++ : $docErrors[] = $r['error'];
+        }
+        // «سایر مدارک» با نامی که کارشناس نوشته
+        $otherNames = $data['other_names'] ?? [];
+        if (!empty($_FILES['other_files']['name']) && is_array($_FILES['other_files']['name'])) {
+            foreach ($_FILES['other_files']['name'] as $i => $nm) {
+                if ($nm === '') continue;
+                $label = trim((string)($otherNames[$i] ?? '')) ?: 'سایر مدارک';
+                $file = ['name' => $nm, 'tmp_name' => $_FILES['other_files']['tmp_name'][$i], 'error' => $_FILES['other_files']['error'][$i]];
+                $r = admin_store_case_doc($pdo, $siteRoot, $caseId, 'other', mb_substr($label, 0, 120), $file, $userId);
+                $r['ok'] ? $uploaded++ : $docErrors[] = $r['error'];
+            }
+        }
+        $st = $pdo->prepare("SELECT status FROM policy_cases WHERE id = ?");
+        $st->execute([$caseId]);
+
         echo json_encode(['ok' => true, 'case_id' => $caseId, 'intro_id' => $introId, 'unique_code' => $uniqueCode,
-                          'required_docs' => get_required_docs_v2($insuranceType, $ownership, $prevBody, $relationship),
-                          'note' => $note], JSON_UNESCAPED_UNICODE);
+                          'required_docs' => $required, 'uploaded' => $uploaded, 'doc_errors' => $docErrors,
+                          'status' => $st->fetchColumn(), 'note' => $note], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // گزینه‌های فرمِ ثبتِ دستی (پوشش‌های بدنه، سقف‌های تعهد) - همان فهرستِ ربات
+    if ($action === 'manual_form_options') {
+        echo json_encode(['ok' => true, 'coverages' => body_coverage_options(), 'liability' => liability_limit_options(),
+                          'relationships' => relationship_options()], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

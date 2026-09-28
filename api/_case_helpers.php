@@ -629,7 +629,20 @@ function compute_health_status($pdo, $case) {
     if (!$st) return 'not_started';
     if ($st === 'REJECTED') return 'needs_fix';
     if ($st === 'APPROVED') return 'approved';
-    return 'submitted';
+    return 'submitted';   // PENDING یا PHOTOS_APPROVED (عکس‌ها تایید شده، منتظرِ گزارشِ کارشناس)
+}
+
+// آیا ستونِ وضعیتِ بازدید، مقدارِ PHOTOS_APPROVED را می‌پذیرد؟ (مایگریشن ۰۱۵) - وگرنه رفتارِ قدیم
+function health_supports_photos_approved($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM health_inspections LIKE 'status'")->fetch();
+        $type = strtolower($col['Type'] ?? '');
+        $ok = !(strpos($type, 'enum') === 0 && strpos($type, 'photos_approved') === false)
+              && !(preg_match('/char\((\d+)\)/', $type, $m) && intval($m[1]) < 15);
+    } catch (Throwable $e) { $ok = false; }
+    return $ok;
 }
 
 // دلیل ردِ آخرین بازدید سلامت (اگر وضعیت needs_fix باشد)
@@ -992,6 +1005,9 @@ function finalize_case_documents_to_archive($pdo, $siteRoot, $caseId) {
 
         $ext = pathinfo($absOld, PATHINFO_EXTENSION) ?: 'jpg';
         $newName = build_doc_filename($doc['doc_key'], $doc['doc_label'], $case['plate'], $case['insured_name'], $case['insured_national_id'], $ext);
+        // مدرکی که قبلاً با همین نام بایگانی شده دوباره جابه‌جا نمی‌شود (وگرنه نامش «_1» می‌گرفت)
+        if (realpath(dirname($absOld)) === realpath($caseFolder)
+            && preg_match('/^' . preg_quote(pathinfo($newName, PATHINFO_FILENAME), '/') . '(_\d+)?\.' . preg_quote($ext, '/') . '$/u', basename($absOld))) continue;
         $absNew = unique_dest_path($caseFolder . '/' . $newName);
         @rename($absOld, $absNew);
 
@@ -1011,7 +1027,7 @@ function finalize_case_documents_to_archive($pdo, $siteRoot, $caseId) {
 
 // آیا این پرونده بازدیدِ سلامتِ تاییدشده‌ای دارد که هنوز فایل گزارش کارشناس برایش آپلود نشده؟
 function has_pending_health_report($pdo, $caseId) {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM health_inspections WHERE case_id = ? AND status = 'APPROVED' AND (report_file_path IS NULL OR report_file_path = '')");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM health_inspections WHERE case_id = ? AND status IN ('APPROVED','PHOTOS_APPROVED') AND (report_file_path IS NULL OR report_file_path = '')");
     $stmt->execute([$caseId]);
     return intval($stmt->fetchColumn()) > 0;
 }
@@ -1315,6 +1331,95 @@ function notif_apply_action($pdo, $scope, $userId, $action, $id = 0) {
 }
 
 // =====================================================================
+//  تاریخچه‌ی بررسی (مایگریشن ۰۱۵) - اگر جدول نباشد بی‌صدا رد می‌شود
+// =====================================================================
+function review_log_ready($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try { $pdo->query("SELECT 1 FROM review_log LIMIT 1"); $ok = true; } catch (Throwable $e) { $ok = false; }
+    return $ok;
+}
+function review_log($pdo, $entity, $decision, $f = []) {
+    if (!review_log_ready($pdo)) return;
+    try {
+        $pdo->prepare("INSERT INTO review_log (entity, case_id, inspection_id, item_key, item_label, decision, note, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            ->execute([$entity, $f['case_id'] ?? null, $f['inspection_id'] ?? null, isset($f['key']) ? (string)$f['key'] : null,
+                       $f['label'] ?? null, $decision, ($f['note'] ?? '') !== '' ? $f['note'] : null, $f['user_id'] ?? null]);
+    } catch (Throwable $e) { error_log('[review_log] ' . $e->getMessage()); }
+}
+
+// =====================================================================
+//  ورود به «در حال صدور»: همه‌ی مدارکِ لازم تایید شده باشند و (برای بدنه) بازدید سلامت
+//  هم به‌طور نهایی (با فایل گزارش) تایید شده باشد
+// =====================================================================
+function case_docs_all_approved($pdo, $case) {
+    $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
+    $st = $pdo->prepare("SELECT doc_key FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
+    $st->execute([$case['id']]);
+    return count(array_diff(array_keys($required), array_column($st->fetchAll(), 'doc_key'))) === 0;
+}
+function case_health_ready($pdo, $case) {
+    if ($case['insurance_type'] !== 'BODY') return true;
+    $st = $pdo->prepare("SELECT status FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+    $st->execute([$case['id']]);
+    return $st->fetchColumn() === 'APPROVED';
+}
+// بعد از هر تایید (مدرک یا بازدید) صدا زده می‌شود. خروجی: 'issuing' | 'docs_done' | null
+function case_try_advance_to_issuing($pdo, $siteRoot, $caseId) {
+    $st = $pdo->prepare("SELECT pc.*, p.bale_chat_id FROM policy_cases pc JOIN persons p ON p.id = pc.person_id WHERE pc.id = ?");
+    $st->execute([$caseId]);
+    $case = $st->fetch();
+    if (!$case || in_array($case['status'], ['ISSUED', 'WITHDRAWN'], true)) return null;
+    if (!case_docs_all_approved($pdo, $case)) return null;
+    finalize_case_documents_to_archive($pdo, $siteRoot, $caseId);   // بایگانیِ مدارک همان لحظه‌ی کامل‌شدن
+    if ($case['status'] === 'ISSUING') return 'issuing';
+    $ctx = 'بیمه ' . insurance_type_fa($case['insurance_type']) . ' پلاک ' . ($case['plate'] ?: 'بدون پلاک');
+    if (!case_health_ready($pdo, $case)) {
+        notify_customer_app($pdo, $case['person_id'], $case['bale_chat_id'], 'مدارک تایید شد',
+            "✅ مدارک مربوط به {$ctx} تایید شد. بعد از تاییدِ بازدید سلامت، پرونده وارد مرحله‌ی «در حال صدور» می‌شود.", 'success', $caseId);
+        return 'docs_done';
+    }
+    $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
+    notify_customer_app($pdo, $case['person_id'], $case['bale_chat_id'], 'پرونده در حال صدور',
+        "✅ مدارک" . ($case['insurance_type'] === 'BODY' ? ' و بازدید سلامتِ' : ' ') . " مربوط به {$ctx} تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.", 'success', $caseId);
+    return 'issuing';
+}
+
+// تاییدِ یک مدرک + بررسیِ ورود به صدور (مشترک بین تاییدِ کارشناس، آپلودِ مستقیمِ ادمین و ثبتِ دستی)
+function approve_case_document_and_maybe_finalize($pdo, $docId, $userId = null, $note = '') {
+    $pdo->prepare("UPDATE case_documents SET status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")->execute([$docId]);
+    $st = $pdo->prepare("SELECT case_id, doc_key, doc_label FROM case_documents WHERE id = ?");
+    $st->execute([$docId]);
+    $doc = $st->fetch();
+    if (!$doc) return null;
+    review_log($pdo, 'CASE_DOC', 'APPROVED', ['case_id' => $doc['case_id'], 'key' => $doc['doc_key'], 'label' => $doc['doc_label'], 'user_id' => $userId, 'note' => $note]);
+    return case_try_advance_to_issuing($pdo, dirname(__DIR__), intval($doc['case_id']));
+}
+
+// ذخیره‌ی یک مدرک که خودِ کارشناس بارگذاری می‌کند (مستقیم تاییدشده). $file = یک ردیف از $_FILES
+function admin_store_case_doc($pdo, $siteRoot, $caseId, $docKey, $docLabel, $file, $userId = null) {
+    if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        return ['ok' => false, 'error' => 'فایلِ «' . $docLabel . '» دریافت نشد (شاید حجمش زیاد است).'];
+    }
+    $tmpDir = temp_archive_root($siteRoot) . '/مدارک دستی ادمین';
+    if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'jpg';
+    $destPath = $tmpDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $destPath)) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.'];
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($destPath, 2621440, 3200);
+    $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
+    // نسخه‌ی قبلیِ همان مدرک (در انتظار/ردشده) جایش را به این می‌دهد؛ «سایر مدارک» روی هم انباشته می‌شوند
+    if ($docKey !== 'other') {
+        $pdo->prepare("DELETE FROM case_documents WHERE case_id = ? AND doc_key = ? AND status IN ('PENDING','REJECTED')")->execute([$caseId, $docKey]);
+    }
+    $pdo->prepare("INSERT INTO case_documents (case_id, doc_key, doc_label, file_path, status) VALUES (?, ?, ?, ?, 'PENDING')")
+        ->execute([$caseId, $docKey, $docLabel, $relPath]);
+    $docId = intval($pdo->lastInsertId());
+    $stage = approve_case_document_and_maybe_finalize($pdo, $docId, $userId, 'بارگذاری توسط کارشناس');
+    return ['ok' => true, 'doc_id' => $docId, 'stage' => $stage];
+}
+
+// =====================================================================
 //  بررسیِ تک‌تکِ عکس‌های بازدید سلامت (مایگریشن ۰۱۳)
 // =====================================================================
 function health_review_columns_ready($pdo) {
@@ -1381,6 +1486,9 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
         if (@rename($abs, $dest)) $photos[$key] = ltrim(str_replace($siteRoot, '', $dest), '/');
     }
     $reviews[$key] = ['status' => $decision, 'note' => mb_substr(trim((string)$note), 0, 500), 'at' => date('Y-m-d H:i:s'), 'by' => $userId];
+    $stepsAll = health_inspection_steps();
+    review_log($pdo, 'HEALTH_PHOTO', $decision, ['case_id' => $insp['case_id'], 'inspection_id' => $inspId, 'key' => $key,
+               'label' => $stepsAll[explode('-', (string)$key)[0]]['label'] ?? $key, 'note' => $reviews[$key]['note'], 'user_id' => $userId]);
 
     $counts = ['APPROVED' => 0, 'REJECTED' => 0, 'PENDING' => 0];
     foreach ($reviews as $r) $counts[$r['status']]++;
@@ -1399,7 +1507,8 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
         $retake = json_encode(array_keys($retakeKeys));
         $reason = 'عکس‌های ناقص: ' . implode('، ', $lines);
     } elseif ($counts['PENDING'] === 0) {
-        $status = 'APPROVED';
+        // همه‌ی عکس‌ها تایید شد: تاییدِ نهایی بعد از بارگذاریِ فایلِ گزارشِ کارشناس (upload_health_report)
+        $status = health_supports_photos_approved($pdo) ? 'PHOTOS_APPROVED' : 'APPROVED';
         $folderPath = $finalDir;
         // یادداشت‌های کارشناس (خسارت‌ها) کنارِ عکس‌ها
         $notes = [];
@@ -1417,8 +1526,9 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
         ->execute([json_encode($photos, JSON_UNESCAPED_UNICODE), json_encode($reviews, JSON_UNESCAPED_UNICODE), $retake, $status, $reason,
                    $folderPath, $counts['APPROVED'] > 0 ? $approvedDate : $insp['approved_jalali_date'], $inspId]);
 
-    // خبر به کاربر فقط وقتی بررسیِ همه‌ی عکس‌ها تمام شد
-    if ($status !== 'PENDING' && $insp['status'] !== $status) {
+    // خبر به کاربر فقط وقتی بررسیِ همه‌ی عکس‌ها تمام شد (تاییدِ عکس‌ها بدون گزارش هنوز «نهایی» نیست)
+    if ($status === 'APPROVED' && $insp['case_id']) case_try_advance_to_issuing($pdo, $siteRoot, intval($insp['case_id']));
+    if (!in_array($status, ['PENDING', 'PHOTOS_APPROVED'], true) && $insp['status'] !== $status) {
         $st = $pdo->prepare("SELECT COALESCE(pc.person_id, hi.person_id) AS person_id, p.bale_chat_id, pc.insurance_type
                                FROM health_inspections hi LEFT JOIN policy_cases pc ON hi.case_id = pc.id
                                JOIN persons p ON p.id = COALESCE(pc.person_id, hi.person_id) WHERE hi.id = ?");
@@ -1434,6 +1544,54 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
         }
     }
     return ['ok' => true, 'status' => $status, 'counts' => $counts, 'photo' => $photos[$key], 'review' => $reviews[$key]];
+}
+
+// تاییدِ نهاییِ بازدید با فایلِ گزارشِ کارشناس. فایل کنارِ مدارکِ پرونده (یا برای بازدیدِ آزاد، کنارِ
+// عکس‌های تاییدشده) با نام‌گذاریِ استاندارد ذخیره می‌شود؛ اگر بازدید منتظرِ گزارش بود، تایید نهایی
+// می‌شود، به کاربر خبر داده می‌شود و پرونده (اگر مدارکش هم کامل است) «در حال صدور» می‌شود.
+function health_attach_report_and_finalize($pdo, $siteRoot, $inspId, $file, $userId = null) {
+    $st = $pdo->prepare("SELECT hi.*, COALESCE(pc.plate, hi.free_plate) AS plate FROM health_inspections hi LEFT JOIN policy_cases pc ON pc.id = hi.case_id WHERE hi.id = ?");
+    $st->execute([$inspId]);
+    $insp = $st->fetch();
+    if (!$insp) return ['ok' => false, 'error' => 'بازدید یافت نشد.'];
+    if (!in_array($insp['status'], ['PHOTOS_APPROVED', 'APPROVED'], true)) {
+        return ['ok' => false, 'error' => 'اول همه‌ی عکس‌های این بازدید باید تایید شوند، بعد فایل گزارش بارگذاری می‌شود.'];
+    }
+    if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        return ['ok' => false, 'error' => 'فایل گزارش دریافت نشد (شاید حجمش زیاد است).'];
+    }
+    $approvedDate = $insp['approved_jalali_date'] ?: jalali_from_gregorian_ts_dotted(time());
+    if ($insp['case_id']) {
+        $c = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        $c->execute([$insp['case_id']]);
+        $dir = resolve_case_folder($pdo, $siteRoot, $c->fetch());
+    } else {
+        $dir = health_abs_path($siteRoot, $insp['photos_folder_path']);
+    }
+    if (!$dir) return ['ok' => false, 'error' => 'پوشه‌ی بایگانیِ این بازدید پیدا نشد.'];
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+    $dest = unique_dest_path($dir . '/' . build_health_report_filename($approvedDate, $insp['plate'], $ext));
+    if (!move_uploaded_file($file['tmp_name'], $dest)) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل گزارش.'];
+    $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
+
+    $wasFinal = $insp['status'] === 'APPROVED';
+    $pdo->prepare("UPDATE health_inspections SET report_file_path = ?, status = 'APPROVED', approved_jalali_date = ?, reviewed_at = NOW() WHERE id = ?")
+        ->execute([$rel, $approvedDate, $inspId]);
+    review_log($pdo, $wasFinal ? 'HEALTH_REPORT' : 'HEALTH', $wasFinal ? 'UPLOADED' : 'FINAL_APPROVED',
+               ['case_id' => $insp['case_id'], 'inspection_id' => $inspId, 'label' => 'گزارش کارشناس', 'note' => basename($dest), 'user_id' => $userId]);
+    $stage = null;
+    if (!$wasFinal) {
+        $p = $pdo->prepare("SELECT COALESCE(pc.person_id, hi.person_id) AS person_id, p.bale_chat_id, pc.insurance_type FROM health_inspections hi
+                              LEFT JOIN policy_cases pc ON hi.case_id = pc.id JOIN persons p ON p.id = COALESCE(pc.person_id, hi.person_id) WHERE hi.id = ?");
+        $p->execute([$inspId]);
+        if ($row = $p->fetch()) {
+            $ctx = ($row['insurance_type'] ? 'بیمه ' . insurance_type_fa($row['insurance_type']) . ' ' : '') . 'پلاک ' . ($insp['plate'] ?: 'بدون پلاک');
+            notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت تایید شد', "✅ بازدید سلامت مربوط به {$ctx} به‌طور نهایی تایید شد.", 'success');
+        }
+        if ($insp['case_id']) $stage = case_try_advance_to_issuing($pdo, $siteRoot, intval($insp['case_id']));
+    }
+    return ['ok' => true, 'report' => $rel, 'final' => !$wasFinal, 'stage' => $stage];
 }
 
 // بازدیدِ ناقصی که منتظرِ ارسالِ دوباره‌ی چند عکس است (برای پرونده یا پلاکِ آزاد)

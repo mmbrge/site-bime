@@ -37,32 +37,6 @@ function notify_customer($pdo, $chatId, $text) {
     curl_exec($ch); curl_close($ch);
 }
 
-// تاییدِ یک مدرک + بررسیِ اینکه آیا با تاییدِ همین یکی، همه‌ی مدارکِ لازمِ پرونده کامل
-// شده‌اند (که در این صورت پرونده وارد «در حال صدور» می‌شود و مدارک بایگانی می‌شوند) -
-// دقیقاً هم‌منطقِ approve_doc، برای استفاده‌ی مشترک با آپلود مستقیم ادمین
-function approve_case_document_and_maybe_finalize($pdo, $docId) {
-    $pdo->prepare("UPDATE case_documents SET status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")->execute([$docId]);
-    $stmt = $pdo->prepare("SELECT case_id FROM case_documents WHERE id = ?");
-    $stmt->execute([$docId]);
-    $caseId = $stmt->fetchColumn();
-    if (!$caseId) return;
-
-    $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
-    $stmt->execute([$caseId]);
-    $case = $stmt->fetch();
-    if (!$case) return;
-
-    $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
-    $stmt = $pdo->prepare("SELECT doc_key FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
-    $stmt->execute([$caseId]);
-    $approvedKeys = array_column($stmt->fetchAll(), 'doc_key');
-
-    if (count(array_diff(array_keys($required), $approvedKeys)) === 0) {
-        $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
-        finalize_case_documents_to_archive($pdo, dirname(__DIR__), $caseId);
-    }
-}
-
 try {
     // ---- حذف یک درخواست (پرونده) - فقط مدیر کل؛ صادرشده‌ها حذف نمی‌شوند ----
     if ($action === 'delete_case') {
@@ -74,7 +48,7 @@ try {
 
     // ---- درخواستِ «خارج از فاز عملیاتی» فقط قابلِ دیدن است؛ هیچ کارِ عملیاتی روی آن انجام نمی‌شود ----
     $mutating = ['approve_all_docs', 'approve_doc', 'reject_doc', 'request_fix', 'review_health_photo', 'approve_health',
-                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy'];
+                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report'];
     $postAction = $_POST['action'] ?? '';
     $guardAction = in_array($action, $mutating, true) ? $action : (in_array($postAction, $mutating, true) ? $postAction : '');
     if ($guardAction !== '') {
@@ -85,9 +59,9 @@ try {
             $st = $pdo->prepare("SELECT case_id FROM case_documents WHERE id = ?");
             $st->execute([intval($data['doc_id'])]);
             $gCase = intval($st->fetchColumn());
-        } elseif (!empty($data['id']) && in_array($guardAction, ['review_health_photo', 'approve_health', 'reject_health'], true)) {
+        } elseif ((!empty($data['id']) || !empty($_POST['inspection_id'])) && in_array($guardAction, ['review_health_photo', 'approve_health', 'reject_health', 'upload_health_report'], true)) {
             $st = $pdo->prepare("SELECT case_id FROM health_inspections WHERE id = ?");
-            $st->execute([intval($data['id'])]);
+            $st->execute([intval($data['id'] ?? $_POST['inspection_id'])]);
             $gCase = intval($st->fetchColumn());
         }
         if ($gCase) {
@@ -127,8 +101,8 @@ try {
         $caseId = intval($_GET['case_id'] ?? ($data['case_id'] ?? 0));
         $stmt = $pdo->prepare("
             SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_national_code,
-                   p.personnel_code AS holder_personnel_code, c.name AS company_name,
-                   i.letter_date, i.max_quota, i.used_quota
+                   p.personnel_code AS holder_personnel_code, p.mobile_number AS holder_mobile, c.name AS company_name,
+                   i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file_path
             FROM policy_cases pc
             JOIN persons p ON pc.person_id = p.id
             LEFT JOIN companies c ON p.company_id = c.id
@@ -148,68 +122,52 @@ try {
         $coverageLabels = [];
         foreach (body_coverage_options() as $key => $opt) { $coverageLabels[$key] = $opt['label']; }
         $requiredDocs = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
-        echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels, 'required_docs' => $requiredDocs], JSON_UNESCAPED_UNICODE);
+        // اطلاعاتِ تکمیلیِ شرکتِ کارفرما (هر ستونی که در این نصب موجود باشد)
+        $company = null;
+        try {
+            $st = $pdo->prepare("SELECT co.* FROM companies co JOIN persons p ON p.company_id = co.id WHERE p.id = ?");
+            $st->execute([$case['person_id']]);
+            if ($co = $st->fetch()) $company = array_intersect_key($co, array_flip(['name', 'phone', 'economic_code', 'national_id', 'address', 'postal_code']));
+        } catch (Throwable $e) {}
+        $case['letter_date_fa'] = $case['letter_date'] ? str_replace('-', '.', $case['letter_date']) : null;
+        // آخرین بازدیدِ سلامت (برای بدنه) با عکس‌ها و گزارش - برای دیدن در همان پنجره‌ی صدور
+        $health = null;
+        if ($case['insurance_type'] === 'BODY') {
+            $st = $pdo->prepare("SELECT * FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+            $st->execute([$caseId]);
+            if ($hi = $st->fetch()) {
+                $steps = health_inspection_steps();
+                $ph = json_decode($hi['photos'] ?: '{}', true) ?: [];
+                $list = [];
+                foreach (health_photo_reviews($hi) as $k => $rv) {
+                    $parts = explode('-', (string)$k);
+                    $list[] = ['label' => ($steps[$parts[0]]['label'] ?? $k) . (isset($parts[1]) ? ' ' . $parts[1] : ''), 'status' => $rv['status'], 'note' => $rv['note'],
+                               'path' => ltrim(str_replace(dirname(__DIR__), '', health_abs_path(dirname(__DIR__), $ph[$k])), '/')];
+                }
+                $health = ['id' => intval($hi['id']), 'number' => intval($hi['inspection_number']), 'status' => $hi['status'],
+                           'approved_jalali' => $hi['approved_jalali_date'], 'report' => $hi['report_file_path'], 'photos' => $list];
+            }
+        }
+        echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels, 'required_docs' => $requiredDocs,
+                          'company' => $company, 'health' => $health], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
     // ۳. تایید یک مدرک
     if ($action === 'approve_all_docs') {
         $caseId = intval($data['case_id'] ?? 0);
-        $pdo->prepare("UPDATE case_documents SET status = 'APPROVED', reviewed_at = NOW() WHERE case_id = ? AND status = 'PENDING'")->execute([$caseId]);
-
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
-        $stmt->execute([$caseId]);
-        $case = $stmt->fetch();
-        if ($case) {
-            $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
-            $stmt = $pdo->prepare("SELECT doc_key FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
-            $stmt->execute([$caseId]);
-            $approvedKeys = array_column($stmt->fetchAll(), 'doc_key');
-            if (count(array_diff(array_keys($required), $approvedKeys)) === 0) {
-                $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
-                finalize_case_documents_to_archive($pdo, dirname(__DIR__), $caseId);
-                $stmt = $pdo->prepare("SELECT bale_chat_id FROM persons WHERE id = ?");
-                $stmt->execute([$case['person_id']]);
-                notify_customer_app($pdo, $case['person_id'], $stmt->fetchColumn(),
-                    "مدارک تایید شد", "✅ مدارک مربوط به صدور بیمه " . insurance_type_fa($case['insurance_type']) . " پلاک " . ($case['plate'] ?: 'بدون پلاک') . " تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.",
-                    'success', $caseId);
-            }
-        }
-        echo json_encode(['ok' => true]);
+        $st = $pdo->prepare("SELECT id FROM case_documents WHERE case_id = ? AND status = 'PENDING'");
+        $st->execute([$caseId]);
+        $stage = null;
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $docId) $stage = approve_case_document_and_maybe_finalize($pdo, intval($docId), $_SESSION['user_id']);
+        echo json_encode(['ok' => true, 'stage' => $stage]);
         exit;
     }
 
     if ($action === 'approve_doc') {
-        $docId = intval($data['doc_id'] ?? 0);
-        $pdo->prepare("UPDATE case_documents SET status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")->execute([$docId]);
-
-        // اگر همه‌ی مدارک لازم تایید شده باشند، پرونده وارد مرحله‌ی «در حال صدور» می‌شود
-        $stmt = $pdo->prepare("SELECT case_id FROM case_documents WHERE id = ?");
-        $stmt->execute([$docId]);
-        $caseId = $stmt->fetchColumn();
-        if ($caseId) {
-            $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
-            $stmt->execute([$caseId]);
-            $case = $stmt->fetch();
-            $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
-
-            $stmt = $pdo->prepare("SELECT doc_key FROM case_documents WHERE case_id = ? AND status = 'APPROVED'");
-            $stmt->execute([$caseId]);
-            $approvedKeys = array_column($stmt->fetchAll(), 'doc_key');
-
-            $allApproved = count(array_diff(array_keys($required), $approvedKeys)) === 0;
-            if ($allApproved) {
-                $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
-                finalize_case_documents_to_archive($pdo, dirname(__DIR__), $caseId);
-                $stmt = $pdo->prepare("SELECT bale_chat_id FROM persons WHERE id = ?");
-                $stmt->execute([$case['person_id']]);
-                notify_customer_app($pdo, $case['person_id'], $stmt->fetchColumn(),
-                    "مدارک تایید شد", "✅ مدارک مربوط به صدور بیمه " . insurance_type_fa($case['insurance_type']) . " پلاک " . ($case['plate'] ?: 'بدون پلاک') . " تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.",
-                    'success', $caseId);
-            }
-        }
-
-        echo json_encode(['ok' => true]);
+        // اگر همه‌ی مدارکِ لازم تایید شده باشند، مدارک بایگانی می‌شوند و (اگر بازدید هم آماده است) پرونده «در حال صدور» می‌شود
+        $stage = approve_case_document_and_maybe_finalize($pdo, intval($data['doc_id'] ?? 0), $_SESSION['user_id']);
+        echo json_encode(['ok' => true, 'stage' => $stage]);
         exit;
     }
 
@@ -226,6 +184,9 @@ try {
 
         $pdo->prepare("UPDATE case_documents SET status = 'REJECTED', reject_reason = ?, reviewed_at = NOW() WHERE id = ?")
             ->execute([$reason, $docId]);
+        $st = $pdo->prepare("SELECT doc_key FROM case_documents WHERE id = ?");
+        $st->execute([$docId]);
+        review_log($pdo, 'CASE_DOC', 'REJECTED', ['case_id' => $doc['case_id'], 'key' => $st->fetchColumn(), 'label' => $doc['doc_label'], 'note' => $reason, 'user_id' => $_SESSION['user_id']]);
 
         $stmt = $pdo->prepare("SELECT pc.person_id, pc.plate, pc.insurance_type, p.bale_chat_id FROM policy_cases pc JOIN persons p ON pc.person_id = p.id WHERE pc.id = ?");
         $stmt->execute([$doc['case_id']]);
@@ -357,26 +318,8 @@ try {
 
     // آپلود فایل گزارش بازدید سلامت توسط کارشناس (جدا از عکس‌های خودِ کاربر)
     if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'upload_health_report') {
-        $inspectionId = intval($_POST['inspection_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT hi.*, pc.plate, pc.folder_path FROM health_inspections hi JOIN policy_cases pc ON hi.case_id = pc.id WHERE hi.id = ?");
-        $stmt->execute([$inspectionId]);
-        $insp = $stmt->fetch();
-        if (!$insp) { echo json_encode(['ok' => false, 'error' => 'بازدید یافت نشد.']); exit; }
-
-        $siteRoot = dirname(__DIR__);
-        $stmt2 = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
-        $stmt2->execute([$insp['case_id']]);
-        $fullCase = $stmt2->fetch();
-        $caseFolder = resolve_case_folder($pdo, $siteRoot, $fullCase);
-
-        $approvedDate = $insp['approved_jalali_date'] ?: jalali_from_gregorian_ts_dotted(time());
-        $ext = pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION);
-        $destPath = unique_dest_path($caseFolder . '/' . build_health_report_filename($approvedDate, $insp['plate'], $ext));
-        move_uploaded_file($_FILES['file']['tmp_name'], $destPath);
-        $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
-
-        $pdo->prepare("UPDATE health_inspections SET report_file_path = ? WHERE id = ?")->execute([$relPath, $inspectionId]);
-        echo json_encode(['ok' => true]);
+        // وقتی همه‌ی عکس‌ها تایید شده‌اند، همین بارگذاری = تاییدِ نهاییِ بازدید (و ورود به صدور)
+        echo json_encode(health_attach_report_and_finalize($pdo, dirname(__DIR__), intval($_POST['inspection_id'] ?? 0), $_FILES['file'], $_SESSION['user_id']), JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -404,6 +347,151 @@ try {
         }
         unset($r);
         echo json_encode(['ok' => true, 'data' => $rows, 'per_photo' => health_review_columns_ready($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- صفحه‌ی «بازدیدهای تاییدشده»: هر درخواست یک ردیف ----
+    //   کارکنان: پرونده‌هایی که مدارکشان کامل تایید شده یا بازدیدِ سلامتشان تاییدِ نهایی شده
+    //   شرکت‌ها / آزاد: بازدیدهای سلامتِ تاییدشده‌ای که به پرونده‌ی کارکنان وصل نیستند؛ اگر پلاک
+    //   در درخواست‌های شرکت‌ها باشد «شرکت‌ها» حساب می‌شود، وگرنه «آزاد»
+    if ($action === 'approved_reviews') {
+        $rows = [];
+        $stmt = $pdo->query("SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_nid, p.personnel_code, co.name AS employer_name,
+                                    (SELECT MAX(cd.reviewed_at) FROM case_documents cd WHERE cd.case_id = pc.id AND cd.status = 'APPROVED') AS docs_approved_at,
+                                    (SELECT COUNT(*) FROM case_documents cd WHERE cd.case_id = pc.id AND cd.status = 'APPROVED') AS docs_approved,
+                                    (SELECT COUNT(*) FROM case_documents cd WHERE cd.case_id = pc.id AND cd.status = 'PENDING') AS docs_pending
+                               FROM policy_cases pc JOIN persons p ON p.id = pc.person_id LEFT JOIN companies co ON co.id = p.company_id
+                              WHERE COALESCE(pc.status, '') <> 'WITHDRAWN'
+                              ORDER BY pc.id DESC LIMIT 3000");
+        $hiSt = $pdo->prepare("SELECT id, status, reviewed_at, approved_jalali_date, report_file_path FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+        $rejSt = review_log_ready($pdo) ? $pdo->prepare("SELECT COUNT(*) FROM review_log WHERE case_id = ? AND decision = 'REJECTED'") : null;
+        foreach ($stmt->fetchAll() as $c) {
+            $docsOk = case_docs_all_approved($pdo, $c);
+            $hiSt->execute([$c['id']]);
+            $hi = $hiSt->fetch() ?: null;
+            $healthOk = $c['insurance_type'] !== 'BODY' || ($hi && $hi['status'] === 'APPROVED');
+            if (!$docsOk && !($hi && $hi['status'] === 'APPROVED')) continue;
+            $required = get_required_docs_v2($c['insurance_type'], $c['ownership_choice'], $c['prev_body_insurance'], $c['insured_relationship']);
+            $lastAt = max((string)$c['docs_approved_at'], (string)($hi['status'] ?? '') === 'APPROVED' ? (string)$hi['reviewed_at'] : '');
+            $rejCount = 0;
+            if ($rejSt) { $rejSt->execute([$c['id']]); $rejCount = intval($rejSt->fetchColumn()); }
+            else {
+                $r = $pdo->prepare("SELECT COUNT(*) FROM case_documents WHERE case_id = ? AND reject_reason IS NOT NULL AND reject_reason <> ''");
+                $r->execute([$c['id']]); $rejCount = intval($r->fetchColumn());
+            }
+            $rows[] = ['source' => 'PERSONNEL', 'source_fa' => 'کارکنان', 'id' => intval($c['id']), 'unique_code' => $c['unique_code'],
+                       'holder_name' => $c['holder_name'], 'insured_name' => $c['insured_name'] ?: $c['holder_name'],
+                       'national_id' => $c['insured_national_id'] ?: $c['holder_nid'], 'personnel_code' => $c['personnel_code'],
+                       'company_name' => $c['employer_name'], 'insurance_type' => $c['insurance_type'], 'plate' => $c['plate'],
+                       'case_status' => $c['status'], 'case_status_fa' => case_status_fa($c['status']),
+                       'docs_ok' => $docsOk, 'docs_approved' => intval($c['docs_approved']), 'docs_required' => count($required),
+                       'health_status' => $c['insurance_type'] === 'BODY' ? ($hi['status'] ?? 'NONE') : 'NA',
+                       'complete' => $docsOk && $healthOk, 'rejections' => $rejCount,
+                       'approved_at' => $lastAt ?: null, 'approved_at_jalali' => $lastAt ? jalali_from_gregorian_ts_dotted(strtotime($lastAt)) : null,
+                       'created_at_jalali' => $c['created_at'] ? jalali_from_gregorian_ts_dotted(strtotime($c['created_at'])) : null];
+        }
+
+        // پلاک‌های درخواست‌های شرکت‌ها (برای تشخیصِ بازدیدهای آزادِ مربوط به شرکت‌ها)
+        $companyPlates = [];
+        try {
+            foreach ($pdo->query("SELECT crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, c.name FROM company_request_plates crp
+                                    JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                                   WHERE crp.plate_p1 IS NOT NULL AND crp.plate_p1 <> ''")->fetchAll() as $cp) {
+                $companyPlates["{$cp['plate_p1']}ایران - {$cp['plate_p2']} {$cp['plate_letter']} {$cp['plate_p4']}"] = $cp['name'];
+            }
+        } catch (Throwable $e) { /* ماژول شرکت‌ها نصب نیست */ }
+        $stmt = $pdo->query("SELECT hi.*, p.full_name, p.national_code FROM health_inspections hi LEFT JOIN persons p ON p.id = hi.person_id
+                              WHERE hi.case_id IS NULL AND hi.status = 'APPROVED' ORDER BY hi.id DESC LIMIT 2000");
+        foreach ($stmt->fetchAll() as $h) {
+            $co = $companyPlates[$h['free_plate'] ?? ''] ?? null;
+            $rej = 0;
+            if ($rejSt) { $r = $pdo->prepare("SELECT COUNT(*) FROM review_log WHERE inspection_id = ? AND decision = 'REJECTED'"); $r->execute([$h['id']]); $rej = intval($r->fetchColumn()); }
+            $rows[] = ['source' => $co ? 'COMPANY' : 'FREE', 'source_fa' => $co ? 'شرکت‌ها' : 'بازدید آزاد', 'id' => intval($h['id']),
+                       'unique_code' => 'بازدید-' . $h['id'], 'holder_name' => $h['full_name'], 'insured_name' => $h['full_name'],
+                       'national_id' => strpos((string)$h['national_code'], 'GUEST') === 0 ? null : $h['national_code'], 'personnel_code' => null,
+                       'company_name' => $co, 'insurance_type' => null, 'plate' => $h['free_plate'],
+                       'case_status' => null, 'case_status_fa' => 'بازدید تاییدشده', 'docs_ok' => null, 'docs_approved' => 0, 'docs_required' => 0,
+                       'health_status' => 'APPROVED', 'complete' => true, 'rejections' => $rej,
+                       'approved_at' => $h['reviewed_at'], 'approved_at_jalali' => $h['approved_jalali_date'] ?: ($h['reviewed_at'] ? jalali_from_gregorian_ts_dotted(strtotime($h['reviewed_at'])) : null),
+                       'created_at_jalali' => $h['created_at'] ? jalali_from_gregorian_ts_dotted(strtotime($h['created_at'])) : null];
+        }
+        usort($rows, fn($a, $b) => strcmp((string)$b['approved_at'], (string)$a['approved_at']));
+        echo json_encode(['ok' => true, 'rows' => $rows, 'history' => review_log_ready($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- جزئیاتِ یک ردیفِ «بازدیدهای تاییدشده»: همه‌ی اطلاعات، مدارک، عکس‌ها و تاریخچه‌ی رد/تایید ----
+    if ($action === 'approved_review_detail') {
+        $src = $_GET['source'] ?? 'PERSONNEL';
+        $id = intval($_GET['id'] ?? 0);
+        $siteRoot = dirname(__DIR__);
+        $steps = health_inspection_steps();
+        $users = [];
+        foreach ($pdo->query("SELECT id, full_name FROM users")->fetchAll() as $u) $users[$u['id']] = $u['full_name'];
+        $fmt = fn($ts) => $ts ? jalali_from_gregorian_ts_dotted(strtotime($ts)) . ' ' . date('H:i', strtotime($ts)) : null;
+        $inspPack = function ($hi) use ($steps, $siteRoot, $fmt, $users) {
+            $photos = json_decode($hi['photos'] ?: '{}', true) ?: [];
+            $list = [];
+            foreach (health_photo_reviews($hi) as $k => $rv) {
+                $parts = explode('-', (string)$k);
+                $list[] = ['key' => (string)$k, 'label' => ($steps[$parts[0]]['label'] ?? $k) . (isset($parts[1]) ? ' ' . $parts[1] : ''),
+                           'path' => ltrim(str_replace($siteRoot, '', health_abs_path($siteRoot, $photos[$k])), '/'),
+                           'status' => $rv['status'], 'note' => $rv['note'],
+                           'at' => $fmt(json_decode($hi['photo_reviews'] ?? '{}', true)[$k]['at'] ?? null),
+                           'by' => $users[json_decode($hi['photo_reviews'] ?? '{}', true)[$k]['by'] ?? 0] ?? null];
+            }
+            return ['id' => intval($hi['id']), 'number' => intval($hi['inspection_number']), 'status' => $hi['status'],
+                    'approved_jalali' => $hi['approved_jalali_date'], 'reviewed_at' => $fmt($hi['reviewed_at']), 'created_at' => $fmt($hi['created_at']),
+                    'report' => $hi['report_file_path'], 'reject_reason' => $hi['reject_reason'], 'photos' => $list];
+        };
+        $history = [];
+        $logRows = function ($where, $arg) use ($pdo, $fmt, $users, &$history) {
+            if (!review_log_ready($pdo)) return;
+            $st = $pdo->prepare("SELECT * FROM review_log WHERE $where ORDER BY id ASC");
+            $st->execute([$arg]);
+            foreach ($st->fetchAll() as $r) {
+                $history[] = ['at' => $fmt($r['created_at']), 'entity' => $r['entity'], 'label' => $r['item_label'], 'decision' => $r['decision'],
+                              'note' => $r['note'], 'by' => $r['user_id'] ? ($users[$r['user_id']] ?? 'کارشناس') : 'کاربر'];
+            }
+        };
+
+        if ($src === 'PERSONNEL') {
+            $st = $pdo->prepare("SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_nid, p.personnel_code, p.mobile_number AS holder_mobile,
+                                        co.name AS employer_name, i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file
+                                   FROM policy_cases pc JOIN persons p ON p.id = pc.person_id LEFT JOIN companies co ON co.id = p.company_id
+                                   LEFT JOIN introductions i ON i.id = pc.introduction_id WHERE pc.id = ?");
+            $st->execute([$id]);
+            $case = $st->fetch();
+            if (!$case) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+            $st = $pdo->prepare("SELECT * FROM case_documents WHERE case_id = ? ORDER BY id ASC");
+            $st->execute([$id]);
+            $docs = array_map(fn($d) => ['label' => $d['doc_label'], 'key' => $d['doc_key'], 'status' => $d['status'], 'path' => $d['file_path'],
+                                          'reject_reason' => $d['reject_reason'], 'uploaded_at' => $fmt($d['uploaded_at']), 'reviewed_at' => $fmt($d['reviewed_at'])], $st->fetchAll());
+            $st = $pdo->prepare("SELECT * FROM health_inspections WHERE case_id = ? ORDER BY id ASC");
+            $st->execute([$id]);
+            $insps = array_map($inspPack, $st->fetchAll());
+            $logRows('case_id = ?', $id);
+            // بدونِ جدولِ تاریخچه: دست‌کم علتِ ردهای فعلی
+            if (!review_log_ready($pdo)) {
+                foreach ($docs as $d) if ($d['reject_reason']) $history[] = ['at' => $d['reviewed_at'], 'entity' => 'CASE_DOC', 'label' => $d['label'], 'decision' => 'REJECTED', 'note' => $d['reject_reason'], 'by' => null];
+            }
+            $cov = json_decode($case['selected_coverages'] ?? '', true);
+            $opts = body_coverage_options(); $covFa = [];
+            foreach ((is_array($cov) ? $cov : []) as $k => $v) $covFa[] = ($opts[$k]['label'] ?? $k) . (($opts[$k]['tiers'][(string)$v] ?? null) ? ' (' . $opts[$k]['tiers'][(string)$v] . ')' : '');
+            $case['coverages_fa'] = $covFa;
+            $case['status_fa'] = case_status_fa($case['status']);
+            $case['letter_date_fa'] = $case['letter_date'] ? str_replace('-', '.', $case['letter_date']) : null;
+            $case['created_at_fa'] = $fmt($case['created_at']);
+            echo json_encode(['ok' => true, 'source' => $src, 'case' => $case, 'docs' => $docs, 'inspections' => $insps, 'history' => $history], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $st = $pdo->prepare("SELECT hi.*, p.full_name, p.national_code, p.mobile_number FROM health_inspections hi LEFT JOIN persons p ON p.id = hi.person_id WHERE hi.id = ?");
+        $st->execute([$id]);
+        $hi = $st->fetch();
+        if (!$hi) { echo json_encode(['ok' => false, 'error' => 'بازدید یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $logRows('inspection_id = ?', $id);
+        echo json_encode(['ok' => true, 'source' => $src, 'person' => ['name' => $hi['full_name'], 'national_code' => $hi['national_code'], 'mobile' => $hi['mobile_number'], 'plate' => $hi['free_plate']],
+                          'inspections' => [$inspPack($hi)], 'docs' => [], 'history' => $history], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -438,7 +526,8 @@ try {
         echo json_encode(['ok' => true, 'per_photo' => health_review_columns_ready($pdo),
                           'inspection' => ['id' => intval($insp['id']), 'number' => intval($insp['inspection_number']), 'status' => $insp['status'],
                                            'plate' => $insp['plate'], 'holder_name' => $insp['holder_name'], 'unique_code' => $insp['unique_code'],
-                                           'insurance_type' => $insp['insurance_type'], 'reject_reason' => $insp['reject_reason']],
+                                           'insurance_type' => $insp['insurance_type'], 'reject_reason' => $insp['reject_reason'],
+                                           'report_file_path' => $insp['report_file_path']],
                           'photos' => $list], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -463,6 +552,7 @@ try {
         if (!$insp) { echo json_encode(['ok' => false, 'error' => 'بازدید یافت نشد.']); exit; }
 
         $siteRoot = dirname(__DIR__);
+        $finalSt = health_supports_photos_approved($pdo) ? 'PHOTOS_APPROVED' : 'APPROVED';
         $approvedDate = jalali_from_gregorian_ts_dotted(time());
         $newFolderName = build_health_photos_folder_name($approvedDate, $insp['plate']);
         $newFolderPath = dirname($insp['photos_folder_path']) . '/' . $newFolderName;
@@ -475,12 +565,16 @@ try {
             foreach ($photos as $k => $relPath) {
                 $newPhotos[$k] = str_replace(basename($insp['photos_folder_path']), $newFolderName, $relPath);
             }
-            $pdo->prepare("UPDATE health_inspections SET photos = ?, photos_folder_path = ?, approved_jalali_date = ?, status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")
-                ->execute([json_encode($newPhotos, JSON_UNESCAPED_UNICODE), $newFolderPath, $approvedDate, $id]);
+            $pdo->prepare("UPDATE health_inspections SET photos = ?, photos_folder_path = ?, approved_jalali_date = ?, status = ?, reviewed_at = NOW() WHERE id = ?")
+                ->execute([json_encode($newPhotos, JSON_UNESCAPED_UNICODE), $newFolderPath, $approvedDate, $finalSt, $id]);
         } else {
-            $pdo->prepare("UPDATE health_inspections SET approved_jalali_date = ?, status = 'APPROVED', reviewed_at = NOW() WHERE id = ?")
-                ->execute([$approvedDate, $id]);
+            $pdo->prepare("UPDATE health_inspections SET approved_jalali_date = ?, status = ?, reviewed_at = NOW() WHERE id = ?")
+                ->execute([$approvedDate, $finalSt, $id]);
         }
+        review_log($pdo, 'HEALTH', 'APPROVED', ['case_id' => $insp['case_id'], 'inspection_id' => $id, 'label' => 'همه‌ی عکس‌ها', 'user_id' => $_SESSION['user_id']]);
+        // تاییدِ نهایی بعد از بارگذاریِ فایلِ گزارش است (upload_health_report)
+        if ($finalSt === 'PHOTOS_APPROVED') { echo json_encode(['ok' => true, 'status' => $finalSt, 'needs_report' => true], JSON_UNESCAPED_UNICODE); exit; }
+        if ($insp['case_id']) case_try_advance_to_issuing($pdo, $siteRoot, intval($insp['case_id']));
 
         $stmt = $pdo->prepare("SELECT COALESCE(pc.person_id, hi.person_id) AS person_id, p.bale_chat_id, hi.inspection_number, COALESCE(pc.plate, hi.plate) AS plate, pc.insurance_type FROM health_inspections hi LEFT JOIN policy_cases pc ON hi.case_id = pc.id JOIN persons p ON p.id = COALESCE(pc.person_id, hi.person_id) WHERE hi.id = ?");
         $stmt->execute([$id]);
@@ -497,6 +591,9 @@ try {
         $id = intval($data['id'] ?? 0);
         $reason = trim($data['reason'] ?? '');
         $pdo->prepare("UPDATE health_inspections SET status = 'REJECTED', reject_reason = ?, reviewed_at = NOW() WHERE id = ?")->execute([$reason, $id]);
+        $st = $pdo->prepare("SELECT case_id FROM health_inspections WHERE id = ?");
+        $st->execute([$id]);
+        review_log($pdo, 'HEALTH', 'REJECTED', ['case_id' => $st->fetchColumn() ?: null, 'inspection_id' => $id, 'label' => 'کل بازدید', 'note' => $reason, 'user_id' => $_SESSION['user_id']]);
         $stmt = $pdo->prepare("SELECT COALESCE(pc.person_id, hi.person_id) AS person_id, p.bale_chat_id, hi.inspection_number, COALESCE(pc.plate, hi.plate) AS plate, pc.insurance_type FROM health_inspections hi LEFT JOIN policy_cases pc ON hi.case_id = pc.id JOIN persons p ON p.id = COALESCE(pc.person_id, hi.person_id) WHERE hi.id = ?");
         $stmt->execute([$id]);
         $row = $stmt->fetch();
@@ -545,31 +642,16 @@ try {
         $caseId = intval($_POST['case_id'] ?? 0);
         $docKey = trim($_POST['doc_key'] ?? '') ?: 'other';
         $docLabel = trim($_POST['doc_label'] ?? '') ?: $docKey;
-
-        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        // «سایر مدارک»: نامی که کارشناس نوشته، نامِ مدرک در بایگانی هم می‌شود
+        if ($docKey === 'other') {
+            $custom = trim($_POST['other_name'] ?? '');
+            if ($custom === '') { echo json_encode(['ok' => false, 'error' => 'نام مدرک را بنویسید.'], JSON_UNESCAPED_UNICODE); exit; }
+            $docLabel = mb_substr($custom, 0, 120);
+        }
+        $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ?");
         $stmt->execute([$caseId]);
-        $case = $stmt->fetch();
-        if (!$case) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
-        if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) {
-            echo json_encode(['ok' => false, 'error' => 'فایل ارسال نشد.']); exit;
-        }
-
-        $siteRoot = dirname(__DIR__);
-        $tmpDir = temp_archive_root($siteRoot) . '/مدارک دستی ادمین';
-        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
-        $ext = pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION) ?: 'jpg';
-        $destPath = $tmpDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
-        if (!move_uploaded_file($_FILES['file']['tmp_name'], $destPath)) {
-            echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.']); exit;
-        }
-        $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
-
-        $pdo->prepare("INSERT INTO case_documents (case_id, doc_key, doc_label, file_path, status) VALUES (?, ?, ?, ?, 'PENDING')")
-            ->execute([$caseId, $docKey, $docLabel, $relPath]);
-        $docId = $pdo->lastInsertId();
-        approve_case_document_and_maybe_finalize($pdo, $docId);
-
-        echo json_encode(['ok' => true, 'doc_id' => $docId]);
+        if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        echo json_encode(admin_store_case_doc($pdo, dirname(__DIR__), $caseId, $docKey, $docLabel, $_FILES['file'], $_SESSION['user_id']), JSON_UNESCAPED_UNICODE);
         exit;
     }
 

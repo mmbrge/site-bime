@@ -301,6 +301,10 @@ try {
             $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
 
             // اگر مدرک قبلاً رد شده بود، نسخه‌ی جدید جای آن را می‌گیرد
+            // ارسالِ دوباره‌ی مدرکی که رد شده بود در تاریخچه‌ی بررسی ثبت می‌شود
+            $wasRej = $pdo->prepare("SELECT doc_label FROM case_documents WHERE case_id = ? AND doc_key = ? AND status = 'REJECTED' LIMIT 1");
+            $wasRej->execute([$caseId, $docKey]);
+            if (($rejLabel = $wasRej->fetchColumn()) !== false) review_log($pdo, 'CASE_DOC', 'RESUBMITTED', ['case_id' => $caseId, 'key' => $docKey, 'label' => $rejLabel, 'note' => 'ارسالِ دوباره توسط کاربر']);
             $pdo->prepare("DELETE FROM case_documents WHERE case_id = ? AND doc_key = ? AND status IN ('PENDING','REJECTED')")->execute([$caseId, $docKey]);
             $pdo->prepare("INSERT INTO case_documents (case_id, doc_key, doc_label, file_path, status) VALUES (?, ?, ?, ?, 'PENDING')")
                 ->execute([$caseId, $docKey, $required[$docKey], $relPath]);

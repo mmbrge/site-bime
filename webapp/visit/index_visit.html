@@ -132,7 +132,7 @@ function fillLetterSelect() { document.getElementById('pl-letter').innerHTML = P
 
 let isGuest = true;
 
-const INSP_STATUS = { PENDING: '⏳ در انتظار بررسی کارشناس', APPROVED: '✅ تایید شده', REJECTED: '❌ رد شده' };
+const INSP_STATUS = { PENDING: '⏳ در انتظار بررسی کارشناس', PHOTOS_APPROVED: '⏳ عکس‌ها تایید شد؛ در انتظار تایید نهایی', APPROVED: '✅ تایید شده', REJECTED: '❌ رد شده' };
 
 async function toggleInspections() {
     const box = document.getElementById('inspections-box');

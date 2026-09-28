@@ -74,7 +74,7 @@
 
 <canvas id="canvas"></canvas>
 
-<script src="../camera-lib.js?v=2"></script>
+<script src="../camera-lib.js?v=3"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -146,16 +146,13 @@ async function takeShot() {
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const vw = video.videoWidth, vh = video.videoHeight;
-  // عکسِ واقعی با وضوحِ کامل (اگر مرورگر پشتیبانی کند)، وگرنه همان فریمِ ویدیو
-  const bmp = window.CameraLib ? await CameraLib.still(stream) : null;
-  const src = (bmp && ((bmp.width > bmp.height) === (vw > vh))) ? bmp : video;
-  const sw = src === video ? vw : bmp.width, sh = src === video ? vh : bmp.height;
-  const sc = sw > 4000 ? 4000 / sw : 1;
-  canvas.width = Math.round(sw * sc); canvas.height = Math.round(sh * sc);
+  // فریمِ «همان لحظه‌ی لمسِ شاتر»؛ تکانِ گوشی بعد از آن عکس را خراب نمی‌کند
+  const sc = vw > 4000 ? 4000 / vw : 1;
+  canvas.width = Math.round(vw * sc); canvas.height = Math.round(vh * sc);
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
-  if (bmp && bmp.close) bmp.close();
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  try { video.pause(); } catch (e) {}
   canvas.toBlob(blob => {
     capturedBlob = blob;
     document.getElementById('shot-img').src = URL.createObjectURL(blob);

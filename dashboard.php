@@ -307,6 +307,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab('records')" id="nav-records" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> مدیریت پرونده‌ها</a>
                         <a href="#" onclick="switchTab('health')" id="nav-health" class="nav-item menu-link"><i class="fas fa-heart-pulse ml-2"></i> بازدید سلامت و مدارک</a>
+                        <a href="#" onclick="switchTab('approved-reviews')" id="nav-approved-reviews" class="nav-item menu-link"><i class="fas fa-circle-check ml-2"></i> بازدیدهای تاییدشده</a>
                         <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
                     </div>
                 </div>
@@ -725,6 +726,62 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
 
         <!-- ======================= تب صدور بیمه‌نامه ======================= -->
+        <!-- ======================= بازدیدهای تاییدشده ======================= -->
+        <div id="tab-approved-reviews" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
+            <div class="flex justify-between items-center flex-wrap gap-2">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-circle-check text-emerald-500 ml-2"></i>بازدیدهای تاییدشده</h1>
+                    <p class="text-xs text-slate-400 mt-1">هر درخواست یک ردیف: چه چیزی، کی و توسط چه کسی تایید شد، و اگر قبلاً رد شده بود، علتش.</p>
+                </div>
+                <span class="flex gap-2">
+                    <button onclick="switchTab('health')" class="bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-hourglass-half ml-1"></i> در انتظار تایید</button>
+                    <button onclick="loadApprovedReviews()" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                </span>
+            </div>
+            <div class="card p-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 items-end">
+                <label class="text-[11px] font-bold text-slate-500 col-span-2">جستجو
+                    <input id="ar-q" oninput="renderApprovedReviews()" placeholder="نام، کد ملی، شناسه، پلاک، شرکت..." class="mt-1 w-full border rounded-lg px-3 py-2 text-xs"></label>
+                <label class="text-[11px] font-bold text-slate-500">منبع
+                    <select id="ar-source" onchange="renderApprovedReviews()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs">
+                        <option value="">همه</option><option value="PERSONNEL">کارکنان</option><option value="COMPANY">شرکت‌ها</option><option value="FREE">بازدید آزاد</option></select></label>
+                <label class="text-[11px] font-bold text-slate-500">نوع بیمه
+                    <select id="ar-type" onchange="renderApprovedReviews()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs">
+                        <option value="">همه</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select></label>
+                <label class="text-[11px] font-bold text-slate-500">وضعیت بررسی
+                    <select id="ar-complete" onchange="renderApprovedReviews()" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs">
+                        <option value="">همه</option><option value="1">کامل (مدارک + بازدید)</option><option value="0">بخشی</option><option value="rej">با سابقه‌ی رد</option></select></label>
+                <label class="text-[11px] font-bold text-slate-500">تایید از تاریخ
+                    <input id="ar-from" oninput="renderApprovedReviews()" placeholder="۱۴۰۵/۰۷/۰۱" dir="ltr" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></label>
+                <label class="text-[11px] font-bold text-slate-500">تا تاریخ
+                    <input id="ar-to" oninput="renderApprovedReviews()" placeholder="۱۴۰۵/۰۷/۳۰" dir="ltr" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></label>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div class="bg-white border rounded-xl p-3 text-center"><p class="text-[11px] text-slate-500">همه (با فیلتر)</p><p id="ar-c-all" class="font-black text-xl">۰</p></div>
+                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center"><p class="text-[11px] text-emerald-700">کامل</p><p id="ar-c-done" class="font-black text-xl text-emerald-700">۰</p></div>
+                <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center"><p class="text-[11px] text-amber-700">بخشی</p><p id="ar-c-part" class="font-black text-xl text-amber-700">۰</p></div>
+                <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center"><p class="text-[11px] text-rose-700">با سابقه‌ی رد</p><p id="ar-c-rej" class="font-black text-xl text-rose-700">۰</p></div>
+            </div>
+            <p id="ar-history-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">برای ثبتِ تاریخچه‌ی کاملِ رد و تاییدها، مایگریشن migrations/015_review_log.sql را اجرا کنید. فعلاً فقط وضعیتِ فعلی نمایش داده می‌شود.</p>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-right text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3">#</th><th class="p-3">منبع</th><th class="p-3">شناسه</th><th class="p-3">بیمه‌گذار / شخص</th><th class="p-3">شرکت</th>
+                        <th class="p-3">نوع</th><th class="p-3">پلاک</th><th class="p-3">مدارک</th><th class="p-3">بازدید سلامت</th><th class="p-3">آخرین تایید</th>
+                        <th class="p-3">سابقه‌ی رد</th><th class="p-3">وضعیت پرونده</th><th class="p-3"></th></tr></thead>
+                    <tbody id="ar-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- جزئیاتِ یک بازدیدِ تاییدشده -->
+        <div id="ar-detail-modal" class="modal-overlay">
+            <div class="modal-content w-full max-w-4xl p-5 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
+                <button type="button" onclick="document.getElementById('ar-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+                <h2 class="text-lg font-black text-slate-800 mb-3"><i class="fas fa-circle-check text-emerald-500 ml-2"></i><span id="ar-d-title">جزئیات</span></h2>
+                <div id="ar-d-body" class="space-y-4"></div>
+            </div>
+        </div>
+
         <div id="tab-cases" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
                 <div>
@@ -780,15 +837,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-heart-pulse text-rose-500 ml-2"></i>بازدید سلامت و مدارک</h1>
                     <p class="text-xs text-slate-400 mt-1">بررسی و تایید مدارک ارسالی و بازدیدهای ۱۴مرحله‌ای، قبل از رفتن به مرحله‌ی صدور.</p>
                 </div>
-                <button onclick="loadHealthTab(); loadDocsReviewList();" class="bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                <span class="flex gap-2 flex-wrap">
+                    <button onclick="switchTab('approved-reviews')" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-circle-check ml-1"></i> بازدیدهای تاییدشده</button>
+                    <button onclick="loadHealthTab(); loadDocsReviewList();" class="bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                </span>
             </div>
 
             <!-- خلاصه -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center"><p class="text-[11px] text-indigo-700">مدارک در انتظار بررسی</p><p id="hs-docs" class="font-black text-xl text-indigo-700">۰</p></div>
                 <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center"><p class="text-[11px] text-amber-700">بازدیدِ در انتظار بررسی</p><p id="hs-pending" class="font-black text-xl text-amber-700">۰</p></div>
-                <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center"><p class="text-[11px] text-rose-700">ناقص (منتظر ارسالِ دوباره)</p><p id="hs-rejected" class="font-black text-xl text-rose-700">۰</p></div>
-                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center"><p class="text-[11px] text-emerald-700">تایید نهایی</p><p id="hs-approved" class="font-black text-xl text-emerald-700">۰</p></div>
+                <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center"><p class="text-[11px] text-blue-700">منتظر گزارش برای تایید نهایی</p><p id="hs-report" class="font-black text-xl text-blue-700">۰</p></div>
+                <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center"><p class="text-[11px] text-rose-700">ناقص (منتظر ارسالِ دوباره‌ی کاربر)</p><p id="hs-rejected" class="font-black text-xl text-rose-700">۰</p></div>
             </div>
 
             <div class="card p-4 border-indigo-100">
@@ -798,12 +858,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <div class="card p-4 border-rose-100">
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                    <h2 class="font-bold text-rose-700 text-sm"><i class="fas fa-car ml-1"></i>بازدیدهای سلامت خودرو</h2>
+                    <h2 class="font-bold text-rose-700 text-sm"><i class="fas fa-car ml-1"></i>بازدیدهای سلامت در انتظار <span class="text-[11px] font-normal text-slate-400">(تاییدشده‌ها به صفحه‌ی «بازدیدهای تاییدشده» می‌روند)</span></h2>
                     <select id="health-filter" onchange="renderHealthList()" class="border rounded-lg px-3 py-1.5 text-xs">
-                        <option value="">همه</option>
-                        <option value="PENDING" selected>در انتظار بررسی</option>
-                        <option value="REJECTED">ناقص - منتظر ارسالِ دوباره</option>
-                        <option value="APPROVED">تایید نهایی</option>
+                        <option value="TODO" selected>کارهای من (بررسی عکس + گزارش)</option>
+                        <option value="PENDING">در انتظار بررسیِ عکس‌ها</option>
+                        <option value="PHOTOS_APPROVED">منتظر گزارش برای تایید نهایی</option>
+                        <option value="REJECTED">ناقص - منتظر ارسالِ دوباره‌ی کاربر</option>
                     </select>
                 </div>
                 <div id="health-tab-body" class="grid md:grid-cols-2 gap-3"></div>
@@ -1018,6 +1078,44 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button onclick="event.stopPropagation(); closeImageZoom()" class="w-9 h-9 bg-white/20 hover:bg-white/30 text-white rounded-lg"><i class="fas fa-times"></i></button>
             </div>
             <img id="image-zoom-content" src="" class="rounded-lg select-none" style="max-width:100%; max-height:100%; transition: transform .15s; cursor: grab;" onwheel="event.stopPropagation(); onImageZoomWheel(event)" onmousedown="onImageZoomDragStart(event)" ondblclick="event.stopPropagation(); resetImageZoom()">
+        </div>
+
+        <!-- ======================= نمایشگرِ عکس (گالری با زوم) - مشترک: صدور، بازدیدهای تاییدشده، مدارک ======================= -->
+        <style>
+            #gv-modal { position: fixed; inset: 0; z-index: 9999990; background: #020617; display: none; flex-direction: column; color: #fff; direction: rtl; }
+            #gv-modal.open { display: flex; }
+            #gv-modal .gv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.1); }
+            #gv-modal .gv-title { font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            #gv-modal .gv-sub { font-size: 11px; color: #94a3b8; }
+            #gv-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; touch-action: none; cursor: grab; }
+            #gv-img { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; transform-origin: 0 0; user-select: none; -webkit-user-drag: none; }
+            #gv-modal .gv-btn { background: rgba(255,255,255,.14); color: #fff; border: 0; border-radius: 10px; min-width: 36px; height: 36px; cursor: pointer; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+            #gv-modal .gv-btn:hover { background: rgba(255,255,255,.26); }
+            #gv-modal .gv-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 58px; }
+            #gv-modal .gv-tools { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; }
+            #gv-strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; border-top: 1px solid rgba(255,255,255,.1); }
+            #gv-strip button { flex: none; border: 2px solid transparent; border-radius: 8px; padding: 0; overflow: hidden; background: #0f172a; cursor: pointer; }
+            #gv-strip button.on { border-color: #fff; }
+            #gv-strip img { width: 64px; height: 48px; object-fit: cover; display: block; }
+        </style>
+        <div id="gv-modal" role="dialog" aria-label="نمایش عکس">
+            <div class="gv-head">
+                <div style="min-width:0"><div class="gv-title" id="gv-title"></div><div class="gv-sub" id="gv-sub"></div></div>
+                <button class="gv-btn" onclick="gvClose()" title="بستن (Esc)"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="gv-stage">
+                <img id="gv-img" alt="" draggable="false">
+                <button class="gv-btn gv-nav" style="right:8px" onclick="gvGo(-1)" title="قبلی"><i class="fas fa-chevron-right"></i></button>
+                <button class="gv-btn gv-nav" style="left:8px" onclick="gvGo(1)" title="بعدی"><i class="fas fa-chevron-left"></i></button>
+                <div class="gv-tools">
+                    <button class="gv-btn" onclick="gvZoomBy(1.4)" title="بزرگ‌نمایی"><i class="fas fa-plus"></i></button>
+                    <button class="gv-btn" onclick="gvZoomBy(1/1.4)" title="کوچک‌نمایی"><i class="fas fa-minus"></i></button>
+                    <button class="gv-btn" onclick="gvReset()" title="اندازه‌ی اصلی"><i class="fas fa-compress"></i></button>
+                    <button class="gv-btn" onclick="gvRotate()" title="چرخاندن"><i class="fas fa-rotate-left"></i></button>
+                    <a class="gv-btn" id="gv-open" target="_blank" title="باز کردن فایل"><i class="fas fa-up-right-from-square"></i></a>
+                </div>
+            </div>
+            <div id="gv-strip"></div>
         </div>
 
         <div id="reject-doc-modal" class="fixed inset-0 bg-black/50 z-[9999] hidden items-start justify-center pt-24 px-4 pb-4 overflow-y-auto">
@@ -2390,7 +2488,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content w-full max-w-3xl p-6 relative max-h-[92vh] overflow-y-auto">
             <button type="button" onclick="closeManualCreateModal()" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h2 class="text-lg font-black mb-1 text-slate-800"><i class="fas fa-user-plus text-blue-500 ml-2"></i><span id="mc-title">ثبت دستی درخواست کارکنان</span></h2>
-            <p class="text-[11px] text-slate-400 mb-4">برای درخواست‌های حضوری یا وقتی تشخیص خودکار انجام نشده. اطلاعات درخواست همین‌جا گرفته می‌شود و بعد از ثبت، مدارک لازم را تک‌تک بارگذاری می‌کنید.</p>
+            <p class="text-[11px] text-slate-400 mb-4">برای درخواست‌های حضوری یا وقتی تشخیص خودکار انجام نشده. همه‌ی اطلاعاتی که ربات می‌پرسد و مدارکِ لازم همین‌جاست؛ با انتخابِ نوع بیمه و بیمه‌گذار، فیلدها و مدارک خودکار عوض می‌شوند.</p>
             <input type="hidden" id="mc-intro-id">
             <input type="hidden" id="mc-case-id">
 
@@ -2411,48 +2509,79 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div id="mc-intro-summary" class="hidden text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"></div>
 
-            <!-- ۲. اطلاعات درخواست -->
+            <!-- ۲. اطلاعات درخواست - فیلدها بر اساس نوع بیمه و نسبت، دقیقاً مثل ربات -->
             <div id="mc-request-section" class="border border-slate-200 rounded-xl p-3 mb-3">
                 <h4 class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات درخواست</h4>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
                     <label class="text-[11px] font-bold text-slate-500 block">نوع بیمه *
-                        <select id="mc-insurance-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcOnTypeChange()"><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select></label>
-                    <label class="text-[11px] font-bold text-slate-500 block">نسبت بیمه‌گذار با پرسنل *
-                        <select id="mc-relationship" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcOnRelChange()"><option>خودم</option><option>پدر</option><option>مادر</option><option>همسر</option><option>فرزند</option></select></label>
-                    <label class="text-[11px] font-bold text-slate-500 block">مدرک مالکیت *
-                        <select id="mc-ownership" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="کارت ماشین">کارت ماشین</option><option value="سند">سند</option></select></label>
-                    <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">نام بیمه‌گذار *<input type="text" id="mc-insured-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
+                        <select id="mc-insurance-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">بیمه‌گذار (نسبت با پرسنل) *
+                        <select id="mc-relationship" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option>خودم</option><option>پدر</option><option>مادر</option><option>همسر</option><option>فرزند</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">مدرک مالکیت خودرو *
+                        <select id="mc-ownership" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="کارت ماشین">کارت ماشین</option><option value="سند">سند</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">نام و نام خانوادگی بیمه‌گذار *<input type="text" id="mc-insured-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
                     <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">کد ملی بیمه‌گذار *<input type="text" id="mc-insured-nid" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
                 </div>
                 <label class="text-[11px] font-bold text-slate-500 block mb-1">پلاک *</label>
-                <div id="mc-plate-mount" class="mb-2 max-w-md"></div>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
-                    <label class="text-[11px] font-bold text-slate-500 block mc-third-only">سقف تعهد مالی
-                        <select id="mc-liability" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="">انتخاب کنید</option></select></label>
-                    <label class="text-[11px] font-bold text-slate-500 block mc-body-only hidden">ارزش خودرو (ریال)<input type="text" id="mc-car-value" class="money-input mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric"></label>
-                    <label class="text-[11px] font-bold text-slate-500 block mc-body-only hidden">بیمه بدنه قبل دارد؟
-                        <select id="mc-prev-body" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="خیر">خیر</option><option value="بله">بله</option></select></label>
+                <div id="mc-plate-mount" class="mb-3 max-w-md"></div>
+
+                <p class="text-[11px] font-bold text-slate-600 mb-1 mt-1"><i class="fas fa-user ml-1 text-slate-300"></i>اطلاعات بیمه‌گذار <span id="mc-insured-who" class="text-slate-400 font-normal"></span></p>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                    <label class="text-[11px] font-bold text-slate-500 block">تاریخ تولد (شمسی) *<input type="text" id="mc-birth" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="۱۳۷۰/۰۵/۱۲"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">موبایل *<input type="text" id="mc-phone" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="11" placeholder="۰۹۱۲..."></label>
+                    <label class="text-[11px] font-bold text-slate-500 block">کد پستی (۱۰ رقم) *<input type="text" id="mc-postal" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block col-span-2 md:col-span-3">آدرس کامل *<input type="text" id="mc-address" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
                 </div>
-                <details class="mt-1">
-                    <summary class="text-[11px] font-bold text-slate-500 cursor-pointer">اطلاعات تماس بیمه‌گذار (اختیاری)</summary>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
-                        <label class="text-[11px] font-bold text-slate-500 block">تاریخ تولد (شمسی)<input type="text" id="mc-birth" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="۱۳۷۰/۰۵/۱۲"></label>
-                        <label class="text-[11px] font-bold text-slate-500 block">موبایل بیمه‌گذار<input type="text" id="mc-phone" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="11"></label>
-                        <label class="text-[11px] font-bold text-slate-500 block">کد پستی<input type="text" id="mc-postal" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
-                        <label class="text-[11px] font-bold text-slate-500 block col-span-2 md:col-span-3">آدرس<input type="text" id="mc-address" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
+
+                <!-- ثالث -->
+                <div class="mc-third-only">
+                    <p class="text-[11px] font-bold text-slate-600 mb-1"><i class="fas fa-shield-halved ml-1 text-slate-300"></i>بیمه ثالث</p>
+                    <label class="text-[11px] font-bold text-slate-500 block max-w-xs">سقف تعهد مالی *
+                        <select id="mc-liability" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="">انتخاب کنید</option></select></label>
+                </div>
+
+                <!-- بدنه -->
+                <div class="mc-body-only hidden">
+                    <p class="text-[11px] font-bold text-slate-600 mb-1"><i class="fas fa-car-burst ml-1 text-slate-300"></i>بیمه بدنه</p>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+                        <label class="text-[11px] font-bold text-slate-500 block">بیمه بدنه‌ی قبلی دارد؟ *
+                            <select id="mc-prev-body" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="خیر">خیر</option><option value="بله">بله</option></select></label>
+                        <label class="text-[11px] font-bold text-slate-500 block mc-prev-only hidden">از بیمه‌ی قبلی خسارت گرفته؟ *
+                            <select id="mc-prev-claim" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="خیر">خیر</option><option value="بله">بله</option></select></label>
+                        <label class="text-[11px] font-bold text-slate-500 block mc-noclaim-only hidden">چند سال عدم خسارت؟ *<input type="text" id="mc-no-claim-years" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="2"></label>
                     </div>
-                </details>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2 items-end">
+                        <label class="text-[11px] font-bold text-slate-500 block">ارزش خودرو (ریال) *<input type="text" id="mc-car-value" class="money-input mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric"></label>
+                        <label class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 pb-2"><input type="checkbox" id="mc-car-value-auto" onchange="mcRefresh()"> محاسبه‌ی ارزش توسط کارشناس</label>
+                    </div>
+                    <p class="text-[11px] font-bold text-slate-500 mb-1">پوشش‌های اضافی (اختیاری)</p>
+                    <div id="mc-coverages" class="grid grid-cols-1 md:grid-cols-2 gap-1.5"></div>
+                </div>
             </div>
 
-            <!-- ۳. چک‌لیستِ مدارک (بعد از ثبت) -->
-            <div id="mc-docs-section" class="hidden border-2 border-emerald-100 bg-emerald-50/30 rounded-xl p-3 mb-3">
-                <h4 class="text-xs font-bold text-emerald-700 mb-1"><i class="fas fa-list-check ml-1"></i>مدارک لازم <span id="mc-case-code" class="text-slate-500 font-normal"></span></h4>
-                <p class="text-[10px] text-slate-500 mb-2">هر مدرک را بارگذاری کنید؛ با همان نام‌گذاریِ مسیرِ عادی ذخیره و تایید می‌شود و وقتی همه کامل شد، پرونده به مرحله‌ی صدور می‌رود.</p>
+            <!-- ۳. مدارک لازم - فهرست همان لحظه با انتخاب‌های بالا عوض می‌شود -->
+            <div id="mc-pick-section" class="border-2 border-emerald-100 bg-emerald-50/30 rounded-xl p-3 mb-3">
+                <h4 class="text-xs font-bold text-emerald-700 mb-1"><i class="fas fa-list-check ml-1"></i>مدارک لازم برای این درخواست</h4>
+                <p class="text-[10px] text-slate-500 mb-2">هر مدرک را انتخاب کنید؛ با «ثبت نهایی» همه با نام‌گذاریِ درست بایگانی و تایید می‌شوند. مدرکی که الان ندارید را بعداً هم می‌شود بارگذاری کرد.</p>
+                <div id="mc-pick-list" class="checklist-grid"></div>
+                <div class="mt-2 rounded-lg border border-slate-200 bg-white p-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-[11px] font-bold text-slate-600">سایر مدارک (اختیاری)</span>
+                        <button type="button" onclick="mcAddOther()" class="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded"><i class="fas fa-plus ml-1"></i>افزودن</button>
+                    </div>
+                    <div id="mc-other-list" class="space-y-1.5"></div>
+                </div>
+            </div>
+
+            <!-- ۴. بعد از ثبت: مدارکی که هنوز مانده -->
+            <div id="mc-docs-section" class="hidden border-2 border-amber-100 bg-amber-50/30 rounded-xl p-3 mb-3">
+                <h4 class="text-xs font-bold text-amber-700 mb-1"><i class="fas fa-list-check ml-1"></i>وضعیت مدارک <span id="mc-case-code" class="text-slate-500 font-normal"></span></h4>
+                <p id="mc-result-note" class="text-[11px] text-slate-600 mb-2"></p>
                 <div id="mc-docs-list" class="checklist-grid"></div>
             </div>
 
             <div class="flex gap-2">
-                <button id="mc-submit-btn" onclick="submitManualRequest()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors"><i class="fas fa-check ml-1"></i>ثبت درخواست</button>
+                <button id="mc-submit-btn" onclick="submitManualRequest()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors"><i class="fas fa-check ml-1"></i>ثبت نهایی درخواست</button>
                 <button id="mc-open-case-btn" onclick="mcOpenCreatedCase()" class="hidden flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl">باز کردن پرونده</button>
                 <button onclick="closeManualCreateModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl">بستن</button>
             </div>
@@ -5299,6 +5428,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings') { loadQuotaSetting(); loadOtpSettings(); }
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
+            if (tabId === 'approved-reviews') loadApprovedReviews();
             if (tabId.startsWith('fin-')) initFinance(tabId);
             if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
             if (tabId === 'issued-list') loadIssuedList();
@@ -6198,7 +6328,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         : '<span class="text-amber-500 text-xs font-bold">⏳ در انتظار بررسی</span>';
                     const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(d.file_path || '');
                     const preview = d.file_path
-                        ? (isImg ? `<img src="/${encodeFilePath(d.file_path)}" onclick="openImageZoom('/${encodeFilePath(d.file_path)}')" class="w-24 h-24 object-cover rounded-lg border cursor-zoom-in hover:opacity-80">` : `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 underline text-xs">مشاهده فایل</a>`)
+                        ? (isImg ? `<img src="/${encodeFilePath(d.file_path)}" data-gv="/${encodeFilePath(d.file_path)}" data-gv-label="${(d.doc_label || '').replace(/"/g, '')}" class="w-24 h-24 object-cover rounded-lg border cursor-zoom-in hover:opacity-80">` : `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 underline text-xs">مشاهده فایل</a>`)
                         : '';
                     const actions = (!isIssueMode && d.status === 'PENDING')
                         ? `<div class="flex gap-2 mt-2">
@@ -6281,8 +6411,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="text-slate-400">موبایل:</span> <b dir="ltr">${e2p(c.insured_phone) || '-'}</b> ${copyBtn(c.insured_phone,'موبایل')}</div>
                         <div><span class="text-slate-400">آدرس:</span> <b>${c.insured_address || '-'}</b> ${copyBtn(c.insured_address,'آدرس')}</div>
                         <div><span class="text-slate-400">کد پستی:</span> <b dir="ltr">${e2p(c.insured_postal_code) || '-'}</b> ${copyBtn(c.insured_postal_code,'کد پستی')}</div>
-                        <div><span class="text-slate-400">دارنده معرفی‌نامه:</span> <b>${c.holder_name}</b></div>
+                        <hr class="col-span-2 my-1 border-slate-200">
+                        <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-id-badge ml-1"></i>دارنده‌ی معرفی‌نامه و شرکت</p>
+                        <div><span class="text-slate-400">دارنده معرفی‌نامه:</span> <b>${c.holder_name}</b> ${copyBtn(c.holder_name,'نام دارنده')}</div>
+                        <div><span class="text-slate-400">کد ملی دارنده:</span> <b dir="ltr">${e2p(c.holder_national_code) || '-'}</b> ${copyBtn(c.holder_national_code,'کد ملی دارنده')}</div>
+                        <div><span class="text-slate-400">کد پرسنلی:</span> <b dir="ltr">${e2p(c.holder_personnel_code) || '-'}</b></div>
+                        <div><span class="text-slate-400">موبایل دارنده:</span> <b dir="ltr">${e2p(c.holder_mobile) || '-'}</b></div>
+                        <div><span class="text-slate-400">نسبت بیمه‌گذار با دارنده:</span> <b>${c.insured_relationship || '-'}</b></div>
                         <div><span class="text-slate-400">شرکت:</span> <b>${c.company_name || '-'}</b></div>
+                        ${data.company && data.company.phone ? `<div><span class="text-slate-400">تلفن شرکت:</span> <b dir="ltr">${e2p(data.company.phone)}</b></div>` : ''}
+                        ${data.company && data.company.economic_code ? `<div><span class="text-slate-400">کد اقتصادی شرکت:</span> <b dir="ltr">${e2p(data.company.economic_code)}</b></div>` : ''}
+                        ${data.company && data.company.address ? `<div class="col-span-2"><span class="text-slate-400">آدرس شرکت:</span> <b>${data.company.address}</b></div>` : ''}
+                        <div><span class="text-slate-400">تاریخ معرفی‌نامه:</span> <b>${c.letter_date_fa ? e2p(c.letter_date_fa) : '-'}</b></div>
+                        <div><span class="text-slate-400">فایل معرفی‌نامه:</span> ${c.intro_file_path && c.intro_file_path !== 'ثبت_دستی'
+                            ? `<a href="/${encodeFilePath(c.intro_file_path)}" target="_blank" data-gv="/${encodeFilePath(c.intro_file_path)}" data-gv-label="معرفی‌نامه" class="text-blue-600 underline font-bold">مشاهده</a>` : '<b>-</b>'}</div>
                         <hr class="col-span-2 my-1 border-slate-200">
                         <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-file-shield ml-1"></i>اطلاعات بیمه‌نامه‌ی درخواستی</p>
                         <div><span class="text-slate-400">نوع بیمه:</span> <b>${insurance_type_fa_js(c.insurance_type)}</b></div>
@@ -6427,8 +6569,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-xs font-bold text-slate-600">${isIssueMode ? 'مدارک تایید‌شده‌ی این پرونده:' : 'مدارک این پرونده:'}</p>
                             ${pendingCount > 1 ? `<button onclick="approveAllDocs(${caseId})" class="bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-emerald-700"><i class="fas fa-check-double ml-1"></i>تایید گروهی همه (${e2p(pendingCount)})</button>` : ''}
                         </div>
-                        <div class="space-y-2">${docsHtml}</div>
+                        <div class="space-y-2" data-gv-group="مدارک ${(c.insured_name || '').replace(/"/g, '')}">${docsHtml}</div>
                     </div>
+
+                    ${data.health ? `
+                    <div data-gv-group="بازدید سلامت ${(c.insured_name || '').replace(/"/g, '')}">
+                        <div class="flex justify-between items-center mb-2 flex-wrap gap-1">
+                            <p class="text-xs font-bold text-slate-600"><i class="fas fa-car ml-1 text-rose-400"></i>بازدید سلامت شماره ${e2p(data.health.number)}
+                                <span class="font-normal ${data.health.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-600'}">(${data.health.status === 'APPROVED' ? 'تایید نهایی' + (data.health.approved_jalali ? ' ' + e2p(data.health.approved_jalali) : '') : data.health.status === 'PHOTOS_APPROVED' ? 'عکس‌ها تایید شد، منتظر گزارش' : data.health.status === 'REJECTED' ? 'ناقص' : 'در انتظار بررسی'})</span></p>
+                            ${data.health.report ? `<a href="/${encodeFilePath(data.health.report)}" target="_blank" data-gv="/${encodeFilePath(data.health.report)}" data-gv-label="گزارش کارشناس" class="text-[11px] text-blue-600 underline font-bold">📄 گزارش کارشناس</a>` : ''}
+                        </div>
+                        <div class="grid grid-cols-4 md:grid-cols-7 gap-1.5">${data.health.photos.map(ph => `
+                            <div class="rounded-lg border ${ph.status === 'APPROVED' ? 'border-emerald-300' : ph.status === 'REJECTED' ? 'border-rose-300' : 'border-slate-200'} overflow-hidden bg-white" title="${ph.label}${ph.note ? ' — ' + ph.note : ''}">
+                                <img src="/${encodeFilePath(ph.path)}" data-gv="/${encodeFilePath(ph.path)}" data-gv-label="${ph.label}${ph.note ? ' — ' + ph.note : ''}" loading="lazy" class="w-full h-14 object-cover cursor-zoom-in">
+                                <p class="text-[9px] p-0.5 truncate">${ph.label}</p>
+                            </div>`).join('')}</div>
+                    </div>` : ''}
 
                     ${!isIssueMode ? `
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
@@ -6455,10 +6611,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="bg-teal-50 border border-teal-100 rounded-xl p-4">
                         <p class="text-xs font-bold text-teal-700 mb-3"><i class="fas fa-cloud-arrow-up ml-1"></i>بارگذاری مستقیمِ مدرک توسط خودمان (نیازی به تاییدِ جداگانه ندارد)</p>
                         <div class="grid grid-cols-1 gap-2">
-                            <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs">
+                            <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs" onchange="document.getElementById('adm-other-name').classList.toggle('hidden', this.value !== 'other')">
                                 ${Object.entries(data.required_docs || {}).map(([k, l]) => `<option value="${k}">${l}</option>`).join('') || ''}
                                 <option value="other">سایر مدارک</option>
                             </select>
+                            <input type="text" id="adm-other-name" class="hidden border rounded-lg px-2 py-1.5 text-xs" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">
                             <input type="file" id="adm-doc-file" class="border rounded-lg px-2 py-1.5 text-xs">
                         </div>
                         <button onclick="uploadAdminCaseDoc(${caseId})" class="mt-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
@@ -6595,12 +6752,86 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
         }
 
-        function openImageZoom(src) {
-            document.getElementById('image-zoom-content').src = src;
-            document.getElementById('image-zoom-modal').classList.remove('hidden');
-            document.getElementById('image-zoom-modal').classList.add('flex');
-            resetImageZoom();
+        // نمایشِ عکس در همان صفحه (گالری با زوم). اگر عکس داخلِ یک گروهِ [data-gv-group] باشد،
+        // عکس‌های دیگرِ همان گروه هم با قبلی/بعدی دیده می‌شوند.
+        function openImageZoom(src, label) { gvOpen([{src, label: label || ''}], 0); }
+
+        let gvItems = [], gvIdx = 0, gvZ = 1, gvX = 0, gvY = 0, gvR = 0;
+        const GV_IMG_RE = /\.(jpe?g|png|webp|gif|bmp)(\?|$)/i;
+        function gvOpen(items, idx = 0, sub = '') {
+            gvItems = (items || []).filter(it => it && it.src);
+            if (!gvItems.length) return;
+            const m = document.getElementById('gv-modal');
+            if (m.parentElement !== document.body) document.body.appendChild(m);
+            document.getElementById('gv-sub').textContent = sub;
+            m.classList.add('open');
+            document.getElementById('gv-strip').style.display = gvItems.length > 1 ? 'flex' : 'none';
+            document.querySelectorAll('#gv-modal .gv-nav').forEach(b => b.style.display = gvItems.length > 1 ? '' : 'none');
+            gvShow(Math.max(0, Math.min(idx, gvItems.length - 1)));
         }
+        function gvClose() { document.getElementById('gv-modal').classList.remove('open'); document.getElementById('gv-img').src = ''; }
+        function gvShow(i) {
+            gvIdx = i;
+            const it = gvItems[i];
+            document.getElementById('gv-img').src = it.src;
+            document.getElementById('gv-open').href = it.src;
+            document.getElementById('gv-title').textContent = (it.label || '') + (gvItems.length > 1 ? `  (${e2p(i + 1)} از ${e2p(gvItems.length)})` : '');
+            document.getElementById('gv-strip').innerHTML = gvItems.length > 1 ? gvItems.map((x, j) =>
+                `<button class="${j === i ? 'on' : ''}" onclick="gvShow(${j})" title="${(x.label || '').replace(/"/g, '')}"><img src="${x.src}" loading="lazy" alt=""></button>`).join('') : '';
+            gvR = 0; gvReset();
+        }
+        function gvGo(step) { if (gvItems.length > 1) gvShow((gvIdx + step + gvItems.length) % gvItems.length); }
+        function gvApply() { document.getElementById('gv-img').style.transform = `translate(${gvX}px, ${gvY}px) scale(${gvZ}) rotate(${gvR}deg)`; }
+        function gvReset() { gvZ = 1; gvX = 0; gvY = 0; gvApply(); }
+        function gvRotate() { gvR = (gvR - 90) % 360; gvZ = 1; gvX = 0; gvY = 0; const img = document.getElementById('gv-img'); img.style.transformOrigin = gvR ? '50% 50%' : '0 0'; gvApply(); }
+        function gvZoomAt(f, cx, cy) {
+            const img = document.getElementById('gv-img');
+            if (gvR) { gvZ = Math.min(8, Math.max(1, gvZ * f)); gvApply(); return; }
+            const r = img.getBoundingClientRect();
+            const nz = Math.min(8, Math.max(1, gvZ * f));
+            const ox = (cx - r.left) / gvZ, oy = (cy - r.top) / gvZ;
+            gvX += (cx - r.left) - ox * nz; gvY += (cy - r.top) - oy * nz; gvZ = nz;
+            if (gvZ === 1) { gvX = 0; gvY = 0; }
+            gvApply();
+        }
+        function gvZoomBy(f) { const r = document.getElementById('gv-stage').getBoundingClientRect(); gvZoomAt(f, r.left + r.width / 2, r.top + r.height / 2); }
+        (function gvBind() {
+            const stage = document.getElementById('gv-stage');
+            if (!stage) return;
+            const pts = new Map(); let last = null, pinch = null;
+            stage.addEventListener('wheel', e => { e.preventDefault(); gvZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, {passive: false});
+            stage.addEventListener('dblclick', e => { if (gvZ > 1) gvReset(); else gvZoomAt(2.5, e.clientX, e.clientY); });
+            stage.addEventListener('pointerdown', e => { if (e.target.closest('button,a')) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY}); last = {x: e.clientX, y: e.clientY}; });
+            stage.addEventListener('pointermove', e => {
+                if (!pts.has(e.pointerId)) return;
+                pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+                if (pts.size === 2) {
+                    const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+                    if (pinch) gvZoomAt(d / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+                    pinch = d;
+                } else if (last && gvZ > 1) { gvX += e.clientX - last.x; gvY += e.clientY - last.y; gvApply(); }
+                last = {x: e.clientX, y: e.clientY};
+            });
+            const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) last = null; };
+            stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+            document.addEventListener('keydown', e => {
+                if (!document.getElementById('gv-modal').classList.contains('open')) return;
+                if (e.key === 'Escape') gvClose(); else if (e.key === 'ArrowLeft') gvGo(1); else if (e.key === 'ArrowRight') gvGo(-1);
+            });
+            // هر عنصرِ [data-gv] (عکس یا لینک به عکس) با کلیک در همین صفحه باز می‌شود
+            document.addEventListener('click', e => {
+                const el = e.target.closest('[data-gv]');
+                if (!el) return;
+                const src = el.getAttribute('data-gv');
+                if (!GV_IMG_RE.test(src)) return;   // PDF و فایل‌های دیگر مثل قبل در تبِ جدید
+                e.preventDefault(); e.stopPropagation();
+                const group = el.closest('[data-gv-group]') || document;
+                const all = [...group.querySelectorAll('[data-gv]')].filter(x => GV_IMG_RE.test(x.getAttribute('data-gv')));
+                const seen = new Set(); const items = [];
+                all.forEach(x => { const u = x.getAttribute('data-gv'); if (!seen.has(u)) { seen.add(u); items.push({src: u, label: x.getAttribute('data-gv-label') || x.getAttribute('title') || ''}); } });
+                gvOpen(items, Math.max(0, items.findIndex(x => x.src === src)), group.getAttribute ? (group.getAttribute('data-gv-group') || '') : '');
+            }, true);
+        })();
         function closeImageZoom() { document.getElementById('image-zoom-modal').classList.add('hidden'); }
 
         // ======================= زوم/جابه‌جاییِ تصویر در حالت بزرگ‌نمایی =======================
@@ -6732,6 +6963,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('case_id', caseId);
             fd.append('doc_key', docKeySel.value);
             fd.append('doc_label', docKeySel.options[docKeySel.selectedIndex].textContent);
+            if (docKeySel.value === 'other') {
+                const nm = document.getElementById('adm-other-name').value.trim();
+                if (!nm) { showToast('نام مدرک را بنویسید؛ با همین نام بایگانی می‌شود.', 'warning'); return; }
+                fd.append('other_name', nm);
+            }
             fd.append('file', fileInput.files[0]);
             try {
                 const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
@@ -6750,8 +6986,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const res = await fetch('api/case_actions.php?action=list');
                 const data = await res.json();
                 if (!data.ok) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4 col-span-full">خطا در اتصال به سرور.</p>'; return; }
-                const needsReview = data.data.filter(c => (c.docs_pending > 0 || c.docs_rejected > 0) && c.status !== 'ISSUED');
-                document.getElementById('hs-docs').textContent = e2pNum(needsReview.filter(c => c.docs_pending > 0).length);
+                // فقط مدارکی که منتظرِ بررسیِ ما هستند؛ تاییدشده‌ها به «بازدیدهای تاییدشده» می‌روند
+                const needsReview = data.data.filter(c => c.docs_pending > 0 && !['ISSUED', 'WITHDRAWN'].includes(c.status));
+                document.getElementById('hs-docs').textContent = e2pNum(needsReview.length);
                 if (needsReview.length === 0) { box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4 col-span-full">مدرکی در انتظار بررسی نیست.</p>'; return; }
                 box.innerHTML = needsReview.map(c => `
                     <div class="border border-slate-200 rounded-xl p-3 flex flex-col gap-2 bg-white">
@@ -6788,8 +7025,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 healthPerPhoto = data.per_photo !== false;
                 const cnt = st => healthListCache.filter(h => h.status === st).length;
                 document.getElementById('hs-pending').textContent = e2pNum(cnt('PENDING'));
+                document.getElementById('hs-report').textContent = e2pNum(cnt('PHOTOS_APPROVED'));
                 document.getElementById('hs-rejected').textContent = e2pNum(cnt('REJECTED'));
-                document.getElementById('hs-approved').textContent = e2pNum(cnt('APPROVED'));
                 renderHealthList();
             } catch(e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8 col-span-full">خطا در دریافت اطلاعات.</p>'; }
         }
@@ -6797,19 +7034,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function renderHealthList() {
             const body = document.getElementById('health-tab-body');
             const f = document.getElementById('health-filter').value;
-            const list = healthListCache.filter(h => !f || h.status === f);
+            // بازدیدهای تاییدِ نهایی این‌جا نمی‌آیند (صفحه‌ی «بازدیدهای تاییدشده»)
+            const list = healthListCache.filter(h => h.status !== 'APPROVED' && (f === 'TODO' ? ['PENDING', 'PHOTOS_APPROVED'].includes(h.status) : (!f || h.status === f)));
             if (!list.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8 col-span-full">بازدیدی با این فیلتر نیست.</p>'; return; }
             body.innerHTML = list.map(h => {
                 const photos = Object.values(JSON.parse(h.photos || '{}'));
                 const c = h.review_counts || {APPROVED: 0, REJECTED: 0, PENDING: photos.length};
-                const pill = h.status === 'APPROVED' ? ['bg-emerald-100 text-emerald-700', 'تایید نهایی']
+                const pill = h.status === 'PHOTOS_APPROVED' ? ['bg-blue-100 text-blue-700', 'عکس‌ها تایید شد - منتظر گزارش']
                            : h.status === 'REJECTED' ? ['bg-rose-100 text-rose-700', 'ناقص - منتظر ارسالِ دوباره']
                            : ['bg-amber-100 text-amber-700', 'در انتظار بررسی'];
                 const thumbs = photos.slice(0, 7).map(p => `<img src="/${encodeFilePath(p)}" loading="lazy" class="w-12 h-12 object-cover rounded-lg border border-slate-200">`).join('')
                     + (photos.length > 7 ? `<span class="w-12 h-12 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">+${e2p(photos.length - 7)}</span>` : '');
-                const reportHtml = h.status !== 'APPROVED' ? '' : (h.report_file_path
-                    ? `<a href="/${encodeFilePath(h.report_file_path)}" target="_blank" class="text-blue-600 underline text-[11px]">گزارش کارشناس</a>`
-                    : `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش کارشناس<input type="file" class="hidden" onchange="uploadHealthReport(${h.id}, this)"></label>`);
+                // همه‌ی عکس‌ها تایید شده: با بارگذاریِ فایلِ گزارش، بازدید تاییدِ نهایی می‌شود
+                const reportHtml = h.status !== 'PHOTOS_APPROVED' ? '' :
+                    `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${h.id}, this)"></label>`;
                 const legacy = !healthPerPhoto && h.status === 'PENDING'
                     ? `<button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">تایید کل</button>
                        <button onclick="rejectHealth(${h.id})" class="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[11px] font-bold">رد کل</button>` : '';
@@ -6886,9 +7124,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (c.PENDING === 0) {
                 sum.classList.remove('hidden');
                 sum.className = 'text-[11px] leading-relaxed rounded-lg p-2 ' + (c.REJECTED ? 'bg-rose-900/60 text-rose-100' : 'bg-emerald-900/60 text-emerald-100');
-                sum.textContent = c.REJECTED
-                    ? `بررسی تمام شد: ${e2pNum(c.REJECTED)} عکس رد شد. بازدید «ناقص» است و از کاربر خواسته شد فقط همین‌ها را دوباره بفرستد.`
-                    : 'بررسی تمام شد: همه‌ی عکس‌ها تایید شد و بازدید نهایی و بایگانی شد.';
+                const st = hvData.inspection.status;
+                if (c.REJECTED) sum.textContent = `بررسی تمام شد: ${e2pNum(c.REJECTED)} عکس رد شد. بازدید «ناقص» است و از کاربر خواسته شد فقط همین‌ها را دوباره بفرستد.`;
+                else if (st === 'PHOTOS_APPROVED') sum.innerHTML = `<b>همه‌ی عکس‌ها تایید و بایگانی شد.</b><br>برای تاییدِ نهایی، فایلِ گزارشِ کارشناس را بارگذاری کنید؛ بعد از آن پرونده وارد «در حال صدور» می‌شود.
+                    <label class="mt-2 block text-center text-[12px] text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${hvData.inspection.id}, this, true)"></label>`;
+                else sum.innerHTML = 'بازدید به‌طور نهایی تایید شده است.' + (hvData.inspection.report_file_path ? ` <a class="underline" target="_blank" href="/${encodeFilePath(hvData.inspection.report_file_path)}">فایل گزارش</a>` : '');
             } else sum.classList.add('hidden');
         }
         function hvShow(i) {
@@ -6977,25 +7218,169 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
         })();
 
-        async function uploadHealthReport(inspectionId, input) {
+        async function uploadHealthReport(inspectionId, input, fromViewer = false) {
             if (!input.files[0]) return;
             const fd = new FormData();
             fd.append('action', 'upload_health_report');
             fd.append('inspection_id', inspectionId);
             fd.append('file', input.files[0]);
-            await fetch('api/case_actions.php', { method: 'POST', body: fd });
-            showToast('گزارش آپلود شد.', 'success');
-            loadHealthTab();
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا در بارگذاری گزارش.', 'error'); input.value = ''; return; }
+                showToast(!data.final ? 'فایل گزارش بارگذاری شد.'
+                    : data.stage === 'issuing' ? 'بازدید تایید نهایی شد و پرونده وارد «در حال صدور» شد.'
+                    : 'بازدید تایید نهایی شد' + (hvData && hvData.inspection.insurance_type ? '؛ بعد از تاییدِ همه‌ی مدارک، پرونده وارد صدور می‌شود.' : '.'), 'success');
+                if (fromViewer && hvData) { hvData.inspection.status = 'APPROVED'; hvData.inspection.report_file_path = data.report; hvRenderStrip(); }
+                else loadHealthTab();
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
         async function approveHealth(id) {
-            await fetch('api/case_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'approve_health', id }) });
-            showToast('بازدید تایید شد.', 'success');
+            const res = await fetch('api/case_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'approve_health', id }) });
+            const data = await res.json().catch(() => ({}));
+            showToast(data.needs_report ? 'عکس‌ها تایید شد؛ برای تایید نهایی فایل گزارش را بارگذاری کنید.' : 'بازدید تایید شد.', 'success');
             loadHealthTab();
         }
 
         function rejectHealth(id) {
             openRejectHealthModal(id);
+        }
+
+
+        // ======================= بازدیدهای تاییدشده =======================
+        let arRows = [];
+        async function loadApprovedReviews() {
+            const tb = document.getElementById('ar-body');
+            tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+            try {
+                const res = await fetch('api/case_actions.php?action=approved_reviews');
+                const data = await res.json();
+                if (!data.ok) { tb.innerHTML = `<tr><td colspan="13" class="text-center p-8 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+                arRows = data.rows || [];
+                document.getElementById('ar-history-note').classList.toggle('hidden', data.history !== false);
+                renderApprovedReviews();
+            } catch (e) { tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>'; }
+        }
+        const arDateKey = v => { const m = p2e(String(v || '')).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0') : ''; };
+        function renderApprovedReviews() {
+            const q = p2e(document.getElementById('ar-q').value.trim()).toLowerCase();
+            const src = document.getElementById('ar-source').value, type = document.getElementById('ar-type').value, comp = document.getElementById('ar-complete').value;
+            const from = arDateKey(document.getElementById('ar-from').value), to = arDateKey(document.getElementById('ar-to').value);
+            const list = arRows.filter(r => {
+                if (src && r.source !== src) return false;
+                if (type && r.insurance_type !== type) return false;
+                if (comp === '1' && !r.complete) return false;
+                if (comp === '0' && r.complete) return false;
+                if (comp === 'rej' && !(r.rejections > 0)) return false;
+                const d = arDateKey(r.approved_at_jalali);
+                if (from && (!d || d < from)) return false;
+                if (to && (!d || d > to)) return false;
+                if (q) {
+                    const hay = [r.unique_code, r.holder_name, r.insured_name, r.national_id, r.personnel_code, r.company_name, r.plate, (r.plate || '').replace(/\s/g, '')].join(' ').toLowerCase();
+                    if (!hay.includes(q) && !hay.includes(q.replace(/\s/g, ''))) return false;
+                }
+                return true;
+            });
+            document.getElementById('ar-c-all').textContent = e2pNum(list.length);
+            document.getElementById('ar-c-done').textContent = e2pNum(list.filter(r => r.complete).length);
+            document.getElementById('ar-c-part').textContent = e2pNum(list.filter(r => !r.complete).length);
+            document.getElementById('ar-c-rej').textContent = e2pNum(list.filter(r => r.rejections > 0).length);
+            const tb = document.getElementById('ar-body');
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-slate-400">موردی با این فیلترها نیست.</td></tr>'; return; }
+            const srcCls = {PERSONNEL: 'bg-indigo-50 text-indigo-700', COMPANY: 'bg-cyan-50 text-cyan-700', FREE: 'bg-slate-100 text-slate-600'};
+            const hs = r => r.health_status === 'NA' ? '<span class="text-slate-300">—</span>'
+                : r.health_status === 'APPROVED' ? '<span class="text-emerald-600 font-bold">✓ تایید نهایی</span>'
+                : r.health_status === 'PHOTOS_APPROVED' ? '<span class="text-blue-600 font-bold">منتظر گزارش</span>'
+                : r.health_status === 'NONE' ? '<span class="text-slate-400">انجام نشده</span>'
+                : r.health_status === 'REJECTED' ? '<span class="text-rose-600">ناقص</span>' : '<span class="text-amber-600">در انتظار</span>';
+            tb.innerHTML = list.map((r, i) => `
+                <tr class="border-t hover:bg-emerald-50/30">
+                    <td class="p-3 text-slate-400">${e2p(i + 1)}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${srcCls[r.source]}">${r.source_fa}</span></td>
+                    <td class="p-3 font-mono text-indigo-600" dir="ltr">${e2p(r.unique_code)}</td>
+                    <td class="p-3"><b>${r.insured_name || '-'}</b>${r.holder_name && r.holder_name !== r.insured_name ? `<div class="text-[10px] text-slate-400">دارنده: ${r.holder_name}</div>` : ''}${r.national_id ? `<div class="text-[10px] text-slate-400" dir="ltr">${e2p(r.national_id)}</div>` : ''}</td>
+                    <td class="p-3">${r.company_name || '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${r.insurance_type ? insurance_type_fa_js(r.insurance_type) : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3 whitespace-nowrap">${r.plate ? formatPlateHtml(r.plate) : '—'}</td>
+                    <td class="p-3">${r.source === 'PERSONNEL' ? (r.docs_ok ? `<span class="text-emerald-600 font-bold">✓ ${e2pNum(r.docs_approved)}</span>` : `<span class="text-amber-600">${e2pNum(r.docs_approved)}/${e2pNum(r.docs_required)}</span>`) : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${hs(r)}</td>
+                    <td class="p-3 whitespace-nowrap">${r.approved_at_jalali ? e2p(r.approved_at_jalali) : '—'}</td>
+                    <td class="p-3">${r.rejections > 0 ? `<span class="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full text-[10px] font-bold">${e2pNum(r.rejections)} بار رد</span>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${r.complete ? '<span class="text-emerald-700 text-[10px] font-bold">کامل</span> · ' : '<span class="text-amber-600 text-[10px] font-bold">بخشی</span> · '}<span class="text-[10px] text-slate-500">${r.case_status_fa || ''}</span></td>
+                    <td class="p-3"><button onclick="openApprovedDetail('${r.source}', ${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap">جزئیات</button></td>
+                </tr>`).join('');
+        }
+
+        const AR_DECISION = {APPROVED: ['✓ تایید', 'text-emerald-700 bg-emerald-50'], REJECTED: ['✗ رد', 'text-rose-700 bg-rose-50'],
+                             RESUBMITTED: ['↻ ارسالِ دوباره', 'text-blue-700 bg-blue-50'], FINAL_APPROVED: ['✓✓ تاییدِ نهایی', 'text-emerald-800 bg-emerald-100'],
+                             UPLOADED: ['📄 بارگذاری', 'text-slate-700 bg-slate-100'], PENDING: ['در انتظار', 'text-amber-700 bg-amber-50']};
+        const AR_ENTITY = {CASE_DOC: 'مدرک', HEALTH_PHOTO: 'عکسِ بازدید', HEALTH: 'بازدید', HEALTH_REPORT: 'گزارش بازدید'};
+        async function openApprovedDetail(source, id) {
+            const m = document.getElementById('ar-detail-modal');
+            const body = document.getElementById('ar-d-body');
+            body.innerHTML = '<p class="text-center text-slate-400 p-6"><i class="fas fa-spinner fa-spin"></i></p>';
+            m.classList.add('active');
+            try {
+                const res = await fetch(`api/case_actions.php?action=approved_review_detail&source=${source}&id=${id}`);
+                const d = await res.json();
+                if (!d.ok) { body.innerHTML = `<p class="text-center text-red-500 p-6">${d.error || 'خطا'}</p>`; return; }
+                const row = (k, v) => v === null || v === undefined || v === '' ? '' : `<div><span class="text-slate-400">${k}:</span> <b>${v}</b></div>`;
+                let info = '';
+                if (d.case) {
+                    const c = d.case;
+                    document.getElementById('ar-d-title').innerHTML = `${c.insured_name || c.holder_name} — <span dir="ltr">${e2p(c.unique_code)}</span>`;
+                    info = `<div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] bg-slate-50 rounded-xl p-3">
+                        ${row('نوع بیمه', insurance_type_fa_js(c.insurance_type))}${row('وضعیت پرونده', c.status_fa)}${row('ثبت درخواست', c.created_at_fa ? e2p(c.created_at_fa) : '')}
+                        ${row('بیمه‌گذار', c.insured_name)}${row('نسبت', c.insured_relationship)}${row('کد ملی بیمه‌گذار', c.insured_national_id ? `<span dir="ltr">${e2p(c.insured_national_id)}</span>` : '')}
+                        ${row('تاریخ تولد', c.insured_birth_date ? e2p(c.insured_birth_date) : '')}${row('موبایل', c.insured_phone ? `<span dir="ltr">${e2p(c.insured_phone)}</span>` : '')}${row('کد پستی', c.insured_postal_code ? e2p(c.insured_postal_code) : '')}
+                        <div class="col-span-2 md:col-span-3">${row('آدرس', c.insured_address)}</div>
+                        ${row('پلاک', c.plate ? formatPlateHtml(c.plate) : '')}${row('مالکیت', c.ownership_choice)}
+                        ${c.insurance_type === 'THIRDPARTY' ? row('سقف تعهد', c.liability_limit ? money(c.liability_limit) + ' ریال' : '') : ''}
+                        ${c.insurance_type === 'BODY' ? row('ارزش خودرو', c.estimated_car_value === null ? '' : (Number(c.estimated_car_value) ? money(c.estimated_car_value) + ' ریال' : 'محاسبه توسط کارشناس')) + row('بیمه بدنه قبل', c.prev_body_insurance) + row('خسارت قبلی', c.prev_body_claim) + row('سال عدم خسارت', c.no_claim_years !== null ? e2p(c.no_claim_years) : '') : ''}
+                        ${c.coverages_fa && c.coverages_fa.length ? `<div class="col-span-2 md:col-span-3">${row('پوشش‌ها', c.coverages_fa.join('، '))}</div>` : ''}
+                        <div class="col-span-2 md:col-span-3 border-t pt-2 mt-1 text-slate-500 font-bold">دارنده‌ی معرفی‌نامه</div>
+                        ${row('نام', c.holder_name)}${row('کد ملی', c.holder_nid ? `<span dir="ltr">${e2p(c.holder_nid)}</span>` : '')}${row('کد پرسنلی', c.personnel_code ? e2p(c.personnel_code) : '')}
+                        ${row('شرکت', c.employer_name)}${row('تاریخ معرفی‌نامه', c.letter_date_fa ? e2p(c.letter_date_fa) : '')}${row('سهمیه', c.max_quota ? e2p((c.used_quota || 0) + ' / ' + c.max_quota) : '')}
+                        ${c.intro_file && c.intro_file !== 'ثبت_دستی' ? `<div><a class="text-blue-600 underline" target="_blank" href="/${encodeFilePath(c.intro_file)}" data-gv="/${encodeFilePath(c.intro_file)}" data-gv-label="معرفی‌نامه">فایل معرفی‌نامه</a></div>` : ''}
+                    </div>`;
+                } else {
+                    const p = d.person || {};
+                    document.getElementById('ar-d-title').innerHTML = `${p.name || 'بازدید آزاد'} — بازدید سلامت`;
+                    info = `<div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] bg-slate-50 rounded-xl p-3">
+                        ${row('شخص', p.name)}${row('کد ملی', p.national_code && !String(p.national_code).startsWith('GUEST') ? `<span dir="ltr">${e2p(p.national_code)}</span>` : '')}${row('موبایل', p.mobile ? `<span dir="ltr">${e2p(p.mobile)}</span>` : '')}${row('پلاک', p.plate ? formatPlateHtml(p.plate) : '')}</div>`;
+                }
+                const docsHtml = (d.docs || []).length ? `<div data-gv-group="مدارک">
+                    <h3 class="text-xs font-bold text-indigo-700 mb-2"><i class="fas fa-file-lines ml-1"></i>مدارک</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">${d.docs.map(x => {
+                        const img = /\.(jpe?g|png|webp|gif)$/i.test(x.path || '');
+                        const cls = x.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50/50' : x.status === 'REJECTED' ? 'border-rose-200 bg-rose-50/50' : 'border-amber-200 bg-amber-50/50';
+                        return `<div class="border rounded-xl p-2 text-[11px] ${cls}">
+                            ${x.path ? (img ? `<img src="/${encodeFilePath(x.path)}" data-gv="/${encodeFilePath(x.path)}" data-gv-label="${x.label}" loading="lazy" class="w-full h-24 object-cover rounded-lg cursor-zoom-in mb-1">`
+                                             : `<a href="/${encodeFilePath(x.path)}" target="_blank" class="block h-24 rounded-lg bg-white border text-center pt-8 text-blue-600 mb-1"><i class="fas fa-file-pdf"></i> فایل</a>`) : ''}
+                            <b>${x.label}</b>
+                            <div class="${x.status === 'APPROVED' ? 'text-emerald-700' : x.status === 'REJECTED' ? 'text-rose-600' : 'text-amber-600'}">${x.status === 'APPROVED' ? '✓ تایید' : x.status === 'REJECTED' ? '✗ رد' : 'در انتظار'}${x.reviewed_at ? ' · ' + e2p(x.reviewed_at) : ''}</div>
+                            ${x.reject_reason && x.status === 'REJECTED' ? `<div class="text-rose-600">علت: ${x.reject_reason}</div>` : ''}
+                            <div class="text-slate-400">بارگذاری: ${x.uploaded_at ? e2p(x.uploaded_at) : '—'}</div>
+                        </div>`; }).join('')}</div></div>` : '';
+                const inspHtml = (d.inspections || []).map(h => `<div data-gv-group="بازدید سلامت شماره ${e2p(h.number)}">
+                    <h3 class="text-xs font-bold text-rose-700 mb-2"><i class="fas fa-car ml-1"></i>بازدید سلامت شماره ${e2p(h.number)}
+                        <span class="font-normal text-slate-500">· ثبت ${h.created_at ? e2p(h.created_at) : ''}${h.approved_jalali ? ' · تایید ' + e2p(h.approved_jalali) : ''}</span>
+                        ${h.report ? `<a class="mr-2 text-blue-600 underline font-normal" target="_blank" href="/${encodeFilePath(h.report)}" data-gv="/${encodeFilePath(h.report)}" data-gv-label="گزارش کارشناس">📄 گزارش کارشناس</a>` : ''}</h3>
+                    <div class="grid grid-cols-3 md:grid-cols-6 gap-1.5">${h.photos.map(ph => `
+                        <div class="text-[10px] rounded-lg border ${ph.status === 'APPROVED' ? 'border-emerald-300' : ph.status === 'REJECTED' ? 'border-rose-300' : 'border-amber-300'} overflow-hidden bg-white">
+                            <img src="/${encodeFilePath(ph.path)}" data-gv="/${encodeFilePath(ph.path)}" data-gv-label="${ph.label}${ph.note ? ' — ' + ph.note : ''}" loading="lazy" class="w-full h-16 object-cover cursor-zoom-in">
+                            <div class="p-1"><b>${ph.label}</b>${ph.note ? `<div class="text-slate-500">${ph.note}</div>` : ''}${ph.at ? `<div class="text-slate-400">${e2p(ph.at)}${ph.by ? ' · ' + ph.by : ''}</div>` : ''}</div>
+                        </div>`).join('')}</div></div>`).join('');
+                const hist = d.history || [];
+                const histHtml = `<div><h3 class="text-xs font-bold text-slate-700 mb-2"><i class="fas fa-clock-rotate-left ml-1"></i>تاریخچه‌ی بررسی</h3>
+                    ${hist.length ? `<ol class="border-r-2 border-slate-200 pr-3 space-y-1.5">${hist.map(x => `
+                        <li class="text-[11px]"><span class="inline-block px-1.5 rounded ${(AR_DECISION[x.decision] || ['', ''])[1]} font-bold">${(AR_DECISION[x.decision] || [x.decision])[0]}</span>
+                            <b>${AR_ENTITY[x.entity] || ''} «${x.label || ''}»</b>${x.note ? ` — <span class="text-slate-600">${x.note}</span>` : ''}
+                            <span class="text-slate-400">· ${x.at ? e2p(x.at) : ''}${x.by ? ' · ' + x.by : ''}</span></li>`).join('')}</ol>`
+                    : '<p class="text-[11px] text-slate-400">تاریخچه‌ای ثبت نشده (رد یا ارسالِ دوباره‌ای نداشته، یا مایگریشن ۰۱۵ هنوز اجرا نشده).</p>'}</div>`;
+                body.innerHTML = info + docsHtml + inspHtml + histHtml;
+            } catch (e) { body.innerHTML = '<p class="text-center text-red-500 p-6">خطا در اتصال به سرور.</p>'; }
         }
 
         // ======================= ورود دومرحله‌ای =======================
@@ -7881,19 +8266,44 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const MC_LIABILITY_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
                                       4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
         let mcCreated = null;
+        let mcFiles = {};          // کلیدِ مدرک => File
+        let mcOthers = [];         // [{name, file}]
+        let mcCoverageOpts = null; // از سرور (همان فهرستِ ربات)
+        let mcSelectedCov = {};
+
+        // هم‌خوان با get_required_docs_v2 در api/_case_helpers.php
+        function mcRequiredDocs() {
+            const type = document.getElementById('mc-insurance-type').value;
+            const own = document.getElementById('mc-ownership').value;
+            const prev = document.getElementById('mc-prev-body').value;
+            const rel = document.getElementById('mc-relationship').value;
+            const d = {};
+            if (type === 'BODY' && prev === 'بله') d.prev_body_insurance = 'بیمه بدنه قبل';
+            d.identity_doc = 'کارت ملی یا گواهینامه (بیمه‌گذار)';
+            if (own === 'سند') d.ownership_doc = 'سند مالکیت';
+            else { d.car_card_front = 'کارت ماشین رو'; d.car_card_back = 'کارت ماشین پشت'; }
+            if (rel && rel !== 'خودم') {
+                d.holder_birth_cert_p1 = 'شناسنامه دارنده معرفی‌نامه - صفحه اول';
+                d.holder_birth_cert_relation = 'شناسنامه دارنده معرفی‌نامه - صفحه مربوط به ' + rel;
+                d.insured_id_doc = 'کارت ملی یا شناسنامه بیمه‌گذار (نسبت: ' + rel + ')';
+            }
+            return d;
+        }
 
         // introId: اگر داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود و بخش پرسنل پنهان است
         function openManualCreateModal(introId = null, holderName = '') {
-            mcCreated = null;
+            mcCreated = null; mcFiles = {}; mcOthers = []; mcSelectedCov = {};
             document.getElementById('mc-intro-id').value = introId || '';
             document.getElementById('mc-case-id').value = '';
             ['mc-full-name','mc-national-code','mc-personnel-code','mc-company-name','mc-mobile','mc-letter-date','mc-quota',
-             'mc-insured-name','mc-insured-nid','mc-car-value','mc-birth','mc-phone','mc-postal','mc-address'].forEach(id => document.getElementById(id).value = '');
+             'mc-insured-name','mc-insured-nid','mc-car-value','mc-birth','mc-phone','mc-postal','mc-address','mc-no-claim-years'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('mc-intro-file').value = '';
             document.getElementById('mc-insurance-type').value = 'THIRDPARTY';
             document.getElementById('mc-relationship').value = 'خودم';
             document.getElementById('mc-ownership').value = 'کارت ماشین';
             document.getElementById('mc-prev-body').value = 'خیر';
+            document.getElementById('mc-prev-claim').value = 'خیر';
+            document.getElementById('mc-car-value-auto').checked = false;
             document.getElementById('mc-liability').innerHTML = '<option value="">انتخاب کنید</option>'
                 + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
             document.getElementById('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', '');
@@ -7903,10 +8313,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             sum.innerHTML = introId ? `<i class="fas fa-folder-plus ml-1"></i>افزودن درخواستِ تازه به معرفی‌نامه‌ی ${holderName || ('#' + e2p(introId))}` : '';
             document.getElementById('mc-title').textContent = introId ? 'افزودن درخواست به معرفی‌نامه' : 'ثبت دستی درخواست کارکنان';
             document.getElementById('mc-docs-section').classList.add('hidden');
-            document.getElementById('mc-request-section').classList.remove('opacity-60', 'pointer-events-none');
+            ['mc-request-section', 'mc-pick-section'].forEach(id => document.getElementById(id).classList.remove('opacity-60', 'pointer-events-none', 'hidden'));
             document.getElementById('mc-submit-btn').classList.remove('hidden');
             document.getElementById('mc-open-case-btn').classList.add('hidden');
-            mcOnTypeChange(); mcOnRelChange();
+            mcRefresh();
+            if (!mcCoverageOpts) {
+                fetch('api/record_actions.php?action=manual_form_options').then(r => r.json()).then(d => {
+                    if (d.ok) { mcCoverageOpts = d.coverages; mcRenderCoverages(); }
+                }).catch(() => {});
+            } else mcRenderCoverages();
             // پیشنهادِ نام شرکت‌ها
             fetch('api/finance_actions.php?action=bootstrap').then(r => r.json()).then(d => {
                 const names = [...new Set((d.companies || []).map(c => c.name))];
@@ -7925,23 +8340,89 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
-        function mcOnTypeChange() {
+        // با هر تغییرِ نوع بیمه/بیمه‌گذار/مالکیت/سابقه، فیلدها و فهرستِ مدارک همان لحظه عوض می‌شوند
+        function mcRefresh() {
+            const m = document.getElementById('manual-create-modal');
             const body = document.getElementById('mc-insurance-type').value === 'BODY';
-            document.querySelectorAll('#manual-create-modal .mc-body-only').forEach(el => el.classList.toggle('hidden', !body));
-            document.querySelectorAll('#manual-create-modal .mc-third-only').forEach(el => el.classList.toggle('hidden', body));
+            const rel = document.getElementById('mc-relationship').value;
+            const prev = document.getElementById('mc-prev-body').value === 'بله';
+            const claim = document.getElementById('mc-prev-claim').value === 'بله';
+            m.querySelectorAll('.mc-body-only').forEach(el => el.classList.toggle('hidden', !body));
+            m.querySelectorAll('.mc-third-only').forEach(el => el.classList.toggle('hidden', body));
+            m.querySelectorAll('.mc-rel-only').forEach(el => el.classList.toggle('hidden', rel === 'خودم'));
+            m.querySelectorAll('.mc-prev-only').forEach(el => el.classList.toggle('hidden', !prev));
+            m.querySelectorAll('.mc-noclaim-only').forEach(el => el.classList.toggle('hidden', !(prev && !claim)));
+            const auto = document.getElementById('mc-car-value-auto').checked;
+            const cv = document.getElementById('mc-car-value');
+            cv.disabled = auto; cv.classList.toggle('bg-slate-100', auto);
+            document.getElementById('mc-insured-who').textContent = rel === 'خودم' ? '(خودِ پرسنل)' : `(${rel})`;
+            mcRenderPickList();
         }
-        function mcOnRelChange() {
-            const self = document.getElementById('mc-relationship').value === 'خودم';
-            document.querySelectorAll('#manual-create-modal .mc-rel-only').forEach(el => el.classList.toggle('hidden', self));
+
+        function mcRenderCoverages() {
+            const box = document.getElementById('mc-coverages');
+            if (!mcCoverageOpts) { box.innerHTML = '<p class="text-[11px] text-slate-400">در حال بارگذاری...</p>'; return; }
+            box.innerHTML = Object.entries(mcCoverageOpts).map(([k, o]) => {
+                const on = Object.prototype.hasOwnProperty.call(mcSelectedCov, k);
+                const tiers = o.tiers ? `<select class="mt-1 border border-slate-300 rounded p-1 text-[11px] bg-white w-full" ${on ? '' : 'disabled'} onchange="mcSelectedCov['${k}']=this.value">
+                        ${Object.entries(o.tiers).map(([tk, tl]) => `<option value="${tk}" ${mcSelectedCov[k] === tk ? 'selected' : ''}>${tl}</option>`).join('')}</select>` : '';
+                return `<label class="block rounded-lg border ${on ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-2 text-[11px] cursor-pointer" title="${o.desc}">
+                    <span class="flex items-center gap-1.5 font-bold text-slate-700"><input type="checkbox" ${on ? 'checked' : ''} onchange="mcToggleCov('${k}', this.checked)"> ${o.label}</span>${tiers}</label>`;
+            }).join('');
         }
+        function mcToggleCov(k, on) {
+            if (on) mcSelectedCov[k] = mcCoverageOpts[k].tiers ? Object.keys(mcCoverageOpts[k].tiers)[0] : true;
+            else delete mcSelectedCov[k];
+            mcRenderCoverages();
+        }
+
+        function mcRenderPickList() {
+            const req = mcRequiredDocs();
+            // فایلِ مدرکی که دیگر لازم نیست کنار گذاشته می‌شود
+            Object.keys(mcFiles).forEach(k => { if (!req[k]) delete mcFiles[k]; });
+            document.getElementById('mc-pick-list').innerHTML = Object.entries(req).map(([key, label]) => {
+                const f = mcFiles[key];
+                return `<div class="rounded-lg border p-2 text-[11px] ${f ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600'}">
+                    <div class="font-bold">${f ? '✓' : '○'} ${label}</div>
+                    ${f ? `<div class="text-[10px] text-slate-500 truncate" dir="ltr">${f.name}</div>
+                           <button type="button" onclick="mcPickFile('${key}', null)" class="text-[10px] text-red-500 underline">حذف</button>` : ''}
+                    <label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">${f ? 'تغییر فایل' : 'انتخاب فایل'}
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="mcPickFile('${key}', this.files[0])"></label>
+                </div>`;
+            }).join('');
+            document.getElementById('mc-other-list').innerHTML = mcOthers.map((o, i) => `
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <input type="text" value="${(o.name || '').replace(/"/g, '&quot;')}" oninput="mcOthers[${i}].name=this.value" placeholder="نام مدرک (مثلاً وکالت‌نامه)" class="flex-1 min-w-[140px] border border-slate-300 rounded p-1.5 text-[11px]">
+                    <label class="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded cursor-pointer">${o.file ? '✓ ' + o.file.name.slice(0, 18) : 'انتخاب فایل'}
+                        <input type="file" class="hidden" onchange="mcOthers[${i}].file=this.files[0]; mcRenderPickList()"></label>
+                    <button type="button" onclick="mcOthers.splice(${i},1); mcRenderPickList()" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-times"></i></button>
+                </div>`).join('') || '<p class="text-[10px] text-slate-400">مدرکِ دیگری لازم نیست؟ خالی بگذارید.</p>';
+        }
+        function mcPickFile(key, file) { if (file) mcFiles[key] = file; else delete mcFiles[key]; mcRenderPickList(); }
+        function mcAddOther() { mcOthers.push({name: '', file: null}); mcRenderPickList(); }
 
         async function submitManualRequest() {
             const v = id => document.getElementById(id).value.trim();
             const introId = v('mc-intro-id');
-            if (!introId && (!v('mc-full-name') || !/^\d{10}$/.test(p2e(v('mc-national-code'))))) {
-                showToast('نام و کد ملیِ ۱۰ رقمیِ پرسنل را وارد کنید.', 'warning'); return;
+            const type = v('mc-insurance-type'), rel = v('mc-relationship');
+            const warn = msg => { showToast(msg, 'warning'); return false; };
+            if (!introId && (!v('mc-full-name') || !/^\d{10}$/.test(p2e(v('mc-national-code'))))) return warn('نام و کد ملیِ ۱۰ رقمیِ پرسنل را وارد کنید.');
+            if (rel !== 'خودم' && (v('mc-insured-name').length < 3 || !/^\d{8,10}$/.test(p2e(v('mc-insured-nid'))))) return warn('نام و کد ملیِ بیمه‌گذار (' + rel + ') را وارد کنید.');
+            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate'))) return warn('پلاک را کامل وارد کنید (همه‌ی خانه‌ها).');
+            if (!/^1[34]\d{2}\D+\d{1,2}\D+\d{1,2}$/.test(p2e(v('mc-birth')))) return warn('تاریخ تولد بیمه‌گذار را درست وارد کنید (مثل ۱۳۷۰/۰۵/۱۲).');
+            if (!/^09\d{9}$/.test(p2e(v('mc-phone')))) return warn('موبایل بیمه‌گذار باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (!/^\d{10}$/.test(p2e(v('mc-postal')))) return warn('کد پستی باید ۱۰ رقم باشد.');
+            if (v('mc-address').length < 10) return warn('آدرس را کامل‌تر وارد کنید.');
+            if (type === 'THIRDPARTY' && !v('mc-liability')) return warn('سقف تعهد مالی را انتخاب کنید.');
+            if (type === 'BODY') {
+                if (v('mc-prev-body') === 'بله' && v('mc-prev-claim') === 'خیر' && v('mc-no-claim-years') === '') return warn('تعداد سال‌های عدم خسارت را وارد کنید.');
+                if (!document.getElementById('mc-car-value-auto').checked && !Number(p2e(v('mc-car-value')).replace(/\D/g, ''))) return warn('ارزش خودرو را وارد کنید یا «محاسبه توسط کارشناس» را بزنید.');
             }
-            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate'))) { showToast('پلاک را کامل وارد کنید (همه‌ی خانه‌ها).', 'warning'); return; }
+            const othersBad = mcOthers.find(o => o.file && !o.name.trim());
+            if (othersBad) return warn('برای «سایر مدارک» نام مدرک را بنویسید.');
+            const missing = Object.entries(mcRequiredDocs()).filter(([k]) => !mcFiles[k]).map(([, l]) => l);
+            if (missing.length && !confirm(`${e2p(missing.length)} مدرک هنوز انتخاب نشده:\n• ${missing.join('\n• ')}\n\nدرخواست ثبت شود و این مدارک را بعداً بارگذاری می‌کنید؟`)) return;
+
             const fd = new FormData();
             fd.append('action', 'create_manual_request');
             if (introId) fd.append('intro_id', introId);
@@ -7954,27 +8435,41 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
             ['insurance_type:mc-insurance-type', 'relationship:mc-relationship', 'ownership_choice:mc-ownership', 'plate:mc-plate',
              'insured_name:mc-insured-name', 'insured_national_id:mc-insured-nid', 'liability_limit:mc-liability', 'car_value:mc-car-value',
-             'prev_body_insurance:mc-prev-body', 'insured_birth_date:mc-birth', 'insured_phone:mc-phone', 'insured_postal_code:mc-postal',
+             'prev_body_insurance:mc-prev-body', 'prev_body_claim:mc-prev-claim', 'no_claim_years:mc-no-claim-years',
+             'insured_birth_date:mc-birth', 'insured_phone:mc-phone', 'insured_postal_code:mc-postal',
              'insured_address:mc-address'].forEach(pair => { const [k, id] = pair.split(':'); fd.append(k, v(id)); });
+            fd.append('car_value_auto', document.getElementById('mc-car-value-auto').checked ? '1' : '');
+            fd.append('coverages', JSON.stringify(mcSelectedCov));
+            Object.entries(mcFiles).forEach(([k, f]) => fd.append('doc_' + k, f));
+            mcOthers.filter(o => o.file).forEach(o => { fd.append('other_files[]', o.file); fd.append('other_names[]', o.name.trim()); });
+
             const btn = document.getElementById('mc-submit-btn');
-            btn.disabled = true;
+            btn.disabled = true; const oldHtml = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت و بارگذاری مدارک...';
             try {
                 const res = await fetch('api/record_actions.php', {method: 'POST', body: fd});
                 const data = await res.json();
                 if (!data.ok) { showToast(data.error || 'خطا در ثبت.', 'error'); return; }
                 mcCreated = data;
                 document.getElementById('mc-case-id').value = data.case_id;
-                showToast(data.note || `درخواست ${data.unique_code} ثبت شد؛ حالا مدارک را بارگذاری کنید.`, data.note ? 'warning' : 'success');
-                // اطلاعاتِ ثبت‌شده قفل می‌شود و چک‌لیستِ مدارک ظاهر می‌شود
+                if (data.note) showToast(data.note, 'warning');
+                (data.doc_errors || []).forEach(e => showToast(e, 'error'));
+                showToast(`درخواست ${data.unique_code} ثبت شد` + (data.uploaded ? ` و ${e2p(data.uploaded)} مدرک بایگانی شد.` : '.'), 'success');
+                // اطلاعاتِ ثبت‌شده قفل می‌شود؛ وضعیتِ مدارک (و مدارکِ باقی‌مانده) نمایش داده می‌شود
                 document.getElementById('mc-request-section').classList.add('opacity-60', 'pointer-events-none');
                 document.getElementById('mc-person-section').classList.add('hidden');
+                document.getElementById('mc-pick-section').classList.add('hidden');
                 btn.classList.add('hidden');
                 document.getElementById('mc-open-case-btn').classList.remove('hidden');
                 document.getElementById('mc-docs-section').classList.remove('hidden');
                 document.getElementById('mc-case-code').textContent = '(' + data.unique_code + ')';
+                document.getElementById('mc-result-note').textContent = data.status === 'ISSUING'
+                    ? '✅ همه‌ی مدارک کامل است و درخواست وارد «در حال صدور» شد.'
+                    : (type === 'BODY' && !Object.entries(mcRequiredDocs()).some(([k]) => !mcFiles[k])
+                        ? 'مدارک کامل است؛ بعد از تاییدِ بازدید سلامت، درخواست وارد «در حال صدور» می‌شود.'
+                        : 'مدارکِ باقی‌مانده را همین‌جا بارگذاری کنید.');
                 renderMcChecklist();
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
-            finally { btn.disabled = false; }
+            finally { btn.disabled = false; btn.innerHTML = oldHtml; }
         }
 
         // چک‌لیستِ مدارکِ لازمِ همین پرونده - هر خانه: تیک اگر هست، ضربدر و دکمه‌ی بارگذاری اگر نیست
@@ -7997,8 +8492,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                              : `<label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">بارگذاری
                                     <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="mcUploadDoc('${key}', '${label.replace(/'/g, '')}', this)"></label>`}
                     </div>`;
-                }).join('') + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
+                }).join('') + docs.filter(d => d.doc_key === 'other').map(d => `<div class="rounded-lg border p-2 text-[11px] bg-emerald-50 border-emerald-200 text-emerald-700">
+                        <div class="font-bold">✓ ${d.doc_label}</div><a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a></div>`).join('')
+                  + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
                         <div class="font-bold">سایر مدارک (اختیاری)</div>
+                        <input type="text" id="mc-post-other-name" placeholder="نام مدرک" class="mt-1 w-full border border-slate-300 rounded p-1 text-[11px]">
                         <label class="inline-block mt-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer">بارگذاری
                             <input type="file" class="hidden" onchange="mcUploadDoc('other', 'سایر مدارک', this)"></label></div>`;
             } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500">خطا در ارتباط با سرور.</p>'; }
@@ -8010,6 +8508,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('action', 'admin_upload_case_doc');
             fd.append('case_id', document.getElementById('mc-case-id').value);
             fd.append('doc_key', key); fd.append('doc_label', label);
+            if (key === 'other') {
+                const nm = (document.getElementById('mc-post-other-name') || {}).value || '';
+                if (!nm.trim()) { showToast('نام مدرک را بنویسید.', 'warning'); input.value = ''; return; }
+                fd.append('other_name', nm.trim()); label = nm.trim();
+            }
             fd.append('file', input.files[0]);
             try {
                 const res = await fetch('api/case_actions.php', {method: 'POST', body: fd});
