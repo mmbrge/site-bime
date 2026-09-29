@@ -10,6 +10,21 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/finance_core.php';
+require_once __DIR__ . '/_company_helpers.php';
+
+// فیلترهای مشترکِ داشبورد/اقساط/اکسل (دوره با شناسه‌ی billing_periods هم پذیرفته می‌شود)
+function fin_request_filters($pdo, array $src) {
+    $f = [];
+    foreach (['source', 'company_id', 'year', 'from', 'to', 'date_field', 'insurance_type', 'status', 'pasargad', 'invoiced', 'q', 'period'] as $k) {
+        if (isset($src[$k]) && $src[$k] !== '') $f[$k] = is_string($src[$k]) ? trim($src[$k]) : $src[$k];
+    }
+    if (!empty($src['period_id'])) {
+        $st = $pdo->prepare("SELECT jalali_year, jalali_month FROM billing_periods WHERE id = ?");
+        $st->execute([intval($src['period_id'])]);
+        if ($bp = $st->fetch()) $f['period'] = sprintf('%04d-%02d', $bp['jalali_year'], $bp['jalali_month']);
+    }
+    return $f;
+}
 
 $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
@@ -24,12 +39,16 @@ if (!in_array($role, ['ADMIN', 'FINANCE', 'COMPANY_LIAISON'], true)) {
     echo json_encode(['ok' => false, 'error' => 'شما به بخش مالی دسترسی ندارید.']); exit;
 }
 $isAdmin = ($role === 'ADMIN');
+try { fin_ensure_schema($pdo); } catch (Throwable $e) { error_log('[finance schema] ' . $e->getMessage()); }
 
 try {
     // =================================================================
     //  فهرست دوره‌ها و شرکت‌ها (برای پرکردن فیلترها)
     // =================================================================
     if ($action === 'bootstrap') {
+        fin_ensure_schema($pdo);
+        // اقساطِ جاافتاده (پرسنلی و شرکتی) هوشمند ساخته/اصلاح می‌شوند
+        $synced = fin_sync_installments($pdo);
         fin_auto_close_periods($pdo);
         $current = fin_current_period($pdo);
         $periods = $pdo->query("SELECT id, title, status, starts_at, ends_at FROM billing_periods ORDER BY jalali_year DESC, jalali_month DESC")->fetchAll();
@@ -39,6 +58,9 @@ try {
             'current_period_id' => $current['id'] ?? null,
             'settings' => fin_settings($pdo),
             'is_admin' => $isAdmin,
+            'synced' => $synced,
+            'column_pool' => fin_invoice_column_pool(),
+            'default_columns' => ['SUMMARY' => fin_invoice_default_columns('SUMMARY'), 'DETAILED' => fin_invoice_default_columns('DETAILED'), 'PERSONNEL' => fin_invoice_default_columns('PERSONNEL')],
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -47,49 +69,87 @@ try {
     //  اقساط با فیلتر
     // =================================================================
     if ($action === 'installments') {
-        $where = ["pc.status = 'ISSUED'"];
-        $params = [];
-        if (!empty($_GET['period_id'])) { $where[] = "pi.period_id = ?"; $params[] = intval($_GET['period_id']); }
-        if (!empty($_GET['company_id'])) { $where[] = "p.company_id = ?"; $params[] = intval($_GET['company_id']); }
-        if (!empty($_GET['q'])) {
-            $where[] = "(pc.insured_name LIKE ? OR pc.plate LIKE ? OR pc.policy_number LIKE ? OR p.full_name LIKE ?)";
-            $like = '%' . $_GET['q'] . '%';
-            array_push($params, $like, $like, $like, $like);
-        }
-        $sql = "
-            SELECT pi.id, pi.case_id, pi.inst_number, pi.amount, pi.due_jalali, pi.settled_to_pasargad,
-                   pc.plate, pc.insurance_type, pc.policy_number, pc.insured_name, pc.total_premium,
-                   COALESCE(pc.is_invoiced,0) AS is_invoiced,
-                   p.full_name AS holder_name, c.name AS company_name, c.id AS company_id,
-                   bp.title AS period_title,
-                   COALESCE(SUM(pa.amount), 0) AS paid
-            FROM policy_installments pi
-            JOIN policy_cases pc ON pi.case_id = pc.id
-            JOIN persons p ON pc.person_id = p.id
-            LEFT JOIN companies c ON p.company_id = c.id
-            LEFT JOIN billing_periods bp ON pi.period_id = bp.id
-            LEFT JOIN payment_allocations pa ON pa.installment_id = pi.id
-            WHERE " . implode(' AND ', $where) . "
-            GROUP BY pi.id
-            ORDER BY pi.due_date ASC, pc.plate ASC, pi.inst_number ASC
-            LIMIT 1000
-        ";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll();
+        $rows = fin_unified_installments($pdo, fin_request_filters($pdo, $_GET));
+        $total = count($rows);
+        $sum = ['amount' => 0, 'paid' => 0, 'remaining' => 0, 'overdue' => 0];
+        foreach ($rows as $r) { $sum['amount'] += $r['amount']; $sum['paid'] += $r['paid']; $sum['remaining'] += $r['remaining']; if ($r['overdue']) $sum['overdue'] += $r['remaining']; }
+        echo json_encode(['ok' => true, 'data' => array_slice($rows, 0, 2000), 'total' => $total, 'sum' => $sum], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
-        $filterStatus = $_GET['status'] ?? '';
-        $out = [];
+    // =================================================================
+    //  داشبورد تحلیلی: کارت‌ها، نمودارها و هشدارها با فیلترهای کامل (پرسنلی + شرکتی)
+    // =================================================================
+    if ($action === 'analytics') {
+        $f = fin_request_filters($pdo, $_GET);
+        $rows = fin_unified_installments($pdo, $f);
+        $today = date('Y-m-d');
+        $k = ['premium' => 0, 'policies' => 0, 'inst_amount' => 0, 'collected' => 0, 'remaining' => 0,
+              'overdue' => 0, 'overdue_count' => 0, 'upcoming' => 0, 'upcoming_count' => 0,
+              'settled' => 0, 'pasargad_due' => 0, 'companies' => 0, 'inst_count' => count($rows)];
+        $policies = []; $companies = []; $byPeriod = []; $byDue = []; $status = ['PAID' => 0, 'PARTIAL' => 0, 'OPEN' => 0, 'OVERDUE' => 0];
+        $bySource = ['P' => ['premium' => 0, 'count' => 0, 'remaining' => 0], 'C' => ['premium' => 0, 'count' => 0, 'remaining' => 0]];
+        $byType = [];
         foreach ($rows as $r) {
-            $paid = intval($r['paid']);
-            $amount = intval($r['amount']);
-            $remaining = max(0, $amount - $paid);
-            $st = $remaining <= 0 ? 'PAID' : ($paid > 0 ? 'PARTIAL' : 'UNPAID');
-            if ($filterStatus && $st !== $filterStatus) continue;
-            $r['paid'] = $paid; $r['remaining'] = $remaining; $r['pay_status'] = $st;
-            $out[] = $r;
+            $pk = $r['source'] . $r['ref_id'];
+            $k['inst_amount'] += $r['amount']; $k['collected'] += min($r['paid'], $r['amount']); $k['remaining'] += $r['remaining'];
+            if ($r['overdue']) { $k['overdue'] += $r['remaining']; $k['overdue_count']++; }
+            if ($r['upcoming']) { $k['upcoming'] += $r['remaining']; $k['upcoming_count']++; }
+            if ($r['settled']) $k['settled'] += $r['amount'];
+            // دریافت‌شده ولی هنوز به پاسارگاد تسویه‌نشده
+            if (!$r['settled']) $k['pasargad_due'] += min($r['paid'], $r['amount']);
+
+            if ($r['pay_status'] === 'PAID') $status['PAID'] += $r['amount'];
+            elseif ($r['overdue']) $status['OVERDUE'] += $r['remaining'];
+            elseif ($r['pay_status'] === 'PARTIAL') $status['PARTIAL'] += $r['remaining'];
+            else $status['OPEN'] += $r['remaining'];
+
+            $cn = $r['company_name'];
+            if (!isset($companies[$cn])) $companies[$cn] = ['name' => $cn, 'amount' => 0, 'paid' => 0, 'remaining' => 0, 'overdue' => 0, 'policies' => []];
+            $companies[$cn]['amount'] += $r['amount']; $companies[$cn]['paid'] += min($r['paid'], $r['amount']);
+            $companies[$cn]['remaining'] += $r['remaining']; if ($r['overdue']) $companies[$cn]['overdue'] += $r['remaining'];
+            $companies[$cn]['policies'][$pk] = 1;
+
+            $dm = substr($r['due_jalali'], 0, 7);
+            if (!isset($byDue[$dm])) $byDue[$dm] = ['due' => 0, 'paid' => 0, 'remaining' => 0, 'settled' => 0];
+            $byDue[$dm]['due'] += $r['amount']; $byDue[$dm]['paid'] += min($r['paid'], $r['amount']);
+            $byDue[$dm]['remaining'] += $r['remaining']; if ($r['settled']) $byDue[$dm]['settled'] += $r['amount'];
+
+            if (!isset($policies[$pk])) {
+                $policies[$pk] = 1;
+                $k['premium'] += $r['premium']; $k['policies']++;
+                $bySource[$r['source']]['premium'] += $r['premium']; $bySource[$r['source']]['count']++;
+                $per = $r['period'];
+                if (!isset($byPeriod[$per])) $byPeriod[$per] = ['premium_p' => 0, 'premium_c' => 0, 'count_p' => 0, 'count_c' => 0];
+                $byPeriod[$per]['premium_' . strtolower($r['source'])] += $r['premium'];
+                $byPeriod[$per]['count_' . strtolower($r['source'])]++;
+                $t = insurance_type_fa($r['insurance_type']) ?: 'نامشخص';
+                if (!isset($byType[$t])) $byType[$t] = ['premium' => 0, 'count' => 0];
+                $byType[$t]['premium'] += $r['premium']; $byType[$t]['count']++;
+            }
+            $bySource[$r['source']]['remaining'] += $r['remaining'];
         }
-        echo json_encode(['ok' => true, 'data' => $out], JSON_UNESCAPED_UNICODE);
+        $k['companies'] = count($companies);
+        ksort($byPeriod); ksort($byDue);
+        $companies = array_values(array_map(function ($c) { $c['policies'] = count($c['policies']); return $c; }, $companies));
+        usort($companies, function ($a, $b) { return $b['amount'] <=> $a['amount']; });
+
+        $alertRow = function ($r) {
+            return ['source' => $r['source'], 'company_name' => $r['company_name'], 'insured' => $r['insured'], 'plate' => $r['plate'],
+                    'inst_number' => $r['inst_number'], 'due_jalali' => $r['due_jalali'], 'amount' => $r['amount'],
+                    'paid' => $r['paid'], 'remaining' => $r['remaining'], 'tracking_code' => $r['tracking_code'], 'policy_number' => $r['policy_number']];
+        };
+        $overdue = []; $upcoming = []; $unpaid = [];
+        foreach ($rows as $r) {
+            if ($r['overdue'] && count($overdue) < 200) $overdue[] = $alertRow($r);
+            if ($r['upcoming'] && count($upcoming) < 200) $upcoming[] = $alertRow($r);
+            if ($r['paid'] <= 0 && $r['remaining'] > 0 && count($unpaid) < 200) $unpaid[] = $alertRow($r);
+        }
+        try { $k['invoices'] = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE COALESCE(status,'ISSUED') <> 'INACTIVE'")->fetchColumn(); } catch (Throwable $e) { $k['invoices'] = 0; }
+
+        echo json_encode(['ok' => true, 'kpi' => $k, 'status' => $status, 'by_period' => $byPeriod, 'by_due' => $byDue,
+            'companies' => array_slice($companies, 0, 50), 'by_source' => $bySource, 'by_type' => $byType,
+            'alerts' => ['overdue' => $overdue, 'upcoming' => $upcoming, 'unpaid' => $unpaid], 'today' => $today], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -167,7 +227,7 @@ try {
         $caseId = intval($data['case_id'] ?? 0);
         $count = !empty($data['count']) ? intval($data['count']) : null;
         $method = $data['method'] ?? null;
-        $res = fin_generate_installments($pdo, $caseId, $count, $method);
+        $res = fin_generate_installments($pdo, $caseId, $count, $method, $isAdmin && !empty($data['force']));
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -191,7 +251,15 @@ try {
             'rule_sequential_payment' => !empty($data['rule_seq']) ? '1' : '0',
             'rule_collect_before_pay' => !empty($data['rule_collect']) ? '1' : '0',
             'invoice_prefix'          => trim($data['inv_prefix'] ?? 'SM49357'),
+            'due_mode'                => ($data['due_mode'] ?? 'issue') === 'period15' ? 'period15' : 'issue',
+            'allow_multiple_invoices' => !empty($data['allow_multi']) ? '1' : '0',
+            'inv_full_policy'         => !empty($data['inv_full_policy']) ? '1' : '0',
+            'inv_company_subtotal'    => !empty($data['inv_subtotal']) ? '1' : '0',
+            'inv_merge_company'       => !empty($data['inv_merge']) ? '1' : '0',
         ];
+        foreach (['SUMMARY', 'DETAILED', 'PERSONNEL'] as $kd) {
+            if (isset($data['inv_cols'][$kd])) $map['inv_cols_' . $kd] = json_encode(fin_invoice_columns($kd, $data['inv_cols'][$kd]));
+        }
         foreach ($map as $k => $v) fin_set($pdo, $k, (string)$v);
         echo json_encode(['ok' => true]);
         exit;
@@ -202,7 +270,8 @@ try {
     // =================================================================
     if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'upload_template') {
         if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر می‌تواند قالب را تغییر دهد.']); exit; }
-        $kind = ($_POST['kind'] ?? '') === 'SUMMARY' ? 'SUMMARY' : 'DETAILED';
+        // هر سه نوع (تجمیعی، تلفیقی، تفکیکی) قالب جداگانه دارند؛ قبلاً قالب «تلفیقی» اشتباهاً به‌جای «تفکیکی» ذخیره می‌شد
+        $kind = fin_kind($_POST['kind'] ?? '');
         $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
         if ($ext !== 'docx') { echo json_encode(['ok' => false, 'error' => 'فقط فایل docx پذیرفته می‌شود.']); exit; }
 
@@ -228,53 +297,66 @@ try {
     //  (راست‌چین، فونت B Nazanin، سربرگ بولد) باز می‌کند.
     // =================================================================
     if ($action === 'export_installments') {
-        $where = ["pc.status = 'ISSUED'"];
-        $params = [];
-        if (!empty($_GET['period_id'])) { $where[] = "pi.period_id = ?"; $params[] = intval($_GET['period_id']); }
-        if (!empty($_GET['company_id'])) { $where[] = "p.company_id = ?"; $params[] = intval($_GET['company_id']); }
-        if (!empty($_GET['q'])) {
-            $where[] = "(pc.insured_name LIKE ? OR pc.plate LIKE ? OR pc.policy_number LIKE ? OR p.full_name LIKE ?)";
-            $like = '%' . $_GET['q'] . '%';
-            array_push($params, $like, $like, $like, $like);
-        }
-        $stmt = $pdo->prepare("
-            SELECT pi.inst_number, pi.amount, pi.due_jalali, pi.settled_to_pasargad,
-                   pc.plate, pc.insurance_type, pc.policy_number, pc.insured_name,
-                   p.full_name AS holder_name, p.national_code, p.personnel_code,
-                   c.name AS company_name, bp.title AS period_title,
-                   COALESCE(SUM(pa.amount), 0) AS paid
-            FROM policy_installments pi
-            JOIN policy_cases pc ON pi.case_id = pc.id
-            JOIN persons p ON pc.person_id = p.id
-            LEFT JOIN companies c ON p.company_id = c.id
-            LEFT JOIN billing_periods bp ON pi.period_id = bp.id
-            LEFT JOIN payment_allocations pa ON pa.installment_id = pi.id
-            WHERE " . implode(' AND ', $where) . "
-            GROUP BY pi.id
-            ORDER BY c.name ASC, pc.plate ASC, pi.inst_number ASC
-        ");
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll();
-
-        $filterStatus = $_GET['status'] ?? '';
-        $headers = ['ردیف','دوره','شرکت','بیمه‌گذار','کد ملی','کد پرسنلی','پلاک','نوع بیمه','شماره بیمه‌نامه',
-                    'شماره قسط','سررسید','مبلغ قسط (ریال)','پرداخت‌شده','مانده','وضعیت','تسویه با پاسارگاد'];
-        $out = [];
-        $i = 1;
+        $rows = fin_unified_installments($pdo, fin_request_filters($pdo, $_GET));
+        $headers = ['ردیف','منبع','دوره','شرکت','بیمه‌گذار / پرسنل','کد ملی','کد پرسنلی','پلاک','نوع بیمه','شماره بیمه‌نامه',
+                    'کد رهگیری','شماره قسط','سررسید','مبلغ قسط (ریال)','دریافت‌شده','مانده','وضعیت','تسویه با پاسارگاد'];
+        $stFa = ['PAID' => 'تسویه‌شده', 'PARTIAL' => 'ناقص', 'UNPAID' => 'پرداخت‌نشده'];
+        $out = []; $i = 1;
         foreach ($rows as $r) {
-            $paid = intval($r['paid']); $amount = intval($r['amount']);
-            $remaining = max(0, $amount - $paid);
-            $st = $remaining <= 0 ? 'PAID' : ($paid > 0 ? 'PARTIAL' : 'UNPAID');
-            if ($filterStatus && $st !== $filterStatus) continue;
-            $stFa = ['PAID' => 'تسویه‌شده', 'PARTIAL' => 'ناقص', 'UNPAID' => 'پرداخت‌نشده'][$st];
-            $out[] = [$i++, $r['period_title'], $r['company_name'], $r['insured_name'] ?: $r['holder_name'],
-                      $r['national_code'], $r['personnel_code'], $r['plate'],
-                      insurance_type_fa($r['insurance_type']), $r['policy_number'],
-                      $r['inst_number'], $r['due_jalali'], $amount, $paid, $remaining, $stFa,
-                      $r['settled_to_pasargad'] ? 'بله' : 'خیر'];
+            [$py, $pm] = array_map('intval', explode('-', $r['period']));
+            $out[] = [$i++, $r['source'] === 'C' ? 'شرکتی' : 'پرسنلی', fin_month_name($pm) . ' ' . $py, $r['company_name'], $r['insured'],
+                      $r['national_code'], $r['personnel_code'], $r['plate'], insurance_type_fa($r['insurance_type']), $r['policy_number'],
+                      $r['tracking_code'], $r['inst_number'], $r['due_jalali'], $r['amount'], $r['paid'], $r['remaining'],
+                      ($r['overdue'] ? 'معوق - ' : '') . $stFa[$r['pay_status']], $r['settled'] ? 'بله' : 'خیر'];
         }
+        fin_send_excel('گزارش-اقساط', $headers, $out, [13, 14, 15]);
+        exit;
+    }
 
-        fin_send_excel('گزارش-اقساط', $headers, $out, [11, 12, 13]);
+    // =================================================================
+    //  «بانک جامع اطلاعات و اقساط کل» (هم‌شکل با اکسل جامع ماموت): هر بیمه‌نامه یک ردیف،
+    //  با همه‌ی اقساطش در ستون‌های کنار هم (مبلغ و وضعیت)، جمع دریافتی، مانده و تسویه با پاسارگاد
+    // =================================================================
+    if ($action === 'export_master') {
+        $rows = fin_unified_installments($pdo, fin_request_filters($pdo, $_GET));
+        $pol = []; $maxN = 0;
+        foreach ($rows as $r) {
+            $key = $r['source'] . $r['ref_id'];
+            if (!isset($pol[$key])) $pol[$key] = ['r' => $r, 'inst' => [], 'paid' => 0, 'rem' => 0, 'settled' => 0, 'sum' => 0];
+            $pol[$key]['inst'][$r['inst_number']] = $r;
+            $pol[$key]['paid'] += min($r['paid'], $r['amount']); $pol[$key]['rem'] += $r['remaining'];
+            $pol[$key]['sum'] += $r['amount']; if ($r['settled']) $pol[$key]['settled'] += $r['amount'];
+            $maxN = max($maxN, $r['inst_number']);
+        }
+        uasort($pol, function ($a, $b) { return [$a['r']['company_name'], $a['r']['insured'], $a['r']['policy_number']] <=> [$b['r']['company_name'], $b['r']['insured'], $b['r']['policy_number']]; });
+        $headers = ['ردیف','منبع','دوره','شرکت','بیمه‌گذار / پرسنل','کد ملی','کد پرسنلی','پلاک','نوع بیمه','شماره بیمه‌نامه','تاریخ صدور','حق بیمه','تعداد اقساط'];
+        for ($n = 1; $n <= $maxN; $n++) { $headers[] = "قسط $n"; $headers[] = "سررسید $n"; $headers[] = "وضعیت $n"; }
+        array_push($headers, 'جمع اقساط', 'دریافت‌شده', 'مانده', 'معوق', 'تسویه‌شده با پاسارگاد', 'وضعیت صورتحساب');
+        $numeric = [11];
+        for ($n = 1; $n <= $maxN; $n++) $numeric[] = 13 + ($n - 1) * 3;
+        $base = 13 + $maxN * 3;
+        array_push($numeric, $base, $base + 1, $base + 2, $base + 3, $base + 4);
+        $out = []; $i = 1;
+        foreach ($pol as $p) {
+            $r = $p['r'];
+            [$py, $pm] = array_map('intval', explode('-', $r['period']));
+            $line = [$i++, $r['source'] === 'C' ? 'شرکتی' : 'پرسنلی', fin_month_name($pm) . ' ' . $py, $r['company_name'], $r['insured'],
+                     $r['national_code'], $r['personnel_code'], $r['plate'], insurance_type_fa($r['insurance_type']), $r['policy_number'],
+                     $r['issue_jalali'], $r['premium'], count($p['inst'])];
+            $overdue = 0;
+            for ($n = 1; $n <= $maxN; $n++) {
+                $x = $p['inst'][$n] ?? null;
+                if (!$x) { array_push($line, '', '', ''); continue; }
+                if ($x['overdue']) $overdue += $x['remaining'];
+                $st = $x['pay_status'] === 'PAID' ? 'پرداخت‌شده' : ($x['overdue'] ? 'معوق' : ($x['pay_status'] === 'PARTIAL' ? 'ناقص' : 'باز'));
+                if ($x['settled']) $st .= ' / پاسارگاد✓';
+                array_push($line, $x['amount'], $x['due_jalali'], $st);
+            }
+            array_push($line, $p['sum'], $p['paid'], $p['rem'], $overdue, $p['settled'],
+                       $r['source'] === 'C' ? '—' : ($r['is_invoiced'] ? 'دارای صورتحساب' : 'بدون صورتحساب'));
+            $out[] = $line;
+        }
+        fin_send_excel('بانک جامع اطلاعات و اقساط کل', $headers, $out, $numeric);
         exit;
     }
 
@@ -422,14 +504,18 @@ try {
         $recRow = $rec->fetch();
         $recOk = $recRow && in_array($recRow['status'], ['RESOLVED', 'OVERRIDDEN'], true);
 
-        $rows = fin_collect_invoice_rows($pdo, $periodId, $companyId);
+        $mode = fin_invoice_mode($pdo, $_GET['mode'] ?? 'uninvoiced');
+        if (is_array($mode)) { echo json_encode($mode, JSON_UNESCAPED_UNICODE); exit; }
+        $rows = fin_collect_invoice_rows($pdo, $periodId, $companyId, $mode);
+        $alreadyInvoiced = count(array_filter($rows, function ($r) { return (int)$r['is_invoiced'] === 1; }));
 
         if ($kind === 'SUMMARY') {
             $byCompany = [];
             foreach ($rows as $r) {
                 $cid = $r['company_id'] ?: 0;
-                if (!isset($byCompany[$cid])) $byCompany[$cid] = ['company_name' => $r['company_name'] ?: 'بدون شرکت', 'policy_count' => 0, 'total_premium' => 0, 'monthly_amount' => 0];
+                if (!isset($byCompany[$cid])) $byCompany[$cid] = ['company_name' => $r['company_name'] ?: 'بدون شرکت', 'policy_count' => 0, 'third_count' => 0, 'body_count' => 0, 'total_premium' => 0, 'monthly_amount' => 0];
                 $byCompany[$cid]['policy_count']++;
+                $byCompany[$cid][fin_is_body($r['insurance_type']) ? 'body_count' : 'third_count']++;
                 $byCompany[$cid]['total_premium'] += intval($r['total_premium']);
                 $byCompany[$cid]['monthly_amount'] += intval($r['monthly_amount']);
             }
@@ -442,6 +528,8 @@ try {
                 'company_name' => $r['company_name'],
                 'personnel_code' => $r['personnel_code'], 'national_code' => $r['national_code'],
                 'insurance_type' => insurance_type_fa($r['insurance_type']),
+                'plate' => $r['plate'], 'policy_number' => $r['policy_number'], 'issue_date' => $r['issue_date'],
+                'is_invoiced' => (int)$r['is_invoiced'],
                 'total_premium' => intval($r['total_premium']),
                 'monthly_amount' => intval($r['monthly_amount']),
             ], $rows);
@@ -451,7 +539,8 @@ try {
                 'national_code' => $r['national_code'], 'personnel_code' => $r['personnel_code'],
                 'plate' => $r['plate'], 'insurance_type' => insurance_type_fa($r['insurance_type']),
                 'policy_number' => $r['policy_number'], 'total_premium' => intval($r['total_premium']),
-                'monthly_amount' => intval($r['monthly_amount']),
+                'monthly_amount' => intval($r['monthly_amount']), 'company_name' => $r['company_name'],
+                'issue_date' => $r['issue_date'], 'is_invoiced' => (int)$r['is_invoiced'],
             ], $rows);
         }
 
@@ -461,6 +550,7 @@ try {
         echo json_encode([
             'ok' => true, 'kind' => $kind, 'lines' => $lines,
             'total' => $total, 'monthly' => $monthly, 'count' => count($lines),
+            'policies' => count($rows), 'already_invoiced' => $alreadyInvoiced, 'mode' => $mode,
             'reconcile_ok' => $recOk,
             'reconcile' => $recRow ? ['id' => $recRow['id'], 'status' => $recRow['status'],
                                       'only_excel' => intval($recRow['only_excel']),
@@ -503,8 +593,24 @@ try {
             $companyName = $manualCompany;
         }
 
-        $rows = fin_collect_invoice_rows($pdo, $periodId, $companyId);
+        $mode = fin_invoice_mode($pdo, $data['mode'] ?? 'uninvoiced');
+        if (is_array($mode)) { echo json_encode($mode, JSON_UNESCAPED_UNICODE); exit; }
+        $rows = fin_collect_invoice_rows($pdo, $periodId, $companyId, $mode);
         if (!$rows) { echo json_encode(['ok' => false, 'error' => 'برای این انتخاب، بیمه‌نامه‌ای وجود ندارد.']); exit; }
+        // هم‌شکل با ماموت: صدور دوباره برای بیمه‌نامه‌هایی که صورتحساب دارند، تایید صریح می‌خواهد
+        $already = count(array_filter($rows, function ($r) { return (int)$r['is_invoiced'] === 1; }));
+        if ($already && empty($data['confirm_reinvoice'])) {
+            echo json_encode(['ok' => false, 'need_confirm' => true, 'already_invoiced' => $already,
+                              'error' => "$already بیمه‌نامه از این فهرست قبلاً صورتحساب دارند."], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $s = fin_settings($pdo);
+        $options = [
+            'columns' => fin_invoice_columns($kind, $data['columns'] ?? (json_decode((string)($s['inv_cols_' . $kind] ?? ''), true) ?: [])),
+            'full_policy' => isset($data['full_policy']) ? !empty($data['full_policy']) : (($s['inv_full_policy'] ?? '1') === '1'),
+            'company_subtotal' => isset($data['company_subtotal']) ? !empty($data['company_subtotal']) : (($s['inv_company_subtotal'] ?? '0') === '1'),
+            'merge_company' => isset($data['merge_company']) ? !empty($data['merge_company']) : (($s['inv_merge_company'] ?? '0') === '1'),
+            'mode' => $mode,
+        ];
 
         $invoiceNo = fin_next_invoice_no($pdo);
         $siteRoot = dirname(__DIR__);
@@ -514,26 +620,32 @@ try {
         }
 
         $total = 0;
-        $pdo->prepare("INSERT INTO invoices (invoice_no, kind, company_id, period_id, total_amount, folder_path, manual_company, created_by)
-                       VALUES (?, ?, ?, ?, 0, ?, ?, ?)")
-            ->execute([$invoiceNo, $kind, $companyId, $periodId, $folder, $manualCompany ?: null, $_SESSION['user_id']]);
+        // شماره‌ی تکراری میان صورتحساب‌های فعال مجاز نیست
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM invoices WHERE invoice_no = ? AND COALESCE(status,'ISSUED') <> 'INACTIVE'");
+        $dup->execute([$invoiceNo]);
+        if ($dup->fetchColumn()) { echo json_encode(['ok' => false, 'error' => "شماره‌ی صورتحساب $invoiceNo قبلاً برای صورتحساب فعال دیگری ثبت شده است؛ شمارنده را در تنظیمات مالی بررسی کنید."], JSON_UNESCAPED_UNICODE); exit; }
+
+        $pdo->prepare("INSERT INTO invoices (invoice_no, kind, company_id, period_id, total_amount, folder_path, manual_company, created_by, status, options_json)
+                       VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'ISSUED', ?)")
+            ->execute([$invoiceNo, $kind, $companyId, $periodId, $folder, $manualCompany ?: null, $_SESSION['user_id'], json_encode($options, JSON_UNESCAPED_UNICODE)]);
         $invoiceId = $pdo->lastInsertId();
 
         $insLine = $pdo->prepare("INSERT INTO invoice_lines
-            (invoice_id, case_id, company_id, person_name, national_code, personnel_code, plate, insurance_type, policy_number, policy_count, total_premium, monthly_amount)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            (invoice_id, case_id, company_id, person_name, national_code, personnel_code, plate, insurance_type, policy_number, policy_count, total_premium, monthly_amount, issue_date, third_count, body_count)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
         if ($kind === 'SUMMARY') {
             $byCompany = [];
             foreach ($rows as $r) {
                 $cid = $r['company_id'] ?: 0;
-                if (!isset($byCompany[$cid])) $byCompany[$cid] = ['name' => $r['company_name'] ?: 'بدون شرکت', 'count' => 0, 'premium' => 0, 'monthly' => 0];
+                if (!isset($byCompany[$cid])) $byCompany[$cid] = ['name' => $r['company_name'] ?: 'بدون شرکت', 'count' => 0, 'premium' => 0, 'monthly' => 0, 'third' => 0, 'body' => 0];
                 $byCompany[$cid]['count']++;
+                $byCompany[$cid][fin_is_body($r['insurance_type']) ? 'body' : 'third']++;
                 $byCompany[$cid]['premium'] += intval($r['total_premium']);
                 $byCompany[$cid]['monthly'] += intval($r['monthly_amount']);
             }
             foreach ($byCompany as $cid => $g) {
-                $insLine->execute([$invoiceId, null, $cid ?: null, $g['name'], null, null, null, null, null, $g['count'], $g['premium'], $g['monthly']]);
+                $insLine->execute([$invoiceId, null, $cid ?: null, $g['name'], null, null, null, null, null, $g['count'], $g['premium'], $g['monthly'], null, $g['third'], $g['body']]);
                 $total += $g['premium'];
             }
         } else {
@@ -543,7 +655,7 @@ try {
                 $insLine->execute([$invoiceId, $r['case_id'], $r['company_id'],
                     $r['insured_name'] ?: $r['holder_name'], $r['national_code'], $r['personnel_code'],
                     $r['plate'], insurance_type_fa($r['insurance_type']), $r['policy_number'],
-                    null, intval($r['total_premium']), intval($r['monthly_amount'])]);
+                    null, intval($r['total_premium']), intval($r['monthly_amount']), $r['issue_date'], null, null]);
                 $total += intval($r['total_premium']);
             }
         }
@@ -582,6 +694,9 @@ try {
         $where = []; $params = [];
         if (!empty($_GET['period_id']))  { $where[] = "i.period_id = ?";  $params[] = intval($_GET['period_id']); }
         if (!empty($_GET['company_id'])) { $where[] = "i.company_id = ?"; $params[] = intval($_GET['company_id']); }
+        if (($_GET['status'] ?? '') === 'ISSUED')   $where[] = "COALESCE(i.status,'ISSUED') <> 'INACTIVE'";
+        if (($_GET['status'] ?? '') === 'INACTIVE') $where[] = "i.status = 'INACTIVE'";
+        if (!empty($_GET['q'])) { $where[] = "(i.invoice_no LIKE ? OR c.name LIKE ? OR i.manual_company LIKE ?)"; $lk = '%' . p2e_digits(trim($_GET['q'])) . '%'; array_push($params, $lk, $lk, $lk); }
         $w = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
         $stmt = $pdo->prepare("
             SELECT i.*, COALESCE(c.name, i.manual_company) AS company_name, bp.title AS period_title,
@@ -594,6 +709,75 @@ try {
         ");
         $stmt->execute($params);
         echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // =================================================================
+    //  غیرفعال‌سازی صورتحساب (هم‌شکل با deactivate_invoice ماموت) - برگشت‌ناپذیر:
+    //   ۱) Word/PDF به زیرپوشه‌ی «صورت حساب های غیر فعال» همان پوشه منتقل می‌شوند
+    //   ۲) وضعیت «غیرفعال» می‌شود
+    //   ۳) بیمه‌نامه‌هایش آزاد می‌شوند (مگر صورتحساب فعال دیگری هم داشته باشند) تا دوباره صورتحساب شوند
+    // =================================================================
+    if ($action === 'deactivate_invoice') {
+        if (!$isAdmin && $role !== 'FINANCE') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر یا مالی می‌تواند صورتحساب را غیرفعال کند.']); exit; }
+        $password = trim($data['password'] ?? '');
+        $st = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $st->execute([$_SESSION['user_id']]);
+        $hash = $st->fetchColumn();
+        if ($password === '' || !$hash || !password_verify($password, $hash)) { echo json_encode(['ok' => false, 'error' => 'رمز عبور نادرست است.']); exit; }
+
+        $id = intval($data['id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM invoices WHERE id = ?");
+        $st->execute([$id]);
+        $inv = $st->fetch();
+        if (!$inv) { echo json_encode(['ok' => false, 'error' => 'صورتحساب یافت نشد.']); exit; }
+        if (($inv['status'] ?? '') === 'INACTIVE') { echo json_encode(['ok' => false, 'error' => 'این صورتحساب قبلاً غیرفعال شده است.']); exit; }
+        $pay = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE invoice_id = ?");
+        $pay->execute([$id]);
+        if ($pay->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'برای این صورتحساب دریافتی ثبت شده؛ اول دریافتی‌ها را از آن جدا کنید.']); exit; }
+
+        $siteRoot = dirname(__DIR__);
+        $moved = [];
+        $newPaths = [];
+        foreach (['docx_path', 'pdf_path'] as $col) {
+            if (empty($inv[$col])) continue;
+            $src = $siteRoot . '/' . $inv[$col];
+            if (!is_file($src)) continue;
+            $destDir = dirname($src) . '/صورت حساب های غیر فعال';
+            if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
+            $ext = pathinfo($src, PATHINFO_EXTENSION);
+            $dest = unique_dest_path($destDir . '/' . $inv['invoice_no'] . '.' . $ext);
+            if (!@rename($src, $dest)) {
+                foreach ($moved as [$a, $b]) @rename($b, $a);
+                echo json_encode(['ok' => false, 'error' => 'انتقال فایل‌های صورتحساب ممکن نشد.']); exit;
+            }
+            $moved[] = [$src, $dest];
+            $newPaths[$col] = ltrim(str_replace($siteRoot, '', $dest), '/');
+        }
+        $pdo->prepare("UPDATE invoices SET status = 'INACTIVE', deactivated_at = NOW(), docx_path = ?, pdf_path = ? WHERE id = ?")
+            ->execute([$newPaths['docx_path'] ?? $inv['docx_path'], $newPaths['pdf_path'] ?? $inv['pdf_path'], $id]);
+
+        // آزادسازی بیمه‌نامه‌ها
+        $cs = $pdo->prepare("SELECT DISTINCT case_id FROM invoice_lines WHERE invoice_id = ? AND case_id IS NOT NULL");
+        $cs->execute([$id]);
+        $caseIds = $cs->fetchAll(PDO::FETCH_COLUMN);
+        if ($inv['kind'] === 'SUMMARY') {
+            // صورتحساب تجمیعی ردیفِ پرونده ندارد؛ پرونده‌هایی که با همین صورتحساب علامت خورده‌اند
+            $cs = $pdo->prepare("SELECT id FROM policy_cases WHERE invoiced_invoice_id = ?");
+            $cs->execute([$id]);
+            $caseIds = array_merge($caseIds, $cs->fetchAll(PDO::FETCH_COLUMN));
+        }
+        $freed = 0; $still = 0;
+        $other = $pdo->prepare("SELECT MAX(i.id) FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id
+                                WHERE il.case_id = ? AND i.id <> ? AND COALESCE(i.status,'ISSUED') <> 'INACTIVE'");
+        foreach (array_unique($caseIds) as $cid) {
+            $other->execute([$cid, $id]);
+            $keep = $other->fetchColumn();
+            if ($keep) { $pdo->prepare("UPDATE policy_cases SET is_invoiced = 1, invoiced_invoice_id = ? WHERE id = ?")->execute([$keep, $cid]); $still++; }
+            else { $pdo->prepare("UPDATE policy_cases SET is_invoiced = 0, invoiced_invoice_id = NULL WHERE id = ?")->execute([$cid]); $freed++; }
+        }
+        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'INVOICE_DEACTIVATE', 'invoices', ?, ?)")->execute([$_SESSION['user_id'], $id, $inv['invoice_no']]); } catch (Throwable $e) {}
+        echo json_encode(['ok' => true, 'freed' => $freed, 'still_invoiced' => $still, 'files' => count($moved)], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -53,3 +53,6 @@ report_assets/templates/cat*_*.docx
 report_assets/templates/*(old*
 report_assets/parsers/*(old*
 Archive/بایگانی/بایگانی گزارشات بازدید/
+
+# پشتیبان‌ها (روی هاست ساخته می‌شوند؛ شامل اطلاعات واقعی)
+backup/

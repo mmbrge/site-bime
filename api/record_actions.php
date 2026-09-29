@@ -451,41 +451,33 @@ try {
             exit;
         }
 
+        // ۱) پیش از هر حذفی، بکاپ کامل (همه‌ی جدول‌های دیتابیس + همه‌ی فایل‌ها و اکسل‌ها) در پوشه‌ی
+        //    backup/<تاریخ امروز>/ ساخته و بررسی می‌شود؛ اگر بکاپ ناموفق باشد هیچ چیزی پاک نمی‌شود.
+        //    این بکاپ از «تنظیمات سیستم ← پشتیبان‌گیری» دوباره ایمپورت می‌شود و همه‌چیز را برمی‌گرداند.
+        require_once __DIR__ . '/_backup_core.php';
+        try {
+            $backup = bk_create($pdo, 'full', 'before-reset', 'بکاپ خودکار پیش از حذف اطلاعات');
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'بکاپ پیش از حذف ساخته نشد، پس هیچ اطلاعاتی پاک نشد: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         $pdo->beginTransaction();
         $pdo->exec("SET FOREIGN_KEY_CHECKS = 0;");
-        // همه‌ی جدول‌های داده‌ای (کاربران پنل و تنظیمات سیستم مثل توکن بات دست‌نخورده می‌مانند)
-        foreach ([
-            'messages', 'ticket_messages', 'tickets', 'documents', 'case_documents',
-            'health_inspections', 'health_attempts', 'policy_cases', 'insurance_requests',
-            'introductions', 'person_vehicles', 'bot_sessions', 'persons', 'companies',
-            'processing_queue', 'audit_logs', 'app_notifications', 'webapp_sessions',
-            // ماژول شرکت‌ها: درخواست‌ها/پلاک‌ها/مدارک، مالی شرکتی، چت داخلی و شرکتی،
-            // و حساب‌های کاربری ثبت‌کننده‌ی شرکت‌ها - قبلاً پاک نمی‌شدند
-            'company_payment_allocations', 'company_payments', 'company_installments',
-            'company_documents', 'company_request_plates', 'company_requests',
-            'company_portal_user_companies',
-            'staff_chat_messages', 'company_chat_messages', 'bot_known_groups',
-            // مالی پرسنلی: اقساط، دریافتی‌ها و تخصیص‌هایشان، چک‌ها، صورتحساب‌ها،
-            // تسویه‌های پاسارگاد، مغایرت‌گیری و دوره‌های صورتحساب - این‌ها هم قبلاً
-            // در «پاک کردن اطلاعات» جا مانده بودند، پس بدهی/بستانکاریِ پرونده‌های
-            // پاک‌شده به‌صورت یتیم در گزارش‌های مالی باقی می‌ماند
-            'payment_allocations', 'payments', 'policy_installments',
-            'invoice_lines', 'invoices', 'cheques',
-            'pasargad_settlement_lines', 'pasargad_settlements',
-            'reconciliations', 'billing_periods',
-            // وضعیت گفتگوی ربات و کدهای یک‌بارمصرف ورود
-            'conversation_state', 'login_otps',
-            // تاریخچه‌ی بررسیِ مدارک/بازدیدها و اعلان‌ها (زنگوله‌ی پنل‌ها و اعلان‌های مدیر در ربات)
-            'review_log', 'user_notifications', 'notification_cursors', 'admin_notifications',
-            // ورود و کاربران: لاگ ورود و خروج، کدهای ورود با بله، درخواست‌های بازیابی رمز
-            // و وضعیتِ گفتگوی ربات شرکت‌ها
-            'login_logs', 'phone_otps', 'password_reset_requests', 'company_bot_state',
-            // گزارش‌های بازدیدِ صادرشده (عکس‌ها و نسخه‌های قبلی)؛ تنظیماتِ گزارش (انواع، قالب‌ها، فیلدها،
-            // بازدیدکننده‌ها، بیمه‌گذارانِ آماده و قلم‌ها) دست‌نخورده می‌مانند
-            'visit_reports', 'visit_report_photos', 'visit_report_versions',
-        ] as $table) {
-            try { $pdo->exec("TRUNCATE TABLE `$table`;"); } catch (Exception $e) { /* اگر جدولی وجود نداشت، رد شو */ }
+        // ۲) همه‌ی جدول‌های دیتابیس پاک می‌شوند (فهرست از خودِ دیتابیس خوانده می‌شود تا جدولِ تازه‌ای جا نماند)،
+        //    به‌جز جدول‌های «تنظیمات» که اطلاعات نیستند: تنظیمات سیستم و توکن ربات‌ها، تنظیمات مالی، قالب‌های
+        //    صورتحساب، و تنظیمات گزارش بازدید (انواع، فیلدها، بازدیدکننده‌ها، بیمه‌گذارانِ آماده، قلم‌ها).
+        //    کاربران جداگانه پایین‌تر رسیدگی می‌شوند.
+        $keepTables = ['users', 'system_settings', 'finance_settings', 'invoice_templates',
+            'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
+            'report_insureds', 'report_insured_categories', 'company_portal_users'];
+        foreach (bk_tables($pdo) as $table) {
+            if (in_array($table, $keepTables, true)) continue;
+            try { $pdo->exec("TRUNCATE TABLE `" . str_replace('`', '``', $table) . "`;"); }
+            catch (Exception $e) { try { $pdo->exec("DELETE FROM `" . str_replace('`', '``', $table) . "`;"); } catch (Exception $e2) {} }
         }
+        // شمارنده‌ی شماره‌ی صورتحساب‌ها هم از اول شروع می‌شود
+        try { $pdo->exec("DELETE FROM `finance_settings` WHERE `setting_key` IN ('invoice_counter','invoice_counter_year');"); } catch (Exception $e) { /* ... */ }
         // کاربرانِ شرکت‌ها با DELETE (نه TRUNCATE) پاک می‌شوند تا شماره‌ی شناسه از اول شروع نشود؛
         // وگرنه نشستِ بازِ یک کاربرِ پاک‌شده روی کاربرِ تازه‌ای با همان شناسه می‌نشست
         try { $pdo->exec("DELETE FROM `company_portal_users`;"); } catch (Exception $e) { /* ... */ }
@@ -530,7 +522,9 @@ try {
         }
         @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
 
-        echo json_encode(['ok' => true, 'message' => 'همه‌ی اطلاعات، پرونده‌ها، گزارش‌های بازدید، بایگانی، چت‌ها، لاگ‌های ورود و خروج و اعلان‌ها کاملاً پاک شدند. سایت به حالت اولیه بازگشت.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'backup' => $backup['rel'],
+            'message' => 'همه‌ی اطلاعات دیتابیس، پرونده‌ها، مالی (اقساط، صورتحساب‌ها، دریافتی‌ها)، گزارش‌های بازدید، بایگانی، چت‌ها، لاگ‌ها و اعلان‌ها کاملاً پاک شدند. '
+                       . 'پیش از حذف، بکاپ کامل در پوشه‌ی backup/' . $backup['rel'] . ' ذخیره شد و از «تنظیمات سیستم ← پشتیبان‌گیری» قابل بازگرداندن است.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 } catch (Exception $e) {

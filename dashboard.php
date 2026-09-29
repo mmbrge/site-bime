@@ -131,6 +131,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <style>
+        /* داشبورد مالی: پویانمایی ستون‌ها، نوارها و کارت‌ها */
+        @keyframes finRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+        @keyframes finGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        @keyframes finPop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        @keyframes finDraw { from { stroke-dasharray: 0 4000; } to { stroke-dasharray: 4000 0; } }
+        .fin-bar { transform-box: fill-box; transform-origin: bottom; animation: finRise .6s cubic-bezier(.2,.8,.2,1) both; }
+        .fin-grow { transform-origin: right; animation: finGrow .8s cubic-bezier(.2,.8,.2,1) both; }
+        .fin-pop { animation: finPop .45s ease both; }
+        .fin-line:not([stroke-dasharray]) { animation: finDraw 1.4s ease both; }
+        .fin-slice { transition: opacity .2s, transform .2s; transform-box: fill-box; transform-origin: center; cursor: pointer; }
+        .fin-slice:hover { opacity: .85; transform: scale(1.04); }
+        .fin-bar:hover { filter: brightness(1.1); }
         @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
         @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
         @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
@@ -1146,7 +1158,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <label class="text-[10px] text-slate-500 block mb-1">نام شرکتِ مخاطبِ نامه (دستی)</label>
                             <input type="text" id="inv-manual-company" class="border rounded-lg px-3 py-2 text-xs" placeholder="مثلاً دنیای ماموت">
                         </div>
+                        <div><label class="text-[10px] text-slate-500 block mb-1">بیمه‌نامه‌ها</label>
+                            <select id="inv-new-mode" class="border rounded-lg px-3 py-2 text-xs">
+                                <option value="uninvoiced">فقط بدون صورتحساب</option>
+                                <option value="invoiced">فقط دارای صورتحساب</option>
+                                <option value="all">همه</option>
+                            </select></div>
                         <button onclick="previewInvoice()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold">پیش‌نمایش</button>
+                    </div>
+                    <div class="border rounded-xl p-3 bg-slate-50/60 space-y-2">
+                        <div class="flex flex-wrap gap-4 text-[11px] font-bold text-slate-600">
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="inv-opt-full"> شماره‌ی کامل بیمه‌نامه</label>
+                            <label class="flex items-center gap-1.5" id="inv-opt-subtotal-wrap"><input type="checkbox" id="inv-opt-subtotal"> ردیف جمع حق بیمه‌ی هر شرکت</label>
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="inv-opt-merge"> ادغام ستون نام شرکت‌های تکراری</label>
+                        </div>
+                        <div><p class="text-[10px] text-slate-500 mb-1.5"><i class="fas fa-table-columns ml-1"></i>ستون‌های جدول صورتحساب (تیک = نمایش؛ با فلش‌ها ترتیب را عوض کنید)</p>
+                            <div id="inv-cols-picker"></div></div>
                     </div>
                     <div id="inv-new-preview"></div>
                 </div>
@@ -1380,22 +1407,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= داشبورد مالی ======================= -->
         <div id="tab-fin-dashboard" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="flex justify-between items-center">
-                <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-chart-pie text-emerald-500 ml-2"></i>داشبورد مالی</h1>
-                    <p class="text-xs text-slate-400 mt-1">نمای کلی بدهی به پاسارگاد و طلب از شرکت‌ها</p>
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-l from-slate-900 via-indigo-900 to-violet-900 p-6 md:p-8 text-white shadow-2xl">
+                <div class="absolute -left-16 -top-16 w-64 h-64 rounded-full bg-indigo-500/20 blur-2xl"></div>
+                <div class="absolute left-40 -bottom-20 w-56 h-56 rounded-full bg-fuchsia-500/20 blur-2xl"></div>
+                <div class="relative flex flex-wrap justify-between items-center gap-4">
+                    <div>
+                        <h1 class="text-2xl md:text-3xl font-black"><i class="fas fa-chart-pie text-emerald-300 ml-2"></i>داشبورد مالی</h1>
+                        <p class="text-xs md:text-sm text-white/70 mt-2 leading-6">اقساط پرسنلی (کسر از حقوق) و شرکتی در یک نما؛ بدهی به پاسارگاد، دریافتی از شرکت‌ها، معوقات و پیش‌بینی جریان نقدی — با فیلترهای کامل</p>
+                    </div>
+                    <div class="flex gap-2 flex-wrap">
+                        <button onclick="switchTab('fin-invoices')" class="bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-xl text-xs font-bold"><i class="fas fa-file-invoice ml-1"></i>صورتحساب‌ها</button>
+                        <button onclick="switchTab('fin-installments')" class="bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-xl text-xs font-bold"><i class="fas fa-list-ol ml-1"></i>اقساط</button>
+                        <button onclick="loadFinDashboard()" class="bg-emerald-400 hover:bg-emerald-300 text-emerald-950 px-4 py-2 rounded-xl text-xs font-black"><i class="fas fa-rotate ml-1"></i>بروزرسانی</button>
+                    </div>
                 </div>
-                <select id="fin-dash-period" onchange="loadFinDashboard()" class="border rounded-lg px-3 py-2 text-xs font-bold"></select>
             </div>
-            <div id="fin-dash-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
-            <div class="card p-4">
-                <h3 class="font-bold text-sm text-slate-700 mb-3"><i class="fas fa-triangle-exclamation text-amber-500 ml-1"></i> اقساط سررسیدگذشته و پرداخت‌نشده</h3>
-                <div id="fin-dash-overdue" class="overflow-x-auto"></div>
-            </div>
-            <div class="card p-4">
-                <h3 class="font-bold text-sm text-slate-700 mb-3"><i class="fas fa-building ml-1"></i> وضعیت شرکت‌ها در این دوره</h3>
-                <div id="fin-dash-companies" class="overflow-x-auto"></div>
-            </div>
+            <div id="fin-dash-root" class="space-y-6"></div>
         </div>
 
         <!-- ======================= اقساط بیمه‌نامه‌ها ======================= -->
@@ -1403,23 +1430,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-ol text-indigo-500 ml-2"></i>اقساط بیمه‌نامه‌ها</h1>
-                    <p class="text-xs text-slate-400 mt-1">بدهی ما به پاسارگاد؛ وضعیت پرداخت هر قسط از سوی شرکت‌ها</p>
+                    <p class="text-xs text-slate-400 mt-1">اقساط پرسنلی (کسر از حقوق) و شرکتی در یک فهرست؛ هر قسط با کد رهگیری ۱۰ رقمی</p>
                 </div>
                 <button onclick="loadFinInstallments()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
             </div>
             <div class="card p-4 flex flex-wrap gap-3 items-end">
+                <div><label class="text-[10px] text-slate-500 block mb-1">منبع</label><select id="inst-f-source" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="">پرسنلی + شرکتی</option><option value="P">پرسنلی</option><option value="C">شرکتی</option></select></div>
                 <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="inst-f-period" class="border rounded-lg px-3 py-2 text-xs"></select></div>
                 <div><label class="text-[10px] text-slate-500 block mb-1">شرکت</label><select id="inst-f-company" class="border rounded-lg px-3 py-2 text-xs"></select></div>
                 <div><label class="text-[10px] text-slate-500 block mb-1">وضعیت</label>
                     <select id="inst-f-status" class="border rounded-lg px-3 py-2 text-xs">
-                        <option value="">همه</option><option value="UNPAID">پرداخت‌نشده</option>
+                        <option value="">همه</option><option value="OPEN">باز (مانده‌دار)</option><option value="OVERDUE">معوق</option>
+                        <option value="UPCOMING">سررسید ۳۰ روز آینده</option><option value="UNPAID">پرداخت‌نشده</option>
                         <option value="PARTIAL">ناقص</option><option value="PAID">تسویه‌شده</option>
                     </select>
                 </div>
-                <div class="flex-1 min-w-[180px]"><label class="text-[10px] text-slate-500 block mb-1">جستجو (نام/پلاک/بیمه‌نامه)</label>
+                <div class="flex-1 min-w-[180px]"><label class="text-[10px] text-slate-500 block mb-1">جستجو (نام/پلاک/بیمه‌نامه/کد رهگیری)</label>
                     <input type="text" id="inst-f-q" class="border rounded-lg px-3 py-2 text-xs w-full" oninput="debouncedInstallments()"></div>
                 <button onclick="loadFinInstallments()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">اعمال فیلتر</button>
                 <a id="inst-export" href="#" onclick="exportInstallments(event)" class="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-file-excel ml-1"></i>خروجی اکسل</a>
+                <a href="#" onclick="exportInstallments(event, 'export_master')" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold" title="هر بیمه‌نامه یک ردیف با همه‌ی اقساطش"><i class="fas fa-table ml-1"></i>بانک جامع اقساط</a>
             </div>
             <div class="card p-0 overflow-x-auto"><div id="fin-installments-body"></div></div>
         </div>
@@ -1455,6 +1486,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="card p-4 flex flex-wrap gap-3 items-end">
                 <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="inv-f-period" onchange="loadInvoices()" class="border rounded-lg px-3 py-2 text-xs"></select></div>
                 <div><label class="text-[10px] text-slate-500 block mb-1">شرکت</label><select id="inv-f-company" onchange="loadInvoices()" class="border rounded-lg px-3 py-2 text-xs"></select></div>
+                <div><label class="text-[10px] text-slate-500 block mb-1">وضعیت</label><select id="inv-f-status" onchange="loadInvoices()" class="border rounded-lg px-3 py-2 text-xs">
+                    <option value="ISSUED">فعال</option><option value="INACTIVE">غیرفعال</option><option value="">همه</option></select></div>
+                <div class="flex-1 min-w-[160px]"><label class="text-[10px] text-slate-500 block mb-1">جستجو (شماره/شرکت)</label><input id="inv-f-q" oninput="clearTimeout(window._invQ); window._invQ = setTimeout(loadInvoices, 400)" class="border rounded-lg px-3 py-2 text-xs w-full"></div>
             </div>
             <div class="card p-0 overflow-x-auto"><div id="fin-invoices-body"></div></div>
         </div>
@@ -1616,9 +1650,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div class="card p-0 overflow-hidden md:col-span-2 border-indigo-100">
+                    <div class="bg-gradient-to-l from-indigo-600 via-violet-600 to-fuchsia-600 p-6 text-white relative overflow-hidden">
+                        <div class="absolute -left-10 -top-10 w-40 h-40 rounded-full bg-white/10"></div>
+                        <div class="absolute left-24 -bottom-16 w-32 h-32 rounded-full bg-white/10"></div>
+                        <h3 class="font-black text-lg relative"><i class="fas fa-database ml-2"></i>پشتیبان‌گیری، خروجی (Export) و ورود اطلاعات (Import)</h3>
+                        <p class="text-xs text-white/80 leading-6 mt-2 relative max-w-3xl">بکاپ کامل شامل <b>همه‌ی جدول‌های دیتابیس</b> و <b>همه‌ی فایل‌ها</b> (بایگانی مدارک و بیمه‌نامه‌ها، صورتحساب‌های Word/PDF، فیش‌ها، اکسل‌ها، گزارش‌های بازدید، قالب‌ها و قلم‌ها) است و در پوشه‌ی <b dir="ltr">backup/تاریخ-امروز</b> ذخیره می‌شود. با «بازیابی» همه‌چیز ریزبه‌ریز به همان لحظه برمی‌گردد. هر بار «حذف اطلاعات» زده شود، اول خودکار یک بکاپ کامل گرفته می‌شود. فایل <span dir="ltr">database.sql</span> داخل ZIP را در phpMyAdmin هم می‌شود ایمپورت کرد.</p>
+                        <div class="flex flex-wrap gap-2 mt-4 relative">
+                            <button onclick="BackupUI.create('full')" class="bg-white text-indigo-700 hover:bg-indigo-50 font-black px-4 py-2.5 rounded-xl text-xs shadow-lg"><i class="fas fa-file-zipper ml-1"></i> بکاپ کامل (دیتابیس + فایل‌ها)</button>
+                            <button onclick="BackupUI.create('db')" class="bg-white/15 hover:bg-white/25 border border-white/30 font-bold px-4 py-2.5 rounded-xl text-xs"><i class="fas fa-database ml-1"></i> بکاپ فقط دیتابیس</button>
+                            <label class="bg-amber-400 hover:bg-amber-300 text-amber-950 font-black px-4 py-2.5 rounded-xl text-xs cursor-pointer shadow-lg"><i class="fas fa-file-import ml-1"></i> ورود اطلاعات از فایل ZIP (Import)
+                                <input type="file" accept=".zip" class="hidden" onchange="BackupUI.uploadRestore(this)"></label>
+                            <button onclick="BackupUI.load()" class="bg-white/15 hover:bg-white/25 border border-white/30 font-bold px-3 py-2.5 rounded-xl text-xs" title="بازخوانی"><i class="fas fa-rotate ml-1"></i>بازخوانی</button>
+                        </div>
+                    </div>
+                    <div id="bk-info" class="flex flex-wrap gap-4 px-6 py-3 bg-indigo-50/60 text-[11px] text-slate-600 border-b border-indigo-100"></div>
+                    <div id="bk-list" class="overflow-x-auto max-h-[420px] overflow-y-auto"></div>
+                </div>
+
                 <div class="card p-6 border-red-100 bg-gradient-to-br from-white to-red-50/30">
                     <h3 class="font-bold text-red-600 mb-2 border-b border-red-100 pb-3"><i class="fas fa-exclamation-triangle ml-2"></i>پاکسازی و بازنشانی داده‌ها</h3>
-                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای پاکسازی تمام پرونده‌ها، پیام‌ها و معرفی‌نامه‌های آزمایشی جهت راه‌اندازی واقعی از دکمه زیر استفاده کنید. (حساب مدیران پاک نخواهد شد).</p>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">همه‌ی اطلاعات دیتابیس (پرونده‌ها، شرکت‌ها، مالی، اقساط، صورتحساب‌ها، گزارش‌ها، چت‌ها و لاگ‌ها) و همه‌ی فایل‌های بایگانی پاک می‌شوند؛ <b>پیش از حذف، خودکار یک بکاپ کامل در پوشه‌ی backup ساخته می‌شود</b> و اگر بکاپ ساخته نشود چیزی پاک نمی‌شود. (حساب مدیران و تنظیمات پاک نخواهد شد).</p>
                     <button onclick="document.getElementById('reset-modal').classList.add('active')" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/20 hover-target transition-all text-xs">
                         <i class="fas fa-trash-restore ml-2"></i> بازنشانی و حذف کلیه پرونده‌ها
                     </button>
@@ -1648,7 +1700,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <input type="number" id="fs-cutoff" placeholder=" " dir="ltr" min="1" max="31">
                             <label>روز شروع دوره مالی (پیش‌فرض ۲۵)</label>
                         </div>
-                        <p class="text-[10px] text-slate-400 -mt-1">بیمه‌نامه‌ای که از این روز به بعد صادر شود، در دوره‌ی ماه بعد قرار می‌گیرد.</p>
+                        <p class="text-[10px] text-slate-400 -mt-1">هم‌شکل با برنامه‌ی ماموت: از روزِ بعد از این روز در ماه قبل تا همین روز در این ماه، دوره‌ی همین ماه است (مثلاً ۲۶ مهر تا ۲۵ آبان = دوره‌ی آبان).</p>
                         <div class="float-input">
                             <input type="number" id="fs-inst-count" placeholder=" " dir="ltr" min="1" max="36">
                             <label>تعداد اقساط پیش‌فرض</label>
@@ -1658,13 +1710,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <div class="grid grid-cols-2 gap-2">
                                 <label class="border rounded-xl p-3 cursor-pointer hover:bg-emerald-50 flex gap-2 items-start">
                                     <input type="radio" name="fs-method" value="easy" class="mt-1">
-                                    <span><b class="text-xs">راحت</b><br><span class="text-[10px] text-slate-500">تقسیم دقیق؛ باقیمانده به قسط اول</span></span>
+                                    <span><b class="text-xs">عادی</b><br><span class="text-[10px] text-slate-500">تقسیم مساوی؛ باقیمانده ریال‌به‌ریال روی اقساط اول</span></span>
                                 </label>
                                 <label class="border rounded-xl p-3 cursor-pointer hover:bg-emerald-50 flex gap-2 items-start">
                                     <input type="radio" name="fs-method" value="mamut" class="mt-1">
-                                    <span><b class="text-xs">ماموت</b><br><span class="text-[10px] text-slate-500">اقساط رُند به هزار؛ اختلاف روی قسط اول</span></span>
+                                    <span><b class="text-xs">ماموت</b><br><span class="text-[10px] text-slate-500">قسط اول = رُند + خرده‌ها؛ بقیه رُند به هزار؛ اختلاف نهایی روی قسط آخر</span></span>
                                 </label>
                             </div>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-slate-600 block mb-2">سررسید اقساط</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="border rounded-xl p-3 cursor-pointer hover:bg-emerald-50 flex gap-2 items-start">
+                                    <input type="radio" name="fs-due" value="issue" class="mt-1">
+                                    <span><b class="text-xs">از تاریخ صدور (ماموت)</b><br><span class="text-[10px] text-slate-500">قسط n = همان روزِ صدور، n ماه بعد</span></span>
+                                </label>
+                                <label class="border rounded-xl p-3 cursor-pointer hover:bg-emerald-50 flex gap-2 items-start">
+                                    <input type="radio" name="fs-due" value="period15" class="mt-1">
+                                    <span><b class="text-xs">پانزدهم ماه</b><br><span class="text-[10px] text-slate-500">قسط n = ۱۵امِ n امین ماه بعد از دوره</span></span>
+                                </label>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-2">اقساط هر بیمه‌نامه‌ی صادرشده خودکار ساخته می‌شود؛ اگر حق بیمه بعداً اصلاح شود و هنوز پرداختی ثبت نشده باشد، اقساط هوشمند دوباره ساخته می‌شوند. اقساط شرکتی طبق تعداد اقساط و فاصله‌ی اولین سررسیدِ هر شرکت ساخته می‌شوند.</p>
                         </div>
                     </div>
                 </div>
@@ -1694,6 +1760,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <div class="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-all peer-checked:-translate-x-5"></div>
                             </label>
                         </div>
+                    </div>
+                </div>
+
+                <div class="card p-6 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-4 border-b pb-3"><i class="fas fa-table-columns text-violet-500 ml-2"></i>صدور صورتحساب (پیش‌فرض‌ها)</h3>
+                    <div class="grid md:grid-cols-2 gap-3 mb-4">
+                        <label class="border rounded-xl p-3 flex items-center justify-between gap-3 cursor-pointer"><span><b class="text-xs">چند صورتحساب برای یک بیمه‌نامه</b><br><span class="text-[10px] text-slate-400">اجازه‌ی صدور برای بیمه‌نامه‌هایی که قبلاً صورتحساب خورده‌اند (با تایید)</span></span><input type="checkbox" id="fs-allow-multi" class="w-4 h-4"></label>
+                        <label class="border rounded-xl p-3 flex items-center justify-between gap-3 cursor-pointer"><span><b class="text-xs">شماره‌ی کامل بیمه‌نامه</b><br><span class="text-[10px] text-slate-400">خاموش = فقط دو بخش آخر (مثلاً ۱۴۰۵/۸۷۶)</span></span><input type="checkbox" id="fs-inv-full" class="w-4 h-4"></label>
+                        <label class="border rounded-xl p-3 flex items-center justify-between gap-3 cursor-pointer"><span><b class="text-xs">ردیف جمع حق بیمه‌ی هر شرکت</b><br><span class="text-[10px] text-slate-400">در صورتحساب تفکیکی و تلفیقی</span></span><input type="checkbox" id="fs-inv-subtotal" class="w-4 h-4"></label>
+                        <label class="border rounded-xl p-3 flex items-center justify-between gap-3 cursor-pointer"><span><b class="text-xs">ادغام ستون نام شرکت</b><br><span class="text-[10px] text-slate-400">نام شرکت‌های تکراریِ پشت‌سرهم در یک خانه</span></span><input type="checkbox" id="fs-inv-merge" class="w-4 h-4"></label>
+                    </div>
+                    <p class="text-[11px] font-bold text-slate-600 mb-2">ستون‌های پیش‌فرض جدول هر نوع صورتحساب</p>
+                    <div class="space-y-3">
+                        <div><p class="text-[10px] text-slate-500 mb-1">تجمیعی (یک سطر برای هر شرکت)</p><div id="fs-cols-SUMMARY"></div></div>
+                        <div><p class="text-[10px] text-slate-500 mb-1">تلفیقی (ریز پرسنل)</p><div id="fs-cols-PERSONNEL"></div></div>
+                        <div><p class="text-[10px] text-slate-500 mb-1">تفکیکی (یک شرکت)</p><div id="fs-cols-DETAILED"></div></div>
                     </div>
                 </div>
 
@@ -2962,6 +3044,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 • کاربران داخلی غیرمدیر، لاگ ورود و خروج، کدهای ورود و درخواست‌های بازیابی رمز<br>
                 • کل بایگانی و پوشه‌های موقت روی هاست<br>
                 <b class="text-slate-600">حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی، قالب‌های صورتحساب و تنظیمات گزارش بازدید (انواع، قالب‌ها، فیلدها، بازدیدکننده‌ها و بیمه‌گذاران) می‌مانند.</b></p>
+            <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3 text-[11px] leading-6 text-right mb-4"><i class="fas fa-shield-halved ml-1"></i>پیش از حذف، <b>خودکار بکاپ کامل</b> (دیتابیس + همه‌ی فایل‌ها و اکسل‌ها) در پوشه‌ی <b dir="ltr">backup/تاریخ امروز</b> ساخته می‌شود و از «تنظیمات سیستم ← پشتیبان‌گیری» قابل بازگرداندن است.</div>
             <input type="password" id="reset-password-input" placeholder="رمز تایید را وارد کنید" class="w-full border rounded-xl px-3 py-2.5 text-sm text-center mb-4" dir="ltr">
             <div class="flex gap-3">
                 <button type="button" onclick="executeResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، همه‌چیز پاک شود</button>
@@ -3052,10 +3135,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
     <script src="money-input.js?v=1"></script>
+    <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=2"></script>
     <script src="visit-reports-list.js?v=2"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=2"></script><script src="visit-reports-editor.js?v=1"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=2"></script><script src="visit-reports-editor.js?v=1"></script><script src="backup-settings.js?v=1"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6237,7 +6321,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') loadTickets();
-            if (tabId === 'settings') { loadQuotaSetting(); }
+            if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); }
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId === 'approved-reviews') loadApprovedReviews();
@@ -6298,128 +6382,74 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---------- داشبورد مالی ----------
-        async function loadFinDashboard() {
-            const pid = document.getElementById('fin-dash-period').value || '';
-            const cards = document.getElementById('fin-dash-cards');
-            cards.innerHTML = '<p class="col-span-4 text-center text-slate-400 text-sm p-4"><i class="fas fa-spinner fa-spin"></i></p>';
-            try {
-                const res = await fetch(`${FIN_API}?action=dashboard&period_id=${pid}`);
-                const d = await res.json();
-                if (!d.ok) { cards.innerHTML = `<p class="col-span-4 text-red-500 text-sm">${d.error}</p>`; return; }
-                const s = d.summary;
-                const card = (t, v, cls, icon) => `
-                    <div class="card p-4">
-                        <p class="text-[11px] text-slate-400 mb-1"><i class="fas ${icon} ml-1"></i>${t}</p>
-                        <p class="text-lg font-black ${cls}">${money(v)}</p>
-                        <p class="text-[9px] text-slate-400">ریال</p>
-                    </div>`;
-                cards.innerHTML =
-                    card('بدهی کل به پاسارگاد', s.total_debt, 'text-slate-700', 'fa-building-columns') +
-                    card('دریافتی از شرکت‌ها', s.total_collected, 'text-emerald-600', 'fa-hand-holding-dollar') +
-                    card('مانده‌ی وصول‌نشده', s.remaining, 'text-amber-600', 'fa-hourglass-half') +
-                    card('تسویه‌شده با پاسارگاد', s.settled_pasargad, 'text-blue-600', 'fa-check-double');
-
-                const ob = document.getElementById('fin-dash-overdue');
-                ob.innerHTML = !d.overdue.length
-                    ? '<p class="text-center text-slate-400 text-xs p-4">قسط سررسیدگذشته‌ای وجود ندارد.</p>'
-                    : `<table class="w-full text-[11px]"><thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th><th class="p-2">پلاک</th>
-                        <th class="p-2">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ</th><th class="p-2">مانده</th></tr></thead><tbody>` +
-                      d.overdue.map(r => `<tr class="border-b hover:bg-red-50">
-                        <td class="p-2">${r.company_name || '-'}</td><td class="p-2">${r.insured_name || '-'}</td>
-                        <td class="p-2 text-center" dir="ltr">${r.plate || '-'}</td>
-                        <td class="p-2 text-center">${e2p(r.inst_number)}</td>
-                        <td class="p-2 text-center text-red-600" dir="ltr">${e2p(r.due_jalali)}</td>
-                        <td class="p-2 text-center">${money(r.amount)}</td>
-                        <td class="p-2 text-center font-bold text-red-600">${money(r.amount - r.paid)}</td></tr>`).join('') + '</tbody></table>';
-
-                const cb = document.getElementById('fin-dash-companies');
-                cb.innerHTML = !d.companies.length
-                    ? '<p class="text-center text-slate-400 text-xs p-4">داده‌ای نیست.</p>'
-                    : `<table class="w-full text-[11px]"><thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-2 text-right">شرکت</th><th class="p-2">تعداد بیمه‌نامه</th><th class="p-2">جمع اقساط</th>
-                        <th class="p-2">پرداخت‌شده</th><th class="p-2">مانده</th><th class="p-2">پیشرفت</th></tr></thead><tbody>` +
-                      d.companies.map(r => {
-                        const rem = r.total_amount - r.paid_amount;
-                        const pct = r.total_amount > 0 ? Math.round((r.paid_amount / r.total_amount) * 100) : 0;
-                        return `<tr class="border-b hover:bg-slate-50">
-                            <td class="p-2 font-bold">${r.name}</td>
-                            <td class="p-2 text-center">${e2p(r.policy_count)}</td>
-                            <td class="p-2 text-center">${money(r.total_amount)}</td>
-                            <td class="p-2 text-center text-emerald-600">${money(r.paid_amount)}</td>
-                            <td class="p-2 text-center ${rem > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}">${money(rem)}</td>
-                            <td class="p-2"><div class="bg-slate-200 rounded-full h-2 w-20 mx-auto"><div class="bg-emerald-500 h-2 rounded-full" style="width:${pct}%"></div></div>
-                                <span class="text-[9px] text-slate-400">${e2p(pct)}٪</span></td></tr>`;
-                      }).join('') + '</tbody></table>';
-            } catch(e) { cards.innerHTML = '<p class="col-span-4 text-red-500 text-sm">خطا در اتصال.</p>'; }
-        }
+        // داشبورد تحلیلی (کارت‌ها، نمودارها، هشدارها و فیلترها) در finance-ui.js است
+        function loadFinDashboard() { if (window.FinUI) FinUI.dashboard(); }
 
         // ---------- اقساط ----------
         let instTimer = null;
         function debouncedInstallments() { clearTimeout(instTimer); instTimer = setTimeout(loadFinInstallments, 400); }
 
-        async function loadFinInstallments() {
-            const body = document.getElementById('fin-installments-body');
-            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
-            const q = new URLSearchParams({
-                action: 'installments',
+        function instParams(action) {
+            return new URLSearchParams({
+                action,
+                source: document.getElementById('inst-f-source').value || '',
                 period_id: document.getElementById('inst-f-period').value || '',
                 company_id: document.getElementById('inst-f-company').value || '',
                 status: document.getElementById('inst-f-status').value || '',
-                q: document.getElementById('inst-f-q').value || '',
+                q: p2e(document.getElementById('inst-f-q').value || ''),
             });
+        }
+
+        async function loadFinInstallments() {
+            const body = document.getElementById('fin-installments-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
             try {
-                const res = await fetch(`${FIN_API}?${q}`);
+                const res = await fetch(`${FIN_API}?${instParams('installments')}`);
                 const d = await res.json();
                 if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
                 if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">قسطی با این فیلترها یافت نشد.</p>'; return; }
-
-                const totals = d.data.reduce((a, r) => { a.amount += r.amount; a.paid += r.paid; return a; }, {amount:0, paid:0});
+                const s = d.sum;
                 body.innerHTML = `
-                    <div class="p-3 bg-slate-50 text-[11px] flex gap-6 flex-wrap border-b">
-                        <span>تعداد: <b>${e2p(d.data.length)}</b></span>
-                        <span>جمع اقساط: <b>${money(totals.amount)}</b> ریال</span>
-                        <span class="text-emerald-600">پرداخت‌شده: <b>${money(totals.paid)}</b></span>
-                        <span class="text-amber-600">مانده: <b>${money(totals.amount - totals.paid)}</b></span>
+                    <div class="p-3 bg-gradient-to-l from-indigo-50 to-white text-[11px] flex gap-6 flex-wrap border-b">
+                        <span>تعداد: <b>${e2p(d.total)}</b>${d.total > d.data.length ? ` <span class="text-slate-400">(نمایش ${e2p(d.data.length)} ردیف اول)</span>` : ''}</span>
+                        <span>جمع اقساط: <b>${money(s.amount)}</b> ریال</span>
+                        <span class="text-emerald-600">دریافت‌شده: <b>${money(s.paid)}</b></span>
+                        <span class="text-amber-600">مانده: <b>${money(s.remaining)}</b></span>
+                        <span class="text-rose-600">معوق: <b>${money(s.overdue)}</b></span>
                     </div>
                     <table class="w-full text-[11px]">
                         <thead class="bg-slate-100 text-slate-600"><tr>
-                            <th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th>
+                            <th class="p-2">منبع</th><th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th>
                             <th class="p-2">پلاک</th><th class="p-2">نوع</th><th class="p-2">شماره بیمه‌نامه</th>
                             <th class="p-2">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ</th>
-                            <th class="p-2">پرداخت‌شده</th><th class="p-2">مانده</th><th class="p-2">وضعیت</th><th class="p-2">پاسارگاد</th><th class="p-2">صورتحساب</th>
+                            <th class="p-2">دریافت‌شده</th><th class="p-2">مانده</th><th class="p-2">وضعیت</th><th class="p-2">پاسارگاد</th><th class="p-2">صورتحساب</th><th class="p-2">کد رهگیری</th>
                         </tr></thead><tbody>` +
                     d.data.map(r => {
-                        const st = INST_ST[r.pay_status];
-                        return `<tr class="border-b hover:bg-indigo-50">
+                        const st = r.overdue ? ['معوق', 'bg-rose-100 text-rose-700'] : INST_ST[r.pay_status];
+                        return `<tr class="border-b hover:bg-indigo-50 ${r.overdue ? 'bg-rose-50/40' : ''}">
+                            <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${r.source === 'C' ? 'bg-cyan-100 text-cyan-700' : 'bg-indigo-100 text-indigo-700'}">${r.source === 'C' ? 'شرکتی' : 'پرسنلی'}</span></td>
                             <td class="p-2">${r.company_name || '-'}</td>
-                            <td class="p-2">${r.insured_name || r.holder_name || '-'}</td>
-                            <td class="p-2 text-center" dir="ltr">${r.plate || '-'}</td>
+                            <td class="p-2">${r.insured || '-'}</td>
+                            <td class="p-2 text-center whitespace-nowrap">${e2p(r.plate || '-')}</td>
                             <td class="p-2 text-center">${insurance_type_fa_js(r.insurance_type)}</td>
-                            <td class="p-2 text-center" dir="ltr">${r.policy_number || '-'}</td>
+                            <td class="p-2 text-center" dir="ltr">${e2p(r.policy_number || '-')}</td>
                             <td class="p-2 text-center font-bold">${e2p(r.inst_number)}</td>
-                            <td class="p-2 text-center" dir="ltr">${e2p(r.due_jalali)}</td>
+                            <td class="p-2 text-center ${r.overdue ? 'text-rose-600 font-bold' : ''}" dir="ltr">${e2p(r.due_jalali)}</td>
                             <td class="p-2 text-center">${money(r.amount)}</td>
                             <td class="p-2 text-center text-emerald-600">${money(r.paid)}</td>
                             <td class="p-2 text-center ${r.remaining > 0 ? 'text-amber-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
                             <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[1]}">${st[0]}</span></td>
-                            <td class="p-2 text-center">${r.settled_to_pasargad == 1 ? '<span class="text-blue-600">✓ تسویه</span>' : '<span class="text-slate-300">—</span>'}</td>
-                            <td class="p-2 text-center">${r.is_invoiced == 1 ? '<span class="text-emerald-600">دارای صورتحساب</span>' : '<span class="text-slate-300">بدون صورتحساب</span>'}</td>
+                            <td class="p-2 text-center">${r.settled == 1 ? '<span class="text-blue-600">✓ تسویه</span>' : '<span class="text-slate-300">—</span>'}</td>
+                            <td class="p-2 text-center">${r.source === 'C' ? '<span class="text-slate-300">—</span>' : (r.is_invoiced == 1 ? '<span class="text-emerald-600">دارای صورتحساب</span>' : '<span class="text-slate-300">بدون صورتحساب</span>')}</td>
+                            <td class="p-2 text-center font-mono text-slate-400" dir="ltr">${e2p(r.tracking_code || '-')}</td>
                         </tr>`;
                     }).join('') + '</tbody></table>';
             } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
         }
 
-        function exportInstallments(ev) {
+        function exportInstallments(ev, action = 'export_installments') {
             ev.preventDefault();
-            const q = new URLSearchParams({
-                action: 'export_installments',
-                period_id: document.getElementById('inst-f-period').value || '',
-                company_id: document.getElementById('inst-f-company').value || '',
-                status: document.getElementById('inst-f-status').value || '',
-                q: document.getElementById('inst-f-q').value || '',
-            });
-            window.open(`${FIN_API}?${q}`, '_blank');
+            window.open(`${FIN_API}?${instParams(action)}`, '_blank');
         }
 
         // ---------- تنظیمات مالی ----------
@@ -6435,6 +6465,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('fs-rule-seq').checked = s.rule_sequential_payment === '1';
                 document.getElementById('fs-rule-collect').checked = s.rule_collect_before_pay === '1';
                 document.getElementById('fs-inv-prefix').value = s.invoice_prefix;
+                document.querySelectorAll('input[name="fs-due"]').forEach(r => r.checked = (r.value === (s.due_mode || 'issue')));
+                document.getElementById('fs-allow-multi').checked = s.allow_multiple_invoices === '1';
+                document.getElementById('fs-inv-full').checked = (s.inv_full_policy ?? '1') === '1';
+                document.getElementById('fs-inv-subtotal').checked = s.inv_company_subtotal === '1';
+                document.getElementById('fs-inv-merge').checked = s.inv_merge_company === '1';
+                window._fsCols = {};
+                const b = await ensureFinBoot();
+                if (b && window.FinUI) ['SUMMARY', 'PERSONNEL', 'DETAILED'].forEach(k => {
+                    let cur = null; try { cur = JSON.parse(s['inv_cols_' + k] || 'null'); } catch (e) {}
+                    window._fsCols[k] = FinUI.columnPicker(document.getElementById('fs-cols-' + k), k, b.column_pool, (Array.isArray(cur) && cur.length) ? cur : b.default_columns[k]);
+                });
                 (d.templates || []).forEach(t => {
                     const map = { SUMMARY: 'tpl-summary-current', PERSONNEL: 'tpl-personnel-current', DETAILED: 'tpl-detailed-current' };
                     const el = document.getElementById(map[t.kind]);
@@ -6455,6 +6496,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         rule_seq: document.getElementById('fs-rule-seq').checked,
                         rule_collect: document.getElementById('fs-rule-collect').checked,
                         inv_prefix: document.getElementById('fs-inv-prefix').value,
+                        due_mode: (document.querySelector('input[name="fs-due"]:checked') || {}).value || 'issue',
+                        allow_multi: document.getElementById('fs-allow-multi').checked,
+                        inv_full_policy: document.getElementById('fs-inv-full').checked,
+                        inv_subtotal: document.getElementById('fs-inv-subtotal').checked,
+                        inv_merge: document.getElementById('fs-inv-merge').checked,
+                        inv_cols: window._fsCols ? Object.fromEntries(Object.entries(window._fsCols).map(([k, p]) => [k, p.get()])) : undefined,
                     })
                 });
                 const d = await res.json();
@@ -6480,12 +6527,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 action: 'invoices',
                 period_id: document.getElementById('inv-f-period').value || '',
                 company_id: document.getElementById('inv-f-company').value || '',
+                status: document.getElementById('inv-f-status').value || '',
+                q: p2e(document.getElementById('inv-f-q').value || ''),
             });
             try {
                 const res = await fetch(`${FIN_API}?${q}`);
                 const d = await res.json();
                 if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
-                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">صورتحسابی صادر نشده است.</p>'; return; }
+                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">صورتحسابی با این فیلترها نیست.</p>'; return; }
                 body.innerHTML = `<table class="w-full text-[11px]">
                     <thead class="bg-slate-100 text-slate-600"><tr>
                         <th class="p-2">شماره صورتحساب</th><th class="p-2">نوع</th><th class="p-2 text-right">شرکت</th>
@@ -6494,8 +6543,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </tr></thead><tbody>` +
                     d.data.map(r => {
                         const rem = r.total_amount - r.paid_amount;
-                        return `<tr class="border-b hover:bg-blue-50">
-                            <td class="p-2 text-center font-bold" dir="ltr">${r.invoice_no}</td>
+                        const inactive = r.status === 'INACTIVE';
+                        return `<tr class="border-b hover:bg-blue-50 ${inactive ? 'opacity-60 bg-slate-50' : ''}">
+                            <td class="p-2 text-center font-bold" dir="ltr">${r.invoice_no}${inactive ? '<div class="text-[9px] text-rose-600 font-bold" dir="rtl">غیرفعال</div>' : ''}</td>
                             <td class="p-2 text-center">${INV_KIND[r.kind] || r.kind}</td>
                             <td class="p-2">${r.company_name || '—'}</td>
                             <td class="p-2 text-center">${faDigits(r.period_title) || '-'}</td>
@@ -6508,9 +6558,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <button onclick="openInvoiceDetail(${r.id})" class="text-blue-600 underline">مشاهده</button>
                                 ${r.docx_path ? `<a href="/${encodeFilePath(r.docx_path)}" target="_blank" class="text-indigo-600 underline mr-2">Word</a>` : ''}
                                 ${r.pdf_path ? `<a href="/${encodeFilePath(r.pdf_path)}" target="_blank" class="text-red-600 underline mr-2">PDF</a>` : ''}
+                                ${!inactive && finBoot && (finBoot.is_admin || '<?php echo ($_SESSION['role'] ?? '') === 'FINANCE' ? '1' : ''; ?>') ? `<button onclick="deactivateInvoice(${r.id}, '${r.invoice_no}')" class="text-rose-600 underline mr-2">غیرفعال‌سازی</button>` : ''}
                             </td></tr>`;
                     }).join('') + '</tbody></table>';
             } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
+        }
+
+        // غیرفعال‌سازی صورتحساب (برگشت‌ناپذیر): فایل‌ها به «صورت حساب های غیر فعال» می‌روند و بیمه‌نامه‌هایش آزاد می‌شوند
+        async function deactivateInvoice(id, no) {
+            const ok = await uiConfirm('غیرفعال‌سازی صورتحساب ' + no,
+                'این کار برگشت‌پذیر نیست: فایل‌های Word/PDF به پوشه‌ی «صورت حساب های غیر فعال» منتقل می‌شوند و بیمه‌نامه‌های این صورتحساب دوباره «بدون صورتحساب» می‌شوند تا بتوانید برای همان دوره صورتحساب تازه صادر کنید.', { danger: true, ok: 'غیرفعال شود' });
+            if (!ok) return;
+            const password = await FinUI.askPassword('تایید غیرفعال‌سازی ' + no, 'رمز عبور حساب خودتان را وارد کنید.');
+            if (!password) return;
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'deactivate_invoice', id, password }) });
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error, 'error'); return; }
+                showAlert('صورتحساب غیرفعال شد', `${e2p(d.freed)} بیمه‌نامه آزاد شد` + (d.still_invoiced ? ` و ${e2p(d.still_invoiced)} بیمه‌نامه چون صورتحساب فعال دیگری دارند، دارای صورتحساب ماندند` : '') + '.', 'success');
+                loadInvoices();
+            } catch (e) { showToast('خطا در اتصال', 'error'); }
         }
 
         function openNewInvoice() {
@@ -6520,7 +6587,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('inv-new-period').innerHTML = document.getElementById('inv-f-period').innerHTML;
             document.getElementById('inv-new-company').innerHTML = document.getElementById('inv-f-company').innerHTML;
             document.getElementById('inv-new-preview').innerHTML = '';
+            const st = (finBoot && finBoot.settings) || {};
+            const multi = st.allow_multiple_invoices === '1';
+            const modeSel = document.getElementById('inv-new-mode');
+            modeSel.value = 'uninvoiced';
+            [...modeSel.options].forEach(o => { if (o.value !== 'uninvoiced') { o.disabled = !multi; o.title = multi ? '' : 'در تنظیمات مالی «چند صورتحساب برای یک بیمه‌نامه» را فعال کنید'; } });
+            document.getElementById('inv-opt-full').checked = (st.inv_full_policy ?? '1') === '1';
+            document.getElementById('inv-opt-subtotal').checked = st.inv_company_subtotal === '1';
+            document.getElementById('inv-opt-merge').checked = st.inv_merge_company === '1';
             onInvKindChange();
+        }
+        let invColsPicker = null;
+        function invDefaultCols(kind) {
+            const st = (finBoot && finBoot.settings) || {};
+            try { const c = JSON.parse(st['inv_cols_' + kind] || 'null'); if (Array.isArray(c) && c.length) return c; } catch (e) {}
+            return (finBoot && finBoot.default_columns && finBoot.default_columns[kind]) || [];
         }
         function onInvKindChange() {
             const kind = document.querySelector('input[name="inv-kind"]:checked').value;
@@ -6528,7 +6609,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // مخاطبِ نامه دستی وارد می‌شود
             document.getElementById('inv-company-wrap').style.display = kind === 'DETAILED' ? 'block' : 'none';
             document.getElementById('inv-manual-wrap').style.display = kind === 'DETAILED' ? 'none' : 'block';
+            document.getElementById('inv-opt-subtotal-wrap').style.display = kind === 'SUMMARY' ? 'none' : 'flex';
             document.getElementById('inv-new-preview').innerHTML = '';
+            if (window.FinUI && finBoot && finBoot.column_pool) {
+                invColsPicker = FinUI.columnPicker(document.getElementById('inv-cols-picker'), kind, finBoot.column_pool, invDefaultCols(kind),
+                    () => { if (document.getElementById('inv-new-preview').innerHTML) previewInvoice(); });
+            }
         }
 
         async function previewInvoice() {
@@ -6540,6 +6626,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 period_id: document.getElementById('inv-new-period').value,
                 company_id: kind === 'DETAILED' ? document.getElementById('inv-new-company').value : '',
                 manual_company: kind === 'DETAILED' ? '' : (document.getElementById('inv-manual-company').value || ''),
+                mode: document.getElementById('inv-new-mode').value,
             });
             try {
                 const res = await fetch(`${FIN_API}?${q}`);
@@ -6555,13 +6642,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                           : '<p class="text-[10px] text-amber-600 mt-1">برای این دوره هنوز مغایرت‌گیری انجام نشده است.</p>'}
                     </div>`;
 
-                const cols = kind === 'SUMMARY'
-                    ? [['نام شرکت','company_name'],['تعداد بیمه‌نامه','policy_count'],['جمع حق بیمه','total_premium'],['قسط ماهانه','monthly_amount']]
-                    : kind === 'PERSONNEL'
-                    ? [['نام پرسنل','person_name'],['نام شرکت','company_name'],['کد پرسنلی','personnel_code'],['کد ملی','national_code'],['نوع بیمه‌نامه','insurance_type'],['مبلغ حق بیمه','total_premium']]
-                    : [['نام پرسنل','person_name'],['کد ملی','national_code'],['پلاک','plate'],['نوع','insurance_type'],['شماره بیمه‌نامه','policy_number'],['حق بیمه','total_premium'],['قسط ماهانه','monthly_amount']];
+                // ستون‌ها همان‌هایی است که در جدول Word می‌آید (انتخاب و ترتیبِ کاربر)
+                const pool = (finBoot && finBoot.column_pool) || {};
+                const chosen = invColsPicker ? invColsPicker.get() : invDefaultCols(kind);
+                const fullPol = document.getElementById('inv-opt-full').checked;
+                const periodTitle = (document.getElementById('inv-new-period').selectedOptions[0] || {}).text || '';
+                const shortPol = v => { const p = String(v || '').split('/').filter(Boolean); return !fullPol && p.length >= 2 ? p.slice(-2).join('/') : (v || ''); };
+                const cols = [['ردیف', '_n'], ...chosen.map(k => [(pool[k] || [k])[0], k])];
+                const cellVal = (l, k, n) => k === '_n' ? e2p(n + 1) : k === 'period' ? periodTitle
+                    : k === 'policy_number' ? `<span dir="ltr">${shortPol(l.policy_number)}</span>`
+                    : ['total_premium','monthly_amount'].includes(k) ? money(l[k])
+                    : ['policy_count','third_count','body_count'].includes(k) ? e2p(l[k] || 0)
+                    : (l[k] ? e2p(l[k]) : '-');
+                const reWarn = d.already_invoiced ? `<div class="bg-sky-50 border border-sky-200 rounded-xl p-3 mb-3 text-[11px] text-sky-800"><i class="fas fa-circle-info ml-1"></i>${e2p(d.already_invoiced)} بیمه‌نامه از این فهرست قبلاً صورتحساب خورده‌اند؛ هنگام صدور تایید گرفته می‌شود.</div>` : '';
 
-                box.innerHTML = recWarn + `
+                box.innerHTML = recWarn + reWarn + `
                     <div class="flex gap-4 text-[11px] mb-2">
                         <span>تعداد ردیف: <b>${e2p(d.count)}</b></span>
                         <span>جمع کل: <b>${money(d.total)}</b> ریال</span>
@@ -6570,10 +6665,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="max-h-60 overflow-y-auto border rounded-xl">
                         <table class="w-full text-[10.5px]"><thead class="bg-slate-50 sticky top-0"><tr>` +
                             cols.map(x => `<th class="p-2">${x[0]}</th>`).join('') + `</tr></thead><tbody>` +
-                        d.lines.map(l => '<tr class="border-b">' + cols.map(x => {
-                            const isNum = ['total_premium','monthly_amount'].includes(x[1]);
-                            return `<td class="p-2 text-center">${isNum ? money(l[x[1]]) : (l[x[1]] || '-')}</td>`;
-                        }).join('') + '</tr>').join('') + `</tbody></table>
+                        d.lines.map((l, n) => `<tr class="border-b ${l.is_invoiced ? 'bg-sky-50' : ''}">` + cols.map(x => `<td class="p-2 text-center whitespace-nowrap">${cellVal(l, x[1], n)}</td>`).join('') + '</tr>').join('') + `</tbody></table>
                     </div>
                     <button onclick="doCreateInvoice()" ${d.reconcile_ok ? '' : 'disabled'}
                         class="w-full mt-3 ${d.reconcile_ok ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-300 cursor-not-allowed'} text-white font-bold py-2.5 rounded-xl text-xs">
@@ -6595,7 +6687,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch(e) { showToast('خطا در اتصال', 'error'); }
         }
 
-        async function doCreateInvoice() {
+        async function doCreateInvoice(confirmReinvoice = false) {
             const kind = document.querySelector('input[name="inv-kind"]:checked').value;
             showToast('در حال صدور صورتحساب...', 'info');
             try {
@@ -6603,8 +6695,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     body: JSON.stringify({ action:'create_invoice', kind,
                         period_id: document.getElementById('inv-new-period').value,
                         company_id: kind === 'DETAILED' ? document.getElementById('inv-new-company').value : null,
-                        manual_company: kind === 'DETAILED' ? null : (document.getElementById('inv-manual-company').value || null) }) });
+                        manual_company: kind === 'DETAILED' ? null : (document.getElementById('inv-manual-company').value || null),
+                        mode: document.getElementById('inv-new-mode').value,
+                        columns: invColsPicker ? invColsPicker.get() : invDefaultCols(kind),
+                        full_policy: document.getElementById('inv-opt-full').checked,
+                        company_subtotal: document.getElementById('inv-opt-subtotal').checked,
+                        merge_company: document.getElementById('inv-opt-merge').checked,
+                        confirm_reinvoice: confirmReinvoice }) });
                 const d = await res.json();
+                if (!d.ok && d.need_confirm) {
+                    if (await uiConfirm('صدور دوباره', `${e2p(d.already_invoiced)} بیمه‌نامه از این فهرست قبلاً صورتحساب دارند. برای این‌ها هم صورتحساب تازه صادر شود؟`)) doCreateInvoice(true);
+                    return;
+                }
                 if (!d.ok) { showToast(d.error, 'error'); return; }
                 showAlert(`صورتحساب ${d.invoice_no} صادر شد.`, (d.generated && d.generated.note) || '', 'success');
                 document.getElementById('inv-new-modal').classList.add('hidden');
@@ -9393,6 +9495,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function executeResetAll() {
             const password = document.getElementById('reset-password-input').value.trim();
             if (!password) { showToast('لطفاً رمز تایید را وارد کنید.', 'error'); return; }
+            const busyBtn = document.querySelector('#reset-modal button[onclick="executeResetAll()"]');
+            const busyHtml = busyBtn ? busyBtn.innerHTML : '';
+            if (busyBtn) { busyBtn.disabled = true; busyBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin ml-1"></i> در حال بکاپ‌گیری و حذف...'; }
             try {
                 const res = await fetch('api/record_actions.php', {
                     method: 'POST',
@@ -9406,12 +9511,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     // اعلان‌های ذخیره‌شده در همین مرورگر (زنگوله در حالتِ محلی) هم پاک شود
                     try { Object.keys(localStorage).filter(k => k.startsWith('notif:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
                     showAlert('پاکسازی کامل انجام شد', data.message, 'success', () => location.reload());
+                } else if (data.error && data.error.indexOf('بکاپ') !== -1) {
+                    showAlert('حذف انجام نشد', data.error, 'error');
                 } else {
                     showToast(data.error || 'خطا در بازنشانی سیستم', 'error');
                 }
             } catch (e) {
                 showToast('خطا در برقراری ارتباط با سرور', 'error');
             }
+            if (busyBtn) { busyBtn.disabled = false; busyBtn.innerHTML = busyHtml; }
         }
 
         function openModal(id) { document.getElementById(id).classList.add('active'); }

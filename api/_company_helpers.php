@@ -1177,7 +1177,7 @@ function company_extract_zip_to_dir($zipPath, $destDir) {
         $entryName = $zip->getNameIndex($i);
         if ($entryName === false) continue;
         // نام‌های حاوی «..» یا مسیر مطلق را رد کن (zip-slip)
-        if (str_contains($entryName, '..') || str_starts_with($entryName, '/') || preg_match('/^[a-zA-Z]:/', $entryName)) continue;
+        if (strpos($entryName, '..') !== false || substr($entryName, 0, 1) === '/' || preg_match('/^[a-zA-Z]:/', $entryName)) continue;
         $targetPath = $destReal . '/' . ltrim($entryName, '/');
         if (substr($entryName, -1) === '/') { @mkdir($targetPath, 0755, true); continue; }
         if (!is_dir(dirname($targetPath))) @mkdir(dirname($targetPath), 0755, true);
@@ -1250,17 +1250,21 @@ function company_generate_installments($pdo, $plateId) {
     [$fy, $fm, $fd] = jalali_from_gregorian_ts($firstTs);
 
     // «فرمول ماموت»: همان روش رُندکردنِ اقساط که برای پرسنل استفاده می‌شود
-    $parts = fin_split_installments($plate['total_premium'], $count, 'mamut');
+    $parts = fin_split_installments(money_to_int($plate['total_premium']), $count, 'mamut');
 
+    if (function_exists('fin_ensure_schema')) fin_ensure_schema($pdo);
+    $hasTrack = function_exists('fin_tracking_code') && $pdo->query("SHOW COLUMNS FROM company_installments LIKE 'tracking_code'")->fetch();
     $pdo->prepare("DELETE FROM company_installments WHERE plate_id = ?")->execute([$plateId]);
-    $ins = $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date) VALUES (?, ?, ?, ?, ?)");
+    $ins = $hasTrack
+        ? $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date, tracking_code) VALUES (?, ?, ?, ?, ?, ?)")
+        : $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date) VALUES (?, ?, ?, ?, ?)");
     $cy = $fy; $cm = $fm;
     foreach ($parts as $i => $amount) {
         if ($i > 0) [$cy, $cm] = company_add_months_jalali($cy, $cm, 1);
         $cd = min($fd, company_jalali_month_len($cy, $cm));
         $dueJ = sprintf('%04d/%02d/%02d', $cy, $cm, $cd);
         $dueG = date('Y-m-d', jalali_to_gregorian_ts($cy, $cm, $cd));
-        $ins->execute([$plateId, $i + 1, $amount, $dueJ, $dueG]);
+        $ins->execute($hasTrack ? [$plateId, $i + 1, $amount, $dueJ, $dueG, fin_tracking_code($pdo, 'company_installments')] : [$plateId, $i + 1, $amount, $dueJ, $dueG]);
     }
     return ['ok' => true, 'count' => count($parts)];
 }
