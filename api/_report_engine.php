@@ -600,6 +600,10 @@ function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array
             return false;
         };
         $late = array_filter($items, $hasVar);
+        // زمینه‌ی سفیدِ کادرهای متغیر (پیش‌فرضِ کادرِ متنِ Word) کشیده نمی‌شود تا قاب‌هایی که زیرشان در قالب
+        // کشیده شده (مثلاً خانه‌های پلاک) پیدا بمانند
+        foreach ($late as &$lt) if (strtoupper((string)($lt['fill'] ?? '')) === '#FFFFFF') $lt['fill'] = null;
+        unset($lt);
         $items = array_merge(array_diff_key($items, $late), $late);
         foreach ($items as $it) {
             $x = $it['x'] + ($it['dx'] ?? 0); $y = $it['y'] + ($it['dy'] ?? 0);
@@ -660,12 +664,15 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
 
     if (!empty($box['fill']) || !empty($box['line'])) {
         $style = (!empty($box['fill']) ? 'F' : '') . (!empty($box['line']) ? 'D' : '');
-        $lineStyle = !empty($box['line']) ? ['all' => ['width' => $box['lineW'] ?: 0.75, 'color' => rpt_hex_rgb($box['line'])]] : [];
+        // رنگ و ضخامتِ کادر همین‌جا تنظیم می‌شود؛ Ellipse و RoundedRect کلیدِ «all» را نمی‌فهمند و رنگِ خطِ
+        // شکلِ قبلی (مثلاً سفید) را به کار می‌بردند - قاب‌های گردِ پلاک سفید و نامرئی می‌شد
+        $ls = !empty($box['line']) ? ['width' => $box['lineW'] ?: 0.75, 'color' => rpt_hex_rgb($box['line']), 'dash' => 0] : [];
+        if ($ls) $pdf->SetLineStyle($ls);
         $fillRgb = !empty($box['fill']) ? rpt_hex_rgb($box['fill']) : [];
         $geom = $box['geom'] ?? 'rect';
-        if ($geom === 'ellipse') $pdf->Ellipse($x + $w / 2, $y + $h / 2, $w / 2, $h / 2, 0, 0, 360, $style, $lineStyle, $fillRgb);
-        elseif ($geom === 'roundRect') $pdf->RoundedRect($x, $y, $w, $h, min($w, $h) / 6, '1111', $style, $lineStyle, $fillRgb);
-        else $pdf->Rect($x, $y, $w, $h, $style, $lineStyle, $fillRgb);
+        if ($geom === 'ellipse') $pdf->Ellipse($x + $w / 2, $y + $h / 2, $w / 2, $h / 2, 0, 0, 360, $style, $ls, $fillRgb);
+        elseif ($geom === 'roundRect') $pdf->RoundedRect($x, $y, $w, $h, min($w, $h) / 6, '1111', $style, $ls, $fillRgb);
+        else $pdf->Rect($x, $y, $w, $h, $style, $ls ? ['all' => $ls] : [], $fillRgb);
     }
     if ($opts['debug']) $pdf->Rect($x, $y, $w, $h, 'D', ['all' => ['width' => 0.3, 'color' => [230, 0, 0]]]);
 

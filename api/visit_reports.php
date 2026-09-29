@@ -9,6 +9,8 @@
 //    بیمه‌گذاران، قلم‌ها، دسترسی‌ها، مسیرِ پایتون، رمزِ اکسل، و تاریخچه‌ی کارها
 // دسترسی: مدیر کل همه‌چیز؛ بقیه فقط صدور/دیدن/ویرایشِ گزارش‌های خودشان، آن هم فقط در نوع‌هایی که مجازند.
 session_start();
+// هشدارهای PHP نباید وسطِ خروجی (PDF / JSON) چاپ شوند؛ فقط در لاگِ سرور نوشته می‌شوند
+ini_set('display_errors', '0');
 // اگر خطای جدیِ PHP پیش آمد (مثلاً فایلی ناقص آپلود شده یا نسخه‌ی PHP قدیمی است)، به‌جای صفحه‌ی خالی/HTML
 // همان پیامِ خطا به‌صورت JSON برگردانده می‌شود تا در پنل دیده شود
 register_shutdown_function(function () {
@@ -33,7 +35,17 @@ if (isset($data['p']) && is_string($data['p'])) {
 }
 $action = $data['action'] ?? ($_GET['action'] ?? '');
 
-function vr_out($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
+function vr_out($a) { while (ob_get_level()) ob_end_clean(); header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
+// فایلِ دودوییِ ساخته‌شده (PDF/Word) بدونِ هیچ خروجیِ ناخواسته‌ای قبلش
+function vr_send_temp($path, $type, $disposition) {
+    while (ob_get_level()) ob_end_clean();
+    header('Content-Type: ' . $type);
+    header('Content-Disposition: ' . $disposition);
+    header('Content-Length: ' . filesize($path));
+    readfile($path);
+    @unlink($path);
+    exit;
+}
 function vr_fail($msg, $extra = []) { vr_out(['ok' => false, 'error' => $msg] + $extra); }
 
 $user = vr_current_user($pdo);
@@ -64,6 +76,8 @@ function vr_load_visible($pdo, $id, $user) {
 //  فرم: پاک‌سازی و اعتبارسنجی
 // ---------------------------------------------------------------------
 function vr_input_form($data) {
+    // فرم به‌صورت base64 هم می‌آید (form_b64) تا فایروالِ هاست روی متن‌هایش حساس نشود
+    if (isset($data['form_b64']) && is_string($data['form_b64'])) $data['form'] = (string)base64_decode($data['form_b64'], true);
     $f = $data['form'] ?? [];
     if (is_string($f)) $f = json_decode($f, true) ?: [];
     return is_array($f) ? $f : [];
@@ -352,6 +366,7 @@ function vr_link_titles($pdo, $r) {
 }
 
 function vr_send_file($abs, $downloadName, $inline = false) {
+    while (ob_get_level()) ob_end_clean();
     if (!$abs || !is_file($abs)) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'فایل پیدا نشد.'; exit; }
     $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
     $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'zip' => 'application/zip',
@@ -497,13 +512,10 @@ try {
                                                          'report_no' => $existing['report_no'] ?? 'پیش‌نمایش']);
         [$layout, $assetDir] = vr_layout($pdo, $cat);
         $tmp = sys_get_temp_dir() . '/vr_prev_' . bin2hex(random_bytes(6)) . '.pdf';
+        ob_start();
         rpt_render_pdf($layout, $assetDir, $values, $tmp, vr_render_opts($pdo, $cat));
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="preview.pdf"');
-        header('Content-Length: ' . filesize($tmp));
-        readfile($tmp);
-        @unlink($tmp);
-        exit;
+        if (!is_file($tmp) || !filesize($tmp)) vr_fail('ساختِ PDFِ پیش‌نمایش ممکن نشد.');
+        vr_send_temp($tmp, 'application/pdf', 'inline; filename="preview.pdf"');
     }
 
     // «ساخت گزارش بازدید» از روی یک درخواست: اطلاعاتِ همان خودرو برای هر نوع گزارش + نوعِ پیشنهادی (سواری/سنگین)
@@ -556,6 +568,7 @@ try {
         $values = vr_build_values($cat, $fields, $form, ['date' => $date[0], 'issuer_name' => $user['name'], 'report_no' => 'تستی']);
         $fmt = ($data['format'] ?? 'pdf') === 'docx' ? 'docx' : 'pdf';
         $tmp = sys_get_temp_dir() . '/vr_test_' . bin2hex(random_bytes(6)) . '.' . $fmt;
+        ob_start();
         if ($fmt === 'pdf') {
             [$layout, $assetDir] = vr_layout($pdo, $cat);
             rpt_render_pdf($layout, $assetDir, $values, $tmp, vr_render_opts($pdo, $cat));
@@ -565,12 +578,8 @@ try {
         if (!is_file($tmp)) vr_fail('ساختِ فایل ممکن نشد.');
         $plateDisplay = vr_plate_display($form['plate']['p1'], $form['plate']['letter'], $form['plate']['p2'], $form['plate']['iran']);
         $name = '(تستی) ' . build_health_report_filename($date[0], $plateDisplay, $fmt);
-        header('Content-Type: ' . ($fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
-        header("Content-Disposition: attachment; filename=\"test.$fmt\"; filename*=UTF-8''" . rawurlencode($name));
-        header('Content-Length: ' . filesize($tmp));
-        readfile($tmp);
-        @unlink($tmp);
-        exit;
+        vr_send_temp($tmp, $fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                     "attachment; filename=\"test.$fmt\"; filename*=UTF-8''" . rawurlencode($name));
     }
 
     if ($action === 'issue' || $action === 'edit') {
@@ -768,9 +777,8 @@ try {
         [$where, $params] = vr_list_where($pdo, $_GET, $user);
         $st = $pdo->prepare("SELECT * FROM visit_reports WHERE $where ORDER BY id");
         $st->execute($params);
-        $rows = []; $i = 0;
-        foreach ($st->fetchAll() as $r) $rows[] = vr_register_row($r, ++$i, $siteRoot);
-        $tmp = xlsx_build(vr_register_columns(), $rows, 'گزارشات بازدید', [0, 20]);
+        [$headers, $rows, $num] = vr_register_table($pdo, $st->fetchAll());
+        $tmp = xlsx_build($headers, $rows, 'گزارشات بازدید', $num);
         if (!$tmp) vr_fail('ساخت فایل اکسل ممکن نشد.');
         vr_audit($pdo, $user['id'], 'VR_DOWNLOAD', 0, 'excel · ' . count($rows) . ' ردیف');
         xlsx_send($tmp, 'گزارشات بازدید ' . jalali_from_gregorian_ts_dotted(time()) . '.xlsx');

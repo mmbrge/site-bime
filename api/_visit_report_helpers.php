@@ -436,25 +436,95 @@ function vr_render_files($pdo, $cat, array $values, $folderAbs, $dateDot, $plate
 // ---------------------------------------------------------------------
 //  دفترِ اکسلِ گزارشات (مثل گزارشات_صادره.xlsx برنامه‌ی ویندوزی، قفل‌شده)
 // ---------------------------------------------------------------------
-function vr_register_columns() {
-    return ['ردیف', 'شماره گزارش', 'تاریخ گزارش', 'پلاک', 'نام بیمه‌گذار', 'کد ملی', 'تلفن', 'آدرس', 'نوع وسیله', 'مدل/سال', 'رنگ',
-            'مورد استفاده', 'شماره موتور', 'شماره شاسی', 'ارزش وسیله', 'بازدید کننده', 'نوع گزارش', 'بیمه‌گر', 'کاربر صادر کننده',
-            'زمان ثبت', 'نسخه', 'اتصال', 'مسیر پوشه'];
-}
-function vr_register_row($r, $i, $siteRoot) {
-    $link = $r['health_inspection_id'] ? 'بازدید سلامت #' . $r['health_inspection_id'] : ($r['case_id'] ? 'درخواست کارکنان #' . $r['case_id'] : ($r['company_plate_id'] ? 'ردیف شرکتی #' . $r['company_plate_id'] : ''));
-    return [$i, $r['report_no'], str_replace('.', '/', $r['report_date']), $r['plate_display'], $r['insured_name'], $r['national_id'], $r['phone'], $r['address'],
-            $r['vehicle_type'], $r['model_year'], $r['color'], $r['usage_type'], $r['engine_no'], $r['chassis_no'],
-            $r['car_value'] ? number_format((float)$r['car_value']) : '', $r['visitor_name'], $r['category_name'], vr_insurer_fa($r['insurer']),
-            $r['issuer_name'], jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at'])),
-            $r['version'], $link, $r['folder_path']];
+// جدولِ کاملِ گزارش‌ها برای اکسل (دفترِ «گزارشات_صادره» و خروجیِ فهرست): همه‌ی اطلاعاتِ گزارش، محلِ صدور/اتصال،
+// صادرکننده و ویرایش‌کننده، و همه‌ی تاریخ‌ها به شمسی. خروجی: [سرستون‌ها، ردیف‌ها، ستون‌های عددی]
+function vr_register_table($pdo, array $reports) {
+    $jdt = function ($ts, $withTime = true) {
+        if (!$ts || !($t = strtotime($ts))) return '';
+        return str_replace('.', '/', jalali_from_gregorian_ts_dotted($t)) . ($withTime ? ' ' . date('H:i', $t) : '');
+    };
+    $users = [];
+    try { foreach ($pdo->query("SELECT id, COALESCE(NULLIF(full_name, ''), username) AS n FROM users")->fetchAll() as $u) $users[intval($u['id'])] = $u['n']; } catch (Throwable $e) {}
+    // اتصال‌ها: کدِ درخواستِ کارکنان و نامِ شرکت/شماره‌ی درخواستِ ردیف‌های شرکتی
+    $caseIds = array_filter(array_map(fn($r) => intval($r['case_id']), $reports));
+    $plateIds = array_filter(array_map(fn($r) => intval($r['company_plate_id']), $reports));
+    $cases = []; $plates = [];
+    if ($caseIds) foreach ($pdo->query("SELECT id, unique_code, insured_name FROM policy_cases WHERE id IN (" . implode(',', array_unique($caseIds)) . ")")->fetchAll() as $c) $cases[intval($c['id'])] = $c;
+    if ($plateIds) foreach ($pdo->query("SELECT crp.id, crp.request_id, c.name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                                         WHERE crp.id IN (" . implode(',', array_unique($plateIds)) . ")")->fetchAll() as $pl) $plates[intval($pl['id'])] = $pl;
+    // ستون‌های فیلدهای هر نوع گزارش (به ترتیب و با برچسبِ خودشان؛ فیلدهایی که ستونِ ثابت دارند تکرار نمی‌شوند)
+    $catFields = []; $fieldCols = [];
+    // فیلدهایی که «ستون اکسل»شان یکی از ستون‌های ثابت است، جدا تکرار نمی‌شوند
+    $fixed = ['نوع وسیله', 'مدل/سال', 'رنگ', 'مورد استفاده', 'شماره موتور', 'شماره شاسی', 'ارزش وسیله', 'بازدید کننده'];
+    $skip = fn($f) => in_array($f['field_type'], ['PartsStatus', 'DamageList'], true) || in_array((string)$f['excel_column'], $fixed, true);
+    foreach (array_unique(array_map(fn($r) => intval($r['category_id']), $reports)) as $cid) {
+        $catFields[$cid] = vr_fields($pdo, $cid);
+        foreach ($catFields[$cid] as $f) {
+            if ($skip($f)) continue;
+            if (!in_array($f['label'], $fieldCols, true)) $fieldCols[] = $f['label'];
+        }
+    }
+    $base = ['ردیف', 'شماره گزارش', 'تاریخ گزارش', 'پلاک', 'نام بیمه‌گذار', 'کد ملی', 'تلفن', 'آدرس', 'نوع وسیله', 'مدل/سال', 'رنگ',
+             'مورد استفاده', 'شماره موتور', 'شماره شاسی', 'ارزش وسیله (ریال)', 'بازدید کننده', 'نوع گزارش', 'بیمه‌گر', 'صادرکننده',
+             'تاریخ و ساعتِ صدور', 'آخرین ویرایش', 'ویرایش توسط', 'نسخه', 'محلِ صدور / اتصال', 'تاریخِ اتصال', 'تعداد عکس',
+             'قطعاتِ آسیب‌دیده', 'تجهیزاتِ اضافی', 'مواضعِ آسیب‌دیده', 'وضعیت'];
+    $headers = array_merge($base, $fieldCols, ['مسیر پوشه']);
+    $out = []; $i = 0;
+    foreach ($reports as $r) {
+        $form = json_decode($r['form_json'] ?: '{}', true) ?: [];
+        $fields = $catFields[intval($r['category_id'])] ?? [];
+        // قطعات: آسیب‌دیده‌ها (با توضیح)، و تجهیزاتِ با برچسبِ اختصاصی (مثلاً «رادیو پخش: دارد»)
+        $damaged = []; $extras = [];
+        foreach ($fields as $f) {
+            if ($f['field_type'] !== 'PartsStatus') continue;
+            $def = vr_parts_default($f);
+            foreach (vr_parts_list($f) as $p) {
+                $st = vr_part_state($form['parts'] ?? [], $p['id'], $def);
+                if (isset($p['ok']) || isset($p['bad'])) {
+                    if ($st !== 'n') $extras[] = $p['label'] . ': ' . ($st === 'k' ? ($p['bad'] ?? 'آسیب‌دیده') : ($p['ok'] ?? 'سالم'));
+                } elseif ($st === 'k') {
+                    $note = trim((string)($form['part_notes'][$p['id']] ?? ''));
+                    $damaged[] = $p['label'] . ($note !== '' ? " ($note)" : '');
+                } elseif ($def === 'n' && $st === 's') {
+                    $extras[] = $p['label'] . ': سالم';
+                }
+            }
+        }
+        $dmg = [];
+        foreach ((array)($form['damages'] ?? []) as $d) {
+            $t = trim(($d['location'] ?? '') . ((isset($d['description']) && trim($d['description']) !== '') ? ': ' . trim($d['description']) : ''));
+            if ($t !== '') $dmg[] = $t;
+        }
+        if ($r['health_inspection_id']) $link = 'بازدید سلامت #' . $r['health_inspection_id'] . ($r['case_id'] && isset($cases[intval($r['case_id'])]) ? ' · درخواست کارکنان ' . $cases[intval($r['case_id'])]['unique_code'] : '');
+        elseif ($r['case_id']) $link = 'درخواست کارکنان ' . ($cases[intval($r['case_id'])]['unique_code'] ?? ('#' . $r['case_id']));
+        elseif ($r['company_plate_id']) { $pl = $plates[intval($r['company_plate_id'])] ?? null; $link = 'ردیف شرکتی' . ($pl ? ' · ' . $pl['name'] . ' · درخواست #' . $pl['request_id'] : ' #' . $r['company_plate_id']); }
+        else $link = 'صفحه‌ی ساخت گزارش (بدون اتصال)';
+        $row = [++$i, $r['report_no'], str_replace('.', '/', $r['report_date']), $r['plate_display'], $r['insured_name'], $r['national_id'], $r['phone'], $r['address'],
+                $r['vehicle_type'], $r['model_year'], $r['color'], $r['usage_type'], $r['engine_no'], $r['chassis_no'],
+                $r['car_value'] ? number_format((float)$r['car_value']) : '', $r['visitor_name'], $r['category_name'], vr_insurer_fa($r['insurer']),
+                $r['issuer_name'] ?: ($users[intval($r['issuer_user_id'])] ?? ''), $jdt($r['created_at']),
+                $r['updated_at'] ? $jdt($r['updated_at']) : '', $r['updated_by'] ? ($users[intval($r['updated_by'])] ?? '') : '', intval($r['version']),
+                $link, $r['linked_at'] ? $jdt($r['linked_at']) : '', intval($r['photos_count']),
+                implode('، ', $damaged), implode('، ', $extras), implode(' | ', $dmg), $r['status'] === 'DELETED' ? 'حذف‌شده' . ($r['deleted_at'] ? ' (' . $jdt($r['deleted_at']) . ')' : '') : 'فعال'];
+        $vals = [];
+        foreach ($fields as $f) {
+            if ($skip($f)) continue;
+            $v = trim((string)($form['fields'][$f['field_key']] ?? ''));
+            if ($f['field_type'] === 'Checkbox') $v = in_array($v, ['1', 'true', 'on', 'بله'], true) ? 'بله' : '';
+            if ($f['field_type'] === 'Money' && $v !== '') $v = vr_money($v);
+            $vals[$f['label']] = $v;
+        }
+        foreach ($fieldCols as $lbl) $row[] = $vals[$lbl] ?? '';
+        $row[] = $r['folder_path'];
+        $out[] = $row;
+    }
+    $num = [0, array_search('نسخه', $headers, true), array_search('تعداد عکس', $headers, true)];
+    return [$headers, $out, $num];
 }
 function vr_write_register($pdo, $siteRoot) {
     if (!function_exists('xlsx_build')) require_once __DIR__ . '/_xlsx_writer.php';
-    $rows = $pdo->query("SELECT * FROM visit_reports WHERE status = 'ACTIVE' ORDER BY id")->fetchAll();
-    $out = []; $i = 0;
-    foreach ($rows as $r) $out[] = vr_register_row($r, ++$i, $siteRoot);
-    $tmp = xlsx_build(vr_register_columns(), $out, 'گزارشات صادره', [0, 20], vr_setting($pdo, 'report_excel_password', '12345'));
+    [$headers, $out, $num] = vr_register_table($pdo, $pdo->query("SELECT * FROM visit_reports WHERE status = 'ACTIVE' ORDER BY id")->fetchAll());
+    $tmp = xlsx_build($headers, $out, 'گزارشات صادره', $num, vr_setting($pdo, 'report_excel_password', '12345'));
     if (!$tmp) return false;
     $root = vr_archive_root($siteRoot);
     if (!is_dir($root)) @mkdir($root, 0775, true);

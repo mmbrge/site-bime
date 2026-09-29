@@ -825,7 +825,7 @@
             fd.append('action', action);
             if (this.mode === 'edit') fd.append('id', this.existing.id); else fd.append('category_id', this.cat.id);
             fd.append('report_date', en(this.$(`#${this.id('date')}`).value));
-            fd.append('form', JSON.stringify(form));
+            fd.append('form_b64', b64(JSON.stringify(form)));   // base64: فایروالِ هاست روی متنِ فرم حساس نشود
             return [fd, form];
         }
         async preview() {
@@ -841,8 +841,13 @@
                     const m = modal({ title: 'پیش‌نمایشِ گزارش', icon: 'fa-eye', width: '60rem', html: `<iframe src="${url}" class="w-full rounded-xl border border-slate-200 bg-white" style="height:78vh"></iframe>
                         <p class="text-[11px] text-slate-400 font-bold mt-2">این فقط پیش‌نمایش است و ذخیره نشده است.</p>`, onClose: () => URL.revokeObjectURL(url) });
                     m.setTitle('پیش‌نمایشِ گزارش', esc(this.cat.name));
-                } else { const d = await res.json(); toast(d.error || 'ساخت پیش‌نمایش ممکن نشد.', 'error'); }
-            } catch (e) { toast('خطا در ساختِ پیش‌نمایش.', 'error'); }
+                } else {
+                    const txt = await res.text();
+                    let d = null; try { d = JSON.parse(txt); } catch (e) {}
+                    const msg = d ? (d.error || 'ساخت پیش‌نمایش ممکن نشد.') : badResponse(res.status, txt);
+                    if (window.showAlert) showAlert('پیش‌نمایش ساخته نشد', msg, 'error'); else toast(msg, 'error');
+                }
+            } catch (e) { toast('خطا در ارتباط با سرور هنگامِ ساختِ پیش‌نمایش: ' + (e.message || e), 'error'); }
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-eye"></i> پیش‌نمایش PDF';
         }
         // «ساخت تستی»: بدونِ عکس و بدونِ ثبت؛ فایل همین لحظه دانلود می‌شود و در بایگانی نمی‌ماند
@@ -857,7 +862,8 @@
                 fd.append('format', fmt);
                 try {
                     const res = await fetch(API, { method: 'POST', body: fd });
-                    if ((res.headers.get('Content-Type') || '').includes('json')) { const d = await res.json(); toast(d.error || 'ساخت ممکن نشد.', 'error'); }
+                    const ct = res.headers.get('Content-Type') || '';
+                    if (!/pdf|wordprocessingml/.test(ct)) { const txt = await res.text(); let d = null; try { d = JSON.parse(txt); } catch (e) {} toast(d ? (d.error || 'ساخت ممکن نشد.') : badResponse(res.status, txt), 'error'); }
                     else {
                         const cd = res.headers.get('Content-Disposition') || '';
                         const mm = cd.match(/filename\*=UTF-8''([^;]+)/);

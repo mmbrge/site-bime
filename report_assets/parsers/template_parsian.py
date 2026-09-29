@@ -77,15 +77,20 @@ class ParsianParser:
             out["chassis_no"] = valid_chassis[0].upper()
             out["vin"] = out["chassis_no"]
             
-        # ۴. موتور
-        engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,15})(?![A-Za-z0-9])', t.replace(out.get('chassis_no', ''), ''), re.I)
-        valid_engines = [c for c in engine_cands if not (c.isdigit() and len(c) in (10, 11) and c.startswith('0')) and not re.match(r'^(13|14)\d{2}$', c)]
-        if valid_engines:
-            alphanumeric_engines = [c for c in valid_engines if re.search(r'[A-Za-z]', c)]
-            out["engine_no"] = max(alphanumeric_engines, key=len).upper() if alphanumeric_engines else max(valid_engines, key=len).upper()
+        # ۴. موتور: اول مقدارِ بعد از «شماره موتور:»؛ وگرنه بلندترین کدِ حرف+عددی (نه اسمِ لاتینِ تیپ مثل FIDELITY)
+        m_eng = re.search(r'شماره\s*موتور\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]{4,24})(?![A-Za-z0-9])', t)
+        if m_eng and re.search(r'\d', m_eng.group(1)) and m_eng.group(1).upper() != out.get('chassis_no'):
+            out["engine_no"] = m_eng.group(1).upper()
+        else:
+            engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,25})(?![A-Za-z0-9])', t.replace(out.get('chassis_no', ''), ''), re.I)
+            valid_engines = [c for c in engine_cands if not (c.isdigit() and len(c) in (10, 11) and c.startswith('0')) and not re.match(r'^(13|14)\d{2}$', c)]
+            mixed = [c for c in valid_engines if re.search(r'[A-Za-z]', c) and re.search(r'\d', c)]
+            if mixed or valid_engines:
+                out["engine_no"] = max(mixed or valid_engines, key=len).upper()
 
         # ۵. کدملی و نام
-        m_nat = re.search(r'(?<!\d)(\d{10})(?!\d)', t)
+        # کد ملی: عددِ ۱۰ رقمیِ بعد از سالِ تولد (نه کدِ نمایندگی/شماره شناسنامه که گاهی قبلش چاپ می‌شود)
+        m_nat = re.search(r'(?<!\d)1[34]\d{2}\s*\n\s*(\d{10})(?!\d)', t) or re.search(r'(?<!\d)(\d{10})(?!\d)', t)
         if m_nat: out["national_id"] = m_nat.group(1)
 
         m_name = re.search(r'(?:سرکار\s*خانم|جناب\s*آقای)\s+([\s\S]+?)\s*کد', t)
@@ -114,12 +119,24 @@ class ParsianParser:
         if m_usage_sys: system = m_usage_sys.group(1).strip()
         out["system"] = system
 
-        tip = ""
-        m_tip = re.search(r'تیپ\s*[:\s]*([\s\S]{2,30}?)(?=تعداد|رنگ|ظرفیت|شماره|سال|\n)', t)
-        if m_tip: tip = re.sub(r'\s+', ' ', m_tip.group(1)).strip()
+        # تیپ ممکن است چند خط باشد («فیدلیتی» + «پرایم»، یا «ریسپکت 2» + «(پرایم)») و بعدش نامِ لاتین می‌آید
+        tip, tip_en = "", ""
+        m_tip = re.search(r'تیپ\s*:?\s*([\s\S]{1,120}?)(?=تعداد\s*سیلندر|رنگ\s*:|ظرفیت|شماره|سال\s*ساخت|$)', t)
+        if m_tip:
+            fa_parts = []
+            for line in m_tip.group(1).split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if re.search(r'[A-Za-z]', line) and not re.search(r'[\u0600-\u06FF]', line):
+                    tip_en = tip_en or line
+                    continue
+                # پرانتزهای برعکسِ PDF: «)پرایم(» => «(پرایم)»
+                line = re.sub(r'^\)(.+)\($', r'(\1)', line)
+                fa_parts.append(line)
+            tip = re.sub(r'\s+', ' ', ' '.join(fa_parts)).strip()
         out["tip"] = tip
-        m_tip_en = re.search(r'تیپ\s*[:\s]*[^\n]*\n\s*([A-Za-z][A-Za-z0-9 \-]{1,30})\s*\n', t)
-        if m_tip_en: out["tip_en"] = m_tip_en.group(1).strip()
+        if tip_en: out["tip_en"] = tip_en
         out["vehicle_type"] = (system + " " + tip).strip() if tip and system and system not in tip else (tip or system)
 
         # ۸-۱. چک‌باکس‌ها (نوع پلاک، مورد استفاده و پرسش‌های بلی/خیر)
@@ -155,6 +172,13 @@ class ParsianParser:
         m_year = re.search(r'سال\s*ساخت\s*:\s*(13[4-9]\d|14[0-1]\d)', t)
         if m_year: out["manufacture_year"] = m_year.group(1)
 
+        # سالِ تولدِ بیمه‌گذار (پارسرِ عمومی آن را «year» می‌گرفت و در سال ساخت می‌نشست)
+        if out.get("national_id"):
+            m_birth = re.search(r'(1[34]\d{2})\s*\n\s*' + re.escape(out["national_id"]), t)
+            if m_birth: out["birth_year"] = m_birth.group(1)
+            m_post = re.search(re.escape(out["national_id"]) + r'\s*\n\s*(\d{10})(?!\d)', t)
+            if m_post: out["postal_code"] = m_post.group(1)
+
         # ۱۱. ارزش خودرو
         m_val = re.search(r'ارزش\s*خودرو:\s*سایر:\s*([\d,]{7,})', t) or re.search(r'([\d,]{7,})\s*ریال', t)
         if m_val: out["insured_value"] = m_val.group(1).replace(',', '').strip()
@@ -163,6 +187,7 @@ class ParsianParser:
         out["shasi"] = out["chassis_no"]
         out["motor"] = out["engine_no"]
         out["sal_sakht"] = out["manufacture_year"]
+        out["year"] = out["manufacture_year"]
         out["rang"] = out["color"]
         out["mordes"] = out["usage"]
         out["noecar"] = out["vehicle_type"]
