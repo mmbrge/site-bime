@@ -300,6 +300,31 @@ if ($a === 'set_layout_asset') {
 if ($a === 'set_layout_clone') {
     $c = vrs_cat($pdo, $data['id'] ?? 0);
     [$layout] = vr_layout($pdo, $c);
+    // کادرِ تازه: متن/متغیر، تیک، یا دایره‌ی توپُر (در قالبِ Word نیست؛ فقط در PDF کشیده می‌شود)
+    if (!empty($data['new'])) {
+        $kind = in_array($data['new'], ['text', 'tick', 'dot'], true) ? $data['new'] : 'text';
+        $var = trim((string)($data['var'] ?? ''));
+        if ($var !== '' && !preg_match('/^[A-Za-z][A-Za-z0-9_]{0,60}$/', $var)) vr_fail('نامِ متغیر فقط حروف و عدد لاتین و _ است.');
+        $page = max(0, min(intval($layout['pages']) - 1, intval($data['page'] ?? 0)));
+        $size = $kind === 'tick' ? 11 : 10;
+        $w = $kind === 'text' ? 110 : ($kind === 'tick' ? 14 : 9);
+        $h = $kind === 'text' ? 18 : ($kind === 'tick' ? 14 : 9);
+        $x = max(0, min($layout['page']['w'] - $w, floatval($data['x'] ?? 250)));
+        $y = max(0, min($layout['page']['h'] - $h, floatval($data['y'] ?? 300)));
+        $text = $kind === 'dot' ? '' : ($var !== '' ? '{{ ' . $var . ' }}' : trim((string)($data['text'] ?? 'متن')));
+        $item = ['page' => $page, 'z' => 999999999, 'behind' => false, 'type' => 'box', 'x' => round($x, 2), 'y' => round($y, 2), 'w' => $w, 'h' => $h,
+                 'rot' => 0, 'vert' => 'horz', 'ins' => [0.5, 0.5, 0.5, 0.5], 'anchor' => 'ctr',
+                 'fill' => $kind === 'dot' ? '#000000' : null, 'line' => null, 'lineW' => 0, 'geom' => $kind === 'dot' ? 'ellipse' : 'rect',
+                 'paras' => $text === '' ? [] : [['align' => 'center', 'bidi' => true, 'size' => $size,
+                     'runs' => [['t' => $text, 'size' => $size, 'b' => false, 'color' => '#000000', 'font' => '']],
+                     'text' => $text, 'has_vars' => strpos($text, '{{') !== false]],
+                 'dx' => 0, 'dy' => 0, 'clone' => 1, 'id' => 'n' . bin2hex(random_bytes(3))];
+        if ($kind === 'dot' && $var !== '') $item['showif'] = $var;
+        $layout['items'][] = $item;
+        $pdo->prepare("UPDATE report_categories SET layout_json = ? WHERE id = ?")->execute([json_encode($layout, JSON_UNESCAPED_UNICODE), $c['id']]);
+        vrs_audit($pdo, $user, "کادرِ تازه در قالبِ «{$c['name']}» اضافه شد");
+        vr_out(['ok' => true, 'index' => count($layout['items']) - 1]);
+    }
     $i = intval($data['index'] ?? -1);
     if (!isset($layout['items'][$i]) || $layout['items'][$i]['type'] !== 'box') vr_fail('کادر پیدا نشد.');
     if (!empty($data['delete'])) {
@@ -318,12 +343,10 @@ if ($a === 'set_layout_clone') {
     vrs_audit($pdo, $user, "کادری در قالبِ «{$c['name']}» " . (!empty($data['delete']) ? 'حذف' : 'کپی') . ' شد');
     vr_out(['ok' => true, 'index' => $newIndex]);
 }
-if ($a === 'set_layout_adjust') {
-    $c = vrs_cat($pdo, $data['id'] ?? 0);
-    [$layout] = vr_layout($pdo, $c);
-    $fonts = array_column(vr_font_choices($pdo), 'value');
+// اعمالِ تنظیم‌های ویرایشگر (جابه‌جایی، پنهان، قلم، اندازه، متن، شرطِ نمایش) روی چیدمان - هم برای ذخیره و هم برای «خروجی دقیق»
+function vrs_apply_adjust(array &$layout, array $items, array $fonts) {
     $n = 0;
-    foreach ((array)($data['items'] ?? []) as $adj) {
+    foreach ($items as $adj) {
         $i = intval($adj['index'] ?? -1);
         if (!isset($layout['items'][$i])) continue;
         $it = &$layout['items'][$i];
@@ -346,6 +369,56 @@ if ($a === 'set_layout_adjust') {
         unset($it);
         $n++;
     }
+    return $n;
+}
+
+// «خروجی دقیق»: همین صفحه با تنظیم‌های ذخیره‌نشده‌ی ویرایشگر، دقیقاً با موتورِ ساختِ PDF کشیده و عکس می‌شود
+if ($a === 'set_layout_render') {
+    $c = vrs_cat($pdo, $data['id'] ?? 0);
+    [$layout, $assetDir] = vr_layout($pdo, $c);
+    $fonts = array_column(vr_font_choices($pdo), 'value');
+    vrs_apply_adjust($layout, (array)($data['items'] ?? []), $fonts);
+    $page = max(0, min(intval($layout['pages']) - 1, intval($data['page'] ?? 0)));
+    $one = $layout;
+    $one['items'] = [];
+    foreach ($layout['items'] as $it) if ($it['page'] === $page) { $it['page'] = 0; $one['items'][] = $it; }
+    $one['pages'] = 1;
+    $fields = vr_fields($pdo, $c['id']);
+    $values = null;
+    if (!empty($data['report_id'])) {
+        $st = $pdo->prepare("SELECT data_json FROM visit_reports WHERE id = ? AND category_id = ?");
+        $st->execute([intval($data['report_id']), $c['id']]);
+        $values = json_decode((string)$st->fetchColumn(), true) ?: null;
+    }
+    if (!$values) $values = vr_sample_all_ticks($c, $fields, vr_build_values($c, $fields, vr_sample_form($fields), ['date' => jalali_from_gregorian_ts_dotted(time()), 'issuer_name' => $user['name'], 'report_no' => 'VR-نمونه']));
+    $extra = [];
+    if (array_key_exists('font_all', $data)) $extra['fontAll'] = in_array((string)$data['font_all'], $fonts, true) ? (string)$data['font_all'] : '';
+    $tmp = sys_get_temp_dir() . '/vr_edit_' . bin2hex(random_bytes(6));
+    rpt_render_pdf($one, $assetDir, $values, $tmp . '.pdf', vr_render_opts($pdo, $c, $extra));
+    $zoom = max(0.5, min(4, floatval($data['zoom'] ?? 2)));
+    $png = null;
+    if (function_exists('proc_open')) {
+        $py = vr_python_path($pdo);
+        $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => vr_home_dir($pdo), 'PYTHONWARNINGS' => 'ignore'];
+        $proc = @proc_open([$py, $siteRoot . '/report_assets/pdf_page_png.py', $tmp . '.pdf', '0', (string)$zoom, $tmp . '.png'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+        if (is_resource($proc)) {
+            $start = time();
+            while (($s = proc_get_status($proc)) && $s['running'] && time() - $start < 25) usleep(40000);
+            if (!empty($s['running'])) proc_terminate($proc, 9);
+            @fclose($pipes[1]); @fclose($pipes[2]); proc_close($proc);
+            if (is_file($tmp . '.png') && filesize($tmp . '.png') > 0) $png = base64_encode(file_get_contents($tmp . '.png'));
+        }
+    }
+    // اگر پایتون/PyMuPDF روی هاست نبود، خودِ PDF فرستاده می‌شود تا مرورگر (pdf.js) آن را بکشد
+    $out = ['ok' => true, 'png' => $png, 'pdf' => $png ? null : base64_encode((string)@file_get_contents($tmp . '.pdf'))];
+    @unlink($tmp . '.pdf'); @unlink($tmp . '.png');
+    vr_out($out);
+}
+if ($a === 'set_layout_adjust') {
+    $c = vrs_cat($pdo, $data['id'] ?? 0);
+    [$layout] = vr_layout($pdo, $c);
+    $fonts = array_column(vr_font_choices($pdo), 'value');
+    $n = vrs_apply_adjust($layout, (array)($data['items'] ?? []), $fonts);
     $pdo->prepare("UPDATE report_categories SET layout_json = ? WHERE id = ?")->execute([json_encode($layout, JSON_UNESCAPED_UNICODE), $c['id']]);
     if (array_key_exists('font_all', $data)) {
         $o = json_decode($c['options_json'] ?? '', true) ?: [];

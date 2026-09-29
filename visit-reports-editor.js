@@ -37,11 +37,17 @@
     .vre-sample .vre-box.off{opacity:.25}
     .vre-sample .vre-box.sel{background:rgba(99,102,241,.08)}
     .vre-sample .vre-box > span{display:block;width:100%}
+    /* «خروجی دقیق»: پس‌زمینه همان صفحه‌ی ساخته‌شده با موتورِ PDF است؛ کادرها فقط قابِ قابلِ کشیدن‌اند */
+    .vre-exact .vre-box{background:transparent!important;color:transparent!important;border-color:rgba(99,102,241,.35)}
+    .vre-exact .vre-box > span{visibility:hidden}
+    .vre-exact .vre-box.sel{background:rgba(99,102,241,.12)!important}
+    .vre-exact .vre-box.cond-off{opacity:1}
+    .vre-exact-busy{position:absolute;top:8px;left:8px;z-index:20;background:rgba(15,23,42,.8);color:#fff;font:bold 11px Vazir,sans-serif;padding:4px 10px;border-radius:8px}
     .vre-panel{overflow:auto;display:flex;flex-direction:column;gap:.75rem}
     .vre-kbd{display:inline-block;background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-radius:.35rem;padding:0 .3rem;font-size:.62rem;font-family:monospace}
     `;
 
-    VR.openLayoutEditor = async function (cat, onSaved) {
+    VR.openLayoutEditor = async function (cat, onSaved, reopenOpts = {}) {
         if (!document.getElementById('vre-css')) { const s = document.createElement('style'); s.id = 'vre-css'; s.textContent = CSS; document.head.appendChild(s); }
         const m = modal({ title: 'ویرایشگرِ قالب', icon: 'fa-object-group', width: '98vw', html: '<div class="vr-skel h-96"></div>', noBackdropClose: true });
         m.setTitle(`ویرایشگرِ قالب · ${esc(cat.name)}`, 'کادرها را با موس بکشید؛ Ctrl/Shift+کلیک یا کشیدنِ کادرِ انتخاب برای چند کادر؛ کلیدهای جهت برای جابه‌جاییِ دقیق');
@@ -49,7 +55,7 @@
         if (!d.ok) { m.body.innerHTML = `<p class="text-red-500 font-bold text-sm p-6">${esc(d.error)}</p>`; return; }
 
         const st = {
-            sample: false, values: d.sample || {},
+            sample: false, exact: false, exactSeq: 0, exactTimer: null, values: d.sample || {},
             page: 0, zoom: 1, scale: 1, sel: new Set(), undo: [], redo: [], dirty: false, showStatic: false, fontAll: d.font_all || '',
             items: d.items, boxes: d.items.filter(i => i.type === 'box' && (!i.empty || i.fill || i.line)), W: d.page.w, H: d.page.h,
         };
@@ -70,6 +76,8 @@
                 <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" class="accent-indigo-600 vre-imgs" checked> پس‌زمینه</label>
                 <label class="flex items-center gap-1.5 text-[11px] font-black text-violet-700 bg-violet-50 rounded-lg px-2 py-1 cursor-pointer"><input type="checkbox" class="accent-violet-600 vre-samp"> نمایش با نمونه</label>
                 <select class="vr-in !py-1 !text-[11px] vre-src hidden" style="width:auto;max-width:18rem"><option value="">دادهٔ نمونه (ساختگی)</option>${(d.reports || []).map(r => `<option value="${r.id}">${esc(r.report_no)} · ${esc(r.insured_name || '')}</option>`).join('')}</select>
+                <label class="flex items-center gap-1.5 text-[11px] font-black text-emerald-700 bg-emerald-50 rounded-lg px-2 py-1 cursor-pointer hidden vre-exact-wrap" title="پس‌زمینه دقیقاً همان PDFِ خروجی است (با موتورِ ساختِ PDF کشیده می‌شود)"><input type="checkbox" class="accent-emerald-600 vre-exact" checked> خروجی دقیق (مثل PDF)</label>
+                <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vre-new" title="کادرِ تازه برای متغیر، تیک یا دایره‌ی توپُر"><i class="fas fa-square-plus"></i> کادر تازه</button>
                 <span class="flex-1"></span>
                 <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vre-undo" title="Ctrl+Z"><i class="fas fa-rotate-left"></i> برگشت</button>
                 <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vre-redo" title="Ctrl+Y"><i class="fas fa-rotate-right"></i> جلو</button>
@@ -145,7 +153,8 @@
             const showImg = m.body.querySelector('.vre-imgs').checked;
             const bgKey = `${st.page}|${s}|${showImg}`;
             const bgl = pageEl.querySelector('.vre-bgl');
-            if (bgl.dataset.key !== bgKey) {
+            if (st.sample && st.exact) { scheduleExact(); }
+            else if (bgl.dataset.key !== bgKey) {
                 bgl.dataset.key = bgKey;
                 bgl.innerHTML = !showImg ? '' : st.items.filter(it => it.type === 'image' && it.page === st.page).map(it => {
                     const [cl, ct, cr, cb] = it.crop || [0, 0, 0, 0];
@@ -160,8 +169,54 @@
             }).join('');
             m.body.querySelectorAll('.vre-pages button').forEach(x => x.className = Number(x.dataset.p) === st.page ? 'on-ok' : '');
         }
+        // ---------------- «خروجی دقیق» ----------------
+        // صفحه با تنظیم‌های فعلی (حتی ذخیره‌نشده) با همان موتورِ PDF کشیده و به‌عنوان پس‌زمینه گذاشته می‌شود
+        let pdfjs = null;
+        async function loadPdfJs() {
+            if (pdfjs) return pdfjs;
+            await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            pdfjs = window.pdfjsLib; return pdfjs;
+        }
+        function scheduleExact() {
+            if (!(st.sample && st.exact)) return;
+            clearTimeout(st.exactTimer);
+            st.exactTimer = setTimeout(renderExact, 450);
+        }
+        async function renderExact() {
+            if (!(st.sample && st.exact)) return;
+            const seq = ++st.exactSeq;
+            const bgl = pageEl.querySelector('.vre-bgl');
+            let busy = pageEl.querySelector('.vre-exact-busy');
+            if (!busy) { busy = document.createElement('div'); busy.className = 'vre-exact-busy'; pageEl.appendChild(busy); }
+            busy.textContent = 'در حال ساختِ خروجی...'; busy.style.display = '';
+            const zoom = Math.min(3, st.scale * (window.devicePixelRatio || 1));
+            const items = st.boxes.filter(b => changed(b) || b._init !== JSON.stringify(PROPS.map(k => b[k] ?? null)))
+                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '' }));
+            const r = await api('set_layout_render', { id: cat.id, page: st.page, zoom, items, font_all: st.fontAll, report_id: Number(srcSel.value) || 0 });
+            if (seq !== st.exactSeq) return;
+            busy.style.display = 'none';
+            if (!r.ok) { toast(r.error || 'ساختِ خروجی ممکن نشد', 'error'); return; }
+            const W = st.W * st.scale, H = st.H * st.scale;
+            bgl.dataset.key = 'exact';
+            if (r.png) { bgl.innerHTML = `<img src="data:image/png;base64,${r.png}" style="position:absolute;left:0;top:0;width:${W}px;height:${H}px" draggable="false">`; return; }
+            try {
+                const lib = await loadPdfJs();
+                const bytes = Uint8Array.from(atob(r.pdf), c => c.charCodeAt(0));
+                const doc = await lib.getDocument({ data: bytes }).promise;
+                const pg = await doc.getPage(1);
+                const vp = pg.getViewport({ scale: zoom });
+                const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+                cv.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px`;
+                await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+                if (seq !== st.exactSeq) return;
+                bgl.innerHTML = ''; bgl.appendChild(cv);
+            } catch (e) { toast('نمایشِ خروجیِ دقیق ممکن نشد؛ پیش‌نمایشِ PDF را بزنید.', 'error'); }
+        }
+
         // فقط موقعیت/ظاهرِ کادرهای انتخاب‌شده عوض شود (موقعِ کشیدن سریع بماند)
         function refreshBoxes(idxs) {
+            scheduleExact();
             idxs.forEach(i => {
                 const el = pageEl.querySelector(`.vre-box[data-i="${i}"]`), b = byIdx.get(i);
                 if (!el) return;
@@ -210,7 +265,7 @@
                 <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600 mt-3 cursor-pointer"><input type="checkbox" class="accent-red-500 vre-hid" ${sel.every(b => b.hidden) ? 'checked' : ''}> پنهان (در PDF چاپ نشود)</label>
                 <button type="button" class="vr-btn vr-btn-s w-full mt-3 !text-[11px] vre-reset"><i class="fas fa-eraser"></i> برگرداندن به حالتِ قالب</button>
                 ${one ? `<div class="grid grid-cols-2 gap-2 mt-2"><button type="button" class="vr-btn vr-btn-s !text-[11px] vre-clone" title="یک کپی از این کادر/شکل کنارش ساخته می‌شود (مثلاً دایره‌ی تیک برای گزینه‌ی دیگر)"><i class="fas fa-clone"></i> کپی این کادر</button>
-                    ${one.clone ? '<button type="button" class="vr-btn vr-btn-s !text-[11px] !text-red-600 vre-delclone"><i class="fas fa-trash"></i> حذف کپی</button>' : ''}</div>` : ''}`;
+                    ${one.clone ? '<button type="button" class="vr-btn vr-btn-s !text-[11px] !text-red-600 vre-delclone"><i class="fas fa-trash"></i> حذف این کادر</button>' : ''}</div>` : ''}`;
             const apply = (fn) => { pushUndo(); sel.forEach(fn); refreshBoxes(sel.map(b => b.index)); renderPropsSoft(); };
             const num = v => { const n = parseFloat(en(String(v)).replace(/[^\d.\-]/g, '')); return isNaN(n) ? null : n; };
             const dxI = props.querySelector('.vre-dx'), dyI = props.querySelector('.vre-dy');
@@ -234,9 +289,8 @@
                 if (!await save()) return;
                 const r = await api('set_layout_clone', { id: cat.id, index: one.index, ...payload });
                 if (!r.ok) { toast(r.error, 'error'); return; }
-                document.removeEventListener('keydown', onKey); m.close();
-                VR.openLayoutEditor(cat, onSaved);
-                toast(payload.delete ? 'کپی حذف شد.' : 'کپی ساخته شد؛ آن را روی جای درست بکشید و «شرطِ نمایش» بدهید.', 'info');
+                reopenEditor(payload.delete ? null : r.index);
+                toast(payload.delete ? 'کادر حذف شد.' : 'کپی ساخته شد؛ آن را روی جای درست بکشید و «شرطِ نمایش» بدهید.', 'info');
             };
             const cl = props.querySelector('.vre-clone'); if (cl) cl.onclick = () => reopen({});
             const dc = props.querySelector('.vre-delclone'); if (dc) dc.onclick = () => reopen({ delete: 1 });
@@ -353,23 +407,30 @@
         m.body.querySelector('.vre-static').onchange = e => { stage.classList.toggle('vre-hide-static', !e.target.checked && !st.sample); };
         // حالتِ نمونه: همه‌ی کادرها (حتی متنِ ثابت) مثلِ خروجی دیده می‌شوند و همچنان جابه‌جا می‌شوند
         const srcSel = m.body.querySelector('.vre-src');
-        m.body.querySelector('.vre-samp').onchange = e => {
-            st.sample = e.target.checked;
+        const exactChk = m.body.querySelector('.vre-exact'), exactWrap = m.body.querySelector('.vre-exact-wrap');
+        const applyMode = () => {
+            st.exact = st.sample && exactChk.checked;
             stage.classList.toggle('vre-sample', st.sample);
+            stage.classList.toggle('vre-exact', st.exact);
             stage.classList.toggle('vre-hide-static', !st.sample && !m.body.querySelector('.vre-static').checked);
             srcSel.classList.toggle('hidden', !st.sample);
+            exactWrap.classList.toggle('hidden', !st.sample);
+            const bgl = pageEl.querySelector('.vre-bgl'); if (bgl) bgl.dataset.key = '';
+            const busy = pageEl.querySelector('.vre-exact-busy'); if (busy && !st.exact) busy.style.display = 'none';
             drawPage();
         };
+        m.body.querySelector('.vre-samp').onchange = e => { st.sample = e.target.checked; applyMode(); };
+        exactChk.onchange = applyMode;
         srcSel.onchange = async () => {
-            if (!srcSel.value) { st.values = d.sample || {}; drawPage(); return; }
+            if (!srcSel.value) { st.values = d.sample || {}; drawPage(); scheduleExact(); return; }
             const r = await api('set_layout_sample', { id: cat.id, report_id: Number(srcSel.value) });
             if (!r.ok) { toast(r.error, 'error'); return; }
-            st.values = r.values; drawPage();
+            st.values = r.values; drawPage(); scheduleExact();
         };
         m.body.querySelector('.vre-imgs').onchange = drawPage;
         m.body.querySelector('.vre-undo').onclick = doUndo;
         m.body.querySelector('.vre-redo').onclick = doRedo;
-        m.body.querySelector('.vre-fontall').onchange = e => { st.fontAll = e.target.value; st.dirty = true; };
+        m.body.querySelector('.vre-fontall').onchange = e => { st.fontAll = e.target.value; st.dirty = true; drawPage(); scheduleExact(); };
         const save = async () => {
             const items = st.boxes.filter(b => changed(b) || b._init !== JSON.stringify(PROPS.map(k => b[k] ?? null)))
                 .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '' }));
@@ -390,6 +451,61 @@
             document.removeEventListener('keydown', onKey); m.close();
         };
         window.addEventListener('resize', () => { if (document.body.contains(m.el)) drawPage(); });
+
+        // ویرایشگر با همان صفحه/حالت دوباره باز می‌شود (بعد از ساخت/کپی/حذفِ کادر) و کادرِ تازه انتخاب‌شده می‌ماند
+        function reopenEditor(selectIndex) {
+            document.removeEventListener('keydown', onKey); m.close();
+            VR.openLayoutEditor(cat, onSaved, { page: st.page, sample: st.sample, exact: exactChk.checked, select: selectIndex, zoom: st.zoom });
+        }
+        window._vreReopen = reopenEditor;
+
+        // ---------------- کادرِ تازه ----------------
+        m.body.querySelector('.vre-new').onclick = () => {
+            const tickVars = d.vars.filter(v => /_(s|k)$|^overall_|^plate_|^engine_/.test(v));
+            props.innerHTML = `<p class="vr-sec-title !text-xs mb-3"><i class="fas fa-square-plus text-emerald-500"></i> کادرِ تازه</p>
+                <label class="vr-lbl">نوع</label>
+                <div class="grid grid-cols-3 gap-1 mb-3 vre-nk">${[['text', 'متن / متغیر'], ['tick', 'تیک ✔'], ['dot', 'دایره‌ی توپُر ●']].map(([k, t], i) => `<button type="button" data-k="${k}" class="vr-btn ${i ? 'vr-btn-s' : 'vr-btn-p'} !py-1.5 !text-[11px]">${t}</button>`).join('')}</div>
+                <label class="vr-lbl vre-nvl">متغیر (مقدارش در کادر نوشته می‌شود)</label>
+                <input class="vr-in !py-1.5 !text-[11px] font-mono vre-nv" dir="ltr" list="vre-vars3" placeholder="مثلاً overall_good">
+                <datalist id="vre-vars3">${d.vars.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+                <p class="text-[10px] font-bold mt-1 vre-nhint"></p>
+                <label class="vr-lbl mt-2 vre-ntl">یا متنِ ثابت (اگر متغیر ندارد)</label>
+                <input class="vr-in !py-1.5 !text-[11px] vre-nt" placeholder="متن">
+                <p class="text-[10px] text-slate-400 font-bold mt-2 leading-5">کادر وسطِ همین قسمتی از صفحه که می‌بینید ساخته می‌شود؛ بعد آن را روی جای درست بکشید. این کادرها فقط در PDF هستند (در قالبِ Word نیستند) و با آپلودِ قالبِ تازه هم می‌مانند.</p>
+                <div class="grid grid-cols-2 gap-2 mt-3"><button type="button" class="vr-btn vr-btn-p !text-[11px] vre-nok"><i class="fas fa-check"></i> ساختن</button><button type="button" class="vr-btn vr-btn-s !text-[11px] vre-nno">انصراف</button></div>`;
+            let kind = 'text';
+            const nv = props.querySelector('.vre-nv'), hint = props.querySelector('.vre-nhint');
+            const upd = () => {
+                props.querySelectorAll('.vre-nk button').forEach(b => { b.className = `vr-btn ${b.dataset.k === kind ? 'vr-btn-p' : 'vr-btn-s'} !py-1.5 !text-[11px]`; });
+                props.querySelector('.vre-nvl').textContent = kind === 'dot' ? 'فقط وقتی این متغیر تیک خورده کشیده شود' : kind === 'tick' ? 'متغیرِ تیک (✔ وقتی گزینه انتخاب شده)' : 'متغیر (مقدارش در کادر نوشته می‌شود)';
+                props.querySelector('.vre-nt').classList.toggle('hidden', kind !== 'text'); props.querySelector('.vre-ntl').classList.toggle('hidden', kind !== 'text');
+                const v = nv.value.trim();
+                hint.className = 'text-[10px] font-bold mt-1 leading-5 vre-nhint ' + (!v || d.vars.includes(v) ? 'text-emerald-600' : 'text-amber-600');
+                hint.textContent = !v ? (kind === 'text' ? '' : 'نمونه‌ها: ' + tickVars.slice(0, 6).join('، ')) : d.vars.includes(v) ? '✓ این متغیر در فیلدهای همین نوع گزارش هست.'
+                    : 'این متغیر هنوز فیلدی ندارد و خالی چاپ می‌شود؛ از «تنظیمات گزارش ← فیلدها» فیلدی بسازید که این متغیر را پر کند (برای تیک: فیلدِ کشویی با «تیک برای هر گزینه»).';
+            };
+            props.querySelectorAll('.vre-nk button').forEach(b => b.onclick = () => { kind = b.dataset.k; upd(); });
+            nv.oninput = upd; upd();
+            props.querySelector('.vre-nno').onclick = () => renderProps();
+            props.querySelector('.vre-nok').onclick = async () => {
+                const v = nv.value.trim(), t = props.querySelector('.vre-nt').value.trim();
+                if (v && !/^[A-Za-z][A-Za-z0-9_]*$/.test(v)) { toast('نامِ متغیر فقط حروف و عدد لاتین و _ است.', 'error'); return; }
+                if (!v && (kind !== 'text' || !t)) { toast(kind === 'text' ? 'متغیر یا متن را بنویسید.' : 'متغیر را بنویسید.', 'error'); return; }
+                if (!await save()) return;
+                const s = st.scale, pr = pageEl.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+                const cx = ((sr.left + sr.width / 2) - pr.left) / s, cy = ((sr.top + Math.min(sr.height, window.innerHeight - sr.top) / 2) - pr.top) / s;
+                const r = await api('set_layout_clone', { id: cat.id, new: kind, var: v, text: t, page: st.page, x: Math.max(0, cx - 40), y: Math.max(0, cy - 8) });
+                if (!r.ok) { toast(r.error, 'error'); return; }
+                reopenEditor(r.index);
+                toast('کادر ساخته شد؛ آن را روی جای درست بکشید.', 'info');
+            };
+        };
+
+        // بازگشتِ حالت بعد از بازگشایی
+        if (reopenOpts.page) st.page = reopenOpts.page;
+        if (reopenOpts.zoom) st.zoom = reopenOpts.zoom;
+        if (reopenOpts.select !== undefined && reopenOpts.select !== null && byIdx.has(reopenOpts.select)) { st.sel = new Set([reopenOpts.select]); st.page = byIdx.get(reopenOpts.select).page; }
+        if (reopenOpts.sample) { m.body.querySelector('.vre-samp').checked = true; exactChk.checked = reopenOpts.exact !== false; st.sample = true; applyMode(); }
         drawPage(); renderProps();
     };
 })();
