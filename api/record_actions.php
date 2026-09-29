@@ -451,80 +451,55 @@ try {
             exit;
         }
 
+        // حالت‌ها: all = همه‌چیز؛ only = فقط بخش‌های انتخاب‌شده؛ except = همه به‌جز بخش‌های انتخاب‌شده
+        require_once __DIR__ . '/_backup_core.php';
+        $sections = bk_reset_sections();
+        $mode = in_array($data['mode'] ?? 'all', ['all', 'only', 'except'], true) ? ($data['mode'] ?? 'all') : 'all';
+        $picked = array_values(array_intersect(array_keys($sections), (array)($data['sections'] ?? [])));
+        if ($mode !== 'all' && !$picked) { echo json_encode(['ok' => false, 'error' => 'حداقل یک بخش انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $targets = $mode === 'all' ? array_keys($sections) : ($mode === 'only' ? $picked : array_values(array_diff(array_keys($sections), $picked)));
+        if (!$targets) { echo json_encode(['ok' => false, 'error' => 'همه‌ی بخش‌ها مستثنا شده‌اند؛ چیزی برای حذف نمی‌ماند.'], JSON_UNESCAPED_UNICODE); exit; }
+        $full = count($targets) === count($sections);
+
         // ۱) پیش از هر حذفی، بکاپ کامل (همه‌ی جدول‌های دیتابیس + همه‌ی فایل‌ها و اکسل‌ها) در پوشه‌ی
         //    backup/<تاریخ امروز>/ ساخته و بررسی می‌شود؛ اگر بکاپ ناموفق باشد هیچ چیزی پاک نمی‌شود.
         //    این بکاپ از «تنظیمات سیستم ← پشتیبان‌گیری» دوباره ایمپورت می‌شود و همه‌چیز را برمی‌گرداند.
-        require_once __DIR__ . '/_backup_core.php';
+        $labels = array_map(fn($k) => $sections[$k]['label'], $targets);
         try {
-            $backup = bk_create($pdo, 'full', 'before-reset', 'بکاپ خودکار پیش از حذف اطلاعات');
+            $backup = bk_create($pdo, 'full', 'before-reset', 'بکاپ خودکار پیش از حذف اطلاعات: ' . ($full ? 'همه' : implode('، ', $labels)));
         } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => 'بکاپ پیش از حذف ساخته نشد، پس هیچ اطلاعاتی پاک نشد: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
             exit;
         }
 
-        $pdo->beginTransaction();
-        $pdo->exec("SET FOREIGN_KEY_CHECKS = 0;");
-        // ۲) همه‌ی جدول‌های دیتابیس پاک می‌شوند (فهرست از خودِ دیتابیس خوانده می‌شود تا جدولِ تازه‌ای جا نماند)،
-        //    به‌جز جدول‌های «تنظیمات» که اطلاعات نیستند: تنظیمات سیستم و توکن ربات‌ها، تنظیمات مالی، قالب‌های
-        //    صورتحساب، و تنظیمات گزارش بازدید (انواع، فیلدها، بازدیدکننده‌ها، بیمه‌گذارانِ آماده، قلم‌ها).
-        //    کاربران جداگانه پایین‌تر رسیدگی می‌شوند.
-        $keepTables = ['users', 'system_settings', 'finance_settings', 'invoice_templates',
-            'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
-            'report_insureds', 'report_insured_categories', 'company_portal_users'];
-        foreach (bk_tables($pdo) as $table) {
-            if (in_array($table, $keepTables, true)) continue;
-            try { $pdo->exec("TRUNCATE TABLE `" . str_replace('`', '``', $table) . "`;"); }
-            catch (Exception $e) { try { $pdo->exec("DELETE FROM `" . str_replace('`', '``', $table) . "`;"); } catch (Exception $e2) {} }
-        }
-        // شمارنده‌ی شماره‌ی صورتحساب‌ها هم از اول شروع می‌شود
-        try { $pdo->exec("DELETE FROM `finance_settings` WHERE `setting_key` IN ('invoice_counter','invoice_counter_year');"); } catch (Exception $e) { /* ... */ }
-        // کاربرانِ شرکت‌ها با DELETE (نه TRUNCATE) پاک می‌شوند تا شماره‌ی شناسه از اول شروع نشود؛
-        // وگرنه نشستِ بازِ یک کاربرِ پاک‌شده روی کاربرِ تازه‌ای با همان شناسه می‌نشست
-        try { $pdo->exec("DELETE FROM `company_portal_users`;"); } catch (Exception $e) { /* ... */ }
-        // بیمه‌گذارانِ آماده‌ی گزارش بازدید می‌مانند ولی پیوندشان به اشخاص/شرکت‌های پاک‌شده برداشته می‌شود
-        try { $pdo->exec("UPDATE `report_insureds` SET `source` = 'MANUAL', `source_id` = NULL WHERE `source` <> 'MANUAL';"); } catch (Exception $e) { /* جدول هنوز نیست */ }
-        // شماره‌گذاریِ گزارش‌های بازدید هم از اول شروع می‌شود
-        try { $pdo->exec("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%';"); } catch (Exception $e) { /* ... */ }
-        // کاربران داخلی «همکار» (اپراتور/مالی/همکار شرکت‌ها) هم پاک می‌شوند؛ فقط
-        // حساب‌های ADMIN دست‌نخورده می‌مانند تا کسی از پنل بیرون نماند (مدیرِ حذف‌شده هم پاک می‌شود)
-        try { $pdo->exec("DELETE FROM `users` WHERE `role` <> 'ADMIN';"); } catch (Exception $e) { /* ... */ }
-        try { $pdo->exec("DELETE FROM `users` WHERE COALESCE(`is_deleted`, 0) = 1 AND `id` <> " . intval($userId) . ";"); } catch (Exception $e) { /* ستون هنوز نیست */ }
-        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
-        if ($pdo->inTransaction()) $pdo->commit();   // TRUNCATE در MySQL خودش commit می‌کند
+        // ۲) حذفِ جدول‌ها و پوشه‌های همان بخش‌ها (تنظیمات هیچ‌وقت پاک نمی‌شوند؛ حساب‌های مدیر کل می‌مانند)
+        bk_reset_run($pdo, $targets, $full, $userId);
+        if ($pdo->inTransaction()) $pdo->commit();
 
-        // خودِ پاکسازی ثبت می‌شود تا معلوم باشد چه کسی و کِی انجام داده
-        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'RESET_ALL', 'system', 0, 'پاکسازی کامل اطلاعات')")->execute([$userId]); } catch (Exception $e) {}
+        // خودِ پاکسازی ثبت می‌شود تا معلوم باشد چه کسی، کِی و چه بخش‌هایی را پاک کرده
+        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'RESET_ALL', 'system', 0, ?)")
+                  ->execute([$userId, $full ? 'پاکسازی کامل اطلاعات' : 'حذف اطلاعات: ' . implode('، ', $labels)]); } catch (Exception $e) {}
 
-        // پاکسازی کامل فایل‌ها: بایگانی، پرونده‌های موقت، صف انتظار و لاگ‌ها
-        function rrmdir_contents($dir) {
-            if (!is_dir($dir)) return;
-            foreach (scandir($dir) as $item) {
-                if ($item === '.' || $item === '..' || $item === '.gitkeep') continue;
-                $path = $dir . '/' . $item;
-                if (is_dir($path)) { rrmdir_contents($path); @rmdir($path); }
-                else { @unlink($path); }
-            }
-        }
-        $siteRoot = dirname(__DIR__);
-        // کلِ بایگانی (همه‌ی زیرپوشه‌ها: صادره، کسر از حقوق، شرکتی، شرکت‌ها، چت‌ها، مدارک دستی، ...)،
-        // بایگانی و موقتِ مالی، همه‌ی موقت‌ها، صف OCR و فایل‌های رسیده از ربات و مینی‌اپ.
-        // قالب‌های Word صورتحساب (tmpl_invoice) تنظیمات‌اند و دست‌نخورده می‌مانند.
-        foreach (['/Archive/بایگانی', '/Archive/مالی', '/موقت', '/بایگانی', '/tmp_ocr', '/tmp_recon',
-                  '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) {
-            rrmdir_contents($siteRoot . $rel);
-        }
-        // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا بایگانی فایل‌ها خالی ولی مرتب دیده شود
-        foreach ([archive_root($siteRoot) . '/بایگانی صادره', archive_root($siteRoot) . '/بایگانی کسر از حقوق',
-                  archive_root($siteRoot) . '/سایر مدارک', archive_root($siteRoot) . '/بایگانی شرکتی',
-                  archive_root($siteRoot) . '/بایگانی گزارشات بازدید',
-                  temp_archive_root($siteRoot), temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) {
-            @mkdir($dir, 0775, true);
-        }
-        @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
+        $msg = $full ? 'همه‌ی اطلاعات (پرونده‌ها، شرکت‌ها، مالی، گزارش‌های بازدید، بایگانی، چت‌ها، لاگ‌ها و اعلان‌ها) کاملاً پاک شد. '
+                     : 'این بخش‌ها پاک شد: ' . implode('، ', $labels) . '. بقیه‌ی بخش‌ها دست‌نخورده ماند. ';
+        echo json_encode(['ok' => true, 'backup' => $backup['rel'], 'full' => $full, 'sections' => $targets,
+            'message' => $msg . 'پیش از حذف، بکاپ کامل در پوشه‌ی backup/' . $backup['rel'] . ' ذخیره شد و از «تنظیمات سیستم ← پشتیبان‌گیری» قابل بازگرداندن است.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
-        echo json_encode(['ok' => true, 'backup' => $backup['rel'],
-            'message' => 'همه‌ی اطلاعات دیتابیس، پرونده‌ها، مالی (اقساط، صورتحساب‌ها، دریافتی‌ها)، گزارش‌های بازدید، بایگانی، چت‌ها، لاگ‌ها و اعلان‌ها کاملاً پاک شدند. '
-                       . 'پیش از حذف، بکاپ کامل در پوشه‌ی backup/' . $backup['rel'] . ' ذخیره شد و از «تنظیمات سیستم ← پشتیبان‌گیری» قابل بازگرداندن است.'], JSON_UNESCAPED_UNICODE);
+    // ---- بخش‌های «حذف اطلاعات» با تعدادِ ردیف‌های هرکدام (برای پنجره‌ی انتخاب) ----
+    if ($action === 'reset_sections') {
+        if ($_SESSION['role'] !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل دسترسی دارد.']); exit; }
+        require_once __DIR__ . '/_backup_core.php';
+        $byTable = bk_reset_section_tables($pdo);
+        $out = [];
+        foreach (bk_reset_sections() as $k => $sec) {
+            $rows = 0;
+            foreach ($byTable[$k] as $t) { try { $rows += intval($pdo->query("SELECT COUNT(*) FROM `" . str_replace('`', '``', $t) . "`")->fetchColumn()); } catch (Throwable $e) {} }
+            if ($k === 'users') { try { $rows = intval($pdo->query("SELECT COUNT(*) FROM users WHERE role <> 'ADMIN'")->fetchColumn()); } catch (Throwable $e) {} }
+            $out[] = ['key' => $k, 'label' => $sec['label'], 'desc' => $sec['desc'], 'rows' => $rows];
+        }
+        echo json_encode(['ok' => true, 'sections' => $out], JSON_UNESCAPED_UNICODE);
         exit;
     }
 } catch (Exception $e) {

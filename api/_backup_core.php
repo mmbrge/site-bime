@@ -249,10 +249,11 @@ function bk_list() {
     return $out;
 }
 
-function bk_rrmdir_contents($dir) {
+// $skip: نامِ زیرپوشه‌هایی که در همین سطح دست نمی‌خورند
+function bk_rrmdir_contents($dir, array $skip = []) {
     if (!is_dir($dir)) return;
     foreach (scandir($dir) as $item) {
-        if ($item === '.' || $item === '..' || $item === '.gitkeep') continue;
+        if ($item === '.' || $item === '..' || $item === '.gitkeep' || in_array($item, $skip, true)) continue;
         $path = $dir . '/' . $item;
         if (is_dir($path) && !is_link($path)) { bk_rrmdir_contents($path); @rmdir($path); }
         else { @unlink($path); }
@@ -336,4 +337,107 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
     return ['statements' => $executed, 'tables' => count($m['tables'] ?? []), 'rows' => $m['rows'] ?? 0,
             'files' => $restored, 'files_failed' => $failed, 'mismatch' => $mismatch,
             'created_jalali' => $m['created_jalali'] ?? '', 'mode' => $m['mode'] ?? ''];
+}
+
+// =====================================================================
+//  بخش‌های «حذف اطلاعات»: هر بخش جدول‌ها، پوشه‌ها و کارهای جانبیِ خودش را دارد.
+//  تنظیمات (سیستم، ربات‌ها، مالی، قالب‌های صورتحساب، تنظیمات گزارش بازدید) هیچ‌وقت پاک نمی‌شوند.
+//  جدولی که در هیچ بخشی نیست (مثلاً جدولِ تازه‌ای که بعداً اضافه شود) مالِ بخشِ «other» است.
+// =====================================================================
+function bk_reset_keep_tables() {
+    return ['users', 'system_settings', 'finance_settings', 'invoice_templates',
+            'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
+            'report_insureds', 'report_insured_categories'];
+}
+function bk_reset_sections() {
+    return [
+        'personnel' => ['label' => 'درخواست‌های کارکنان و بازدید سلامت',
+            'desc' => 'اشخاص، معرفی‌نامه‌ها، پرونده‌ها و مدارک، بازدیدهای سلامت، تاریخچه‌ی بررسی‌ها و بایگانیِ صادره/کسر از حقوق/سایر مدارک',
+            'tables' => ['persons', 'person_vehicles', 'introductions', 'policy_cases', 'case_documents', 'health_inspections', 'health_attempts', 'insurance_requests', 'review_log']],
+        'companies' => ['label' => 'شرکت‌ها و درخواست‌های شرکتی',
+            'desc' => 'شرکت‌ها، درخواست‌ها و ردیف‌ها، مدارک، کاربرانِ شرکت‌ها، چت و ربات شرکت‌ها و بایگانیِ شرکتی',
+            'tables' => ['companies', 'company_requests', 'company_request_plates', 'company_documents', 'company_portal_users', 'company_portal_user_companies',
+                         'company_bot_state', 'company_chat_messages', 'bot_known_groups']],
+        'finance' => ['label' => 'مالی',
+            'desc' => 'اقساط، دریافت‌ها و تخصیص‌ها، چک‌ها، صورتحساب‌ها، دوره‌ها، تسویه‌ها و مغایرت‌ها (شماره‌ی صورتحساب از اول)',
+            'tables' => ['billing_periods', 'cheques', 'company_installments', 'company_payments', 'company_payment_allocations', 'invoices', 'invoice_lines',
+                         'payments', 'payment_allocations', 'policy_installments', 'pasargad_settlements', 'pasargad_settlement_lines', 'reconciliations']],
+        'visit_reports' => ['label' => 'گزارش‌های بازدید',
+            'desc' => 'گزارش‌های صادرشده با عکس‌ها و نسخه‌های قبلی، دفترِ اکسل و بایگانیِ گزارشات (شماره‌ی گزارش از اول؛ تنظیمات و قالب‌ها می‌مانند)',
+            'tables' => ['visit_reports', 'visit_report_photos', 'visit_report_versions']],
+        'messages' => ['label' => 'پیام‌ها، اعلان‌ها و لاگ‌ها',
+            'desc' => 'تیکت‌ها، چت داخلی، اعلان‌ها، لاگ‌های ورود و کارها، کدهای ورود و درخواست‌های بازیابی رمز',
+            'tables' => ['messages', 'staff_chat_messages', 'tickets', 'ticket_messages', 'admin_notifications', 'app_notifications', 'user_notifications',
+                         'notification_cursors', 'audit_logs', 'login_logs', 'login_otps', 'phone_otps', 'password_reset_requests', 'bot_sessions', 'webapp_sessions']],
+        'users' => ['label' => 'کاربرانِ داخلی (به‌جز مدیر کل)',
+            'desc' => 'کارشناسان صدور و مالی و همکارانِ بیمه با ما (پنل عادی و پارسیان)؛ حساب‌های مدیر کل همیشه می‌مانند',
+            'tables' => []],
+        'other' => ['label' => 'صف پردازش و فایل‌های موقت',
+            'desc' => 'صفِ OCR و فایل‌های رسیده از ربات/مینی‌اپ و هر جدولِ دیگری که در بخش‌های بالا نیست',
+            'tables' => ['processing_queue']],
+    ];
+}
+// جدول‌های هر بخش در همین دیتابیس (جدولِ ناشناخته => other)
+function bk_reset_section_tables($pdo) {
+    $secs = bk_reset_sections();
+    $known = [];
+    foreach ($secs as $k => $s) foreach ($s['tables'] as $t) $known[$t] = $k;
+    $out = array_fill_keys(array_keys($secs), []);
+    foreach (bk_tables($pdo) as $t) {
+        if (in_array($t, bk_reset_keep_tables(), true)) continue;
+        $out[$known[$t] ?? 'other'][] = $t;
+    }
+    return $out;
+}
+// پاک کردنِ بخش‌های انتخاب‌شده. $full: حذفِ کامل (کلِ بایگانی و موقت‌ها، همان رفتارِ قبلی)
+function bk_reset_run($pdo, array $targets, $full, $userId) {
+    $siteRoot = bk_site_root();
+    $byTable = bk_reset_section_tables($pdo);
+    $wipe = function ($t) use ($pdo) {
+        $q = '`' . str_replace('`', '``', $t) . '`';
+        try { $pdo->exec("TRUNCATE TABLE $q"); } catch (Throwable $e) { try { $pdo->exec("DELETE FROM $q"); } catch (Throwable $e2) {} }
+    };
+    $try = function ($sql) use ($pdo) { try { $pdo->exec($sql); } catch (Throwable $e) { /* جدول/ستون هنوز نیست */ } };
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+    foreach ($targets as $sec) foreach ($byTable[$sec] ?? [] as $t) {
+        // کاربرانِ شرکت‌ها با DELETE تا شناسه از اول شروع نشود (نشستِ بازِ کاربرِ پاک‌شده روی کاربرِ تازه ننشیند)
+        if ($t === 'company_portal_users') $try("DELETE FROM `company_portal_users`"); else $wipe($t);
+    }
+    $has = fn($s) => in_array($s, $targets, true);
+    if ($has('personnel')) {
+        $try("UPDATE `report_insureds` SET `source` = 'MANUAL', `source_id` = NULL WHERE `source` = 'PERSON'");
+        if (!$has('visit_reports')) $try("UPDATE `visit_reports` SET `case_id` = NULL, `health_inspection_id` = NULL");
+    }
+    if ($has('companies')) {
+        $try("UPDATE `report_insureds` SET `source` = 'MANUAL', `source_id` = NULL WHERE `source` = 'COMPANY'");
+        if (!$has('visit_reports')) $try("UPDATE `visit_reports` SET `company_plate_id` = NULL");
+    }
+    if ($has('finance')) $try("DELETE FROM `finance_settings` WHERE `setting_key` IN ('invoice_counter', 'invoice_counter_year')");
+    if ($has('visit_reports')) $try("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%'");
+    if ($has('users')) {
+        $try("DELETE FROM `users` WHERE `role` <> 'ADMIN'");
+        $try("DELETE FROM `users` WHERE COALESCE(`is_deleted`, 0) = 1 AND `id` <> " . intval($userId));
+    }
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+    // فایل‌ها
+    $arch = archive_root($siteRoot); $tmp = temp_archive_root($siteRoot);
+    if ($full) {
+        foreach (['/Archive/بایگانی', '/Archive/مالی', '/موقت', '/بایگانی', '/tmp_ocr', '/tmp_recon',
+                  '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
+    } else {
+        if ($has('personnel')) {
+            foreach (['/بایگانی صادره', '/بایگانی کسر از حقوق', '/سایر مدارک'] as $d) bk_rrmdir_contents($arch . $d);
+            bk_rrmdir_contents($tmp, ['شرکت‌ها', 'چت شرکت‌ها', 'چت داخلی']);
+        }
+        if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
+        if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot)); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
+        if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
+        if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
+        if ($has('other')) foreach (['/بایگانی', '/tmp_ocr', '/tmp_recon', '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
+    }
+    if ($full || $has('messages')) @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
+    // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا خالی ولی مرتب دیده شوند
+    foreach ([$arch . '/بایگانی صادره', $arch . '/بایگانی کسر از حقوق', $arch . '/سایر مدارک', $arch . '/بایگانی شرکتی', $arch . '/بایگانی گزارشات بازدید',
+              $tmp, temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) @mkdir($dir, 0775, true);
 }

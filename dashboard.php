@@ -1671,7 +1671,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="card p-6 border-red-100 bg-gradient-to-br from-white to-red-50/30">
                     <h3 class="font-bold text-red-600 mb-2 border-b border-red-100 pb-3"><i class="fas fa-exclamation-triangle ml-2"></i>پاکسازی و بازنشانی داده‌ها</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">همه‌ی اطلاعات دیتابیس (پرونده‌ها، شرکت‌ها، مالی، اقساط، صورتحساب‌ها، گزارش‌ها، چت‌ها و لاگ‌ها) و همه‌ی فایل‌های بایگانی پاک می‌شوند؛ <b>پیش از حذف، خودکار یک بکاپ کامل در پوشه‌ی backup ساخته می‌شود</b> و اگر بکاپ ساخته نشود چیزی پاک نمی‌شود. (حساب مدیران و تنظیمات پاک نخواهد شد).</p>
-                    <button onclick="document.getElementById('reset-modal').classList.add('active')" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/20 hover-target transition-all text-xs">
+                    <button onclick="openResetModal()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/20 hover-target transition-all text-xs">
                         <i class="fas fa-trash-restore ml-2"></i> بازنشانی و حذف کلیه پرونده‌ها
                     </button>
                 </div>
@@ -3040,22 +3040,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <!-- دیالوگ تایید ریست کل سیستم -->
     <div id="reset-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-sm p-6 relative text-center border border-red-200">
+        <div class="modal-content w-full max-w-lg p-6 relative border border-red-200" style="max-height:94vh; overflow-y:auto; margin:0 12px;">
             <button type="button" onclick="document.getElementById('reset-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <div class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-lg shadow-red-500/30"><i class="fas fa-radiation-alt"></i></div>
-            <h3 class="text-lg font-black text-red-600 mb-2">هشدار پاکسازی کامل</h3>
-            <p class="text-xs text-slate-500 mb-4 leading-relaxed text-right">برای همیشه پاک می‌شود (سایت دقیقاً مثل روز اول می‌شود):<br>
-                • معرفی‌نامه‌ها، پرونده‌ها، مدارک، بازدیدها و تاریخچه‌ی بررسی‌ها<br>                • گزارش‌های بازدیدِ صادرشده (با عکس‌ها و نسخه‌های قبلی)<br>
-                • شرکت‌ها، درخواست‌های شرکتی و کاربرانِ شرکت‌ها<br>
-                • همه‌ی اطلاعات مالی (اقساط، دریافت‌ها، چک‌ها، صورتحساب‌ها، تسویه‌ها)<br>
-                • تیکت‌ها و همه‌ی چت‌ها، اعلان‌ها و اعلان‌های مدیر<br>
-                • کاربران داخلی غیرمدیر، لاگ ورود و خروج، کدهای ورود و درخواست‌های بازیابی رمز<br>
-                • کل بایگانی و پوشه‌های موقت روی هاست<br>
-                <b class="text-slate-600">حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی، قالب‌های صورتحساب و تنظیمات گزارش بازدید (انواع، قالب‌ها، فیلدها، بازدیدکننده‌ها و بیمه‌گذاران) می‌مانند.</b></p>
+            <div class="w-14 h-14 bg-red-500 text-white rounded-full flex items-center justify-center mx-auto mb-3 text-2xl shadow-lg shadow-red-500/30"><i class="fas fa-radiation-alt"></i></div>
+            <h3 class="text-lg font-black text-red-600 mb-1 text-center">حذف اطلاعات</h3>
+            <p class="text-[11px] text-slate-500 mb-4 text-center">کل سایت به بخش‌هایی تقسیم شده؛ همه را پاک کنید، یا فقط بخش‌هایی را، یا همه به‌جز چند بخش.</p>
+            <!-- حالت: همه / فقط انتخاب‌شده‌ها / همه به‌جز انتخاب‌شده‌ها -->
+            <div class="grid grid-cols-3 gap-1.5 bg-slate-100 rounded-xl p-1 mb-3 text-[11px] font-bold" id="reset-mode-seg">
+                <button type="button" data-mode="all" onclick="setResetMode('all')" class="rounded-lg py-2">همه‌چیز</button>
+                <button type="button" data-mode="only" onclick="setResetMode('only')" class="rounded-lg py-2">فقط بخش‌های انتخابی</button>
+                <button type="button" data-mode="except" onclick="setResetMode('except')" class="rounded-lg py-2">همه به‌جز انتخابی‌ها</button>
+            </div>
+            <p id="reset-mode-hint" class="text-[11px] font-bold text-slate-600 mb-2 text-right"></p>
+            <div id="reset-sections" class="space-y-1.5 mb-3 text-right"><p class="text-[11px] text-slate-400 text-center py-3">در حال بارگذاری...</p></div>
+            <p id="reset-dep-warn" class="hidden text-[11px] leading-5 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3 text-right"></p>
+            <p class="text-[11px] text-slate-500 leading-5 mb-3 text-right"><b class="text-slate-600">همیشه می‌مانند:</b> حساب‌های مدیر کل، تنظیمات سیستم و ربات‌ها، تنظیمات مالی، قالب‌های صورتحساب و تنظیمات گزارش بازدید (انواع، قالب‌ها، فیلدها، بازدیدکننده‌ها و بیمه‌گذاران).</p>
             <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3 text-[11px] leading-6 text-right mb-4"><i class="fas fa-shield-halved ml-1"></i>پیش از حذف، <b>خودکار بکاپ کامل</b> (دیتابیس + همه‌ی فایل‌ها و اکسل‌ها) در پوشه‌ی <b dir="ltr">backup/تاریخ امروز</b> ساخته می‌شود و از «تنظیمات سیستم ← پشتیبان‌گیری» قابل بازگرداندن است.</div>
             <input type="password" id="reset-password-input" placeholder="رمز تایید را وارد کنید" class="w-full border rounded-xl px-3 py-2.5 text-sm text-center mb-4" dir="ltr">
             <div class="flex gap-3">
-                <button type="button" onclick="executeResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، همه‌چیز پاک شود</button>
+                <button type="button" id="reset-go-btn" onclick="executeResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs">بله، همه‌چیز پاک شود</button>
                 <button type="button" onclick="document.getElementById('reset-modal').classList.remove('active')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl transition-colors hover-target text-xs">انصراف</button>
             </div>
         </div>
@@ -3146,7 +3149,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=6"></script>
-    <script src="visit-reports-list.js?v=3"></script>
+    <script src="visit-reports-list.js?v=4"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=3"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
     <?php endif; ?>
     <script>
@@ -9563,17 +9566,74 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
+        // ---- حذف اطلاعات: همه / فقط بخش‌های انتخابی / همه به‌جز انتخابی‌ها ----
+        let resetMode = 'all', resetSecs = [];
+        async function openResetModal() {
+            document.getElementById('reset-modal').classList.add('active');
+            document.getElementById('reset-password-input').value = '';
+            setResetMode('all');
+            const box = document.getElementById('reset-sections');
+            box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-3">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/record_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_sections'})});
+                const d = await res.json();
+                if (!d.ok) { box.innerHTML = `<p class="text-[11px] text-red-500 text-center">${d.error || 'خطا'}</p>`; return; }
+                resetSecs = d.sections;
+                box.innerHTML = resetSecs.map(x => `<label class="flex items-start gap-2 border rounded-xl p-2.5 cursor-pointer hover:bg-slate-50" data-rsec="${x.key}">
+                    <input type="checkbox" value="${x.key}" class="mt-1" onchange="renderResetState()">
+                    <span class="flex-1"><span class="flex justify-between gap-2"><b class="text-xs text-slate-700">${x.label}</b><span class="text-[10px] text-slate-400 whitespace-nowrap">${e2pNum(x.rows)} ردیف</span></span>
+                    <span class="block text-[10px] text-slate-400 leading-5 mt-0.5">${x.desc}</span></span></label>`).join('');
+                renderResetState();
+            } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500 text-center">خطا در ارتباط با سرور</p>'; }
+        }
+        function setResetMode(m) {
+            resetMode = m;
+            document.querySelectorAll('#reset-mode-seg button').forEach(b => b.className = 'rounded-lg py-2 ' + (b.dataset.mode === m ? 'bg-white shadow text-red-600' : 'text-slate-500'));
+            renderResetState();
+        }
+        function resetPicked() { return [...document.querySelectorAll('#reset-sections input:checked')].map(i => i.value); }
+        // بخش‌هایی که واقعاً پاک می‌شوند
+        function resetTargets() {
+            const all = resetSecs.map(x => x.key), picked = resetPicked();
+            return resetMode === 'all' ? all : resetMode === 'only' ? picked : all.filter(k => !picked.includes(k));
+        }
+        function renderResetState() {
+            const hint = document.getElementById('reset-mode-hint');
+            const inputs = document.querySelectorAll('#reset-sections input');
+            inputs.forEach(i => { i.disabled = resetMode === 'all'; if (resetMode === 'all') i.checked = false; });
+            hint.textContent = resetMode === 'all' ? 'همه‌ی بخش‌های زیر (و کلِ بایگانی و پوشه‌های موقت) پاک می‌شود.'
+                             : resetMode === 'only' ? 'فقط بخش‌هایی که تیک می‌زنید پاک می‌شود؛ بقیه می‌ماند.'
+                             : 'بخش‌هایی که تیک می‌زنید می‌ماند؛ همه‌ی بخش‌های دیگر پاک می‌شود.';
+            const t = resetTargets();
+            document.querySelectorAll('#reset-sections [data-rsec]').forEach(l => {
+                // قرمز = پاک می‌شود، سبز = می‌ماند (با استایلِ مستقیم تا به کلاس‌های ساخته‌شده‌ی Tailwind وابسته نباشد)
+                const del = t.includes(l.dataset.rsec);
+                l.style.borderColor = del ? '#fca5a5' : '#6ee7b7';
+                l.style.background = del ? '#fef2f2' : '#ecfdf5';
+            });
+            // وابستگی‌ها: مالی به پرونده‌ها و شرکت‌ها وصل است
+            const warn = [];
+            if (!t.includes('finance') && (t.includes('personnel') || t.includes('companies'))) warn.push('«مالی» می‌ماند ولی پرونده‌ها/شرکت‌هایی که اقساط و صورتحساب‌ها به آن‌ها وصل‌اند پاک می‌شوند؛ ردیف‌های مالیِ آن‌ها بی‌صاحب می‌مانند.');
+            if (!t.includes('visit_reports') && (t.includes('personnel') || t.includes('companies'))) warn.push('گزارش‌های بازدید می‌مانند ولی اتصالشان به درخواست‌های پاک‌شده برداشته می‌شود.');
+            const w = document.getElementById('reset-dep-warn');
+            w.innerHTML = warn.map(x => '<i class="fas fa-triangle-exclamation ml-1"></i>' + x).join('<br>'); w.classList.toggle('hidden', !warn.length);
+            const btn = document.getElementById('reset-go-btn');
+            const full = t.length === resetSecs.length;
+            btn.textContent = !t.length ? 'بخشی برای حذف انتخاب نشده' : full ? 'بله، همه‌چیز پاک شود' : `بله، ${e2pNum(t.length)} بخش پاک شود`;
+            btn.disabled = !t.length; btn.classList.toggle('opacity-50', !t.length);
+        }
         async function executeResetAll() {
             const password = document.getElementById('reset-password-input').value.trim();
             if (!password) { showToast('لطفاً رمز تایید را وارد کنید.', 'error'); return; }
-            const busyBtn = document.querySelector('#reset-modal button[onclick="executeResetAll()"]');
+            if (resetMode !== 'all' && !resetPicked().length) { showToast('حداقل یک بخش را تیک بزنید.', 'error'); return; }
+            const busyBtn = document.getElementById('reset-go-btn');
             const busyHtml = busyBtn ? busyBtn.innerHTML : '';
             if (busyBtn) { busyBtn.disabled = true; busyBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin ml-1"></i> در حال بکاپ‌گیری و حذف...'; }
             try {
                 const res = await fetch('api/record_actions.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'reset_all', password})
+                    body: JSON.stringify({action: 'reset_all', password, mode: resetMode, sections: resetPicked()})
                 });
                 const data = await res.json();
                 if (data.ok) {
@@ -9581,7 +9641,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     document.getElementById('reset-password-input').value = '';
                     // اعلان‌های ذخیره‌شده در همین مرورگر (زنگوله در حالتِ محلی) هم پاک شود
                     try { Object.keys(localStorage).filter(k => k.startsWith('notif:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
-                    showAlert('پاکسازی کامل انجام شد', data.message, 'success', () => location.reload());
+                    showAlert(data.full ? 'پاکسازی کامل انجام شد' : 'حذف اطلاعات انجام شد', data.message, 'success', () => location.reload());
                 } else if (data.error && data.error.indexOf('بکاپ') !== -1) {
                     showAlert('حذف انجام نشد', data.error, 'error');
                 } else {

@@ -8,6 +8,7 @@
     const { api, modal, askPassword, lightbox, plateHtml, fa, en, esc, money, fileUrl, API } = VR;
     const toast = (m, t = 'info') => (typeof window.showToast === 'function' ? window.showToast(m, t) : console.log(m));
     const confirmBox = (t, m, o) => (window.uiConfirm ? uiConfirm(t, m, o) : Promise.resolve(confirm(m)));
+    let lastRows = [];   // ردیف‌های همین صفحه (برای پنجره‌ی دانلود)
     const LINK_FA = { health: ['بازدید سلامت', 'fa-heart-pulse', 'bg-rose-50 text-rose-600'], case: ['درخواست کارکنان', 'fa-user-tie', 'bg-sky-50 text-sky-600'], company: ['ردیف شرکتی', 'fa-building', 'bg-violet-50 text-violet-600'] };
 
     const st = { page: 1, filters: {}, data: null, timer: null };
@@ -92,11 +93,13 @@
         const fc = Object.keys(p).filter(k => !['q', 'sort'].includes(k)).length;
         const fcEl = document.getElementById('vrl-fcount');
         fcEl.textContent = fa(fc); fcEl.classList.toggle('hidden', !fc);
+        lastRows = d.rows;
         if (!d.rows.length) {
             list.innerHTML = `<div class="vr-card p-12 text-center vr-fade-up"><div class="w-16 h-16 rounded-2xl bg-slate-100 text-slate-300 flex items-center justify-center mx-auto text-2xl mb-3"><i class="fas fa-folder-open"></i></div>
                 <p class="font-black text-slate-500 text-sm">${Object.keys(p).length > 1 ? 'گزارشی با این جستجو/فیلتر پیدا نشد.' : 'هنوز گزارشی صادر نشده است.'}</p></div>`;
         } else list.innerHTML = `<div class="space-y-2 vr-stagger">${d.rows.map(rowHtml).join('')}</div>`;
         list.querySelectorAll('[data-open]').forEach(el => el.onclick = () => VR.openDetail(Number(el.dataset.open)));
+        list.querySelectorAll('[data-dl]').forEach(el => el.onclick = e => { e.stopPropagation(); const r = (lastRows || []).find(x => x.id === Number(el.dataset.dl)); if (r) downloadPopup(r); });
         const pages = Math.ceil(d.total / d.per_page);
         const pg = document.getElementById('vrl-pager');
         pg.innerHTML = pages > 1 ? `<button class="vr-btn vr-btn-s !py-1.5" ${st.page <= 1 ? 'disabled' : ''} data-pg="${st.page - 1}"><i class="fas fa-chevron-right"></i></button>
@@ -127,6 +130,7 @@
                 ${linksChips(r)}
                 ${r.version > 1 ? `<span class="vr-chip bg-amber-50 text-amber-600"><i class="fas fa-code-branch"></i> نسخه ${fa(r.version)}</span>` : ''}
                 ${r.photos_count ? `<span class="vr-chip bg-slate-100 text-slate-500"><i class="fas fa-image"></i> ${fa(r.photos_count)}</span>` : ''}
+                <button type="button" data-dl="${r.id}" class="vr-chip bg-indigo-50 text-indigo-600 hover:bg-indigo-100" title="دانلود زیپ یا فایل گزارش"><i class="fas fa-download"></i> دانلود</button>
             </div></div>`;
     }
 
@@ -143,6 +147,28 @@
         reload();
         return m;
     };
+
+    // پنجره‌ی دانلود: زیپِ کاملِ گزارش یا فقط فایل‌ها؛ با شروعِ دانلود خودش بسته می‌شود
+    function downloadPopup(r) {
+        const opts = [
+            [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها (کلِ پوشه‌ی گزارش)'],
+            [fileUrl(r.id, 'pdf'), 'fa-file-pdf text-rose-500', 'فقط فایل گزارش (PDF)', ''],
+            r.has_docx ? [fileUrl(r.id, 'docx'), 'fa-file-word text-blue-600', 'فایل Word گزارش', ''] : null,
+            r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', `${fa(r.photos_count || 0)} عکس`] : null,
+        ].filter(Boolean);
+        const m = modal({ title: 'دانلود گزارش', icon: 'fa-download', width: '26rem', html: `<div class="space-y-2">${opts.map(([href, ic, t, sub], i) => `
+            <button type="button" data-i="${i}" class="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 p-3 text-right transition-colors">
+                <i class="fas ${ic} text-xl w-7 text-center"></i><span class="flex-1"><b class="block text-xs text-slate-700">${t}</b>${sub ? `<span class="text-[10px] text-slate-400">${sub}</span>` : ''}</span>
+                <i class="fas fa-arrow-down text-slate-300"></i></button>`).join('')}</div>` });
+        m.setTitle('دانلود گزارش', `<span dir="ltr">${esc(r.report_no)}</span> · ${esc(r.insured_name || '')}`);
+        m.body.querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+            const a = document.createElement('a');
+            a.href = opts[Number(b.dataset.i)][0]; a.download = '';
+            document.body.appendChild(a); a.click(); a.remove();
+            b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i> دانلود شروع شد...';
+            setTimeout(() => m.close(), 600);
+        });
+    }
 
     function renderDetail(m, r, reload) {
         m.setTitle(`گزارش <span dir="ltr">${esc(r.report_no)}</span>`, `${esc(r.category_name)} · صادرکننده: ${esc(r.issuer_name || '')} · ${fa(r.created_jalali)}`);
@@ -184,7 +210,7 @@
                         <a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'pdf')}"><i class="fas fa-download"></i> دانلود PDF</a>
                         ${r.has_docx ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'docx')}"><i class="fas fa-file-word text-blue-600"></i> Word</a>` : '<span></span>'}
                         ${r.has_zip ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'zip')}"><i class="fas fa-file-zipper text-amber-500"></i> ZIP عکس‌ها</a>` : '<span></span>'}
-                        <a class="vr-btn vr-btn-s" href="${API}?action=folder_zip&id=${r.id}"><i class="fas fa-box-archive text-violet-500"></i> کلِ پوشه</a>
+                        <a class="vr-btn vr-btn-s" href="${API}?action=folder_zip&id=${r.id}"><i class="fas fa-box-archive text-violet-500"></i> زیپ کاملِ گزارش</a>
                     </div>
                     ${r.can_admin && r.archive_path ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-folder"><i class="fas fa-folder-open text-amber-500"></i> نمایشِ پوشه در بایگانی</button>` : ''}
                     ${active && r.can_edit ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-edit !text-amber-700 !border-amber-200"><i class="fas fa-pen-to-square"></i> ویرایش گزارش</button>` : ''}
