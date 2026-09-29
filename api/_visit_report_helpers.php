@@ -421,6 +421,16 @@ function vr_write_register($pdo, $siteRoot) {
 //  پارسرِ PDF (الگوریتم‌های استخراجِ پایتونی - همان فایل‌های .py برنامه‌ی ویندوزی)
 // ---------------------------------------------------------------------
 function vr_python_path($pdo) { return vr_setting($pdo, 'report_python_path', VR_DEFAULT_PYTHON); }
+// پوشه‌ی خانگیِ کاربرِ هاست (مثلاً /home/besiteir). محیطِ پایتونِ سی‌پنل (CloudLinux) موقعِ اجرا متغیرِ HOME را
+// لازم دارد و PHP آن را به برنامه‌ها نمی‌دهد؛ بدونش یک Traceback بی‌ضرر چاپ می‌شود.
+function vr_home_dir($pdo) {
+    $h = getenv('HOME');
+    if ($h && is_dir($h)) return $h;
+    if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) { $pw = @posix_getpwuid(posix_geteuid()); if (!empty($pw['dir']) && is_dir($pw['dir'])) return $pw['dir']; }
+    if (preg_match('#^(/home\d*/[^/]+)/#', vr_python_path($pdo) . '/', $m) && is_dir($m[1])) return $m[1];
+    if (preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) return $m[1];
+    return sys_get_temp_dir();
+}
 function vr_run_parser($pdo, $pdfAbs, $parserAbs = null) {
     $py = vr_python_path($pdo);
     $runner = dirname(__DIR__) . '/report_assets/parser_runner.py';
@@ -428,7 +438,7 @@ function vr_run_parser($pdo, $pdfAbs, $parserAbs = null) {
     if (!is_file($py) && strpos($py, '/') !== false) return ['ok' => false, 'error' => "پایتون در مسیرِ تنظیم‌شده پیدا نشد: {$py} (از تنظیمات گزارش اصلاح کنید)."];
     $cmd = [$py, $runner, $pdfAbs];
     if ($parserAbs) $cmd[] = $parserAbs;
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => sys_get_temp_dir()];
+    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => vr_home_dir($pdo), 'PYTHONWARNINGS' => 'ignore'];
     $proc = @proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
     if (!is_resource($proc)) return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.'];
     stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);

@@ -271,7 +271,7 @@ if ($a === 'set_parser_upload') {
     $abs = $dir . '/' . $name;
     $tmpCheck = sys_get_temp_dir() . '/vr_chk_' . bin2hex(random_bytes(4)) . '.py';
     copy($f['tmp_name'], $tmpCheck);
-    $chk = @shell_exec(escapeshellarg(vr_python_path($pdo)) . ' -m py_compile ' . escapeshellarg($tmpCheck) . ' 2>&1');
+    $chk = @shell_exec('HOME=' . escapeshellarg(vr_home_dir($pdo)) . ' ' . escapeshellarg(vr_python_path($pdo)) . ' -m py_compile ' . escapeshellarg($tmpCheck) . ' 2>&1');
     @unlink($tmpCheck);
     if (trim((string)$chk) !== '') vr_fail('فایلِ پایتون خطای نگارشی دارد:' . "\n" . mb_substr(trim($chk), -800));
     $shared = [];
@@ -318,13 +318,18 @@ if ($a === 'set_parser_test') {
 }
 if ($a === 'set_python_check') {
     $py = vr_python_path($pdo);
-    $out = @shell_exec(escapeshellarg($py) . ' -c ' . escapeshellarg('import sys; print(sys.version.split()[0])
-for m in ("fitz", "pdfplumber", "PyPDF2"):
+    $envPrefix = 'HOME=' . escapeshellarg(vr_home_dir($pdo)) . ' PYTHONWARNINGS=ignore PYTHONIOENCODING=utf8 ';
+    $out = @shell_exec($envPrefix . escapeshellarg($py) . ' -c ' . escapeshellarg('import sys, warnings; warnings.simplefilter("ignore"); print("Python " + sys.version.split()[0])
+for m, label in (("pymupdf", "PyMuPDF (لازم)"), ("pdfplumber", "pdfplumber (اختیاری)"), ("PyPDF2", "PyPDF2 (اختیاری)")):
     try:
-        __import__(m); print(m + ": OK")
-    except Exception as e:
-        print(m + ": -")') . ' 2>&1');
-    vr_out(['ok' => $out !== null && $out !== '' && strpos($out, 'OK') !== false, 'output' => trim((string)$out), 'python' => $py]);
+        __import__(m); print(label + ": OK")
+    except Exception:
+        if m == "pymupdf":
+            try:
+                import fitz; print(label + ": OK"); continue
+            except Exception: pass
+        print(label + ": -")') . ' 2>&1');
+    vr_out(['ok' => $out !== null && strpos((string)$out, 'PyMuPDF (لازم): OK') !== false, 'output' => trim((string)$out), 'python' => $py]);
 }
 
 // ---- فیلدها (جایگزینِ fields_config.xlsx) ----

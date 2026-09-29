@@ -30,7 +30,10 @@ def _out(obj):
 #  خواندنِ متن
 # ---------------------------------------------------------------------------
 def extract_with_pymupdf(pdf_path):
-    import fitz  # PyMuPDF
+    try:
+        import pymupdf as fitz  # نسخه‌های تازه‌ی PyMuPDF
+    except ImportError:
+        import fitz  # PyMuPDF (نسخه‌های قدیمی)
     doc = fitz.open(pdf_path)
     try:
         return "\n".join([page.get_text() for page in doc])
