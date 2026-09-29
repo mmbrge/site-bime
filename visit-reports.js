@@ -153,10 +153,15 @@
     // ------------------------------------------------------------------
     //  پنجره‌ها
     // ------------------------------------------------------------------
-    function modal({ title, icon = 'fa-file-circle-check', width = '64rem', html = '', onClose, noBackdropClose = false } = {}) {
+    // لایه‌ی هر پنجره‌ی تازه بالای پنجره‌های بازِ قبلی (حتی وقتی از روی مودال‌های پنل با z-index بالا باز شده)
+    function nextZ(min = 9000) {
+        return Math.max(min, ...[...document.querySelectorAll('.vr-overlay')].map(o => Number(o.style.zIndex) || 9000)) + 1;
+    }
+    function modal({ title, icon = 'fa-file-circle-check', width = '64rem', html = '', onClose, noBackdropClose = false, zIndex = 0 } = {}) {
         injectCss();
         const ov = document.createElement('div');
         ov.className = 'vr-overlay';
+        ov.style.zIndex = String(nextZ(zIndex || 9000));
         ov.innerHTML = `<div class="vr-modal" style="max-width:${width}">
             <div class="flex items-center justify-between gap-3 px-5 py-4 bg-white border-b border-slate-100">
                 <div class="flex items-center gap-3 min-w-0"><span class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30"><i class="fas ${icon}"></i></span>
@@ -197,7 +202,7 @@
         injectCss();
         const ov = document.createElement('div');
         ov.className = 'vr-overlay';
-        ov.style.cssText = 'align-items:center;background:rgba(2,6,23,.9);z-index:9500';
+        ov.style.cssText = `align-items:center;background:rgba(2,6,23,.9);z-index:${nextZ(9500)}`;
         const draw = () => {
             ov.innerHTML = `<button class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 vr-lb-x"><i class="fas fa-xmark"></i></button>
                 ${urls.length > 1 ? `<button class="absolute right-4 top-1/2 w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 vr-lb-n"><i class="fas fa-chevron-right"></i></button>
@@ -237,7 +242,8 @@
     ];
 
     class Builder {
-        // opts: { mode: 'new'|'edit'|'health', reportId, healthId, onDone(report), inModal }
+        // opts: { mode: 'new'|'edit'|'health'|'target', reportId, healthId, target: {type, id, raw, insurer, class, title}, prefill, onDone(report), inModal }
+        //   target: «ساخت گزارش بازدید» از روی یک درخواست (ردیفِ شرکتی / درخواستِ کارکنان / ردیفِ هنوز ثبت‌نشده) - فرم از همان پر می‌شود
         constructor(root, opts = {}) {
             injectCss();
             this.root = root; this.opts = opts; this.mode = opts.mode || 'new';
@@ -253,6 +259,7 @@
         async init() {
             this.root.innerHTML = `<div class="space-y-4">${[1, 2, 3].map(() => '<div class="vr-skel h-28"></div>').join('')}</div>`;
             const b = await boot(true);
+            if (this.dead) return;   // در این فاصله صفحه عوض شده و فرمِ تازه‌ای جایش آمده
             if (!b.ok) { this.root.innerHTML = `<div class="vr-card p-8 text-center text-red-500 font-bold text-sm">${esc(b.error || 'خطا در بارگذاری')}</div>`; return; }
             this.boot = b;
             if (this.mode === 'edit') {
@@ -268,6 +275,15 @@
                 this.health = h;
                 h.photos.forEach(p => { if (p.status !== 'REJECTED') this.healthSel.add(p.key); });
             }
+            if (this.mode === 'target') {
+                this.prefill = this.opts.prefill;
+                if (!this.prefill) {
+                    const t = this.opts.target || {};
+                    const p = await api('target_prefill', { type: t.type, id: t.id, raw: t.raw, insurer: t.insurer, class: t.class, title: t.title, company_id: t.company_id });
+                    if (!p.ok) { this.root.innerHTML = `<div class="vr-card p-8 text-center text-red-500 font-bold text-sm">${esc(p.error)}</div>`; return; }
+                    this.prefill = p;
+                }
+            }
             if (!b.categories.length) {
                 this.root.innerHTML = `<div class="vr-card p-10 text-center vr-fade-up"><div class="w-16 h-16 rounded-2xl bg-amber-100 text-amber-500 flex items-center justify-center mx-auto text-2xl mb-3"><i class="fas fa-lock"></i></div>
                     <p class="font-black text-slate-700">هیچ نوع گزارشی برای شما فعال نیست.</p><p class="text-xs text-slate-400 mt-2 font-bold">مدیر کل باید از «تنظیمات گزارش» به شما دسترسی بدهد.</p></div>`;
@@ -275,10 +291,12 @@
             }
             this.renderShell();
             if (this.cat) this.selectCat(this.cat.id, true);
+            else if (this.mode === 'target' && this.prefill.category_id && b.categories.some(c => c.id === this.prefill.category_id)) this.selectCat(this.prefill.category_id, true);
             else if (b.categories.length === 1) this.selectCat(b.categories[0].id);
         }
 
         renderShell() {
+            if (this.dead) return;
             const b = this.boot;
             const head = this.mode === 'edit'
                 ? `<div class="vr-card p-4 flex flex-wrap items-center gap-3 vr-fade-up"><span class="vr-chip bg-amber-100 text-amber-700"><i class="fas fa-pen"></i> ویرایشِ گزارش</span>
@@ -286,7 +304,8 @@
                     <span class="text-[11px] text-slate-400 font-bold mr-auto">بعد از ذخیره، فایل‌های قبلی با «(old)» کنارِ فایل‌های تازه نگه داشته می‌شوند.</span></div>`
                 : `<div class="vr-card p-4 sm:p-5 vr-fade-up">
                     <div class="flex items-center justify-between gap-3 mb-3 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-indigo-500 to-violet-600"><i class="fas fa-shapes"></i></span> نوع گزارش</div>
-                    ${this.health ? `<span class="vr-chip bg-rose-50 text-rose-600"><i class="fas fa-heart-pulse"></i> از بازدید سلامت شماره ${fa(this.health.inspection.number)} · ${esc(this.health.inspection.holder || '')}</span>` : ''}</div>
+                    ${this.health ? `<span class="vr-chip bg-rose-50 text-rose-600"><i class="fas fa-heart-pulse"></i> از بازدید سلامت شماره ${fa(this.health.inspection.number)} · ${esc(this.health.inspection.holder || '')}</span>` : ''}
+                    ${this.mode === 'target' ? `<span class="vr-chip bg-sky-50 text-sky-700"><i class="fas fa-link"></i> از درخواست${this.prefill.title ? ': ' + esc(this.prefill.title) : ''} · ${this.prefill.class === 'HEAVY' ? 'سنگین' : 'سواری / وانت'}</span>` : ''}</div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 vr-stagger">${b.categories.map(c => `
                         <div class="vr-cat vr-card p-4 flex items-start gap-3" data-cat="${c.id}">
                             <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0 bg-gradient-to-br ${c.insurer === 'PARSIAN' ? 'from-rose-500 to-red-600' : 'from-sky-500 to-indigo-600'}"><i class="fas ${/سنگین|کامیون/.test(c.name) ? 'fa-truck' : 'fa-car'}"></i></span>
@@ -326,6 +345,7 @@
                 this.applyForm(this.health.forms[catId] || {});
                 if (this.health.damages.length && !this.damages.length) { this.damages = this.health.damages.slice(0, this.maxDamages()); this.renderDamages(); }
             }
+            else if (this.mode === 'target') this.applyForm((this.prefill.forms || {})[catId] || {});
             if (this.mode === 'new') this.offerDraft();
             this.updateVisibility();
             this.dirty = false;
@@ -352,7 +372,7 @@
                 return `<div class="vr-card p-4 sm:p-5 vr-fade-up"><div class="vr-sec-title mb-4"><span class="vr-ic bg-gradient-to-br ${st[0]}"><i class="fas ${st[1]}"></i></span>${esc(s)}</div>
                     <div class="grid grid-cols-1 sm:grid-cols-6 gap-3">${fs.map(f => this.fieldHtml(f)).join('')}</div></div>`;
             }).join('');
-            const canParse = this.mode === 'new' && c.has_parser !== undefined;
+            const canParse = ['new', 'target'].includes(this.mode) && c.has_parser !== undefined;
             const wrap = this.$('.vr-form-wrap');
             wrap.innerHTML = `
                 <div class="space-y-4">
@@ -390,8 +410,9 @@
                 ${secHtml}
                 ${this.photosCardHtml()}
                 <div class="vr-sticky"><div class="vr-card p-3 sm:p-4 flex flex-wrap items-center gap-3 shadow-xl">
-                    <div class="flex-1 min-w-[12rem]"><div class="vr-progress hidden"><div style="width:0%"></div></div><p class="vr-status text-[11px] font-bold text-slate-400">${this.mode === 'edit' ? 'برای ذخیره‌ی تغییرات، رمزِ پنلتان پرسیده می‌شود.' : 'بعد از صدور، PDF و Word و ZIPِ عکس‌ها در بایگانی ساخته می‌شود.'}</p></div>
+                    <div class="flex-1 min-w-[12rem]"><div class="vr-progress hidden"><div style="width:0%"></div></div><p class="vr-status text-[11px] font-bold text-slate-400">${this.mode === 'edit' ? 'برای ذخیره‌ی تغییرات، رمزِ پنلتان پرسیده می‌شود.' : (this.mode === 'target' ? 'بعد از صدور، گزارش و عکس‌ها در بایگانی ساخته می‌شود و به همین درخواست وصل می‌شود.' : 'بعد از صدور، PDF و Word و ZIPِ عکس‌ها در بایگانی ساخته می‌شود.') + ' بارگذاریِ عکس‌ها (عکس، پوشه یا ZIP) اجباری است.'}</p></div>
                     <button type="button" class="vr-btn vr-btn-s vr-preview"><i class="fas fa-eye"></i> پیش‌نمایش PDF</button>
+                    <button type="button" class="vr-btn vr-btn-s vr-test" title="بدونِ عکس هم ساخته می‌شود؛ نه ثبت می‌شود و نه در بایگانی می‌رود - فقط همین لحظه دانلود"><i class="fas fa-flask text-amber-500"></i> ساخت تستی گزارش</button>
                     <button type="button" class="vr-btn vr-btn-p vr-submit px-6"><i class="fas ${this.mode === 'edit' ? 'fa-floppy-disk' : 'fa-file-circle-check'}"></i> ${this.mode === 'edit' ? 'ذخیره‌ی ویرایش' : 'صدور گزارش'}</button>
                 </div></div>
                 </div>`;
@@ -499,7 +520,7 @@
         photosCardHtml() {
             const hp = this.health ? this.health.photos : [];
             return `<div class="vr-card p-4 sm:p-5 vr-fade-up">
-                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span>عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
+                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span><span class="req">*</span>عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
                 <div class="flex flex-wrap gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*" capture="environment" class="hidden vr-cam-in"></label>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="همه‌ی عکس‌های داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه<input type="file" webkitdirectory directory multiple class="hidden vr-dir-in"></label>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="عکس‌های داخلِ فایلِ ZIP خودکار استخراج می‌شوند"><i class="fas fa-file-zipper text-violet-500"></i> ZIP<input type="file" accept=".zip,application/zip" multiple class="hidden vr-zip-in"></label></div></div>
@@ -548,10 +569,11 @@
                     t.querySelector('img').onclick = () => lightbox(this._urls, Number(t.dataset.i));
                 });
             }
-            const total = this.uploads.length + (this.existing ? this.existing.photos.filter(p => !this.removePhotos.has(p.id)).length : 0) + (this.health ? this.healthSel.size : 0);
+            const total = this.photoTotal();
             const cnt = this.root.querySelector('.vr-ph-count');
-            if (cnt) cnt.textContent = total ? `${fa(total)} عکس` : 'بدون عکس';
+            if (cnt) { cnt.textContent = total ? `${fa(total)} عکس` : 'بدون عکس (اجباری)'; cnt.className = `vr-ph-count vr-chip ${total ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`; }
         }
+        photoTotal() { return this.uploads.length + (this.existing ? this.existing.photos.filter(p => !this.removePhotos.has(p.id)).length : 0) + (this.health ? this.healthSel.size : 0); }
         async addImages(files) {
             const st = this.root.querySelector('.vr-status');
             let list = [];
@@ -639,6 +661,7 @@
                 q.onfocus = show; q.oninput = show; q.onblur = () => setTimeout(() => dd.classList.add('hidden'), 150);
             }
             wrap.querySelector('.vr-preview').onclick = () => this.preview();
+            wrap.querySelector('.vr-test').onclick = () => this.testBuild();
             wrap.querySelector('.vr-submit').onclick = () => this.submit();
         }
 
@@ -782,6 +805,11 @@
             const chassisF = this.cat.fields.find(f => f.excel_column === 'شماره شاسی');
             if (!filled && !(chassisF && form.fields[chassisF.field_key])) return 'پلاک یا شماره شاسی را وارد کنید.';
             if (!form.insured.name) return 'نام بیمه‌گذار را وارد کنید.';
+            if (!this.photoTotal()) {
+                const d = this.root.querySelector('[data-drop="img"]');
+                if (d) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.classList.add('vr-flash'); }
+                return 'عکس‌های بازدید را بارگذاری کنید (عکس، پوشه یا فایل ZIP). برای ساختِ بدونِ عکس، «ساخت تستی گزارش» را بزنید.';
+            }
             for (const f of this.cat.fields) {
                 if (!f.required || ['PartsStatus', 'Checkbox'].includes(f.field_type)) continue;
                 const w = this.root.querySelector(`[data-wrap="${f.field_key}"]`);
@@ -817,6 +845,34 @@
             } catch (e) { toast('خطا در ساختِ پیش‌نمایش.', 'error'); }
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-eye"></i> پیش‌نمایش PDF';
         }
+        // «ساخت تستی»: بدونِ عکس و بدونِ ثبت؛ فایل همین لحظه دانلود می‌شود و در بایگانی نمی‌ماند
+        testBuild() {
+            if (!this.cat) return;
+            const m = modal({ title: 'ساخت تستی گزارش', icon: 'fa-flask', width: '30rem', html: `<p class="text-xs text-slate-500 font-bold leading-6 mb-4">این گزارش <b>ثبت نمی‌شود</b>، شماره نمی‌گیرد و در بایگانی ساخته نمی‌شود؛ فقط همین حالا دانلود می‌شود. عکس هم لازم نیست.</p>
+                <div class="grid grid-cols-2 gap-2"><button type="button" class="vr-btn vr-btn-p vr-t-pdf justify-center"><i class="fas fa-file-pdf"></i> دانلود PDF</button>
+                <button type="button" class="vr-btn vr-btn-s vr-t-docx justify-center"><i class="fas fa-file-word text-blue-600"></i> دانلود Word</button></div>` });
+            const go = async (fmt, btn) => {
+                const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ساخت...';
+                const [fd] = this.formData('test_build');
+                fd.append('format', fmt);
+                try {
+                    const res = await fetch(API, { method: 'POST', body: fd });
+                    if ((res.headers.get('Content-Type') || '').includes('json')) { const d = await res.json(); toast(d.error || 'ساخت ممکن نشد.', 'error'); }
+                    else {
+                        const cd = res.headers.get('Content-Disposition') || '';
+                        const mm = cd.match(/filename\*=UTF-8''([^;]+)/);
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(await res.blob());
+                        a.download = mm ? decodeURIComponent(mm[1]) : `test.${fmt}`;
+                        document.body.appendChild(a); a.click(); a.remove();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+                    }
+                } catch (e) { toast('خطا در ساختِ فایل.', 'error'); }
+                btn.disabled = false; btn.innerHTML = old;
+            };
+            m.body.querySelector('.vr-t-pdf').onclick = e => go('pdf', e.currentTarget);
+            m.body.querySelector('.vr-t-docx').onclick = e => go('docx', e.currentTarget);
+        }
         async submit() {
             if (this.busy || !this.cat) return;
             const [fd, form] = this.formData(this.mode === 'edit' ? 'edit' : 'issue');
@@ -829,6 +885,7 @@
                 fd.append('remove_photos', JSON.stringify([...this.removePhotos]));
             }
             if (this.mode === 'health') { fd.append('health_inspection_id', this.health.inspection.id); fd.append('health_photos', JSON.stringify([...this.healthSel])); }
+            if (this.mode === 'target' && this.opts.target && ['company', 'case'].includes(this.opts.target.type)) { fd.append('link_type', this.opts.target.type); fd.append('link_id', this.opts.target.id); }
             this.uploads.forEach(f => fd.append('photos[]', f, f.name));
             this.busy = true;
             const btn = this.$('.vr-submit'), bar = this.$('.vr-progress'), st = this.$('.vr-status');
@@ -950,21 +1007,39 @@
     const VR = window.VR = window.VR || {};
     Object.assign(VR, { api, apiForm, modal, askPassword, lightbox, plateHtml, fa, en, esc, money, fileUrl, injectCss, boot, numWords, Builder, API });
 
+    // با هر بار آمدن به صفحه‌ی «ساخت گزارش بازدید» فرم تازه ساخته می‌شود؛ کارِ نیمه‌تمام به‌عنوانِ پیش‌نویس
+    // ذخیره می‌شود و همان‌جا پیشنهادِ بازیابی می‌آید (عکس‌ها در پیش‌نویس نمی‌مانند)
     VR.initBuildTab = function () {
         const root = document.getElementById('vr-build-root');
         if (!root) return;
-        if (root._builder && root._builder.dirty) return;   // کارِ نیمه‌تمام پاک نشود
+        const old = root._builder;
+        if (old && old.dirty && old.cat) { try { old.saveDraft(true); } catch (e) {} }
+        if (old) old.dead = true;
         root._builder = new Builder(root, { mode: 'new' });
     };
     // پاپ‌آپ: ساختِ گزارش از روی یک بازدید سلامت
     VR.openHealthBuilder = function (healthId, onDone) {
-        const m = modal({ title: 'ساخت گزارش بازدید', icon: 'fa-file-circle-plus', width: '76rem' });
+        const m = modal({ title: 'ساخت گزارش بازدید', icon: 'fa-file-circle-plus', width: '76rem', zIndex: 1000005 });
         m.setTitle('ساخت گزارش بازدید', 'اطلاعات و عکس‌های همین بازدید سلامت پیش‌پر شده است؛ بعد از صدور، PDF مستقیم در همین بازدید قرار می‌گیرد.');
         new Builder(m.body, { mode: 'health', healthId, inModal: true, close: m.close, onDone });
         return m;
     };
+    // پاپ‌آپ: «ساخت گزارش بازدید» از روی یک درخواست (همه‌جای پنل از همین استفاده می‌کند)
+    //   target: { type: 'company'|'case'|'raw', id, raw, insurer, class, title }
+    //   اگر برای همین درخواست قبلاً گزارش صادر شده، همان برای ویرایش باز می‌شود؛ اگر درخواستِ کارکنان بازدیدِ سلامتِ
+    //   تاییدشده دارد، ساخت از روی همان بازدید (با عکس‌هایش) باز می‌شود.
+    VR.openTargetBuilder = async function (target, onDone) {
+        const p = await api('target_prefill', { type: target.type, id: target.id, raw: target.raw, insurer: target.insurer, class: target.class, title: target.title, company_id: target.company_id });
+        if (!p.ok) { toast(p.error || 'خطا', 'error'); return null; }
+        if (p.existing) { toast(`برای این درخواست قبلاً گزارش ${p.existing.report_no} صادر شده؛ همان برای ویرایش باز شد.`, 'info'); return VR.openEditor(p.existing.id, onDone); }
+        if (p.health_id) return VR.openHealthBuilder(p.health_id, onDone);
+        const m = modal({ title: 'ساخت گزارش بازدید', icon: 'fa-file-circle-plus', width: '76rem', zIndex: 1000005 });
+        m.setTitle('ساخت گزارش بازدید', 'اطلاعاتی که برای همین خودرو ثبت شده خودکار نشسته است؛ نوعِ گزارش هم بر اساسِ سواری/سنگین انتخاب شده (قابلِ تغییر).');
+        new Builder(m.body, { mode: 'target', target, prefill: p, inModal: true, close: m.close, onDone });
+        return m;
+    };
     VR.openEditor = function (reportId, onDone) {
-        const m = modal({ title: 'ویرایش گزارش', icon: 'fa-pen-to-square', width: '76rem' });
+        const m = modal({ title: 'ویرایش گزارش', icon: 'fa-pen-to-square', width: '76rem', zIndex: 1000005 });
         new Builder(m.body, { mode: 'edit', reportId, inModal: true, close: m.close, onDone });
         return m;
     };

@@ -506,6 +506,73 @@ try {
         exit;
     }
 
+    // «ساخت گزارش بازدید» از روی یک درخواست: اطلاعاتِ همان خودرو برای هر نوع گزارش + نوعِ پیشنهادی (سواری/سنگین)
+    //   type = company (ردیفِ شرکتی) | case (درخواستِ کارکنان) | raw (ردیفی که هنوز ثبت نشده؛ داده از خودِ فرم)
+    if ($action === 'target_prefill') {
+        if ($user['role'] === 'PARSIAN') vr_fail('دسترسی ندارید.');
+        $type = (string)($data['type'] ?? '');
+        $tid = intval($data['id'] ?? 0);
+        $existing = null; $health = null;
+        if ($type === 'raw') {
+            $raw = is_array($data['raw'] ?? null) ? $data['raw'] : [];
+            $raw = array_map(fn($v) => is_scalar($v) ? trim((string)$v) : '', $raw);
+            // ردیفِ شرکتیِ هنوز ثبت‌نشده: بیمه‌گذار همان شرکت است
+            if (!empty($data['company_id'])) {
+                $co = $pdo->prepare("SELECT name, economic_code, phone, address FROM companies WHERE id = ?");
+                $co->execute([intval($data['company_id'])]);
+                if ($co = $co->fetch()) $raw += ['name' => $co['name'], 'national_id' => $co['economic_code'], 'phone_bimeg' => $co['phone'], 'addres_bimeg' => $co['address']];
+            }
+            $t = ['insurer' => (string)($data['insurer'] ?? 'PASARGAD'), 'raw' => $raw, 'title' => (string)($data['title'] ?? ''),
+                  'class' => in_array($data['class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $data['class'] : vr_vehicle_class($raw['vehicle_type'] ?? '')];
+        } else {
+            if (!in_array($type, ['company', 'case'], true)) vr_fail('نوعِ درخواست نامعتبر است.');
+            $t = vr_target_raw($pdo, $type, $tid);
+            if (!$t) vr_fail('درخواست پیدا نشد.');
+            $col = $type === 'company' ? 'company_plate_id' : 'case_id';
+            $ex = $pdo->prepare("SELECT id, report_no FROM visit_reports WHERE $col = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1");
+            $ex->execute([$tid]);
+            $existing = $ex->fetch() ?: null;
+            if ($type === 'case') {
+                // بازدیدِ سلامتِ تاییدشده دارد: همان مسیرِ «ساخت گزارش از بازدید سلامت» (با عکس‌های خودش)
+                $h = $pdo->prepare("SELECT id FROM health_inspections WHERE case_id = ? AND status IN ('PHOTOS_APPROVED', 'APPROVED') ORDER BY id DESC LIMIT 1");
+                $h->execute([$tid]);
+                $health = intval($h->fetchColumn()) ?: null;
+            }
+        }
+        $cats = vr_user_categories($pdo, $user);
+        $forms = [];
+        foreach ($cats as $c) $forms[$c['id']] = vr_map_parsed($t['raw'], vr_fields($pdo, $c['id']), vr_visitors($pdo, $c['id']));
+        vr_out(['ok' => true, 'forms' => $forms, 'category_id' => vr_suggest_category($cats, $t['insurer'], $t['class']), 'class' => $t['class'],
+                'title' => $t['title'], 'existing' => $existing, 'health_id' => $health]);
+    }
+
+    // «ساخت تستی»: همان فایل‌ها، ولی نه بایگانی می‌شود و نه ثبت؛ فقط همین لحظه دانلود می‌شود
+    if ($action === 'test_build') {
+        $cat = vr_category($pdo, $data['category_id'] ?? 0);
+        if (!$cat || !vr_can_issue($cat, $user)) vr_fail('اجازه‌ی ساختِ این نوع گزارش را ندارید.');
+        $fields = vr_fields($pdo, $cat['id']);
+        $form = vr_clean_form(vr_input_form($data), $fields);
+        $date = vr_parse_jalali($data['report_date'] ?? '') ?: [jalali_from_gregorian_ts_dotted(time()), time()];
+        $values = vr_build_values($cat, $fields, $form, ['date' => $date[0], 'issuer_name' => $user['name'], 'report_no' => 'تستی']);
+        $fmt = ($data['format'] ?? 'pdf') === 'docx' ? 'docx' : 'pdf';
+        $tmp = sys_get_temp_dir() . '/vr_test_' . bin2hex(random_bytes(6)) . '.' . $fmt;
+        if ($fmt === 'pdf') {
+            [$layout, $assetDir] = vr_layout($pdo, $cat);
+            rpt_render_pdf($layout, $assetDir, $values, $tmp, vr_render_opts($pdo, $cat));
+        } else {
+            rpt_fill_docx($siteRoot . '/' . ltrim($cat['template_path'], '/'), $tmp, $values, vr_render_opts($pdo, $cat));
+        }
+        if (!is_file($tmp)) vr_fail('ساختِ فایل ممکن نشد.');
+        $plateDisplay = vr_plate_display($form['plate']['p1'], $form['plate']['letter'], $form['plate']['p2'], $form['plate']['iran']);
+        $name = '(تستی) ' . build_health_report_filename($date[0], $plateDisplay, $fmt);
+        header('Content-Type: ' . ($fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
+        header("Content-Disposition: attachment; filename=\"test.$fmt\"; filename*=UTF-8''" . rawurlencode($name));
+        header('Content-Length: ' . filesize($tmp));
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
+
     if ($action === 'issue' || $action === 'edit') {
         $existing = null;
         if ($action === 'edit') {
@@ -539,12 +606,26 @@ try {
         $removePhotos = $data['remove_photos'] ?? [];
         if (is_string($removePhotos)) $removePhotos = json_decode($removePhotos, true) ?: [];
         $uploads = vr_uploaded_images();
+        // عکس‌های بازدید اجباری است (عکس، پوشه یا ZIP)؛ فقط «ساخت تستی» بدونِ عکس ساخته می‌شود
+        $keptPhotos = 0;
+        if ($existing) {
+            $kp = $pdo->prepare("SELECT id FROM visit_report_photos WHERE report_id = ?");
+            $kp->execute([$existing['id']]);
+            $keptPhotos = count(array_diff(array_map('intval', $kp->fetchAll(PDO::FETCH_COLUMN)), array_map('intval', (array)$removePhotos)));
+        }
+        if (!$uploads && !($healthId && $healthKeys) && !$keptPhotos) vr_fail('بارگذاریِ عکس‌های بازدید (عکس، پوشه یا فایل ZIP) اجباری است. برای ساختِ بدونِ عکس از «ساخت تستی» استفاده کنید.');
+        // اتصال به درخواستی که گزارش از رویش ساخته شده (ردیفِ شرکتی / درخواستِ کارکنان)
+        $linkType = (string)($data['link_type'] ?? '');
+        $linkId = intval($data['link_id'] ?? 0);
+        if ($linkType !== '' && (!in_array($linkType, ['company', 'case'], true) || !$linkId || $user['role'] === 'PARSIAN')) vr_fail('اتصالِ گزارش به این درخواست مجاز نیست.');
         $report = vr_produce($pdo, $siteRoot, $user, $cat, $fields, $form, $date[0], $date[1], $existing,
                              ['uploads' => $uploads, 'remove_photos' => $existing ? $removePhotos : [],
                               'health_photos' => $healthId ? vr_health_photos_pick($pdo, $siteRoot, $healthId, (array)$healthKeys) : []]);
         $link = null;
         try {
             if ($healthId) $link = vr_link_health($pdo, $siteRoot, $report, $healthId, $user['id']);
+            elseif ($linkType === 'company') $link = vr_link_company_plate($pdo, $siteRoot, $report, $linkId, $user['id']);
+            elseif ($linkType === 'case') $link = vr_link_case($pdo, $siteRoot, $report, $linkId, $user['id']);
             elseif ($existing) $link = vr_relink($pdo, $siteRoot, $report, $user['id']);
         } catch (Throwable $e) { $link = ['ok' => false, 'error' => $e->getMessage()]; }
         if ($link && !empty($link['ok'])) vr_audit($pdo, $user['id'], 'VR_LINK', $report['id'], ($link['target'] ?? '') . ' · ' . ($link['report'] ?? ''));

@@ -20,11 +20,17 @@
     let seq = 0;
 
     const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false,
-        carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: false, customCov: false, cov: null,
-        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {} });
+        carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
+        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false });
+    // سواری/وانت یا سنگین: انتخابِ کاربر، وگرنه حدس از نام خودرو (مثل سرور)
+    const HEAVY_RE = /کامیون|کشنده|تریلی|تریلر|اتوبوس|مینی\s*بوس|میدل\s*باس|بوس|سنگین|کمپرسی|تانکر|جرثقیل|لودر|بیل\s*مکانیکی|گریدر|بولدوزر|تراکتور|ماشین\s*آلات|یدک\s*کش/;
+    const vclassOf = r => r.vclass || (HEAVY_RE.test(String(r.carName || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک')) ? 'HEAVY' : 'LIGHT');
+    // این ردیف بازدید لازم دارد؟ (بدنه، خودروی کارکرده، و «نیاز به بازدید ندارد» تیک نخورده)
+    const needsVisit = r => isNew() && r.type === 'BODY' && !r.skipHealth && !r.isNew;
+    const VISIT_TYPES = ['health_inspection', 'health_report'];
 
     function blankState() {
-        return { companyId: '', insurer: 'PASARGAD', kind: 'NEW_POLICY', mode: 'THIRDPARTY', text: '', letter: null,
+        return { companyId: '', insurer: 'PASARGAD', kind: 'NEW_POLICY', mode: 'THIRDPARTY', text: '', letter: null, noVisitAll: false,
                  liabilityAll: '', liabilityPerRow: false, cov: null, covBaseOnly: false, defaults: null, rows: [newRow('THIRDPARTY')] };
     }
 
@@ -146,6 +152,8 @@
               <label class="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" data-f="covBaseOnly" ${st.covBaseOnly ? 'checked' : ''}> فقط پوشش پایه (بدون پوشش تکمیلی)</label>
             </div>
             <p class="text-[10px] mb-3">${hint}</p>
+            <label class="flex items-center gap-2 text-xs font-black mb-3 rounded-xl border-2 px-3 py-2 w-fit cursor-pointer ${st.noVisitAll ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'}">
+              <input type="checkbox" data-f="noVisitAll" ${st.noVisitAll ? 'checked' : ''}> این درخواست نیاز به بازدید ندارد <span class="font-bold text-[10px] text-slate-400">(گزارش و عکس‌های بازدید برای هیچ خودرویی خواسته نمی‌شود)</span></label>
             ${st.covBaseOnly ? '' : covEditor(st.cov || {}, 'all')}
             <p class="text-[10px] text-slate-400 mt-2">اگر یک پلاک پوشش‌های دیگری می‌خواهد، در کارتِ همان خودرو «پوشش متفاوت» را بزنید.</p></div>`;
     }
@@ -161,16 +169,21 @@
         const plate = r.noPlate
             ? `<div class="grid grid-cols-2 gap-2"><div><label class="lbl">شماره شاسی (VIN) *</label><input data-r="chassis" class="inp" dir="ltr" value="${esc(r.chassis)}"></div>
                <div><label class="lbl">شماره موتور</label><input data-r="engine" class="inp" dir="ltr" value="${esc(r.engine)}"></div></div>`
-            : `<div><label class="lbl">پلاک *</label><div class="flex gap-1 items-center" dir="rtl">
-                <input data-r="p1" class="inp text-center !w-14" maxlength="2" placeholder="۱۲" value="${esc(fa(r.p1))}">
-                <select data-r="letter" class="inp !w-24">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            // مثلِ بقیه‌ی فرم‌های پنل: چپ‌به‌راست [۲ رقم = p4] [حرف] [۳ رقم] [ایران + کد شهر = p1]
+            : `<div><label class="lbl">پلاک *</label><div class="flex gap-1 items-center" dir="ltr">
+                <input data-r="p4" class="inp text-center !w-14" maxlength="2" placeholder="۱۲" value="${esc(fa(r.p4))}">
+                <select data-r="letter" class="inp !w-24" dir="rtl">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
                 <input data-r="p2" class="inp text-center !w-16" maxlength="3" placeholder="۳۴۵" value="${esc(fa(r.p2))}">
                 <span class="text-[10px] text-slate-400 px-1">ایران</span>
-                <input data-r="p4" class="inp text-center !w-14" maxlength="2" placeholder="۶۷" value="${esc(fa(r.p4))}"></div></div>`;
+                <input data-r="p1" class="inp text-center !w-14" maxlength="2" placeholder="۶۷" value="${esc(fa(r.p1))}"></div></div>`;
         const kindFields = isNew() ? (body ? `
                 <div><label class="lbl">ارزش خودرو (ریال) *</label><input data-r="carValue" class="inp money-input" value="${esc(money(r.carValue))}" placeholder="۵,۰۰۰,۰۰۰,۰۰۰"></div>
                 <div><label class="lbl">بیمه بدنه قبل</label><select data-r="prevBody" class="inp"><option value="">نامشخص</option><option value="YES" ${r.prevBody === 'YES' ? 'selected' : ''}>دارد</option><option value="NO" ${r.prevBody === 'NO' ? 'selected' : ''}>ندارد</option></select></div>
-                <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600 mt-5"><input type="checkbox" data-r="skipHealth" ${r.skipHealth ? 'checked' : ''}> بدون بازدید سلامت</label>`
+                <div><label class="lbl">نوع خودرو (برای قالبِ گزارش بازدید)</label><select data-r="vclass" class="inp">
+                  <option value="" ${!r.vclass ? 'selected' : ''}>خودکار از نام خودرو (${vclassOf({ carName: r.carName }) === 'HEAVY' ? 'سنگین' : 'سواری / وانت'})</option>
+                  <option value="LIGHT" ${r.vclass === 'LIGHT' ? 'selected' : ''}>سواری / وانت / استیشن</option>
+                  <option value="HEAVY" ${r.vclass === 'HEAVY' ? 'selected' : ''}>سنگین (کامیون، اتوبوس، مینی‌بوس...)</option></select></div>
+                <label class="flex items-center gap-2 text-[11px] font-bold mt-5 ${r.skipHealth ? 'text-amber-700' : 'text-slate-600'}"><input type="checkbox" data-r="skipHealth" ${r.skipHealth ? 'checked' : ''}> این خودرو نیاز به بازدید ندارد</label>`
               : (st.liabilityPerRow ? `<div><label class="lbl">تعهد مالی این پلاک *</label><select data-r="liability" class="inp">${liabilityOptions(r.liability, '-- انتخاب --')}</select></div>`
                                     : `<div class="text-[11px] text-slate-500 mt-5">تعهد: <b>${st.liabilityAll ? money(st.liabilityAll) + ' ریال' : '—'}</b> (برای همه)</div>`))
             : `<div><label class="lbl">شماره بیمه‌نامه‌ی فعلی *</label><input data-r="refPolicy" class="inp" dir="ltr" value="${esc(r.refPolicy)}"></div>
@@ -182,7 +195,9 @@
             ${r.customCov ? `<div class="mt-2"><label class="flex items-center gap-2 text-[11px] mb-2"><input type="checkbox" data-rcovbase ${r.cov && r.cov.__none ? 'checked' : ''}> فقط پوشش پایه</label>${r.cov && r.cov.__none ? '' : covEditor(r.cov || {}, 'row:' + r.id)}</div>`
                           : `<p class="text-[10px] text-slate-400 mt-1">${st.covBaseOnly ? 'فقط پوشش پایه' : (Object.keys(st.cov || {}).length ? 'همان پوشش‌های پیش‌فرض بالا' : 'پوشش پیش‌فرض هنوز انتخاب نشده')}</p>`}</div>` : '';
 
-        const docs = checklistFor(r).map(item => `<div class="rounded-xl border ${item.required ? 'border-slate-200' : 'border-dashed border-slate-200'} p-2 bg-white">
+        const items = checklistFor(r);
+        const visitItems = items.filter(it => VISIT_TYPES.includes(it.key));
+        const docs = visitCard(r, visitItems) + items.filter(it => !VISIT_TYPES.includes(it.key) || (r.manualVisit && needsVisit(r))).map(item => `<div class="rounded-xl border ${item.required ? 'border-slate-200' : 'border-dashed border-slate-200'} p-2 bg-white">
             <p class="text-[11px] font-bold text-slate-700">${esc(item.label)} ${item.required ? '<span class="text-rose-500">*</span>' : '<span class="text-slate-400 font-normal">(اختیاری)</span>'}</p>
             ${item.hint ? `<p class="text-[9.5px] text-slate-400 mb-1">${esc(item.hint)}</p>` : ''}
             <div class="flex flex-wrap gap-1">${item.upload_types.map(t => {
@@ -215,6 +230,40 @@
           </div>`;
     }
 
+    // «ساخت گزارش بازدید»: گزارش و عکس‌های بازدید یک‌جا، از همان فرمِ صدورِ گزارش (پاپ‌آپ) با اطلاعاتِ همین خودرو
+    function visitCard(r, visitItems) {
+        if (!needsVisit(r)) return '';
+        const rep = r.report;
+        const canBuild = !!(window.VR && VR.openTargetBuilder);
+        return `<div class="rounded-xl border-2 ${rep ? 'border-emerald-300 bg-emerald-50' : 'border-indigo-200 bg-indigo-50/60'} p-2 md:col-span-2 lg:col-span-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div><p class="text-[11px] font-black ${rep ? 'text-emerald-700' : 'text-indigo-700'}"><i class="fas fa-file-circle-check ml-1"></i>گزارش بازدید <span class="text-rose-500">*</span></p>
+                <p class="text-[9.5px] text-slate-500">گزارش و عکس‌های بازدید با هم؛ اطلاعاتِ همین خودرو خودکار در فرم می‌نشیند و قالبِ ${vclassOf(r) === 'HEAVY' ? 'سنگین' : 'سواری / وانت'} باز می‌شود.</p></div>
+              <div class="flex flex-wrap gap-1.5 items-center">
+                ${rep ? `<span class="text-[10.5px] font-black text-emerald-700">✓ گزارش <span dir="ltr">${esc(rep.no)}</span> · ${fa(rep.photos || 0)} عکس</span>
+                    <a href="${VR.fileUrl(rep.id, 'pdf', '&inline=1')}" target="_blank" class="btn-s !py-1 !px-2 !text-[10px] bg-white text-slate-600 border">مشاهده</a>
+                    <button data-visit-edit class="btn-s !py-1 !px-2 !text-[10px] bg-white text-indigo-600 border">ویرایش</button>
+                    <button data-visit-drop class="btn-s !py-1 !px-2 !text-[10px] bg-white text-rose-500 border" title="گزارش در بایگانی می‌ماند؛ فقط به این ردیف وصل نمی‌شود">جدا کردن</button>`
+                    : (canBuild ? `<button data-visit class="btn-s bg-gradient-to-l from-indigo-600 to-violet-600 text-white shadow"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : '<span class="text-[10px] text-amber-600">به بخشِ گزارش بازدید دسترسی ندارید</span>')}
+              </div></div>
+            ${!rep && visitItems.length ? `<label class="flex items-center gap-1.5 text-[9.5px] text-slate-500 mt-1.5 cursor-pointer"><input type="checkbox" data-r="manualVisit" ${r.manualVisit ? 'checked' : ''}> گزارش/عکسِ آماده دارم (بارگذاریِ فایل به‌جای ساخت)</label>` : ''}
+          </div>`;
+    }
+
+    async function buildVisit(r) {
+        // r.p1 کدِ «ایران» است و r.p4 دو رقمِ سمتِ چپِ پلاک (مثل ذخیره در plate_p1/plate_p4)
+        const raw = { plate_part1: r.noPlate ? '' : en(r.p4), plate_letter: r.noPlate || !(r.p1 || r.p2) ? '' : r.letter, plate_part2: r.noPlate ? '' : en(r.p2), plate_part3: r.noPlate ? '' : en(r.p1),
+                      chassis_no: r.chassis, engine_no: r.engine, vehicle_type: r.carName, insured_value: en(r.carValue).replace(/\D/g, '') };
+        const company = (form.companies || []).find(c => String(c.id) === String(st.companyId));
+        await VR.openTargetBuilder({ type: 'raw', raw, insurer: st.insurer, class: vclassOf(r), company_id: st.companyId || '',
+                                     title: [company && company.name, r.carName].filter(Boolean).join(' · ') }, rep => {
+            r.report = { id: rep.id, no: rep.report_no, photos: rep.photos_count };
+            r.manualVisit = false;
+            VISIT_TYPES.forEach(t => delete r.files[t]);
+            if (root && root.style.display !== 'none') render();
+        });
+    }
+
     function summary() {
         const t = st.rows.filter(r => r.type === 'THIRDPARTY').length, b = st.rows.length - t;
         const files = st.rows.reduce((a, r) => a + Object.values(r.files).reduce((x, f) => x + f.length, 0), 0) + (st.letter ? 1 : 0);
@@ -236,6 +285,7 @@
                 const f = el.dataset.f;
                 st[f] = el.type === 'checkbox' ? el.checked : el.value;
                 if (f === 'companyId') await loadDefaults();
+                if (f === 'noVisitAll') st.rows.forEach(r => { if (r.type === 'BODY') r.skipHealth = st.noVisitAll; });
                 if (f === 'kind' && st.kind !== 'NEW_POLICY') st.rows.forEach(r => { r.customCov = false; });
                 if (f !== 'text') render();
             });
@@ -256,12 +306,18 @@
                 if (['p1', 'p2', 'p4', 'expiry'].includes(f)) { v = en(v); el.value = fa(v); }
                 r[f] = v;
                 // فیلدهایی که ظاهر کارت را عوض می‌کنند، کارت را دوباره می‌سازند
-                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability'].includes(f)) {
+                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit'].includes(f)) {
                     if (f === 'customCov' && v && !r.cov) r.cov = JSON.parse(JSON.stringify(st.covBaseOnly ? { __none: true } : (st.cov || {})));
                     render();
                 } else { const s = root.querySelector('#cmr-summary'); if (s) s.innerHTML = summary(); }
             });
         });
+        root.querySelectorAll('[data-visit]').forEach(b => b.onclick = () => buildVisit(rowOf(b)));
+        root.querySelectorAll('[data-visit-edit]').forEach(b => b.onclick = () => {
+            const r = rowOf(b);
+            VR.openEditor(r.report.id, rep => { r.report = { id: rep.id, no: rep.report_no, photos: rep.photos_count }; render(); });
+        });
+        root.querySelectorAll('[data-visit-drop]').forEach(b => b.onclick = () => { rowOf(b).report = null; render(); });
         root.querySelectorAll('[data-rcovbase]').forEach(el => el.onchange = () => { const r = rowOf(el); r.cov = el.checked ? { __none: true } : {}; render(); });
         root.querySelectorAll('[data-cov]').forEach(el => el.onchange = () => {
             const cov = covTarget(el.dataset.scope), k = el.dataset.cov, o = form.coverage_options[k];
@@ -311,6 +367,7 @@
                 chassis_no: r.noPlate ? r.chassis : '', engine_no: r.noPlate ? r.engine : '', is_new_vehicle: r.isNew ? 1 : 0,
                 car_name: r.carName, expiry_date: en(r.expiry), liability_limit: st.liabilityPerRow ? r.liability : '',
                 car_value: en(r.carValue), has_prev_body: r.prevBody, skip_health_inspection: r.skipHealth ? 1 : 0,
+                vehicle_class: r.type === 'BODY' ? vclassOf(r) : '',
                 coverages: r.type === 'BODY' && r.customCov ? covOut(r.cov || {}) : null,
                 ref_policy_number: r.refPolicy, endorsement_request: r.endorse, cancellation_reason: r.cancelReason, row_note: r.note,
             })),
@@ -336,8 +393,16 @@
             fd.append('doc_type', jobs[j].type); fd.append('file', jobs[j].file);
             try { const x = await (await fetch(API, { method: 'POST', body: fd })).json(); if (!x.ok) failed++; } catch (e) { failed++; }
         }
+        // گزارش‌های بازدیدی که در همین فرم ساخته شده‌اند به ردیفِ خودشان وصل می‌شوند (PDF و عکس‌ها در پوشه‌ی همان ردیف)
+        let linked = 0;
+        for (let i = 0; i < st.rows.length; i++) {
+            const r = st.rows[i];
+            if (!r.report || !needsVisit(r) || !d.plate_ids[i]) continue;
+            btn.innerHTML = `<i class="fas fa-circle-notch fa-spin ml-1"></i> اتصالِ گزارش بازدید ${fa(i + 1)}...`;
+            try { const x = await VR.api('link', { id: r.report.id, type: 'company', target_id: d.plate_ids[i] }); if (x.ok) linked++; else failed++; } catch (e) { failed++; }
+        }
         close();
-        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? ` و ${fa(jobs.length - failed)} فایل بارگذاری شد` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
+        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد` : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
         if (window.loadCompanyRequests) loadCompanyRequests();
         if (window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id);
     }

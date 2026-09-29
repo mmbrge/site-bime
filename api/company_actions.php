@@ -799,7 +799,7 @@ try {
 
         $defaultLiability = company_parse_money($data['default_liability'] ?? '');
         $defaultCov = company_clean_coverages($data['default_coverages'] ?? null);
-        $clean = []; $errors = [];
+        $clean = []; $errors = []; $classes = [];
         $counts = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
         foreach ($rows as $i => $r) {
             $n = $i + 1;
@@ -839,6 +839,7 @@ try {
                         trim($r['car_name'] ?? '') ?: null,
                         $type === 'BODY' && in_array($r['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $r['has_prev_body'] : null,
                         trim($r['row_note'] ?? '') ?: null, $cov];
+            $classes[] = in_array($r['vehicle_class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $r['vehicle_class'] : null;
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
 
@@ -854,6 +855,11 @@ try {
         $plateIds = [];
         foreach ($clean as $vals) { $ins->execute(array_merge([$requestId], $vals)); $plateIds[] = (int)$pdo->lastInsertId(); }
         $pdo->commit();
+        // سواری/سنگین (برای انتخابِ خودکارِ نوعِ گزارش بازدید) - اگر مایگریشن ۰۲۰ اجرا نشده باشد بی‌صدا رد می‌شود
+        foreach ($plateIds as $i => $pid) {
+            if (empty($classes[$i])) continue;
+            try { $pdo->prepare("UPDATE company_request_plates SET vehicle_class = ? WHERE id = ?")->execute([$classes[$i], $pid]); } catch (Throwable $e) { break; }
+        }
 
         // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
         $siteRoot = dirname(__DIR__);

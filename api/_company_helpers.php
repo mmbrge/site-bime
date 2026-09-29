@@ -265,6 +265,8 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
 
         // ---- بازدید سلامت: برای بعضی خودروها اجباری، برای بعضی نه ----
         $healthNeeded = !$skipHealthInspection;
+        // «نیاز به بازدید ندارد»: نه عکسِ بازدید خواسته می‌شود نه گزارش (مگر از قبل بارگذاری شده باشد)
+        if (!$healthNeeded && !$has('health_inspection') && !$has('health_report')) return $items;
         $items[] = [
             'key' => 'health_inspection',
             'label' => 'بازدید سلامت',

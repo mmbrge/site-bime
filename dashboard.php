@@ -3138,9 +3138,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=4"></script>
+    <script src="visit-reports.js?v=5"></script>
     <script src="visit-reports-list.js?v=3"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=3"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=1"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=3"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -4483,6 +4483,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>`;
         }
 
+        // چک‌لیستِ یک ردیف: «بازدید سلامت» و «گزارش بازدید» یک خانه‌ی مشترک‌اند با دکمه‌ی «ساخت گزارش بازدید»
+        const VISIT_KEYS = ['health_inspection', 'health_report'];
+        function rowChecklistHtml(p, canEdit) {
+            const items = p.checklist || [];
+            const visit = items.filter(it => VISIT_KEYS.includes(it.key));
+            return items.filter(it => !VISIT_KEYS.includes(it.key)).map(it => checklistChip(p, it, canEdit)).join('')
+                 + (visit.length ? visitChip(p, visit, canEdit) : '');
+        }
+        function visitChip(p, items, canEdit) {
+            const report = items.find(it => it.key === 'health_report');
+            const ok = items.every(it => it.satisfied || !it.required);
+            const required = items.some(it => it.required);
+            const tone = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : (required ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400');
+            const docs = items.flatMap(it => it.docs || []);
+            const links = docs.map(d => d.is_dir
+                ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ عکس‌ها">عکس‌ها (پوشه)</a>`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>`).join('<span class="text-slate-300 mx-1">|</span>');
+            const del = canEdit ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
+            const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
+            const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow px-2 py-0.5 rounded whitespace-nowrap">
+                    <i class="fas fa-file-circle-plus ml-1"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
+            const missing = items.filter(it => !it.satisfied);
+            const manual = canEdit && missing.length ? `<details class="mt-1"><summary class="cursor-pointer text-[9.5px] text-slate-500">فایلِ آماده دارم</summary>
+                    <div class="flex flex-wrap gap-1 mt-1">${missing.map(it => checklistChip(p, { ...it, docs: [] }, canEdit)).join('')}</div></details>` : '';
+            return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="گزارش و عکس‌های بازدید">
+                <div class="font-bold whitespace-nowrap">${ok ? '✓' : '✗'} گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</div>
+                ${links ? `<div class="mt-0.5">${links}${del}</div>` : ''}${build}${manual}
+            </div>`;
+        }
+        // پاپ‌آپِ ساختِ گزارش از روی همین ردیف: اطلاعاتِ ردیف و شرکت خودکار، قالبِ سواری/سنگین خودکار؛
+        // بعد از صدور، PDF و عکس‌ها خودکار در پوشه‌ی همین ردیف می‌نشینند
+        function openCompanyVisitReport(plateId) {
+            if (!window.VR || !VR.openTargetBuilder) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            VR.openTargetBuilder({ type: 'company', id: plateId }, () => { if (currentRequestId) openCompanyRequestDetail(currentRequestId); });
+        }
+
         // شناسه‌ی ردیف: اگر پلاک دارد پلاک، وگرنه شماره شاسی (لیفتراک و خودروی صفرکیلومتر)
         function rowIdentityHtml(p) {
             if (p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4) {
@@ -4533,7 +4569,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const rowsHtml = currentRequestRows.length ? currentRequestRows.map((p, idx) => {
                 const fs = FOLDER_STATUS_FA[p.folder_status] || ['—', 'text-slate-400'];
                 const missing = Object.values(p.missing_docs || {});
-                const chips = (p.checklist || []).map(it => checklistChip(p, it, isAdmin)).join('');
+                const chips = rowChecklistHtml(p, isAdmin);
                 return `
                 <tr class="border-t border-slate-100 align-top">
                     <td class="p-2 text-[10px] text-slate-400">${e2pNum(idx + 1)}</td>
@@ -7225,6 +7261,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
 
+        // «ساخت گزارش بازدید» از روی درخواستِ کارکنان (جزئیاتِ درخواست و ثبتِ دستی)
+        function openCaseVisitReport(caseId, after) {
+            if (!window.VR || !VR.openTargetBuilder) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            VR.openTargetBuilder({ type: 'case', id: caseId }, () => { if (after) after(); else if (currentCaseId == caseId && !document.getElementById('case-detail-modal').classList.contains('hidden')) openCase(caseId); });
+        }
+
         async function openCase(caseId, mode) {
             currentCaseId = caseId;
             if (mode) currentCaseMode = mode;
@@ -7508,6 +7550,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <img src="/${encodeFilePath(ph.path)}" data-gv="/${encodeFilePath(ph.path)}" data-gv-label="${ph.label}${ph.note ? ' — ' + ph.note : ''}" loading="lazy" class="w-full h-14 object-cover cursor-zoom-in">
                                 <p class="text-[9px] p-0.5 truncate">${ph.label}</p>
                             </div>`).join('')}</div>
+                    </div>` : ''}
+
+                    ${c.insurance_type === 'BODY' && window.VR && VR.openTargetBuilder ? `
+                    <div class="bg-violet-50 border border-violet-100 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-bold text-violet-700"><i class="fas fa-file-circle-check ml-1"></i>گزارش بازدید
+                            <span class="block font-normal text-[10px] text-slate-500 mt-0.5">اطلاعاتِ همین درخواست خودکار در فرم می‌نشیند و قالبِ سواری/سنگین خودکار انتخاب می‌شود؛ اگر بازدیدِ سلامتِ تاییدشده دارد، از همان عکس‌ها ساخته می‌شود.</span></p>
+                        <button onclick="openCaseVisitReport(${caseId})" class="text-[11px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>
                     </div>` : ''}
 
                     ${!isIssueMode && IS_ADMIN ? `
@@ -9352,6 +9401,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>`;
                 }).join('') + docs.filter(d => d.doc_key === 'other').map(d => `<div class="rounded-lg border p-2 text-[11px] bg-emerald-50 border-emerald-200 text-emerald-700">
                         <div class="font-bold">✓ ${d.doc_label}</div><a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a></div>`).join('')
+                  + (data.case && data.case.insurance_type === 'BODY' && window.VR && VR.openTargetBuilder ? `<div class="rounded-lg border-2 border-violet-200 bg-violet-50 p-2 text-[11px] text-violet-700">
+                        <div class="font-bold">گزارش بازدید</div>
+                        <button type="button" onclick="openCaseVisitReport(${caseId}, renderMcChecklist)" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-2 py-0.5 rounded"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button></div>` : '')
                   + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
                         <div class="font-bold">سایر مدارک (اختیاری)</div>
                         <input type="text" id="mc-post-other-name" placeholder="نام مدرک" class="mt-1 w-full border border-slate-300 rounded p-1 text-[11px]">

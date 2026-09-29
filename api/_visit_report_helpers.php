@@ -586,6 +586,19 @@ function vr_link_company_plate($pdo, $siteRoot, $report, $plateId, $userId) {
         ->execute([$plate['company_id'], $plate['request_id'], $plateId, vr_rel($siteRoot, $tmpDest), basename($report['pdf_path']), $userId]);
     $docId = $pdo->lastInsertId();
     $rel = company_place_document($pdo, $siteRoot, $docId, $plateId, 'health_report');
+    // عکس‌های همین گزارش هم «بازدید سلامت»ِ ردیف می‌شوند (اگر ردیف هنوز عکسِ بازدید ندارد)
+    $ph = $pdo->prepare("SELECT file_path FROM visit_report_photos WHERE report_id = ? LIMIT 1");
+    $ph->execute([$report['id']]);
+    $photoRel = $ph->fetchColumn();
+    $hasHealth = $pdo->prepare("SELECT COUNT(*) FROM company_documents WHERE plate_id = ? AND doc_type = 'health_inspection' AND status = 'ASSIGNED'");
+    $hasHealth->execute([$plateId]);
+    if ($photoRel && !$hasHealth->fetchColumn() && is_dir(dirname(vr_abs($siteRoot, $photoRel)))) {
+        $photosDir = dirname(vr_abs($siteRoot, $photoRel));
+        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at)
+                       VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', 'health_inspection', 'ASSIGNED', ?, NOW())")
+            ->execute([$plate['company_id'], $plate['request_id'], $plateId, vr_rel($siteRoot, $photosDir), basename($photosDir), $userId]);
+        company_place_document($pdo, $siteRoot, $pdo->lastInsertId(), $plateId, 'health_inspection');
+    }
     company_sync_plate_status($pdo, $plateId);
     $pdo->prepare("UPDATE visit_reports SET company_plate_id = ?, linked_at = NOW(), linked_by = ? WHERE id = ?")->execute([$plateId, $userId, $report['id']]);
     return ['ok' => true, 'target' => 'company', 'report' => $rel];
@@ -644,6 +657,64 @@ function vr_plate_split($plate) {
     if (preg_match('/(\d{2})\s*ایران\s*-?\s*(\d{3})\s*([^\d\s-]+)\s*(\d{2})/u', $s, $m)) return ['p1' => $m[4], 'letter' => $m[3], 'p2' => $m[2], 'iran' => $m[1]];
     if (preg_match('/(\d{2})\s*([^\d\s-]+)\s*(\d{3})\s*-?\s*ایران\s*(\d{2})/u', $s, $m)) return ['p1' => $m[1], 'letter' => $m[2], 'p2' => $m[3], 'iran' => $m[4]];
     return ['p1' => '', 'letter' => '', 'p2' => '', 'iran' => ''];
+}
+
+// ---------------------------------------------------------------------
+//  «ساخت گزارش بازدید» از روی یک درخواست (ردیفِ شرکتی، درخواستِ کارکنان، یا ردیفِ هنوز ثبت‌نشده)
+// ---------------------------------------------------------------------
+// سواری/وانت/استیشن => LIGHT؛ کامیون، اتوبوس، مینی‌بوس و ... => HEAVY
+function vr_vehicle_class($text) {
+    $t = str_replace(['ي', 'ك', "\u{200C}"], ['ی', 'ک', ' '], (string)$text);
+    return preg_match('/کامیون|کشنده|تریلی|تریلر|اتوبوس|مینی\s*بوس|میدل\s*باس|میدلباس|بوس|سنگین|کمپرسی|تانکر|جرثقیل|لودر|بیل\s*مکانیکی|گریدر|بولدوزر|تراکتور|ماشین\s*آلات|یدک\s*کش/u', $t) ? 'HEAVY' : 'LIGHT';
+}
+function vr_category_class($cat) {
+    return preg_match('/سنگین|کامیون|اتوبوس|مینی\s*بوس/u', (string)$cat['name']) ? 'HEAVY' : 'LIGHT';
+}
+// نوعِ گزارشِ پیشنهادی: هم‌بیمه‌گر و هم‌کلاس (سواری/سنگین)؛ اگر برای آن بیمه‌گر نوعی نبود، هم‌کلاس از بقیه
+function vr_suggest_category(array $cats, $insurer, $class) {
+    $insurer = strtoupper((string)$insurer);
+    foreach ([[true, true], [false, true], [true, false], [false, false]] as [$needIns, $needCls]) {
+        foreach ($cats as $c) {
+            if ($needIns && strtoupper((string)$c['insurer']) !== $insurer) continue;
+            if ($needCls && vr_category_class($c) !== $class) continue;
+            return intval($c['id']);
+        }
+    }
+    return null;
+}
+// دادهٔ خام (به کلیدهای پارسر) برای یک هدف
+//   company: ردیفِ درخواستِ شرکتی · case: درخواستِ کارکنان
+function vr_target_raw($pdo, $type, $id) {
+    if ($type === 'company') {
+        $st = $pdo->prepare("SELECT crp.*, cr.insurer, c.name AS company_name, c.economic_code, c.phone AS company_phone, c.address AS company_address
+                               FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+        $st->execute([intval($id)]);
+        $r = $st->fetch();
+        if (!$r) return null;
+        $class = !empty($r['vehicle_class']) ? $r['vehicle_class'] : vr_vehicle_class($r['car_name']);
+        return ['insurer' => $r['insurer'], 'class' => $class, 'title' => trim(($r['company_name'] ?? '') . ' · ' . ($r['car_name'] ?? ''), ' ·'),
+                'raw' => ['name' => $r['company_name'], 'national_id' => $r['economic_code'], 'phone_bimeg' => $r['company_phone'], 'addres_bimeg' => $r['company_address'],
+                          // در ردیف‌های شرکتی plate_p1 کدِ «ایران» است و plate_p4 دو رقمِ سمتِ چپ («{p1}ایران - {p2} {letter} {p4}»)
+                          'plate_part1' => $r['plate_p4'], 'plate_letter' => $r['plate_letter'], 'plate_part2' => $r['plate_p2'], 'plate_part3' => $r['plate_p1'],
+                          'chassis_no' => $r['chassis_no'] ?: $r['vin'], 'engine_no' => $r['engine_no'], 'vehicle_type' => $r['car_name'],
+                          'insured_value' => $r['car_value'] ? (string)$r['car_value'] : '']];
+    }
+    if ($type === 'case') {
+        $st = $pdo->prepare("SELECT pc.*, p.full_name, p.national_code, p.mobile_number FROM policy_cases pc LEFT JOIN persons p ON p.id = pc.person_id WHERE pc.id = ?");
+        $st->execute([intval($id)]);
+        $h = $st->fetch();
+        if (!$h) return null;
+        $vt = trim(($h['car_system'] ?? '') . ' ' . ($h['car_type'] ?? ''));
+        $raw = ['name' => $h['insured_name'] ?: $h['full_name'], 'national_id' => $h['insured_national_id'] ?: $h['national_code'],
+                'phone_bimeg' => $h['insured_phone'] ?: $h['mobile_number'], 'addres_bimeg' => $h['insured_address'],
+                'chassis_no' => $h['chassis_num'] ?: $h['vin'], 'engine_no' => $h['engine_num'], 'year' => $h['car_model_year'], 'color' => $h['car_color'],
+                'usage' => $h['car_usage'], 'vehicle_type' => $vt,
+                'insured_value' => preg_replace('/\D/', '', (string)($h['car_value'] ?: $h['estimated_car_value']))];
+        $pl = vr_plate_split($h['plate']);
+        $raw += ['plate_part1' => $pl['p1'], 'plate_letter' => $pl['letter'], 'plate_part2' => $pl['p2'], 'plate_part3' => $pl['iran']];
+        return ['insurer' => 'PASARGAD', 'class' => vr_vehicle_class($vt . ' ' . ($h['car_usage'] ?? '')), 'title' => trim(($h['unique_code'] ?? '') . ' · ' . $raw['name'], ' ·'), 'raw' => $raw];
+    }
+    return null;
 }
 
 // مدیر کل همه‌ی گزارش‌ها را می‌بیند؛ بقیه فقط گزارش‌هایی که خودشان صادر کرده‌اند (و نوعش هنوز برایشان مجاز است)
