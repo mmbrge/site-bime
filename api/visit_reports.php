@@ -83,8 +83,9 @@ function vr_clean_form(array $form, array $fields) {
     foreach ($fields as $f) {
         $k = $f['field_key'];
         if ($f['field_type'] === 'PartsStatus') {
+            $def = vr_parts_default($f);
             foreach (vr_parts_list($f) as $p) {
-                $out['parts'][$p['id']] = (($form['parts'][$p['id']] ?? 's') === 'k') ? 'k' : 's';
+                $out['parts'][$p['id']] = vr_part_state(is_array($form['parts'] ?? null) ? $form['parts'] : [], $p['id'], $def);
                 // توضیحِ خسارتِ قطعه (فقط برای قطعه‌ی خسارتی)
                 $note = mb_substr($t($form['part_notes'][$p['id']] ?? ''), 0, 300);
                 if ($out['parts'][$p['id']] === 'k' && $note !== '') $out['part_notes'][$p['id']] = $note;
@@ -408,7 +409,7 @@ try {
         foreach (vr_user_categories($pdo, $user) as $c) {
             $fields = vr_fields($pdo, $c['id']);
             foreach ($fields as &$f) {
-                if ($f['field_type'] === 'PartsStatus') $f['parts'] = vr_parts_list($f);
+                if ($f['field_type'] === 'PartsStatus') { $f['parts'] = vr_parts_list($f); $f['parts_default'] = vr_parts_default($f); }
                 if ($f['field_type'] === 'Combobox') $f['choices'] = vr_combo_options($f);
                 if ($f['field_type'] === 'DamageList') $f['max_rows'] = max(1, intval($f['options'] ?: 5));
                 unset($f['tick_map'], $f['parser_keys'], $f['words_var']);
@@ -606,7 +607,8 @@ try {
         }
         $parts = [];
         foreach ($fields as $f) if ($f['field_type'] === 'PartsStatus') foreach (vr_parts_list($f) as $p)
-            $parts[] = ['id' => $p['id'], 'label' => $p['label'], 'status' => ($form['parts'][$p['id']] ?? 's'), 'note' => $form['part_notes'][$p['id']] ?? ''];
+            $parts[] = ['id' => $p['id'], 'label' => $p['label'], 'status' => vr_part_state($form['parts'] ?? [], $p['id'], vr_parts_default($f)),
+                        'ok' => $p['ok'] ?? null, 'bad' => $p['bad'] ?? null, 'note' => $form['part_notes'][$p['id']] ?? ''];
         $out['display'] = $display; $out['parts'] = $parts;
         $out['ok_label'] = $cat['ok_label'] ?? 'سالم'; $out['bad_label'] = $cat['bad_label'] ?? 'خسارتی';
         $st = $pdo->prepare("SELECT id, file_path, orig_name, source FROM visit_report_photos WHERE report_id = ? ORDER BY sort_order, id");

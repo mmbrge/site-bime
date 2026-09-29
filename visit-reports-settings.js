@@ -204,7 +204,7 @@
     }
     function fieldRowHtml(f, i, types, cols, n) {
         const t = f.field_type;
-        const optHint = { Combobox: 'گزینه‌ها با ویرگول: شخصی,عمومی,دولتی', PartsStatus: 'قطعات: c1|شیشه جلو; c2|سپر جلو (شناسه|نام)', DamageList: 'حداکثر تعدادِ ردیف (مثلاً ۵)' }[t];
+        const optHint = { Combobox: 'گزینه‌ها با ویرگول: شخصی,عمومی,دولتی', PartsStatus: 'قطعات: c1|شیشه جلو; c2|سپر جلو (شناسه|نام) - برچسبِ دلخواه: p48|رادیو|دارد|ندارد - «مقدار پیش‌فرض» = none یعنی هیچ‌کدام تیک نخورد', DamageList: 'حداکثر تعدادِ ردیف (مثلاً ۵)' }[t];
         const inp = (p, ph, cls = '', dir = '') => `<input class="vr-in !py-1.5 !text-xs ${cls}" ${dir ? `dir="${dir}"` : ''} data-p="${p}" value="${esc(f[p] ?? '')}" placeholder="${ph}">`;
         const hasAdv = f.excel_column || f.parser_keys || f.show_if || f.tick_map || f.words_var || f.default_value || f.help || f.width || f.max_chars;
         return `<div class="rounded-2xl border ${f._new ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-100 bg-slate-50/50'} p-3" data-fi="${i}">
@@ -279,6 +279,7 @@
             out.innerHTML = `<p class="font-bold text-emerald-600 mb-2"><i class="fas fa-circle-check"></i> ${fa(Object.keys(data).length)} کلید · ${esc(d.parser_used)} · ${esc(d.method)} · ${fa(d.seconds)} ثانیه</p>
                 ${d.parser_error ? `<p class="text-amber-600 font-bold mb-2">خطای پارسرِ اختصاصی: ${esc(d.parser_error)}</p>` : ''}
                 <table class="w-full"><tbody>${Object.entries(data).map(([k, v]) => `<tr class="border-t border-slate-50"><td class="p-1 font-mono text-slate-400" dir="ltr">${esc(k)}</td><td class="p-1 font-bold text-slate-700">${esc(v)}</td></tr>`).join('')}</tbody></table>
+                ${(d.checked || []).length ? `<details class="mt-2"><summary class="font-black text-slate-500 cursor-pointer">چک‌باکس‌های علامت‌خورده‌ی PDF (${fa(d.checked.length)})</summary><ul class="list-disc pr-5 mt-1 text-slate-600">${d.checked.map(c => `<li>${esc(c)}</li>`).join('')}</ul></details>` : ''}
                 <details class="mt-2"><summary class="font-black text-slate-500 cursor-pointer">متنِ خام (${fa(d.raw_len)} کاراکتر)</summary><pre class="bg-slate-50 rounded-xl p-2 mt-1 max-h-60 overflow-auto whitespace-pre-wrap text-[10px]">${esc(d.raw_preview || '')}</pre></details>`;
         };
     }

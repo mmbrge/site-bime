@@ -83,14 +83,30 @@ function vr_fields($pdo, $catId) {
     return $out;
 }
 // چک‌لیستِ قطعاتِ یک فیلد PartsStatus: «c1|شیشه جلو;c2|برف پاک کن ها;...»
+// «شناسه|نام» یا «شناسه|نام|برچسبِ سالم|برچسبِ آسیب‌دیده» (مثلاً «p48|رادیو پخش|دارد|ندارد»)
 function vr_parts_list($field) {
     $out = [];
     foreach (preg_split('/[;\n]+/u', (string)$field['options']) as $tok) {
         if (strpos($tok, '|') === false) continue;
-        [$pid, $label] = array_map('trim', explode('|', $tok, 2));
-        if ($pid !== '' && $label !== '') $out[] = ['id' => $pid, 'label' => $label];
+        $bits = array_map('trim', explode('|', $tok));
+        [$pid, $label] = [$bits[0], $bits[1] ?? ''];
+        if ($pid === '' || $label === '') continue;
+        $p = ['id' => $pid, 'label' => $label];
+        if (($bits[2] ?? '') !== '') $p['ok'] = $bits[2];
+        if (($bits[3] ?? '') !== '') $p['bad'] = $bits[3];
+        $out[] = $p;
     }
     return $out;
+}
+// وضعیتِ پیش‌فرضِ قطعه‌های یک فیلد: s (سالم - مثل قبل)، k، یا n (هیچ‌کدام تیک نخورد؛ «مقدار پیش‌فرض» = none)
+function vr_parts_default($field) {
+    $d = mb_strtolower(trim((string)($field['default_value'] ?? '')));
+    if (in_array($d, ['none', 'n', '-', '0', 'خالی', 'هیچ', 'هیچکدام', 'هیچ‌کدام'], true)) return 'n';
+    return $d === 'k' ? 'k' : 's';
+}
+function vr_part_state(array $parts, $pid, $default) {
+    $st = $parts[$pid] ?? $default;
+    return in_array($st, ['s', 'k', 'n'], true) ? $st : $default;
 }
 function vr_combo_options($field) {
     return array_values(array_filter(array_map('trim', preg_split('/[,،\n]+/u', (string)$field['options'])), fn($v) => $v !== ''));
@@ -142,12 +158,16 @@ function vr_layout($pdo, $cat, $force = false) {
     $tpl = $cat['template_path'] ? $siteRoot . '/' . ltrim($cat['template_path'], '/') : null;
     if (!$tpl || !is_file($tpl)) throw new RuntimeException('برای این نوع گزارش هنوز قالب Word بارگذاری نشده است (تنظیمات گزارش).');
     $assetDir = vr_asset_dir($cat['id']);
-    $layout = (!$force && $cat['layout_json']) ? json_decode($cat['layout_json'], true) : null;
-    // نسخه‌ی قدیمیِ چیدمان (بدونِ شکلِ کادرها، مثلاً دایره) یک بار دوباره خوانده می‌شود؛ تنظیم‌های دستی حفظ می‌شود
-    if (!$layout || !is_dir($assetDir) || intval($layout['version'] ?? 1) < 2) {
+    $layout = $cat['layout_json'] ? json_decode($cat['layout_json'], true) : null;
+    // امضای فایلِ قالب: اگر فایل روی هاست عوض شده باشد (حتی بدونِ آپلود از تنظیمات)، چیدمان دوباره خوانده می‌شود
+    clearstatcache(true, $tpl);
+    $sig = filesize($tpl) . '-' . substr(md5_file($tpl), 0, 12);
+    // نسخه‌ی قدیمیِ چیدمان (بدونِ شکلِ کادرها، مثلاً دایره) یا قالبِ عوض‌شده دوباره خوانده می‌شود؛ تنظیم‌های دستی حفظ می‌شود
+    if ($force || !$layout || !is_dir($assetDir) || intval($layout['version'] ?? 1) < 2 || ($layout['tpl_sig'] ?? '') !== $sig) {
         $old = $layout;
         $layout = rpt_analyze_docx($tpl, $assetDir);
-        // جابه‌جایی‌های دستیِ قبلی (dx/dy/hidden) روی کادرهای هم‌جا حفظ می‌شود
+        $layout['tpl_sig'] = $sig;
+        // جابه‌جایی‌ها و تنظیم‌های دستیِ قبلی (dx/dy/hidden/قلم/...) روی کادرهای هم‌جا و کادرهای ساخته‌شده در ویرایشگر حفظ می‌شود
         if ($old) $layout = vr_carry_adjustments($old, $layout);
         $pdo->prepare("UPDATE report_categories SET layout_json = ?, layout_updated_at = NOW() WHERE id = ?")
             ->execute([json_encode($layout, JSON_UNESCAPED_UNICODE), $cat['id']]);
@@ -256,7 +276,7 @@ function vr_rounded_time() {
 // ---------------------------------------------------------------------
 //  ساختِ مقدارهای قالب از روی فرم (همان منطقِ generate_report برنامه‌ی ویندوزی، ولی تنظیم‌پذیر)
 // ---------------------------------------------------------------------
-// $form: ['plate' => [p1, letter, p2, iran], 'insured' => [...], 'fields' => [key => value], 'parts' => [pid => s|k],
+// $form: ['plate' => [p1, letter, p2, iran], 'insured' => [...], 'fields' => [key => value], 'parts' => [pid => s|k|n],
 //         'damages' => [[location, description], ...], 'report_date' => '1405.07.06']
 function vr_field_visible($f, $fieldsValues) {
     if (!$f['show_if']) return true;
@@ -277,8 +297,9 @@ function vr_build_values($cat, array $fields, array $form, array $meta) {
         $type = $f['field_type'];
         $visible = vr_field_visible($f, $fv);
         if ($type === 'PartsStatus') {
+            $def = vr_parts_default($f);
             foreach (vr_parts_list($f) as $p) {
-                $st = ($form['parts'][$p['id']] ?? 's') === 'k' ? 'k' : 's';
+                $st = vr_part_state($form['parts'] ?? [], $p['id'], $def);
                 $v["{$p['id']}_{$okS}"] = $visible && $st === 's' ? $tick : '';
                 $v["{$p['id']}_{$badS}"] = $visible && $st === 'k' ? $tick : '';
                 // توضیحِ خسارتِ قطعه: c25_s_t و c25_k_t و c25_t (هر کدام که در قالب گذاشته شود)

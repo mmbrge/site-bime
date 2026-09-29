@@ -429,20 +429,28 @@
             return `<div class="vr-card p-4 sm:p-5 vr-fade-up" data-wrap="${f.field_key}"${f.show_if ? ` data-showif="${esc(f.show_if)}"` : ''}>
                 <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-emerald-500 to-teal-600"><i class="fas fa-list-check"></i></span>${esc(f.label)}
                     <span class="vr-parts-count vr-chip bg-slate-100 text-slate-500"></span></div>
-                    <div class="flex gap-2"><button type="button" class="vr-btn vr-btn-g !py-1.5 !text-[11px] whitespace-nowrap vr-all-ok"><i class="fas fa-check-double"></i> همه ${esc(this.cat.ok_label)}</button>
+                    <div class="flex gap-2"><button type="button" class="vr-btn vr-btn-g !py-1.5 !text-[11px] whitespace-nowrap vr-all-ok">${f.parts_default === 'n' ? '<i class="fas fa-eraser"></i> پاک کردنِ همه' : `<i class="fas fa-check-double"></i> همه ${esc(this.cat.ok_label)}`}</button>
                     <input class="vr-in !py-1.5 !text-xs w-40 vr-parts-q" placeholder="🔍 جستجوی قطعه"></div></div>
                 <div class="vr-parts grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-1" data-field="${f.id}"></div></div>`;
         }
+        // وضعیتِ قطعه: s / k / n (n = هیچ‌کدام؛ برای فیلدهایی که «مقدار پیش‌فرض»شان none است، مثل تجهیزاتِ غیرفابریک)
+        partState(f, pid) { const st = this.parts[pid]; return ['s', 'k', 'n'].includes(st) ? st : (f.parts_default || 's'); }
+        // «آسیب‌دیده»ی واقعی (نه «ندارد»ِ تجهیزات) - برای شمارش و «از قطعاتِ آسیب‌دیده»
+        partIsDamage(p) { return !p.bad || p.bad === this.cat.bad_label; }
         renderParts() {
             this.cat.fields.filter(f => f.field_type === 'PartsStatus').forEach(f => {
                 const box = this.root.querySelector(`.vr-parts[data-field="${f.id}"]`);
                 if (!box) return;
-                const q = (this.root.querySelector('.vr-parts-q') || {}).value || '';
+                const card = box.closest('.vr-card') || this.root;
+                const q = (card.querySelector('.vr-parts-q') || {}).value || '';
+                const optional = f.parts_default === 'n';
                 box.innerHTML = f.parts.filter(p => !q || p.label.includes(q)).map(p => {
-                    const bad = this.parts[p.id] === 'k';
+                    const st = this.partState(f, p.id);
+                    const bad = st === 'k' && this.partIsDamage(p);
+                    const okL = p.ok || this.cat.ok_label, badL = p.bad || this.cat.bad_label;
                     return `<div class="vr-part ${bad ? 'bad' : ''} flex flex-wrap items-center justify-between gap-2 rounded-xl px-2.5 py-1.5" data-part="${p.id}">
-                        <span class="text-xs font-bold ${bad ? 'text-red-600' : 'text-slate-600'}">${esc(p.label)}</span>
-                        <span class="vr-seg"><button type="button" data-v="s" class="${bad ? '' : 'on-ok'}">${esc(this.cat.ok_label)}</button><button type="button" data-v="k" class="${bad ? 'on-bad' : ''}">${esc(this.cat.bad_label)}</button></span>
+                        <span class="text-xs font-bold ${bad ? 'text-red-600' : st === 'n' ? 'text-slate-400' : 'text-slate-600'}">${esc(p.label)}</span>
+                        <span class="vr-seg">${optional ? `<button type="button" data-v="n" class="${st === 'n' ? 'on-ok' : ''}" title="هیچ‌کدام تیک نخورد">—</button>` : ''}<button type="button" data-v="s" class="${st === 's' ? 'on-ok' : ''}">${esc(okL)}</button><button type="button" data-v="k" class="${st === 'k' ? (bad ? 'on-bad' : 'on-ok') : ''}">${esc(badL)}</button></span>
                         ${bad ? `<input class="vr-in !py-1 !text-[11px] w-full vr-part-note vr-fade-up" data-pn="${p.id}" placeholder="توضیحِ خسارت (اختیاری) - مثلاً خط و خش، فرورفتگی" value="${esc(this.partNotes[p.id] || '')}">` : ''}</div>`;
                 }).join('');
                 box.querySelectorAll('.vr-part button').forEach(btn => btn.onclick = () => {
@@ -451,9 +459,16 @@
                     if (btn.dataset.v === 'k') { const n = box.querySelector(`[data-pn="${pid}"]`); if (n) n.focus(); }
                 });
                 box.querySelectorAll('.vr-part-note').forEach(inp => inp.oninput = () => { this.partNotes[inp.dataset.pn] = inp.value; });
-                const bad = f.parts.filter(p => this.parts[p.id] === 'k').length;
-                const cnt = this.root.querySelector('.vr-parts-count');
-                if (cnt) { cnt.textContent = bad ? `${fa(bad)} ${this.cat.bad_label}` : `همه ${this.cat.ok_label}`; cnt.className = `vr-parts-count vr-chip ${bad ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`; }
+                const cnt = card.querySelector('.vr-parts-count');
+                if (!cnt) return;
+                if (optional) {
+                    const marked = f.parts.filter(p => this.partState(f, p.id) !== 'n').length;
+                    cnt.textContent = marked ? `${fa(marked)} مورد علامت‌خورده` : 'هیچ موردی علامت نخورده';
+                    cnt.className = 'vr-parts-count vr-chip bg-slate-100 text-slate-500';
+                    return;
+                }
+                const bad = f.parts.filter(p => this.partState(f, p.id) === 'k' && this.partIsDamage(p)).length;
+                cnt.textContent = bad ? `${fa(bad)} ${this.cat.bad_label}` : `همه ${this.cat.ok_label}`; cnt.className = `vr-parts-count vr-chip ${bad ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`;
             });
         }
 
@@ -587,17 +602,21 @@
             if (hpAll) hpAll.onclick = () => { this.health.photos.forEach(p => this.healthSel.add(p.key)); this.renderPhotos(); };
             if (hpNone) hpNone.onclick = () => { this.healthSel.clear(); this.renderPhotos(); };
             // قطعات
-            const allOk = wrap.querySelector('.vr-all-ok');
-            if (allOk) allOk.onclick = () => { this.parts = {}; this.partNotes = {}; this.renderParts(); this.saveDraft(); };
-            const pq = wrap.querySelector('.vr-parts-q');
-            if (pq) pq.oninput = () => this.renderParts();
+            // «همه سالم» فقط قطعه‌های همان کارت را به پیش‌فرض برمی‌گرداند (تجهیزاتِ غیرفابریک => هیچ‌کدام)
+            wrap.querySelectorAll('.vr-all-ok').forEach(allOk => allOk.onclick = () => {
+                const f = this.cat.fields.find(x => x.field_key === (allOk.closest('[data-wrap]') || {}).dataset?.wrap);
+                (f ? f.parts : []).forEach(p => { delete this.parts[p.id]; delete this.partNotes[p.id]; });
+                if (!f) { this.parts = {}; this.partNotes = {}; }
+                this.renderParts(); this.saveDraft();
+            });
+            wrap.querySelectorAll('.vr-parts-q').forEach(pq => pq.oninput = () => this.renderParts());
             // مواضع آسیب
             const dAdd = wrap.querySelector('.vr-dmg-add');
             if (dAdd) dAdd.onclick = () => { if (this.damages.length < this.maxDamages()) { this.damages.push({ location: '', description: '' }); this.renderDamages(); const ins = this.root.querySelectorAll('.vr-dmg [data-d="location"]'); if (ins.length) ins[ins.length - 1].focus(); } };
             const dParts = wrap.querySelector('.vr-dmg-from-parts');
             if (dParts) dParts.onclick = () => {
                 const labels = [];
-                this.cat.fields.filter(f => f.field_type === 'PartsStatus').forEach(f => f.parts.forEach(p => { if (this.parts[p.id] === 'k') labels.push([p.label, this.partNotes[p.id] || '']); }));
+                this.cat.fields.filter(f => f.field_type === 'PartsStatus').forEach(f => f.parts.forEach(p => { if (this.partState(f, p.id) === 'k' && this.partIsDamage(p)) labels.push([p.label, this.partNotes[p.id] || '']); }));
                 if (!labels.length) { toast(`هیچ قطعه‌ای «${this.cat.bad_label}» علامت نخورده است.`, 'warning'); return; }
                 let added = 0;
                 labels.forEach(([l, n]) => { if (this.damages.length < this.maxDamages() && !this.damages.some(d => d.location === l)) { this.damages.push({ location: l, description: n }); added++; } });

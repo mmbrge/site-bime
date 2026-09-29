@@ -1,6 +1,10 @@
 import re
 import unicodedata
 
+# parser_runner.py سایت، چک‌باکس‌های PDF را این‌جا می‌گذارد: [{'label','line','checked',...}]
+# (در برنامه‌ی ویندوزی خالی می‌ماند و پارسر فقط با متن کار می‌کند)
+PDF_CHECKBOXES = []
+
 class ParsianParser:
     def __init__(self):
         pass
@@ -13,7 +17,8 @@ class ParsianParser:
             '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
             '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
             '،': ',', 'ي': 'ی', 'ك': 'ک', 
-            'ͯ': 'ی', 'ͬ': 'ی', 'ͷ': 'ک', 'ﻼ': 'لا', '(': '(', ')': ')'
+            'ͯ': 'ی', 'ͬ': 'ی', 'ͷ': 'ک', 'ͺ': 'ک', 'ͽ': 'گ', 'Ĺ': '',
+            'ﻼ': 'لا', 'ﻻ': 'لا', '(': '(', ')': ')'
         }
         for k, v in mapping.items():
             s = s.replace(k, v)
@@ -103,12 +108,33 @@ class ParsianParser:
                 addr = re.sub(r'[,،\-]+$', '', addr).strip()
                 if len(addr) > 3: out["addres_bimeg"] = addr
 
-        # ۸. مورد استفاده و نوع وسیله نقلیه
-        m_usage_sys = re.search(r'نوع\s*و\s*سیستم\s*[:\s]*([^\n]+)', t)
-        if m_usage_sys: out["usage"] = m_usage_sys.group(1).strip()
+        # ۸. نوع وسیله نقلیه: «نوع و سیستم» (سواری/وانت/...) + «تیپ» (دیگنیتی) ← «سواری دیگنیتی»
+        system = ""
+        m_usage_sys = re.search(r'نوع\s*و\s*سیستم\s*[:\s]*([^\n:]+)', t)
+        if m_usage_sys: system = m_usage_sys.group(1).strip()
+        out["system"] = system
 
+        tip = ""
         m_tip = re.search(r'تیپ\s*[:\s]*([\s\S]{2,30}?)(?=تعداد|رنگ|ظرفیت|شماره|سال|\n)', t)
-        if m_tip: out["vehicle_type"] = m_tip.group(1).strip()
+        if m_tip: tip = re.sub(r'\s+', ' ', m_tip.group(1)).strip()
+        out["tip"] = tip
+        m_tip_en = re.search(r'تیپ\s*[:\s]*[^\n]*\n\s*([A-Za-z][A-Za-z0-9 \-]{1,30})\s*\n', t)
+        if m_tip_en: out["tip_en"] = m_tip_en.group(1).strip()
+        out["vehicle_type"] = (system + " " + tip).strip() if tip and system and system not in tip else (tip or system)
+
+        # ۸-۱. چک‌باکس‌ها (نوع پلاک، مورد استفاده و پرسش‌های بلی/خیر)
+        boxes = self._checked()
+        plate_type = self._answer(boxes, r'نوع\s*پلاک', ('شخصی', 'عمومی', 'دولتی', 'نظامی'))
+        if plate_type: out["plate_type"] = plate_type
+        usage = self._answer(boxes, r'مورد\s*استفاده', None)
+        out["usage"] = usage or plate_type or ("شخصی" if system == "سواری" else system)
+        for key, pat in (("is_owner", r'مالک\s*خودرو\s*هستید'), ("prior_accident", r'سابقه\s*تصادف'),
+                         ("drives_self", r'خودتان\s*انجام'), ("other_drivers", r'افراد\s*دیگری'),
+                         ("prev_body_insurance", r'قبلا\s*بیمه\s*نامه\s*بدنه'), ("body_claims", r'بدنه\s*خسارت'),
+                         ("third_claims", r'شخص\s*ثالث\s*خسارت'), ("parking", r'محل\s*پارک'),
+                         ("payment_method", r'نحوه\s*پرداخت')):
+            ans = self._answer(boxes, pat, None)
+            if ans: out[key] = ans
 
         # ۹. رنگ و سیلندر
         m_cyl_color = re.search(r'تعداد\s*سیلندر\s*:\s*رنگ\s*:\s*\n*(\d+)\s*([^\n\d]+)', t)
@@ -120,6 +146,10 @@ class ParsianParser:
             if m_color: out["color"] = m_color.group(0).strip()
             m_cyl = re.search(r'سیلندر(?:[^0-9]{0,20})?(\d+)', t)
             if m_cyl: out["cylinder_count"] = m_cyl.group(1)
+
+        # ۹-۱. ظرفیت («5نفر»)
+        m_cap = re.search(r'(\d{1,3})\s*نفر', t)
+        if m_cap: out["capacity"] = m_cap.group(1)
 
         # ۱۰. سال ساخت
         m_year = re.search(r'سال\s*ساخت\s*:\s*(13[4-9]\d|14[0-1]\d)', t)
@@ -137,7 +167,7 @@ class ParsianParser:
         out["mordes"] = out["usage"]
         out["noecar"] = out["vehicle_type"]
         out["arzesh"] = out["insured_value"]
-        out["zarfiat"] = out.get("cylinder_count", "4")
+        out["zarfiat"] = out.get("capacity", "")
         
         sync_pairs = [
             ("phone_bimeg", "phone_number", "phone"),
@@ -152,6 +182,33 @@ class ParsianParser:
                 for k in group: out[k] = val
                 
         return out
+
+    # -----------------------------------------------------------------
+    def _checked(self):
+        res = []
+        for b in (PDF_CHECKBOXES or []):
+            if not b.get('checked'):
+                continue
+            res.append({'label': self._clean_text(b.get('label', '')), 'line': self._clean_text(b.get('line', ''))})
+        return res
+
+    def _answer(self, boxes, line_pat, choices):
+        """گزینه‌ی علامت‌خورده‌ی سطری که با line_pat شناخته می‌شود."""
+        for b in boxes:
+            if not re.search(line_pat, b['line']):
+                continue
+            label = b['label']
+            if choices:
+                for c in choices:
+                    if c in label:
+                        return c
+                continue
+            # «... داشته است» / «نداشته است» / «بلی» / «خیر»
+            if label.endswith('نداشته است'): return 'نداشته است'
+            if label.endswith('داشته است'): return 'داشته است'
+            label = re.sub(r'^.*(?:نوع\s*پلاک|مورد\s*استفاده[^:]*|محل\s*پارک\s*خودرو|نحوه\s*پرداخت(?:\s*حق\s*بیمه)?)\s*:?\s*', '', label).strip(' :')
+            return re.split(r'\s*\)', label)[0].strip() or label
+        return ""
 
 # ==================================
 # تابع رابط برای سازگاری با پنل اصلی

@@ -60,6 +60,86 @@ def extract_with_pypdf2(pdf_path):
 EXTRACTORS = [('PyMuPDF', extract_with_pymupdf), ('pdfplumber', extract_with_pdfplumber), ('PyPDF2', extract_with_pypdf2)]
 
 
+# ---------------------------------------------------------------------------
+#  چک‌باکس‌ها (فقط با PyMuPDF): مربع‌های کوچکِ کادردار؛ اگر مربعِ توپُرِ کوچک‌تری داخلش باشد «علامت‌خورده» است.
+#  برچسبِ هر گزینه نزدیک‌ترین کلمه‌های سمتِ راستِ کادر روی همان خط است (فرم‌های فارسی راست‌به‌چپ‌اند).
+# ---------------------------------------------------------------------------
+_GLYPH_FIX = {'ͬ': 'ی', 'ͯ': 'ی', 'ͷ': 'ک', 'ͺ': 'ک', 'ͽ': 'گ', 'Ĺ': '', 'ﻼ': 'لا', 'ﻻ': 'لا', 'ي': 'ی', 'ك': 'ک'}
+
+
+def _fix_glyphs(s):
+    for k, v in _GLYPH_FIX.items():
+        s = s.replace(k, v)
+    return s
+
+
+def extract_checkboxes(pdf_path):
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        import fitz
+    out = []
+    doc = fitz.open(pdf_path)
+    try:
+        for pno, page in enumerate(doc):
+            frames, marks = [], []
+            for g in page.get_drawings():
+                r = g.get('rect')
+                if r is None or not (3 <= r.width <= 12 and 3 <= r.height <= 12) or abs(r.width - r.height) > 1.2:
+                    continue
+                if g.get('fill') is not None and 'f' in (g.get('type') or ''):
+                    marks.append(r)
+                if g.get('color') is not None and 's' in (g.get('type') or ''):
+                    frames.append(r)
+            if not frames:
+                continue
+            words = [w for w in page.get_text('words') if w[4].strip()]
+            for fr in frames:
+                # مربعِ توپُرِ هم‌اندازه‌ی کادر، خودِ کادر است نه علامت
+                checked = any(m.width < fr.width - 1 and fr.x0 - 0.5 <= m.x0 and m.x1 <= fr.x1 + 0.5 and fr.y0 - 0.5 <= m.y0 and m.y1 <= fr.y1 + 0.5
+                              for m in marks)
+                yc = (fr.y0 + fr.y1) / 2
+                line = sorted([w for w in words if w[1] - 2 <= yc <= w[3] + 2], key=lambda w: w[0])
+                right = [w for w in line if w[0] >= fr.x1 - 1]
+                # برچسب: کلمه‌های چسبیده به هم، از کنارِ کادر تا اولین فاصله‌ی بزرگ یا کادرِ بعدی
+                nxt = min([f.x0 for f in frames if abs((f.y0 + f.y1) / 2 - yc) < 3 and f.x0 > fr.x1] or [1e9])
+                label, last = [], fr.x1
+                for w in right:
+                    if w[0] > nxt or w[0] - last > 12:
+                        break
+                    label.append(w)
+                    last = w[2]
+                out.append({'page': pno, 'x': round(fr.x0, 1), 'y': round(fr.y0, 1), 'checked': checked,
+                            'label': _stem_last(_words_text(label).strip(' :')), 'line': _words_text(right)})
+    finally:
+        doc.close()
+    return out
+
+
+# «ی»ِ آخرِ کلمه در بعضی PDFها (مثل پرسشنامه‌ی پارسیان) جای دیگری از صفحه چاپ می‌شود و از کلمه جدا می‌افتد
+_STEMS = {'بل': 'بلی', 'شخص': 'شخصی', 'عموم': 'عمومی', 'دولت': 'دولتی', 'قسط': 'قسطی', 'اختصاص': 'اختصاصی',
+          'رانندگ': 'رانندگی', 'نظام': 'نظامی', 'اصل': 'اصلی', 'اضاف': 'اضافی'}
+
+
+def _words_text(ws):
+    """کلمه‌ها از راست به چپ؛ تکه‌هایی که بی‌فاصله کنار هم‌اند (مثل «پ»+«لا»+«ک») به هم می‌چسبند."""
+    parts, prev_x0 = [], None
+    for w in sorted(ws, key=lambda w: -w[0]):
+        t = _fix_glyphs(w[4])
+        if parts and prev_x0 is not None and -1.0 < prev_x0 - w[2] < 0.3:
+            parts[-1] += t
+        else:
+            parts.append(t)
+        prev_x0 = w[0]
+    return re.sub(r'\s+', ' ', ' '.join(parts)).strip()
+
+
+def _stem_last(label):
+    ws = label.split(' ')
+    ws[-1] = _STEMS.get(ws[-1], ws[-1])
+    return ' '.join(ws)
+
+
 def extract_texts(pdf_path):
     """همه‌ی روش‌های در دسترس را به ترتیب امتحان می‌کند: [(method, text), ...]"""
     out, errors = [], []
@@ -68,7 +148,7 @@ def extract_texts(pdf_path):
             t = fn(pdf_path)
             if t and t.strip():
                 out.append((name, t))
-        except Exception as e:  # کتابخانه نصب نیست یا فایل را نخواند
+        except BaseException as e:  # کتابخانه نصب نیست یا فایل را نخواند (PanicExceptionِ کتابخانه‌های Rust هم Exception نیست)
             errors.append("%s: %s" % (name, e))
     return out, errors
 
@@ -246,7 +326,7 @@ def _score(d):
 # ---------------------------------------------------------------------------
 #  پارسرِ اختصاصی
 # ---------------------------------------------------------------------------
-def load_custom_parser(parser_path):
+def load_custom_parser(parser_path, checkboxes=None):
     parser_path = os.path.abspath(parser_path)
     folder = os.path.dirname(parser_path)
     if folder not in sys.path:
@@ -255,7 +335,10 @@ def load_custom_parser(parser_path):
     spec = importlib.util.spec_from_file_location(stem, parser_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[stem] = module
+    # پارسرها می‌توانند چک‌باکس‌های PDF را از PDF_CHECKBOXES بخوانند (برنامه‌ی ویندوزی این را ندارد و خالی می‌ماند)
+    module.PDF_CHECKBOXES = checkboxes or []
     spec.loader.exec_module(module)
+    module.PDF_CHECKBOXES = checkboxes or []
     fn = getattr(module, 'parse_pdf_fields', None)
     if not callable(fn):
         raise RuntimeError('تابع parse_pdf_fields(raw_text) در فایل پارسر تعریف نشده است.')
@@ -297,10 +380,15 @@ def main():
         return 1
 
     method, raw_text = texts[0]
+    try:
+        checkboxes = extract_checkboxes(pdf_path)
+    except BaseException as e:
+        checkboxes = []
+        errors.append('checkboxes: %s' % e)
     data, used, parser_error = {}, 'generic', None
     if parser_path:
         try:
-            fn = load_custom_parser(parser_path)
+            fn = load_custom_parser(parser_path, checkboxes)
             data = _clean(fn(raw_text) or {})
             used = 'custom'
         except Exception as e:
@@ -334,7 +422,8 @@ def main():
             traceback.print_exc(file=sys.stderr)
 
     _out({'ok': True, 'data': {k: v for k, v in data.items() if v != ''}, 'method': method, 'parser_used': used,
-          'parser_error': parser_error, 'raw_len': len(raw_text), 'raw_preview': raw_text[:3000]})
+          'parser_error': parser_error, 'raw_len': len(raw_text), 'raw_preview': raw_text[:3000],
+          'checked': [(c['line'] + ' ← ' + c['label']) if len(c['label']) < 12 else c['label'] for c in checkboxes if c['checked']]})
     return 0
 
 

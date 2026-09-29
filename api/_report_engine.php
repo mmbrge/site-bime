@@ -591,7 +591,17 @@ function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array
     foreach ($layout['items'] as $it) if (empty($it['hidden'])) $byPage[$it['page']][] = $it;
     for ($p = 0; $p < max(1, intval($layout['pages'])); $p++) {
         $pdf->AddPage($W > $H ? 'L' : 'P', [$W, $H]);
-        foreach ($byPage[$p] ?? [] as $it) {
+        // کادرهایی که متغیر دارند (پلاک، نام، ...) آخر کشیده می‌شوند تا هیچ تصویر یا شکلِ جلوتری رویشان را نپوشاند
+        $items = $byPage[$p] ?? [];
+        $hasVar = function ($it) {
+            if ($it['type'] === 'image') return false;
+            if (isset($it['text']) && strpos((string)$it['text'], '{{') !== false) return true;
+            foreach ($it['paras'] ?? [] as $pp) foreach ($pp['runs'] ?? [] as $r) if (strpos((string)$r['t'], '{{') !== false) return true;
+            return false;
+        };
+        $late = array_filter($items, $hasVar);
+        $items = array_merge(array_diff_key($items, $late), $late);
+        foreach ($items as $it) {
             $x = $it['x'] + ($it['dx'] ?? 0); $y = $it['y'] + ($it['dy'] ?? 0);
             if ($it['type'] === 'image') rpt_draw_image($pdf, $it, $x, $y, $assetDir);
             else rpt_draw_box($pdf, $it, $x, $y, $values, $opts, $W);

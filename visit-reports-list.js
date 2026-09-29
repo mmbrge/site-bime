@@ -147,7 +147,10 @@
     function renderDetail(m, r, reload) {
         m.setTitle(`گزارش <span dir="ltr">${esc(r.report_no)}</span>`, `${esc(r.category_name)} · صادرکننده: ${esc(r.issuer_name || '')} · ${fa(r.created_jalali)}`);
         const photoUrls = r.photos.map(p => fileUrl(r.id, 'photo', '&pid=' + p.id));
-        const bad = r.parts.filter(p => p.status === 'k');
+        // «ندارد»ِ تجهیزات آسیب نیست؛ قطعه‌ی بی‌علامت (n) هم نشان داده نمی‌شود
+        const isBad = p => p.status === 'k' && (!p.bad || p.bad === r.bad_label);
+        const shownParts = r.parts.filter(p => p.status !== 'n');
+        const bad = r.parts.filter(isBad);
         const dmg = (r.form && r.form.damages) || [];
         const bySec = {};
         r.display.forEach(x => { (bySec[x.section || 'مشخصات'] = bySec[x.section || 'مشخصات'] || []).push(x); });
@@ -166,7 +169,7 @@
                 ${Object.entries(bySec).map(([s, rows]) => `<div class="vr-card p-5 vr-fade-up"><p class="vr-sec-title mb-3 !text-xs">${esc(s)}</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">${rows.map(x => `<div class="flex gap-2 border-b border-dashed border-slate-100 pb-1.5"><span class="text-slate-400 font-bold w-28 shrink-0">${esc(x.label)}</span><span class="font-black text-slate-700 break-all">${esc(x.value ? (/^[\d\s,.:\/]+( ریال)?$/.test(x.value) ? fa(x.value) : x.value) : '—')}</span></div>`).join('')}</div></div>`).join('')}
                 ${r.parts.length ? `<div class="vr-card p-5 vr-fade-up"><p class="vr-sec-title mb-3 !text-xs">وضعیت قطعات <span class="vr-chip ${bad.length ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}">${bad.length ? fa(bad.length) + ' ' + esc(r.bad_label) : 'همه ' + esc(r.ok_label)}</span></p>
-                    <div class="flex flex-wrap gap-1.5">${r.parts.map(p => `<span class="vr-chip ${p.status === 'k' ? 'bg-red-100 text-red-600' : 'bg-slate-50 text-slate-400'}"><i class="fas ${p.status === 'k' ? 'fa-circle-exclamation' : 'fa-check'}"></i> ${esc(p.label)}${p.status === 'k' && p.note ? ` <span class="font-bold text-red-500/80">: ${esc(p.note)}</span>` : ''}</span>`).join('')}</div></div>` : ''}
+                    <div class="flex flex-wrap gap-1.5">${shownParts.map(p => `<span class="vr-chip ${isBad(p) ? 'bg-red-100 text-red-600' : 'bg-slate-50 text-slate-400'}"><i class="fas ${isBad(p) ? 'fa-circle-exclamation' : 'fa-check'}"></i> ${esc(p.label)}${(p.ok || p.bad) ? ` <span class="font-bold">: ${esc(p.status === 'k' ? (p.bad || r.bad_label) : (p.ok || r.ok_label))}</span>` : ''}${isBad(p) && p.note ? ` <span class="font-bold text-red-500/80">: ${esc(p.note)}</span>` : ''}</span>`).join('')}</div></div>` : ''}
                 ${dmg.length ? `<div class="vr-card p-5 vr-fade-up"><p class="vr-sec-title mb-3 !text-xs">مواضع آسیب‌دیده</p>
                     <div class="space-y-1.5">${dmg.map((x, i) => `<div class="flex gap-2 text-xs"><span class="w-6 h-6 rounded-full bg-rose-100 text-rose-600 font-black flex items-center justify-center text-[10px] shrink-0">${fa(i + 1)}</span><span class="font-black text-slate-700">${esc(x.location)}</span><span class="text-slate-500">${esc(x.description)}</span></div>`).join('')}</div></div>` : ''}
                 <div class="vr-card p-5 vr-fade-up"><p class="vr-sec-title mb-3 !text-xs">عکس‌ها (${fa(r.photos.length)})</p>
