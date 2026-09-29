@@ -678,10 +678,15 @@ function vr_sample_form(array $fields) {
             case 'Time': $form['fields'][$k] = '10:30'; break;
             case 'Date': $form['fields'][$k] = '1405/01/01'; break;
             case 'Checkbox': $form['fields'][$k] = '1'; break;
+            case 'Visitor': $form['fields'][$k] = 'بازدیدکننده نمونه'; break;
             case 'Combobox': $form['fields'][$k] = vr_combo_options($f)[0] ?? ''; break;
             case 'PartsStatus': foreach (vr_parts_list($f) as $i => $p) { $form['parts'][$p['id']] = $i % 4 === 3 ? 'k' : 's'; if ($i % 4 === 3) $form['part_notes'][$p['id']] = 'خط و خش'; } break;
             case 'DamageList': $form['damages'] = [['location' => 'گلگیر جلو راست', 'description' => 'خط و خش'], ['location' => 'سپر عقب', 'description' => 'فرورفتگی']]; break;
-            default: $form['fields'][$k] = $f['max_chars'] && $f['max_chars'] <= 4 ? str_repeat('9', min(4, $f['max_chars'])) : $f['label'];
+            default:
+                // نمونه‌ی واقع‌گرا برای ستون‌های شناخته‌شده، وگرنه برچسبِ فیلد
+                $samples = ['نوع وسیله' => 'سواری پژو ۲۰۶ تیپ ۵', 'سیستم/برند' => 'ایران خودرو', 'رنگ' => 'سفید روغنی', 'مدل/سال' => '1401',
+                            'شماره شاسی' => 'NAAP13FE9KJ123456', 'شماره موتور' => '165A0123456', 'مورد استفاده' => 'شخصی', 'سیلندر' => '4', 'ظرفیت' => '5 نفر'];
+                $form['fields'][$k] = $samples[$f['excel_column'] ?? ''] ?? ($f['max_chars'] && $f['max_chars'] <= 4 ? str_repeat('9', min(4, $f['max_chars'])) : $f['label']);
         }
     }
     return $form;

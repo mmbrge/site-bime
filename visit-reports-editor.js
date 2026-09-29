@@ -27,6 +27,13 @@
     .vre-box:hover{box-shadow:0 0 0 2px rgba(99,102,241,.35)}
     .vre-band{position:absolute;border:1.5px solid #6366f1;background:rgba(99,102,241,.1);pointer-events:none;z-index:10}
     .vre-hide-static .vre-box:not(.var):not(.chg){display:none}
+    /* «نمایش با نمونه»: کادرها مثلِ خروجیِ واقعی (متنِ پُرشده، بدونِ رنگِ زمینه) ولی همچنان قابلِ کشیدن */
+    .vre-sample .vre-box{display:flex!important;flex-direction:column;background:transparent;color:#0b1220;border:1px dashed rgba(148,163,184,.35);overflow:visible}
+    .vre-sample .vre-box.var{background:transparent;color:#0b1220;border-color:rgba(99,102,241,.35)}
+    .vre-sample .vre-box.chg{background:transparent;border-color:#f59e0b}
+    .vre-sample .vre-box.off{opacity:.25}
+    .vre-sample .vre-box.sel{background:rgba(99,102,241,.08)}
+    .vre-sample .vre-box > span{display:block;width:100%}
     .vre-panel{overflow:auto;display:flex;flex-direction:column;gap:.75rem}
     .vre-kbd{display:inline-block;background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-radius:.35rem;padding:0 .3rem;font-size:.62rem;font-family:monospace}
     `;
@@ -39,6 +46,7 @@
         if (!d.ok) { m.body.innerHTML = `<p class="text-red-500 font-bold text-sm p-6">${esc(d.error)}</p>`; return; }
 
         const st = {
+            sample: false, values: d.sample || {},
             page: 0, zoom: 1, scale: 1, sel: new Set(), undo: [], redo: [], dirty: false, showStatic: false, fontAll: d.font_all || '',
             items: d.items, boxes: d.items.filter(i => i.type === 'box' && !i.empty), W: d.page.w, H: d.page.h,
         };
@@ -56,6 +64,8 @@
                 <div class="vr-seg"><button type="button" class="vre-zo">−</button><button type="button" class="vre-zf">اندازه‌ی صفحه</button><button type="button" class="vre-zi">+</button></div>
                 <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" class="accent-indigo-600 vre-static"> نمایشِ کادرهای متنِ ثابت</label>
                 <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" class="accent-indigo-600 vre-imgs" checked> پس‌زمینه</label>
+                <label class="flex items-center gap-1.5 text-[11px] font-black text-violet-700 bg-violet-50 rounded-lg px-2 py-1 cursor-pointer"><input type="checkbox" class="accent-violet-600 vre-samp"> نمایش با نمونه</label>
+                <select class="vr-in !py-1 !text-[11px] vre-src hidden" style="width:auto;max-width:18rem"><option value="">دادهٔ نمونه (ساختگی)</option>${(d.reports || []).map(r => `<option value="${r.id}">${esc(r.report_no)} · ${esc(r.insured_name || '')}</option>`).join('')}</select>
                 <span class="flex-1"></span>
                 <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vre-undo" title="Ctrl+Z"><i class="fas fa-rotate-left"></i> برگشت</button>
                 <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vre-redo" title="Ctrl+Y"><i class="fas fa-rotate-right"></i> جلو</button>
@@ -80,8 +90,21 @@
         const stage = m.body.querySelector('.vre-stage'), pageEl = m.body.querySelector('.vre-page'), props = m.body.querySelector('.vre-props');
 
         function fitScale() { const w = stage.clientWidth - 48; st.scale = Math.max(0.3, (w > 200 ? w : 800) / st.W) * st.zoom; }
+        // قلمِ نمایشی نزدیک به PDF: قلم‌های لاتین با Helvetica/Arial، بقیه وزیر
+        function boxFont(b) {
+            const f = b.font || st.fontAll || b.wfont || '';
+            if (/narrow/i.test(f)) return "font-family:'Arial Narrow',Helvetica,Arial,Vazir,sans-serif;font-stretch:condensed;";
+            if (/arial|helvetica|times|calibri|tahoma|verdana|segoe|cambria|courier|garamond/i.test(f)) return 'font-family:Helvetica,Arial,Vazir,sans-serif;';
+            return 'font-family:Vazir,Tahoma,sans-serif;';
+        }
         function boxStyle(b) {
             const s = st.scale, pt = b.fsize || b.size || 10;
+            if (st.sample) {
+                const [il, it, ir, ib] = b.ins || [0, 0, 0, 0];
+                return `left:${(b.x + (b.dx || 0)) * s}px;top:${(b.y + (b.dy || 0)) * s}px;width:${b.w * s}px;height:${b.h * s}px;font-size:${pt * s}px;line-height:1.1;` +
+                       `padding:${it * s}px ${ir * s}px ${ib * s}px ${il * s}px;justify-content:${b.anchor === 'ctr' ? 'center' : b.anchor === 'b' ? 'flex-end' : 'flex-start'};` +
+                       `white-space:pre-wrap;${boxFont(b)}text-align:${b.align === 'center' ? 'center' : b.align === 'left' ? 'left' : 'right'};direction:rtl;${b.rot ? `transform:rotate(${b.rot}deg);` : ''}`;
+            }
             const multi = b.h > pt * 2.2;   // کادرِ چندخطی (مثل آدرس) شکسته نمایش داده شود، کادرِ کوچک یک‌خطی
             const size = Math.max(6, Math.min(pt * s, multi ? pt * s : b.h * s * 0.85));
             return `left:${(b.x + (b.dx || 0)) * s}px;top:${(b.y + (b.dy || 0)) * s}px;width:${b.w * s}px;height:${b.h * s}px;font-size:${size}px;` +
@@ -90,7 +113,10 @@
         }
         function boxText(b) { return (b.text !== null && b.text !== undefined && b.text !== '') ? b.text : b.orig; }
         // نمایشِ جمع‌وجور در ویرایشگر: {{ c1_k }} => c1_k
-        function boxLabel(b) { return boxText(b).replace(/\{\{\s*([^}]+?)\s*\}\}/g, '$1'); }
+        function boxLabel(b) {
+            if (st.sample) return b.hidden ? '' : ((b.text !== null && b.text !== undefined && b.text !== '') ? b.text : (b.printed ?? b.orig)).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, k) => String(st.values[k.trim()] ?? ''));
+            return boxText(b).replace(/\{\{\s*([^}]+?)\s*\}\}/g, '$1');
+        }
         function drawPage() {
             fitScale();
             const s = st.scale;
@@ -111,7 +137,7 @@
             }
             pageEl.querySelector('.vre-boxl').innerHTML = st.boxes.filter(b => b.page === st.page).map(b => {
                 const isVar = /\{\{/.test(boxText(b));
-                return `<div class="vre-box ${isVar ? 'var' : ''} ${changed(b) ? 'chg' : ''} ${b.hidden ? 'off' : ''} ${st.sel.has(b.index) ? 'sel' : ''}" data-i="${b.index}" style="${boxStyle(b)}" title="${esc(boxText(b))}">${esc(boxLabel(b))}</div>`;
+                return `<div class="vre-box ${isVar ? 'var' : ''} ${changed(b) ? 'chg' : ''} ${b.hidden ? 'off' : ''} ${st.sel.has(b.index) ? 'sel' : ''}" data-i="${b.index}" style="${boxStyle(b)}" title="${esc(boxText(b))}"><span>${esc(boxLabel(b))}</span></div>`;
             }).join('');
             m.body.querySelectorAll('.vre-pages button').forEach(x => x.className = Number(x.dataset.p) === st.page ? 'on-ok' : '');
         }
@@ -121,7 +147,7 @@
                 const el = pageEl.querySelector(`.vre-box[data-i="${i}"]`), b = byIdx.get(i);
                 if (!el) return;
                 el.setAttribute('style', boxStyle(b));
-                el.textContent = boxLabel(b);
+                el.innerHTML = `<span>${esc(boxLabel(b))}</span>`;
                 el.title = boxText(b);
                 el.classList.toggle('chg', changed(b)); el.classList.toggle('off', !!b.hidden); el.classList.toggle('sel', st.sel.has(i));
                 el.classList.toggle('var', /\{\{/.test(boxText(b)));
@@ -281,7 +307,22 @@
         m.body.querySelector('.vre-zi').onclick = () => { st.zoom = Math.min(4, st.zoom * 1.25); drawPage(); };
         m.body.querySelector('.vre-zo').onclick = () => { st.zoom = Math.max(0.4, st.zoom / 1.25); drawPage(); };
         m.body.querySelector('.vre-zf').onclick = () => { st.zoom = 1; drawPage(); };
-        m.body.querySelector('.vre-static').onchange = e => { stage.classList.toggle('vre-hide-static', !e.target.checked); };
+        m.body.querySelector('.vre-static').onchange = e => { stage.classList.toggle('vre-hide-static', !e.target.checked && !st.sample); };
+        // حالتِ نمونه: همه‌ی کادرها (حتی متنِ ثابت) مثلِ خروجی دیده می‌شوند و همچنان جابه‌جا می‌شوند
+        const srcSel = m.body.querySelector('.vre-src');
+        m.body.querySelector('.vre-samp').onchange = e => {
+            st.sample = e.target.checked;
+            stage.classList.toggle('vre-sample', st.sample);
+            stage.classList.toggle('vre-hide-static', !st.sample && !m.body.querySelector('.vre-static').checked);
+            srcSel.classList.toggle('hidden', !st.sample);
+            drawPage();
+        };
+        srcSel.onchange = async () => {
+            if (!srcSel.value) { st.values = d.sample || {}; drawPage(); return; }
+            const r = await api('set_layout_sample', { id: cat.id, report_id: Number(srcSel.value) });
+            if (!r.ok) { toast(r.error, 'error'); return; }
+            st.values = r.values; drawPage();
+        };
         m.body.querySelector('.vre-imgs').onchange = drawPage;
         m.body.querySelector('.vre-undo').onclick = doUndo;
         m.body.querySelector('.vre-redo').onclick = doRedo;

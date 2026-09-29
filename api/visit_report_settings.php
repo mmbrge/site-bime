@@ -259,11 +259,27 @@ if ($a === 'set_layout_editor') {
         foreach ($it['paras'] ?? [] as $p) foreach ($p['runs'] as $r) if ($size === null && trim($r['t']) !== '') { $size = $r['size'] ?: ($p['size'] ?: ($layout['defaults']['size'] ?? 11)); $font = $r['font']; }
         $items[] = $base + ['rot' => $it['rot'] ?? 0, 'orig' => $orig, 'text' => $it['text'] ?? null, 'font' => $it['font'] ?? '', 'fsize' => $it['fsize'] ?? null,
                             'size' => $size ?: ($layout['defaults']['size'] ?? 11), 'wfont' => $font, 'align' => $it['paras'][0]['align'] ?? 'right',
-                            'has_vars' => strpos($orig . ($it['text'] ?? ''), '{{') !== false, 'empty' => trim($orig) === ''];
+                            'has_vars' => strpos($orig . ($it['text'] ?? ''), '{{') !== false, 'empty' => trim($orig) === '',
+                            'anchor' => $it['anchor'] ?? 't', 'ins' => $it['ins'] ?? [0, 0, 0, 0],
+                            // متنی که واقعاً چاپ می‌شود (متنِ سفید در Word عمداً دیده نمی‌شود)
+                            'printed' => implode("\n", array_map(fn($p) => implode('', array_map(fn($r) => ($r['color'] ?? '') === '#FFFFFF' ? '' : $r['t'], $p['runs'] ?? [])), $it['paras'] ?? []))];
     }
     $o = json_decode($c['options_json'] ?? '', true) ?: [];
+    // داده‌ی نمونه برای حالتِ «نمایش با نمونه» + آخرین گزارش‌های واقعیِ همین نوع (برای نمونه‌ی واقعی)
+    $fields = vr_fields($pdo, $c['id']);
+    $sample = vr_build_values($c, $fields, vr_sample_form($fields), ['date' => jalali_from_gregorian_ts_dotted(time()), 'issuer_name' => $user['name'], 'report_no' => 'VR-نمونه']);
+    $rs = $pdo->prepare("SELECT id, report_no, insured_name, plate_display FROM visit_reports WHERE category_id = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 20");
+    $rs->execute([$c['id']]);
     vr_out(['ok' => true, 'page' => $layout['page'], 'pages' => $layout['pages'], 'items' => $items, 'fonts' => vr_font_choices($pdo),
-            'font_all' => $o['font_all'] ?? '', 'vars' => vr_expected_vars($c, vr_fields($pdo, $c['id']))]);
+            'font_all' => $o['font_all'] ?? '', 'vars' => vr_expected_vars($c, $fields), 'sample' => $sample, 'reports' => $rs->fetchAll()]);
+}
+// مقدارهای یک گزارشِ واقعی برای نمایش در ویرایشگر
+if ($a === 'set_layout_sample') {
+    $st = $pdo->prepare("SELECT data_json FROM visit_reports WHERE id = ? AND category_id = ?");
+    $st->execute([intval($data['report_id'] ?? 0), intval($data['id'] ?? 0)]);
+    $j = $st->fetchColumn();
+    if (!$j) vr_fail('گزارش پیدا نشد.');
+    vr_out(['ok' => true, 'values' => json_decode($j, true) ?: []]);
 }
 // عکس‌های پس‌زمینه‌ی قالب برای ویرایشگر (پوشه‌ی report_assets از بیرون بسته است)
 if ($a === 'set_layout_asset') {
