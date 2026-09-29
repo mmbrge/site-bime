@@ -15,6 +15,7 @@ $allowedCompanyIds = $session['company_ids'];
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
 $schemaProblem = company_schema_problem($pdo);
 if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem], JSON_UNESCAPED_UNICODE); exit; }
+company_ensure_coverage_column($pdo);
 
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
@@ -101,7 +102,7 @@ try {
                                        car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
                                        insurance_type, status, expiry_date,
                                        skip_health_inspection, has_prev_body, car_name, row_note, policy_number, issued_at,
-                                       issued_file_path, issued_file_path IS NOT NULL AS has_issued_file
+                                       issued_file_path, issued_file_path IS NOT NULL AS has_issued_file, selected_coverages
                                 FROM company_request_plates WHERE request_id = ? ORDER BY id");
         $stmt->execute([$requestId]);
         $plates = $stmt->fetchAll();
@@ -112,6 +113,7 @@ try {
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $p['plate_display'] = company_row_label($p);
+            $p['coverages_fa'] = company_coverages_fa($p['selected_coverages'] ?? null);
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind);
             foreach ($p['checklist'] as &$item) {

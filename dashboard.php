@@ -2073,7 +2073,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
-                    <button onclick="openAdminNewRequestModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواست</button>
+                    <button onclick="CompanyManualRequest.open()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواست</button>
+                    <button onclick="openAdminNewRequestModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold" title="فقط ساخت درخواست خالی (ردیف‌ها و مدارک را بعداً اضافه می‌کنید)"><i class="fas fa-file ml-1"></i>درخواست خالی</button>
                     <?php endif; ?>
                 </div>
             </div>
@@ -3139,7 +3140,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=2"></script>
     <script src="visit-reports-list.js?v=2"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=2"></script><script src="visit-reports-editor.js?v=1"></script><script src="backup-settings.js?v=1"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=2"></script><script src="visit-reports-editor.js?v=1"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=1"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -4549,6 +4550,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500">ارزش: ${money(p.car_value)} ریال</p>` : ''}
                         ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500">تعهد: ${money(p.liability_limit)} ریال</p>` : ''}
                         ${p.insurance_type === 'BODY' && Number(p.skip_health_inspection) ? '<p class="text-[9px] text-slate-400">بدون بازدید</p>' : ''}
+                        ${p.insurance_type === 'BODY' ? `<div class="mt-1 whitespace-normal max-w-[220px]">${(p.coverages_fa || []).length
+                            ? p.coverages_fa.map(c => `<span class="inline-block text-[9px] bg-violet-50 text-violet-700 border border-violet-100 rounded px-1 mt-0.5 ml-0.5">${c}</span>`).join('')
+                            : '<span class="text-[9px] text-amber-600">پوشش‌ها مشخص نشده</span>'}
+                            ${isAdmin && p.status !== 'ISSUED' && window.CompanyManualRequest ? `<button onclick='CompanyManualRequest.editCoverages(${p.id}, ${JSON.stringify(p.selected_coverages || null)})' class="text-[9px] text-blue-600 underline mr-1">ویرایش پوشش</button>` : ''}</div>` : ''}
                     </td>
                     <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر کیلومتر</span>' : '—')}</td>
                     <td class="p-2 col-checklist"><div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
@@ -5013,6 +5018,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${infoCell('تعهد مالی', r.liability_limit ? money(r.liability_limit) + ' ریال' : '')}
                         ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
                     </div>
+                    ${r.insurance_type === 'BODY' ? `<div class="mt-2 bg-violet-50 border border-violet-100 rounded-lg p-2"><p class="text-[10px] font-bold text-violet-700 mb-1"><i class="fas fa-list-check ml-1"></i>پوشش‌های درخواستی</p>
+                        ${(r.coverages_fa || []).length ? r.coverages_fa.map(c => `<span class="inline-block text-[10.5px] bg-white border border-violet-200 text-violet-800 rounded-lg px-2 py-0.5 ml-1 mb-1">${c}</span>`).join('') : '<span class="text-[10.5px] text-amber-600">مشخص نشده</span>'}</div>` : ''}
                     ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mt-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
                     ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mt-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
                 </div>
@@ -5107,6 +5114,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
                         ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : dash)}
                     </div>
+                    ${(r.coverages_fa || []).length ? `<p class="text-[10.5px] text-violet-700 mt-2"><b>پوشش‌ها:</b> ${r.coverages_fa.join('، ')}</p>` : ''}
                 </div>
 
                 <div class="border border-slate-200 rounded-xl p-3 mb-4">

@@ -16,6 +16,9 @@ $actor = require_admin_or_liaison();
 $schemaProblem = company_schema_problem($pdo);
 if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem], JSON_UNESCAPED_UNICODE); exit; }
 
+// ستونِ «پوشش‌های درخواستی» هر ردیف (بدنه) خودکار ساخته می‌شود؛ نیازی به اجرای SQL دستی نیست
+company_ensure_coverage_column($pdo);
+
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
 
@@ -26,7 +29,7 @@ $action = $data['action'] ?? ($_GET['action'] ?? '');
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
-$adminOnly = ['admin_create_request', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'update_row',
+$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
@@ -218,6 +221,7 @@ try {
             $r['status_fa']           = company_plate_status_fa($r['status'], $kind);
             $r['request_kind_fa']     = company_request_kind_fa($kind);
             $r['insurance_type_fa']   = insurance_type_fa($r['insurance_type']);
+            $r['coverages_fa']        = company_coverages_fa($r['selected_coverages'] ?? null);
             $r['expiry_date_jalali']  = $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null;
             $r['request_date_jalali'] = jd(strtotime($r['request_created_at']));
             $r['days_to_expiry']      = $r['expiry_date'] ? (int)floor((strtotime($r['expiry_date']) - strtotime('today')) / 86400) : null;
@@ -392,6 +396,7 @@ try {
                     'car_name' => $r['car_name'], 'car_system' => null, 'car_type' => null,
                     'car_model_year' => null, 'car_color' => null, 'car_usage' => null,
                     'car_value' => $r['car_value'], 'liability_limit' => $r['liability_limit'],
+                    'coverages_fa' => company_coverages_fa($r['selected_coverages'] ?? null),
                     'total_premium' => $r['total_premium'], 'insurer' => $r['insurer'],
                     'request_date' => $r['request_created_at'], 'request_date_jalali' => jd(strtotime($r['request_created_at'])),
                     'expiry_date_jalali' => $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null,
@@ -746,6 +751,121 @@ try {
         exit;
     }
 
+    // ---- اطلاعاتِ فرمِ «ثبت کامل درخواست دستی»: شرکت‌ها، پوشش‌ها، سقف‌های تعهد، مدارک لازم هر نوع،
+    //      و (اگر شرکت داده شود) آخرین پوشش‌ها و تعهد مالیِ درخواست‌شده‌ی همان شرکت به‌عنوان پیش‌فرض ----
+    if ($action === 'admin_manual_form') {
+        $companyId = intval($data['company_id'] ?? 0);
+        if ($companyId) {
+            echo json_encode(['ok' => true, 'defaults' => company_last_request_defaults($pdo, $companyId)], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $companies = $pdo->query("SELECT id, name, allowed_insurers FROM companies ORDER BY name")->fetchAll();
+        $checklists = [];
+        foreach (['NEW_POLICY', 'ENDORSEMENT', 'CANCELLATION'] as $k) {
+            foreach (['THIRDPARTY', 'BODY'] as $t) {
+                foreach ([0, 1] as $skip) {
+                    foreach (['YES', 'NO'] as $prev) {
+                        $checklists["$k|$t|$skip|$prev"] = company_plate_checklist($t, (bool)$skip, [], $prev, $k);
+                    }
+                }
+            }
+        }
+        $docTypes = [];
+        foreach (company_doc_types() as $key => $v) $docTypes[$key] = company_doc_type_label($key);
+        echo json_encode(['ok' => true, 'companies' => $companies, 'coverage_options' => body_coverage_options(),
+                          'liability_options' => liability_limit_options(), 'checklists' => $checklists,
+                          'doc_types' => $docTypes, 'kinds' => company_request_kinds(),
+                          'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ثبت کاملِ یک درخواست شرکتی توسط خودمان، یک‌جا: شرکت، نوع، ردیف‌ها (پلاک یا شاسی)، تعهد مالیِ ثالث
+    //      (برای همه یا تک‌تک)، ارزش خودرو و پوشش‌های بدنه (پیش‌فرض برای همه + متفاوت برای هر پلاک).
+    //      نامه اختیاری است؛ مدارک و نامه بعد از همین، با admin_upload_plate_doc بارگذاری می‌شوند.
+    //      پوشه‌ی روزِ درخواست داخل پوشه‌ی همان شرکت و پوشه‌ی هر ردیف همین حالا ساخته می‌شود. ----
+    if ($action === 'admin_create_full_request') {
+        $companyId = intval($data['company_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, name, allowed_insurers FROM companies WHERE id = ?");
+        $st->execute([$companyId]);
+        $company = $st->fetch();
+        if (!$company) { echo json_encode(['ok' => false, 'error' => 'شرکت را انتخاب کنید.']); exit; }
+        $insurer = in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true) ? $data['insurer'] : 'PASARGAD';
+        if ($company['allowed_insurers'] !== 'BOTH' && $company['allowed_insurers'] !== $insurer) {
+            echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($company['allowed_insurers'] === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.'], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+        if (!$rows) { echo json_encode(['ok' => false, 'error' => 'حداقل یک خودرو (پلاک یا شماره شاسی) وارد کنید.']); exit; }
+
+        $defaultLiability = company_parse_money($data['default_liability'] ?? '');
+        $defaultCov = company_clean_coverages($data['default_coverages'] ?? null);
+        $clean = []; $errors = [];
+        $counts = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
+        foreach ($rows as $i => $r) {
+            $n = $i + 1;
+            $p1 = trim(p2e_digits($r['plate_p1'] ?? '')); $p2 = trim(p2e_digits($r['plate_p2'] ?? ''));
+            $letter = trim($r['plate_letter'] ?? ''); $p4 = trim(p2e_digits($r['plate_p4'] ?? ''));
+            $chassis = trim(p2e_digits($r['chassis_no'] ?? ''));
+            $hasPlate = $p1 !== '' || $p2 !== '' || $letter !== '' || $p4 !== '';
+            if ($hasPlate && ($p1 === '' || $p2 === '' || $letter === '' || $p4 === '')) { $errors[] = "ردیف $n: پلاک ناقص است."; continue; }
+            if (!$hasPlate && $chassis === '') { $errors[] = "ردیف $n: پلاک یا شماره شاسی را وارد کنید."; continue; }
+            $type = in_array($r['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $r['insurance_type'] : null;
+            if (!$type) { $errors[] = "ردیف $n: نوع بیمه (ثالث/بدنه) را انتخاب کنید."; continue; }
+            $expiry = trim($r['expiry_date'] ?? '') ?: null;
+            if ($expiry && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry)) $expiry = fin_jalali_to_date($expiry);
+            $isNew = !empty($r['is_new_vehicle']) ? 1 : 0;
+
+            $liability = null; $carValue = null; $cov = null;
+            if ($kind === 'NEW_POLICY') {
+                if ($type === 'THIRDPARTY') {
+                    $liability = company_parse_money($r['liability_limit'] ?? '') ?: $defaultLiability;
+                    if (!$liability) { $errors[] = "ردیف $n (ثالث): تعهد مالی را مشخص کنید."; continue; }
+                } else {
+                    $carValue = company_parse_money($r['car_value'] ?? '');
+                    if (!$carValue) { $errors[] = "ردیف $n (بدنه): ارزش خودرو را وارد کنید."; continue; }
+                    $cov = (isset($r['coverages']) && $r['coverages'] !== null && $r['coverages'] !== '') ? company_clean_coverages($r['coverages']) : $defaultCov;
+                    if ($cov === null) { $errors[] = "ردیف $n (بدنه): پوشش‌های درخواستی را انتخاب کنید (یا «فقط پوشش پایه»)."; continue; }
+                }
+                $counts[$type]++;
+            } else {
+                $counts[$kind]++;
+                if (trim($r['ref_policy_number'] ?? '') === '') { $errors[] = "ردیف $n: شماره بیمه‌نامه‌ی فعلی را وارد کنید."; continue; }
+            }
+            $clean[] = [$p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null, $chassis ?: null,
+                        trim(p2e_digits($r['engine_no'] ?? '')) ?: null, $isNew, $carValue, $liability,
+                        trim(p2e_digits($r['ref_policy_number'] ?? '')) ?: null, trim($r['endorsement_request'] ?? '') ?: null,
+                        trim($r['cancellation_reason'] ?? '') ?: null, $type, $expiry,
+                        ($isNew || !empty($r['skip_health_inspection'])) ? 1 : 0,
+                        trim($r['car_name'] ?? '') ?: null,
+                        $type === 'BODY' && in_array($r['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $r['has_prev_body'] : null,
+                        trim($r['row_note'] ?? '') ?: null, $cov];
+        }
+        if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
+
+        $pdo->beginTransaction();
+        $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, ?, 'NEW')")
+            ->execute([$companyId, trim($data['request_text'] ?? '') ?: null, $insurer, $kind, json_encode(company_normalize_requested_counts($counts))]);
+        $requestId = (int)$pdo->lastInsertId();
+        $ins = $pdo->prepare("INSERT INTO company_request_plates
+            (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
+             car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
+             insurance_type, expiry_date, skip_health_inspection, car_name, has_prev_body, row_note, selected_coverages)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $plateIds = [];
+        foreach ($clean as $vals) { $ins->execute(array_merge([$requestId], $vals)); $plateIds[] = (int)$pdo->lastInsertId(); }
+        $pdo->commit();
+
+        // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
+        $siteRoot = dirname(__DIR__);
+        $st = $pdo->prepare("SELECT created_at FROM company_requests WHERE id = ?");
+        $st->execute([$requestId]);
+        @mkdir(company_request_date_folder($siteRoot, strtotime($st->fetchColumn()), $company['name']), 0755, true);
+        foreach ($plateIds as $pid) { ensure_plate_folder($pdo, $siteRoot, $pid); company_sync_plate_status($pdo, $pid); }
+
+        echo json_encode(['ok' => true, 'request_id' => $requestId, 'plate_ids' => $plateIds], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- ویرایش متن/بیمه‌گرِ یک درخواست موجود ----
     if ($action === 'edit_request') {
         $requestId = intval($data['request_id'] ?? 0);
@@ -919,6 +1039,7 @@ try {
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $p['plate_display'] = company_row_label($p);
+            $p['coverages_fa'] = company_coverages_fa($p['selected_coverages'] ?? null);
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             // چک‌لیستِ کاملِ همین ردیف: هر آیتم با تیک/ضربدر، اجباری یا اختیاری، و
             // مدرکِ متناظرش (اگر موجود است) تا در جدول قابل باز کردن باشد
@@ -940,6 +1061,9 @@ try {
             $stmtInst->execute([$p['id']]);
             $p['installments'] = $stmtInst->fetchAll();
         }
+        // بدون unset، حلقه‌ی بعدیِ «foreach ($plates as $p)» ردیفِ آخر را با ردیفِ ماقبل آخر رونویسی می‌کرد
+        // (ردیف آخرِ هر درخواستِ چندردیفی در جزئیات، تکراریِ ردیف قبلی دیده می‌شد)
+        unset($p);
 
         foreach ($docs as &$d) $d['doc_type_label'] = company_doc_type_label($d['doc_type']);
         unset($d);
@@ -954,6 +1078,7 @@ try {
 
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
                           'counts' => $counts, 'doc_types' => company_doc_types(),
+                          'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options(),
                           'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1203,10 +1328,24 @@ try {
                        trim($data['cancellation_reason'] ?? '') ?: null,
                        $plateId]);
 
+        if (array_key_exists('coverages', $data)) {
+            $pdo->prepare("UPDATE company_request_plates SET selected_coverages = ? WHERE id = ?")
+                ->execute([$data['coverages'] === null || $data['coverages'] === '' ? null : company_clean_coverages($data['coverages']), $plateId]);
+        }
+
         // نوع بیمه/انقضا در نامِ پوشه‌ی ردیف هست، پس پوشه هم باید هم‌نام شود
         ensure_plate_folder($pdo, dirname(__DIR__), $plateId);
         $status = company_sync_plate_status($pdo, $plateId);
         echo json_encode(['ok' => true, 'status' => $status], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- تغییر پوشش‌های درخواستیِ بدنه‌ی یک ردیف (coverages: آرایه‌ی پوشش‌ها، 'none' = فقط پایه، null = نامشخص) ----
+    if ($action === 'set_row_coverages') {
+        $plateId = intval($data['plate_id'] ?? 0);
+        $cov = ($data['coverages'] ?? null) === null ? null : company_clean_coverages($data['coverages']);
+        $pdo->prepare("UPDATE company_request_plates SET selected_coverages = ? WHERE id = ?")->execute([$cov, $plateId]);
+        echo json_encode(['ok' => true, 'coverages_fa' => company_coverages_fa($cov)], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

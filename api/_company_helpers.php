@@ -1268,3 +1268,75 @@ function company_generate_installments($pdo, $plateId) {
     }
     return ['ok' => true, 'count' => count($parts)];
 }
+
+// =====================================================================
+//  پوشش‌های درخواستیِ بیمه بدنه برای هر ردیف شرکتی (همان فهرست پوشش‌های پرسنلی)
+//  ذخیره: JSON {کلید: سطح یا true}؛ «{}» یعنی صریحاً «فقط پوشش پایه»، NULL یعنی مشخص نشده
+// =====================================================================
+function company_ensure_coverage_column($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'selected_coverages'")->fetch()) {
+            $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN selected_coverages TEXT NULL");
+        }
+    } catch (Throwable $e) { error_log('[company coverages column] ' . $e->getMessage()); }
+}
+
+// ورودی: آرایه/JSON پوشش‌ها، یا 'none' (فقط پوشش پایه)؛ خروجی: JSON تمیز یا null
+function company_clean_coverages($input) {
+    if ($input === 'none') return '{}';
+    if (is_string($input)) $input = json_decode($input, true);
+    if (!is_array($input)) return null;
+    $opts = body_coverage_options();
+    $clean = [];
+    foreach ($input as $k => $v) {
+        if (!isset($opts[$k])) continue;
+        $clean[$k] = $opts[$k]['tiers']
+            ? (isset($opts[$k]['tiers'][(string)$v]) ? (string)$v : array_key_first($opts[$k]['tiers']))
+            : true;
+    }
+    return json_encode((object)$clean, JSON_UNESCAPED_UNICODE);
+}
+
+// برچسب‌های خوانای پوشش‌ها: «نوسان قیمت: ۵۰ درصد افزایش ارزش»؛ برای «{}» => فقط پوشش پایه
+function company_coverages_fa($json) {
+    if ($json === null || $json === '') return [];
+    $cov = json_decode((string)$json, true);
+    if (!is_array($cov)) return [];
+    if (!$cov) return ['فقط پوشش پایه (بدون پوشش تکمیلی)'];
+    $opts = body_coverage_options();
+    $out = [];
+    foreach ($cov as $k => $v) {
+        if (!isset($opts[$k])) continue;
+        $out[] = $opts[$k]['label'] . (($opts[$k]['tiers'] && isset($opts[$k]['tiers'][(string)$v])) ? ': ' . $opts[$k]['tiers'][(string)$v] : '');
+    }
+    return $out;
+}
+
+// آخرین پوشش‌ها و تعهد مالیِ درخواست‌شده‌ی یک شرکت (پیش‌فرضِ فرم ثبت دستی)
+function company_last_request_defaults($pdo, $companyId) {
+    $out = ['coverages' => null, 'coverages_from' => null, 'liability_limit' => null, 'liability_from' => null];
+    try {
+        $st = $pdo->prepare("SELECT crp.selected_coverages, cr.id, cr.created_at FROM company_request_plates crp
+                             JOIN company_requests cr ON cr.id = crp.request_id
+                             WHERE cr.company_id = ? AND crp.insurance_type = 'BODY' AND crp.selected_coverages IS NOT NULL
+                             ORDER BY cr.created_at DESC, crp.id DESC LIMIT 1");
+        $st->execute([$companyId]);
+        if ($r = $st->fetch()) {
+            $out['coverages'] = json_decode($r['selected_coverages'], true);
+            $out['coverages_from'] = ['request_id' => (int)$r['id'], 'date' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at']))];
+        }
+        $st = $pdo->prepare("SELECT crp.liability_limit, cr.id, cr.created_at FROM company_request_plates crp
+                             JOIN company_requests cr ON cr.id = crp.request_id
+                             WHERE cr.company_id = ? AND crp.insurance_type = 'THIRDPARTY' AND crp.liability_limit > 0
+                             ORDER BY cr.created_at DESC, crp.id DESC LIMIT 1");
+        $st->execute([$companyId]);
+        if ($r = $st->fetch()) {
+            $out['liability_limit'] = (int)$r['liability_limit'];
+            $out['liability_from'] = ['request_id' => (int)$r['id'], 'date' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at']))];
+        }
+    } catch (Throwable $e) {}
+    return $out;
+}
