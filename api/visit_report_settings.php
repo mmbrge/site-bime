@@ -257,13 +257,15 @@ if ($a === 'set_layout_editor') {
         }
         $orig = implode("\n", array_map(fn($p) => $p['text'] ?? '', $it['paras'] ?? []));
         $size = null; $font = '';
-        foreach ($it['paras'] ?? [] as $p) foreach ($p['runs'] as $r) if ($size === null && trim($r['t']) !== '') { $size = $r['size'] ?: ($p['size'] ?: ($layout['defaults']['size'] ?? 11)); $font = $r['font']; }
+        $wbold = false;
+        foreach ($it['paras'] ?? [] as $p) foreach ($p['runs'] as $r) if ($size === null && trim($r['t']) !== '') { $size = $r['size'] ?: ($p['size'] ?: ($layout['defaults']['size'] ?? 11)); $font = $r['font']; $wbold = !empty($r['b']); }
         $items[] = $base + ['rot' => $it['rot'] ?? 0, 'orig' => $orig, 'text' => $it['text'] ?? null, 'font' => $it['font'] ?? '', 'fsize' => $it['fsize'] ?? null,
                             'size' => $size ?: ($layout['defaults']['size'] ?? 11), 'wfont' => $font, 'align' => $it['paras'][0]['align'] ?? 'right',
                             'has_vars' => strpos($orig . ($it['text'] ?? ''), '{{') !== false, 'empty' => trim($orig) === '',
                             'anchor' => $it['anchor'] ?? 't', 'ins' => $it['ins'] ?? [0, 0, 0, 0],
                             // شکل‌های بی‌متن (دایره/مربعِ توپُر، خط‌دور) هم در ویرایشگر انتخاب و جابه‌جا می‌شوند
                             'fill' => $it['fill'] ?? null, 'line' => $it['line'] ?? null, 'geom' => $it['geom'] ?? 'rect', 'showif' => $it['showif'] ?? '', 'clone' => !empty($it['clone']),
+                            'bold' => isset($it['bold']) ? (int)$it['bold'] : null, 'wbold' => $wbold,
                             // متنی که واقعاً چاپ می‌شود (متنِ سفید در Word عمداً دیده نمی‌شود)
                             'printed' => implode("\n", array_map(fn($p) => implode('', array_map(fn($r) => ($r['color'] ?? '') === '#FFFFFF' ? '' : $r['t'], $p['runs'] ?? [])), $it['paras'] ?? []))];
     }
@@ -359,6 +361,8 @@ function vrs_apply_adjust(array &$layout, array $items, array $fonts) {
                 $sv = trim((string)$adj['showif']);
                 if ($sv !== '' && preg_match('/^[A-Za-z][A-Za-z0-9_]{0,60}$/', $sv)) $it['showif'] = $sv; else unset($it['showif']);
             }
+            // ضخامت: 1 = بولد، 0 = معمولی، خالی = مثلِ قالب
+            if (array_key_exists('bold', $adj)) { if ($adj['bold'] === null || $adj['bold'] === '') unset($it['bold']); else $it['bold'] = empty($adj['bold']) ? 0 : 1; }
             if (array_key_exists('fsize', $adj)) { $z = floatval($adj['fsize']); if ($z >= 3 && $z <= 72) $it['fsize'] = round($z, 1); else unset($it['fsize']); }
             if (array_key_exists('text', $adj)) {
                 $t = $adj['text'];
@@ -615,6 +619,9 @@ if ($a === 'set_font_upload') {
     require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
     $mk = function ($f, $suffix) use ($dir, $word) {
         $base = 'rf' . substr(md5($word), 0, 8) . $suffix;
+        // فایل‌های قبلیِ همین قلم پاک می‌شوند؛ وگرنه TCPDF فایلِ موجود را دوباره نمی‌سازد و آپلودِ تازه
+        // (مثلاً وقتی قبلاً نسخه‌ی Bold جای Regular آپلود شده بود) هیچ اثری نداشت
+        foreach (['.php', '.z', '.ctg.z'] as $e) @unlink($dir . '/' . $base . $e);
         $tmp = sys_get_temp_dir() . '/' . $base . '.' . $f['ext'];
         copy($f['tmp_name'], $tmp);
         $name = TCPDF_FONTS::addTTFfont($tmp, 'TrueTypeUnicode', '', 32, $dir . '/');
@@ -625,6 +632,7 @@ if ($a === 'set_font_upload') {
     if (!$regName) vr_fail('این فایلِ قلم قابلِ تبدیل نبود (فایل TTF سالم لازم است).');
     $boldName = null;
     if (!empty($_FILES['bold']['tmp_name'])) $boldName = $mk(vrs_upload('bold', ['ttf', 'otf']), 'b');
+    else foreach (['.php', '.z', '.ctg.z'] as $e) @unlink($dir . '/rf' . substr(md5($word), 0, 8) . 'b' . $e);
     $family = $regName;
     $pdo->prepare("INSERT INTO report_fonts (word_name, family, regular_file, bold_file) VALUES (?, ?, ?, ?)
                    ON DUPLICATE KEY UPDATE family = VALUES(family), regular_file = VALUES(regular_file), bold_file = VALUES(bold_file)")

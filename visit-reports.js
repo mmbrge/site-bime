@@ -30,11 +30,17 @@
 
     // پاسخِ غیرِ JSON (خطای PHP/سرور): متنِ خودِ خطا نشان داده می‌شود تا علتش معلوم باشد
     function badResponse(status, txt) {
+        if (status === 403 || status === 406 || /mod_security|Forbidden|Not Acceptable/i.test(String(txt || '').slice(0, 2000))) {
+            return `فایروالِ هاست (ModSecurity) این درخواست را مسدود کرد (کد ${status || 403}). صفحه را یک بار تازه کنید (Ctrl+F5) تا نسخه‌ی جدید بارگذاری شود؛ اگر باز تکرار شد به پشتیبانیِ هاست بگویید mod_security را برای پوشه‌ی api سایت بررسی کنند.`;
+        }
         const plain = String(txt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
         return `پاسخِ نامعتبر از سرور${status && status !== 200 ? ' (کد ' + status + ')' : ''}${plain ? ': ' + plain : ' (پاسخ خالی بود)'}`;
     }
+    // بدنه‌ی درخواست به‌صورت base64 فرستاده می‌شود: فایروالِ هاست (ModSecurity) روی متن‌هایی مثل {{ متغیر }}
+    // یا کدهای قالب حساس است و درخواستِ ویرایشگر را با خطای ۴۰۳ رد می‌کرد
+    const b64 = s => btoa(unescape(encodeURIComponent(s)));
     async function api(action, body = {}) {
-        const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
+        const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, p: b64(JSON.stringify(body)) }) });
         const txt = await res.text();
         try { return JSON.parse(txt); } catch (e) { return { ok: false, error: badResponse(res.status, txt) }; }
     }

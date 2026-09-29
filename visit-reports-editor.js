@@ -10,7 +10,7 @@
     const toast = (m, t = 'info') => (typeof window.showToast === 'function' ? window.showToast(m, t) : console.log(m));
     const confirmBox = (t, m, o) => (window.uiConfirm ? uiConfirm(t, m, o) : Promise.resolve(confirm(m)));
     const round = v => Math.round(v * 2) / 2;   // گامِ نیم‌پوینت
-    const PROPS = ['dx', 'dy', 'hidden', 'font', 'fsize', 'text', 'showif'];
+    const PROPS = ['dx', 'dy', 'hidden', 'font', 'fsize', 'text', 'showif', 'bold'];
 
     const CSS = `
     .vre-wrap{display:grid;grid-template-columns:1fr 20rem;gap:1rem;height:calc(100vh - 9rem)}
@@ -59,13 +59,13 @@
             page: 0, zoom: 1, scale: 1, sel: new Set(), undo: [], redo: [], dirty: false, showStatic: false, fontAll: d.font_all || '',
             items: d.items, boxes: d.items.filter(i => i.type === 'box' && (!i.empty || i.fill || i.line)), W: d.page.w, H: d.page.h,
         };
-        st.boxes.forEach(b => { b.showif = b.showif || ''; b.shape = !!b.empty; });
+        st.boxes.forEach(b => { b.showif = b.showif || ''; b.shape = !!b.empty; if (b.bold === undefined) b.bold = null; });
         st.boxes.forEach(b => { b._init = JSON.stringify(PROPS.map(k => b[k] ?? null)); });
         const byIdx = new Map(st.boxes.map(b => [b.index, b]));
         const snapshot = () => JSON.stringify(st.boxes.map(b => PROPS.map(k => b[k] ?? null)));
         const restore = snap => { JSON.parse(snap).forEach((vals, i) => PROPS.forEach((k, j) => { st.boxes[i][k] = vals[j]; })); };
         const pushUndo = () => { st.undo.push(snapshot()); if (st.undo.length > 100) st.undo.shift(); st.redo = []; st.dirty = true; };
-        const changed = b => JSON.stringify(PROPS.map(k => b[k] ?? null)) !== JSON.stringify([0, 0, false, '', null, null, '']);
+        const changed = b => JSON.stringify(PROPS.map(k => b[k] ?? null)) !== JSON.stringify([0, 0, false, '', null, null, '', null]);
 
         const fontOpts = (cur, withDefault) => (withDefault ? `<option value="">${withDefault}</option>` : '') + d.fonts.map(f => `<option value="${esc(f.value)}" ${f.value === cur ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
         m.body.innerHTML = `
@@ -100,6 +100,8 @@
                 </div>
             </div>`;
         const stage = m.body.querySelector('.vre-stage'), pageEl = m.body.querySelector('.vre-page'), props = m.body.querySelector('.vre-props');
+        // بعد از انتخاب از فهرست/تیک در پنل، فوکوس برداشته می‌شود تا کلیدهای جهت دوباره کادر را جابه‌جا کنند
+        props.addEventListener('change', e => { if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') setTimeout(() => e.target.blur(), 0); });
 
         function fitScale() { const w = stage.clientWidth - 48; st.scale = Math.max(0.3, (w > 200 ? w : 800) / st.W) * st.zoom; }
         // قلمِ نمایشی نزدیک به PDF: قلم‌های لاتین با Helvetica/Arial، بقیه وزیر
@@ -114,7 +116,8 @@
             if (!b.shape) return '';
             return `background:${b.fill || 'transparent'};border-color:${b.line || '#94a3b8'};${b.geom === 'ellipse' ? 'border-radius:50%;' : ''}`;
         }
-        function boxStyle(b) { return boxStyleBase(b) + shapeStyle(b); }
+        const isBold = b => (b.bold === null || b.bold === undefined) ? !!b.wbold : !!Number(b.bold);
+        function boxStyle(b) { return boxStyleBase(b) + shapeStyle(b) + (isBold(b) ? 'font-weight:bold;' : 'font-weight:normal;'); }
         function boxStyleBase(b) {
             const s = st.scale, pt = b.fsize || b.size || 10;
             if (st.sample) {
@@ -192,7 +195,7 @@
             busy.textContent = 'در حال ساختِ خروجی...'; busy.style.display = '';
             const zoom = Math.min(3, st.scale * (window.devicePixelRatio || 1));
             const items = st.boxes.filter(b => changed(b) || b._init !== JSON.stringify(PROPS.map(k => b[k] ?? null)))
-                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '' }));
+                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '', bold: b.bold ?? null }));
             const r = await api('set_layout_render', { id: cat.id, page: st.page, zoom, items, font_all: st.fontAll, report_id: Number(srcSel.value) || 0 });
             if (seq !== st.exactSeq) return;
             busy.style.display = 'none';
@@ -252,6 +255,8 @@
                 <div class="grid grid-cols-4 gap-1 mt-2">${[['←', -1, 0], ['→', 1, 0], ['↑', 0, -1], ['↓', 0, 1]].map(([t, x, y]) => `<button type="button" class="vr-btn vr-btn-s !py-1 vre-nudge" data-x="${x}" data-y="${y}">${t}</button>`).join('')}</div>
                 <p class="text-[10px] text-slate-400 font-bold mt-1">${one ? `جای نهایی: افقی ${fa(round(one.x + (one.dx || 0)))}، عمودی ${fa(round(one.y + (one.dy || 0)))} پوینت از گوشه‌ی بالا-چپ` : 'عددِ واردشده به همه‌ی کادرهای انتخابی اضافه می‌شود.'}</p>
                 <div class="mt-3"><label class="vr-lbl">قلم</label><select class="vr-in !py-2 vre-font">${fontOpts(same('font'), same('font') === null ? '— متفاوت —' : 'همان قلمِ قالب')}${same('font') === null ? '<option value="__keep" selected>— بدونِ تغییر —</option>' : ''}</select></div>
+                <div class="mt-2"><label class="vr-lbl">ضخامت (بولد) ${one ? `<span class="text-slate-400">· قالب: ${one.wbold ? 'بولد' : 'معمولی'}</span>` : ''}</label>
+                    <select class="vr-in !py-2 vre-bold">${(() => { const v = same('bold'); const cur = v === null ? '__keep' : (v === '' || v === null ? '' : String(Number(v))); return `${v === null ? '<option value="__keep" selected>— متفاوت —</option>' : ''}<option value="" ${cur === '' ? 'selected' : ''}>مثلِ قالب</option><option value="1" ${cur === '1' ? 'selected' : ''}>بولد</option><option value="0" ${cur === '0' ? 'selected' : ''}>معمولی</option>`; })()}</select></div>
                 <div class="mt-2"><label class="vr-lbl">اندازه‌ی قلم (پوینت) ${one ? `<span class="text-slate-400">· قالب: ${fa(one.size)}</span>` : ''}</label><input class="vr-in !py-1.5 text-center vre-fsize" dir="ltr" value="${same('fsize') ? fa(same('fsize')) : ''}" placeholder="همان اندازه‌ی قالب"></div>
                 ${one ? `<div class="mt-2"><label class="vr-lbl">متن / متغیرِ کادر</label>
                     <textarea class="vr-in !text-xs font-mono vre-text" dir="ltr" rows="3">${esc(boxText(one))}</textarea>
@@ -276,6 +281,7 @@
             onNum(dxI, 'dx'); onNum(dyI, 'dy');
             props.querySelectorAll('.vre-nudge').forEach(x => x.onclick = () => apply(b => { b.dx = round((b.dx || 0) + Number(x.dataset.x) * 0.5); b.dy = round((b.dy || 0) + Number(x.dataset.y) * 0.5); }));
             props.querySelector('.vre-font').onchange = e => { if (e.target.value === '__keep') return; apply(b => { b.font = e.target.value || ''; }); };
+            props.querySelector('.vre-bold').onchange = e => { if (e.target.value === '__keep') return; apply(b => { b.bold = e.target.value === '' ? null : Number(e.target.value); }); };
             props.querySelector('.vre-fsize').onchange = e => { const v = num(e.target.value); apply(b => { b.fsize = v && v >= 3 && v <= 72 ? v : null; }); };
             props.querySelector('.vre-hid').onchange = e => apply(b => { b.hidden = e.target.checked; });
             props.querySelector('.vre-showif').onchange = e => {
@@ -283,7 +289,7 @@
                 if (v !== '' && !/^[A-Za-z][A-Za-z0-9_]*$/.test(v)) { toast('نامِ متغیر فقط حروف و عدد لاتین و _ است.', 'error'); return; }
                 apply(b => { b.showif = v; }); drawPage();
             };
-            props.querySelector('.vre-reset').onclick = () => { apply(b => { b.dx = 0; b.dy = 0; b.hidden = false; b.font = ''; b.fsize = null; b.text = null; b.showif = ''; }); renderProps(); };
+            props.querySelector('.vre-reset').onclick = () => { apply(b => { b.dx = 0; b.dy = 0; b.hidden = false; b.font = ''; b.fsize = null; b.text = null; b.showif = ''; b.bold = null; }); renderProps(); };
             // کپی/حذفِ کادر: اول تغییرها ذخیره و بعد ویرایشگر با چیدمانِ تازه دوباره باز می‌شود
             const reopen = async (payload) => {
                 if (!await save()) return;
@@ -316,6 +322,9 @@
         let drag = null;
         pageEl.addEventListener('pointerdown', e => {
             if (e.button !== 0) return;
+            // اگر فوکوس روی فیلدی از پنل مانده، کلیدهای جهت به آن فیلد می‌رفت و کادر جابه‌جا نمی‌شد
+            const ae = document.activeElement;
+            if (ae && ae !== document.body && /INPUT|TEXTAREA|SELECT|BUTTON/.test(ae.tagName)) ae.blur();
             const boxEl = e.target.closest('.vre-box');
             const add = e.ctrlKey || e.metaKey || e.shiftKey;
             const rect = pageEl.getBoundingClientRect();
@@ -433,7 +442,7 @@
         m.body.querySelector('.vre-fontall').onchange = e => { st.fontAll = e.target.value; st.dirty = true; drawPage(); scheduleExact(); };
         const save = async () => {
             const items = st.boxes.filter(b => changed(b) || b._init !== JSON.stringify(PROPS.map(k => b[k] ?? null)))
-                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '' }));
+                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '', bold: b.bold ?? null }));
             const r = await api('set_layout_adjust', { id: cat.id, items, font_all: st.fontAll });
             if (!r.ok) { toast(r.error, 'error'); return false; }
             st.boxes.forEach(b => { b._init = JSON.stringify(PROPS.map(k => b[k] ?? null)); });

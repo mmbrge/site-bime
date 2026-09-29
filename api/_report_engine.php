@@ -518,9 +518,11 @@ function rpt_para_segments($para, $values, $opts) {
         $text = rpt_localize_digits($text, !rpt_font_is_latin($fontName));
         $color = $r['color'] ?: '#000000';
         $cur = null; $buf = '';
-        $push = function () use (&$segs, &$buf, &$cur, $r, $size, $color, $f) {
+        // ضخامتِ اختصاصیِ کادر (از ویرایشگر) بر ضخامتِ متنِ Word مقدم است
+        $bold = isset($opts['boxBold']) ? (bool)$opts['boxBold'] : (bool)$r['b'];
+        $push = function () use (&$segs, &$buf, &$cur, $bold, $size, $color, $f) {
             if ($buf === '') return;
-            $segs[] = ['t' => $buf, 'family' => $cur, 'b' => $r['b'] && $cur !== 'dejavusans', 'size' => $size, 'color' => $color, 'stretch' => $cur === 'helvetica' ? $f['stretch'] : 100];
+            $segs[] = ['t' => $buf, 'family' => $cur, 'b' => $bold && $cur !== 'dejavusans', 'size' => $size, 'color' => $color, 'stretch' => $cur === 'helvetica' ? $f['stretch'] : 100];
             $buf = '';
         };
         foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) as $c) {
@@ -662,6 +664,7 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
     $paras = []; $alignFirst = 'right'; $expand = 0; $shrink = 1.0;
     if (!empty($box['font'])) $opts['boxFont'] = $box['font'];
     if (!empty($box['fsize'])) $opts['boxSize'] = floatval($box['fsize']);
+    if (isset($box['bold']) && $box['bold'] !== '' && $box['bold'] !== null) $opts['boxBold'] = (int)$box['bold'];
     foreach (rpt_box_paras($box) as $para) {
         if (rpt_paragraph_is_empty($para, $values)) { $paras[] = null; continue; }
         $segs = rpt_para_segments($para, $values, $opts);

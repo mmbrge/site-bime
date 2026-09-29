@@ -26,6 +26,11 @@ require_once __DIR__ . '/_visit_report_helpers.php';
 $siteRoot = dirname(__DIR__);
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
+// بدنه‌ی base64 (از کلاینت؛ برای عبور از فایروالِ هاست که {{ }} و متنِ قالب را مسدود می‌کرد)
+if (isset($data['p']) && is_string($data['p'])) {
+    $dec = json_decode((string)base64_decode($data['p'], true), true);
+    if (is_array($dec)) $data = $dec + ['action' => $data['action'] ?? ''];
+}
 $action = $data['action'] ?? ($_GET['action'] ?? '');
 
 function vr_out($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }

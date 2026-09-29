@@ -157,7 +157,7 @@ function vr_layout($pdo, $cat, $force = false) {
 function vr_carry_adjustments($old, $new) {
     $key = fn($it) => $it['page'] . '|' . round($it['x']) . '|' . round($it['y']) . '|' . $it['type'];
     $map = [];
-    $keys = ['font', 'fsize', 'text', 'showif'];
+    $keys = ['font', 'fsize', 'text', 'showif', 'bold'];
     foreach ($old['items'] ?? [] as $it) {
         $has = ($it['dx'] ?? 0) || ($it['dy'] ?? 0) || !empty($it['hidden']);
         foreach ($keys as $k) if (isset($it[$k]) && $it[$k] !== '' && $it[$k] !== null) $has = true;
