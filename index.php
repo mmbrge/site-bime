@@ -33,14 +33,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $user = $stmt->fetch();
 
         // درگاهِ انتخاب‌شده باید با نقشِ واقعیِ حساب کاربری هم‌خوانی داشته باشد
+        // «کاربر همکار بیمه با ما» هم همکارانِ عادی را شامل می‌شود و هم همکارانِ «پنل پارسیان» (فقط گزارش بازدید)
         $gate = $_POST['login_gate'] ?? 'STAFF';
+        $liaisonRoles = ['COMPANY_LIAISON', 'PARSIAN'];
         $gateOk = $user && (
-            ($gate === 'LIAISON' && $user['role'] === 'COMPANY_LIAISON') ||
+            ($gate === 'LIAISON' && in_array($user['role'], $liaisonRoles, true)) ||
             ($gate !== 'LIAISON' && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE'], true))
         );
 
         if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
-            $error = 'درگاه ورود را درست انتخاب کنید.';
+            $error = in_array($user['role'], $liaisonRoles, true)
+                ? 'این حساب «همکار بیمه با ما» است؛ بالای فرم «کاربر همکار بیمه با ما» را انتخاب کنید.'
+                : 'درگاه ورود را درست انتخاب کنید.';
         } elseif ($user && password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);   // جلوگیری از تثبیت نشست
             $_SESSION['user_id']   = $user['id'];

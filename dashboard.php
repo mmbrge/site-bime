@@ -55,7 +55,7 @@ HTML;
 }
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'کاربر پارسیان'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'همکار بیمه با ما · پنل پارسیان'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -1860,7 +1860,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
                     <option value="">همه‌ی نقش‌ها</option><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option>
-                    <option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="PARSIAN">کاربر پارسیان</option><option value="COMPANY">کاربر شرکت</option>
+                    <option value="FINANCE">کارشناس مالی</option><option value="LIAISON_ALL">همکار بیمه با ما (همه)</option><option value="COMPANY_LIAISON">— پنل عادی</option><option value="PARSIAN">— پنل پارسیان</option><option value="COMPANY">کاربر شرکت</option>
                 </select>
             </div>
 
@@ -2669,11 +2669,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button type="button" data-role="OPERATOR" onclick="pickNewUserRole('OPERATOR')"><i class="fas fa-file-signature"></i>کارشناس صدور</button>
                 <button type="button" data-role="FINANCE" onclick="pickNewUserRole('FINANCE')"><i class="fas fa-calculator"></i>کارشناس مالی</button>
                 <button type="button" data-role="COMPANY_LIAISON" onclick="pickNewUserRole('COMPANY_LIAISON')"><i class="fas fa-handshake"></i>همکار بیمه با ما</button>
-                <button type="button" data-role="PARSIAN" onclick="pickNewUserRole('PARSIAN')" title="فقط ساخت، دیدن و ویرایشِ گزارش‌های بازدیدِ خودش (انواعی که در «تنظیمات گزارش» به او داده شده)"><i class="fas fa-file-circle-check"></i>کاربر پارسیان</button>
                 <button type="button" data-role="COMPANY" onclick="pickNewUserRole('COMPANY')"><i class="fas fa-building"></i>کاربر شرکت</button>
             </div>
             <input type="hidden" id="su-role">
             <div id="su-fields" class="hidden mt-4">
+                <!-- «همکار بیمه با ما» دو نوع پنل دارد: عادی، یا پارسیان (فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش) -->
+                <div id="su-liaison-box" class="hidden mb-4">
+                    <label class="text-xs font-bold text-slate-500 block mb-1">نوعِ پنلِ کاربری *</label>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <label class="border-2 rounded-xl p-2 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50"><input type="radio" name="su-panel" value="COMPANY_LIAISON" checked onchange="document.getElementById('su-role').value = this.value"> <b>پنل عادی</b><span class="block text-[10px] text-slate-400 mt-1">دسترسی‌های همکار بیمه با ما</span></label>
+                        <label class="border-2 rounded-xl p-2 cursor-pointer has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50"><input type="radio" name="su-panel" value="PARSIAN" onchange="document.getElementById('su-role').value = this.value"> <b>پنل پارسیان</b><span class="block text-[10px] text-slate-400 mt-1">فقط «ساخت گزارش بازدید» و «گزارشات صادره»ِ خودش</span></label>
+                    </div>
+                </div>
                 <div id="su-company-box" class="hidden mb-4">
                     <label class="text-xs font-bold text-slate-500 block mb-1">شرکت(ها)ی این کاربر *</label>
                     <input type="search" id="su-company-q" oninput="filterCompanyPicker('su')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1">
@@ -2702,7 +2709,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
             <div id="esu-staff-box">
                 <div class="float-input">
-                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><option value="COMPANY_LIAISON">همکار بیمه با ما</option><option value="PARSIAN">کاربر پارسیان</option><option value="ADMIN">مدیر کل</option></select>
+                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><optgroup label="همکار بیمه با ما"><option value="COMPANY_LIAISON">همکار بیمه با ما · پنل عادی</option><option value="PARSIAN">همکار بیمه با ما · پنل پارسیان</option></optgroup><option value="ADMIN">مدیر کل</option></select>
                     <label>نقش</label>
                 </div>
                 <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
@@ -6014,7 +6021,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما', PARSIAN: 'کاربر پارسیان'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما', PARSIAN: 'همکار بیمه با ما (پنل پارسیان)'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
@@ -6049,11 +6056,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('su-n-all').textContent = '(' + e2p(alive.length) + ')';
             document.getElementById('su-n-staff').textContent = '(' + e2p(alive.filter(u => u.type === 'STAFF').length) + ')';
             document.getElementById('su-n-company').textContent = '(' + e2p(alive.filter(u => u.type === 'COMPANY').length) + ')';
-            const list = staffUsersCache.filter(u => (!userTypeFilter || u.type === userTypeFilter) && (!role || u.role === role)
+            const list = staffUsersCache.filter(u => (!userTypeFilter || u.type === userTypeFilter) && (!role || u.role === role || (role === 'LIAISON_ALL' && ['COMPANY_LIAISON', 'PARSIAN'].includes(u.role)))
                 && (!q || [u.full_name, u.username, u.mobile_number, u.personnel_code, u.company_names, ROLE_FA[u.role]].join(' ').toLowerCase().includes(q)));
             document.getElementById('su-body').innerHTML = list.map(u => {
                 const del = Number(u.is_deleted) === 1, co = u.type === 'COMPANY';
                 const roleChip = co ? '<span class="su-chip co"><i class="fas fa-building ml-1"></i>کاربر شرکت</span>'
+                                    : u.role === 'PARSIAN' ? '<span class="su-chip">همکار بیمه با ما</span> <span class="su-chip" style="background:#fff1f2;color:#be123c" title="فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش">پنل پارسیان</span>'
                                     : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
                 const isMe = !co && Number(u.id) === staffMeId;
                 return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
@@ -6103,6 +6111,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('su-role').value = role;
             document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.toggle('active', b.dataset.role === role));
             const co = role === 'COMPANY';
+            const liaison = role === 'COMPANY_LIAISON';
+            document.getElementById('su-liaison-box').classList.toggle('hidden', !liaison);
+            if (liaison) document.querySelectorAll('input[name="su-panel"]').forEach(r => { r.checked = r.value === 'COMPANY_LIAISON'; });
             document.getElementById('su-company-box').classList.toggle('hidden', !co);
             document.getElementById('su-personnel-box').classList.toggle('hidden', co);
             if (co) renderCompanyPicker('su');
