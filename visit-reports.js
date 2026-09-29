@@ -14,17 +14,22 @@
     const money = v => { const d = en(v).replace(/\D/g, ''); return d ? fa(d.replace(/\B(?=(\d{3})+(?!\d))/g, ',')) : ''; };
     let uidSeq = 0;
 
+    // پاسخِ غیرِ JSON (خطای PHP/سرور): متنِ خودِ خطا نشان داده می‌شود تا علتش معلوم باشد
+    function badResponse(status, txt) {
+        const plain = String(txt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+        return `پاسخِ نامعتبر از سرور${status && status !== 200 ? ' (کد ' + status + ')' : ''}${plain ? ': ' + plain : ' (پاسخ خالی بود)'}`;
+    }
     async function api(action, body = {}) {
         const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
         const txt = await res.text();
-        try { return JSON.parse(txt); } catch (e) { return { ok: false, error: 'پاسخِ نامعتبر از سرور.' }; }
+        try { return JSON.parse(txt); } catch (e) { return { ok: false, error: badResponse(res.status, txt) }; }
     }
     function apiForm(fd, onProgress) {
         return new Promise((resolve) => {
             const x = new XMLHttpRequest();
             x.open('POST', API);
             if (onProgress) x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
-            x.onload = () => { try { resolve(JSON.parse(x.responseText)); } catch (e) { resolve({ ok: false, error: x.status === 413 ? 'حجمِ فایل‌ها بیش از حدِ مجازِ سرور است.' : 'پاسخِ نامعتبر از سرور.' }); } };
+            x.onload = () => { try { resolve(JSON.parse(x.responseText)); } catch (e) { resolve({ ok: false, error: x.status === 413 ? 'حجمِ فایل‌ها بیش از حدِ مجازِ سرور است.' : badResponse(x.status, x.responseText) }); } };
             x.onerror = () => resolve({ ok: false, error: 'خطای شبکه؛ اتصال را بررسی کنید.' });
             x.send(fd);
         });

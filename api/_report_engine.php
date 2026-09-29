@@ -166,15 +166,20 @@ function rpt_axis_pos($node, $size, $ctx, $axis) {
     if (!$node) return $axis === 'h' ? $m['l'] : $m['t'];
     $rel = $node->getAttribute('relativeFrom');
     if ($axis === 'h') {
-        $ref = match ($rel) {
-            'page' => [0, $W], 'leftMargin', 'insideMargin' => [0, $m['l']], 'rightMargin', 'outsideMargin' => [$W - $m['r'], $W],
-            default => [$m['l'], $W - $m['r']],   // margin, column, character
-        };
+        // (بدون match تا روی PHP 7.4 هاست هم اجرا شود)
+        switch ($rel) {
+            case 'page': $ref = [0, $W]; break;
+            case 'leftMargin': case 'insideMargin': $ref = [0, $m['l']]; break;
+            case 'rightMargin': case 'outsideMargin': $ref = [$W - $m['r'], $W]; break;
+            default: $ref = [$m['l'], $W - $m['r']];   // margin, column, character
+        }
     } else {
-        $ref = match ($rel) {
-            'page' => [0, $H], 'topMargin' => [0, $m['t']], 'bottomMargin' => [$H - $m['b'], $H],
-            default => [$m['t'], $H - $m['b']],   // margin, paragraph, line (فرض: پاراگرافِ لنگر بالای صفحه است)
-        };
+        switch ($rel) {
+            case 'page': $ref = [0, $H]; break;
+            case 'topMargin': $ref = [0, $m['t']]; break;
+            case 'bottomMargin': $ref = [$H - $m['b'], $H]; break;
+            default: $ref = [$m['t'], $H - $m['b']];   // margin, paragraph, line (فرض: پاراگرافِ لنگر بالای صفحه است)
+        }
     }
     $off = null; $align = null;
     foreach ($node->childNodes as $c) {
@@ -183,11 +188,9 @@ function rpt_axis_pos($node, $size, $ctx, $axis) {
         if ($c->localName === 'align') $align = trim($c->textContent);
     }
     if ($off !== null) return $ref[0] + $off;
-    return match ($align) {
-        'right', 'bottom', 'outside' => $ref[1] - $size,
-        'center' => ($ref[0] + $ref[1] - $size) / 2,
-        default => $ref[0],
-    };
+    if (in_array($align, ['right', 'bottom', 'outside'], true)) return $ref[1] - $size;
+    if ($align === 'center') return ($ref[0] + $ref[1] - $size) / 2;
+    return $ref[0];
 }
 
 function rpt_inline_in_body(DOMElement $in, $ctx) {
@@ -205,7 +208,7 @@ function rpt_color($node, $ctx) {
     $c = $ctx->xp->query('.//a:srgbClr', $node)->item(0);
     if ($c) return '#' . strtoupper($c->getAttribute('val'));
     $s = $ctx->xp->query('.//a:schemeClr', $node)->item(0);
-    if ($s) return match ($s->getAttribute('val')) { 'bg1', 'lt1' => '#FFFFFF', 'tx1', 'dk1' => '#000000', default => '#4472C4' };
+    if ($s) return ['bg1' => '#FFFFFF', 'lt1' => '#FFFFFF', 'tx1' => '#000000', 'dk1' => '#000000'][$s->getAttribute('val')] ?? '#4472C4';
     return null;
 }
 
@@ -629,7 +632,7 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
         }
         $tx = $x + $il;
         if ($expand > 0) {
-            $tx -= match ($alignFirst) { 'center' => $expand / 2, 'right' => $expand, default => 0 };
+            $tx -= ['center' => $expand / 2, 'right' => $expand][$alignFirst] ?? 0;
             $iw += $expand;
         }
         $pdf->startTransaction();
@@ -637,7 +640,7 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
         $pdf->writeHTMLCell($iw, 0, $pageW - ($tx + $iw), $y + $it, $html, 0, 1, false, true, '', true);
         $textH = $pdf->GetY() - ($y + $it);
         $pdf->rollbackTransaction(true);
-        $offY = match ($box['anchor'] ?? 't') { 'ctr' => ($ih - $textH) / 2, 'b' => $ih - $textH, default => 0 };
+        $offY = ['ctr' => ($ih - $textH) / 2, 'b' => $ih - $textH][$box['anchor'] ?? 't'] ?? 0;
         $pdf->setRTL(true);
         $pdf->writeHTMLCell($iw, 0, $pageW - ($tx + $iw), $y + $it + $offY, $html, 0, 1, false, true, '', true);
         $pdf->setRTL(false);

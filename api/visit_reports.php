@@ -9,6 +9,14 @@
 //    بیمه‌گذاران، قلم‌ها، دسترسی‌ها، مسیرِ پایتون، رمزِ اکسل، و تاریخچه‌ی کارها
 // دسترسی: مدیر کل همه‌چیز؛ بقیه فقط صدور/دیدن/ویرایشِ گزارش‌های خودشان، آن هم فقط در نوع‌هایی که مجازند.
 session_start();
+// اگر خطای جدیِ PHP پیش آمد (مثلاً فایلی ناقص آپلود شده یا نسخه‌ی PHP قدیمی است)، به‌جای صفحه‌ی خالی/HTML
+// همان پیامِ خطا به‌صورت JSON برگردانده می‌شود تا در پنل دیده شود
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if (!$e || !in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) return;
+    if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['ok' => false, 'error' => 'خطای سرور: ' . $e['message'] . ' (' . basename($e['file']) . ':' . $e['line'] . ')'], JSON_UNESCAPED_UNICODE);
+});
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_company_helpers.php';
