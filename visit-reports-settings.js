@@ -143,11 +143,11 @@
                 <div><p class="text-[11px] font-black text-amber-600 mb-1">فیلد هست ولی جایی در قالب ندارد (در PDF چاپ نمی‌شود):</p>${chips(t.unused, 'bg-amber-50 text-amber-700')}</div>
                 <details><summary class="text-[11px] font-black text-slate-500 cursor-pointer">همه‌ی متغیرهای قالب (${fa(t.vars.length)})</summary><div class="mt-2 flex flex-wrap gap-1">${chips(t.vars, 'bg-slate-100 text-slate-600')}</div></details>
             </div></div>
-            ${t.exists ? `<div class="vr-card p-5 mt-4 vr-fade-up"><div class="flex items-center justify-between gap-2 flex-wrap mb-3"><p class="vr-sec-title !text-xs"><i class="fas fa-up-down-left-right text-violet-500"></i> جابه‌جاییِ دقیقِ کادرها (بدونِ Word)</p>
-                <div class="flex gap-2"><label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500"><input type="checkbox" class="accent-indigo-600 vrs-allbox"> همه‌ی کادرهای متنی</label>
-                <button type="button" class="vr-btn vr-btn-p !py-1.5 !text-[11px] vrs-adj-save"><i class="fas fa-floppy-disk"></i> ذخیره‌ی جابه‌جایی‌ها</button></div></div>
-                <p class="text-[10px] text-slate-400 font-bold mb-3">واحد: پوینت (۱ پوینت ≈ ۰٫۳۵ میلی‌متر). مثبتِ «افقی» یعنی به راست، مثبتِ «عمودی» یعنی به پایین. بعد از ذخیره، «پیش‌نمایش» را ببینید. با بارگذاریِ قالبِ تازه، جابه‌جایی‌های کادرهای هم‌جا حفظ می‌شود.</p>
-                <div class="vrs-boxes max-h-[28rem] overflow-y-auto"><div class="vr-skel h-20"></div></div></div>` : ''}`;
+            ${t.exists ? `<div class="vr-card p-5 mt-4 vr-fade-up flex flex-wrap items-center gap-4">
+                <span class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white flex items-center justify-center text-xl shadow-lg"><i class="fas fa-object-group"></i></span>
+                <div class="flex-1 min-w-[14rem]"><p class="font-black text-slate-700 text-sm">ویرایشگرِ گرافیکیِ کادرها</p>
+                <p class="text-[11px] text-slate-500 font-bold leading-6">صفحه‌ی فرم را ببینید و کادرها را با موس (تکی یا چندتایی) جابه‌جا کنید؛ عددِ افقی/عمودی خودکار نوشته می‌شود. قلم، اندازه و متن/متغیرِ هر کادر، و یک قلم برای همه‌ی کادرها هم همین‌جاست.</p></div>
+                <button type="button" class="vr-btn vr-btn-p vrs-editor"><i class="fas fa-pen-ruler"></i> بازکردنِ ویرایشگر</button></div>` : ''}`;
         const inp = sb.querySelector('.vrs-tpl-in');
         const upload = async file => {
             const stEl = sb.querySelector('.vrs-tpl-st');
@@ -165,26 +165,8 @@
         z.addEventListener('drop', e => { if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
         const re = sb.querySelector('.vrs-reanalyze');
         if (re) re.onclick = async () => { const d = await api('set_template_reanalyze', { id: cat.id }); if (!d.ok) return toast(d.error, 'error'); toast('قالب دوباره خوانده شد.', 'info'); await loadBoot(); renderTypes(body); };
-        const boxes = sb.querySelector('.vrs-boxes');
-        if (!boxes) return;
-        const loadBoxes = async () => {
-            const d = await api('set_layout_boxes', { id: cat.id, all: sb.querySelector('.vrs-allbox').checked });
-            if (!d.ok) { boxes.innerHTML = `<p class="text-xs text-red-500">${esc(d.error)}</p>`; return; }
-            boxes.innerHTML = `<table class="w-full text-[11px]"><thead class="sticky top-0 bg-white"><tr class="text-slate-400 font-bold"><th class="text-right p-1.5">صفحه</th><th class="text-right p-1.5">متنِ کادر</th><th class="p-1.5">افقی</th><th class="p-1.5">عمودی</th><th class="p-1.5">پنهان</th></tr></thead>
-                <tbody>${d.boxes.map(b => `<tr class="border-t border-slate-50 ${b.dx || b.dy || b.hidden ? 'bg-violet-50/60' : ''}" data-idx="${b.index}"><td class="p-1.5 font-bold text-slate-400">${fa(b.page)}</td>
-                <td class="p-1.5 font-bold text-slate-600" dir="ltr" style="text-align:right">${esc(b.text)}</td>
-                <td class="p-1.5"><input class="vr-in !py-1 !px-1 text-center w-16" dir="ltr" data-k="dx" value="${b.dx}"></td><td class="p-1.5"><input class="vr-in !py-1 !px-1 text-center w-16" dir="ltr" data-k="dy" value="${b.dy}"></td>
-                <td class="p-1.5 text-center"><input type="checkbox" class="accent-red-500" data-k="hidden" ${b.hidden ? 'checked' : ''}></td></tr>`).join('')}</tbody></table>`;
-        };
-        sb.querySelector('.vrs-allbox').onchange = loadBoxes;
-        loadBoxes();
-        sb.querySelector('.vrs-adj-save').onclick = async () => {
-            const items = [...boxes.querySelectorAll('tr[data-idx]')].map(tr => ({ index: Number(tr.dataset.idx), dx: Number(en(tr.querySelector('[data-k="dx"]').value)) || 0,
-                dy: Number(en(tr.querySelector('[data-k="dy"]').value)) || 0, hidden: tr.querySelector('[data-k="hidden"]').checked }));
-            const d = await api('set_layout_adjust', { id: cat.id, items });
-            if (!d.ok) return toast(d.error, 'error');
-            toast('ذخیره شد؛ پیش‌نمایش را ببینید.', 'info'); loadBoxes();
-        };
+        const ed = sb.querySelector('.vrs-editor');
+        if (ed) ed.onclick = () => { if (VR.openLayoutEditor) VR.openLayoutEditor(cat, async () => { await loadBoot(); }); else toast('فایلِ visit-reports-editor.js بارگذاری نشده است.', 'error'); };
     }
 
     // ---- فیلدها ----
@@ -499,12 +481,12 @@
             ${step(2, 'آماده‌کردنِ قالبِ Word', `در Word، فرمِ اسکن‌شده را به‌صورت عکس پشتِ متن بگذارید و هر جا باید مقداری چاپ شود یک <b>Text Box</b> بکشید و داخلش متغیر را بنویسید؛ مثل ${code('{{ noecar }}')}. اندازه و قلم و چینشِ متنِ داخلِ کادر همان است که در PDF می‌آید. متغیرهایی که خودکار پر می‌شوند:
                 <div class="grid sm:grid-cols-2 gap-x-6 mt-2">${[['name', 'نام بیمه‌گذار'], ['national_id', 'کد ملی'], ['phone_bimeg', 'تلفن'], ['addres_bimeg', 'آدرس'], ['plate_part1', 'دو رقمِ اولِ پلاک'], ['plate_letter', 'حرفِ پلاک'], ['plate_part2', 'سه رقمِ پلاک'], ['plate_part3', 'کدِ ایران'],
                 ['date_shamsi', 'تاریخ (۱۴۰۵.۰۷.۰۶)'], ['date_shamsi_slash', 'تاریخ (۱۴۰۵/۰۷/۰۶)'], ['report_no', 'شماره گزارش'], ['issuer_name', 'صادرکننده'], ['arzesh_words', 'ارزش به حروف']].map(([k, v]) => `<p>${code(k)} ${v}</p>`).join('')}</div>`)}
-            ${step(3, 'بارگذاری و بررسیِ قالب', `در زبانه‌ی «قالب Word» فایل را آپلود کنید. بخشِ «بررسیِ هماهنگی» نشان می‌دهد کدام متغیرِ قالب فیلدی ندارد (خالی چاپ می‌شود) و کدام فیلد جایی در قالب ندارد. «پیش‌نمایش با دادهٔ نمونه» و «نامِ متغیرها + کادرها» را ببینید؛ اگر کادری کمی جابه‌جا بود از «جابه‌جاییِ دقیقِ کادرها» اصلاحش کنید.`)}
+            ${step(3, 'بارگذاری و بررسیِ قالب', `در زبانه‌ی «قالب Word» فایل را آپلود کنید. بخشِ «بررسیِ هماهنگی» نشان می‌دهد کدام متغیرِ قالب فیلدی ندارد (خالی چاپ می‌شود) و کدام فیلد جایی در قالب ندارد. «پیش‌نمایش با دادهٔ نمونه» و «نامِ متغیرها + کادرها» را ببینید؛ در «ویرایشگرِ گرافیکیِ کادرها» می‌توانید کادرها را با موس (تکی یا چندتایی با Ctrl/Shift یا کشیدنِ کادرِ انتخاب) یا کلیدهای جهت جابه‌جا کنید، عددِ افقی/عمودی را دستی بنویسید، برای هر کادر قلم و اندازه و متن/متغیر را عوض کنید یا یک قلم برای همه‌ی کادرها بگذارید.`)}
             ${step(4, 'تعریفِ فیلدها', `هر فیلد یک «نامِ متغیر» دارد که باید با نامِ داخلِ {{ }} قالب یکی باشد. انواع:
                 <ul class="list-disc pr-5 mt-1"><li><b>متن / عدد / مبلغ / تاریخ / ساعت / متن چندخطی</b>: مقدار همان‌طور چاپ می‌شود (مبلغ با جداکننده؛ با «متغیرِ به حروف» عددش به حروف هم چاپ می‌شود).</li>
                 <li><b>انتخاب از لیست</b>: گزینه‌ها با ویرگول. با «تیک برای هر گزینه» (مثلاً ${code('شخصی=plate_personal; عمومی=plate_public')}) کنارِ گزینه‌ی انتخاب‌شده تیک می‌خورد.</li>
                 <li><b>تیک (بله/خیر)</b>: اگر روشن باشد علامتِ تیک چاپ می‌شود؛ با «شرطِ نمایش» فیلدهای دیگر را نشان/پنهان می‌کند (مثلاً ${code('has_yadak=1')}).</li>
-                <li><b>چک‌لیستِ قطعات</b>: فهرست به شکلِ ${code('c1|شیشه جلو; c2|سپر جلو')}. برای هر قطعه دو متغیر ساخته می‌شود: ${code('c1_s')} (سالم) و ${code('c1_k')} (خسارتی) - پسوندها در «مشخصات» قابلِ تغییرند.</li>
+                <li><b>چک‌لیستِ قطعات</b>: فهرست به شکلِ ${code('c1|شیشه جلو; c2|سپر جلو')}. برای هر قطعه دو متغیر ساخته می‌شود: ${code('c1_s')} (سالم) و ${code('c1_k')} (خسارتی) - پسوندها در «مشخصات» قابلِ تغییرند. اگر قطعه خسارتی زده شود می‌شود توضیح هم نوشت؛ توضیح در ${code('c1_s_t')}، ${code('c1_k_t')} و ${code('c1_t')} (هر کدام که در قالب گذاشته شود) چاپ می‌شود.</li>
                 <li><b>مواضعِ آسیب‌دیده</b>: «گزینه» تعدادِ ردیف است؛ متغیرها ${code('damage_location_1')} و ${code('damage_description_1')} تا آخر.</li>
                 <li><b>بازدیدکننده</b>: از فهرستِ «بازدیدکننده‌ها» انتخاب می‌شود.</li></ul>
                 «بخش» فیلدها را در فرم گروه می‌کند؛ «ستونِ دفترِ اکسل» مقدار را در دفترِ گزارشات و جستجو می‌آورد؛ «شرطِ نمایش» یعنی فیلد فقط وقتی دیده و چاپ شود که شرط برقرار باشد (مثل ${code('plate_type=سایر')}). برای افزودنِ «یک بخشِ اضافه» کافی است فیلدهایش را با بخشِ تازه اضافه کنید و Text Boxهایش را در قالب بگذارید.`)}

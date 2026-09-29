@@ -3053,9 +3053,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="notif-bell.js?v=1"></script>
     <script src="money-input.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=1"></script>
-    <script src="visit-reports-list.js?v=1"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=1"></script><?php endif; ?>
+    <script src="visit-reports.js?v=2"></script>
+    <script src="visit-reports-list.js?v=2"></script>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=2"></script><script src="visit-reports-editor.js?v=1"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت

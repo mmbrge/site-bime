@@ -12,6 +12,20 @@
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const toast = (m, t = 'info') => (typeof window.showToast === 'function' ? window.showToast(m, t) : console.log(m));
     const money = v => { const d = en(v).replace(/\D/g, ''); return d ? fa(d.replace(/\B(?=(\d{3})+(?!\d))/g, ',')) : ''; };
+    // رقم‌ها مثلِ بقیه‌ی پنل فارسی؛ ولی متنی که حروفِ لاتین دارد (شماره شاسی/موتور) رقمِ لاتین می‌ماند
+    const faAuto = v => { const s = String(v ?? ''); return /[A-Za-z]/.test(s) ? en(s) : fa(s); };
+    // تبدیلِ هم‌زمان با تایپ، برای همه‌ی خانه‌های متنیِ داخلِ ناحیه‌های .vr-fa-scope
+    document.addEventListener('input', e => {
+        const el = e.target;
+        if (!el || !el.closest || !el.closest('.vr-fa-scope')) return;
+        if (!(el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && ['text', 'search', ''].includes(el.type)))) return;
+        if (el.readOnly || el.classList.contains('money-input') || el.classList.contains('psplit-part') || el.classList.contains('font-mono') || el.dataset.nofa !== undefined) return;
+        const nv = faAuto(el.value);
+        if (nv === el.value) return;
+        const a = el.selectionStart, b = el.selectionEnd;
+        el.value = nv;
+        try { el.setSelectionRange(a, b); } catch (err) { /* بعضی خانه‌ها انتخاب ندارند */ }
+    }, true);
     let uidSeq = 0;
 
     // پاسخِ غیرِ JSON (خطای PHP/سرور): متنِ خودِ خطا نشان داده می‌شود تا علتش معلوم باشد
@@ -133,7 +147,7 @@
     // ------------------------------------------------------------------
     //  پنجره‌ها
     // ------------------------------------------------------------------
-    function modal({ title, icon = 'fa-file-circle-check', width = '64rem', html = '', onClose } = {}) {
+    function modal({ title, icon = 'fa-file-circle-check', width = '64rem', html = '', onClose, noBackdropClose = false } = {}) {
         injectCss();
         const ov = document.createElement('div');
         ov.className = 'vr-overlay';
@@ -148,8 +162,10 @@
         document.body.style.overflow = 'hidden';
         const close = () => { ov.remove(); if (!document.querySelector('.vr-overlay')) document.body.style.overflow = ''; if (onClose) onClose(); };
         ov.querySelector('.vr-m-close').onclick = close;
-        ov.addEventListener('mousedown', e => { if (e.target === ov) ov.dataset.down = '1'; });
-        ov.addEventListener('mouseup', e => { if (e.target === ov && ov.dataset.down) close(); ov.dataset.down = ''; });
+        if (!noBackdropClose) {
+            ov.addEventListener('mousedown', e => { if (e.target === ov) ov.dataset.down = '1'; });
+            ov.addEventListener('mouseup', e => { if (e.target === ov && ov.dataset.down) close(); ov.dataset.down = ''; });
+        }
         return { el: ov, body: ov.querySelector('.vr-m-body'), close, setTitle: (t, sub) => { ov.querySelector('.vr-m-title').innerHTML = t; ov.querySelector('.vr-m-sub').innerHTML = sub || ''; } };
     }
 
@@ -219,8 +235,9 @@
         constructor(root, opts = {}) {
             injectCss();
             this.root = root; this.opts = opts; this.mode = opts.mode || 'new';
+            root.classList.add('vr-fa-scope');
             this.u = 'vr' + (++uidSeq);
-            this.cat = null; this.parts = {}; this.damages = []; this.uploads = []; this.removePhotos = new Set();
+            this.cat = null; this.parts = {}; this.partNotes = {}; this.damages = []; this.uploads = []; this.removePhotos = new Set();
             this.healthSel = new Set(); this.insuredId = null; this.existing = null; this.health = null; this.busy = false;
             this.init();
         }
@@ -278,21 +295,31 @@
         async selectCat(catId, initial) {
             const c = this.boot.categories.find(x => x.id === catId);
             if (!c) return;
-            if (this.cat && this.cat.id !== catId && !initial && this.dirty) {
-                const ok = await (window.uiConfirm ? uiConfirm('تغییر نوع گزارش', 'اطلاعاتی که وارد کرده‌اید برای نوعِ تازه دوباره چیده می‌شود؛ مقدارهای مشترک حفظ می‌شوند. ادامه می‌دهید؟') : Promise.resolve(true));
-                if (!ok) return;
+            if (this.cat && this.cat.id === catId && !initial) return;
+            // هر نوع گزارش داده‌ی خودش را دارد: داده‌ی نوعِ فعلی به‌عنوانِ پیش‌نویسِ همان نوع ذخیره می‌شود و نوعِ تازه
+            // خالی (یا با پیش‌نویسِ خودش) باز می‌شود. در حالتِ بازدید سلامت پیش‌نویس نداریم، پس اول می‌پرسیم.
+            if (this.cat && !initial && this.dirty) {
+                if (this.mode === 'new') {
+                    this.saveDraft(true);
+                    toast(`پیش‌نویسِ «${this.cat.name}» ذخیره شد؛ با برگشتن به همان نوع می‌توانید بازیابی‌اش کنید.`, 'info');
+                } else {
+                    const ok = await (window.uiConfirm ? uiConfirm('تغییر نوع گزارش', 'اطلاعاتی که برای این نوع وارد کرده‌اید کنار گذاشته می‌شود و نوعِ تازه از اول (با اطلاعاتِ همین بازدید) پر می‌شود. ادامه می‌دهید؟') : Promise.resolve(true));
+                    if (!ok) return;
+                }
             }
-            const keep = this.cat ? this.collect() : null;
+            // عکس‌های انتخاب‌شده هم مالِ همان نوع‌اند (در پیش‌نویس جا نمی‌شوند؛ تا صفحه باز است نگه داشته می‌شوند)
+            this._uploadsByCat = this._uploadsByCat || {};
+            if (this.cat && this.mode === 'new') this._uploadsByCat[this.cat.id] = this.uploads;
+            this.uploads = this.mode === 'new' ? (this._uploadsByCat[catId] || []) : this.uploads;
             this.cat = c;
             this.root.querySelectorAll('[data-cat]').forEach(el => el.classList.toggle('sel', Number(el.dataset.cat) === catId));
-            this.parts = {}; this.damages = [];
+            this.parts = {}; this.partNotes = {}; this.damages = []; this.insuredId = null;
             this.renderForm();
             if (this.mode === 'edit') { this.applyForm(this.existing.form || {}); this.$(`#${this.id('date')}`).value = fa(this.existing.report_date.replace(/\./g, '/')); }
             else if (this.mode === 'health') {
                 this.applyForm(this.health.forms[catId] || {});
                 if (this.health.damages.length && !this.damages.length) { this.damages = this.health.damages.slice(0, this.maxDamages()); this.renderDamages(); }
             }
-            if (keep) this.applyForm(keep, true);
             if (this.mode === 'new') this.offerDraft();
             this.updateVisibility();
             this.dirty = false;
@@ -379,12 +406,14 @@
                 case 'Textarea': input = `<textarea id="${idv}" rows="3" class="vr-in" data-key="${f.field_key}">${dv}</textarea>`; break;
                 case 'Number': input = `<input id="${idv}" class="vr-in" dir="ltr" inputmode="numeric" data-key="${f.field_key}" value="${fa(dv)}"${ml}>`; break;
                 case 'Money': input = `<div class="relative"><input id="${idv}" class="vr-in money-input !pl-12" dir="ltr" inputmode="numeric" data-key="${f.field_key}" value="${money(dv)}"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">ریال</span></div><p class="vr-words text-[10px] text-indigo-500 font-bold mt-1 min-h-[1rem]" data-for="${f.field_key}"></p>`; break;
-                case 'Combobox': input = `<select id="${idv}" class="vr-in" data-key="${f.field_key}"><option value="">— انتخاب —</option>${(f.choices || []).map(o => `<option ${o === f.default_value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`; break;
+                // پیش‌فرض: «مقدارِ پیش‌فرض»ِ فیلد، وگرنه اولین گزینه (گزینه‌ی خالی آخرِ فهرست می‌ماند برای خالی‌گذاشتن)
+                case 'Combobox': { const ch = f.choices || []; const def = ch.includes(f.default_value) ? f.default_value : ch[0];
+                    input = `<select id="${idv}" class="vr-in" data-key="${f.field_key}">${ch.map(o => `<option ${o === def ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="">— خالی —</option></select>`; break; }
                 case 'Checkbox': return `<div class="${span} flex items-center" data-wrap="${f.field_key}"${f.show_if ? ` data-showif="${esc(f.show_if)}"` : ''}><label class="flex items-center gap-3 cursor-pointer select-none mt-4">
                         <input type="checkbox" id="${idv}" class="hidden" data-key="${f.field_key}" ${['1', 'بله', 'true'].includes(f.default_value) ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">${esc(f.label)}</span></label>${help}</div>`;
                 case 'Date': input = `<input id="${idv}" class="vr-in text-center" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱" data-key="${f.field_key}" value="${fa(dv)}">`; break;
                 case 'Time': input = `<input id="${idv}" class="vr-in text-center vr-time" dir="ltr" inputmode="numeric" maxlength="5" placeholder="۱۰:۳۰" data-key="${f.field_key}" value="${fa(dv || this.boot.time)}">`; break;
-                case 'Visitor': input = `<select id="${idv}" class="vr-in" data-key="${f.field_key}"><option value="">— بازدیدکننده —</option>${this.cat.visitors.map(v => `<option ${v.name === f.default_value ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`; break;
+                case 'Visitor': input = `<select id="${idv}" class="vr-in" data-key="${f.field_key}">${this.cat.visitors.map((v, i) => `<option ${(f.default_value ? v.name === f.default_value : i === 0) ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}<option value="">— بدونِ بازدیدکننده —</option></select>`; break;
                 default: input = `<input id="${idv}" class="vr-in" data-key="${f.field_key}" value="${dv}"${ml}>`;
             }
             return `<div class="${span}" data-wrap="${f.field_key}"${f.show_if ? ` data-showif="${esc(f.show_if)}"` : ''}>${lbl}${input}${help}</div>`;
@@ -405,13 +434,17 @@
                 const q = (this.root.querySelector('.vr-parts-q') || {}).value || '';
                 box.innerHTML = f.parts.filter(p => !q || p.label.includes(q)).map(p => {
                     const bad = this.parts[p.id] === 'k';
-                    return `<div class="vr-part ${bad ? 'bad' : ''} flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5" data-part="${p.id}">
+                    return `<div class="vr-part ${bad ? 'bad' : ''} flex flex-wrap items-center justify-between gap-2 rounded-xl px-2.5 py-1.5" data-part="${p.id}">
                         <span class="text-xs font-bold ${bad ? 'text-red-600' : 'text-slate-600'}">${esc(p.label)}</span>
-                        <span class="vr-seg"><button type="button" data-v="s" class="${bad ? '' : 'on-ok'}">${esc(this.cat.ok_label)}</button><button type="button" data-v="k" class="${bad ? 'on-bad' : ''}">${esc(this.cat.bad_label)}</button></span></div>`;
+                        <span class="vr-seg"><button type="button" data-v="s" class="${bad ? '' : 'on-ok'}">${esc(this.cat.ok_label)}</button><button type="button" data-v="k" class="${bad ? 'on-bad' : ''}">${esc(this.cat.bad_label)}</button></span>
+                        ${bad ? `<input class="vr-in !py-1 !text-[11px] w-full vr-part-note vr-fade-up" data-pn="${p.id}" placeholder="توضیحِ خسارت (اختیاری) - مثلاً خط و خش، فرورفتگی" value="${esc(this.partNotes[p.id] || '')}">` : ''}</div>`;
                 }).join('');
                 box.querySelectorAll('.vr-part button').forEach(btn => btn.onclick = () => {
-                    this.parts[btn.closest('.vr-part').dataset.part] = btn.dataset.v; this.dirty = true; this.renderParts(); this.saveDraft();
+                    const pid = btn.closest('.vr-part').dataset.part;
+                    this.parts[pid] = btn.dataset.v; this.dirty = true; this.renderParts(); this.saveDraft();
+                    if (btn.dataset.v === 'k') { const n = box.querySelector(`[data-pn="${pid}"]`); if (n) n.focus(); }
                 });
+                box.querySelectorAll('.vr-part-note').forEach(inp => inp.oninput = () => { this.partNotes[inp.dataset.pn] = inp.value; });
                 const bad = f.parts.filter(p => this.parts[p.id] === 'k').length;
                 const cnt = this.root.querySelector('.vr-parts-count');
                 if (cnt) { cnt.textContent = bad ? `${fa(bad)} ${this.cat.bad_label}` : `همه ${this.cat.ok_label}`; cnt.className = `vr-parts-count vr-chip ${bad ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`; }
@@ -446,13 +479,15 @@
             const hp = this.health ? this.health.photos : [];
             return `<div class="vr-card p-4 sm:p-5 vr-fade-up">
                 <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span>عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
-                <div class="flex gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*" capture="environment" class="hidden vr-cam-in"></label></div></div>
+                <div class="flex flex-wrap gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*" capture="environment" class="hidden vr-cam-in"></label>
+                <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="همه‌ی عکس‌های داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه<input type="file" webkitdirectory directory multiple class="hidden vr-dir-in"></label>
+                <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="عکس‌های داخلِ فایلِ ZIP خودکار استخراج می‌شوند"><i class="fas fa-file-zipper text-violet-500"></i> ZIP<input type="file" accept=".zip,application/zip" multiple class="hidden vr-zip-in"></label></div></div>
                 ${hp.length ? `<p class="text-[11px] font-bold text-slate-500 mb-2"><i class="fas fa-heart-pulse text-rose-400"></i> عکس‌های بازدید سلامت (تیک‌خورده‌ها کنارِ گزارش ذخیره می‌شوند)</p>
                     <div class="flex gap-2 mb-2"><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-all">انتخابِ همه</button><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-none">هیچ‌کدام</button></div>
                     <div class="vr-hp grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-4"></div>` : ''}
                 <div class="vr-ex grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-3"></div>
                 <label class="vr-drop p-5 flex flex-col items-center justify-center gap-2 cursor-pointer text-center" data-drop="img">
-                    <i class="fas fa-cloud-arrow-up text-3xl text-indigo-400"></i><p class="font-black text-slate-600 text-xs">عکس‌ها را اینجا رها کنید یا کلیک کنید</p>
+                    <i class="fas fa-cloud-arrow-up text-3xl text-indigo-400"></i><p class="font-black text-slate-600 text-xs">عکس‌ها، پوشه یا فایلِ ZIP را اینجا رها کنید یا کلیک کنید</p>
                     <p class="text-[10px] text-slate-400 font-bold">چند عکس با هم؛ عکس‌های حجیم خودکار کوچک می‌شوند</p>
                     <input type="file" accept="image/*" multiple class="hidden vr-img-in"></label>
                 <div class="vr-up grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mt-3"></div></div>`;
@@ -497,9 +532,16 @@
             if (cnt) cnt.textContent = total ? `${fa(total)} عکس` : 'بدون عکس';
         }
         async addImages(files) {
-            const list = Array.from(files || []).filter(f => /^image\//.test(f.type));
-            if (!list.length) return;
             const st = this.root.querySelector('.vr-status');
+            let list = [];
+            for (const f of Array.from(files || [])) {
+                if (/\.zip$/i.test(f.name) || /zip/.test(f.type)) {
+                    if (st) st.textContent = `در حال باز کردنِ «${f.name}»...`;
+                    try { const imgs = await zipImages(f); list.push(...imgs); if (!imgs.length) toast(`در «${f.name}» عکسی پیدا نشد.`, 'warning'); }
+                    catch (e) { toast(`ZIPِ «${f.name}» باز نشد: ${e.message}`, 'error'); }
+                } else if (/^image\//.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name)) list.push(f);
+            }
+            if (!list.length) { if (st) st.textContent = ''; return; }
             if (st) st.textContent = 'در حال آماده‌سازیِ عکس‌ها...';
             for (const f of list) this.uploads.push(await shrinkImage(f));
             if (this.uploads.length > 40) { this.uploads = this.uploads.slice(0, 40); toast('حداکثر ۴۰ عکس در هر بار ذخیره.', 'warning'); }
@@ -526,18 +568,21 @@
                 ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
                 z.addEventListener('drop', e => {
                     const fs = e.dataTransfer.files;
-                    if (z.dataset.drop === 'pdf') { if (fs[0]) this.parsePdf(fs[0]); } else this.addImages(fs);
+                    if (z.dataset.drop === 'pdf') { if (fs[0]) this.parsePdf(fs[0]); } else droppedFiles(e.dataTransfer).then(list => this.addImages(list));
                 });
             });
             const imgIn = wrap.querySelector('.vr-img-in'), camIn = wrap.querySelector('.vr-cam-in');
             imgIn.onchange = () => { this.addImages(imgIn.files); imgIn.value = ''; };
             camIn.onchange = () => { this.addImages(camIn.files); camIn.value = ''; };
+            const dirIn = wrap.querySelector('.vr-dir-in'), zipIn = wrap.querySelector('.vr-zip-in');
+            dirIn.onchange = () => { this.addImages([...dirIn.files].sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, 'fa', { numeric: true }))); dirIn.value = ''; };
+            zipIn.onchange = () => { this.addImages(zipIn.files); zipIn.value = ''; };
             const hpAll = wrap.querySelector('.vr-hp-all'), hpNone = wrap.querySelector('.vr-hp-none');
             if (hpAll) hpAll.onclick = () => { this.health.photos.forEach(p => this.healthSel.add(p.key)); this.renderPhotos(); };
             if (hpNone) hpNone.onclick = () => { this.healthSel.clear(); this.renderPhotos(); };
             // قطعات
             const allOk = wrap.querySelector('.vr-all-ok');
-            if (allOk) allOk.onclick = () => { this.parts = {}; this.renderParts(); this.saveDraft(); };
+            if (allOk) allOk.onclick = () => { this.parts = {}; this.partNotes = {}; this.renderParts(); this.saveDraft(); };
             const pq = wrap.querySelector('.vr-parts-q');
             if (pq) pq.oninput = () => this.renderParts();
             // مواضع آسیب
@@ -546,10 +591,10 @@
             const dParts = wrap.querySelector('.vr-dmg-from-parts');
             if (dParts) dParts.onclick = () => {
                 const labels = [];
-                this.cat.fields.filter(f => f.field_type === 'PartsStatus').forEach(f => f.parts.forEach(p => { if (this.parts[p.id] === 'k') labels.push(p.label); }));
+                this.cat.fields.filter(f => f.field_type === 'PartsStatus').forEach(f => f.parts.forEach(p => { if (this.parts[p.id] === 'k') labels.push([p.label, this.partNotes[p.id] || '']); }));
                 if (!labels.length) { toast(`هیچ قطعه‌ای «${this.cat.bad_label}» علامت نخورده است.`, 'warning'); return; }
                 let added = 0;
-                labels.forEach(l => { if (this.damages.length < this.maxDamages() && !this.damages.some(d => d.location === l)) { this.damages.push({ location: l, description: '' }); added++; } });
+                labels.forEach(([l, n]) => { if (this.damages.length < this.maxDamages() && !this.damages.some(d => d.location === l)) { this.damages.push({ location: l, description: n }); added++; } });
                 this.renderDamages();
                 toast(added ? `${fa(added)} موضع اضافه شد؛ شرحِ خسارت را بنویسید.` : 'همه‌ی قطعاتِ خسارتی از قبل در فهرست هستند.', added ? 'info' : 'warning');
             };
@@ -591,7 +636,7 @@
             }
             const g = k => { const el = this.$(`#${this.id(k)}`); return el ? el.value.trim() : ''; };
             const form = { plate, insured: { name: g('ins-name'), national_id: en(g('ins-nid')), phone: en(g('ins-phone')), address: g('ins-addr'), insured_id: this.insuredId },
-                           fields: {}, parts: { ...this.parts }, damages: this.damages.filter(d => (d.location || '').trim() || (d.description || '').trim()) };
+                           fields: {}, parts: { ...this.parts }, part_notes: Object.fromEntries(Object.entries(this.partNotes).filter(([k, v]) => this.parts[k] === 'k' && String(v).trim())), damages: this.damages.filter(d => (d.location || '').trim() || (d.description || '').trim()) };
             (this.cat ? this.cat.fields : []).forEach(f => {
                 const el = this.fieldEl(f.field_key);
                 if (!el) return;
@@ -615,7 +660,7 @@
             const ins = form.insured || {};
             [['ins-name', ins.name], ['ins-nid', fa(ins.national_id)], ['ins-phone', fa(ins.phone)], ['ins-addr', ins.address]].forEach(([k, v]) => {
                 if (onlyFilled && !v) return;
-                const el = this.$(`#${this.id(k)}`); if (el) { el.value = String(v || '').replace(/\s*\n\s*/g, ' '); if (v) mark(el); }
+                const el = this.$(`#${this.id(k)}`); if (el) { el.value = faAuto(String(v || '').replace(/\s*\n\s*/g, ' ')); if (v) mark(el); }
             });
             if (ins.insured_id) { this.insuredId = ins.insured_id; this.$('.vr-ins-badge').classList.remove('hidden'); }
             const fv = form.fields || {};
@@ -631,9 +676,10 @@
                 else if (f.field_type === 'Money') el.value = money(v);
                 else if (['Number', 'Date', 'Time'].includes(f.field_type)) el.value = fa(v);
                 else if (el.tagName === 'SELECT' && v && ![...el.options].some(o => o.value === v)) { el.insertAdjacentHTML('beforeend', `<option>${esc(v)}</option>`); el.value = v; }
-                else el.value = v;
+                else el.value = el.tagName === 'SELECT' ? v : faAuto(v);
                 if (v) mark(el);
             });
+            if (form.part_notes && typeof form.part_notes === 'object') this.partNotes = { ...this.partNotes, ...form.part_notes };
             if (form.parts && Object.keys(form.parts).length) { this.parts = { ...form.parts }; this.renderParts(); }
             if (Array.isArray(form.damages) && form.damages.length) { this.damages = form.damages.map(d => ({ location: d.location || '', description: d.description || '' })).slice(0, this.maxDamages()); this.renderDamages(); }
             this.updateVisibility(); this.updateWords();
@@ -661,10 +707,16 @@
 
         // ---------------- پیش‌نویس ----------------
         draftKey() { return `vr_draft_v1_${this.cat ? this.cat.id : 0}`; }
-        saveDraft() {
+        // هر نوع گزارش پیش‌نویسِ جدای خودش را دارد؛ now=true یعنی همین الان (مثلاً پیش از رفتن به نوعِ دیگر)
+        saveDraft(now = false) {
             if (this.mode !== 'new' || !this.cat) return;
             clearTimeout(this._dt);
-            this._dt = setTimeout(() => { try { localStorage.setItem(this.draftKey(), JSON.stringify({ form: this.collect(), date: this.$(`#${this.id('date')}`).value, at: Date.now() })); } catch (e) {} }, 700);
+            const catId = this.cat.id;
+            const write = () => {
+                if (!this.cat || this.cat.id !== catId) return;   // نوع عوض شده؛ داده‌ی نوعِ تازه زیرِ نامِ قبلی ذخیره نشود
+                try { localStorage.setItem(this.draftKey(), JSON.stringify({ form: this.collect(), date: this.$(`#${this.id('date')}`).value, at: Date.now() })); } catch (e) {}
+            };
+            if (now) write(); else this._dt = setTimeout(write, 700);
         }
         clearDraft() { try { localStorage.removeItem(this.draftKey()); } catch (e) {} }
         offerDraft() {
@@ -769,6 +821,7 @@
                 return;
             }
             this.clearDraft();
+            if (this._uploadsByCat) delete this._uploadsByCat[this.cat.id];
             this.dirty = false;
             this.success(d);
         }
@@ -793,12 +846,59 @@
             const det = this.root.querySelector('.vr-s-detail');
             if (det) det.onclick = () => VR.openDetail(r.id);
             const nw = this.root.querySelector('.vr-s-new');
-            if (nw) nw.onclick = () => { this.mode = 'new'; this.cat = null; this.parts = {}; this.damages = []; this.uploads = []; this.insuredId = null; this.init(); };
+            if (nw) nw.onclick = () => { this.mode = 'new'; this.cat = null; this.parts = {}; this.partNotes = {}; this.damages = []; this.uploads = []; this.insuredId = null; this.init(); };
             const cl = this.root.querySelector('.vr-s-close');
             if (cl && this.opts.close) cl.onclick = () => this.opts.close();
             if (this.opts.onDone) this.opts.onDone(r, d);
             window.dispatchEvent(new CustomEvent('vr:changed', { detail: r }));
         }
+    }
+
+    // ------------------------------------------------------------------
+    //  خواندنِ عکس‌ها از ZIP در خودِ مرورگر (بدونِ کتابخانه؛ فشرده‌سازیِ deflate با DecompressionStream)
+    // ------------------------------------------------------------------
+    const IMG_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    async function zipImages(file) {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const dv = new DataView(buf.buffer);
+        let eocd = -1;
+        for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+        if (eocd < 0) throw new Error('فایل ZIP معتبر نیست');
+        const count = dv.getUint16(eocd + 10, true);
+        let p = dv.getUint32(eocd + 16, true);
+        const utf8 = new TextDecoder('utf-8'), out = [];
+        for (let n = 0; n < count && dv.getUint32(p, true) === 0x02014b50; n++) {
+            const flags = dv.getUint16(p + 8, true), method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+            const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+            const name = utf8.decode(buf.subarray(p + 46, p + 46 + nl));
+            p += 46 + nl + xl + cl;
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            if (name.endsWith('/') || /(^|\/)(__MACOSX|\.)/.test(name) || !IMG_MIME[ext] || (flags & 1)) continue;
+            const start = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+            const data = buf.subarray(start, start + csize);
+            let blob;
+            if (method === 0) blob = new Blob([data]);
+            else if (method === 8) {
+                if (typeof DecompressionStream === 'undefined') throw new Error('این مرورگر باز کردنِ ZIP را پشتیبانی نمی‌کند؛ مرورگر را به‌روز کنید');
+                blob = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+            } else continue;
+            out.push(new File([blob], name.split('/').pop(), { type: IMG_MIME[ext] }));
+        }
+        return out.sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
+    }
+    // فایل‌ها و پوشه‌هایی که روی صفحه رها شده‌اند (پوشه‌ها با همه‌ی زیرپوشه‌ها)
+    async function droppedFiles(dt) {
+        const items = [...(dt.items || [])].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+        if (!items.length || !items.some(e => e.isDirectory)) return [...dt.files];
+        const out = [];
+        const walk = async entry => {
+            if (entry.isFile) { out.push(await new Promise((res, rej) => entry.file(res, rej))); return; }
+            const reader = entry.createReader();
+            let batch;
+            do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const e of batch) await walk(e); } while (batch.length);
+        };
+        for (const e of items) await walk(e);
+        return out.sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
     }
 
     // عدد به حروف (مثلِ سرور)

@@ -72,13 +72,18 @@ function vr_clean_form(array $form, array $fields) {
         'insured' => ['name' => mb_substr($t($ins['name'] ?? ''), 0, 200), 'national_id' => mb_substr(preg_replace('/\s+/', '', p2e_digits($ins['national_id'] ?? '')), 0, 20),
                       'phone' => mb_substr(preg_replace('/\s+/', '', p2e_digits($ins['phone'] ?? '')), 0, 40), 'address' => mb_substr($t($ins['address'] ?? ''), 0, 1000),
                       'insured_id' => intval($ins['insured_id'] ?? 0) ?: null],
-        'fields' => [], 'parts' => [], 'damages' => [],
+        'fields' => [], 'parts' => [], 'part_notes' => [], 'damages' => [],
     ];
     $fv = is_array($form['fields'] ?? null) ? $form['fields'] : [];
     foreach ($fields as $f) {
         $k = $f['field_key'];
         if ($f['field_type'] === 'PartsStatus') {
-            foreach (vr_parts_list($f) as $p) $out['parts'][$p['id']] = (($form['parts'][$p['id']] ?? 's') === 'k') ? 'k' : 's';
+            foreach (vr_parts_list($f) as $p) {
+                $out['parts'][$p['id']] = (($form['parts'][$p['id']] ?? 's') === 'k') ? 'k' : 's';
+                // توضیحِ خسارتِ قطعه (فقط برای قطعه‌ی خسارتی)
+                $note = mb_substr($t($form['part_notes'][$p['id']] ?? ''), 0, 300);
+                if ($out['parts'][$p['id']] === 'k' && $note !== '') $out['part_notes'][$p['id']] = $note;
+            }
             continue;
         }
         if ($f['field_type'] === 'DamageList') {
@@ -485,10 +490,8 @@ try {
         $values = vr_build_values($cat, $fields, $form, ['date' => $date[0], 'issuer_name' => $existing['issuer_name'] ?? $user['name'],
                                                          'report_no' => $existing['report_no'] ?? 'پیش‌نمایش']);
         [$layout, $assetDir] = vr_layout($pdo, $cat);
-        $opts = json_decode($cat['options_json'] ?? '', true) ?: [];
         $tmp = sys_get_temp_dir() . '/vr_prev_' . bin2hex(random_bytes(6)) . '.pdf';
-        rpt_render_pdf($layout, $assetDir, $values, $tmp, ['fontMap' => vr_font_map($pdo), 'fontScale' => floatval($opts['font_scale'] ?? 1) ?: 1,
-                                                           'lineHeight' => floatval($opts['line_height'] ?? 1.1) ?: 1.1]);
+        rpt_render_pdf($layout, $assetDir, $values, $tmp, vr_render_opts($pdo, $cat));
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="preview.pdf"');
         header('Content-Length: ' . filesize($tmp));
@@ -598,7 +601,7 @@ try {
         }
         $parts = [];
         foreach ($fields as $f) if ($f['field_type'] === 'PartsStatus') foreach (vr_parts_list($f) as $p)
-            $parts[] = ['id' => $p['id'], 'label' => $p['label'], 'status' => ($form['parts'][$p['id']] ?? 's')];
+            $parts[] = ['id' => $p['id'], 'label' => $p['label'], 'status' => ($form['parts'][$p['id']] ?? 's'), 'note' => $form['part_notes'][$p['id']] ?? ''];
         $out['display'] = $display; $out['parts'] = $parts;
         $out['ok_label'] = $cat['ok_label'] ?? 'سالم'; $out['bad_label'] = $cat['bad_label'] ?? 'خسارتی';
         $st = $pdo->prepare("SELECT id, file_path, orig_name, source FROM visit_report_photos WHERE report_id = ? ORDER BY sort_order, id");

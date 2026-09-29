@@ -484,8 +484,9 @@ function rpt_para_segments($para, $values, $opts) {
         $text = rpt_fill_text($r['t'], $values);
         if ($single && trim($text) !== '') $text = trim($text) . ' ';
         if ($text === '') continue;
-        $size = max(4, ($r['size'] ?: ($para['size'] ?: $opts['defaultSize'])) * ($opts['fontScale'] ?? 1));
-        $f = rpt_font_for($r['font'], $opts['fontMap']);
+        // اندازه/قلمِ اختصاصیِ همین کادر (از ویرایشگرِ قالب) یا قلمِ یکسان برای همه، بر قلمِ Word مقدم است
+        $size = !empty($opts['boxSize']) ? floatval($opts['boxSize']) : max(4, ($r['size'] ?: ($para['size'] ?: $opts['defaultSize'])) * ($opts['fontScale'] ?? 1));
+        $f = rpt_font_for(!empty($opts['boxFont']) ? $opts['boxFont'] : (!empty($opts['fontAll']) ? $opts['fontAll'] : $r['font']), $opts['fontMap']);
         $color = $r['color'] ?: '#000000';
         $cur = null; $buf = '';
         $push = function () use (&$segs, &$buf, &$cur, $r, $size, $color, $f) {
@@ -585,6 +586,23 @@ function rpt_draw_image(RptPdf $pdf, $it, $x, $y, $assetDir) {
     $pdf->StopTransform();
 }
 
+// پاراگراف‌های یک کادر؛ اگر در ویرایشگرِ قالب متنِ کادر (مثلاً متغیرش) عوض شده باشد، همان متن با
+// سبکِ اولین تکه‌ی متنِ اصلیِ کادر (اندازه، ضخامت، رنگ، قلم و چینش) جایش می‌نشیند
+function rpt_box_paras($box) {
+    if (!isset($box['text']) || $box['text'] === null || $box['text'] === '') return $box['paras'];
+    $p0 = $box['paras'][0] ?? ['align' => 'right', 'bidi' => true, 'size' => null, 'runs' => []];
+    $r0 = null;
+    foreach ($box['paras'] as $p) foreach ($p['runs'] as $r) if (!$r0 && $r['color'] !== '#FFFFFF' && trim($r['t']) !== '') $r0 = $r;
+    $r0 = $r0 ?: ['size' => $p0['size'] ?? null, 'b' => false, 'color' => '#000000', 'font' => ''];
+    $out = [];
+    foreach (preg_split('/\r?\n/', (string)$box['text']) as $line) {
+        $out[] = ['align' => $p0['align'] ?? 'right', 'bidi' => $p0['bidi'] ?? true, 'size' => $p0['size'] ?? null,
+                  'runs' => [['t' => $line, 'size' => $r0['size'], 'b' => $r0['b'], 'color' => $r0['color'] === '#FFFFFF' ? '#000000' : $r0['color'], 'font' => $r0['font']]],
+                  'text' => $line, 'has_vars' => strpos($line, '{{') !== false];
+    }
+    return $out;
+}
+
 function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
     $w = $box['w']; $h = $box['h'];
     $rot = $box['rot'] ?? 0;
@@ -607,7 +625,9 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
     [$il, $it, $ir, $ib] = $box['ins'];
     $iw = max(2, $w - $il - $ir); $ih = max(2, $h - $it - $ib);
     $paras = []; $alignFirst = 'right'; $expand = 0; $shrink = 1.0;
-    foreach ($box['paras'] as $para) {
+    if (!empty($box['font'])) $opts['boxFont'] = $box['font'];
+    if (!empty($box['fsize'])) $opts['boxSize'] = floatval($box['fsize']);
+    foreach (rpt_box_paras($box) as $para) {
         if (rpt_paragraph_is_empty($para, $values)) { $paras[] = null; continue; }
         $segs = rpt_para_segments($para, $values, $opts);
         if (!$segs) continue;

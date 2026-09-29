@@ -20,6 +20,8 @@ function vrs_template_info($pdo, $cat, $siteRoot) {
     $optional = ['plate_display', 'date_shamsi', 'date_shamsi_slash', 'issuer_name', 'report_no', 'arzesh_words'];
     foreach ($fields as $f) {
         if ($f['tick_map']) $optional[] = $f['field_key'];
+        // متغیرهای توضیحِ قطعه (..._t) اختیاری‌اند؛ هر کدام لازم بود در قالب گذاشته می‌شود
+        if ($f['field_type'] === 'PartsStatus') foreach ($expected as $ev) if (substr($ev, -2) === '_t') $optional[] = $ev;
         foreach ($fields as $g) if ($g['show_if'] && preg_match('/^\s*' . preg_quote($f['field_key'], '/') . '\s*!?=/', $g['show_if'])) $optional[] = $f['field_key'];
     }
     return ['exists' => $exists, 'orig_name' => $cat['template_orig_name'], 'vars' => $vars,
@@ -208,10 +210,8 @@ if ($a === 'set_template_preview') {
     if (!empty($_GET['names'])) foreach ($values as $k => &$v) if ($v !== '' && !in_array($v, [$c['tick_mark'] ?: '✔'], true)) $v = $k;
     unset($v);
     [$layout, $assetDir] = vr_layout($pdo, $c);
-    $opts = json_decode($c['options_json'] ?? '', true) ?: [];
     $tmp = sys_get_temp_dir() . '/vr_prev_' . bin2hex(random_bytes(6)) . '.pdf';
-    rpt_render_pdf($layout, $assetDir, $values, $tmp, ['fontMap' => vr_font_map($pdo), 'debug' => !empty($_GET['debug']),
-                                                       'fontScale' => floatval($opts['font_scale'] ?? 1) ?: 1, 'lineHeight' => floatval($opts['line_height'] ?? 1.1) ?: 1.1]);
+    rpt_render_pdf($layout, $assetDir, $values, $tmp, vr_render_opts($pdo, $c, ['debug' => !empty($_GET['debug'])]));
     header('Content-Type: application/pdf');
     header("Content-Disposition: inline; filename=\"preview.pdf\"");
     header('Content-Length: ' . filesize($tmp));
@@ -242,19 +242,74 @@ if ($a === 'set_layout_boxes') {
     }
     vr_out(['ok' => true, 'boxes' => $boxes, 'page' => $layout['page'], 'pages' => $layout['pages']]);
 }
+// ویرایشگرِ گرافیکیِ قالب: همه‌ی عکس‌ها (پس‌زمینه‌ی فرم) و کادرهای متنیِ همه‌ی صفحه‌ها
+if ($a === 'set_layout_editor') {
+    $c = vrs_cat($pdo, $data['id'] ?? 0);
+    [$layout] = vr_layout($pdo, $c);
+    $items = [];
+    foreach ($layout['items'] as $i => $it) {
+        $base = ['index' => $i, 'type' => $it['type'], 'page' => $it['page'], 'x' => round($it['x'], 2), 'y' => round($it['y'], 2),
+                 'w' => round($it['w'], 2), 'h' => round($it['h'], 2), 'dx' => floatval($it['dx'] ?? 0), 'dy' => floatval($it['dy'] ?? 0), 'hidden' => !empty($it['hidden'])];
+        if ($it['type'] === 'image') {
+            $items[] = $base + ['file' => $it['file'], 'crop' => $it['crop'] ?? [0, 0, 0, 0], 'behind' => !empty($it['behind'])];
+            continue;
+        }
+        $orig = implode("\n", array_map(fn($p) => $p['text'] ?? '', $it['paras'] ?? []));
+        $size = null; $font = '';
+        foreach ($it['paras'] ?? [] as $p) foreach ($p['runs'] as $r) if ($size === null && trim($r['t']) !== '') { $size = $r['size'] ?: ($p['size'] ?: ($layout['defaults']['size'] ?? 11)); $font = $r['font']; }
+        $items[] = $base + ['rot' => $it['rot'] ?? 0, 'orig' => $orig, 'text' => $it['text'] ?? null, 'font' => $it['font'] ?? '', 'fsize' => $it['fsize'] ?? null,
+                            'size' => $size ?: ($layout['defaults']['size'] ?? 11), 'wfont' => $font, 'align' => $it['paras'][0]['align'] ?? 'right',
+                            'has_vars' => strpos($orig . ($it['text'] ?? ''), '{{') !== false, 'empty' => trim($orig) === ''];
+    }
+    $o = json_decode($c['options_json'] ?? '', true) ?: [];
+    vr_out(['ok' => true, 'page' => $layout['page'], 'pages' => $layout['pages'], 'items' => $items, 'fonts' => vr_font_choices($pdo),
+            'font_all' => $o['font_all'] ?? '', 'vars' => vr_expected_vars($c, vr_fields($pdo, $c['id']))]);
+}
+// عکس‌های پس‌زمینه‌ی قالب برای ویرایشگر (پوشه‌ی report_assets از بیرون بسته است)
+if ($a === 'set_layout_asset') {
+    $c = vrs_cat($pdo, $_GET['id'] ?? 0);
+    $abs = vr_asset_dir($c['id']) . '/' . basename((string)($_GET['file'] ?? ''));
+    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    if (!is_file($abs) || !in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'], true)) { http_response_code(404); exit; }
+    header('Content-Type: ' . ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'bmp' => 'image/bmp', 'webp' => 'image/webp'][$ext]);
+    header('Cache-Control: private, max-age=3600');
+    header('Content-Length: ' . filesize($abs));
+    readfile($abs);
+    exit;
+}
 if ($a === 'set_layout_adjust') {
     $c = vrs_cat($pdo, $data['id'] ?? 0);
     [$layout] = vr_layout($pdo, $c);
+    $fonts = array_column(vr_font_choices($pdo), 'value');
+    $n = 0;
     foreach ((array)($data['items'] ?? []) as $adj) {
         $i = intval($adj['index'] ?? -1);
         if (!isset($layout['items'][$i])) continue;
-        $layout['items'][$i]['dx'] = max(-200, min(200, floatval($adj['dx'] ?? 0)));
-        $layout['items'][$i]['dy'] = max(-200, min(200, floatval($adj['dy'] ?? 0)));
-        if (!empty($adj['hidden'])) $layout['items'][$i]['hidden'] = 1; else unset($layout['items'][$i]['hidden']);
+        $it = &$layout['items'][$i];
+        $it['dx'] = round(max(-600, min(600, floatval($adj['dx'] ?? 0))), 2);
+        $it['dy'] = round(max(-900, min(900, floatval($adj['dy'] ?? 0))), 2);
+        if (!empty($adj['hidden'])) $it['hidden'] = 1; else unset($it['hidden']);
+        if ($it['type'] === 'box') {
+            if (array_key_exists('font', $adj)) { $f = trim((string)$adj['font']); if ($f !== '' && in_array($f, $fonts, true)) $it['font'] = $f; else unset($it['font']); }
+            if (array_key_exists('fsize', $adj)) { $z = floatval($adj['fsize']); if ($z >= 3 && $z <= 72) $it['fsize'] = round($z, 1); else unset($it['fsize']); }
+            if (array_key_exists('text', $adj)) {
+                $t = $adj['text'];
+                if ($t === null || trim((string)$t) === '' || (string)$t === ($adj['orig'] ?? null)) unset($it['text']);
+                else $it['text'] = mb_substr(str_replace("\r", '', (string)$t), 0, 1000);
+            }
+        }
+        unset($it);
+        $n++;
     }
     $pdo->prepare("UPDATE report_categories SET layout_json = ? WHERE id = ?")->execute([json_encode($layout, JSON_UNESCAPED_UNICODE), $c['id']]);
-    vrs_audit($pdo, $user, "جای کادرهای قالبِ «{$c['name']}» تنظیم شد");
-    vr_out(['ok' => true]);
+    if (array_key_exists('font_all', $data)) {
+        $o = json_decode($c['options_json'] ?? '', true) ?: [];
+        $fa = trim((string)$data['font_all']);
+        $o['font_all'] = in_array($fa, $fonts, true) ? $fa : '';
+        $pdo->prepare("UPDATE report_categories SET options_json = ? WHERE id = ?")->execute([json_encode($o, JSON_UNESCAPED_UNICODE), $c['id']]);
+    }
+    vrs_audit($pdo, $user, "کادرهای قالبِ «{$c['name']}» در ویرایشگر تنظیم شد");
+    vr_out(['ok' => true, 'saved' => $n]);
 }
 
 // ---- الگوریتمِ استخراج (فایل‌های .py با همان نامِ اصلی، همه در یک پوشه) ----

@@ -156,12 +156,33 @@ function vr_layout($pdo, $cat, $force = false) {
 function vr_carry_adjustments($old, $new) {
     $key = fn($it) => $it['page'] . '|' . round($it['x']) . '|' . round($it['y']) . '|' . $it['type'];
     $map = [];
-    foreach ($old['items'] ?? [] as $it) if (($it['dx'] ?? 0) || ($it['dy'] ?? 0) || !empty($it['hidden'])) $map[$key($it)] = $it;
+    $keys = ['font', 'fsize', 'text'];
+    foreach ($old['items'] ?? [] as $it) {
+        $has = ($it['dx'] ?? 0) || ($it['dy'] ?? 0) || !empty($it['hidden']);
+        foreach ($keys as $k) if (isset($it[$k]) && $it[$k] !== '' && $it[$k] !== null) $has = true;
+        if ($has) $map[$key($it)] = $it;
+    }
     foreach ($new['items'] as &$it) {
-        if (isset($map[$key($it)])) { $o = $map[$key($it)]; $it['dx'] = $o['dx'] ?? 0; $it['dy'] = $o['dy'] ?? 0; if (!empty($o['hidden'])) $it['hidden'] = 1; }
+        if (!isset($map[$key($it)])) continue;
+        $o = $map[$key($it)];
+        $it['dx'] = $o['dx'] ?? 0; $it['dy'] = $o['dy'] ?? 0;
+        if (!empty($o['hidden'])) $it['hidden'] = 1;
+        if ($it['type'] === 'box') foreach ($keys as $k) if (isset($o[$k]) && $o[$k] !== '' && $o[$k] !== null) $it[$k] = $o[$k];
     }
     unset($it);
     return $new;
+}
+// تنظیماتِ ساختِ PDFِ یک نوع گزارش: قلم‌ها، ضریبِ اندازه، فاصله‌ی خطوط و «یک قلم برای همه‌ی کادرها»
+function vr_render_opts($pdo, $cat, array $extra = []) {
+    $o = json_decode($cat['options_json'] ?? '', true) ?: [];
+    return $extra + ['fontMap' => vr_font_map($pdo), 'fontScale' => floatval($o['font_scale'] ?? 1) ?: 1,
+                     'lineHeight' => floatval($o['line_height'] ?? 1.1) ?: 1.1, 'fontAll' => trim((string)($o['font_all'] ?? ''))];
+}
+// قلم‌هایی که در ویرایشگرِ قالب قابلِ انتخاب‌اند: قلم‌های آپلودی + قلم‌های همراهِ سایت
+function vr_font_choices($pdo) {
+    $out = [['value' => 'Vazir', 'label' => 'وزیر (پیش‌فرض فارسی)'], ['value' => 'Arial', 'label' => 'Helvetica (لاتین) + وزیر'], ['value' => 'Arial Narrow', 'label' => 'Helvetica فشرده (Arial Narrow) + وزیر']];
+    foreach (array_keys(vr_font_map($pdo)) as $w) $out[] = ['value' => $w, 'label' => $w . ' (آپلودی)'];
+    return $out;
 }
 function vr_font_map($pdo) {
     $map = [];
@@ -257,6 +278,9 @@ function vr_build_values($cat, array $fields, array $form, array $meta) {
                 $st = ($form['parts'][$p['id']] ?? 's') === 'k' ? 'k' : 's';
                 $v["{$p['id']}_{$okS}"] = $visible && $st === 's' ? $tick : '';
                 $v["{$p['id']}_{$badS}"] = $visible && $st === 'k' ? $tick : '';
+                // توضیحِ خسارتِ قطعه: c25_s_t و c25_k_t و c25_t (هر کدام که در قالب گذاشته شود)
+                $note = ($visible && $st === 'k') ? trim((string)($form['part_notes'][$p['id']] ?? '')) : '';
+                $v["{$p['id']}_{$okS}_t"] = $v["{$p['id']}_{$badS}_t"] = $v["{$p['id']}_t"] = $note;
             }
             continue;
         }
@@ -307,7 +331,8 @@ function vr_record_columns(array $fields, array $values) {
     foreach ($fields as $f) {
         $col = $colMap[$f['excel_column'] ?? ''] ?? null;
         if (!$col || isset($out[$col])) continue;
-        $val = $values[$f['field_key']] ?? '';
+        // ستون‌های جستجو با رقمِ لاتین ذخیره می‌شوند (در فرم رقم فارسی تایپ می‌شود)
+        $val = $col === 'visitor_name' ? ($values[$f['field_key']] ?? '') : p2e_digits((string)($values[$f['field_key']] ?? ''));
         if ($col === 'car_value') $val = ($d = preg_replace('/\D/', '', (string)$val)) !== '' ? intval($d) : null;
         if ($val !== '' && $val !== null) $out[$col] = $val;
     }
@@ -377,9 +402,7 @@ function vr_render_files($pdo, $cat, array $values, $folderAbs, $dateDot, $plate
     if (!is_dir($folderAbs)) @mkdir($folderAbs, 0775, true);
     $pdf = $folderAbs . '/' . build_health_report_filename($dateDot, $plateDisplay, 'pdf');
     $docx = $folderAbs . '/' . build_health_report_filename($dateDot, $plateDisplay, 'docx');
-    $opts = json_decode($cat['options_json'] ?? '', true) ?: [];
-    rpt_render_pdf($layout, $assetDir, $values, $pdf, ['fontMap' => vr_font_map($pdo), 'fontScale' => floatval($opts['font_scale'] ?? 1) ?: 1,
-                                                        'lineHeight' => floatval($opts['line_height'] ?? 1.1) ?: 1.1]);
+    rpt_render_pdf($layout, $assetDir, $values, $pdf, vr_render_opts($pdo, $cat));
     $tpl = dirname(__DIR__) . '/' . ltrim($cat['template_path'], '/');
     $docxOk = rpt_fill_docx($tpl, $docx, $values);
     if (!is_file($pdf)) throw new RuntimeException('ساخت فایل PDF گزارش ممکن نشد.');
@@ -633,7 +656,7 @@ function vr_expected_vars($cat, array $fields) {
     $v = ['name', 'national_id', 'phone_bimeg', 'addres_bimeg', 'plate_part1', 'plate_letter', 'plate_part2', 'plate_part3', 'plate_display',
           'date_shamsi', 'date_shamsi_slash', 'issuer_name', 'report_no', 'arzesh_words'];
     foreach ($fields as $f) {
-        if ($f['field_type'] === 'PartsStatus') { foreach (vr_parts_list($f) as $p) { $v[] = "{$p['id']}_{$okS}"; $v[] = "{$p['id']}_{$badS}"; } continue; }
+        if ($f['field_type'] === 'PartsStatus') { foreach (vr_parts_list($f) as $p) { $v[] = "{$p['id']}_{$okS}"; $v[] = "{$p['id']}_{$badS}"; $v[] = "{$p['id']}_{$okS}_t"; $v[] = "{$p['id']}_{$badS}_t"; $v[] = "{$p['id']}_t"; } continue; }
         if ($f['field_type'] === 'DamageList') { $n = max(1, intval($f['options'] ?: 5)); for ($i = 1; $i <= $n; $i++) { $v[] = "damage_location_{$i}"; $v[] = "damage_description_{$i}"; } continue; }
         $v[] = $f['field_key'];
         if ($f['words_var']) $v[] = $f['words_var'];
@@ -656,7 +679,7 @@ function vr_sample_form(array $fields) {
             case 'Date': $form['fields'][$k] = '1405/01/01'; break;
             case 'Checkbox': $form['fields'][$k] = '1'; break;
             case 'Combobox': $form['fields'][$k] = vr_combo_options($f)[0] ?? ''; break;
-            case 'PartsStatus': foreach (vr_parts_list($f) as $i => $p) $form['parts'][$p['id']] = $i % 4 === 3 ? 'k' : 's'; break;
+            case 'PartsStatus': foreach (vr_parts_list($f) as $i => $p) { $form['parts'][$p['id']] = $i % 4 === 3 ? 'k' : 's'; if ($i % 4 === 3) $form['part_notes'][$p['id']] = 'خط و خش'; } break;
             case 'DamageList': $form['damages'] = [['location' => 'گلگیر جلو راست', 'description' => 'خط و خش'], ['location' => 'سپر عقب', 'description' => 'فرورفتگی']]; break;
             default: $form['fields'][$k] = $f['max_chars'] && $f['max_chars'] <= 4 ? str_repeat('9', min(4, $f['max_chars'])) : $f['label'];
         }
