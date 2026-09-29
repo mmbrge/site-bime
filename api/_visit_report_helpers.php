@@ -143,7 +143,8 @@ function vr_layout($pdo, $cat, $force = false) {
     if (!$tpl || !is_file($tpl)) throw new RuntimeException('برای این نوع گزارش هنوز قالب Word بارگذاری نشده است (تنظیمات گزارش).');
     $assetDir = vr_asset_dir($cat['id']);
     $layout = (!$force && $cat['layout_json']) ? json_decode($cat['layout_json'], true) : null;
-    if (!$layout || !is_dir($assetDir)) {
+    // نسخه‌ی قدیمیِ چیدمان (بدونِ شکلِ کادرها، مثلاً دایره) یک بار دوباره خوانده می‌شود؛ تنظیم‌های دستی حفظ می‌شود
+    if (!$layout || !is_dir($assetDir) || intval($layout['version'] ?? 1) < 2) {
         $old = $layout;
         $layout = rpt_analyze_docx($tpl, $assetDir);
         // جابه‌جایی‌های دستیِ قبلی (dx/dy/hidden) روی کادرهای هم‌جا حفظ می‌شود
@@ -156,7 +157,7 @@ function vr_layout($pdo, $cat, $force = false) {
 function vr_carry_adjustments($old, $new) {
     $key = fn($it) => $it['page'] . '|' . round($it['x']) . '|' . round($it['y']) . '|' . $it['type'];
     $map = [];
-    $keys = ['font', 'fsize', 'text'];
+    $keys = ['font', 'fsize', 'text', 'showif'];
     foreach ($old['items'] ?? [] as $it) {
         $has = ($it['dx'] ?? 0) || ($it['dy'] ?? 0) || !empty($it['hidden']);
         foreach ($keys as $k) if (isset($it[$k]) && $it[$k] !== '' && $it[$k] !== null) $has = true;
@@ -170,6 +171,8 @@ function vr_carry_adjustments($old, $new) {
         if ($it['type'] === 'box') foreach ($keys as $k) if (isset($o[$k]) && $o[$k] !== '' && $o[$k] !== null) $it[$k] = $o[$k];
     }
     unset($it);
+    // کادرهای کپی‌شده در ویرایشگر (در قالبِ Word نیستند) با قالبِ تازه هم می‌مانند
+    foreach ($old['items'] ?? [] as $it) if (!empty($it['clone'])) $new['items'][] = $it;
     return $new;
 }
 // تنظیماتِ ساختِ PDFِ یک نوع گزارش: قلم‌ها، ضریبِ اندازه، فاصله‌ی خطوط و «یک قلم برای همه‌ی کادرها»
@@ -404,7 +407,7 @@ function vr_render_files($pdo, $cat, array $values, $folderAbs, $dateDot, $plate
     $docx = $folderAbs . '/' . build_health_report_filename($dateDot, $plateDisplay, 'docx');
     rpt_render_pdf($layout, $assetDir, $values, $pdf, vr_render_opts($pdo, $cat));
     $tpl = dirname(__DIR__) . '/' . ltrim($cat['template_path'], '/');
-    $docxOk = rpt_fill_docx($tpl, $docx, $values);
+    $docxOk = rpt_fill_docx($tpl, $docx, $values, vr_render_opts($pdo, $cat));
     if (!is_file($pdf)) throw new RuntimeException('ساخت فایل PDF گزارش ممکن نشد.');
     return [$pdf, $docxOk ? $docx : null];
 }
@@ -663,6 +666,22 @@ function vr_expected_vars($cat, array $fields) {
         foreach ($f['tick_map'] as $var) $v[] = $var;
     }
     return array_values(array_unique($v));
+}
+
+// در «نمونه»ی ویرایشگر و پیش‌نمایش، همه‌ی تیک‌ها زده می‌شوند (سالم و خسارتیِ همه‌ی ردیف‌ها، همه‌ی گزینه‌های
+// تیک‌دار و چک‌باکس‌ها) تا جای همه‌ی تیک‌ها روی فرم دیده و تنظیم شود
+function vr_sample_all_ticks($cat, array $fields, array $values) {
+    $tick = $cat['tick_mark'] ?: '✔';
+    $okS = $cat['ok_suffix'] ?: 's'; $badS = $cat['bad_suffix'] ?: 'k';
+    foreach ($fields as $f) {
+        if ($f['field_type'] === 'PartsStatus') {
+            foreach (vr_parts_list($f) as $p) { $values["{$p['id']}_{$okS}"] = $tick; $values["{$p['id']}_{$badS}"] = $tick; }
+            continue;
+        }
+        if ($f['field_type'] === 'Checkbox') $values[$f['field_key']] = $tick;
+        foreach ($f['tick_map'] as $var) $values[$var] = $tick;
+    }
+    return $values;
 }
 
 // فرمِ نمونه برای پیش‌نمایشِ قالب در تنظیمات

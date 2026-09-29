@@ -207,6 +207,7 @@ if ($a === 'set_template_preview') {
     $fields = vr_fields($pdo, $c['id']);
     $form = vr_sample_form($fields);
     $values = vr_build_values($c, $fields, $form, ['date' => jalali_from_gregorian_ts_dotted(time()), 'issuer_name' => $user['name'], 'report_no' => 'VR-نمونه']);
+    $values = vr_sample_all_ticks($c, $fields, $values);
     if (!empty($_GET['names'])) foreach ($values as $k => &$v) if ($v !== '' && !in_array($v, [$c['tick_mark'] ?: '✔'], true)) $v = $k;
     unset($v);
     [$layout, $assetDir] = vr_layout($pdo, $c);
@@ -261,13 +262,15 @@ if ($a === 'set_layout_editor') {
                             'size' => $size ?: ($layout['defaults']['size'] ?? 11), 'wfont' => $font, 'align' => $it['paras'][0]['align'] ?? 'right',
                             'has_vars' => strpos($orig . ($it['text'] ?? ''), '{{') !== false, 'empty' => trim($orig) === '',
                             'anchor' => $it['anchor'] ?? 't', 'ins' => $it['ins'] ?? [0, 0, 0, 0],
+                            // شکل‌های بی‌متن (دایره/مربعِ توپُر، خط‌دور) هم در ویرایشگر انتخاب و جابه‌جا می‌شوند
+                            'fill' => $it['fill'] ?? null, 'line' => $it['line'] ?? null, 'geom' => $it['geom'] ?? 'rect', 'showif' => $it['showif'] ?? '', 'clone' => !empty($it['clone']),
                             // متنی که واقعاً چاپ می‌شود (متنِ سفید در Word عمداً دیده نمی‌شود)
                             'printed' => implode("\n", array_map(fn($p) => implode('', array_map(fn($r) => ($r['color'] ?? '') === '#FFFFFF' ? '' : $r['t'], $p['runs'] ?? [])), $it['paras'] ?? []))];
     }
     $o = json_decode($c['options_json'] ?? '', true) ?: [];
     // داده‌ی نمونه برای حالتِ «نمایش با نمونه» + آخرین گزارش‌های واقعیِ همین نوع (برای نمونه‌ی واقعی)
     $fields = vr_fields($pdo, $c['id']);
-    $sample = vr_build_values($c, $fields, vr_sample_form($fields), ['date' => jalali_from_gregorian_ts_dotted(time()), 'issuer_name' => $user['name'], 'report_no' => 'VR-نمونه']);
+    $sample = vr_sample_all_ticks($c, $fields, vr_build_values($c, $fields, vr_sample_form($fields), ['date' => jalali_from_gregorian_ts_dotted(time()), 'issuer_name' => $user['name'], 'report_no' => 'VR-نمونه']));
     $rs = $pdo->prepare("SELECT id, report_no, insured_name, plate_display FROM visit_reports WHERE category_id = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 20");
     $rs->execute([$c['id']]);
     vr_out(['ok' => true, 'page' => $layout['page'], 'pages' => $layout['pages'], 'items' => $items, 'fonts' => vr_font_choices($pdo),
@@ -293,6 +296,28 @@ if ($a === 'set_layout_asset') {
     readfile($abs);
     exit;
 }
+// کپی‌کردنِ یک کادر/شکل (مثلاً دایره‌ی توپُرِ «خوب» برای گزینه‌های «متوسط» و «بد») یا حذفِ کپی
+if ($a === 'set_layout_clone') {
+    $c = vrs_cat($pdo, $data['id'] ?? 0);
+    [$layout] = vr_layout($pdo, $c);
+    $i = intval($data['index'] ?? -1);
+    if (!isset($layout['items'][$i]) || $layout['items'][$i]['type'] !== 'box') vr_fail('کادر پیدا نشد.');
+    if (!empty($data['delete'])) {
+        if (empty($layout['items'][$i]['clone'])) vr_fail('فقط کادرهای کپی‌شده حذف می‌شوند؛ کادرِ قالب را می‌توانید «پنهان» کنید.');
+        array_splice($layout['items'], $i, 1);
+        $newIndex = null;
+    } else {
+        $n = $layout['items'][$i];
+        $n['clone'] = 1;
+        $n['dx'] = round(floatval($n['dx'] ?? 0) + 14, 2);
+        unset($n['hidden'], $n['showif']);
+        $layout['items'][] = $n;
+        $newIndex = count($layout['items']) - 1;
+    }
+    $pdo->prepare("UPDATE report_categories SET layout_json = ? WHERE id = ?")->execute([json_encode($layout, JSON_UNESCAPED_UNICODE), $c['id']]);
+    vrs_audit($pdo, $user, "کادری در قالبِ «{$c['name']}» " . (!empty($data['delete']) ? 'حذف' : 'کپی') . ' شد');
+    vr_out(['ok' => true, 'index' => $newIndex]);
+}
 if ($a === 'set_layout_adjust') {
     $c = vrs_cat($pdo, $data['id'] ?? 0);
     [$layout] = vr_layout($pdo, $c);
@@ -307,6 +332,10 @@ if ($a === 'set_layout_adjust') {
         if (!empty($adj['hidden'])) $it['hidden'] = 1; else unset($it['hidden']);
         if ($it['type'] === 'box') {
             if (array_key_exists('font', $adj)) { $f = trim((string)$adj['font']); if ($f !== '' && in_array($f, $fonts, true)) $it['font'] = $f; else unset($it['font']); }
+            if (array_key_exists('showif', $adj)) {
+                $sv = trim((string)$adj['showif']);
+                if ($sv !== '' && preg_match('/^[A-Za-z][A-Za-z0-9_]{0,60}$/', $sv)) $it['showif'] = $sv; else unset($it['showif']);
+            }
             if (array_key_exists('fsize', $adj)) { $z = floatval($adj['fsize']); if ($z >= 3 && $z <= 72) $it['fsize'] = round($z, 1); else unset($it['fsize']); }
             if (array_key_exists('text', $adj)) {
                 $t = $adj['text'];

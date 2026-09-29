@@ -103,7 +103,7 @@ function rpt_analyze_docx($docxPath, $assetDir) {
     usort($ctx->items, fn($a, $b) => [$a['page'], $a['behind'] ? 0 : 1, $a['z']] <=> [$b['page'], $b['behind'] ? 0 : 1, $b['z']]);
     foreach ($ctx->items as $i => &$it) $it['id'] = 'i' . ($i + 1);
     unset($it);
-    return ['version' => 1, 'page' => ['w' => round($W, 2), 'h' => round($H, 2), 'margins' => $mar], 'pages' => $pages,
+    return ['version' => 2, 'page' => ['w' => round($W, 2), 'h' => round($H, 2), 'margins' => $mar], 'pages' => $pages,
             'defaults' => $defaults, 'items' => $ctx->items, 'warnings' => array_values(array_unique($ctx->warnings))];
 }
 
@@ -215,8 +215,10 @@ function rpt_color($node, $ctx) {
 function rpt_shape(DOMElement $sp, $x, $y, $w, $h, $base, $ctx, $rotDeg = 0) {
     $xp = $ctx->xp;
     $spPr = $xp->query('wps:spPr', $sp)->item(0);
-    $fill = null; $line = null; $lineW = 0;
+    $fill = null; $line = null; $lineW = 0; $geom = 'rect';
     if ($spPr) {
+        $pg = $xp->query('a:prstGeom', $spPr)->item(0);
+        if ($pg && $pg->getAttribute('prst')) $geom = $pg->getAttribute('prst');
         $xfrm = $xp->query('a:xfrm', $spPr)->item(0);
         if ($xfrm && $xfrm->getAttribute('rot')) $rotDeg += intval($xfrm->getAttribute('rot')) / 60000;
         $sf = $xp->query('a:solidFill', $spPr)->item(0);
@@ -264,7 +266,7 @@ function rpt_shape(DOMElement $sp, $x, $y, $w, $h, $base, $ctx, $rotDeg = 0) {
     if (!$paras && !$fill && !$line) return;
     $ctx->items[] = $base + ['type' => 'box', 'x' => round($x, 2), 'y' => round($y, 2), 'w' => round($w, 2), 'h' => round($h, 2),
         'rot' => round($rotDeg, 2), 'vert' => $vert, 'ins' => array_map(fn($v) => round($v, 2), $ins), 'anchor' => $anchor,
-        'fill' => $fill, 'line' => $line, 'lineW' => round($lineW, 2), 'paras' => $paras, 'dx' => 0, 'dy' => 0];
+        'fill' => $fill, 'line' => $line, 'lineW' => round($lineW, 2), 'geom' => $geom, 'paras' => $paras, 'dx' => 0, 'dy' => 0];
 }
 
 // یک پاراگراف: ترازبندی، راست‌به‌چپ بودن و تکه‌ها (با اندازه، ضخامت و رنگِ قلم)
@@ -467,6 +469,30 @@ function rpt_font_for($wordFont, $fontMap) {
     return ['family' => 'vazir', 'file' => 'vazir.php', 'latin' => $isLatin ? 'helvetica' : null, 'stretch' => stripos($wf, 'narrow') !== false ? 82 : 100];
 }
 
+// قلمِ لاتین است؟ (Arial، Times، Calibri، ... و نسخه‌های Narrow)؛ بقیه (وزیر، B Nazanin، قلم‌های آپلودیِ فارسی) فارسی‌اند
+function rpt_font_is_latin($name) {
+    $n = mb_strtolower(trim((string)$name));
+    if ($n === '') return false;
+    if (preg_match('/[\x{0600}-\x{06FF}]/u', $n) || preg_match('/^(b |iran|vazir|yekan|nazanin|titr|lotus|mitra|zar|koodak|sahel|shabnam|samim|traffic|homa|roya|yas|kamran|compset|nika)/u', $n)) return false;
+    return (bool)preg_match('/arial|helvetica|times|calibri|tahoma|verdana|segoe|cambria|courier|garamond|georgia|consolas|narrow|roboto|open sans|century|book antiqua|trebuchet/u', $n);
+}
+
+// رقم‌های متن را فارسی (۰-۹) یا لاتین (0-9) می‌کند؛ کلمه‌ای که حرفِ لاتین دارد (مثل شماره شاسی) در حالتِ فارسی دست نمی‌خورد
+function rpt_localize_digits($text, $persian) {
+    $text = (string)$text;
+    if ($text === '') return $text;
+    return preg_replace_callback('/\S+/u', function ($m) use ($persian) {
+        $w = $m[0];
+        if ($persian) {
+            if (preg_match('/[A-Za-z]/', $w)) return $w;
+            return strtr($w, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']);
+        }
+        if (preg_match('/[\x{0621}-\x{064A}\x{067E}-\x{06D3}]/u', $w)) return $w;
+        return strtr($w, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+                          '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']);
+    }, $text);
+}
+
 function rpt_fill_text($t, $values) {
     return preg_replace_callback('/\{\{\s*([A-Za-z0-9_\x{0600}-\x{06FF}]+)\s*\}\}/u', fn($m) => (string)($values[$m[1]] ?? ''), (string)$t);
 }
@@ -486,7 +512,10 @@ function rpt_para_segments($para, $values, $opts) {
         if ($text === '') continue;
         // اندازه/قلمِ اختصاصیِ همین کادر (از ویرایشگرِ قالب) یا قلمِ یکسان برای همه، بر قلمِ Word مقدم است
         $size = !empty($opts['boxSize']) ? floatval($opts['boxSize']) : max(4, ($r['size'] ?: ($para['size'] ?: $opts['defaultSize'])) * ($opts['fontScale'] ?? 1));
-        $f = rpt_font_for(!empty($opts['boxFont']) ? $opts['boxFont'] : (!empty($opts['fontAll']) ? $opts['fontAll'] : $r['font']), $opts['fontMap']);
+        $fontName = !empty($opts['boxFont']) ? $opts['boxFont'] : (!empty($opts['fontAll']) ? $opts['fontAll'] : $r['font']);
+        $f = rpt_font_for($fontName, $opts['fontMap']);
+        // عددها مطابقِ قلم: قلمِ فارسی (وزیر، B Nazanin، ...) => ۰-۹ فارسی؛ قلمِ لاتین (Arial، ...) => 0-9
+        $text = rpt_localize_digits($text, !rpt_font_is_latin($fontName));
         $color = $r['color'] ?: '#000000';
         $cur = null; $buf = '';
         $push = function () use (&$segs, &$buf, &$cur, $r, $size, $color, $f) {
@@ -604,6 +633,8 @@ function rpt_box_paras($box) {
 }
 
 function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
+    // «نمایش فقط وقتی این متغیر پر/تیک است» (از ویرایشگرِ قالب)؛ مثلاً دایره‌ی توپُرِ «خوب» فقط برای وضعیتِ خوب
+    if (!empty($box['showif']) && trim((string)($values[$box['showif']] ?? '')) === '') return;
     $w = $box['w']; $h = $box['h'];
     $rot = $box['rot'] ?? 0;
     $vert = $box['vert'] ?? 'horz';
@@ -618,7 +649,11 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
     if (!empty($box['fill']) || !empty($box['line'])) {
         $style = (!empty($box['fill']) ? 'F' : '') . (!empty($box['line']) ? 'D' : '');
         $lineStyle = !empty($box['line']) ? ['all' => ['width' => $box['lineW'] ?: 0.75, 'color' => rpt_hex_rgb($box['line'])]] : [];
-        $pdf->Rect($x, $y, $w, $h, $style, $lineStyle, !empty($box['fill']) ? rpt_hex_rgb($box['fill']) : []);
+        $fillRgb = !empty($box['fill']) ? rpt_hex_rgb($box['fill']) : [];
+        $geom = $box['geom'] ?? 'rect';
+        if ($geom === 'ellipse') $pdf->Ellipse($x + $w / 2, $y + $h / 2, $w / 2, $h / 2, 0, 0, 360, $style, $lineStyle, $fillRgb);
+        elseif ($geom === 'roundRect') $pdf->RoundedRect($x, $y, $w, $h, min($w, $h) / 6, '1111', $style, $lineStyle, $fillRgb);
+        else $pdf->Rect($x, $y, $w, $h, $style, $lineStyle, $fillRgb);
     }
     if ($opts['debug']) $pdf->Rect($x, $y, $w, $h, 'D', ['all' => ['width' => 0.3, 'color' => [230, 0, 0]]]);
 
@@ -671,18 +706,36 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
 // ---------------------------------------------------------------------
 //  ۳) نسخه‌ی Word پرشده (مثل برنامه‌ی ویندوزی)
 // ---------------------------------------------------------------------
-function rpt_fill_docx($tplPath, $destPath, array $values) {
+function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
     if (!@copy($tplPath, $destPath)) return false;
     $z = new ZipArchive();
     if ($z->open($destPath) !== true) return false;
+    $fontAll = trim((string)($opts['fontAll'] ?? ''));
+    $fill = function ($xml, $persian) use ($values) {
+        return preg_replace_callback('/\{\{\s*([A-Za-z0-9_\x{0600}-\x{06FF}]+)\s*\}\}/u', function ($m) use ($values, $persian) {
+            $raw = (string)($values[$m[1]] ?? '');
+            if ($persian !== null) $raw = rpt_localize_digits($raw, $persian);
+            $v = htmlspecialchars($raw, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            return str_replace("\n", '</w:t><w:br/><w:t xml:space="preserve">', $v);
+        }, $xml);
+    };
     for ($i = 0; $i < $z->numFiles; $i++) {
         $n = $z->getNameIndex($i);
         if (!preg_match('#^word/(document|header\d*|footer\d*)\.xml$#', $n)) continue;
         $xml = rpt_merge_placeholders($z->getFromIndex($i));
-        $xml = preg_replace_callback('/\{\{\s*([A-Za-z0-9_\x{0600}-\x{06FF}]+)\s*\}\}/u', function ($m) use ($values) {
-            $v = htmlspecialchars((string)($values[$m[1]] ?? ''), ENT_XML1 | ENT_QUOTES, 'UTF-8');
-            return str_replace("\n", '</w:t><w:br/><w:t xml:space="preserve">', $v);
+        // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
+        $xml = preg_replace_callback('#<w:r\b[^>]*>(?:(?!</w:r>).)*</w:r>#s', function ($m) use ($fill, $fontAll) {
+            $run = $m[0];
+            if (strpos($run, '{{') === false) return $run;
+            $font = $fontAll;
+            if ($font === '' && preg_match('#<w:rFonts\b([^>]*)/?>#', $run, $rf)) {
+                foreach (['w:cs', 'w:ascii', 'w:hAnsi'] as $attr) {
+                    if (preg_match('#' . $attr . '="([^"]+)"#', $rf[1], $fm)) { $font = $fm[1]; break; }
+                }
+            }
+            return $fill($run, $font === '' ? null : !rpt_font_is_latin($font));
         }, $xml);
+        $xml = $fill($xml, null);   // جا مانده‌ها (بیرون از run)
         $z->addFromString($n, $xml);
     }
     return $z->close();

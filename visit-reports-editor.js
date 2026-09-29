@@ -10,7 +10,7 @@
     const toast = (m, t = 'info') => (typeof window.showToast === 'function' ? window.showToast(m, t) : console.log(m));
     const confirmBox = (t, m, o) => (window.uiConfirm ? uiConfirm(t, m, o) : Promise.resolve(confirm(m)));
     const round = v => Math.round(v * 2) / 2;   // گامِ نیم‌پوینت
-    const PROPS = ['dx', 'dy', 'hidden', 'font', 'fsize', 'text'];
+    const PROPS = ['dx', 'dy', 'hidden', 'font', 'fsize', 'text', 'showif'];
 
     const CSS = `
     .vre-wrap{display:grid;grid-template-columns:1fr 20rem;gap:1rem;height:calc(100vh - 9rem)}
@@ -26,7 +26,10 @@
     .vre-box.sel{outline:2px solid #6366f1;outline-offset:1px;box-shadow:0 0 0 4px rgba(99,102,241,.2);z-index:5;background:rgba(99,102,241,.16)}
     .vre-box:hover{box-shadow:0 0 0 2px rgba(99,102,241,.35)}
     .vre-band{position:absolute;border:1.5px solid #6366f1;background:rgba(99,102,241,.1);pointer-events:none;z-index:10}
-    .vre-hide-static .vre-box:not(.var):not(.chg){display:none}
+    .vre-hide-static .vre-box:not(.var):not(.chg):not(.shape){display:none}
+    .vre-box.shape{border-style:solid}
+    .vre-box.cond::after{content:'?';position:absolute;top:-8px;left:-8px;width:12px;height:12px;border-radius:50%;background:#7c3aed;color:#fff;font:bold 9px/12px sans-serif;text-align:center}
+    .vre-sample .vre-box.cond-off{opacity:.12}
     /* «نمایش با نمونه»: کادرها مثلِ خروجیِ واقعی (متنِ پُرشده، بدونِ رنگِ زمینه) ولی همچنان قابلِ کشیدن */
     .vre-sample .vre-box{display:flex!important;flex-direction:column;background:transparent;color:#0b1220;border:1px dashed rgba(148,163,184,.35);overflow:visible}
     .vre-sample .vre-box.var{background:transparent;color:#0b1220;border-color:rgba(99,102,241,.35)}
@@ -48,14 +51,15 @@
         const st = {
             sample: false, values: d.sample || {},
             page: 0, zoom: 1, scale: 1, sel: new Set(), undo: [], redo: [], dirty: false, showStatic: false, fontAll: d.font_all || '',
-            items: d.items, boxes: d.items.filter(i => i.type === 'box' && !i.empty), W: d.page.w, H: d.page.h,
+            items: d.items, boxes: d.items.filter(i => i.type === 'box' && (!i.empty || i.fill || i.line)), W: d.page.w, H: d.page.h,
         };
+        st.boxes.forEach(b => { b.showif = b.showif || ''; b.shape = !!b.empty; });
         st.boxes.forEach(b => { b._init = JSON.stringify(PROPS.map(k => b[k] ?? null)); });
         const byIdx = new Map(st.boxes.map(b => [b.index, b]));
         const snapshot = () => JSON.stringify(st.boxes.map(b => PROPS.map(k => b[k] ?? null)));
         const restore = snap => { JSON.parse(snap).forEach((vals, i) => PROPS.forEach((k, j) => { st.boxes[i][k] = vals[j]; })); };
         const pushUndo = () => { st.undo.push(snapshot()); if (st.undo.length > 100) st.undo.shift(); st.redo = []; st.dirty = true; };
-        const changed = b => JSON.stringify(PROPS.map(k => b[k] ?? null)) !== JSON.stringify([0, 0, false, '', null, null]);
+        const changed = b => JSON.stringify(PROPS.map(k => b[k] ?? null)) !== JSON.stringify([0, 0, false, '', null, null, '']);
 
         const fontOpts = (cur, withDefault) => (withDefault ? `<option value="">${withDefault}</option>` : '') + d.fonts.map(f => `<option value="${esc(f.value)}" ${f.value === cur ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
         m.body.innerHTML = `
@@ -97,7 +101,13 @@
             if (/arial|helvetica|times|calibri|tahoma|verdana|segoe|cambria|courier|garamond/i.test(f)) return 'font-family:Helvetica,Arial,Vazir,sans-serif;';
             return 'font-family:Vazir,Tahoma,sans-serif;';
         }
-        function boxStyle(b) {
+        // شکلِ بی‌متن (مثلاً دایره‌ی توپُرِ «خوب»): رنگ و خط‌دور و گردیِ خودش را دارد
+        function shapeStyle(b) {
+            if (!b.shape) return '';
+            return `background:${b.fill || 'transparent'};border-color:${b.line || '#94a3b8'};${b.geom === 'ellipse' ? 'border-radius:50%;' : ''}`;
+        }
+        function boxStyle(b) { return boxStyleBase(b) + shapeStyle(b); }
+        function boxStyleBase(b) {
             const s = st.scale, pt = b.fsize || b.size || 10;
             if (st.sample) {
                 const [il, it, ir, ib] = b.ins || [0, 0, 0, 0];
@@ -111,10 +121,19 @@
                    `white-space:${multi ? 'pre-wrap' : 'nowrap'};overflow:hidden;text-overflow:ellipsis;` +
                    `text-align:${b.align === 'center' ? 'center' : b.align === 'left' ? 'left' : 'right'};direction:rtl;${b.rot ? `transform:rotate(${b.rot}deg);` : ''}`;
         }
+        // در حالتِ نمونه، کادری که شرطِ نمایشش برقرار نیست کم‌رنگ دیده می‌شود (در PDF چاپ نمی‌شود)
+        const condOff = b => st.sample && !!b.showif && String(st.values[b.showif] ?? '').trim() === '';
         function boxText(b) { return (b.text !== null && b.text !== undefined && b.text !== '') ? b.text : b.orig; }
         // نمایشِ جمع‌وجور در ویرایشگر: {{ c1_k }} => c1_k
+        // مثلِ PDF: قلمِ فارسی => رقم فارسی؛ قلمِ لاتین => رقم لاتین (کلمه‌ی دارای حرفِ لاتین مثل شماره شاسی دست نمی‌خورد)
+        const LATIN_FONT = /arial|helvetica|times|calibri|tahoma|verdana|segoe|cambria|courier|garamond|georgia|consolas|narrow|roboto|open sans|century|trebuchet/i;
+        function localDigits(b, t) {
+            const f = String(b.font || st.fontAll || b.wfont || '').trim();
+            const latin = f !== '' && !/[\u0600-\u06FF]/.test(f) && !/^(b |iran|vazir|yekan|nazanin|titr|lotus|mitra|zar)/i.test(f) && LATIN_FONT.test(f);
+            return t.replace(/\S+/g, w => latin ? (/[\u0621-\u064A\u067E-\u06D3]/.test(w) ? w : en(w)) : (/[A-Za-z]/.test(w) ? w : fa(w)));
+        }
         function boxLabel(b) {
-            if (st.sample) return b.hidden ? '' : ((b.text !== null && b.text !== undefined && b.text !== '') ? b.text : (b.printed ?? b.orig)).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, k) => String(st.values[k.trim()] ?? ''));
+            if (st.sample) return b.hidden ? '' : localDigits(b, ((b.text !== null && b.text !== undefined && b.text !== '') ? b.text : (b.printed ?? b.orig)).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, k) => String(st.values[k.trim()] ?? '')));
             return boxText(b).replace(/\{\{\s*([^}]+?)\s*\}\}/g, '$1');
         }
         function drawPage() {
@@ -137,7 +156,7 @@
             }
             pageEl.querySelector('.vre-boxl').innerHTML = st.boxes.filter(b => b.page === st.page).map(b => {
                 const isVar = /\{\{/.test(boxText(b));
-                return `<div class="vre-box ${isVar ? 'var' : ''} ${changed(b) ? 'chg' : ''} ${b.hidden ? 'off' : ''} ${st.sel.has(b.index) ? 'sel' : ''}" data-i="${b.index}" style="${boxStyle(b)}" title="${esc(boxText(b))}"><span>${esc(boxLabel(b))}</span></div>`;
+                return `<div class="vre-box ${isVar ? 'var' : ''} ${b.shape ? 'shape' : ''} ${b.showif ? 'cond' : ''} ${condOff(b) ? 'cond-off' : ''} ${changed(b) ? 'chg' : ''} ${b.hidden ? 'off' : ''} ${st.sel.has(b.index) ? 'sel' : ''}" data-i="${b.index}" style="${boxStyle(b)}" title="${esc(b.shape ? 'شکل' + (b.showif ? ' · فقط وقتی ' + b.showif + ' تیک خورده' : '') : boxText(b))}"><span>${esc(b.shape ? '' : boxLabel(b))}</span></div>`;
             }).join('');
             m.body.querySelectorAll('.vre-pages button').forEach(x => x.className = Number(x.dataset.p) === st.page ? 'on-ok' : '');
         }
@@ -151,6 +170,8 @@
                 el.title = boxText(b);
                 el.classList.toggle('chg', changed(b)); el.classList.toggle('off', !!b.hidden); el.classList.toggle('sel', st.sel.has(i));
                 el.classList.toggle('var', /\{\{/.test(boxText(b)));
+                el.classList.toggle('cond', !!b.showif); el.classList.toggle('cond-off', condOff(b));
+                if (b.shape) el.innerHTML = '<span></span>';
             });
         }
 
@@ -182,8 +203,14 @@
                     <div class="flex gap-1 mt-1"><input class="vr-in !py-1 !text-[11px] font-mono vre-var" dir="ltr" list="vre-vars" placeholder="نامِ متغیر"><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vre-setvar" title="متنِ کادر فقط همین متغیر شود">جایگزینی</button><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vre-addvar">افزودن</button></div>
                     <datalist id="vre-vars">${d.vars.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
                     ${one.text ? `<p class="text-[10px] text-amber-600 font-bold mt-1">متنِ اصلی: <span dir="ltr">${esc(one.orig)}</span></p>` : ''}</div>` : ''}
+                <div class="mt-3"><label class="vr-lbl">شرطِ نمایش: فقط وقتی این متغیر تیک/پر است چاپ شود</label>
+                    <input class="vr-in !py-1.5 !text-[11px] font-mono vre-showif" dir="ltr" list="vre-vars2" value="${esc(same('showif') ?? '')}" placeholder="${same('showif') === null ? '— متفاوت —' : 'بدونِ شرط (همیشه)'}">
+                    <datalist id="vre-vars2">${d.vars.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+                    <p class="text-[10px] text-slate-400 mt-1 leading-5">مثلاً برای دایره‌ی توپُرِ «خوب»، متغیرِ تیکِ گزینه‌ی «خوب» (مثل overall_good) را بنویسید تا فقط برای وضعیتِ خوب کشیده شود.</p></div>
                 <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600 mt-3 cursor-pointer"><input type="checkbox" class="accent-red-500 vre-hid" ${sel.every(b => b.hidden) ? 'checked' : ''}> پنهان (در PDF چاپ نشود)</label>
-                <button type="button" class="vr-btn vr-btn-s w-full mt-3 !text-[11px] vre-reset"><i class="fas fa-eraser"></i> برگرداندن به حالتِ قالب</button>`;
+                <button type="button" class="vr-btn vr-btn-s w-full mt-3 !text-[11px] vre-reset"><i class="fas fa-eraser"></i> برگرداندن به حالتِ قالب</button>
+                ${one ? `<div class="grid grid-cols-2 gap-2 mt-2"><button type="button" class="vr-btn vr-btn-s !text-[11px] vre-clone" title="یک کپی از این کادر/شکل کنارش ساخته می‌شود (مثلاً دایره‌ی تیک برای گزینه‌ی دیگر)"><i class="fas fa-clone"></i> کپی این کادر</button>
+                    ${one.clone ? '<button type="button" class="vr-btn vr-btn-s !text-[11px] !text-red-600 vre-delclone"><i class="fas fa-trash"></i> حذف کپی</button>' : ''}</div>` : ''}`;
             const apply = (fn) => { pushUndo(); sel.forEach(fn); refreshBoxes(sel.map(b => b.index)); renderPropsSoft(); };
             const num = v => { const n = parseFloat(en(String(v)).replace(/[^\d.\-]/g, '')); return isNaN(n) ? null : n; };
             const dxI = props.querySelector('.vre-dx'), dyI = props.querySelector('.vre-dy');
@@ -196,7 +223,23 @@
             props.querySelector('.vre-font').onchange = e => { if (e.target.value === '__keep') return; apply(b => { b.font = e.target.value || ''; }); };
             props.querySelector('.vre-fsize').onchange = e => { const v = num(e.target.value); apply(b => { b.fsize = v && v >= 3 && v <= 72 ? v : null; }); };
             props.querySelector('.vre-hid').onchange = e => apply(b => { b.hidden = e.target.checked; });
-            props.querySelector('.vre-reset').onclick = () => { apply(b => { b.dx = 0; b.dy = 0; b.hidden = false; b.font = ''; b.fsize = null; b.text = null; }); renderProps(); };
+            props.querySelector('.vre-showif').onchange = e => {
+                const v = e.target.value.trim();
+                if (v !== '' && !/^[A-Za-z][A-Za-z0-9_]*$/.test(v)) { toast('نامِ متغیر فقط حروف و عدد لاتین و _ است.', 'error'); return; }
+                apply(b => { b.showif = v; }); drawPage();
+            };
+            props.querySelector('.vre-reset').onclick = () => { apply(b => { b.dx = 0; b.dy = 0; b.hidden = false; b.font = ''; b.fsize = null; b.text = null; b.showif = ''; }); renderProps(); };
+            // کپی/حذفِ کادر: اول تغییرها ذخیره و بعد ویرایشگر با چیدمانِ تازه دوباره باز می‌شود
+            const reopen = async (payload) => {
+                if (!await save()) return;
+                const r = await api('set_layout_clone', { id: cat.id, index: one.index, ...payload });
+                if (!r.ok) { toast(r.error, 'error'); return; }
+                document.removeEventListener('keydown', onKey); m.close();
+                VR.openLayoutEditor(cat, onSaved);
+                toast(payload.delete ? 'کپی حذف شد.' : 'کپی ساخته شد؛ آن را روی جای درست بکشید و «شرطِ نمایش» بدهید.', 'info');
+            };
+            const cl = props.querySelector('.vre-clone'); if (cl) cl.onclick = () => reopen({});
+            const dc = props.querySelector('.vre-delclone'); if (dc) dc.onclick = () => reopen({ delete: 1 });
             if (one) {
                 const ta = props.querySelector('.vre-text');
                 ta.onchange = () => apply(b => { b.text = ta.value.trim() === '' || ta.value === b.orig ? null : ta.value; });
@@ -329,7 +372,7 @@
         m.body.querySelector('.vre-fontall').onchange = e => { st.fontAll = e.target.value; st.dirty = true; };
         const save = async () => {
             const items = st.boxes.filter(b => changed(b) || b._init !== JSON.stringify(PROPS.map(k => b[k] ?? null)))
-                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig }));
+                .map(b => ({ index: b.index, dx: b.dx || 0, dy: b.dy || 0, hidden: !!b.hidden, font: b.font || '', fsize: b.fsize || null, text: b.text ?? null, orig: b.orig, showif: b.showif || '' }));
             const r = await api('set_layout_adjust', { id: cat.id, items, font_all: st.fontAll });
             if (!r.ok) { toast(r.error, 'error'); return false; }
             st.boxes.forEach(b => { b._init = JSON.stringify(PROPS.map(k => b[k] ?? null)); });
