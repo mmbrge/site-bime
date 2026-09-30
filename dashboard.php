@@ -53,6 +53,9 @@ HTML;
     $vrMenuHtml = str_replace('{{VR_SETTINGS}}', ($_SESSION['role'] ?? '') === 'ADMIN'
         ? '<div class="menu-sep"></div><a href="#" onclick="switchTab(\'vr-settings\')" id="nav-vr-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات گزارش</a>' : '', $vrMenuHtml) . "\n";
 }
+// منوی «گفتگوها»: پیام‌رسانِ یکپارچه برای همه‌ی نقش‌ها (مدیر، اپراتور، مالی، همکار، پارسیان)
+$chatNavHtml = '<a href="#" onclick="switchTab(\'tickets\')" id="nav-tickets" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-comments ml-1"></i> گفتگوها'
+    . ' <span id="chat-nav-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span></a>' . "\n";
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'همکار بیمه با ما · پنل پارسیان'][$role] ?? $role;
@@ -393,12 +396,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
-                <?php if ($isParsian) echo $vrMenuHtml; ?>
+                <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml; ?>
                 <?php if (!$isParsian): ?>
 
                 <?php if (!$isLiaison): ?>
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
                 <?php endif; ?>
+                <?php echo $chatNavHtml; ?>
 
                 <?php if (!$isLiaison): ?>
                 <!-- ===== عملیات بیمه: خطِ کارِ پرسنلی، از پرونده تا صدور ===== -->
@@ -494,10 +498,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
                         <i class="fas fa-comments ml-1"></i> ارتباطات و کاربران
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                        <span id="tickets-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
                     </button>
                     <div class="menu-panel">
-                        <a href="#" onclick="switchTab('tickets')" id="nav-tickets" class="nav-item menu-link"><i class="fas fa-comments ml-2"></i> گفتگوها</a>
                         <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران ربات بله</a>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a>
@@ -792,28 +794,47 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
         </div>
 
-        <!-- ======================= تب گفتگوها (تیکت پشتیبانی) ======================= -->
+        <!-- ======================= تب گفتگوها (پیام‌رسانِ یکپارچه، chat-ui.js) =======================
+             همه‌ی گفتگوها یک‌جا: کارکنان (ربات/وب‌اپ)، شرکت‌ها و همکارانِ داخلی. هر نقش فقط
+             گفتگوهایی را می‌بیند که سرور (api/_chat_core.php) اجازه می‌دهد. -->
         <div id="tab-tickets" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-comments text-emerald-500 ml-2"></i>گفتگوهای پشتیبانی</h1>
-                    <p class="text-xs text-slate-400 mt-1">پیام‌های کاربرانی که از «ارتباط با کارشناس» استفاده کرده‌اند.</p>
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <div class="flex items-center gap-3">
+                    <span class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30"><i class="fas fa-comments"></i></span>
+                    <div><h1 class="text-lg font-black text-slate-800">گفتگوها</h1>
+                    <p class="text-[11px] font-bold text-slate-400">پیام‌ها، فایل‌ها و موضوعِ هر پیام (درخواستِ مربوط) - کلیک‌راست روی هر پیام برای پاسخ، ویرایش و حذف</p></div>
                 </div>
+                <?php if (!$isParsian && !$isLiaison): ?>
                 <div class="flex gap-2">
-                    <button onclick="openNewChatPicker()" class="bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-plus ml-1"></i> گفتگوی جدید</button>
-                    <button onclick="loadTickets()" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors hover-target"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                    <button onclick="switchGoftegoSub('messenger')" id="goftego-sub-messenger" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">💬 پیام‌رسان</button>
+                    <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 آرشیو کاملِ چت‌های ربات</button>
                 </div>
-            </div>
-
-            <div class="flex gap-2 mb-4 flex-wrap">
-                <button onclick="switchGoftegoSub('tickets')" id="goftego-sub-tickets" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">🎫 تیکت‌های پشتیبانی</button>
-                <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 چت‌های ربات (آرشیو کامل)</button>
-                <button onclick="switchGoftegoSub('staffchat')" id="goftego-sub-staffchat" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">👥 چت داخلی</button>
-                <?php if ($canSeeCompanies): ?>
-                <button onclick="switchGoftegoSub('companychat')" id="goftego-sub-companychat" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🏢 چت با شرکت‌ها</button>
                 <?php endif; ?>
             </div>
 
+            <div id="goftego-panel-messenger"><div id="chat-root" style="height: calc(100vh - 200px); min-height: 520px;"></div></div>
+
+            <div id="goftego-panel-botchats" class="hidden">
+                <div class="card overflow-hidden border-slate-200">
+                    <div class="p-3 border-b">
+                        <input type="text" id="botchat-search-input" placeholder="جستجو با نام، کد ملی یا شماره تماس..." class="border rounded-lg px-3 py-2 text-xs font-bold w-full md:w-80 outline-none focus:border-emerald-500">
+                    </div>
+                    <div class="overflow-x-auto max-h-[560px]">
+                        <table class="w-full text-right">
+                            <thead class="bg-slate-50 text-slate-600 text-xs font-bold sticky top-0">
+                                <tr><th class="p-4">نام</th><th class="p-4">کد ملی</th><th class="p-4">شماره تماس</th><th class="p-4">وضعیت فعلی</th><th class="p-4">عملیات</th></tr>
+                            </thead>
+                            <tbody id="botchats-body" class="text-sm font-bold divide-y divide-slate-100">
+                                <tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- بخش‌های قدیمیِ گفتگو: دیگر نمایش داده نمی‌شوند (پیام‌رسانِ بالا جایشان را گرفته)،
+                 ولی عناصرشان می‌مانند چون اسکریپت‌های قدیمیِ همین صفحه به آن‌ها گوش می‌دهند -->
+            <div id="goftego-legacy" class="hidden" aria-hidden="true">
             <div id="goftego-panel-tickets">
             <div class="card overflow-hidden border-emerald-100 flex relative" style="height: 640px;">
                 <div class="w-1/3 border-l flex flex-col">
@@ -841,24 +862,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
             </div>
-            </div>
-
-            <div id="goftego-panel-botchats" class="hidden">
-                <div class="card overflow-hidden border-slate-200">
-                    <div class="p-3 border-b">
-                        <input type="text" id="botchat-search-input" placeholder="جستجو با نام، کد ملی یا شماره تماس..." class="border rounded-lg px-3 py-2 text-xs font-bold w-full md:w-80 outline-none focus:border-emerald-500">
-                    </div>
-                    <div class="overflow-x-auto max-h-[560px]">
-                        <table class="w-full text-right">
-                            <thead class="bg-slate-50 text-slate-600 text-xs font-bold sticky top-0">
-                                <tr><th class="p-4">نام</th><th class="p-4">کد ملی</th><th class="p-4">شماره تماس</th><th class="p-4">وضعیت فعلی</th><th class="p-4">عملیات</th></tr>
-                            </thead>
-                            <tbody id="botchats-body" class="text-sm font-bold divide-y divide-slate-100">
-                                <tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
             </div>
 
             <div id="goftego-panel-staffchat" class="hidden">
@@ -907,6 +910,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
             <?php endif; ?>
+            </div>
         </div>
 
 
@@ -3145,6 +3149,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
+    <script src="chat-ui.js?v=1"></script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -6210,6 +6215,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function openUserDM(type, id) {
             const u = findUser(type, id);
             if (!u) return;
+            // گفتگو در پیام‌رسانِ یکپارچه: همکارِ داخلی ← گفتگوی مستقیم؛ کاربرِ شرکت با یک شرکت ← گفتگوی آن شرکت
+            if (type !== 'COMPANY') { switchTab('tickets', 'S:' + u.id); return; }
+            if ((u.company_ids || []).length === 1) { switchTab('tickets', 'C:' + u.company_ids[0]); return; }
             document.getElementById('dm-id').value = u.id;
             document.getElementById('dm-type').value = type;
             document.getElementById('dm-name').textContent = u.full_name;
@@ -6340,7 +6348,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             else showToast(data.error || 'خطا', 'error');
         }
 
-        function switchTab(tabId) {
+        function switchTab(tabId, tabKey) {
+            // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
+            if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
             if (!target) { showToast('این بخش هنوز در دسترس نیست.', 'error'); return; }
@@ -6378,7 +6388,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
-            if (tabId === 'tickets') loadTickets();
+            if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); }
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
@@ -8461,26 +8471,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         document.getElementById('user-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') searchUsers(); });
 
-        // بروزرسانی خودکار هر ۱۵ ثانیه: اگر تب گفتگوها بازه لیست کامل رو رفرش کن،
-        // وگرنه فقط بج تعداد نخوانده رو (بدون بهم‌ریختن تب فعلی کاربر) بروز کن
-        async function pollTicketsBadge() {
-            try {
-                const res = await fetch('api/ticket_actions.php?action=list');
-                const data = await res.json();
-                if (!data.ok) return;
-                const ticketsTabActive = !document.getElementById('tab-tickets').classList.contains('hidden');
-                if (ticketsTabActive) {
-                    loadTickets();
-                } else {
-                    let totalUnread = 0;
-                    data.data.forEach(t => totalUnread += parseInt(t.unread_count || 0));
-                    const badge = document.getElementById('tickets-badge');
-                    if (totalUnread > 0) { badge.innerText = e2p(totalUnread); badge.classList.remove('hidden'); }
-                    else { badge.classList.add('hidden'); }
-                }
-            } catch(e) {}
-        }
-        setInterval(pollTicketsBadge, 15000);
+        // شمارنده‌ی پیام‌های نخوانده‌ی منوی «گفتگوها»: pollChatBadge (بخشِ پیام‌رسان)
 
         // ======================= کاربران =======================
         function renderUsers(users) {
@@ -8745,14 +8736,49 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let currentTicketId = null;
 
         // ======================= چت‌های ربات (آرشیو کامل، کنار تیکت‌های پشتیبانی) =======================
+        // ======================= پیام‌رسانِ یکپارچه (chat-ui.js + api/chat_actions.php) =======================
+        const CHAT_API = 'api/chat_actions.php';
+        // بدنه base64 می‌رود تا فایروالِ هاست روی متنِ پیام‌ها حساس نشود
+        const chatB64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o || {}))));
+        async function chatCall(action, data) {
+            const res = await fetch(CHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action, p: chatB64(data)})});
+            return res.json();
+        }
+        async function chatUpload(action, fd) {
+            fd.append('action', action);
+            const res = await fetch(CHAT_API, {method: 'POST', body: fd});
+            return res.json();
+        }
+        function setChatBadge(n) {
+            const b = document.getElementById('chat-nav-badge');
+            if (!b) return;
+            n = parseInt(n || 0);
+            if (n > 0) { b.textContent = e2p(n > 99 ? '99+' : n); b.classList.remove('hidden'); } else b.classList.add('hidden');
+        }
+        let chatUI = null;
+        // key مثل «P:12» (کارکنان)، «C:3» (شرکت)، «S:5» (همکار داخلی) - اختیاری
+        function openMessenger(key) {
+            switchGoftegoSub('messenger');
+            if (!window.ChatUI) return;
+            if (!chatUI) chatUI = ChatUI.mount(document.getElementById('chat-root'), {mode: 'full', theme: 'light', call: chatCall, upload: chatUpload, openKey: key || null, onUnread: setChatBadge});
+            else if (key) chatUI.open(key);
+        }
+        async function pollChatBadge() {
+            if (chatUI && !document.getElementById('tab-tickets').classList.contains('hidden')) return; // خودِ پیام‌رسان شمارنده را به‌روز می‌کند
+            try { const d = await chatCall('chat_unread', {}); if (d && d.ok) setChatBadge(d.unread); } catch (e) {}
+        }
+        pollChatBadge();
+        setInterval(pollChatBadge, 15000);
+
         function switchGoftegoSub(which) {
-            ['tickets','botchats','staffchat','companychat'].forEach(k => {
+            ['messenger','tickets','botchats','staffchat','companychat'].forEach(k => {
                 const panel = document.getElementById('goftego-panel-' + k);
                 if (panel) panel.classList.toggle('hidden', which !== k);
                 const btn = document.getElementById('goftego-sub-' + k);
                 if (btn) btn.className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === k ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
             });
             if (which === 'botchats') loadBotChats();
+            if (which !== 'messenger') return;
             if (which === 'staffchat') loadStaffChatList();
             if (which === 'companychat') loadCompanyChatList();
         }
@@ -8792,9 +8818,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     currentTicketsData = data.data;
                     renderTicketsList(currentTicketsData);
                     const totalUnread = currentTicketsData.reduce((s, t) => s + parseInt(t.unread_count || 0), 0);
-                    const badge = document.getElementById('tickets-badge');
-                    if (totalUnread > 0) { badge.innerText = e2p(totalUnread); badge.classList.remove('hidden'); }
-                    else { badge.classList.add('hidden'); }
                 } else {
                     list.innerHTML = '<p class="text-center text-slate-400 text-sm p-4">خطا در دریافت گفتگوها.</p>';
                 }
@@ -9067,6 +9090,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         
         document.addEventListener('contextmenu', (e) => {
             e.preventDefault();
+            // پیام‌رسان منوی کلیک‌راستِ خودش را دارد
+            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu')) { ctxMenu.classList.remove('active'); ctxMenu.style.display = ''; return; }
             
             // ذخیره متن انتخاب شده و فیلدی که فوکوس دارد قبل از اینکه منو باز شود
             ctxSelectedText = window.getSelection().toString();

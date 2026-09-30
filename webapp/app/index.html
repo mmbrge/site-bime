@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>بیمه با ما</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<script src="/chat-ui.js?v=1"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -88,11 +90,12 @@
   .field-row { display: flex; gap: 8px; margin-bottom: 10px; }
   .field-row input, .field-row select { text-align: center; }
 
-  .chat-wrap { flex: 1; display: flex; flex-direction: column; }
-  .chat-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; }
-  .msg-bubble { max-width: 78%; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.8; }
-  .msg-bubble.me { align-self: flex-start; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-left-radius: 4px; }
-  .msg-bubble.them { align-self: flex-end; background: var(--glass); border: 1px solid var(--glass-b); border-bottom-right-radius: 4px; }
+  /* گفتگو با پشتیبانی: پیام‌رسانِ مشترک (chat-ui.js) تمامِ ارتفاعِ صفحه را می‌گیرد */
+  #screen-support { padding: 12px 10px 8px; overflow: hidden; min-height: 0; }
+  #screen-support .topbar { margin-bottom: 10px; }
+  #support-chat { flex: 1; min-height: 0; }
+  #app-body { min-height: 0; }
+  body.chat-open .app-footer { display: none; }
   .chat-input-row { display: flex; gap: 8px; margin-top: 10px; }
   .chat-input-row input { flex: 1; }
 
@@ -228,18 +231,7 @@
 <!-- ==================== ارتباط با کارشناس ==================== -->
 <div id="screen-support" class="screen">
   <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>💬 ارتباط با کارشناس</h2><div style="width:38px"></div></div>
-  <div class="chat-wrap">
-    <div class="chat-msgs" id="support-msgs"><div class="spinner">در حال بارگذاری...</div></div>
-    <div id="typing-indicator" style="display:none; font-size:11px; color:#94a3b8; padding:4px 8px;">کارشناس در حال نوشتن است...</div>
-    <div id="emoji-picker" style="display:none; padding:8px; background:var(--glass); border-radius:12px; margin-bottom:6px; flex-wrap:wrap; gap:6px;"></div>
-    <div class="chat-input-row">
-      <button class="btn btn-outline btn-sm" style="width:auto; flex:0 0 40px; padding:8px;" onclick="toggleEmojiPicker()">😊</button>
-      <button class="btn btn-outline btn-sm" style="width:auto; flex:0 0 40px; padding:8px;" onclick="document.getElementById('support-file-input').click()">📎</button>
-      <input type="file" id="support-file-input" accept="image/*,application/pdf" style="display:none;" onchange="sendSupportFile(event)">
-      <input type="text" id="support-input" placeholder="پیام خود را بنویسید..." oninput="onSupportTyping()">
-      <button class="btn btn-primary btn-sm" style="width:auto;" onclick="sendSupportMessage()">ارسال</button>
-    </div>
-  </div>
+  <div id="support-chat"></div>
 </div>
 
 </div><!-- /app-body -->
@@ -327,6 +319,7 @@ function nav(screen) {
     if (screen === 'policies') loadPolicies();
     if (screen === 'vehicles') loadVehicles();
     if (screen === 'health') loadHealthCases();
+    document.body.classList.toggle('chat-open', screen === 'support');
     if (screen === 'support') nav_supportEnter(); else nav_supportLeave();
     if (screen === 'notifications') loadNotifications();
 }
@@ -403,6 +396,8 @@ async function initApp() {
         if (data.unread_notifications > 0) { badge.textContent = toFa(data.unread_notifications); badge.style.display = 'flex'; }
         if (data.has_unread_support_reply) { document.getElementById('support-reply-badge').style.display = 'block'; }
         showScreen('home');
+        // لینکِ «مشاهده و پاسخ» در پیامِ ربات مستقیم گفتگو را باز می‌کند
+        if (params.get('open') === 'support') nav('support');
     } catch (e) { showAppError('خطا در اتصال به سرور.'); }
 }
 function showAppError(msg) { document.getElementById('error-text').textContent = msg; showScreen('error'); }
@@ -570,103 +565,27 @@ async function startFreeHealthSession() {
     } catch(e) { showToast('خطا در اتصال به سرور.'); }
 }
 
-// ======================= ارتباط با کارشناس (چت زنده با پولینگ) =======================
-let supportPollTimer = null;
-let supportTypingTimer = null;
-const EMOJI_LIST = ['😀','😂','😍','👍','🙏','❤️','😢','😡','🎉','🤔','👌','🚗','📄','✅','❌','⏰'];
-
+// ======================= ارتباط با کارشناس (پیام‌رسانِ مشترک: /chat-ui.js) =======================
+// فایل، پاسخ به پیام، ویرایش و حذف (کلیک‌راست یا لمسِ طولانی روی پیام) و موضوعِ پیام (کدام درخواست)
+let supportChat = null;
+const chatB64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o || {}))));
+async function supportCall(action, data) {
+    const res = await fetch(API, { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action, p: chatB64(Object.assign({ token: TOKEN }, data || {})) }) });
+    return res.json();
+}
+async function supportUpload(action, fd) {
+    fd.append('token', TOKEN);
+    const res = await fetch(`${API}?action=${encodeURIComponent(action)}`, { method: 'POST', body: fd });
+    return res.json();
+}
 function nav_supportEnter() {
-    loadSupportMessages();
-    if (supportPollTimer) clearInterval(supportPollTimer);
-    supportPollTimer = setInterval(loadSupportMessages, 4000);
-}
-function nav_supportLeave() {
-    if (supportPollTimer) { clearInterval(supportPollTimer); supportPollTimer = null; }
-}
-
-function fmtMsgTime(iso) {
-    const d = new Date(iso.replace(' ', 'T'));
-    const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
-    return toFa(`${hh}:${mm}`);
-}
-
-async function loadSupportMessages() {
     document.getElementById('support-reply-badge').style.display = 'none';
-    const box = document.getElementById('support-msgs');
-    const wasEmpty = box.dataset.loaded !== '1';
-    if (wasEmpty) box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
-    try {
-        const res = await fetch(`${API}?action=support_messages&token=${encodeURIComponent(TOKEN)}`);
-        const data = await res.json();
-        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
-        box.dataset.loaded = '1';
-        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز گفتگویی نداشته‌اید. پیام خود را بنویسید.</div>'; }
-        else {
-            const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-            box.innerHTML = data.data.map(m => {
-                const isMe = m.sender_type !== 'ADMIN';
-                const fileHtml = m.file_path ? (/\.(jpg|jpeg|png|webp)$/i.test(m.file_path)
-                    ? `<img src="/${m.file_path}" style="max-width:180px;border-radius:10px;display:block;margin-bottom:4px;" onclick="window.open('/${m.file_path}')">`
-                    : `<a href="/${m.file_path}" target="_blank" style="color:inherit;text-decoration:underline;">📎 فایل ضمیمه</a>`) : '';
-                const readTick = isMe ? `<span style="font-size:9px;opacity:.7;">${m.is_read == 1 ? '✓✓ دیده شد' : '✓ ارسال شد'}</span>` : '';
-                return `<div class="msg-bubble ${isMe ? 'me' : 'them'}">
-                    ${fileHtml}${m.message_text ? m.message_text : ''}
-                    <div style="font-size:9px;opacity:.6;margin-top:4px;display:flex;justify-content:space-between;gap:8px;">
-                        <span>${fmtMsgTime(m.created_at)}</span>${readTick}
-                    </div>
-                </div>`;
-            }).join('');
-            if (wasAtBottom || wasEmpty) box.scrollTop = box.scrollHeight;
-        }
-        document.getElementById('typing-indicator').style.display = data.admin_typing ? 'block' : 'none';
-    } catch(e) { if (wasEmpty) box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+    if (!window.ChatUI) { document.getElementById('support-chat').innerHTML = '<div class="empty-state">بارگذاریِ گفتگو ممکن نشد؛ صفحه را دوباره باز کنید.</div>'; return; }
+    if (!supportChat) supportChat = ChatUI.mount(document.getElementById('support-chat'), { mode: 'single', theme: 'dark', call: supportCall, upload: supportUpload, toast: showToast });
+    else supportChat.poll();
 }
-
-function onSupportTyping() {
-    if (supportTypingTimer) return;
-    fetch(`${API}?action=support_typing&token=${encodeURIComponent(TOKEN)}`).catch(()=>{});
-    supportTypingTimer = setTimeout(() => { supportTypingTimer = null; }, 3000);
-}
-
-async function sendSupportMessage() {
-    const input = document.getElementById('support-input');
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = '';
-    document.getElementById('emoji-picker').style.display = 'none';
-    try {
-        await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ action: 'support_send', token: TOKEN, message: text }) });
-        loadSupportMessages();
-    } catch(e) { showToast('خطا در ارسال پیام.'); }
-}
-
-async function sendSupportFile(ev) {
-    const file = ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    showToast('در حال ارسال...');
-    const fd = new FormData();
-    fd.append('token', TOKEN); fd.append('file', file);
-    try {
-        const res = await fetch(`${API}?action=support_send_file`, { method:'POST', body: fd });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); return; }
-        loadSupportMessages();
-    } catch(e) { showToast('خطا در اتصال به سرور.'); }
-}
-
-function toggleEmojiPicker() {
-    const box = document.getElementById('emoji-picker');
-    if (box.style.display === 'flex') { box.style.display = 'none'; return; }
-    box.innerHTML = EMOJI_LIST.map(e => `<span style="font-size:20px;cursor:pointer;" onclick="insertEmoji('${e}')">${e}</span>`).join('');
-    box.style.display = 'flex';
-}
-function insertEmoji(e) {
-    const input = document.getElementById('support-input');
-    input.value += e;
-    input.focus();
-}
+function nav_supportLeave() {}
 
 // ======================= اعلان‌ها =======================
 const NOTIF_ICON = {info:'ℹ️', success:'✅', warning:'⚠️', error:'❌'};

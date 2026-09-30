@@ -69,7 +69,7 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
             $stmt->execute([$since, $until]);
             foreach ($stmt->fetchAll() as $r) {
                 $add('company_chat', 'پیام جدید از ' . $r['company_name'],
-                     mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'companies-requests',
+                     mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'tickets:C:' . intval($r['company_id']),
                      ['company_id' => intval($r['company_id'])]);
             }
         }
@@ -91,24 +91,27 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
 
         // پیام‌های تازه‌ی مشتری‌ها در گفتگوها
         try {
-            $stmt = $pdo->prepare("SELECT tm.id, tm.message, tm.created_at FROM ticket_messages tm
+            $stmt = $pdo->prepare("SELECT tm.id, tm.ticket_id, tm.message, tm.created_at, t.person_id FROM ticket_messages tm
+                                    LEFT JOIN tickets t ON t.id = tm.ticket_id
                                     WHERE tm.created_at > ? AND tm.created_at <= ? AND tm.sender_type <> 'ADMIN' ORDER BY tm.created_at DESC LIMIT 10");
             $stmt->execute([$since, $until]);
             foreach ($stmt->fetchAll() as $r) {
-                $add('ticket', 'پیام جدید در گفتگوها', mb_substr((string)($r['message'] ?: 'پیام تازه'), 0, 90), $r['created_at'], 'tickets');
+                // «tickets:P:12» یعنی تبِ گفتگوها و مستقیم همان گفتگو
+                $key = intval($r['person_id']) > 0 ? 'P:' . intval($r['person_id']) : 'T:' . intval($r['ticket_id']);
+                $add('ticket', 'پیام جدید در گفتگوها', mb_substr((string)($r['message'] ?: 'پیام تازه'), 0, 90), $r['created_at'], 'tickets:' . $key);
             }
         } catch (Throwable $e) { /* ... */ }
     }
 
-    // پیام‌های داخلیِ تازه برای خودم (همه‌ی نقش‌ها). تبِ پیام داخلی فقط برای غیرِ همکار هست.
+    // پیام‌های داخلیِ تازه برای خودم (همه‌ی نقش‌ها؛ همه تبِ «گفتگوها» را دارند)
     try {
-        $stmt = $pdo->prepare("SELECT scm.id, scm.message, scm.created_at, u.full_name
+        $stmt = $pdo->prepare("SELECT scm.id, scm.from_user_id, scm.message, scm.created_at, u.full_name
                                 FROM staff_chat_messages scm LEFT JOIN users u ON u.id = scm.from_user_id
                                 WHERE scm.created_at > ? AND scm.created_at <= ? AND scm.to_user_id = ? ORDER BY scm.created_at DESC LIMIT 20");
         $stmt->execute([$since, $until, $userId]);
         foreach ($stmt->fetchAll() as $r) {
             $add('staff_chat', 'پیام داخلی از ' . ($r['full_name'] ?: 'همکار'),
-                 mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], $seesPersonnel ? 'tickets' : null);
+                 mb_substr((string)($r['message'] ?: 'یک فایل فرستاد'), 0, 90), $r['created_at'], 'tickets:S:' . intval($r['from_user_id']));
         }
     } catch (Throwable $e) { /* ... */ }
 

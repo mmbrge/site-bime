@@ -272,6 +272,21 @@ try {
     // =====================================================================
     //  ارتباط با کارشناس (تیکت پشتیبانی)
     // =====================================================================
+    // ---- پیام‌رسانِ جدید (همان هسته‌ی پنل): گفتگوی کاربر با پشتیبانی، با فایل، پاسخ، ویرایش، حذف و موضوعِ پیام ----
+    if (strpos($action, 'chat_') === 0) {
+        require_once __DIR__ . '/_company_helpers.php';
+        require_once __DIR__ . '/_auth_helpers.php';
+        require_once __DIR__ . '/_chat_core.php';
+        $in = $_POST ?: $jsonBody;
+        if (isset($in['p']) && is_string($in['p'])) { $dec = json_decode((string)base64_decode($in['p'], true), true); if (is_array($dec)) $in = $dec + $in; }
+        $person = resolve_main_session($pdo, $in['token'] ?? ($_GET['token'] ?? ''), $in['init_data'] ?? null);
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است. دوباره از ربات وارد شوید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $actor = ['kind' => 'PERSON', 'id' => intval($person['id']), 'name' => $person['full_name']];
+        $in['key'] = 'P:' . intval($person['id']);
+        echo json_encode(chat_dispatch($pdo, $actor, $action, $in, $_FILES), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'support_messages') {
         $token = $_GET['token'] ?? '';
         $person = resolve_main_session($pdo, $token);

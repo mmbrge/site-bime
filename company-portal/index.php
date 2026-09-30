@@ -47,6 +47,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=1"></script>
+<script src="../chat-ui.js?v=1"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -146,33 +147,23 @@ if (!$companies) {
     </svg>
 </button>
 
-<!-- مودال چت با بیمه با ما -->
+<!-- مودال چت با بیمه با ما: پیام‌رسانِ مشترک (chat-ui.js) - فایل، پاسخ، ویرایش، حذف و موضوعِ پیام (کدام درخواست) -->
 <div id="chat-modal" class="modal-overlay">
-    <div class="modal-content p-0 flex flex-col" style="height: 70vh;">
-        <div class="p-4 border-b flex items-center justify-between">
-            <h3 class="font-bold text-lg">چت با بیمه با ما</h3>
-            <button onclick="closeModal('chat-modal')" aria-label="بستن" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0">
+    <div class="modal-content p-0 flex flex-col overflow-hidden" style="width: min(820px, 96vw); max-width: none; height: min(86vh, 800px);">
+        <div class="px-4 py-3 border-b flex items-center justify-between gap-3">
+            <h3 class="font-black text-base">گفتگو با «بیمه با ما»</h3>
+            <?php if (count($companies) > 1): ?>
+            <select id="chat-company" onchange="mountPortalChat()" class="flex-1 max-w-xs border rounded-lg p-2 text-sm">
+                <?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?>
+            </select>
+            <?php else: ?>
+            <input type="hidden" id="chat-company" value="<?php echo $companies[0]['id']; ?>">
+            <?php endif; ?>
+            <button onclick="closeChatModal()" aria-label="بستن" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
         </div>
-        <?php if (count($companies) > 1): ?>
-        <div class="p-3 border-b">
-            <select id="chat-company" onchange="loadChatMessages()" class="w-full border rounded-lg p-2 text-sm">
-                <?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?>
-            </select>
-        </div>
-        <?php else: ?>
-        <input type="hidden" id="chat-company" value="<?php echo $companies[0]['id']; ?>">
-        <?php endif; ?>
-        <div id="chat-body" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50"></div>
-        <div class="p-3 border-t flex gap-2 items-center">
-            <label title="پیوست فایل" class="text-slate-400 hover:text-blue-500 cursor-pointer shrink-0">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                <input type="file" id="chat-file" class="hidden" onchange="sendChatFile()">
-            </label>
-            <input type="text" id="chat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
-            <button onclick="sendChatMessage()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">ارسال</button>
-        </div>
+        <div id="portal-chat" class="flex-1 min-h-0 p-2 bg-slate-100"></div>
     </div>
 </div>
 
@@ -361,7 +352,7 @@ async function pollNotifications() {
         events.forEach(e => pushNotification(e.title, e.body, e.type));
         // اگر پیام تازه‌ای آمد و مودال چت باز است، همان‌جا هم تازه شود
         if (events.some(e => e.type === 'chat')
-            && document.getElementById('chat-modal').classList.contains('active')) loadChatMessages();
+            && document.getElementById('chat-modal').classList.contains('active') && portalChat) portalChat.poll();
     } catch (e) { /* قطعیِ لحظه‌ای نباید چیزی را خراب کند */ }
 }
 // فقط شمارِ خوانده‌نشده‌ها (بدون رویداد) - since خالی یعنی «رویداد نفرست»
@@ -859,7 +850,6 @@ async function uploadDocuments() {
     openRequestDetail(activeRequestId);
 }
 
-function fmtBubbleTime(ts) { return new Date(ts.replace(' ', 'T')).toLocaleString('fa-IR'); }
 
 // دیالوگ‌های تایید/ورودی با استایل خودِ پنل (نه پنجره‌ی پیش‌فرض مرورگر)
 function showPortalConfirm(title, message) {
@@ -888,78 +878,30 @@ function showPortalPrompt(title, currentValue) {
     });
 }
 
-function openChatModal() { openModal('chat-modal'); loadChatMessages(); }
-
-function renderBubble(isMine, msg) {
-    const align = isMine ? 'justify-end' : 'justify-start';
-    const color = isMine ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 border';
-    let fileHtml = '';
-    if (msg.file_path) {
-        const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.file_path);
-        fileHtml = isImg ? `<img src="../${msg.file_path}" class="rounded-lg max-w-full mt-2">` : `<a href="../${msg.file_path}" target="_blank" class="underline text-xs block mt-2"><i class="fas fa-paperclip ml-1"></i>مشاهده فایل</a>`;
-    }
-    // پیام‌های خودِ شرکت قابل ویرایش و حذف‌اند (پیام‌های ما نه)
-    const controls = isMine ? `
-        <div class="flex gap-2 mt-1 opacity-70">
-            <button onclick="editMyChatMessage(${msg.id})" class="text-[10px] underline hover:opacity-100">ویرایش</button>
-            <button onclick="deleteMyChatMessage(${msg.id})" class="text-[10px] underline hover:opacity-100">حذف</button>
-        </div>` : '';
-    return `<div class="flex ${align}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]"><span id="pmsg-text-${msg.id}">${msg.message || ''}</span>${fileHtml}<div class="text-[10px] opacity-60 mt-1" dir="ltr">${fmtBubbleTime(msg.created_at)}</div>${controls}</div></div>`;
-}
-
-async function editMyChatMessage(msgId) {
-    const current = document.getElementById('pmsg-text-' + msgId).innerText;
-    const updated = await showPortalPrompt('ویرایش پیام', current);
-    if (updated === null || !updated.trim() || updated === current) return;
+// ---- گفتگو با «بیمه با ما» (پیام‌رسانِ مشترک: ../chat-ui.js) ----
+let portalChat = null;
+const chatB64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o || {}))));
+const chatCompanyId = () => document.getElementById('chat-company').value;
+async function portalChatCall(action, data) {
     const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'chat_edit_message', message_id: msgId, message: updated})});
-    const data = await res.json();
-    if (data.ok) { showToast('پیام ویرایش شد.'); loadChatMessages(); }
-    else showToast(data.error || 'خطا در ویرایش پیام.');
+        body: JSON.stringify({action, p: chatB64(Object.assign({company_id: chatCompanyId()}, data || {}))})});
+    return res.json();
 }
-
-async function deleteMyChatMessage(msgId) {
-    if (!await showPortalConfirm('حذف پیام', 'این پیام برای همیشه حذف می‌شود.')) return;
-    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'chat_delete_message', message_id: msgId})});
-    const data = await res.json();
-    if (data.ok) { showToast('پیام حذف شد.'); loadChatMessages(); }
-    else showToast(data.error || 'خطا در حذف پیام.');
+async function portalChatUpload(action, fd) {
+    fd.append('action', action); fd.append('company_id', chatCompanyId());
+    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
+    return res.json();
 }
-
-async function loadChatMessages() {
-    const companyId = document.getElementById('chat-company').value;
-    const res = await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'chat_get_messages', company_id: companyId})});
-    refreshChatUnread(); // با باز شدنِ گفتگو پیام‌ها خوانده می‌شوند؛ عددِ روی آیکن هم به‌روز شود
-    const data = await res.json();
-    const body = document.getElementById('chat-body');
-    if (!data.ok) { body.innerHTML = `<p class="text-center text-red-500 text-xs">${data.error || 'خطا'}</p>`; return; }
-    body.innerHTML = data.messages.length ? data.messages.map(m => renderBubble(m.sender_type === 'COMPANY', m)).join('') : '<p class="text-center text-slate-400 text-xs mt-10">هنوز پیامی رد و بدل نشده.</p>';
-    body.scrollTop = body.scrollHeight;
+function mountPortalChat() {
+    if (portalChat) portalChat.destroy();
+    portalChat = window.ChatUI ? ChatUI.mount(document.getElementById('portal-chat'), {mode: 'single', theme: 'light', call: portalChatCall, upload: portalChatUpload, toast: showToast}) : null;
+    setTimeout(refreshChatUnread, 1500); // با باز شدنِ گفتگو پیام‌ها خوانده می‌شوند؛ عددِ روی آیکن هم به‌روز شود
 }
-
-async function sendChatMessage() {
-    const input = document.getElementById('chat-input');
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = '';
-    await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'chat_send_message', company_id: document.getElementById('chat-company').value, message: text})});
-    loadChatMessages();
+function openChatModal() {
+    openModal('chat-modal');
+    if (!portalChat) mountPortalChat(); else { portalChat.poll(); setTimeout(refreshChatUnread, 1500); }
 }
-
-async function sendChatFile() {
-    const fileInput = document.getElementById('chat-file');
-    if (!fileInput.files[0]) return;
-    const fd = new FormData();
-    fd.append('action', 'chat_send_message');
-    fd.append('company_id', document.getElementById('chat-company').value);
-    fd.append('file', fileInput.files[0]);
-    try { await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd}); loadChatMessages(); }
-    catch (e) { showToast('خطا در ارسال فایل.'); }
-    fileInput.value = '';
-}
-
-document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(); });
+function closeChatModal() { closeModal('chat-modal'); refreshChatUnread(); }
 
 loadRequests();
 

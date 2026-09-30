@@ -463,6 +463,21 @@ try {
         exit;
     }
 
+    // ---- پیام‌رسانِ جدید (همان هسته‌ی پنل): گفتگوی شرکت با «بیمه با ما» ----
+    if (in_array($action, ['chat_open', 'chat_poll', 'chat_send', 'chat_edit', 'chat_delete', 'chat_set_ref', 'chat_unread'], true)) {
+        require_once __DIR__ . '/_chat_core.php';
+        $in = $data;
+        if (isset($in['p']) && is_string($in['p'])) { $dec = json_decode((string)base64_decode($in['p'], true), true); if (is_array($dec)) $in = $dec + $in; }
+        $actor = ['kind' => 'COMPANY', 'id' => intval($session['company_user_id']), 'company_ids' => $allowedCompanyIds, 'name' => $session['full_name'] ?? 'کاربر شرکت'];
+        if ($action !== 'chat_unread') {
+            $companyId = resolve_company_id($allowedCompanyIds, $in['company_id'] ?? null);
+            if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت انتخاب‌شده معتبر نیست.']); exit; }
+            $in['key'] = 'C:' . intval($companyId);
+        }
+        echo json_encode(chat_dispatch($pdo, $actor, $action, $in, $_FILES), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- چت با بیمه با ما (یک گفتگوی مشترک به ازای هر شرکت) ----
     if ($action === 'chat_get_messages') {
         $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null);
