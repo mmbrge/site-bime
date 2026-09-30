@@ -294,6 +294,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             font-weight: normal;
         }
 
+        /* موبایل و صفحه‌های کوتاه: نوارِ بالا و فوتر در جریانِ صفحه می‌آیند (نه ثابت روی فرم) و صفحه اسکرول می‌خورد،
+           تا فوتر هیچ‌وقت روی دکمه‌ها نیفتد */
+        @media (max-width: 640px), (max-height: 780px) {
+            body { overflow-y: auto !important; overflow-x: hidden !important; justify-content: flex-start !important; padding: 14px 0 18px; min-height: 100vh; min-height: 100dvh; }
+            .top-info-bar { position: relative; top: auto; right: auto; margin: 0 auto 14px; align-self: center; }
+            #main-panel { margin: auto 0; flex-shrink: 0; }
+            .footer-credit { position: relative; bottom: auto; left: auto; transform: none; margin: 18px auto 0; padding: 0 12px; flex-shrink: 0; }
+            .footer-box { padding: 8px 14px; font-size: 11px; text-align: center; }
+        }
+        @media (max-width: 640px) {
+            #main-panel { width: calc(100% - 28px); padding: 22px 16px; box-sizing: border-box; }
+        }
+
         /* ================= دکمه‌های انتخاب درگاه ورود ================= */
         .gate-btn { background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.15); color: #9ca3af; }
         .gate-btn.active { background: rgba(0,210,255,0.15); border-color: #00d2ff; color: #fff; box-shadow: 0 0 12px rgba(0,210,255,0.25); }

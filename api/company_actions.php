@@ -418,10 +418,11 @@ try {
             if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }
             try {
                 $stmt = $pdo->prepare("
-                    SELECT pc.*, per.full_name AS holder_name, per.national_code AS holder_nid, per.mobile_number,
-                           co.name AS employer_name
+                    SELECT pc.*, per.full_name AS holder_name, per.national_code AS holder_nid, per.mobile_number, per.personnel_code AS holder_pcode,
+                           co.name AS employer_name, it.letter_date AS intro_letter_date, it.created_at AS intro_created_at
                       FROM policy_cases pc
                       LEFT JOIN persons per ON per.id = pc.person_id
+                      LEFT JOIN introductions it ON it.id = pc.introduction_id
                       LEFT JOIN companies co ON co.id = per.company_id
                      WHERE " . implode(' AND ', $w) . " ORDER BY pc.issued_at DESC LIMIT 5000");
                 $stmt->execute($p);
@@ -450,6 +451,10 @@ try {
                         'folder_status' => null, 'issued_file_path' => $r['issued_file_path'],
                         'unique_code' => $r['unique_code'] ?? null, 'central_unique_code' => $r['central_unique_code'] ?? null,
                         'policy_issue_date' => $r['policy_issue_date'] ?? null,
+                        // معرفی‌نامه‌ی این بیمه‌نامه (تاریخِ نامه و ماهش) و کد پرسنلی
+                        'personnel_code' => $r['holder_pcode'] ?? null,
+                        'intro_letter_j' => (!empty($r['intro_letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', $r['intro_letter_date'], $lm)) ? sprintf('%04d/%02d/%02d', $lm[1], $lm[2], $lm[3]) : null,
+                        'intro_month_fa' => $r['introduction_id'] ? (function () use ($r) { [$y, $m] = intro_letter_month(['letter_date' => $r['intro_letter_date'], 'created_at' => $r['intro_created_at']]); return jalali_month_name($m) . ' ' . $y; })() : null,
                     ];
                 }
             } catch (Throwable $e) { /* اگر ستونی نبود، دست‌کم شرکتی‌ها نمایش داده شوند */ }
@@ -484,7 +489,8 @@ try {
                         'پلاک', 'شماره شاسی', 'شماره موتور', 'نوع بیمه', 'بیمه‌گر', 'شماره بیمه‌نامه',
                         'شماره بیمه‌نامه مرجع', 'خودرو', 'سیستم', 'تیپ', 'مدل', 'رنگ', 'کاربری', 'VIN',
                         'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'حق بیمه (ریال)',
-                        'تاریخ درخواست', 'تاریخ انقضا', 'تاریخ صدور', 'وضعیت', 'توضیح درخواست'];
+                        'تاریخ درخواست', 'تاریخ انقضا', 'تاریخ صدور', 'وضعیت', 'توضیح درخواست',
+                        'کد پرسنلی', 'تاریخ صدور معرفی‌نامه', 'ماه معرفی‌نامه'];
             $out = [];
             foreach ($rows as $i => $r) {
                 $out[] = [
@@ -496,6 +502,7 @@ try {
                     $r['car_value'], $r['liability_limit'], $r['total_premium'],
                     fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits($r['issued_at_jalali']), $r['status_fa'],
                     $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
+                    $r['personnel_code'] ?? '', fa_digits($r['intro_letter_j'] ?? ''), $r['intro_month_fa'] ?? '',
                 ];
             }
             $rangeFa = ($data['issued_from'] ?? ($_GET['issued_from'] ?? '')) ?: 'ابتدا';

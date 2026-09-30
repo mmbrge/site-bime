@@ -345,6 +345,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         @media (max-width: 1023px) {
             .menu-panel { padding-right: 14px; border-right: 2px solid #e2e8f0; margin: 2px 6px 6px 0; }
         }
+        /* ---- کارتابل پرونده‌ها: کارت‌های آمار و انتخابِ بازه ---- */
+        .rec-seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: #f1f5f9; padding: 4px; border-radius: 14px; }
+        .rec-seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 10px; font-size: 11px; font-weight: 800; color: #64748b; transition: .2s; }
+        .rec-seg button:hover { color: #d97706; }
+        .rec-seg button.on { background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff; box-shadow: 0 6px 14px -8px #ea580c; }
+        .rec-card { position: relative; overflow: hidden; border-radius: 22px; padding: 18px 18px 16px; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2));
+                    box-shadow: 0 18px 34px -20px var(--c2); transition: transform .25s, box-shadow .25s; animation: recIn .5s both; }
+        .rec-card:nth-child(2) { animation-delay: .06s } .rec-card:nth-child(3) { animation-delay: .12s } .rec-card:nth-child(4) { animation-delay: .18s }
+        .rec-card:hover { transform: translateY(-4px); box-shadow: 0 24px 40px -20px var(--c2); }
+        .rec-card::after { content: ''; position: absolute; width: 170px; height: 170px; border-radius: 50%; background: rgba(255,255,255,.12); left: -50px; top: -70px; }
+        .rec-card::before { content: ''; position: absolute; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.08); left: 40px; bottom: -60px; }
+        .rec-ic { position: absolute; left: 16px; top: 16px; font-size: 26px; opacity: .85; z-index: 1; }
+        .rec-t { font-size: 12px; font-weight: 800; opacity: .9; position: relative; z-index: 1; }
+        .rec-v { font-size: 26px; font-weight: 900; margin-top: 6px; position: relative; z-index: 1; letter-spacing: -.5px; }
+        .rec-v small { font-size: 12px; font-weight: 700; opacity: .85; margin-right: 4px; }
+        .rec-s { font-size: 11px; opacity: .88; margin-top: 4px; position: relative; z-index: 1; min-height: 16px; }
+        @keyframes recIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body class="h-screen flex flex-col">
@@ -705,12 +722,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
 
-            <div class="card p-3">
-                <input type="text" id="records-search-input" placeholder="جستجو با نام، کد ملی، کد پرسنلی، شرکت یا وضعیت..." class="w-full border rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-amber-500">
+            <!-- بازه‌ی زمانی: روی کارت‌ها و جدول با هم اثر دارد -->
+            <div class="card p-3 flex flex-wrap items-center gap-2">
+                <span class="text-xs font-black text-slate-500 ml-1"><i class="fas fa-calendar-days text-amber-500 ml-1"></i>بازه:</span>
+                <div id="rec-period" class="rec-seg">
+                    <button data-p="month">این ماه</button><button data-p="3">۳ ماه</button><button data-p="6">۶ ماه</button><button data-p="12">۱ سال</button><button data-p="all" class="on">کل</button><button data-p="custom"><i class="fas fa-sliders ml-1"></i>تاریخ دلخواه</button>
+                </div>
+                <div id="rec-custom" class="hidden flex items-center gap-1 text-xs font-bold text-slate-500">
+                    از <input id="rec-from" placeholder="۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-2 py-1.5 w-28 text-center">
+                    تا <input id="rec-to" placeholder="۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-2 py-1.5 w-28 text-center">
+                    <button onclick="applyRecordsPeriod()" class="bg-amber-500 text-white rounded-lg px-3 py-1.5"><i class="fas fa-check"></i></button>
+                </div>
+                <span id="rec-range-label" class="text-[11px] font-bold text-slate-400 mr-auto"></span>
             </div>
-            
+
+            <!-- چهار کارت: معرفی‌نامه‌ها، بیمه‌نامه‌ها، حق بیمه، اقساطِ معوق -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div class="rec-card" style="--c1:#6366f1;--c2:#8b5cf6"><i class="fas fa-envelope-open-text rec-ic"></i>
+                    <p class="rec-t">معرفی‌نامه‌های صادرشده</p><p class="rec-v" id="rc-letters">—</p><p class="rec-s" id="rc-letters-s">&nbsp;</p></div>
+                <div class="rec-card" style="--c1:#0ea5e9;--c2:#2563eb"><i class="fas fa-file-shield rec-ic"></i>
+                    <p class="rec-t">بیمه‌نامه‌های صادرشده</p><p class="rec-v" id="rc-issued">—</p><p class="rec-s" id="rc-issued-s">&nbsp;</p></div>
+                <div class="rec-card" style="--c1:#10b981;--c2:#059669"><i class="fas fa-sack-dollar rec-ic"></i>
+                    <p class="rec-t">حق بیمه‌ی ایجادشده</p><p class="rec-v" id="rc-premium">—</p><p class="rec-s" id="rc-premium-s">&nbsp;</p></div>
+                <div class="rec-card" style="--c1:#f43f5e;--c2:#e11d48"><i class="fas fa-hourglass-end rec-ic"></i>
+                    <p class="rec-t">اقساطِ معوق (سررسید گذشته)</p><p class="rec-v" id="rc-overdue">—</p><p class="rec-s" id="rc-overdue-s">&nbsp;</p></div>
+            </div>
+
+            <div class="card p-3 flex flex-wrap items-center gap-2">
+                <input type="text" id="records-search-input" placeholder="جستجو: نام، کد ملی، کد پرسنلی، شرکت، ماه، تاریخ..." class="flex-1 min-w-[220px] border rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-amber-500">
+                <select id="rec-month" class="border rounded-lg px-2 py-2 text-xs font-bold"><option value="">همه‌ی ماه‌های معرفی‌نامه</option></select>
+                <select id="rec-issued-f" class="border rounded-lg px-2 py-2 text-xs font-bold">
+                    <option value="">همه</option><option value="yes">دارای صادره</option><option value="no">بدون صادره</option><option value="month">صادره در ماهِ معرفی‌نامه</option></select>
+                <button onclick="exportRecordsExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-xs"><i class="fas fa-file-excel ml-1"></i> خروجی اکسل (همین فهرست)</button>
+            </div>
+
             <div class="card overflow-hidden">
-                <div class="overflow-x-auto max-h-[500px]">
+                <div class="overflow-x-auto max-h-[560px]">
                     <table class="w-full text-right">
                         <thead class="bg-slate-50 text-slate-500 text-xs font-bold border-b border-slate-200 sticky top-0 shadow-sm">
                             <tr>
@@ -718,12 +765,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <th class="p-4">نام کامل پرسنل</th>
                                 <th class="p-4">کد ملی</th>
                                 <th class="p-4">کد پرسنلی</th>
+                                <th class="p-4">تاریخ صدور معرفی‌نامه<br><span class="font-normal text-slate-400">تاریخ ثبت</span></th>
+                                <th class="p-4">ماه معرفی‌نامه</th>
                                 <th class="p-4">بیمه‌نامه‌های صادرشده</th>
+                                <th class="p-4">حق بیمه</th>
                                 <th class="p-4">عملیات</th>
                             </tr>
                         </thead>
                         <tbody id="records-body" class="text-sm font-bold divide-y divide-slate-100">
-                            <tr><td colspan="6" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال بارگذاری پرونده‌ها...</td></tr>
+                            <tr><td colspan="9" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال بارگذاری پرونده‌ها...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -3167,6 +3217,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
     <script src="chat-ui.js?v=3"></script>
+    <script src="table-count.js?v=1"></script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -3745,52 +3796,141 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         switchTab('vr-build');
         <?php endif; ?>
 
+        // ======================= کارتابل پرونده‌ها (معرفی‌نامه‌های کارکنان) =======================
+        // بازه‌ی زمانی روی کارت‌ها و جدول با هم اثر دارد: جدول بر اساسِ تاریخِ صدورِ معرفی‌نامه (اگر نبود، تاریخِ ثبت)
+        let recPeriod = {p: 'all', from: '', to: ''};
+        let currentRecordsFiltered = [];
+        const recEn = s => String(s || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        const recJ = d => { try { return recEn(new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year: 'numeric', month: '2-digit', day: '2-digit'}).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
+        const recNorm = s => { const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/.exec(recEn(s).trim()); return m ? `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}` : ''; };
+        function recPeriodRange(p) {
+            const today = recJ(new Date());
+            if (p === 'all') return {from: '', to: ''};
+            if (p === 'month') return {from: today.slice(0, 8) + '01', to: today};
+            const d = new Date(); d.setMonth(d.getMonth() - Number(p)); d.setDate(d.getDate() + 1);
+            return {from: recJ(d), to: today};
+        }
+        document.querySelectorAll('#rec-period [data-p]').forEach(b => b.onclick = () => {
+            document.querySelectorAll('#rec-period [data-p]').forEach(x => x.classList.toggle('on', x === b));
+            const p = b.dataset.p;
+            document.getElementById('rec-custom').classList.toggle('hidden', p !== 'custom');
+            if (p === 'custom') { document.getElementById('rec-from').focus(); return; }
+            recPeriod = {p, ...recPeriodRange(p)};
+            refreshRecordsPeriod();
+        });
+        function applyRecordsPeriod() {
+            const from = recNorm(document.getElementById('rec-from').value), to = recNorm(document.getElementById('rec-to').value);
+            if (!from && !to) { showToast('حداقل یکی از تاریخ‌ها را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.', 'warning'); return; }
+            recPeriod = {p: 'custom', from, to};
+            refreshRecordsPeriod();
+        }
+        ['rec-from', 'rec-to'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyRecordsPeriod(); }));
+        function refreshRecordsPeriod() {
+            document.getElementById('rec-range-label').textContent = recPeriod.from || recPeriod.to
+                ? `از ${e2p(recPeriod.from || 'ابتدا')} تا ${e2p(recPeriod.to || 'امروز')}` : 'همه‌ی زمان‌ها';
+            loadRecordsStats();
+            filterRecordsTable();
+        }
+        // شمارشِ متحرکِ عددها روی کارت‌ها
+        function recCount(el, val, fmt) {
+            const start = performance.now(), dur = 700, from = 0;
+            const step = t => { const k = Math.min(1, (t - start) / dur), v = Math.round(from + (val - from) * (1 - Math.pow(1 - k, 3))); el.innerHTML = fmt(v); if (k < 1) requestAnimationFrame(step); };
+            requestAnimationFrame(step);
+        }
+        const recMoney = v => e2p(Number(v || 0).toLocaleString('en-US'));
+        async function loadRecordsStats() {
+            try {
+                const qs = new URLSearchParams({action: 'stats', from: recPeriod.from || '', to: recPeriod.to || ''});
+                const d = await (await fetch('api/records.php?' + qs)).json();
+                if (!d.ok) return;
+                recCount(document.getElementById('rc-letters'), d.letters, v => `${e2p(v)}<small>فقره</small>`);
+                recCount(document.getElementById('rc-issued'), d.issued, v => `${e2p(v)}<small>فقره</small>`);
+                recCount(document.getElementById('rc-premium'), Math.round(d.premium / 10), v => `${recMoney(v)}<small>تومان</small>`);
+                recCount(document.getElementById('rc-overdue'), Math.round(d.overdue_amount / 10), v => `${recMoney(v)}<small>تومان</small>`);
+                document.getElementById('rc-letters-s').textContent = 'بر اساس تاریخِ صدورِ معرفی‌نامه';
+                document.getElementById('rc-issued-s').textContent = `ثالث ${e2p(d.issued_third)} · بدنه ${e2p(d.issued_body)}`;
+                document.getElementById('rc-premium-s').textContent = `ثالث ${recMoney(Math.round(d.premium_third / 10))} · بدنه ${recMoney(Math.round(d.premium_body / 10))} تومان`;
+                document.getElementById('rc-overdue-s').textContent = d.overdue_count ? `${e2p(d.overdue_count)} قسط از ${e2p(d.overdue_people)} نفر` : 'قسطِ معوقی نیست 🎉';
+            } catch (e) {}
+        }
+
         async function loadRecords() {
             loadStats();
+            loadRecordsStats();
             const tbody = document.getElementById('records-body');
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال خواندن اطلاعات از دیتابیس...</td></tr>';
-            
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال خواندن اطلاعات از دیتابیس...</td></tr>';
             try {
                 const res = await fetch('api/records.php');
                 const data = await res.json();
-                if (data.ok) { currentRecordsData = data.data; renderRecordsTable(currentRecordsData); }
-                else tbody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-red-500">خطا در خواندن اطلاعات.</td></tr>';
+                if (data.ok) {
+                    currentRecordsData = data.data;
+                    // ماه‌های موجود برای فیلترِ «ماه معرفی‌نامه»
+                    const sel = document.getElementById('rec-month'), cur = sel.value;
+                    const months = [...new Map(currentRecordsData.map(r => [r.letter_year + '-' + r.letter_month, r])).values()]
+                        .sort((a, b) => (b.letter_year * 100 + b.letter_month) - (a.letter_year * 100 + a.letter_month));
+                    sel.innerHTML = '<option value="">همه‌ی ماه‌های معرفی‌نامه</option>' + months.map(r => `<option value="${r.letter_year}-${r.letter_month}">${r.letter_month_fa} ${e2p(r.letter_year)}</option>`).join('');
+                    sel.value = cur;
+                    filterRecordsTable();
+                }
+                else tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در خواندن اطلاعات.</td></tr>';
             } catch (error) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-red-500">خطا در برقراری ارتباط با سرور.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در برقراری ارتباط با سرور.</td></tr>';
             }
         }
 
+        function filterRecordsTable() {
+            const q = recEn(document.getElementById('records-search-input').value.trim()).toLowerCase();
+            const month = document.getElementById('rec-month').value, iss = document.getElementById('rec-issued-f').value;
+            currentRecordsFiltered = currentRecordsData.filter(row => {
+                const d = row.filter_date || '';
+                if (recPeriod.from && d < recPeriod.from) return false;
+                if (recPeriod.to && d > recPeriod.to) return false;
+                if (month && month !== row.letter_year + '-' + row.letter_month) return false;
+                if (iss === 'yes' && !row.issued_total) return false;
+                if (iss === 'no' && row.issued_total) return false;
+                if (iss === 'month' && !row.issued_in_letter_month) return false;
+                if (!q) return true;
+                const hay = [row.full_name, row.national_code, row.personnel_code, row.company_name, row.mobile_number, row.letter_month_fa,
+                    row.letter_month_fa + ' ' + row.letter_year, row.letter_date_j, row.registered_j, row.issued_summary, row.relationship_summary].filter(Boolean).join(' ');
+                return recEn(hay).toLowerCase().includes(q);
+            });
+            renderRecordsTable(currentRecordsFiltered);
+        }
+        document.getElementById('records-search-input').addEventListener('input', filterRecordsTable);
+        document.getElementById('rec-month').addEventListener('change', filterRecordsTable);
+        document.getElementById('rec-issued-f').addEventListener('change', filterRecordsTable);
+
         function renderRecordsTable(list) {
             const tbody = document.getElementById('records-body');
-            if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center p-8 text-slate-400">موردی یافت نشد.</td></tr>'; return; }
-            tbody.innerHTML = '';
-            list.forEach((row, index) => {
-                tbody.innerHTML += `
+            if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400">موردی یافت نشد.</td></tr>'; return; }
+            tbody.innerHTML = list.map((row, index) => `
                     <tr data-id="${row.id}" class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
                         <td class="p-4 font-mono text-slate-400">${e2p(index + 1)}</td>
-                        <td class="p-4 text-slate-700">${row.full_name || '-'}</td>
+                        <td class="p-4 text-slate-700">${row.full_name || '-'}${row.company_name ? `<span class="block text-[10px] text-slate-400 font-normal">${row.company_name}</span>` : ''}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.personnel_code) || '-'}</td>
-                        <td class="p-4 text-blue-600 text-xs">${row.issued_summary || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span><br><span class="text-[10px] text-slate-400">${row.relationship_summary || ''}</span></td>
-                        <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(row.total_cases)} بیمه‌نامه)</button>
+                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : '<span class="text-slate-300">ثبت نشده</span>'}</span>
+                            <span class="block text-[10px] text-slate-400 font-normal mt-0.5" title="تاریخ ثبت در سامانه"><i class="fas fa-clock-rotate-left ml-1"></i>${e2p(row.registered_j || '-')}</span></td>
+                        <td class="p-4 whitespace-nowrap"><span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-3 py-1 text-xs">${row.letter_month_fa} ${e2p(row.letter_year)}</span></td>
+                        <td class="p-4 text-blue-600 text-xs">${e2p(row.issued_summary) || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span>
+                            <span class="block text-[10px] ${row.issued_in_letter_month ? 'text-emerald-600' : 'text-slate-400'} mt-0.5">در ماهِ معرفی‌نامه: ${e2p(String(row.issued_in_letter_month))} فقره</span>
+                            <span class="block text-[10px] text-slate-400">${e2p(row.relationship_summary || '')}</span></td>
+                        <td class="p-4 text-xs whitespace-nowrap text-emerald-700">${row.premium_total ? recMoney(Math.round(row.premium_total / 10)) + ' <span class="text-[10px] text-slate-400">تومان</span>' : '<span class="text-slate-300">—</span>'}</td>
+                        <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(String(row.total_cases))} بیمه‌نامه)</button>
                             ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
-                    </tr>
-                `;
-            });
+                    </tr>`).join('');
         }
 
-        document.getElementById('records-search-input').addEventListener('input', e => {
-            const q = e.target.value.trim().toLowerCase();
-            if (!q) { renderRecordsTable(currentRecordsData); return; }
-            const filtered = currentRecordsData.filter(row => {
-                const haystack = [
-                    row.full_name, row.national_code, row.personnel_code, row.company_name,
-                    row.status_farsi, row.issued_summary, row.relationship_summary,
-                ].filter(Boolean).join(' ').toLowerCase();
-                return haystack.includes(q);
-            });
-            renderRecordsTable(filtered);
-        });
+        // خروجی اکسل: دقیقاً همین ردیف‌های فیلترشده، با جزئیاتِ هر بیمه‌نامه‌ی زیرِ هر معرفی‌نامه
+        function exportRecordsExcel() {
+            if (!currentRecordsFiltered.length) { showToast('ردیفی برای خروجی نیست.', 'warning'); return; }
+            const f = document.createElement('form');
+            f.method = 'POST'; f.action = 'api/records.php'; f.style.display = 'none';
+            f.innerHTML = `<input name="action" value="export"><input name="ids">`;
+            f.querySelector('[name=ids]').value = JSON.stringify(currentRecordsFiltered.map(r => r.id));
+            document.body.appendChild(f); f.submit(); setTimeout(() => f.remove(), 1000);
+            showToast(`خروجی اکسلِ ${e2p(currentRecordsFiltered.length)} ردیف در حال آماده‌سازی است...`, 'success');
+        }
 
         // ======================= بایگانی و مدیریت فایل‌ها =======================
         let fmCurrentPath = '';

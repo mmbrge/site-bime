@@ -860,15 +860,17 @@ function get_issued_count_for_intro($pdo, $introId) {
 }
 
 // =====================================================================
-//  «بایگانی کسر از حقوق»: هر معرفی‌نامه بر اساس ماه‌ها
-//   - پوشه‌ی اصلیِ معرفی‌نامه همیشه در ماهِ خودِ معرفی‌نامه است (تاریخِ نامه؛ اگر نبود تاریخِ ثبت):
-//       کسر از حقوق/{سال}/{ماهِ معرفی‌نامه}/{نام - کدملی - کدپرسنلی - شرکت - تعداد}
-//     معرفی‌نامه، پرونده‌های در جریان و بیمه‌نامه‌هایی که در همان ماه صادر شده‌اند اینجا هستند.
-//   - اگر بیمه‌نامه‌ای در ماهِ دیگری صادر شود، پوشه‌ی معرفی‌نامه در آن ماه هم ساخته می‌شود
-//     (زیرپوشه‌ی «معرفی‌نامه» و فایل‌هایش کپی می‌شود) و پوشه‌ی آن درخواست به همان‌جا می‌رود:
-//       کسر از حقوق/{سال}/{ماهِ صدور}/{نام - ... - تعداد}/{پوشه‌ی بیمه‌نامه}
-//   - «تعداد» در انتهای نامِ هر پوشه = تعدادِ بیمه‌نامه‌های صادرشده‌ی همین معرفی‌نامه در همان ماه
-//     (یعنی دقیقاً تعدادِ پوشه‌های صادره‌ی داخلش). بایگانی صادره هم همیشه بر اساس ماهِ صدور است.
+//  «بایگانی کسر از حقوق» (کارکنان): هر معرفی‌نامه بر اساس ماه‌ها
+//   - نامِ پوشه‌ی معرفی‌نامه با ماهِ صدورِ خودِ معرفی‌نامه شروع می‌شود:
+//       «(مهر) نام - کدملی - کدپرسنلی - شرکت - تعداد»
+//   - پوشه‌ی اصلی همیشه در ماهِ معرفی‌نامه است (تاریخِ نامه؛ اگر نبود تاریخِ ثبت) و معرفی‌نامه،
+//     پرونده‌های در جریان و بیمه‌نامه‌های صادرشده در همان ماه را دارد.
+//   - اگر بیمه‌نامه‌ی بعدی در ماهِ دیگری صادر شود، «آخرین وضعیتِ» پوشه‌ی معرفی‌نامه (کلِ محتوا،
+//     همه‌ی درخواست‌های قبلی) در آن ماه کپی می‌شود و پوشه‌ی درخواستِ تازه داخلِ همان قرار می‌گیرد:
+//       کسر از حقوق/{سال}/{ماهِ صدور}/(مهر) نام … - تعداد/{همه‌ی قبلی‌ها + پوشه‌ی بیمه‌نامه‌ی جدید}
+//     برای ماهِ بعدی هم همین: از آخرین پوشه‌ی ماه (کامل‌ترین وضعیت) کپی می‌شود.
+//   - «تعداد» در انتهای نامِ هر پوشه = تعدادِ بیمه‌نامه‌های همین معرفی‌نامه که در همان ماه صادر شده.
+//   - بایگانی صادره مثلِ قبل بر اساس ماهِ صدور است.
 // =====================================================================
 
 // ماهِ معرفی‌نامه: تاریخِ خودِ نامه (letter_date که شمسی ذخیره می‌شود)، وگرنه تاریخِ ثبت
@@ -926,22 +928,33 @@ function archive_move_dir($src, $dst) {
     return true;
 }
 
-// پوشه‌ای از همین معرفی‌نامه که الان در یک ماهِ مشخص هست (با هر شمارنده‌ای در انتهای نام)
-function intro_find_month_folder($monthDir, $baseName) {
+function archive_rrmdir($dir) {
+    if (!is_dir($dir)) return;
+    foreach (scandir($dir) as $f) { if ($f === '.' || $f === '..') continue; is_dir("$dir/$f") ? archive_rrmdir("$dir/$f") : @unlink("$dir/$f"); }
+    @rmdir($dir);
+}
+
+// نامِ پوشه‌ی معرفی‌نامه (بدونِ شمارنده): «(ماهِ معرفی‌نامه) نام - کدملی - کدپرسنلی - شرکت»
+function intro_folder_base($intro, $letterMonth) {
+    return sanitize_folder_name('(' . jalali_month_name($letterMonth) . ') '
+        . build_intro_folder_name($intro['full_name'], $intro['national_code'], $intro['personnel_code'], $intro['company_name']));
+}
+
+// پوشه‌ای از همین معرفی‌نامه که الان در یک ماهِ مشخص هست (با هر شمارنده‌ای؛ نامِ قدیمیِ بدونِ ماه هم پیدا می‌شود)
+function intro_find_month_folder($monthDir, array $bases) {
     if (!is_dir($monthDir)) return null;
     foreach (scandir($monthDir) as $f) {
         if ($f === '.' || $f === '..' || !is_dir("$monthDir/$f")) continue;
-        if ($f === $baseName || strpos($f, $baseName . NAME_SEP) === 0) {
-            $rest = substr($f, strlen($baseName . NAME_SEP));
-            if ($f === $baseName || preg_match('/^\d+$/', $rest)) return "$monthDir/$f";
+        foreach ($bases as $base) {
+            if ($f === $base) return "$monthDir/$f";
+            if (strpos($f, $base . NAME_SEP) === 0 && preg_match('/^\d+$/', substr($f, strlen($base . NAME_SEP)))) return "$monthDir/$f";
         }
     }
     return null;
 }
 
-// پوشه‌ی معرفی‌نامه (و پوشه‌های ماه‌های دیگرش) را می‌سازد/هماهنگ می‌کند و مسیرِ پوشه‌ی اصلی را برمی‌گرداند.
-// هر بار بعد از تغییری که روی نام یا تعدادِ صادره اثر دارد صدا زده می‌شود؛ خودترمیم‌گر است:
-// پوشه‌ی بیمه‌نامه‌ای که در ماهِ دیگری صادر شده ولی هنوز در ماهِ معرفی‌نامه مانده، جابه‌جا می‌شود.
+// پوشه‌های معرفی‌نامه را می‌سازد/هماهنگ می‌کند و مسیرِ پوشه‌ی اصلی (ماهِ معرفی‌نامه) را برمی‌گرداند.
+// بعد از هر تغییری که روی نام یا صادره‌ها اثر دارد صدا زده می‌شود؛ خودترمیم‌گر است.
 function sync_intro_folder($pdo, $siteRoot, $introId) {
     $stmt = $pdo->prepare("
         SELECT i.*, p.full_name, p.national_code, p.personnel_code, c.name AS company_name
@@ -952,21 +965,37 @@ function sync_intro_folder($pdo, $siteRoot, $introId) {
     $intro = $stmt->fetch();
     if (!$intro) return null;
 
-    $baseName = build_intro_folder_name($intro['full_name'], $intro['national_code'], $intro['personnel_code'], $intro['company_name']);
     [$ly, $lm] = intro_letter_month($intro);
-    $homeKey = $ly . '-' . $lm;
+    $base = intro_folder_base($intro, $lm);
+    $bases = [$base, build_intro_folder_name($intro['full_name'], $intro['national_code'], $intro['personnel_code'], $intro['company_name'])]; // نامِ قدیمی (بدونِ ماه)
+    $homeKey = $ly * 100 + $lm;
 
     // بیمه‌نامه‌های صادرشده، به تفکیکِ ماهِ صدور
-    $cs = $pdo->prepare("SELECT id, folder_path, issued_at, updated_at FROM policy_cases WHERE introduction_id = ? AND status = 'ISSUED'");
+    $cs = $pdo->prepare("SELECT id, plate, insured_name, folder_path, issued_at, updated_at FROM policy_cases WHERE introduction_id = ? AND status = 'ISSUED'");
     $cs->execute([$introId]);
     $byMonth = [];
-    foreach ($cs->fetchAll() as $c) { [$y, $m] = case_issue_month($c); $byMonth[$y . '-' . $m][] = $c; }
+    foreach ($cs->fetchAll() as $c) { [$y, $m] = case_issue_month($c); $byMonth[$y * 100 + $m][] = $c; }
+    ksort($byMonth);
+    $fp = function ($caseId) use ($pdo) { $q = $pdo->prepare("SELECT folder_path FROM policy_cases WHERE id = ?"); $q->execute([$caseId]); return $q->fetchColumn(); };
+    $isCanonical = function ($path) use ($pdo) { $q = $pdo->prepare("SELECT COUNT(*) FROM policy_cases WHERE folder_path = ?"); $q->execute([$path]); return intval($q->fetchColumn()) > 0; };
+    // پوشه‌ی یک پرونده را به پوشه‌ی یک ماه می‌برد (کپیِ قدیمیِ همان پرونده که از «آخرین وضعیت» آمده جایگزین می‌شود)
+    $placeCase = function ($c, $target) use ($pdo, $siteRoot, $fp, $isCanonical) {
+        $cf = $fp($c['id']);
+        if (!$cf || !is_dir($cf) || dirname($cf) === $target) return;
+        foreach (array_unique([basename($cf), build_case_folder_name($c['plate'], $c['insured_name'])]) as $n) {
+            $stale = $target . '/' . $n;
+            if (is_dir($stale) && $stale !== $cf && !$isCanonical($stale)) archive_rrmdir($stale);
+        }
+        $dst = $target . '/' . basename($cf);
+        archive_move_dir($cf, $dst);
+        archive_repath($pdo, $siteRoot, $cf, $dst);
+    };
 
     // ---- ۱) پوشه‌ی اصلی در ماهِ معرفی‌نامه ----
-    $homePath = kasr_month_dir($siteRoot, $ly, $lm) . '/' . name_join([$baseName, count($byMonth[$homeKey] ?? [])]);
-    $current = $intro['folder_path'];
-    if (!$current || !is_dir($current)) $current = intro_find_month_folder(kasr_month_dir($siteRoot, $ly, $lm), $baseName);
-    if ($current && $current !== $homePath && is_dir($current)) {
+    $homeDir = kasr_month_dir($siteRoot, $ly, $lm);
+    $homePath = $homeDir . '/' . name_join([$base, count($byMonth[$homeKey] ?? [])]);
+    $current = ($intro['folder_path'] && is_dir($intro['folder_path'])) ? $intro['folder_path'] : intro_find_month_folder($homeDir, $bases);
+    if ($current && $current !== $homePath) {
         archive_move_dir($current, $homePath);
         archive_repath($pdo, $siteRoot, $current, $homePath);
     } elseif (!is_dir($homePath)) {
@@ -974,38 +1003,28 @@ function sync_intro_folder($pdo, $siteRoot, $introId) {
     }
     $pdo->prepare("UPDATE introductions SET folder_path = ? WHERE id = ?")->execute([$homePath, $introId]);
     if (!is_dir($homePath . '/معرفی‌نامه')) @mkdir($homePath . '/معرفی‌نامه', 0777, true);
-
-    // مسیرِ فعلیِ پوشه‌ی یک پرونده (بعد از هر جابه‌جایی دوباره خوانده می‌شود)
-    $fp = function ($caseId) use ($pdo) { $q = $pdo->prepare("SELECT folder_path FROM policy_cases WHERE id = ?"); $q->execute([$caseId]); return $q->fetchColumn(); };
-
-    // ---- ۲) ماه‌های دیگری که در آن‌ها بیمه‌نامه صادر شده ----
-    foreach ($byMonth as $key => $cases) {
-        if ($key === $homeKey) continue;
-        [$y, $m] = array_map('intval', explode('-', $key));
-        $monthDir = kasr_month_dir($siteRoot, $y, $m);
-        $want = $monthDir . '/' . name_join([$baseName, count($cases)]);
-        $have = intro_find_month_folder($monthDir, $baseName);
-        if ($have && $have !== $want) { archive_move_dir($have, $want); archive_repath($pdo, $siteRoot, $have, $want); }
-        if (!is_dir($want)) @mkdir($want, 0777, true);
-        // «فراخوانیِ» معرفی‌نامه: همان فایل‌های معرفی‌نامه (با اطلاعات قبلی) در این ماه هم کپی می‌شود
-        if (!is_dir($want . '/معرفی‌نامه') && is_dir($homePath . '/معرفی‌نامه')) copy_dir_recursive($homePath . '/معرفی‌نامه', $want . '/معرفی‌نامه');
-        // پوشه‌ی هر بیمه‌نامه‌ی این ماه باید داخلِ همین پوشه باشد
-        foreach ($cases as $c) {
-            $cf = $fp($c['id']);
-            if (!$cf || !is_dir($cf) || dirname($cf) === $want) continue;
-            $dst = $want . '/' . basename($cf);
-            archive_move_dir($cf, $dst);
-            archive_repath($pdo, $siteRoot, $cf, $dst);
-        }
-    }
-    // بیمه‌نامه‌ای که در ماهِ خودِ معرفی‌نامه صادر شده ولی (به هر دلیل) جای دیگری است، برمی‌گردد به پوشه‌ی اصلی
     foreach ($byMonth[$homeKey] ?? [] as $c) {
         $cf = $fp($c['id']);
-        if (!$cf || !is_dir($cf) || dirname($cf) === $homePath) continue;
-        if (strpos($cf, archive_root($siteRoot) . '/بایگانی کسر از حقوق/') !== 0) continue;
-        $dst = $homePath . '/' . basename($cf);
-        archive_move_dir($cf, $dst);
-        archive_repath($pdo, $siteRoot, $cf, $dst);
+        if ($cf && strpos($cf, archive_root($siteRoot) . '/بایگانی کسر از حقوق/') === 0) $placeCase($c, $homePath);
+    }
+
+    // ---- ۲) ماه‌های بعدی که در آن‌ها بیمه‌نامه صادر شده (به ترتیبِ زمان) ----
+    $latest = $homePath;   // «آخرین وضعیت»ِ پوشه‌ی معرفی‌نامه تا این ماه
+    foreach ($byMonth as $key => $cases) {
+        if ($key === $homeKey) continue;
+        $y = intdiv($key, 100); $m = $key % 100;
+        $monthDir = kasr_month_dir($siteRoot, $y, $m);
+        $want = $monthDir . '/' . name_join([$base, count($cases)]);
+        $have = intro_find_month_folder($monthDir, $bases);
+        if ($have && $have !== $want) { archive_move_dir($have, $want); archive_repath($pdo, $siteRoot, $have, $want); }
+        if (!is_dir($want)) {
+            // اولین صدور در این ماه: کلِ آخرین وضعیتِ پوشه‌ی معرفی‌نامه (معرفی‌نامه + همه‌ی درخواست‌های قبلی) کپی می‌شود
+            @mkdir($want, 0777, true);
+            if (is_dir($latest)) copy_dir_recursive($latest, $want);
+        }
+        if (!is_dir($want . '/معرفی‌نامه') && is_dir($homePath . '/معرفی‌نامه')) copy_dir_recursive($homePath . '/معرفی‌نامه', $want . '/معرفی‌نامه');
+        foreach ($cases as $c) $placeCase($c, $want);   // درخواستِ تازه‌ی همین ماه داخلِ همین پوشه
+        $latest = $want;
     }
     return $homePath;
 }
