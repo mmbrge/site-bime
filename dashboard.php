@@ -345,6 +345,52 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         @media (max-width: 1023px) {
             .menu-panel { padding-right: 14px; border-right: 2px solid #e2e8f0; margin: 2px 6px 6px 0; }
         }
+        /* ---- ثبت دستیِ معرفی‌نامه / انتخابِ معرفی‌نامه ---- */
+        .mi-box { padding: 0 !important; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; border-radius: 26px; }
+        .mi-head { position: relative; display: flex; align-items: center; gap: 14px; padding: 20px 22px; color: #fff; background: linear-gradient(135deg, #4f46e5, #2563eb 60%, #0ea5e9); overflow: hidden; }
+        .mi-head.teal { background: linear-gradient(135deg, #0d9488, #059669 60%, #10b981); }
+        .mi-head::after { content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(255,255,255,.1); left: -60px; top: -90px; }
+        .mi-head h2 { font-size: 17px; font-weight: 900; }
+        .mi-head p { font-size: 11.5px; opacity: .85; margin-top: 2px; }
+        .mi-ic { width: 48px; height: 48px; border-radius: 16px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 21px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+        .mi-x { position: absolute; left: 16px; top: 16px; width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.18); color: #fff; z-index: 1; transition: .2s; }
+        .mi-x:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
+        .mi-body { padding: 18px 22px; overflow-y: auto; flex: 1; min-height: 0; }
+        .mi-foot { display: flex; gap: 8px; padding: 14px 22px; border-top: 1px solid #eef2f7; background: #fbfcfe; }
+        .mi-btn { flex: 1; border: 0; border-radius: 14px; padding: 12px; font-weight: 900; font-size: 13px; color: #fff; background: linear-gradient(135deg, #4f46e5, #2563eb); box-shadow: 0 12px 22px -14px #2563eb; transition: transform .15s, filter .2s; }
+        .mi-btn:hover { filter: brightness(1.08); } .mi-btn:active { transform: scale(.98); } .mi-btn:disabled { opacity: .6; }
+        .mi-btn.ghost { flex: 0 0 auto; padding: 12px 18px; background: #f1f5f9; color: #475569; box-shadow: none; }
+        .mi-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 22px 16px; border: 2px dashed #c7d2fe; border-radius: 20px;
+                   background: linear-gradient(180deg, #f8faff, #eef2ff); cursor: pointer; transition: .25s; }
+        .mi-drop:hover, .mi-drop.over { border-color: #6366f1; background: #eef2ff; transform: translateY(-2px); }
+        .mi-drop b { font-size: 13px; color: #3730a3; } .mi-drop small { font-size: 11px; color: #64748b; }
+        .mi-drop-ic { width: 54px; height: 54px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #fff; background: linear-gradient(135deg, #6366f1, #0ea5e9); box-shadow: 0 12px 24px -12px #6366f1; animation: miFloat 3s ease-in-out infinite; }
+        .mi-scan { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: #eef2ff; color: #3730a3; animation: recIn .3s both; }
+        .mi-scan b { font-size: 12.5px; display: block; } .mi-scan small { font-size: 11px; color: #64748b; }
+        .mi-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #c7d2fe; border-top-color: #4f46e5; animation: miSpin .8s linear infinite; flex-shrink: 0; }
+        .mi-attached { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: linear-gradient(135deg, #ecfdf5, #f0fdfa); border: 1px solid #a7f3d0; color: #065f46; font-size: 12px; font-weight: 800; animation: recIn .35s both; }
+        .mi-attached i.fa-file-circle-check { font-size: 22px; color: #10b981; }
+        .mi-attached button { margin-right: auto; font-size: 11px; color: #0f766e; background: #fff; border-radius: 10px; padding: 5px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.06); }
+        .mi-warn { margin-top: 10px; padding: 11px 14px; border-radius: 14px; font-size: 12px; font-weight: 800; display: flex; gap: 8px; align-items: flex-start; animation: recIn .3s both; }
+        .mi-warn.err { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; } .mi-warn.info { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+        .mi-f { display: block; font-size: 11px; font-weight: 800; color: #64748b; }
+        .mi-f input { display: block; width: 100%; margin-top: 5px; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; font-size: 13px; font-weight: 700; color: #0f172a; background: #fff; outline: none; transition: .2s; }
+        .mi-f input:focus { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99,102,241,.12); }
+        .mi-f input.auto { border-color: #34d399; background: #f0fdf4; animation: miGlow 1.2s ease-out; }
+        .mi-f input.bad { border-color: #f43f5e; background: #fff1f2; }
+        .ip-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1.5px solid #eef2f7; border-radius: 16px; cursor: pointer; transition: .2s; animation: recIn .3s both; }
+        .ip-item:hover { border-color: #14b8a6; background: #f0fdfa; transform: translateX(-3px); }
+        .ip-item.full { opacity: .5; cursor: not-allowed; }
+        .ip-av { width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, #14b8a6, #0ea5e9); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; flex-shrink: 0; }
+        .mc-body > div[id^="mc-"][class*="border"] { border-radius: 18px !important; box-shadow: 0 6px 18px -14px rgba(15,23,42,.35); background-color: #fff; }
+        .mc-body h4 { font-size: 12.5px !important; }
+        .mc-body input:not([type=checkbox]):not([type=file]), .mc-body select { border-radius: 12px !important; border-color: #e2e8f0 !important; }
+        .mc-body input:focus, .mc-body select:focus { border-color: #14b8a6 !important; box-shadow: 0 0 0 4px rgba(20,184,166,.12); outline: none; }
+        #mc-submit-btn { flex: 1; border-radius: 14px; background: linear-gradient(135deg, #0d9488, #059669); box-shadow: 0 12px 22px -14px #059669; }
+        @keyframes miFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @keyframes miSpin { to { transform: rotate(360deg); } }
+        @keyframes miGlow { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,.5); } 100% { box-shadow: 0 0 0 8px rgba(16,185,129,0); } }
+
         /* ---- کارتابل پرونده‌ها: کارت‌های آمار و انتخابِ بازه ---- */
         .rec-seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: #f1f5f9; padding: 4px; border-radius: 14px; }
         .rec-seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 10px; font-size: 11px; font-weight: 800; color: #64748b; transition: .2s; }
@@ -363,6 +409,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .rec-s { font-size: 11px; opacity: .88; margin-top: 4px; position: relative; z-index: 1; min-height: 16px; }
         @keyframes recIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 </style>
+<link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="h-screen flex flex-col">
 
@@ -716,7 +763,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <div class="flex gap-2">
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
-                    <button onclick="openManualCreateModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors hover-target"><i class="fas fa-plus ml-1"></i> ثبت دستی پرونده</button>
+                    <button onclick="openManualIntroModal()" class="bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/30 transition-all hover-target"><i class="fas fa-envelope-open-text ml-1"></i> ثبت دستی معرفی‌نامه</button>
                     <?php endif; ?>
                     <button onclick="loadRecords()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold text-sm hover-target transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی جدول</button>
                 </div>
@@ -1982,7 +2029,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-check text-teal-500 ml-2"></i>لیست صدور</h1>
                     <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند - شرکتی و کارکنان. با صدور هر ردیف، از این فهرست بیرون می‌رود. ستون‌هایی که به آن نوع مربوط نیستند با — نشان داده می‌شوند.</p>
                 </div>
-                <button onclick="loadIssueQueue()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                <div class="flex gap-2">
+                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+                    <button onclick="openIntroPicker()" class="bg-gradient-to-l from-teal-600 to-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-teal-500/30 hover:brightness-110 transition-all"><i class="fas fa-plus ml-1"></i> درخواست جدید کارکنان</button>
+                    <?php endif; ?>
+                    <button onclick="loadIssueQueue()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                </div>
             </div>
 
             <div class="grid grid-cols-3 gap-2">
@@ -2879,12 +2931,70 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
+    <!-- ثبت دستیِ معرفی‌نامه (فقط معرفی‌نامه؛ درخواست‌ها از «لیست صدور» ثبت می‌شوند) -->
+    <div id="manual-intro-modal" class="modal-overlay">
+        <div class="modal-content mi-box w-full max-w-2xl relative" style="margin:0 12px;">
+            <div class="mi-head">
+                <button type="button" onclick="closeManualIntroModal()" class="mi-x"><i class="fas fa-times"></i></button>
+                <span class="mi-ic"><i class="fas fa-envelope-open-text"></i></span>
+                <div><h2>ثبت دستی معرفی‌نامه</h2><p>فایل را بگذارید تا اطلاعاتش خودکار خوانده شود، یا همه را دستی بنویسید.</p></div>
+            </div>
+            <div class="mi-body">
+                <!-- بارگذاری و تشخیصِ خودکار -->
+                <label id="mi-drop" class="mi-drop">
+                    <input type="file" id="mi-file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden>
+                    <span class="mi-drop-ic"><i class="fas fa-cloud-arrow-up"></i></span>
+                    <b>فایل معرفی‌نامه را اینجا رها کنید یا انتخاب کنید</b>
+                    <small>PDF یا عکس · بعد از بارگذاری بررسی می‌شود که معرفی‌نامه باشد و فیلدها خودکار پر می‌شوند</small>
+                </label>
+                <div id="mi-scan" class="mi-scan hidden"><span class="mi-spin"></span><div><b>در حال خواندن و تشخیصِ معرفی‌نامه...</b><small id="mi-scan-name"></small></div></div>
+                <div id="mi-attached" class="mi-attached hidden"></div>
+                <div id="mi-alert" class="hidden"></div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                    <label class="mi-f">نام و نام خانوادگی پرسنل *<input id="mi-full-name" autocomplete="off"></label>
+                    <label class="mi-f">کد ملی (۱۰ رقم) *<input id="mi-national-code" dir="ltr" inputmode="numeric" maxlength="10" autocomplete="off"></label>
+                    <label class="mi-f">کد پرسنلی<input id="mi-personnel-code" dir="ltr" inputmode="numeric" autocomplete="off"></label>
+                    <label class="mi-f">شرکت / کارفرما<input id="mi-company-name" list="mi-companies-dl" placeholder="مثلاً ماموت" autocomplete="off"></label>
+                    <label class="mi-f">تاریخ صدور معرفی‌نامه (شمسی)<input id="mi-letter-date" dir="ltr" inputmode="numeric" placeholder="۱۴۰۵/۰۷/۰۱"></label>
+                    <label class="mi-f">موبایل پرسنل<input id="mi-mobile" dir="ltr" inputmode="numeric" maxlength="11" placeholder="۰۹۱۲..."></label>
+                    <label class="mi-f">سهمیه‌ی معرفی‌نامه<input id="mi-quota" dir="ltr" inputmode="numeric" placeholder="پیش‌فرضِ تنظیمات"></label>
+                </div>
+                <datalist id="mi-companies-dl"></datalist>
+                <p class="text-[11px] text-slate-400 mt-3"><i class="fas fa-circle-info ml-1"></i>بعد از ثبت، درخواستِ بیمه (ثالث/بدنه) را از «لیست صدور» ← «درخواست جدید کارکنان» برای همین معرفی‌نامه ثبت کنید.</p>
+            </div>
+            <div class="mi-foot">
+                <button id="mi-submit" onclick="submitManualIntro()" class="mi-btn"><i class="fas fa-check ml-1"></i>ثبت معرفی‌نامه</button>
+                <button onclick="closeManualIntroModal()" class="mi-btn ghost">انصراف</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- «درخواست جدید کارکنان» در لیست صدور: اول معرفی‌نامه انتخاب می‌شود -->
+    <div id="intro-picker-modal" class="modal-overlay">
+        <div class="modal-content mi-box w-full max-w-xl relative" style="margin:0 12px;">
+            <div class="mi-head teal">
+                <button type="button" onclick="closeModal('intro-picker-modal')" class="mi-x"><i class="fas fa-times"></i></button>
+                <span class="mi-ic"><i class="fas fa-file-circle-plus"></i></span>
+                <div><h2>درخواست جدید کارکنان</h2><p>این درخواست برای کدام معرفی‌نامه است؟</p></div>
+            </div>
+            <div class="mi-body">
+                <input id="ip-q" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm mb-3 outline-none focus:border-teal-500" placeholder="جستجو: نام، کد ملی، کد پرسنلی، شرکت، ماه...">
+                <div id="ip-list" class="space-y-2"></div>
+            </div>
+            <div class="mi-foot"><button onclick="closeModal('intro-picker-modal'); openManualIntroModal()" class="mi-btn ghost"><i class="fas fa-envelope-open-text ml-1"></i>معرفی‌نامه‌ی تازه ثبت کنید</button></div>
+        </div>
+    </div>
+
     <!-- مودال ثبت دستیِ درخواست کارکنان: پرسنل و معرفی‌نامه -> اطلاعات درخواست -> چک‌لیست مدارک -->
     <div id="manual-create-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-3xl p-6 relative max-h-[92vh] overflow-y-auto">
-            <button type="button" onclick="closeManualCreateModal()" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h2 class="text-lg font-black mb-1 text-slate-800"><i class="fas fa-user-plus text-blue-500 ml-2"></i><span id="mc-title">ثبت دستی درخواست کارکنان</span></h2>
-            <p class="text-[11px] text-slate-400 mb-4">برای درخواست‌های حضوری یا وقتی تشخیص خودکار انجام نشده. همه‌ی اطلاعاتی که ربات می‌پرسد و مدارکِ لازم همین‌جاست؛ با انتخابِ نوع بیمه و بیمه‌گذار، فیلدها و مدارک خودکار عوض می‌شوند.</p>
+        <div class="modal-content mi-box w-full max-w-3xl relative" style="margin:0 12px;">
+            <div class="mi-head teal">
+                <button type="button" onclick="closeManualCreateModal()" class="mi-x"><i class="fas fa-times"></i></button>
+                <span class="mi-ic"><i class="fas fa-file-circle-plus"></i></span>
+                <div><h2 id="mc-title">ثبت دستی درخواست کارکنان</h2><p>اطلاعاتی که ربات می‌پرسد و مدارکِ همان درخواست؛ فهرستِ مدارک با هر انتخاب عوض می‌شود.</p></div>
+            </div>
+            <div class="mi-body mc-body">
             <input type="hidden" id="mc-intro-id">
             <input type="hidden" id="mc-case-id">
 
@@ -2976,10 +3086,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="mc-docs-list" class="checklist-grid"></div>
             </div>
 
-            <div class="flex gap-2">
+            </div>
+            <div class="mi-foot">
                 <button id="mc-submit-btn" onclick="submitManualRequest()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 hover-target transition-colors"><i class="fas fa-check ml-1"></i>ثبت نهایی درخواست</button>
                 <button id="mc-open-case-btn" onclick="mcOpenCreatedCase()" class="hidden flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl">باز کردن پرونده</button>
-                <button onclick="closeManualCreateModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl">بستن</button>
+                <button onclick="closeManualCreateModal()" class="mi-btn ghost">بستن</button>
             </div>
         </div>
     </div>
@@ -3217,7 +3328,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
     <script src="chat-ui.js?v=3"></script>
-    <script src="table-count.js?v=1"></script>
+    <script src="table-count.js?v=2"></script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -3917,9 +4028,127 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <span class="block text-[10px] text-slate-400">${e2p(row.relationship_summary || '')}</span></td>
                         <td class="p-4 text-xs whitespace-nowrap text-emerald-700">${row.premium_total ? recMoney(Math.round(row.premium_total / 10)) + ' <span class="text-[10px] text-slate-400">تومان</span>' : '<span class="text-slate-300">—</span>'}</td>
                         <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(String(row.total_cases))} بیمه‌نامه)</button>
+                            ${row.has_intro_file ? `<a href="api/records.php?action=download_intro&intro_id=${row.introduction_id}" onclick="event.stopPropagation()" title="دانلودِ فایلِ معرفی‌نامه" class="mr-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"><i class="fas fa-file-arrow-down"></i>معرفی‌نامه</a>` : ''}
                             ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
                     </tr>`).join('');
         }
+
+        // ======================= ثبت دستیِ معرفی‌نامه (با تشخیصِ خودکار از روی فایل) =======================
+        let miToken = null;
+        const MI_FIELDS = ['full_name', 'national_code', 'personnel_code', 'company_name', 'letter_date', 'mobile', 'quota'];
+        const miEl = k => document.getElementById('mi-' + k.replace(/_/g, '-'));
+        function miShow(state, html) {
+            document.getElementById('mi-drop').classList.toggle('hidden', state !== 'drop');
+            document.getElementById('mi-scan').classList.toggle('hidden', state !== 'scan');
+            const at = document.getElementById('mi-attached');
+            at.classList.toggle('hidden', state !== 'attached');
+            if (state === 'attached') at.innerHTML = html;
+        }
+        function miAlert(kind, text) {
+            const a = document.getElementById('mi-alert');
+            if (!text) { a.className = 'hidden'; a.innerHTML = ''; return; }
+            a.className = 'mi-warn ' + kind;
+            a.innerHTML = `<i class="fas ${kind === 'err' ? 'fa-triangle-exclamation' : 'fa-circle-info'} mt-0.5"></i><span></span>`;
+            a.querySelector('span').textContent = text;
+        }
+        function openManualIntroModal() {
+            miToken = null;
+            MI_FIELDS.forEach(k => { const e = miEl(k); e.value = ''; e.classList.remove('auto', 'bad'); });
+            document.getElementById('mi-file').value = '';
+            miShow('drop'); miAlert();
+            const btn = document.getElementById('mi-submit'); btn.disabled = false;
+            fetch('api/finance_actions.php?action=bootstrap').then(r => r.json()).then(d => {
+                const names = [...new Set((d.companies || []).map(c => c.name))];
+                document.getElementById('mi-companies-dl').innerHTML = names.map(n => `<option value="${n}">`).join('');
+            }).catch(() => {});
+            openModal('manual-intro-modal');
+        }
+        function closeManualIntroModal() { closeModal('manual-intro-modal'); }
+        async function miUpload(file) {
+            if (!file) return;
+            miAlert(); miShow('scan'); document.getElementById('mi-scan-name').textContent = file.name;
+            const fd = new FormData(); fd.append('action', 'intro_detect'); fd.append('file', file);
+            let d;
+            try { d = await (await fetch('api/record_actions.php', {method: 'POST', body: fd})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            document.getElementById('mi-file').value = '';
+            if (!d.ok) { miShow('drop'); miAlert('err', d.error || 'بارگذاری ممکن نشد.'); if (d.not_intro) showToast(d.error, 'error'); return; }
+            miToken = d.token;
+            // فایل پذیرفته شد: کادرِ بارگذاری پنهان می‌شود و همین فایل برای بایگانی استفاده می‌شود
+            miShow('attached', `<i class="fas fa-file-circle-check"></i><span>${d.detected ? 'معرفی‌نامه تشخیص داده شد' : 'فایل پیوست شد'}: <span class="font-normal"></span></span><button type="button" onclick="miRemoveFile()"><i class="fas fa-rotate ml-1"></i>تعویض فایل</button>`);
+            document.querySelector('#mi-attached span span').textContent = d.name;
+            if (d.warning) miAlert('info', d.warning);
+            if (d.detected) {
+                let n = 0;
+                Object.entries(d.fields || {}).forEach(([k, v]) => {
+                    const e = miEl(k); if (!e || !v) return;
+                    e.value = ['national_code', 'personnel_code', 'letter_date', 'mobile'].includes(k) ? e2p(v) : v;
+                    e.classList.remove('auto'); void e.offsetWidth; e.classList.add('auto'); n++;
+                });
+                showToast(n ? `${e2p(n)} فیلد از روی معرفی‌نامه پر شد؛ بقیه را کامل کنید.` : 'معرفی‌نامه تشخیص داده شد ولی فیلدی خوانده نشد؛ دستی وارد کنید.', n ? 'success' : 'warning');
+            }
+        }
+        function miRemoveFile() { miToken = null; miShow('drop'); miAlert(); }
+        (function () {
+            const drop = document.getElementById('mi-drop'), inp = document.getElementById('mi-file');
+            inp.addEventListener('change', () => miUpload(inp.files[0]));
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+            drop.addEventListener('drop', e => { const f = (e.dataTransfer.files || [])[0]; if (f) miUpload(f); });
+        })();
+        async function submitManualIntro() {
+            const v = k => p2e(miEl(k).value.trim());
+            MI_FIELDS.forEach(k => miEl(k).classList.remove('bad'));
+            const bad = (k, msg) => { miEl(k).classList.add('bad'); miEl(k).focus(); showToast(msg, 'warning'); };
+            if (v('full_name').length < 3) return bad('full_name', 'نام و نام خانوادگیِ پرسنل را وارد کنید.');
+            if (!/^\d{10}$/.test(v('national_code'))) return bad('national_code', 'کد ملی باید ۱۰ رقم باشد.');
+            if (v('letter_date') && !/^1[34]\d\d\D+\d{1,2}\D+\d{1,2}$/.test(v('letter_date'))) return bad('letter_date', 'تاریخ معرفی‌نامه را مثل ۱۴۰۵/۰۷/۰۱ وارد کنید.');
+            if (v('mobile') && !/^09\d{9}$/.test(v('mobile'))) return bad('mobile', 'موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (!miToken && !(await uiConfirm('بدونِ فایل', 'فایلِ معرفی‌نامه بارگذاری نشده. بدون فایل ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
+            const btn = document.getElementById('mi-submit'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+            try {
+                const body = {action: 'create_intro', file_token: miToken || '', max_quota: v('quota')};
+                MI_FIELDS.filter(k => k !== 'quota').forEach(k => body[k] = v(k));
+                const d = await (await fetch('api/record_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+                if (!d.ok) { if (d.field) bad(d.field, d.error); else showToast(d.error || 'ثبت نشد.', 'error'); return; }
+                closeManualIntroModal();
+                showToast('معرفی‌نامه ثبت شد' + (d.filed ? ' و فایلش در بایگانی قرار گرفت.' : '.'), 'success');
+                loadRecords();
+                if (await uiConfirm('ثبت درخواست', 'همین حالا برای این معرفی‌نامه درخواستِ بیمه (ثالث/بدنه) ثبت می‌کنید؟', {ok: 'بله، درخواست جدید'}))
+                    openManualCreateModal(d.intro_id, v('full_name'));
+            } finally { btn.disabled = false; btn.innerHTML = old; }
+        }
+
+        // ======================= «درخواست جدید کارکنان» از لیست صدور: انتخابِ معرفی‌نامه =======================
+        let ipData = [];
+        async function openIntroPicker() {
+            document.getElementById('ip-q').value = '';
+            document.getElementById('ip-list').innerHTML = '<p class="text-center text-slate-400 text-xs py-6"><i class="fas fa-spinner fa-spin"></i></p>';
+            openModal('intro-picker-modal');
+            try { const d = await (await fetch('api/records.php')).json(); ipData = d.ok ? d.data : []; } catch (e) { ipData = []; }
+            renderIntroPicker();
+            setTimeout(() => document.getElementById('ip-q').focus(), 80);
+        }
+        function renderIntroPicker() {
+            const q = recEn(document.getElementById('ip-q').value.trim()).toLowerCase();
+            const list = ipData.filter(r => !q || recEn([r.full_name, r.national_code, r.personnel_code, r.company_name, r.letter_month_fa, r.letter_date_j].join(' ')).toLowerCase().includes(q)).slice(0, 60);
+            document.getElementById('ip-list').innerHTML = list.length ? list.map((r, i) => {
+                const [used, max] = String(r.quota_summary || '0 / 4').split('/').map(x => parseInt(x));
+                const full = used >= max;
+                return `<div class="ip-item ${full ? 'full' : ''}" data-i="${ipData.indexOf(r)}" style="animation-delay:${Math.min(i, 10) * 25}ms" title="${full ? 'سهمیه‌ی این معرفی‌نامه پر شده' : ''}">
+                    <span class="ip-av">${(r.full_name || '؟').trim().charAt(0)}</span>
+                    <div class="flex-1 min-w-0"><b class="text-sm text-slate-700">${r.full_name || '-'}</b>
+                        <p class="text-[11px] text-slate-400">${e2p(r.national_code || '')} · ${r.company_name || '—'} · معرفی‌نامه‌ی ${r.letter_month_fa} ${e2p(r.letter_year)}</p></div>
+                    <span class="text-[11px] font-black ${full ? 'text-rose-500' : 'text-teal-600'} whitespace-nowrap">سهمیه ${e2p(String(used))}/${e2p(String(max))}</span></div>`;
+            }).join('') : '<p class="text-center text-slate-400 text-xs py-6">معرفی‌نامه‌ای پیدا نشد.</p>';
+            document.querySelectorAll('#ip-list .ip-item').forEach(el => el.onclick = () => {
+                if (el.classList.contains('full')) { showToast('سهمیه‌ی این معرفی‌نامه پر شده است.', 'warning'); return; }
+                const r = ipData[Number(el.dataset.i)];
+                closeModal('intro-picker-modal');
+                openManualCreateModal(r.introduction_id, r.full_name);
+            });
+        }
+        document.getElementById('ip-q').addEventListener('input', renderIntroPicker);
 
         // خروجی اکسل: دقیقاً همین ردیف‌های فیلترشده، با جزئیاتِ هر بیمه‌نامه‌ی زیرِ هر معرفی‌نامه
         function exportRecordsExcel() {
@@ -9518,6 +9747,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('manual-create-modal').classList.remove('active');
             if (mcCreated) {
                 loadRecords();
+                if (!document.getElementById('tab-issue-queue')?.classList.contains('hidden') && typeof loadIssueQueue === 'function') loadIssueQueue();
                 if (document.getElementById('intro-detail-modal').classList.contains('flex')) {
                     openIntroDetail(mcCreated.intro_id, document.getElementById('intro-detail-name').textContent);
                 }

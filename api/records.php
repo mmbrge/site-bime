@@ -42,7 +42,7 @@ function rec_letter_date($intro) {
 function rec_rows($pdo) {
     $records = $pdo->query("
         SELECT ir.id, ir.introduction_id, p.id AS person_id, p.full_name, p.national_code, p.personnel_code, p.mobile_number,
-               c.name AS company_name, ir.created_at, i.created_at AS intro_created_at, i.letter_date, i.max_quota, i.used_quota
+               c.name AS company_name, ir.created_at, i.created_at AS intro_created_at, i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file
           FROM insurance_requests ir
           JOIN persons p ON ir.person_id = p.id
           LEFT JOIN companies c ON p.company_id = c.id
@@ -78,6 +78,9 @@ function rec_rows($pdo) {
         $row['issued_summary'] = $issued ? implode(' / ', array_filter([$row['issued_third'] ? $row['issued_third'] . ' فقره ثالث' : '', $row['issued_body'] ? $row['issued_body'] . ' فقره بدنه' : ''])) : '۰ فقره';
         $row['relationship_summary'] = "خودش: {$self} فقره / بستگان: " . ($row['issued_total'] - $self) . " فقره";
         $row['quota_summary'] = ($row['used_quota'] ?? 0) . ' / ' . ($row['max_quota'] ?? 4);
+        // فایلِ معرفی‌نامه در بایگانی هست؟ (مسیر به فرانت داده نمی‌شود؛ دانلود از download_intro)
+        $row['has_intro_file'] = !empty($row['intro_file']) && $row['intro_file'] !== 'ثبت_دستی' && is_file(dirname(__DIR__) . '/' . ltrim($row['intro_file'], '/'));
+        unset($row['intro_file']);
     }
     unset($row);
     return $records;
@@ -85,6 +88,22 @@ function rec_rows($pdo) {
 
 try {
     $action = $_GET['action'] ?? ($_POST['action'] ?? '');
+
+    // ---------------- دانلودِ فایلِ معرفی‌نامه ----------------
+    if ($action === 'download_intro') {
+        $st = $pdo->prepare("SELECT i.file_path FROM introductions i WHERE i.id = ?");
+        $st->execute([intval($_GET['intro_id'] ?? 0)]);
+        $rel = (string)$st->fetchColumn();
+        $abs = realpath(dirname(__DIR__) . '/' . ltrim($rel, '/'));
+        $root = realpath(archive_root(dirname(__DIR__)));
+        if (!$rel || !$abs || !$root || strpos($abs, $root) !== 0 || !is_file($abs)) { echo json_encode(['ok' => false, 'error' => 'فایلِ معرفی‌نامه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        header('Content-Type: ' . (['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream'));
+        header("Content-Disposition: attachment; filename=\"intro.$ext\"; filename*=UTF-8''" . rawurlencode(basename($abs)));
+        header('Content-Length: ' . filesize($abs));
+        readfile($abs);
+        exit;
+    }
 
     // ---------------- کارت‌های بالای صفحه ----------------
     if ($action === 'stats') {

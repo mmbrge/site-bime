@@ -24,13 +24,125 @@ if (!$data && !empty($_POST)) { $data = $_POST; $action = $_POST['action'] ?? $a
 $userId = $_SESSION['user_id'];
 
 // ثبت دستی و ویرایشِ درخواست‌ها فقط کارِ مدیر کل است؛ بقیه‌ی نقش‌ها فقط می‌بینند
-if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro'], true)
+if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro'], true)
     && ($_SESSION['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 try {
+    // ---- ثبت دستیِ معرفی‌نامه: ۱) تشخیصِ خودکار از روی فایل ----
+    // فایل با همان الگوریتمِ صفِ پردازش خوانده می‌شود؛ اگر معرفی‌نامه نبود رد می‌شود، اگر بود
+    // اطلاعاتش برگردانده و خودِ فایل موقتاً نگه داشته می‌شود تا با «ثبت» به بایگانی برود.
+    if ($action === 'intro_detect') {
+        $siteRoot = dirname(__DIR__);
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط PDF یا عکس (JPG/PNG).'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($f['size'] > 15 * 1048576) { echo json_encode(['ok' => false, 'error' => 'حجم فایل بیشتر از ۱۵ مگابایت است.'], JSON_UNESCAPED_UNICODE); exit; }
+        $dir = temp_archive_root($siteRoot) . '/معرفی‌نامه‌های دستی';
+        if (!is_dir($dir)) @mkdir($dir, 0777, true);
+        // پاک کردنِ فایل‌های موقتِ رهاشده (بیش از یک روز)
+        foreach (glob($dir . '/*') ?: [] as $old) if (is_file($old) && filemtime($old) < time() - 86400) @unlink($old);
+        $token = bin2hex(random_bytes(12));
+        $dest = $dir . '/' . $token . '.' . $ext;
+        if (!move_uploaded_file($f['tmp_name'], $dest)) { echo json_encode(['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+
+        $ocr = run_document_ocr_verbose($dest);
+        $x = $ocr['data'];
+        if (!$x) {
+            // خواندن ممکن نشد (مثلاً اسکنِ بی‌کیفیت یا نبودِ موتورِ OCR): فایل نگه داشته می‌شود و دستی ادامه می‌دهید
+            if ($ocr['debug']) error_log('[intro_detect] ' . $ocr['debug']);
+            echo json_encode(['ok' => true, 'token' => $token . '.' . $ext, 'name' => $f['name'], 'detected' => false,
+                              'warning' => 'فایل پیوست شد ولی خواندنِ خودکارش ممکن نشد (کیفیتِ اسکن یا موتورِ تشخیص)؛ اطلاعات را دستی وارد کنید.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if (($x['ins_type'] ?? '') !== 'معرفی‌نامه') {
+            @unlink($dest);
+            $kind = ($x['ins_type'] ?? '') && $x['ins_type'] !== 'ناشناخته' ? ' (به نظر «' . $x['ins_type'] . '» است)' : '';
+            echo json_encode(['ok' => false, 'not_intro' => true, 'error' => 'این فایل معرفی‌نامه نیست' . $kind . '. لطفاً فایلِ معرفی‌نامه را بارگذاری کنید.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $fields = ['full_name' => trim($x['insured_name'] ?? ''), 'national_code' => p2e_digits(trim($x['national_id'] ?? '')),
+                   'personnel_code' => p2e_digits(trim($x['personnel_id'] ?? '')), 'company_name' => trim($x['company_name'] ?? ''),
+                   'letter_date' => p2e_digits(trim($x['letter_date'] ?? ''))];
+        // اگر این کد ملی از قبل در سامانه هست، موبایلش را هم پیشنهاد می‌دهیم
+        if (preg_match('/^\d{10}$/', $fields['national_code'])) {
+            $st = $pdo->prepare("SELECT mobile_number, personnel_code FROM persons WHERE national_code = ?");
+            $st->execute([$fields['national_code']]);
+            if ($p = $st->fetch()) { $fields['mobile'] = (string)$p['mobile_number']; if ($fields['personnel_code'] === '') $fields['personnel_code'] = (string)$p['personnel_code']; }
+        }
+        echo json_encode(['ok' => true, 'token' => $token . '.' . $ext, 'name' => $f['name'], 'detected' => true, 'fields' => $fields], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ثبت دستیِ معرفی‌نامه: ۲) ثبت (فقط معرفی‌نامه؛ درخواست‌ها از «لیست صدور» ثبت می‌شوند) ----
+    if ($action === 'create_intro') {
+        $siteRoot = dirname(__DIR__);
+        $fullName = trim($data['full_name'] ?? '');
+        $nationalCode = preg_replace('/\D/', '', p2e_digits((string)($data['national_code'] ?? '')));
+        $personnelCode = trim(p2e_digits($data['personnel_code'] ?? ''));
+        $companyName = trim($data['company_name'] ?? '');
+        $mobile = preg_replace('/\D/', '', p2e_digits($data['mobile'] ?? ''));
+        $ld = p2e_digits(trim($data['letter_date'] ?? ''));
+        $letterDate = preg_match('/^(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+        $quota = intval(p2e_digits($data['max_quota'] ?? 0));
+        $token = basename((string)($data['file_token'] ?? ''));
+        if (mb_strlen($fullName) < 3) { echo json_encode(['ok' => false, 'error' => 'نام و نام خانوادگیِ پرسنل را وارد کنید.', 'field' => 'full_name'], JSON_UNESCAPED_UNICODE); exit; }
+        if (strlen($nationalCode) !== 10) { echo json_encode(['ok' => false, 'error' => 'کد ملی باید ۱۰ رقم باشد.', 'field' => 'national_code'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($ld !== '' && !$letterDate) { echo json_encode(['ok' => false, 'error' => 'تاریخ معرفی‌نامه را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.', 'field' => 'letter_date'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($mobile !== '' && !preg_match('/^09\d{9}$/', $mobile)) { echo json_encode(['ok' => false, 'error' => 'موبایل باید ۱۱ رقم و با ۰۹ شروع شود.', 'field' => 'mobile'], JSON_UNESCAPED_UNICODE); exit; }
+        $tmpFile = null;
+        if ($token !== '' && preg_match('/^[a-f0-9]{24}\.(pdf|jpg|jpeg|png|webp)$/', $token)) {
+            $tmpFile = temp_archive_root($siteRoot) . '/معرفی‌نامه‌های دستی/' . $token;
+            if (!is_file($tmpFile)) $tmpFile = null;
+        }
+        if ($quota <= 0) { $q = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'default_intro_quota'"); $quota = intval($q->fetchColumn() ?: 4); }
+
+        $pdo->beginTransaction();
+        $companyId = null;
+        if ($companyName !== '') {
+            $st = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+            $st->execute([$companyName]);
+            $companyId = $st->fetchColumn() ?: null;
+            if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+        }
+        $st = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
+        $st->execute([$nationalCode]);
+        $personId = intval($st->fetchColumn());
+        if (!$personId) {
+            $pdo->prepare("INSERT INTO persons (national_code, personnel_code, full_name, company_id, mobile_number) VALUES (?, ?, ?, ?, ?)")
+                ->execute([$nationalCode, $personnelCode, $fullName, $companyId, $mobile ?: null]);
+            $personId = intval($pdo->lastInsertId());
+        } else {
+            $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = COALESCE(NULLIF(?, ''), personnel_code), company_id = COALESCE(?, company_id), mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")
+                ->execute([$fullName, $personnelCode, $companyId, $mobile, $personId]);
+        }
+        $pdo->prepare("INSERT INTO introductions (person_id, file_path, letter_date, max_quota) VALUES (?, 'ثبت_دستی', ?, ?)")->execute([$personId, $letterDate, $quota]);
+        $introId = intval($pdo->lastInsertId());
+        $pdo->prepare("INSERT INTO insurance_requests (person_id, introduction_id, insurance_type, status) VALUES (?, ?, NULL, 'NEW')")->execute([$personId, $introId]);
+        $pdo->commit();
+
+        // پوشه‌ی «بایگانی کسر از حقوق» + فایلِ معرفی‌نامه (همان فایلی که بالا بارگذاری و تشخیص داده شد)
+        $introFolder = sync_intro_folder($pdo, $siteRoot, $introId);
+        $filed = false;
+        if ($tmpFile && $introFolder) {
+            $dir = $introFolder . '/معرفی‌نامه';
+            if (!is_dir($dir)) @mkdir($dir, 0777, true);
+            $ext = pathinfo($tmpFile, PATHINFO_EXTENSION);
+            $st = $pdo->prepare("SELECT c.name FROM companies c WHERE c.id = (SELECT company_id FROM persons WHERE id = ?)");
+            $st->execute([$personId]);
+            $dest = unique_dest_path($dir . '/' . build_intro_folder_name($fullName, $nationalCode, $personnelCode, $st->fetchColumn() ?: $companyName) . '.' . $ext);
+            if (@rename($tmpFile, $dest)) {
+                $pdo->prepare("UPDATE introductions SET file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $dest), '/'), $introId]);
+                $filed = true;
+            }
+        }
+        echo json_encode(['ok' => true, 'intro_id' => $introId, 'filed' => $filed], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- ۱. آمار داشبورد ----
     if ($action === 'stats') {
         $total = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status != 'DELETED'")->fetchColumn();

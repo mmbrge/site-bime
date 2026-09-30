@@ -1,0 +1,49 @@
+/* فایل: ui-scroll.css
+   اسکرول‌بارهای اختصاصیِ سایت: مینیمال و گرد.
+   - صفحه‌ها: باریک، گرادیانِ بنفش/آبی
+   - جدول‌ها (جعبه‌های اسکرولِ داخلِ صفحه): باریک‌تر و ملایم‌تر، تا از اسکرولِ صفحه جدا شناخته شوند
+   - پاپ‌آپ‌ها: ریل شفاف و با فاصله از بالا/پایین تا گوشه‌های گردِ پنجره خراب نشود
+   دکمه‌های فلشِ بالا/پایین همه‌جا حذف شده‌اند. */
+
+/* ---- پایه (همه‌ی اسکرول‌ها) ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #818cf8, #6366f1 55%, #8b5cf6);
+    border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #6366f1, #4f46e5 55%, #7c3aed); border-width: 2px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:horizontal { background: linear-gradient(90deg, #818cf8, #6366f1 55%, #8b5cf6); background-clip: padding-box; }
+
+/* ---- جدول‌ها: ریلِ نازک‌تر و رنگِ آرام‌تر ---- */
+.overflow-x-auto::-webkit-scrollbar, .overflow-auto::-webkit-scrollbar, .overflow-y-auto::-webkit-scrollbar, [class*="max-h-"]::-webkit-scrollbar { width: 7px; height: 7px; }
+.overflow-x-auto::-webkit-scrollbar-thumb, .overflow-auto::-webkit-scrollbar-thumb, .overflow-y-auto::-webkit-scrollbar-thumb, [class*="max-h-"]::-webkit-scrollbar-thumb {
+    background: #cbd5e1; border: 2px solid transparent; background-clip: padding-box; border-radius: 999px;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb:hover, .overflow-auto::-webkit-scrollbar-thumb:hover, .overflow-y-auto::-webkit-scrollbar-thumb:hover, [class*="max-h-"]::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8; background-clip: padding-box;
+}
+.overflow-x-auto::-webkit-scrollbar-track, .overflow-auto::-webkit-scrollbar-track { background: rgba(241, 245, 249, .6); border-radius: 999px; margin: 0 14px; }
+
+/* ---- پاپ‌آپ‌ها: ریل شفاف با فاصله تا گوشه‌های گرد ---- */
+.modal-content::-webkit-scrollbar, .modal-overlay > div::-webkit-scrollbar, .mi-body::-webkit-scrollbar { width: 8px; }
+.modal-content::-webkit-scrollbar-track, .modal-overlay > div::-webkit-scrollbar-track, .mi-body::-webkit-scrollbar-track { background: transparent; margin: 22px 0; }
+.modal-content::-webkit-scrollbar-thumb, .modal-overlay > div::-webkit-scrollbar-thumb, .mi-body::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(129, 140, 248, .75), rgba(139, 92, 246, .75)); border: 2px solid transparent; background-clip: padding-box; border-radius: 999px;
+}
+/* گوشه‌ی گردِ پنجره روی خودِ اسکرول هم اعمال شود */
+.modal-content { background-clip: padding-box; }
+
+/* ---- حالتِ تیره (وب‌اپ کارکنان) ---- */
+.scroll-dark ::-webkit-scrollbar-thumb, .scroll-dark::-webkit-scrollbar-thumb { background: rgba(165, 180, 252, .35); background-clip: padding-box; }
+.scroll-dark ::-webkit-scrollbar-thumb:hover { background: rgba(165, 180, 252, .6); background-clip: padding-box; }
+
+/* فایرفاکس (کرومِ جدید اگر این دو ویژگی را ببیند استایل‌های بالا را نادیده می‌گیرد؛ پس فقط برای فایرفاکس) */
+@supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: rgba(99, 102, 241, .45) transparent; }
+    .overflow-x-auto, .overflow-auto, .overflow-y-auto, [class*="max-h-"] { scrollbar-color: rgba(100, 116, 139, .4) transparent; }
+    .modal-content, .modal-content *, .modal-overlay > div, .mi-body, .cx-modal > div { scrollbar-color: rgba(99, 102, 241, .4) transparent; }
+    .scroll-dark, .scroll-dark * { scrollbar-color: rgba(165, 180, 252, .35) transparent; }
+}

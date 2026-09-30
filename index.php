@@ -312,8 +312,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .gate-btn.active { background: rgba(0,210,255,0.15); border-color: #00d2ff; color: #fff; box-shadow: 0 0 12px rgba(0,210,255,0.25); }
 
     </style>
+<link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
-<body class="font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
+<body class="scroll-dark font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
 
     <!-- موس اختصاصی -->
     <div class="cursor-dot"></div>

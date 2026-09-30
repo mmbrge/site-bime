@@ -104,6 +104,7 @@ if (!$companies) {
                   opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .3s; }
     .notif-card.show { opacity: 1; transform: translateX(0); }
 </style>
+<link rel="stylesheet" href="../ui-scroll.css?v=1">
 </head>
 <body class="min-h-screen">
 <div class="cursor-dot"></div>
