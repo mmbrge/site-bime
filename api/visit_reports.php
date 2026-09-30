@@ -434,6 +434,7 @@ try {
             $cats[] = ['id' => intval($c['id']), 'name' => $c['name'], 'insurer' => $c['insurer'], 'insurer_fa' => vr_insurer_fa($c['insurer']),
                        'ok_label' => $c['ok_label'], 'bad_label' => $c['bad_label'], 'has_template' => !empty($c['template_path']),
                        'has_parser' => !empty($c['parser_path']), 'description' => $opts['description'] ?? '',
+                       'photos_required' => !isset($opts['photos_required']) || !empty($opts['photos_required']), 'allow_no_photos' => !empty($opts['allow_no_photos']),
                        'fields' => $fields, 'visitors' => vr_visitors($pdo, $c['id']), 'insureds' => vr_insureds($pdo, $c['id'])];
         }
         [$jy, $jm, $jd] = jalali_from_gregorian_ts(time());
@@ -622,7 +623,12 @@ try {
             $kp->execute([$existing['id']]);
             $keptPhotos = count(array_diff(array_map('intval', $kp->fetchAll(PDO::FETCH_COLUMN)), array_map('intval', (array)$removePhotos)));
         }
-        if (!$uploads && !($healthId && $healthKeys) && !$keptPhotos) vr_fail('بارگذاریِ عکس‌های بازدید (عکس، پوشه یا فایل ZIP) اجباری است. برای ساختِ بدونِ عکس از «ساخت تستی» استفاده کنید.');
+        // (طبقِ تنظیمِ همان نوع گزارش: اجباری/اختیاری، و اجازه‌ی «عکس بازدید ندارم»)
+        $catOpts = json_decode($cat['options_json'] ?? '', true) ?: [];
+        $photosRequired = !isset($catOpts['photos_required']) || !empty($catOpts['photos_required']);
+        $noPhotosOk = !empty($catOpts['allow_no_photos']) && !empty($data['no_photos']);
+        if ($photosRequired && !$noPhotosOk && !$uploads && !($healthId && $healthKeys) && !$keptPhotos)
+            vr_fail('بارگذاریِ عکس‌های بازدید (عکس، پوشه یا فایل ZIP) اجباری است. برای ساختِ بدونِ عکس از «ساخت تستی» استفاده کنید.');
         // اتصال به درخواستی که گزارش از رویش ساخته شده (ردیفِ شرکتی / درخواستِ کارکنان)
         $linkType = (string)($data['link_type'] ?? '');
         $linkId = intval($data['link_id'] ?? 0);

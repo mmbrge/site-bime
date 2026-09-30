@@ -83,6 +83,10 @@
                 <div><label class="vr-lbl">ترتیب نمایش</label><input class="vr-in text-center" dir="ltr" id="vrs-sort" value="${esc(c ? c.sort_order : 0)}"></div>
             </div>
             <label class="flex items-center gap-3 cursor-pointer w-fit"><input type="checkbox" id="vrs-active" class="hidden" ${!c || c.is_active ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">فعال (در صفحه‌ی ساخت نشان داده شود)</span></label>
+            <div class="border-t border-slate-100 pt-4 space-y-2"><p class="vr-sec-title !text-xs"><i class="fas fa-images text-cyan-500"></i> عکس‌های بازدید</p>
+                <label class="flex items-center gap-3 cursor-pointer w-fit"><input type="checkbox" id="vrs-ph-req" class="hidden" ${o.photos_required === undefined || Number(o.photos_required) ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">بارگذاریِ عکس بازدید برای صدورِ این نوع گزارش <b>اجباری</b> است</span></label>
+                <label class="flex items-center gap-3 cursor-pointer w-fit mr-8" id="vrs-ph-nowrap"><input type="checkbox" id="vrs-ph-none" class="hidden" ${Number(o.allow_no_photos) ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">کاربر دکمه‌ی <b>«عکس بازدید ندارم»</b> را داشته باشد (با زدنش بدونِ عکس صادر می‌شود)</span></label>
+                <p class="text-[10px] text-slate-400 font-bold">اگر اجباری نباشد، گزارش بدونِ عکس هم صادر می‌شود و آن دکمه لازم نیست. «ساخت تستی گزارش» همیشه بدونِ عکس کار می‌کند.</p></div>
             <div class="border-t border-slate-100 pt-4"><p class="vr-sec-title !text-xs mb-2"><i class="fas fa-key text-amber-500"></i> چه کسانی می‌توانند این نوع گزارش را صادر کنند؟</p>
                 <p class="text-[10px] text-slate-400 font-bold mb-2">مدیر کل همیشه دسترسی دارد. کاربرانِ دیگر فقط صدور/دیدن/ویرایشِ گزارش‌های خودشان را دارند؛ تنظیمات فقط برای مدیر کل است.</p>
                 <div class="flex flex-wrap gap-2 mb-3">${Object.entries(roles).map(([k, v]) => `<label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5 cursor-pointer"><input type="checkbox" class="accent-indigo-600" name="vrs-role" value="${k}" ${acc.roles.includes(k) || k === 'ADMIN' ? 'checked' : ''} ${k === 'ADMIN' ? 'disabled' : ''}> همه‌ی «${esc(v)}»ها</label>`).join('')}</div>
@@ -101,7 +105,8 @@
             const d = await api('set_cat_save', {
                 id: c ? c.id : 0, name: g('vrs-name').value, insurer: g('vrs-insurer').value, ok_label: g('vrs-okl').value, ok_suffix: g('vrs-oks').value,
                 bad_label: g('vrs-badl').value, bad_suffix: g('vrs-bads').value, tick_mark: g('vrs-tick').value, is_active: g('vrs-active').checked ? 1 : 0,
-                sort_order: Number(en(g('vrs-sort').value)) || 0, options: { description: g('vrs-desc').value, font_scale: en(g('vrs-fs').value), line_height: en(g('vrs-lh').value) },
+                sort_order: Number(en(g('vrs-sort').value)) || 0, options: { description: g('vrs-desc').value, font_scale: en(g('vrs-fs').value), line_height: en(g('vrs-lh').value),
+                                                                        photos_required: g('vrs-ph-req').checked ? 1 : 0, allow_no_photos: g('vrs-ph-none').checked ? 1 : 0 },
                 access: { roles: checkedVals(box, 'vrs-role'), users: checkedVals(box, 'vrs-user') }
             });
             if (!d.ok) return toast(d.error, 'error');

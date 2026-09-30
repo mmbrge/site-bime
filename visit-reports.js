@@ -338,7 +338,7 @@
             this.uploads = this.mode === 'new' ? (this._uploadsByCat[catId] || []) : this.uploads;
             this.cat = c;
             this.root.querySelectorAll('[data-cat]').forEach(el => el.classList.toggle('sel', Number(el.dataset.cat) === catId));
-            this.parts = {}; this.partNotes = {}; this.damages = []; this.insuredId = null;
+            this.parts = {}; this.partNotes = {}; this.damages = []; this.insuredId = null; this.noPhotos = false;
             this.renderForm();
             if (this.mode === 'edit') { this.applyForm(this.existing.form || {}); this.$(`#${this.id('date')}`).value = fa(this.existing.report_date.replace(/\./g, '/')); }
             else if (this.mode === 'health') {
@@ -410,7 +410,7 @@
                 ${secHtml}
                 ${this.photosCardHtml()}
                 <div class="vr-sticky"><div class="vr-card p-3 sm:p-4 flex flex-wrap items-center gap-3 shadow-xl">
-                    <div class="flex-1 min-w-[12rem]"><div class="vr-progress hidden"><div style="width:0%"></div></div><p class="vr-status text-[11px] font-bold text-slate-400">${this.mode === 'edit' ? 'برای ذخیره‌ی تغییرات، رمزِ پنلتان پرسیده می‌شود.' : (this.mode === 'target' ? 'بعد از صدور، گزارش و عکس‌ها در بایگانی ساخته می‌شود و به همین درخواست وصل می‌شود.' : 'بعد از صدور، PDF و Word و ZIPِ عکس‌ها در بایگانی ساخته می‌شود.') + ' بارگذاریِ عکس‌ها (عکس، پوشه یا ZIP) اجباری است.'}</p></div>
+                    <div class="flex-1 min-w-[12rem]"><div class="vr-progress hidden"><div style="width:0%"></div></div><p class="vr-status text-[11px] font-bold text-slate-400">${this.mode === 'edit' ? 'برای ذخیره‌ی تغییرات، رمزِ پنلتان پرسیده می‌شود.' : (this.mode === 'target' ? 'بعد از صدور، گزارش و عکس‌ها در بایگانی ساخته می‌شود و به همین درخواست وصل می‌شود.' : 'بعد از صدور، PDF و Word و ZIPِ عکس‌ها در بایگانی ساخته می‌شود.') + (c.photos_required !== false ? ' بارگذاریِ عکس‌ها (عکس، پوشه یا ZIP) اجباری است' + (c.allow_no_photos ? ' (یا «عکس بازدید ندارم»).' : '.') : '')}</p></div>
                     <button type="button" class="vr-btn vr-btn-s vr-preview"><i class="fas fa-eye"></i> پیش‌نمایش PDF</button>
                     <button type="button" class="vr-btn vr-btn-s vr-test" title="بدونِ عکس هم ساخته می‌شود؛ نه ثبت می‌شود و نه در بایگانی می‌رود - فقط همین لحظه دانلود"><i class="fas fa-flask text-amber-500"></i> ساخت تستی گزارش</button>
                     <button type="button" class="vr-btn vr-btn-p vr-submit px-6"><i class="fas ${this.mode === 'edit' ? 'fa-floppy-disk' : 'fa-file-circle-check'}"></i> ${this.mode === 'edit' ? 'ذخیره‌ی ویرایش' : 'صدور گزارش'}</button>
@@ -520,7 +520,8 @@
         photosCardHtml() {
             const hp = this.health ? this.health.photos : [];
             return `<div class="vr-card p-4 sm:p-5 vr-fade-up">
-                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span><span class="req">*</span>عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
+                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span>${this.cat.photos_required !== false ? '<span class="req">*</span>' : ''}عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
+                ${this.cat.photos_required !== false && this.cat.allow_no_photos ? `<label class="flex items-center gap-2 cursor-pointer select-none vr-nophoto-wrap"><input type="checkbox" class="hidden vr-nophoto" ${this.noPhotos ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">عکس بازدید ندارم</span></label>` : ''}
                 <div class="flex flex-wrap gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*" capture="environment" class="hidden vr-cam-in"></label>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="همه‌ی عکس‌های داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه<input type="file" webkitdirectory directory multiple class="hidden vr-dir-in"></label>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="عکس‌های داخلِ فایلِ ZIP خودکار استخراج می‌شوند"><i class="fas fa-file-zipper text-violet-500"></i> ZIP<input type="file" accept=".zip,application/zip" multiple class="hidden vr-zip-in"></label></div></div>
@@ -571,7 +572,8 @@
             }
             const total = this.photoTotal();
             const cnt = this.root.querySelector('.vr-ph-count');
-            if (cnt) { cnt.textContent = total ? `${fa(total)} عکس` : 'بدون عکس (اجباری)'; cnt.className = `vr-ph-count vr-chip ${total ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`; }
+            const need = this.cat && this.cat.photos_required !== false && !(this.cat.allow_no_photos && this.noPhotos);
+            if (cnt) { cnt.textContent = total ? `${fa(total)} عکس` : need ? 'بدون عکس (اجباری)' : 'بدون عکس'; cnt.className = `vr-ph-count vr-chip ${total ? 'bg-emerald-50 text-emerald-600' : need ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`; }
         }
         photoTotal() { return this.uploads.length + (this.existing ? this.existing.photos.filter(p => !this.removePhotos.has(p.id)).length : 0) + (this.health ? this.healthSel.size : 0); }
         async addImages(files) {
@@ -632,6 +634,8 @@
                 this.renderParts(); this.saveDraft();
             });
             wrap.querySelectorAll('.vr-parts-q').forEach(pq => pq.oninput = () => this.renderParts());
+            const np = wrap.querySelector('.vr-nophoto');
+            if (np) np.onchange = () => { this.noPhotos = np.checked; this.renderPhotos(); };
             // مواضع آسیب
             const dAdd = wrap.querySelector('.vr-dmg-add');
             if (dAdd) dAdd.onclick = () => { if (this.damages.length < this.maxDamages()) { this.damages.push({ location: '', description: '' }); this.renderDamages(); const ins = this.root.querySelectorAll('.vr-dmg [data-d="location"]'); if (ins.length) ins[ins.length - 1].focus(); } };
@@ -805,10 +809,10 @@
             const chassisF = this.cat.fields.find(f => f.excel_column === 'شماره شاسی');
             if (!filled && !(chassisF && form.fields[chassisF.field_key])) return 'پلاک یا شماره شاسی را وارد کنید.';
             if (!form.insured.name) return 'نام بیمه‌گذار را وارد کنید.';
-            if (!this.photoTotal()) {
+            if (!this.photoTotal() && this.cat.photos_required !== false && !(this.cat.allow_no_photos && this.noPhotos)) {
                 const d = this.root.querySelector('[data-drop="img"]');
                 if (d) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.classList.add('vr-flash'); }
-                return 'عکس‌های بازدید را بارگذاری کنید (عکس، پوشه یا فایل ZIP). برای ساختِ بدونِ عکس، «ساخت تستی گزارش» را بزنید.';
+                return 'عکس‌های بازدید را بارگذاری کنید (عکس، پوشه یا فایل ZIP)' + (this.cat.allow_no_photos ? '، یا «عکس بازدید ندارم» را بزنید.' : '. برای ساختِ بدونِ عکس، «ساخت تستی گزارش» را بزنید.');
             }
             for (const f of this.cat.fields) {
                 if (!f.required || ['PartsStatus', 'Checkbox'].includes(f.field_type)) continue;
@@ -891,6 +895,7 @@
                 fd.append('remove_photos', JSON.stringify([...this.removePhotos]));
             }
             if (this.mode === 'health') { fd.append('health_inspection_id', this.health.inspection.id); fd.append('health_photos', JSON.stringify([...this.healthSel])); }
+            if (this.noPhotos && this.cat.allow_no_photos) fd.append('no_photos', '1');
             if (this.mode === 'target' && this.opts.target && ['company', 'case'].includes(this.opts.target.type)) { fd.append('link_type', this.opts.target.type); fd.append('link_id', this.opts.target.id); }
             this.uploads.forEach(f => fd.append('photos[]', f, f.name));
             this.busy = true;

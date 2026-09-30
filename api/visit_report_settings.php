@@ -116,7 +116,13 @@ if ($a === 'set_cat_save') {
                'users' => array_values(array_unique(array_map('intval', (array)($data['access']['users'] ?? []))))];
     $optsIn = (array)($data['options'] ?? []);
     $opts = ['font_scale' => max(0.5, min(1.5, floatval($optsIn['font_scale'] ?? 1) ?: 1)), 'line_height' => max(0.8, min(2, floatval($optsIn['line_height'] ?? 1.1) ?: 1.1)),
-             'description' => mb_substr(trim((string)($optsIn['description'] ?? '')), 0, 500)];
+             'description' => mb_substr(trim((string)($optsIn['description'] ?? '')), 0, 500),
+             // عکس‌های بازدید: اجباری هست یا نه؛ و اگر اجباری است، کاربر گزینه‌ی «عکس بازدید ندارم» داشته باشد یا نه
+             'photos_required' => !isset($optsIn['photos_required']) || !empty($optsIn['photos_required']) ? 1 : 0,
+             'allow_no_photos' => !empty($optsIn['allow_no_photos']) ? 1 : 0];
+    // تنظیمِ قلمِ یکسان (از ویرایشگرِ قالب) با ذخیره‌ی این فرم پاک نشود
+    $prevOpts = $id ? (json_decode((string)$pdo->query("SELECT options_json FROM report_categories WHERE id = " . intval($id))->fetchColumn(), true) ?: []) : [];
+    if (isset($prevOpts['font_all'])) $opts['font_all'] = $prevOpts['font_all'];
     $cols = ['name' => $name, 'insurer' => $ins, 'ok_suffix' => $okS, 'bad_suffix' => $badS,
              'ok_label' => mb_substr(trim((string)($data['ok_label'] ?? '')) ?: 'سالم', 0, 40), 'bad_label' => mb_substr(trim((string)($data['bad_label'] ?? '')) ?: 'خسارتی', 0, 40),
              'tick_mark' => mb_substr(trim((string)($data['tick_mark'] ?? '')) ?: '✔', 0, 4), 'is_active' => empty($data['is_active']) ? 0 : 1,
