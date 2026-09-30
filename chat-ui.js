@@ -80,22 +80,24 @@
             ov.className = 'cx-dlg-ov' + (o.theme === 'dark' ? ' dark' : '');
             ov.innerHTML = `<div class="cx-dlg"><div class="cx-dlg-ic ${o.danger ? 'danger' : ''}"><i class="fas ${o.icon || (o.danger ? 'fa-trash' : o.input ? 'fa-pen' : 'fa-circle-question')}"></i></div>
                 <b class="cx-dlg-t"></b><p class="cx-dlg-m"></p>${o.input ? '<input class="cx-dlg-in">' : ''}
-                <div class="cx-dlg-b"><button class="cx-dlg-ok ${o.danger ? 'danger' : ''}"></button><button class="cx-dlg-no"></button></div></div>`;
+                ${o.choices ? `<div class="cx-dlg-ch">${o.choices.map((c, i) => `<button data-c="${i}" class="${c.danger ? 'danger' : ''}"><b>${esc(c.label)}</b>${c.note ? `<small>${esc(c.note)}</small>` : ''}</button>`).join('')}</div>` : ''}
+                <div class="cx-dlg-b">${o.choices ? '' : '<button class="cx-dlg-ok ' + (o.danger ? 'danger' : '') + '"></button>'}<button class="cx-dlg-no"></button></div></div>`;
             ov.querySelector('.cx-dlg-t').textContent = o.title || '';
             const msg = ov.querySelector('.cx-dlg-m'); msg.textContent = o.message || ''; if (!o.message) msg.remove();
-            ov.querySelector('.cx-dlg-ok').textContent = o.ok || (o.danger ? 'بله، حذف شود' : 'تایید');
+            const okb = ov.querySelector('.cx-dlg-ok'); if (okb) okb.textContent = o.ok || (o.danger ? 'بله، حذف شود' : 'تایید');
             ov.querySelector('.cx-dlg-no').textContent = o.cancel || 'انصراف';
             const inp = ov.querySelector('.cx-dlg-in');
             if (inp) { inp.value = (o.input.value || ''); inp.placeholder = o.input.placeholder || ''; }
             const done = v => { ov.classList.remove('on'); document.removeEventListener('keydown', key, true); setTimeout(() => ov.remove(), 220); resolve(v); };
-            const ok = () => done(inp ? inp.value : true), no = () => done(inp ? null : false);
-            const key = e => { if (e.key === 'Escape') { e.preventDefault(); no(); } if (e.key === 'Enter' && (inp || document.activeElement === ov.querySelector('.cx-dlg-ok'))) { e.preventDefault(); ok(); } };
-            ov.querySelector('.cx-dlg-ok').onclick = ok; ov.querySelector('.cx-dlg-no').onclick = no;
+            const ok = () => done(inp ? inp.value : true), no = () => done(o.choices || inp ? null : false);
+            const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); no(); } if (e.key === 'Enter' && okb && (inp || document.activeElement === okb)) { e.preventDefault(); ok(); } };
+            if (okb) okb.onclick = ok; ov.querySelector('.cx-dlg-no').onclick = no;
+            ov.querySelectorAll('[data-c]').forEach(b => b.onclick = () => done(o.choices[Number(b.dataset.c)].value));
             ov.onclick = e => { if (e.target === ov) no(); };
             document.addEventListener('keydown', key, true);
             document.body.appendChild(ov);
             requestAnimationFrame(() => ov.classList.add('on'));
-            setTimeout(() => (inp || ov.querySelector('.cx-dlg-ok')).focus(), 60);
+            setTimeout(() => { const f = inp || okb || ov.querySelector('.cx-dlg-no'); if (f) f.focus(); }, 60);
         });
     }
     function miniToast(msg, type) {
@@ -104,6 +106,27 @@
         t.className = 'cx-toast ' + (type || ''); t.textContent = msg;
         document.body.appendChild(t);
         setTimeout(() => t.classList.add('out'), 2300); setTimeout(() => t.remove(), 2700);
+    }
+
+    // به‌روزرسانیِ بی‌صدای یک فهرست: blocks = [[کلید، html، تازه؟], ...]؛ فقط گره‌هایی که html‌شان عوض شده
+    // دوباره ساخته می‌شوند و ترتیب درست می‌شود (بدونِ خالی/پر شدنِ کلِ فهرست که چشمک می‌زند)
+    function patchList(box, blocks, onNew) {
+        const old = new Map();
+        [...box.children].forEach(c => { if (c.dataset && c.dataset.pk) old.set(c.dataset.pk, c); });
+        const keep = new Set(); let prev = null;
+        for (const [k, html, isNew] of blocks) {
+            let node = old.get(k);
+            if (!node || node._h !== html) {
+                const t = document.createElement('template'); t.innerHTML = html.trim();
+                const n = t.content.firstElementChild; n.dataset.pk = k; n._h = html;
+                if (node) node.replaceWith(n);
+                node = n; if (onNew) onNew(n, k, isNew);
+            }
+            const want = prev ? prev.nextSibling : box.firstChild;
+            if (want !== node) box.insertBefore(node, want);
+            keep.add(node); prev = node;
+        }
+        [...box.children].forEach(c => { if (!keep.has(c) && !(c.classList && c.classList.contains('cx-typing-bubble'))) c.remove(); });
     }
 
     // ---- انتخابِ عکسِ پروفایل: عکس‌های آماده، گالری/سیستم، یا بدونِ عکس ----
@@ -199,6 +222,7 @@
 .cx-threads{flex:1;overflow-y:auto;padding:4px 8px 10px}
 .cx-th{display:flex;gap:10px;align-items:center;padding:10px;border-radius:14px;cursor:pointer;transition:background .2s,transform .2s;position:relative;animation:cxFade .35s both}
 .cx-th:hover{background:var(--hover)}
+.cx-settled .cx-th{animation:none}
 .cx-th.on{background:linear-gradient(135deg,rgba(79,70,229,.12),rgba(124,58,237,.12))}
 .cx-th.on::before{content:'';position:absolute;right:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:linear-gradient(var(--me1),var(--me2))}
 .cx-av{width:44px;height:44px;border-radius:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;position:relative}
@@ -314,6 +338,26 @@
 .cx-menu.dark button:hover{color:#a5b4fc}
 .cx-menu button i{width:18px;text-align:center;opacity:.8}
 .cx-menu button.danger{color:#e11d48}
+.cx-menu button:disabled,.cx-menu button.disabled{opacity:.38;cursor:not-allowed;background:transparent!important;color:inherit!important}
+.cx-selslot:empty{display:none}
+.cx-selbar{display:flex;align-items:center;gap:6px;padding:7px 12px;background:linear-gradient(135deg,rgba(79,70,229,.12),rgba(124,58,237,.12));border-bottom:1px solid var(--line);position:relative;z-index:2;animation:cxSlide .25s both;flex-wrap:wrap}
+.cx-selbar b{flex:1;font-size:12px;color:var(--acc);min-width:120px}
+.cx-selb{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:10px;padding:5px 10px;font-size:11px;font-weight:800;transition:.15s}
+.cx-selb:hover:not(:disabled){border-color:var(--acc);color:var(--acc)}
+.cx-selb.danger{color:#e11d48}
+.cx-selb:disabled{opacity:.4;cursor:not-allowed}
+.cx-selmode .cx-row{padding-right:34px;cursor:pointer;border-radius:14px;transition:background .15s}
+.cx-selmode .cx-row::before{content:'';position:absolute;right:6px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--muted);background:var(--panel);transition:.15s}
+.cx-selmode .cx-row.cx-sel{background:rgba(99,102,241,.1)}
+.cx-selmode .cx-row.cx-sel::before{border-color:var(--acc);background:var(--acc);box-shadow:inset 0 0 0 3px var(--panel)}
+.cx-selmode .cx-dots{display:none}
+.cx-closedbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;background:rgba(225,29,72,.08);color:#be123c;font-size:12px;font-weight:700;animation:cxSlide .25s both;margin-bottom:6px}
+.cx-dark .cx-closedbar{color:#fda4af}
+.cx-closedbar.slim{background:rgba(245,158,11,.1);color:#b45309;padding:6px 10px;font-size:11px}
+.cx-closedbar span{flex:1;line-height:1.8}
+.cx-closedbar button{border:0;background:var(--panel);color:var(--acc);border-radius:10px;padding:5px 10px;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.cx-compose.cx-blocked .cx-in-row,.cx-compose.cx-blocked .cx-topic,.cx-compose.cx-blocked .cx-barslot{display:none}
+.cx-compose.cx-blocked .cx-closedbar{margin-bottom:0}
 .cx-menu button.danger:hover{background:rgba(225,29,72,.1);color:#e11d48}
 .cx-menu hr{border:0;border-top:1px solid rgba(148,163,184,.25);margin:4px 6px}
 .cx-menu .cx-mh{font-size:10.5px;font-weight:900;color:#94a3b8;padding:6px 10px 2px}
@@ -365,6 +409,17 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 .cx-dlg-in{width:100%;border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;font-family:inherit;font-size:13px;margin-bottom:14px;outline:none;background:#f8fafc;color:inherit}
 .cx-dlg-ov.dark .cx-dlg-in{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
 .cx-dlg-b{display:flex;gap:8px}
+.cx-dlg-ch{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.cx-dlg-ch button{border:1.5px solid #e0e7ff;background:#f8faff;border-radius:16px;padding:10px 14px;text-align:right;font-family:inherit;cursor:pointer;transition:.18s;color:inherit}
+.cx-dlg-ch button:hover{border-color:#6366f1;background:#eef2ff;transform:translateY(-1px)}
+.cx-dlg-ch button b{display:block;font-size:13px;color:#4338ca}
+.cx-dlg-ch button small{display:block;font-size:11px;opacity:.7;margin-top:2px;line-height:1.7}
+.cx-dlg-ch button.danger{border-color:#fecdd3;background:#fff5f6}
+.cx-dlg-ch button.danger b{color:#e11d48}
+.cx-dlg-ch button.danger:hover{border-color:#e11d48;background:#ffe4e6}
+.cx-dlg-ov.dark .cx-dlg-ch button{background:rgba(255,255,255,.05);border-color:rgba(165,180,252,.25)}
+.cx-dlg-ov.dark .cx-dlg-ch button b{color:#a5b4fc}
+.cx-dlg-ov.dark .cx-dlg-ch button.danger b{color:#fb7185}
 .cx-dlg-b button{flex:1;border:0;border-radius:14px;padding:11px 8px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;transition:transform .15s}
 .cx-dlg-b button:active{transform:scale(.96)}
 .cx-dlg-ok{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 10px 20px -12px #6366f1}
@@ -462,12 +517,14 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             if (this.o.onUnread) this.o.onUnread(n);
         }
         renderChips() {
+            const prevHtml = this._chipsSig;
             const cnt = t => this.threads.filter(x => t === 'unread' ? x.unread : x.type === t).length;
             const chips = [['all', 'همه', this.threads.length], ['unread', 'نخوانده', cnt('unread')]];
             if (this.caps.person) chips.push(['PERSON', 'کارکنان', cnt('PERSON')]);
             if (this.caps.company) chips.push(['COMPANY', 'شرکت‌ها', cnt('COMPANY')]);
             chips.push(['STAFF', 'همکاران', cnt('STAFF')]);
             const box = this.$('.cx-chips');
+            const sig = JSON.stringify([chips, this.filter]); if (sig === prevHtml) return; this._chipsSig = sig;
             box.innerHTML = chips.map(([k, l, n]) => `<button class="cx-chip ${this.filter === k ? 'on' : ''}" data-f="${k}">${l}${n ? ' · ' + fa(n) : ''}</button>`).join('');
             box.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { this.filter = b.dataset.f; this.renderChips(); this.renderThreads(); });
         }
@@ -477,12 +534,17 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         renderThreads() {
             const list = this.threads.filter(t => this.filter === 'all' || (this.filter === 'unread' ? t.unread : t.type === this.filter));
             const box = this.$('.cx-threads');
-            box.innerHTML = list.length ? list.map((t, i) => `<div class="cx-th ${t.key === this.key ? 'on' : ''}" data-k="${t.key}" style="animation-delay:${Math.min(i, 12) * 25}ms">
+            if (!list.length) { box.innerHTML = `<div style="padding:30px 10px;text-align:center;color:var(--muted)"><i class="fas fa-inbox" style="font-size:28px;opacity:.4"></i><p>گفتگویی نیست.</p></div>`; return; }
+            // انیمیشنِ ورود فقط بارِ اول؛ به‌روزرسانی‌های پس‌زمینه فقط ردیف‌های عوض‌شده را بی‌صدا عوض می‌کنند
+            if (!box.querySelector('[data-pk]')) { box.classList.remove('cx-settled'); setTimeout(() => box.classList.add('cx-settled'), 700); }
+            patchList(box, list.map((t, i) => ['t:' + t.key, `<div class="cx-th ${t.key === this.key ? 'on' : ''}" data-k="${t.key}" style="animation-delay:${Math.min(i, 12) * 25}ms">
                 ${this.avatar(t.title, t.type, t.avatar, t.presence)}
-                <div class="cx-th-b"><div class="cx-th-t"><b>${esc(t.title)}</b><span>${t.last_date === todayJ ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
-                <div class="cx-th-l"><p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</div></div></div>`).join('')
-                : `<div style="padding:30px 10px;text-align:center;color:var(--muted)"><i class="fas fa-inbox" style="font-size:28px;opacity:.4"></i><p>گفتگویی نیست.</p></div>`;
-            box.querySelectorAll('[data-k]').forEach(el => el.onclick = () => this.open(el.dataset.k));
+                <div class="cx-th-b"><div class="cx-th-t"><b>${t.closed ? '<i class="fas fa-lock" style="font-size:10px;color:#e11d48" title="گفتگو قطع شده"></i> ' : ''}${esc(t.title)}</b><span>${t.last_date === todayJ ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
+                <div class="cx-th-l"><p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</div></div></div>`]),
+                n => {
+                    n.onclick = () => this.open(n.dataset.k);
+                    n.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); this.threadMenu(e.clientX, e.clientY, n.dataset.k); };
+                });
         }
 
         async newChat() {
@@ -511,7 +573,8 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         // ---------------- یک گفتگو
         async open(key) {
             this.key = key; this.msgs = []; this.sig = ''; this.seen = new Set(); this.topic = null; this.topicFilter = null; this.replyTo = null; this.editing = null; this.file = null; this.newBelow = 0;
-            this.search = null; this.presence = null;
+            this.search = null; this.presence = null; this.state = null; this.selecting = false; this.selected = new Set();
+            if (this.root) this.root.classList.remove('cx-selmode');
             this.root.classList.add('cx-conv-open');
             if (this.o.mode === 'full') this.renderThreads();
             const main = this.$('.cx-main');
@@ -521,7 +584,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             if (this.key !== key) return;
             if (!d.ok) { main.innerHTML = `<div class="cx-empty"><i class="fas fa-triangle-exclamation" style="font-size:30px;color:#f59e0b"></i><b>${esc(d.error)}</b></div>`; return; }
             this.head = d.head; this.refs = d.refs || [];
-            this.presence = d.head.presence || null; this.presenceAt = Date.now();
+            this.presence = d.head.presence || null; this.presenceAt = Date.now(); this.state = d.state || null;
             this.renderConv();
             this.setMessages(d.messages, true);
             this.setTyping(d.typing);
@@ -538,7 +601,9 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                     <div class="cx-head-b"><b>${esc(h.title)}</b><span class="cx-hsub"></span></div>
                     <div class="cx-head-tools"><input class="cx-fq" placeholder="جستجو در پیام‌ها...">
                     <button class="cx-ib cx-find" title="جستجو در گفتگو (متن و تاریخ)"><i class="fas fa-magnifying-glass"></i></button>
-                    ${this.refs.length ? `<button class="cx-ib cx-refs-btn" title="درخواست‌ها"><i class="fas fa-folder-tree"></i></button>` : ''}</div></div>
+                    ${this.refs.length ? `<button class="cx-ib cx-refs-btn" title="درخواست‌ها"><i class="fas fa-folder-tree"></i></button>` : ''}
+                    <button class="cx-ib cx-more" title="گزینه‌های گفتگو"><i class="fas fa-ellipsis-vertical"></i></button></div></div>
+                <div class="cx-selslot"></div>
                 <div class="cx-fdates"><div><i class="fas fa-calendar-days"></i> از <input class="cx-f-from" placeholder="۱۴۰۵/۰۷/۰۱" inputmode="numeric"> تا <input class="cx-f-to" placeholder="۱۴۰۵/۰۷/۳۰" inputmode="numeric">
                     <button class="cx-chip" data-r="0">امروز</button><button class="cx-chip" data-r="7">۷ روزِ اخیر</button><button class="cx-chip" data-r="30">۳۰ روزِ اخیر</button><button class="cx-chip" data-r="">همه</button>
                     <span class="cx-fn"></span></div></div>
@@ -547,6 +612,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                 <div class="cx-body"></div>
                 <button class="cx-fab" title="پیام‌های تازه"><i class="fas fa-chevron-down"></i></button>
                 <div class="cx-compose">
+                    <div class="cx-stateslot"></div>
                     <div class="cx-barslot"></div>
                     ${this.refs.length ? `<button class="cx-topic"><i class="fas fa-tag"></i><span></span><i class="fas fa-chevron-down" style="font-size:9px"></i></button>` : ''}
                     <div class="cx-in-row">
@@ -568,6 +634,11 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.$('.cx-file-in').onchange = e => { if (e.target.files[0]) this.attach(e.target.files[0]); e.target.value = ''; };
             this.$('.cx-emo-btn').onclick = e => { e.stopPropagation(); this.emoji(); };
             this.bindFind();
+            // منوی خودِ گفتگو: ⋮، کلیک‌راست روی سرِ گفتگو یا جای خالیِ گفتگو
+            const more = this.$('.cx-more'); more.onclick = e => { e.stopPropagation(); const r = more.getBoundingClientRect(); this.threadMenu(r.left + r.width, r.bottom + 4, this.key); };
+            this.$('.cx-head').oncontextmenu = e => { if (e.target.closest('input')) return; e.preventDefault(); e.stopPropagation(); this.threadMenu(e.clientX, e.clientY, this.key); };
+            body.oncontextmenu = e => { if (e.target.closest('.cx-msg')) return; e.preventDefault(); e.stopPropagation(); this.threadMenu(e.clientX, e.clientY, this.key); };
+            main.onkeydown = e => { if (e.key === 'Escape' && this.selecting) this.stopSelect(); };
             const tb = this.$('.cx-topic'); if (tb) tb.onclick = () => this.openRefs('pick');
             const rb = this.$('.cx-refs-btn'); if (rb) rb.onclick = () => this.openRefs();
             // کشیدن و رها کردنِ فایل
@@ -576,7 +647,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             main.ondragleave = () => { if (--dc <= 0) { dc = 0; drop.classList.remove('show'); } };
             main.ondragover = e => e.preventDefault();
             main.ondrop = e => { e.preventDefault(); dc = 0; drop.classList.remove('show'); const f = (e.dataTransfer.files || [])[0]; if (f) this.attach(f); };
-            this.renderTopic(); this.renderBar(); this.renderFilter(); this.renderSub();
+            this.renderTopic(); this.renderBar(); this.renderFilter(); this.renderSub(); this.renderState();
             if (this.refs.length) this.bindRefs();
             setTimeout(() => ta.focus(), 60);
         }
@@ -612,29 +683,39 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             }
             // کدام پیام‌ها پشتِ هم از یک نفرند (فقط آخرینِ هر دسته عکسِ فرستنده را نشان می‌دهد)
             const grp = list.map((m, i) => { const p = list[i - 1]; return !!(p && p.date === m.date && p.mine === m.mine && p.sender === m.sender && (m.ts - p.ts) < 300); });
-            let html = '', lastDay = '';
+            const blocks = []; let lastDay = '';
             list.forEach((m, i) => {
-                if (m.date !== lastDay) { html += `<div class="cx-day"><span>${dayLabel(m.date)}</span></div>`; lastDay = m.date; }
-                html += this.msgHtml(m, grp[i], !first && !this.seen.has(m.id), !grp[i + 1]);
+                if (m.date !== lastDay) { blocks.push(['d:' + m.date, `<div class="cx-day"><span>${dayLabel(m.date)}</span></div>`]); lastDay = m.date; }
+                blocks.push(['m:' + m.id, this.msgHtml(m, grp[i], false, !grp[i + 1]), !first && !this.seen.has(m.id)]);
             });
-            html += '<div class="cx-typing-bubble"><i></i><i></i><i></i></div>';
-            body.innerHTML = html;
-            body.querySelectorAll('.cx-msg').forEach(el => {
-                const m = this.msgs.find(x => x.id === Number(el.dataset.id));
-                el.oncontextmenu = e => { e.preventDefault(); this.menu(e.clientX, e.clientY, m); };
-                let lp; el.ontouchstart = e => { lp = setTimeout(() => { const t = e.touches[0]; this.menu(t.clientX, t.clientY, m); }, 480); };
-                el.ontouchend = el.ontouchmove = () => clearTimeout(lp);
-                const dots = el.querySelector('.cx-dots'); if (dots) dots.onclick = e => { e.stopPropagation(); const r = dots.getBoundingClientRect(); this.menu(r.left, r.bottom, m); };
-                const rp = el.querySelector('.cx-reply'); if (rp) rp.onclick = () => this.jump(Number(rp.dataset.to));
-                const rf = el.querySelector('.cx-ref'); if (rf) rf.onclick = () => this.setFilter(m.ref);
-                el.querySelectorAll('.cx-img').forEach(img => {
-                    img.onclick = () => this.lightbox(img.src);
-                    // عکس بعد از چیدمان بار می‌شود و ارتفاع را زیاد می‌کند؛ اگر پایینِ گفتگو بودیم همان‌جا بمانیم
-                    if (!img.complete) img.onload = () => { if (this.stick !== false) this.scrollBottom(); };
-                });
-                el.ondblclick = () => { if (!m.deleted) this.reply(m); };
+            // فقط پیام‌هایی که واقعاً عوض شده‌اند دوباره ساخته می‌شوند؛ بقیه دست نمی‌خورند (بدونِ چشمک زدن)
+            patchList(body, blocks, (node, k, isNew) => {
+                if (k[0] !== 'm') return;
+                if (isNew) { const mm = node.querySelector('.cx-msg'); if (mm) mm.classList.add('cx-in'); }
+                this.bindRow(node);
             });
+            if (!body.querySelector(':scope > .cx-typing-bubble')) body.insertAdjacentHTML('beforeend', '<div class="cx-typing-bubble"><i></i><i></i><i></i></div>');
+            else body.appendChild(body.querySelector(':scope > .cx-typing-bubble'));
+            this.paintSelection();
             this.setTyping(this._typing);
+        }
+        // رویدادهای یک پیام (کلیک‌راست، لمسِ طولانی، انتخاب، پاسخ، عکس)
+        bindRow(row) {
+            const el = row.querySelector('.cx-msg'); if (!el) return;
+            const id = Number(el.dataset.id), m = () => this.msgs.find(x => x.id === id);
+            el.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); if (m()) this.menu(e.clientX, e.clientY, m()); };
+            let lp; el.ontouchstart = e => { lp = setTimeout(() => { const t = e.touches[0]; if (m()) this.menu(t.clientX, t.clientY, m()); }, 480); };
+            el.ontouchend = el.ontouchmove = () => clearTimeout(lp);
+            row.onclick = e => { if (this.selecting) { e.preventDefault(); e.stopPropagation(); this.toggleSel(id); } };
+            const dots = el.querySelector('.cx-dots'); if (dots) dots.onclick = e => { e.stopPropagation(); const r = dots.getBoundingClientRect(); if (m()) this.menu(r.left, r.bottom, m()); };
+            const rp = el.querySelector('.cx-reply'); if (rp) rp.onclick = e => { if (this.selecting) return; this.jump(Number(rp.dataset.to)); };
+            const rf = el.querySelector('.cx-ref'); if (rf) rf.onclick = e => { if (this.selecting) return; this.setFilter(m().ref); };
+            el.querySelectorAll('.cx-img').forEach(img => {
+                img.onclick = e => { if (this.selecting) return; this.lightbox(img.src); };
+                // عکس بعد از چیدمان بار می‌شود و ارتفاع را زیاد می‌کند؛ اگر پایینِ گفتگو بودیم همان‌جا بمانیم
+                if (!img.complete) img.onload = () => { if (this.stick !== false) this.scrollBottom(); };
+            });
+            el.ondblclick = () => { const x = m(); if (x && !x.deleted && !this.selecting) this.reply(x); };
         }
         msgHtml(m, grouped, isNew, lastOfGroup) {
             const side = m.mine ? 'me' : 'them';
@@ -683,16 +764,18 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this._polling = false;
             if (!d.ok || key !== this.key) return;
             if (d.presence !== undefined) { this.presence = d.presence; this.presenceAt = Date.now(); this.renderPresenceDot(); }
+            if (d.state !== undefined) { this.state = d.state; this.renderState(); }
             this.setMessages(d.messages); this.setTyping(d.typing);
         }
         // زیرِ نامِ طرفِ مقابل: «در حال نوشتن...» یا «آنلاین / آخرین بازدید» و مشخصات
         renderSub() {
             const s = this.$('.cx-hsub'); if (!s || !this.head) return;
-            if (this._typing) { s.innerHTML = '<span class="cx-typing">در حال نوشتن...</span>'; return; }
+            if (this._typing) { if (!s.querySelector('.cx-typing')) s.innerHTML = '<span class="cx-typing">در حال نوشتن...</span>'; return; }
             const group = this.head.type !== 'STAFF' && this.o.mode === 'single';
             const lbl = seenLabel(this.presence, this.presenceAt, group);
             const sub = lbl && group ? '' : fa(this.head.sub || '');
-            s.innerHTML = (lbl ? `<span class="cx-pr ${this.presence && this.presence.online ? 'on' : ''}">${esc(lbl)}</span>` : '') + (lbl && sub ? ' · ' : '') + esc(sub);
+            const h = (lbl ? `<span class="cx-pr ${this.presence && this.presence.online ? 'on' : ''}">${esc(lbl)}</span>` : '') + (lbl && sub ? ' · ' : '') + esc(sub);
+            if (s.innerHTML !== h) s.innerHTML = h;
         }
         renderPresenceDot() {
             const av = this.$('.cx-head .cx-av'); if (!av) return;
@@ -757,7 +840,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                 try { d = await this.o.upload('chat_send', fd); } catch (e) { d = { ok: false, error: 'خطا در ارسالِ فایل.' }; }
             } else d = await this.call('chat_send', { text, reply_to: this.replyTo ? this.replyTo.id : null, ref });
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
-            if (!d.ok) return this.toast(d.error || 'ارسال نشد.', 'error');
+            if (!d.ok) { if (d.closed) this.poll(); return this.toast(d.error || 'ارسال نشد.', 'error'); }
             ta.value = ''; ta.style.height = ''; this.replyTo = null; this.file = null; if (this._fileUrl) URL.revokeObjectURL(this._fileUrl); this._fileUrl = null;
             this.renderBar(); ta.focus();
             await this.poll(); this.scrollBottom(true);
@@ -826,36 +909,188 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         }
 
         // ---------------- منوی کلیک‌راست
-        menu(x, y, m) {
+        // منوی شناور (کلیک‌راست / لمسِ طولانی / ⋮). items: [آیکن، عنوان، کار، 'danger'|'disabled'] یا null (خطِ جداکننده)
+        popMenu(x, y, title, items) {
             document.querySelectorAll('.cx-menu').forEach(e => e.remove());
-            const staffThread = this.o.mode === 'full' && this.head && this.head.type !== 'STAFF';
-            const canRef = this.refs.length && !m.deleted && (staffThread || m.can_modify);
-            const items = [];
-            if (!m.deleted) items.push(['fa-reply', 'پاسخ', () => this.reply(m)]);
-            if (m.text) items.push(['fa-copy', 'کپیِ متن', () => { navigator.clipboard && navigator.clipboard.writeText(m.text); this.toast('کپی شد.', 'success'); }]);
-            if (m.file) items.push(['fa-download', 'دانلودِ فایل', () => { const a = document.createElement('a'); a.href = m.file.url; a.download = m.file.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }]);
-            if (m.reply) items.push(['fa-arrow-turn-up', 'رفتن به پیامِ اصلی', () => this.jump(m.reply.id)]);
-            if (this.searchActive() || this.topicFilter) items.push(['fa-location-crosshairs', 'نمایشِ این پیام در گفتگو', () => this.jump(m.id)]);
-            if (canRef) items.push(['fa-tag', m.ref ? 'تغییرِ موضوعِ پیام' : 'تعیینِ موضوعِ پیام (درخواست)', () => this.openRefs('message', m)]);
-            if (m.ref) items.push(['fa-filter', 'همه‌ی پیام‌های همین موضوع', () => this.setFilter(m.ref)]);
-            if (m.can_modify) {
-                items.push(null);
-                if (m.text !== null) items.push(['fa-pen', 'ویرایش', () => this.edit(m)]);
-                items.push(['fa-trash', 'حذف', () => this.del(m), 'danger']);
-            }
             if (!items.length) return;
             const el = document.createElement('div');
             el.className = 'cx-menu' + (this.o.theme === 'dark' ? ' dark' : '');
-            el.innerHTML = `<div class="cx-mh">${esc(m.mine ? 'پیامِ شما' : m.sender)} · ${fa(m.time)}</div>` + items.map((it, i) => it ? `<button data-i="${i}" class="${it[3] || ''}"><i class="fas ${it[0]}"></i>${it[1]}</button>` : '<hr>').join('');
+            el.innerHTML = (title ? `<div class="cx-mh">${esc(title)}</div>` : '') + items.map((it, i) => it
+                ? `<button data-i="${i}" class="${it[3] || ''}" ${it[3] === 'disabled' ? 'disabled title="' + esc(it[4] || '') + '"' : ''}><i class="fas ${it[0]}"></i>${it[1]}</button>` : '<hr>').join('');
             document.body.appendChild(el);
             // offsetWidth/Height (نه getBoundingClientRect) چون انیمیشنِ بازشدن اندازه را کوچک نشان می‌دهد
             const w = el.offsetWidth, h = el.offsetHeight;
             el.style.left = Math.max(8, Math.min(x - w, window.innerWidth - w - 8)) + 'px';
             el.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
-            el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { el.remove(); items[Number(b.dataset.i)][2](); });
-            const close = e => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', close, true); document.removeEventListener('scroll', close, true); } };
-            setTimeout(() => { document.addEventListener('mousedown', close, true); document.addEventListener('scroll', close, true); }, 0);
-            document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { el.remove(); document.removeEventListener('keydown', k); } });
+            const close = e => { if (!e || !el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', close, true); document.removeEventListener('scroll', close, true); document.removeEventListener('keydown', key, true); } };
+            const key = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+            el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const it = items[Number(b.dataset.i)]; if (it[3] === 'disabled') return; close(); it[2](); });
+            setTimeout(() => { document.addEventListener('mousedown', close, true); document.addEventListener('scroll', close, true); document.addEventListener('keydown', key, true); }, 0);
+        }
+        menu(x, y, m) {
+            if (this.selecting) return this.selMenu(x, y, m);
+            const staffThread = this.o.mode === 'full' && this.head && this.head.type !== 'STAFF';
+            const canRef = this.refs.length && !m.deleted && (staffThread || m.can_modify);
+            const items = [];
+            if (!m.deleted && this.canSend()) items.push(['fa-reply', 'پاسخ', () => this.reply(m)]);
+            if (m.text) items.push(['fa-copy', 'کپیِ متن', () => this.copy(m.text)]);
+            if (m.file) items.push(['fa-download', 'دانلودِ فایل', () => { const a = document.createElement('a'); a.href = m.file.url; a.download = m.file.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }]);
+            if (m.reply) items.push(['fa-arrow-turn-up', 'رفتن به پیامِ اصلی', () => this.jump(m.reply.id)]);
+            if (this.searchActive() || this.topicFilter) items.push(['fa-location-crosshairs', 'نمایشِ این پیام در گفتگو', () => this.jump(m.id)]);
+            if (canRef) items.push(['fa-tag', m.ref ? 'تغییرِ موضوعِ پیام' : 'تعیینِ موضوعِ پیام (درخواست)', () => this.openRefs('message', m)]);
+            if (m.ref) items.push(['fa-filter', 'همه‌ی پیام‌های همین موضوع', () => this.setFilter(m.ref)]);
+            items.push(['fa-square-check', 'انتخاب (چند پیام)', () => this.startSelect(m.id)]);
+            items.push(null);
+            if (m.can_modify && m.text !== null) items.push(['fa-pen', 'ویرایش', () => this.edit(m)]);
+            items.push(['fa-trash', 'حذف', () => this.del([m]), 'danger']);
+            this.popMenu(x, y, (m.mine ? 'پیامِ شما' : m.sender) + ' · ' + fa(m.time), items);
+        }
+        copy(text) {
+            try { navigator.clipboard.writeText(text); this.toast('کپی شد.', 'success'); }
+            catch (e) { this.toast('کپی ممکن نشد.', 'error'); }
+        }
+
+        // ---------------- حذف: برای هر دو طرف یا فقط برای من (یک یا چند پیام)
+        async del(list) {
+            list = list.filter(Boolean);
+            if (!list.length) return;
+            const canBoth = list.filter(m => m.can_modify && !m.deleted);
+            const n = list.length, many = n > 1;
+            const choices = [];
+            if (canBoth.length) choices.push({ value: 'both', danger: true, label: 'حذف برای هر دو طرف',
+                note: canBoth.length < n ? `فقط ${fa(canBoth.length)} پیامِ خودتان برای طرفِ مقابل هم حذف می‌شود؛ بقیه فقط برای شما.` : 'طرفِ مقابل به‌جایش «این پیام حذف شد» می‌بیند.' });
+            choices.push({ value: 'me', label: 'فقط برای من', note: 'فقط از صفحه‌ی شما پاک می‌شود؛ طرفِ مقابل همچنان می‌بیند.' });
+            const v = await dialog({ title: many ? `حذفِ ${fa(n)} پیام` : 'حذفِ پیام', message: many ? 'پیام‌های انتخاب‌شده چطور حذف شوند؟' : 'این پیام چطور حذف شود؟', choices, theme: this.o.theme, danger: true });
+            if (!v) return;
+            let d;
+            if (v === 'both') {
+                d = await this.call('chat_delete', { ids: canBoth.map(m => m.id) });
+                const rest = list.filter(m => !canBoth.includes(m));
+                if (d.ok && rest.length) d = await this.call('chat_hide', { ids: rest.map(m => m.id) });
+            } else d = await this.call('chat_hide', { ids: list.map(m => m.id) });
+            if (!d.ok) return this.toast(d.error || 'حذف نشد.', 'error');
+            this.stopSelect(); this.sig = ''; await this.poll();
+            if (this.o.mode === 'full') this.loadThreads(true);
+        }
+
+        // ---------------- انتخابِ چند پیام
+        startSelect(id) {
+            this.selecting = true; this.selected = new Set(id ? [id] : []);
+            this.root.classList.add('cx-selmode'); this.renderSelBar(); this.paintSelection();
+        }
+        stopSelect() {
+            if (!this.selecting) return;
+            this.selecting = false; this.selected = new Set();
+            this.root.classList.remove('cx-selmode'); this.renderSelBar(); this.paintSelection();
+        }
+        toggleSel(id) {
+            if (this.selected.has(id)) this.selected.delete(id); else this.selected.add(id);
+            this.renderSelBar(); this.paintSelection();
+        }
+        paintSelection() {
+            const body = this.$('.cx-body'); if (!body) return;
+            body.querySelectorAll('[data-pk^="m:"]').forEach(r => r.classList.toggle('cx-sel', !!this.selecting && this.selected.has(Number(r.dataset.pk.slice(2)))));
+        }
+        selList() { return this.msgs.filter(m => this.selected.has(m.id)); }
+        renderSelBar() {
+            const slot = this.$('.cx-selslot'); if (!slot) return;
+            if (!this.selecting) { slot.innerHTML = ''; return; }
+            const n = this.selected.size;
+            slot.innerHTML = `<div class="cx-selbar"><button class="cx-ib" data-a="x" title="لغوِ انتخاب"><i class="fas fa-xmark"></i></button>
+                <b>${n ? fa(n) + ' پیام انتخاب شد' : 'روی پیام‌ها بزنید تا انتخاب شوند'}</b>
+                <button class="cx-selb" data-a="all"><i class="fas fa-check-double"></i> همه</button>
+                <button class="cx-selb" data-a="copy" ${n ? '' : 'disabled'}><i class="fas fa-copy"></i> کپی</button>
+                <button class="cx-selb" disabled title="در انتخابِ چندتایی ویرایش غیرفعال است"><i class="fas fa-pen"></i> ویرایش</button>
+                <button class="cx-selb danger" data-a="del" ${n ? '' : 'disabled'}><i class="fas fa-trash"></i> حذف</button></div>`;
+            slot.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+                const a = b.dataset.a;
+                if (a === 'x') this.stopSelect();
+                if (a === 'all') { this.msgs.forEach(m => this.selected.add(m.id)); this.renderSelBar(); this.paintSelection(); }
+                if (a === 'copy') this.copySelected();
+                if (a === 'del') this.del(this.selList());
+            });
+        }
+        copySelected() {
+            const t = this.selList().filter(m => m.text).map(m => `${m.mine ? 'شما' : m.sender} (${fa(m.date)} ${fa(m.time)}):\n${m.text}`).join('\n\n');
+            if (t) this.copy(t);
+        }
+        selMenu(x, y, m) {
+            const on = this.selected.has(m.id), n = this.selected.size;
+            this.popMenu(x, y, n ? fa(n) + ' پیام انتخاب شده' : 'انتخابِ چندتایی', [
+                ['fa-square-check', on ? 'برداشتنِ انتخاب' : 'انتخابِ این پیام', () => this.toggleSel(m.id)],
+                ['fa-copy', 'کپیِ پیام‌های انتخاب‌شده', () => this.copySelected(), n ? '' : 'disabled'],
+                ['fa-pen', 'ویرایش', null, 'disabled', 'در انتخابِ چندتایی ویرایش غیرفعال است'],
+                null,
+                ['fa-trash', `حذفِ ${n ? fa(n) + ' ' : ''}پیام`, () => this.del(this.selList()), n ? 'danger' : 'disabled'],
+                ['fa-xmark', 'لغوِ انتخاب', () => this.stopSelect()],
+            ]);
+        }
+
+        // ---------------- منوی خودِ گفتگو (کلیک‌راست روی فهرست، سرِ گفتگو یا زمینه‌ی گفتگو)
+        convInfo(key) {
+            const t = this.threads.find(x => x.key === key) || {};
+            const type = String(key || '').charAt(0);
+            const st = key === this.key && this.state ? this.state : null;
+            return { key, title: t.title || (this.head && key === this.key ? this.head.title : ''), closed: st ? st.mode : (t.closed || null),
+                     canClose: st ? st.can_close : this.o.mode === 'full', canReopen: st ? !!st.can_reopen : this.o.mode === 'full',
+                     canBoth: st ? st.can_clear_both : (this.o.mode === 'full' && (type === 'S' || !!this.caps.admin)) };
+        }
+        threadMenu(x, y, key) {
+            const c = this.convInfo(key), open = key === this.key, items = [];
+            if (!open) items.push(['fa-comments', 'باز کردنِ گفتگو', () => this.open(key)]);
+            if (open) {
+                items.push(['fa-magnifying-glass', 'جستجو در گفتگو', () => this.$('.cx-find') && this.$('.cx-find').click()]);
+                items.push(['fa-square-check', 'انتخابِ پیام‌ها', () => this.startSelect()]);
+            }
+            items.push(null);
+            items.push(['fa-broom', 'پاک کردنِ تاریخچه‌ی گفتگو', () => this.clearHistory(key), 'danger']);
+            if (c.canClose) {
+                if (c.closed) items.push(['fa-link', 'وصل کردنِ دوباره‌ی گفتگو', () => this.reopen(key), c.canReopen ? '' : 'disabled', 'فقط کسی که قطع کرده (یا مدیر کل)']);
+                else items.push(['fa-ban', 'قطعِ گفتگو', () => this.closeConv(key), 'danger']);
+            }
+            this.popMenu(x, y, c.title || 'گفتگو', items);
+        }
+        async clearHistory(key) {
+            const c = this.convInfo(key);
+            const choices = [{ value: 'me', label: 'فقط برای من', note: 'پیام‌ها فقط از صفحه‌ی شما پاک می‌شوند.' }];
+            if (c.canBoth) choices.unshift({ value: 'both', danger: true, label: 'برای هر دو طرف', note: 'همه‌ی پیام‌های تا این لحظه برای هر دو طرف پاک می‌شوند.' });
+            const v = await dialog({ title: 'پاک کردنِ تاریخچه', message: `تاریخچه‌ی گفتگو${c.title ? ' با «' + c.title + '»' : ''} پاک شود؟`, choices, danger: true, icon: 'fa-broom', theme: this.o.theme });
+            if (!v) return;
+            const d = await this.call('chat_clear', { key, scope: v });
+            if (!d.ok) return this.toast(d.error || 'انجام نشد.', 'error');
+            this.toast('تاریخچه پاک شد.', 'success');
+            if (key === this.key) { this.sig = ''; this.stopSelect(); await this.poll(); }
+            if (this.o.mode === 'full') this.loadThreads(true);
+        }
+        async closeConv(key) {
+            const c = this.convInfo(key);
+            const v = await dialog({ title: 'قطعِ گفتگو', message: `گفتگو${c.title ? ' با «' + c.title + '»' : ''} چطور قطع شود؟ هر وقت خواستید می‌توانید دوباره وصلش کنید.`, icon: 'fa-ban', danger: true, theme: this.o.theme,
+                choices: [{ value: 'ONE', label: 'یک‌طرفه', note: 'طرفِ مقابل دیگر نمی‌تواند پیام بفرستد؛ شما می‌توانید.' },
+                          { value: 'BOTH', danger: true, label: 'دوطرفه', note: 'هیچ‌کدام از دو طرف نمی‌توانند پیام بفرستند.' }] });
+            if (!v) return;
+            const d = await this.call('chat_close', { key, mode: v });
+            if (!d.ok) return this.toast(d.error || 'انجام نشد.', 'error');
+            this.toast('گفتگو قطع شد.', 'success');
+            if (key === this.key) await this.poll();
+            if (this.o.mode === 'full') this.loadThreads(true);
+        }
+        async reopen(key) {
+            const d = await this.call('chat_close', { key, mode: 'OPEN' });
+            if (!d.ok) return this.toast(d.error || 'انجام نشد.', 'error');
+            this.toast('گفتگو دوباره وصل شد.', 'success');
+            if (key === this.key) await this.poll();
+            if (this.o.mode === 'full') this.loadThreads(true);
+        }
+        // وضعیتِ قطع: نوارِ جای کادرِ نوشتن (یا نوارِ باریک اگر خودم یک‌طرفه قطع کرده‌ام)
+        canSend() { return !this.state || this.state.can_send !== false; }
+        renderState() {
+            const slot = this.$('.cx-stateslot'), st = this.state; if (!slot) return;
+            const sig = JSON.stringify(st || null); if (slot._sig === sig) return; slot._sig = sig;
+            const blocked = st && !st.can_send;
+            this.$('.cx-compose').classList.toggle('cx-blocked', !!blocked);
+            if (!st || !st.mode) { slot.innerHTML = ''; return; }
+            slot.innerHTML = `<div class="cx-closedbar ${blocked ? '' : 'slim'}"><i class="fas ${blocked ? 'fa-lock' : 'fa-ban'}"></i><span>${esc(fa(st.text))}</span>${st.can_reopen ? '<button><i class="fas fa-link"></i> وصلِ دوباره</button>' : ''}</div>`;
+            const b = slot.querySelector('button'); if (b) b.onclick = () => this.reopen(this.key);
         }
 
         // ---------------- درخواست‌ها (موضوعِ پیام)

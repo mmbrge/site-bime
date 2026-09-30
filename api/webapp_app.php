@@ -342,6 +342,8 @@ try {
             notify_admin($pdo, "💬 تیکت پشتیبانی جدید (اپ) · {$person['full_name']}");
         }
 
+        require_once __DIR__ . '/_chat_state.php';
+        if (!chat_ticket_client_can_send($pdo, $ticketId)) { echo json_encode(['ok' => false, 'error' => CHAT_CLOSED_CLIENT_MSG], JSON_UNESCAPED_UNICODE); exit; }
         // پیام‌های مشتری به‌طور پیش‌فرض «خوانده‌نشده» ثبت می‌شوند تا در پنل مدیریت مشخص باشد کدام پیام‌ها هنوز دیده نشده‌اند
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_type, message, is_read) VALUES (?, 'CUSTOMER', ?, 0)");
         $stmt->execute([$ticketId, $text]);

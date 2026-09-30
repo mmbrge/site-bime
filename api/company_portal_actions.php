@@ -464,7 +464,7 @@ try {
     }
 
     // ---- پیام‌رسانِ جدید (همان هسته‌ی پنل): گفتگوی شرکت با «بیمه با ما» ----
-    if (in_array($action, ['chat_open', 'chat_poll', 'chat_send', 'chat_edit', 'chat_delete', 'chat_set_ref', 'chat_unread', 'chat_ping', 'chat_offline', 'chat_me', 'chat_set_avatar'], true)) {
+    if (in_array($action, ['chat_open', 'chat_poll', 'chat_send', 'chat_edit', 'chat_delete', 'chat_set_ref', 'chat_unread', 'chat_ping', 'chat_offline', 'chat_me', 'chat_set_avatar', 'chat_hide', 'chat_clear'], true)) {
         require_once __DIR__ . '/_chat_core.php';
         $in = $data;
         if (isset($in['p']) && is_string($in['p'])) { $dec = json_decode((string)base64_decode($in['p'], true), true); if (is_array($dec)) $in = $dec + $in; }
@@ -506,6 +506,8 @@ try {
             $filePath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
         }
         if ($message === '' && !$filePath) { echo json_encode(['ok' => false, 'error' => 'پیام یا فایلی ارسال نشد.']); exit; }
+        require_once __DIR__ . '/_chat_state.php';
+        if (!chat_company_can_send($pdo, $companyId)) { echo json_encode(['ok' => false, 'error' => CHAT_CLOSED_CLIENT_MSG], JSON_UNESCAPED_UNICODE); exit; }
 
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_portal_user_id, message, file_path) VALUES (?, 'COMPANY', ?, ?, ?)")
             ->execute([$companyId, $session['company_user_id'], $message ?: null, $filePath]);

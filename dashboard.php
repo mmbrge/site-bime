@@ -171,8 +171,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            می‌شود ولی transform فقط composite (GPU) است - همان جلوه، بدون افتِ سرعتِ پنل.
            کلاسِ حالتِ «روی چیزِ قابل‌کلیک» هم روی خودِ همین دو عنصر گذاشته می‌شود، نه روی
            body؛ چون عوض‌کردنِ کلاسِ body باعثِ بازمحاسبه‌ی استایلِ کلِ صفحه می‌شد. */
-        .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 99999999 !important; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background 0.2s; box-shadow: 0 0 10px rgba(59,130,246,0.5); will-change: transform; }
-        .cursor-outline { position: fixed; left: 0; top: 0; width: 24px; height: 24px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 99999998 !important; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s; will-change: transform; }
+        .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 2147483647 !important; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background 0.2s; box-shadow: 0 0 10px rgba(59,130,246,0.5); will-change: transform; }
+        .cursor-outline { position: fixed; left: 0; top: 0; width: 24px; height: 24px; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 50%; pointer-events: none; z-index: 2147483646 !important; transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%); transition: opacity 0.2s; will-change: transform; }
         .cursor-outline.is-hover { transform: translate(var(--ox, -100px), var(--oy, -100px)) translate(-50%, -50%) scale(0.5); opacity: 0; }
         .cursor-dot.is-hover { transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%) scale(1.8); background: #2563eb; }
 
@@ -3166,7 +3166,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
-    <script src="chat-ui.js?v=2"></script>
+    <script src="chat-ui.js?v=3"></script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -6091,7 +6091,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     const p = d.presence[u.type + ':' + u.id]; if (!p) return;
                     u.presence = p;
                     const td = document.querySelector(`[data-pres="${u.type}:${u.id}"]`);
-                    if (td) td.innerHTML = presenceCell(p);
+                    const html = presenceCell(p);
+                    if (td && td._h !== html) { td.innerHTML = html; td._h = html; }   // فقط اگر عوض شده (بدونِ چشمک)
                     const dot = td && td.parentElement.querySelector('.cx-av');
                     if (dot) { const on = dot.querySelector('.cx-on'); if (p.online && !on && Number(u.is_deleted) !== 1) dot.insertAdjacentHTML('beforeend', '<b class="cx-on"></b>'); if (!p.online && on) on.remove(); }
                 });
@@ -9186,7 +9187,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         document.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             // پیام‌رسان منوی کلیک‌راستِ خودش را دارد
-            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu')) { ctxMenu.classList.remove('active'); ctxMenu.style.display = ''; return; }
+            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu, .cx-th, .cx-body, .cx-head, .cx-selbar')) { ctxMenu.classList.remove('active'); return; }
             
             // ذخیره متن انتخاب شده و فیلدی که فوکوس دارد قبل از اینکه منو باز شود
             ctxSelectedText = window.getSelection().toString();
@@ -9207,9 +9208,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
             
             ctxMenu.classList.add('active');
+            // اندازه‌ی واقعیِ منو (بسته به گزینه‌ها) تا هیچ‌وقت از پایین/کنارِ صفحه بیرون نزند
+            const mw = ctxMenu.offsetWidth || 224, mh = ctxMenu.offsetHeight || 260;
             let x = e.clientX, y = e.clientY;
-            if(x + 224 > window.innerWidth) x = window.innerWidth - 224;
-            if(y + 200 > window.innerHeight) y = window.innerHeight - 200;
+            if (x + mw > window.innerWidth - 8) x = Math.max(8, x - mw);
+            if (y + mh > window.innerHeight - 8) y = Math.max(8, window.innerHeight - mh - 8);
             ctxMenu.style.left = `${x}px`; ctxMenu.style.top = `${y}px`;
         });
 

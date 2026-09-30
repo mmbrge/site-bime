@@ -12,6 +12,7 @@
 // امکانات: فایل، پاسخ به پیام، ویرایش، حذف، موضوعِ پیام (درخواستِ مربوط)، خوانده‌شدن، «در حال نوشتن».
 
 require_once __DIR__ . '/_profile_core.php';
+require_once __DIR__ . '/_chat_state.php';
 
 function chat_ready($pdo) {
     static $ok = null;
@@ -113,17 +114,17 @@ function chat_threads($pdo, $actor, $q = '') {
     if ($caps['company']) {
         $st = $pdo->query("SELECT c.id, c.name,
                 (SELECT GROUP_CONCAT(cpu.full_name SEPARATOR '، ') FROM company_portal_user_companies cpuc JOIN company_portal_users cpu ON cpu.id = cpuc.portal_user_id WHERE cpuc.company_id = c.id) AS members,
-                m.message, m.file_path, m.sender_type, m.created_at,
+                m.id AS last_msg_id, m.message, m.file_path, m.sender_type, m.created_at,
                 (SELECT COUNT(*) FROM company_chat_messages x WHERE x.company_id = c.id AND x.sender_type = 'COMPANY' AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
               FROM companies c JOIN company_chat_messages m ON m.id = (SELECT MAX(id) FROM company_chat_messages WHERE company_id = c.id AND deleted_at IS NULL)");
         $cp = chat_company_presence_map($pdo);
         foreach ($st->fetchAll() as $c) {
             if (!$match([$c['name'], $c['members'], $c['message']])) continue;
-            $out[] = ['key' => 'C:' . intval($c['id']), 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => (string)$c['members'], 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null,
+            $out[] = ['key' => 'C:' . intval($c['id']), 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => (string)$c['members'], 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null, 'last_msg_id' => intval($c['last_msg_id']),
                       'last' => $c['message'] ?: '📎 فایل', 'last_mine' => $c['sender_type'] === 'ADMIN', 'last_at' => chat_ts($c['created_at']), 'unread' => intval($c['unread'])];
         }
     }
-    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.message, m.file_path, m.from_user_id, m.created_at, " . prof_cols($pdo, 'u') . ",
+    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.id AS last_msg_id, m.message, m.file_path, m.from_user_id, m.created_at, " . prof_cols($pdo, 'u') . ",
             (SELECT COUNT(*) FROM staff_chat_messages x WHERE x.from_user_id = u.id AND x.to_user_id = ? AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
           FROM users u JOIN staff_chat_messages m ON m.id = (SELECT MAX(id) FROM staff_chat_messages
                 WHERE deleted_at IS NULL AND ((from_user_id = u.id AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = u.id)))
@@ -132,7 +133,23 @@ function chat_threads($pdo, $actor, $q = '') {
     foreach ($st->fetchAll() as $u) {
         if (!$match([$u['full_name'], $u['message']])) continue;
         $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
-                  'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last' => $u['message'] ?: '📎 فایل', 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
+                  'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: '📎 فایل', 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
+    }
+    // تاریخچه‌ای که (برای من یا برای همه) پاک شده، پیش‌نمایشِ آخرین پیام را هم نشان نمی‌دهد؛ و گفتگوی قطع‌شده قفل دارد
+    if (chat_state_ready($pdo)) {
+        $upto = []; $closed = [];
+        $st = $pdo->prepare("SELECT thread, MAX(upto_id) AS u FROM chat_hidden WHERE upto_id IS NOT NULL AND viewer IN (?, '*') GROUP BY thread");
+        $st->execute([chat_viewer($actor)]);
+        foreach ($st->fetchAll() as $r) $upto[$r['thread']] = intval($r['u']);
+        foreach ($pdo->query("SELECT thread, closed_mode FROM chat_state WHERE closed_mode IS NOT NULL")->fetchAll() as $r) $closed[$r['thread']] = $r['closed_mode'];
+        foreach ($out as &$t) {
+            [$ty, $tid] = chat_parse_key($t['key']);
+            $th = chat_thread_id($ty, $tid, $me);
+            $t['closed'] = $closed[$th] ?? null;
+            $lastId = intval($t['last_msg_id'] ?? ($t['last_id'] ?? 0));
+            if (isset($upto[$th]) && $lastId && $lastId <= $upto[$th]) { $t['last'] = 'تاریخچه پاک شد'; $t['last_mine'] = false; $t['unread'] = 0; }
+        }
+        unset($t);
     }
     usort($out, fn($a, $b) => ($b['last_at'] ?? 0) <=> ($a['last_at'] ?? 0));
     foreach ($out as &$t) { $t['last_date'] = chat_jdate($t['last_at']); $t['last_time'] = $t['last_at'] ? date('H:i', $t['last_at']) : ''; $t['last'] = mb_substr((string)$t['last'], 0, 90); }
@@ -343,7 +360,7 @@ function chat_can_modify($actor, $type, $row) {
 }
 
 function chat_messages($pdo, $actor, $type, $id) {
-    $rows = chat_raw_rows($pdo, $actor, $type, $id);
+    $rows = chat_visible_rows($pdo, $actor, $type, $id);
     $byId = [];
     foreach ($rows as $r) $byId[$r['id']] = $r;
     $out = [];
@@ -354,6 +371,8 @@ function chat_messages($pdo, $actor, $type, $id) {
             $o = $byId[intval($r['reply_to'])];
             $rep = ['id' => $o['id'], 'sender' => chat_is_mine($actor, $o) ? 'شما' : $o['sender'],
                     'text' => $o['deleted'] ? 'پیامِ حذف‌شده' : mb_substr((string)($o['text'] ?: ($o['file'] ? '📎 ' . ($o['file_name'] ?: 'فایل') : '')), 0, 120)];
+        } elseif ($r['reply_to']) {
+            $rep = ['id' => intval($r['reply_to']), 'sender' => '', 'text' => 'پیامِ پاک‌شده'];
         }
         $out[] = ['id' => $r['id'], 'mine' => $mine, 'can_modify' => !$r['deleted'] && chat_can_modify($actor, $type, $r),
                   'sender' => $r['sender'], 'avatar' => $r['avatar'] ?? null, 'text' => $r['deleted'] ? null : $r['text'], 'file' => $r['deleted'] ? null : chat_file_out($r['file'], $r['file_name']),
@@ -419,6 +438,10 @@ function chat_resolve_ref($pdo, $type, $id, $ref) {
 }
 
 function chat_send($pdo, $actor, $type, $id, $text, $file, $replyTo, $ref) {
+    if (chat_state_ready($pdo) && !chat_side_can_send($pdo, chat_thread_id($type, $id, $actor['id']), chat_side($actor, $type))) {
+        $st = chat_state_out($pdo, $actor, $type, $id);
+        return ['ok' => false, 'error' => $st['text'] ?: 'این گفتگو بسته شده است.', 'closed' => true];
+    }
     $text = trim(str_replace("\r\n", "\n", (string)$text));
     if (mb_strlen($text) > 4000) return ['ok' => false, 'error' => 'متن پیام خیلی طولانی است.'];
     $root = dirname(__DIR__);
@@ -537,6 +560,105 @@ function chat_set_ref($pdo, $actor, $type, $id, $msgId, $ref) {
     return ['ok' => true];
 }
 
+// ---------------------------------------------------------------------
+//  حذف «فقط برای من»، پاک کردنِ تاریخچه، قطعِ گفتگو (مایگریشن ۰۲۳)
+// ---------------------------------------------------------------------
+function chat_viewer($actor) { return $actor['kind'] . ':' . intval($actor['id']); }
+// طرفِ actor در این گفتگو
+function chat_side($actor, $type) {
+    if ($type === 'S') return 'STAFF:' . intval($actor['id']);
+    return $actor['kind'] === 'STAFF' ? 'OURS' : 'CLIENT';
+}
+// پیام‌هایی که این actor می‌بیند (بدونِ پنهان‌شده‌ها برای خودش یا برای همه)
+function chat_visible_rows($pdo, $actor, $type, $id) {
+    $rows = chat_raw_rows($pdo, $actor, $type, $id);
+    if (!chat_state_ready($pdo) || !$rows) return $rows;
+    $st = $pdo->prepare("SELECT msg_id, upto_id FROM chat_hidden WHERE thread = ? AND viewer IN (?, '*')");
+    $st->execute([chat_thread_id($type, $id, $actor['id']), chat_viewer($actor)]);
+    $ids = []; $upto = 0;
+    foreach ($st->fetchAll() as $h) { if ($h['msg_id']) $ids[intval($h['msg_id'])] = true; if ($h['upto_id']) $upto = max($upto, intval($h['upto_id'])); }
+    if (!$ids && !$upto) return $rows;
+    return array_values(array_filter($rows, fn($r) => $r['id'] > $upto && !isset($ids[$r['id']])));
+}
+// پاک کردنِ تاریخچه برای هر دو طرف: همکارانِ داخلی (گفتگوی خودشان) و مدیر کل
+function chat_can_clear_both($actor, $type) {
+    if ($actor['kind'] !== 'STAFF') return false;
+    return $type === 'S' || ($actor['role'] ?? '') === 'ADMIN';
+}
+// قطع/وصلِ گفتگو: کاربرانِ پنل (در گفتگوی کارکنان و شرکت‌ها، طرفِ «بیمه با ما»)؛ همکاران در گفتگوی دونفره
+function chat_can_close($actor, $type) { return $actor['kind'] === 'STAFF'; }
+
+function chat_state_out($pdo, $actor, $type, $id) {
+    if (!chat_state_ready($pdo)) return null;
+    $side = chat_side($actor, $type);
+    $s = chat_state_get($pdo, chat_thread_id($type, $id, $actor['id']));
+    $out = ['mode' => $s['closed_mode'] ?? null, 'by_me' => $s && $s['closed_side'] === $side, 'can_close' => chat_can_close($actor, $type),
+            'can_clear_both' => chat_can_clear_both($actor, $type), 'can_send' => true, 'text' => ''];
+    if (!$s) return $out;
+    $out['can_send'] = $s['closed_mode'] !== 'BOTH' && $s['closed_side'] === $side;
+    // وصلِ دوباره: همان طرفی که قطع کرده (یا مدیر کل)
+    $out['can_reopen'] = chat_can_close($actor, $type) && ($out['by_me'] || ($actor['role'] ?? '') === 'ADMIN');
+    $when = $s['closed_at'] ? ' (' . chat_jdate(strtotime($s['closed_at'])) . ')' : '';
+    if ($s['closed_mode'] === 'BOTH') $out['text'] = ($out['by_me'] ? 'این گفتگو را دوطرفه قطع کرده‌اید' : 'این گفتگو بسته شده') . $when . '؛ هیچ‌کدام از دو طرف نمی‌توانند پیام بفرستند.';
+    elseif ($out['by_me']) $out['text'] = 'این گفتگو را یک‌طرفه قطع کرده‌اید' . $when . '؛ طرفِ مقابل نمی‌تواند پیام بفرستد ولی شما می‌توانید.';
+    else $out['text'] = $actor['kind'] === 'STAFF' && $type === 'S' ? 'این همکار گفتگو را قطع کرده؛ فعلاً نمی‌توانید پیام بفرستید.' : CHAT_CLOSED_CLIENT_MSG;
+    return $out;
+}
+
+// چند پیام را «فقط برای من» پنهان می‌کند
+function chat_hide($pdo, $actor, $type, $id, $ids) {
+    if (!chat_state_ready($pdo)) return ['ok' => false, 'error' => CHAT_STATE_MSG];
+    $mine = [];
+    foreach (chat_raw_rows($pdo, $actor, $type, $id) as $r) $mine[$r['id']] = true;
+    $ins = $pdo->prepare("INSERT INTO chat_hidden (viewer, thread, msg_id) VALUES (?, ?, ?)");
+    $n = 0;
+    foreach (array_unique(array_map('intval', (array)$ids)) as $mid) if (isset($mine[$mid])) { $ins->execute([chat_viewer($actor), chat_thread_id($type, $id, $actor['id']), $mid]); $n++; }
+    return $n ? ['ok' => true, 'count' => $n] : ['ok' => false, 'error' => 'پیامی انتخاب نشده.'];
+}
+// حذف برای هر دو طرف (یک یا چند پیام) - فقط پیام‌هایی که اجازه‌ی حذفشان هست
+function chat_delete_many($pdo, $actor, $type, $id, $ids) {
+    $rows = [];
+    foreach (chat_raw_rows($pdo, $actor, $type, $id) as $r) $rows[$r['id']] = $r;
+    $ok = 0; $denied = 0;
+    foreach (array_unique(array_map('intval', (array)$ids)) as $mid) {
+        $r = $rows[$mid] ?? null;
+        if (!$r || $r['deleted']) continue;
+        if (!chat_can_modify($actor, $type, $r)) { $denied++; continue; }
+        $pdo->prepare("UPDATE " . chat_table($type) . " SET deleted_at = NOW() WHERE id = ?")->execute([$mid]);
+        $ok++;
+    }
+    if (!$ok) return ['ok' => false, 'error' => $denied ? 'فقط پیام‌های خودتان را می‌توانید برای هر دو طرف حذف کنید.' : 'پیامی پیدا نشد.'];
+    return ['ok' => true, 'count' => $ok, 'denied' => $denied];
+}
+// پاک کردنِ کلِ تاریخچه: برای من، یا برای هر دو طرف
+function chat_clear($pdo, $actor, $type, $id, $scope) {
+    if (!chat_state_ready($pdo)) return ['ok' => false, 'error' => CHAT_STATE_MSG];
+    if ($scope === 'both' && !chat_can_clear_both($actor, $type)) return ['ok' => false, 'error' => 'پاک کردنِ تاریخچه برای هر دو طرف فقط از دستِ مدیر کل برمی‌آید.'];
+    $rows = chat_raw_rows($pdo, $actor, $type, $id);
+    if (!$rows) return ['ok' => true];
+    $max = max(array_column($rows, 'id'));
+    chat_mark_read($pdo, $actor, $type, $id);
+    $pdo->prepare("INSERT INTO chat_hidden (viewer, thread, upto_id) VALUES (?, ?, ?)")
+        ->execute([$scope === 'both' ? '*' : chat_viewer($actor), chat_thread_id($type, $id, $actor['id']), $max]);
+    return ['ok' => true];
+}
+// قطعِ گفتگو: ONE (یک‌طرفه) / BOTH (دوطرفه) / OPEN (وصلِ دوباره)
+function chat_close($pdo, $actor, $type, $id, $mode) {
+    if (!chat_state_ready($pdo)) return ['ok' => false, 'error' => CHAT_STATE_MSG];
+    if (!chat_can_close($actor, $type)) return ['ok' => false, 'error' => 'قطعِ این گفتگو از دستِ شما برنمی‌آید.'];
+    $thread = chat_thread_id($type, $id, $actor['id']);
+    if ($mode === 'OPEN') {
+        $st = chat_state_out($pdo, $actor, $type, $id);
+        if ($st['mode'] && empty($st['can_reopen'])) return ['ok' => false, 'error' => 'فقط کسی که گفتگو را قطع کرده (یا مدیر کل) می‌تواند آن را دوباره وصل کند.'];
+        $pdo->prepare("DELETE FROM chat_state WHERE thread = ?")->execute([$thread]);
+        return ['ok' => true];
+    }
+    if (!in_array($mode, ['ONE', 'BOTH'], true)) return ['ok' => false, 'error' => 'نوعِ قطع نامعتبر است.'];
+    $pdo->prepare("REPLACE INTO chat_state (thread, closed_mode, closed_side, closed_by, closed_at) VALUES (?, ?, ?, ?, NOW())")
+        ->execute([$thread, $mode, chat_side($actor, $type), mb_substr((string)$actor['name'], 0, 150)]);
+    return ['ok' => true];
+}
+
 // تعدادِ پیام‌های خوانده‌نشده (برای نشانِ منو)
 function chat_unread_total($pdo, $actor) {
     $n = 0;
@@ -590,7 +712,7 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
     if (!chat_ready($pdo)) return ['ok' => false, 'error' => CHAT_SCHEMA_MSG];
     if ($action === 'chat_threads') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
-        return ['ok' => true, 'threads' => chat_threads($pdo, $actor, $data['q'] ?? ''), 'caps' => chat_staff_caps($actor['role'])];
+        return ['ok' => true, 'threads' => chat_threads($pdo, $actor, $data['q'] ?? ''), 'caps' => chat_staff_caps($actor['role']) + ['admin' => ($actor['role'] ?? '') === 'ADMIN']];
     }
     if ($action === 'chat_contacts') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
@@ -605,17 +727,24 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
         case 'chat_open':      // سرِ گفتگو + درخواست‌ها + پیام‌ها
             chat_mark_read($pdo, $actor, $type, $id);
             return ['ok' => true, 'head' => chat_head($pdo, $actor, $type, $id), 'refs' => $type === 'T' ? [] : chat_refs($pdo, $type, $id),
-                    'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id)];
+                    'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id),
+                    'state' => chat_state_out($pdo, $actor, $type, $id)];
         case 'chat_poll':
             chat_mark_read($pdo, $actor, $type, $id);
             return ['ok' => true, 'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id),
-                    'presence' => chat_peer_presence($pdo, $actor, $type, $id)];
+                    'presence' => chat_peer_presence($pdo, $actor, $type, $id), 'state' => chat_state_out($pdo, $actor, $type, $id)];
         case 'chat_send':
             $ref = $data['ref'] ?? null;
             if (is_string($ref)) $ref = json_decode($ref, true);
             return chat_send($pdo, $actor, $type, $id, $data['text'] ?? '', $files['file'] ?? null, $data['reply_to'] ?? null, $ref);
         case 'chat_edit':    return chat_edit($pdo, $actor, $type, $id, $data['id'] ?? 0, $data['text'] ?? '');
-        case 'chat_delete':  return chat_delete($pdo, $actor, $type, $id, $data['id'] ?? 0);
+        case 'chat_delete':  // یک یا چند پیام، برای هر دو طرف
+            return isset($data['ids']) ? chat_delete_many($pdo, $actor, $type, $id, is_string($data['ids']) ? json_decode($data['ids'], true) : $data['ids'])
+                                       : chat_delete($pdo, $actor, $type, $id, $data['id'] ?? 0);
+        case 'chat_hide':    // فقط برای من
+            return chat_hide($pdo, $actor, $type, $id, isset($data['ids']) ? (is_string($data['ids']) ? json_decode($data['ids'], true) : $data['ids']) : [$data['id'] ?? 0]);
+        case 'chat_clear':   return chat_clear($pdo, $actor, $type, $id, ($data['scope'] ?? '') === 'both' ? 'both' : 'me');
+        case 'chat_close':   return chat_close($pdo, $actor, $type, $id, strtoupper((string)($data['mode'] ?? '')));
         case 'chat_set_ref':
             $ref = $data['ref'] ?? null;
             if (is_string($ref)) $ref = json_decode($ref, true);

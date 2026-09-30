@@ -47,7 +47,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=1"></script>
-<script src="../chat-ui.js?v=2"></script>
+<script src="../chat-ui.js?v=3"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>

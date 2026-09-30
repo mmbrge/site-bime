@@ -14,6 +14,7 @@ require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_chat_state.php';
 
 $update = json_decode(file_get_contents('php://input'), true);
 if (!$update) exit;
@@ -463,6 +464,8 @@ function chat_store($chat, $acc, $t, $message, $text, $asAdmin) {
         if ($text === '') $text = trim($message['caption'] ?? '');
     }
     if ($text === '' && !$filePath) return;
+    // گفتگوی قطع‌شده: هر طرف فقط اگر اجازه داشته باشد می‌فرستد
+    if (!chat_company_can_send($pdo, $companyId, $asAdmin ? 'OURS' : 'CLIENT')) { say($chat, '⛔️ ' . ($asAdmin ? 'این گفتگو دوطرفه قطع شده است.' : CHAT_CLOSED_CLIENT_MSG)); return; }
     if ($asAdmin) {
         $pdo->prepare("INSERT INTO company_chat_messages (company_id, sender_type, sender_user_id, message, file_path) VALUES (?, 'ADMIN', ?, ?, ?)")
             ->execute([$companyId, $acc['user']['id'], $text ?: null, $filePath]);

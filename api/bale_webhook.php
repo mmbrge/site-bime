@@ -2,6 +2,7 @@
 // فایل: api/bale_webhook.php
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_chat_state.php';
 
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -1272,6 +1273,8 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
             return;
         }
         $ticket_id = find_open_ticket($pdo, $chat_id);
+        // گفتگوی قطع‌شده از طرفِ «بیمه با ما»: پیام ثبت نمی‌شود
+        if ($ticket_id && !chat_ticket_client_can_send($pdo, $ticket_id)) { send_msg($chat_id, "⛔️ " . CHAT_CLOSED_CLIENT_MSG, $bot_token, support_mode_kb()); return; }
         if ($ticket_id) {
             log_ticket_message($pdo, $ticket_id, $text ?: '[فایل/رسانه]', null, $incoming_message_id);
             send_msg($chat_id, "✅ پیام شما برای کارشناس ارسال شد.", $bot_token, support_mode_kb());
