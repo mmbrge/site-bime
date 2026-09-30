@@ -4,6 +4,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_profile_core.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -94,7 +95,7 @@ try {
         $q = trim($_GET['q'] ?? ($data['q'] ?? ''));
         $sql = "
             SELECT p.id, p.full_name, p.national_code, p.personnel_code, p.mobile_number,
-                   p.bale_chat_id, p.conversation_state, c.name AS company_name, p.created_at
+                   p.bale_chat_id, p.conversation_state, c.name AS company_name, p.created_at, " . prof_cols($pdo, 'p') . "
             FROM persons p
             LEFT JOIN companies c ON p.company_id = c.id
             WHERE p.bale_chat_id IS NOT NULL
@@ -120,7 +121,10 @@ try {
         $sql .= " ORDER BY p.created_at DESC LIMIT 200";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
-        echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()]);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$r) { $r['presence'] = prof_presence($r); unset($r['seen_ago'], $r['is_online']); }
+        unset($r);
+        echo json_encode(['ok' => true, 'data' => $rows]);
         exit;
     }
 

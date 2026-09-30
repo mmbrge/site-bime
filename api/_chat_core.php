@@ -11,6 +11,8 @@
 //   ['kind' => 'COMPANY', 'id' => portal_user_id, 'company_ids' => [...], 'name' => ...]   (پنل شرکت‌ها)
 // امکانات: فایل، پاسخ به پیام، ویرایش، حذف، موضوعِ پیام (درخواستِ مربوط)، خوانده‌شدن، «در حال نوشتن».
 
+require_once __DIR__ . '/_profile_core.php';
+
 function chat_ready($pdo) {
     static $ok = null;
     if ($ok !== null) return $ok;
@@ -86,13 +88,14 @@ function chat_threads($pdo, $actor, $q = '') {
         foreach ($pdo->query("SELECT ticket_id, MAX(id) AS last_id, SUM(sender_type = 'CUSTOMER' AND COALESCE(is_read, '0') IN ('0', '')) AS unread
                                 FROM ticket_messages WHERE deleted_at IS NULL GROUP BY ticket_id")->fetchAll() as $a) $agg[intval($a['ticket_id'])] = $a;
         $groups = [];
-        foreach ($pdo->query("SELECT t.id, t.person_id, t.sender_name, t.customer_typing_at, p.full_name, p.national_code, p.mobile_number
+        foreach ($pdo->query("SELECT t.id, t.person_id, t.sender_name, t.customer_typing_at, p.full_name, p.national_code, p.mobile_number, " . prof_cols($pdo, 'p') . "
                                 FROM tickets t LEFT JOIN persons p ON p.id = t.person_id")->fetchAll() as $t) {
             $a = $agg[intval($t['id'])] ?? null;
             if (!$a) continue;
             $key = $t['person_id'] && $t['full_name'] !== null ? 'P:' . intval($t['person_id']) : 'T:' . intval($t['id']);
             if (!isset($groups[$key])) $groups[$key] = ['key' => $key, 'type' => 'PERSON', 'title' => $t['full_name'] ?: ($t['sender_name'] ?: 'کاربر ربات'),
-                                                        'sub' => trim(($t['national_code'] ?? '') . ' ' . ($t['mobile_number'] ?? '')), 'last_id' => 0, 'unread' => 0];
+                                                        'sub' => trim(($t['national_code'] ?? '') . ' ' . ($t['mobile_number'] ?? '')), 'last_id' => 0, 'unread' => 0,
+                                                        'avatar' => $t['avatar'] ?: null, 'presence' => $t['person_id'] ? prof_presence($t) : null];
             $groups[$key]['unread'] += intval($a['unread']);
             $groups[$key]['last_id'] = max($groups[$key]['last_id'], intval($a['last_id']));
         }
@@ -113,13 +116,14 @@ function chat_threads($pdo, $actor, $q = '') {
                 m.message, m.file_path, m.sender_type, m.created_at,
                 (SELECT COUNT(*) FROM company_chat_messages x WHERE x.company_id = c.id AND x.sender_type = 'COMPANY' AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
               FROM companies c JOIN company_chat_messages m ON m.id = (SELECT MAX(id) FROM company_chat_messages WHERE company_id = c.id AND deleted_at IS NULL)");
+        $cp = chat_company_presence_map($pdo);
         foreach ($st->fetchAll() as $c) {
             if (!$match([$c['name'], $c['members'], $c['message']])) continue;
-            $out[] = ['key' => 'C:' . intval($c['id']), 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => (string)$c['members'],
+            $out[] = ['key' => 'C:' . intval($c['id']), 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => (string)$c['members'], 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null,
                       'last' => $c['message'] ?: '📎 فایل', 'last_mine' => $c['sender_type'] === 'ADMIN', 'last_at' => chat_ts($c['created_at']), 'unread' => intval($c['unread'])];
         }
     }
-    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.message, m.file_path, m.from_user_id, m.created_at,
+    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.message, m.file_path, m.from_user_id, m.created_at, " . prof_cols($pdo, 'u') . ",
             (SELECT COUNT(*) FROM staff_chat_messages x WHERE x.from_user_id = u.id AND x.to_user_id = ? AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
           FROM users u JOIN staff_chat_messages m ON m.id = (SELECT MAX(id) FROM staff_chat_messages
                 WHERE deleted_at IS NULL AND ((from_user_id = u.id AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = u.id)))
@@ -128,7 +132,7 @@ function chat_threads($pdo, $actor, $q = '') {
     foreach ($st->fetchAll() as $u) {
         if (!$match([$u['full_name'], $u['message']])) continue;
         $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
-                  'last' => $u['message'] ?: '📎 فایل', 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
+                  'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last' => $u['message'] ?: '📎 فایل', 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
     }
     usort($out, fn($a, $b) => ($b['last_at'] ?? 0) <=> ($a['last_at'] ?? 0));
     foreach ($out as &$t) { $t['last_date'] = chat_jdate($t['last_at']); $t['last_time'] = $t['last_at'] ? date('H:i', $t['last_at']) : ''; $t['last'] = mb_substr((string)$t['last'], 0, 90); }
@@ -146,25 +150,63 @@ function chat_contacts($pdo, $actor, $q) {
     $q = trim((string)$q); $like = '%' . $q . '%';
     $out = [];
     if ($caps['person']) {
-        $st = $pdo->prepare("SELECT id, full_name, national_code, mobile_number FROM persons WHERE full_name LIKE ? OR national_code LIKE ? OR mobile_number LIKE ? ORDER BY id DESC LIMIT 15");
+        $st = $pdo->prepare("SELECT x.id, x.full_name, x.national_code, x.mobile_number, " . prof_cols($pdo, 'x') . " FROM persons x WHERE x.full_name LIKE ? OR x.national_code LIKE ? OR x.mobile_number LIKE ? ORDER BY x.id DESC LIMIT 15");
         $st->execute([$like, $like, $like]);
-        foreach ($st->fetchAll() as $p) $out[] = ['key' => 'P:' . $p['id'], 'type' => 'PERSON', 'title' => $p['full_name'], 'sub' => trim($p['national_code'] . ' ' . $p['mobile_number'])];
+        foreach ($st->fetchAll() as $p) $out[] = ['key' => 'P:' . $p['id'], 'type' => 'PERSON', 'title' => $p['full_name'], 'sub' => trim($p['national_code'] . ' ' . $p['mobile_number']),
+                                                  'avatar' => $p['avatar'] ?: null, 'presence' => prof_presence($p)];
     }
     if ($caps['company']) {
         $st = $pdo->prepare("SELECT id, name FROM companies WHERE name LIKE ? ORDER BY name LIMIT 15");
         $st->execute([$like]);
-        foreach ($st->fetchAll() as $c) $out[] = ['key' => 'C:' . $c['id'], 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => 'شرکت'];
+        $cp = chat_company_presence_map($pdo);
+        foreach ($st->fetchAll() as $c) $out[] = ['key' => 'C:' . $c['id'], 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => 'شرکت', 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null];
     }
-    $st = $pdo->prepare("SELECT id, full_name, role FROM users WHERE id <> ? AND COALESCE(is_deleted, 0) = 0 AND (full_name LIKE ? OR username LIKE ?) ORDER BY full_name LIMIT 20");
-    try { $st->execute([intval($actor['id']), $like, $like]); } catch (Throwable $e) { $st = $pdo->prepare("SELECT id, full_name, role FROM users WHERE id <> ? AND (full_name LIKE ? OR username LIKE ?) ORDER BY full_name LIMIT 20"); $st->execute([intval($actor['id']), $like, $like]); }
-    foreach ($st->fetchAll() as $u) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role'])];
+    $pc = prof_cols($pdo, 'x');
+    $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND COALESCE(x.is_deleted, 0) = 0 AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20");
+    try { $st->execute([intval($actor['id']), $like, $like]); } catch (Throwable $e) { $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20"); $st->execute([intval($actor['id']), $like, $like]); }
+    foreach ($st->fetchAll() as $u) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
+                                              'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u)];
     return $out;
 }
 
 // ---------------------------------------------------------------------
 //  سرِ گفتگو (نام و مشخصات) و «درخواست‌ها»ی طرفِ گفتگو (برای موضوعِ پیام)
 // ---------------------------------------------------------------------
+// سرِ گفتگو + عکس و حضورِ طرفِ مقابل
 function chat_head($pdo, $actor, $type, $id) {
+    $h = chat_head_base($pdo, $actor, $type, $id);
+    $h['avatar'] = chat_peer_avatar($pdo, $actor, $type, $id);
+    $h['presence'] = chat_peer_presence($pdo, $actor, $type, $id);
+    return $h;
+}
+// عکسِ طرفِ مقابل (پشتیبانی و شرکت عکسِ ثابت ندارند)
+function chat_peer_avatar($pdo, $actor, $type, $id) {
+    if ($actor['kind'] !== 'STAFF' || !in_array($type, ['P', 'S'], true)) return null;
+    $p = prof_get($pdo, $type === 'P' ? 'PERSON' : 'STAFF', $id);
+    return $p['avatar'] ?? null;
+}
+// آنلاین / آخرین بازدیدِ طرفِ مقابل. برای کارکنان و شرکت‌ها «پشتیبانی» یعنی هر کدام از کارشناسانِ مربوط
+function chat_peer_presence($pdo, $actor, $type, $id) {
+    if (!prof_ready($pdo) || $type === 'T') return null;
+    if ($actor['kind'] === 'PERSON') return prof_staff_presence($pdo, ['ADMIN', 'OPERATOR', 'FINANCE']);
+    if ($actor['kind'] === 'COMPANY') return prof_staff_presence($pdo, ['ADMIN', 'COMPANY_LIAISON']);
+    if ($type === 'C') return prof_company_presence($pdo, $id);
+    $p = prof_get($pdo, $type === 'P' ? 'PERSON' : 'STAFF', $id);
+    return $p['presence'] ?? null;
+}
+// حضورِ همه‌ی شرکت‌ها یک‌جا (برای فهرستِ گفتگوها)
+function chat_company_presence_map($pdo) {
+    if (!prof_ready($pdo)) return [];
+    $rows = $pdo->query("SELECT l.company_id, " . prof_cols($pdo, 'x') . " FROM company_portal_users x
+                           JOIN (SELECT portal_user_id, company_id FROM company_portal_user_companies
+                                 UNION SELECT id, company_id FROM company_portal_users WHERE company_id IS NOT NULL) l ON l.portal_user_id = x.id
+                          WHERE COALESCE(x.is_deleted, 0) = 0")->fetchAll();
+    $by = [];
+    foreach ($rows as $r) $by[intval($r['company_id'])][] = $r;
+    return array_map('prof_presence_merge', $by);
+}
+
+function chat_head_base($pdo, $actor, $type, $id) {
     if ($type === 'P') {
         $st = $pdo->prepare("SELECT full_name, national_code, mobile_number, bale_chat_id FROM persons WHERE id = ?");
         $st->execute([$id]);
@@ -234,11 +276,16 @@ function chat_case_status_fa($s) {
 // ---------------------------------------------------------------------
 //  پیام‌ها
 // ---------------------------------------------------------------------
+// ستون‌های عکسِ فرستنده (پیش از اجرای مایگریشن ۰۲۲ خالی)
+function chat_av_cols($pdo, $staffAlias, $clientAlias) {
+    return prof_ready($pdo) ? "$staffAlias.avatar AS staff_av, $clientAlias.avatar AS client_av" : "NULL AS staff_av, NULL AS client_av";
+}
+
 // ردیف‌های خامِ پیام‌های یک گفتگو (با نامِ فرستنده)، به ترتیبِ زمان
 function chat_raw_rows($pdo, $actor, $type, $id) {
     if ($type === 'P' || $type === 'T') {
         $where = $type === 'P' ? 't.person_id = ?' : 't.id = ?';
-        $st = $pdo->prepare("SELECT tm.*, t.person_id, u.full_name AS staff_name, COALESCE(p.full_name, t.sender_name) AS client_name
+        $st = $pdo->prepare("SELECT tm.*, t.person_id, u.full_name AS staff_name, COALESCE(p.full_name, t.sender_name) AS client_name, " . chat_av_cols($pdo, 'u', 'p') . "
                                FROM ticket_messages tm JOIN tickets t ON t.id = tm.ticket_id
                                LEFT JOIN users u ON u.id = tm.admin_id LEFT JOIN persons p ON p.id = t.person_id
                               WHERE $where ORDER BY tm.id");
@@ -246,7 +293,7 @@ function chat_raw_rows($pdo, $actor, $type, $id) {
         return array_map(function ($r) {
             $ours = $r['sender_type'] !== 'CUSTOMER';
             return ['id' => intval($r['id']), 'ours' => $ours, 'author' => $ours ? 'STAFF:' . intval($r['admin_id']) : 'CLIENT',
-                    'sender' => $ours ? ($r['staff_name'] ?: 'کارشناس') : ($r['client_name'] ?: 'کاربر'),
+                    'sender' => $ours ? ($r['staff_name'] ?: 'کارشناس') : ($r['client_name'] ?: 'کاربر'), 'avatar' => ($ours ? $r['staff_av'] : $r['client_av']) ?: null,
                     'text' => $r['message'], 'file' => $r['file_path'], 'file_name' => $r['file_name'], 'reply_to' => $r['reply_to_id'],
                     'ref' => $r['ref_type'] ? ['type' => $r['ref_type'], 'id' => intval($r['ref_id']), 'label' => $r['ref_label']] : null,
                     'edited' => !empty($r['edited_at']), 'deleted' => !empty($r['deleted_at']), 'at' => chat_ts($r['created_at']),
@@ -254,26 +301,26 @@ function chat_raw_rows($pdo, $actor, $type, $id) {
         }, $st->fetchAll());
     }
     if ($type === 'C') {
-        $st = $pdo->prepare("SELECT m.*, u.full_name AS staff_name, cpu.full_name AS portal_name FROM company_chat_messages m
+        $st = $pdo->prepare("SELECT m.*, u.full_name AS staff_name, cpu.full_name AS portal_name, " . chat_av_cols($pdo, 'u', 'cpu') . " FROM company_chat_messages m
                                LEFT JOIN users u ON u.id = m.sender_user_id LEFT JOIN company_portal_users cpu ON cpu.id = m.sender_portal_user_id
                               WHERE m.company_id = ? ORDER BY m.id");
         $st->execute([$id]);
         return array_map(function ($r) {
             $ours = $r['sender_type'] === 'ADMIN';
             return ['id' => intval($r['id']), 'ours' => $ours, 'author' => $ours ? 'STAFF:' . intval($r['sender_user_id']) : 'CLIENT:' . intval($r['sender_portal_user_id']),
-                    'sender' => $ours ? ($r['staff_name'] ?: 'بیمه با ما') : ($r['portal_name'] ?: 'کاربر شرکت'),
+                    'sender' => $ours ? ($r['staff_name'] ?: 'بیمه با ما') : ($r['portal_name'] ?: 'کاربر شرکت'), 'avatar' => ($ours ? $r['staff_av'] : $r['client_av']) ?: null,
                     'text' => $r['message'], 'file' => $r['file_path'], 'file_name' => $r['file_name'], 'reply_to' => $r['reply_to_id'],
                     'ref' => $r['ref_type'] ? ['type' => $r['ref_type'], 'id' => intval($r['ref_id']), 'label' => $r['ref_label']] : null,
                     'edited' => !empty($r['edited_at']), 'deleted' => !empty($r['deleted_at']), 'at' => chat_ts($r['created_at']), 'read' => !empty($r['is_read'])];
         }, $st->fetchAll());
     }
     $me = intval($actor['id']);
-    $st = $pdo->prepare("SELECT m.*, u.full_name AS from_name FROM staff_chat_messages m LEFT JOIN users u ON u.id = m.from_user_id
+    $st = $pdo->prepare("SELECT m.*, u.full_name AS from_name, " . chat_av_cols($pdo, 'u', 'u') . " FROM staff_chat_messages m LEFT JOIN users u ON u.id = m.from_user_id
                           WHERE (m.from_user_id = ? AND m.to_user_id = ?) OR (m.from_user_id = ? AND m.to_user_id = ?) ORDER BY m.id");
     $st->execute([$me, $id, $id, $me]);
     return array_map(function ($r) use ($me) {
         $ours = intval($r['from_user_id']) === $me;
-        return ['id' => intval($r['id']), 'ours' => $ours, 'author' => 'STAFF:' . intval($r['from_user_id']), 'sender' => $r['from_name'] ?: 'همکار',
+        return ['id' => intval($r['id']), 'ours' => $ours, 'author' => 'STAFF:' . intval($r['from_user_id']), 'sender' => $r['from_name'] ?: 'همکار', 'avatar' => $r['staff_av'] ?: null,
                 'text' => $r['message'], 'file' => $r['file_path'], 'file_name' => $r['file_name'], 'reply_to' => $r['reply_to_id'],
                 'ref' => $r['ref_type'] ? ['type' => $r['ref_type'], 'id' => intval($r['ref_id']), 'label' => $r['ref_label']] : null,
                 'edited' => !empty($r['edited_at']), 'deleted' => !empty($r['deleted_at']), 'at' => chat_ts($r['created_at']), 'read' => !empty($r['is_read'])];
@@ -309,7 +356,7 @@ function chat_messages($pdo, $actor, $type, $id) {
                     'text' => $o['deleted'] ? 'پیامِ حذف‌شده' : mb_substr((string)($o['text'] ?: ($o['file'] ? '📎 ' . ($o['file_name'] ?: 'فایل') : '')), 0, 120)];
         }
         $out[] = ['id' => $r['id'], 'mine' => $mine, 'can_modify' => !$r['deleted'] && chat_can_modify($actor, $type, $r),
-                  'sender' => $r['sender'], 'text' => $r['deleted'] ? null : $r['text'], 'file' => $r['deleted'] ? null : chat_file_out($r['file'], $r['file_name']),
+                  'sender' => $r['sender'], 'avatar' => $r['avatar'] ?? null, 'text' => $r['deleted'] ? null : $r['text'], 'file' => $r['deleted'] ? null : chat_file_out($r['file'], $r['file_name']),
                   'reply' => $rep, 'ref' => $r['ref'], 'edited' => $r['edited'], 'deleted' => $r['deleted'],
                   'ts' => $r['at'], 'date' => chat_jdate($r['at']), 'time' => $r['at'] ? date('H:i', $r['at']) : '',
                   // تیکِ دوتایی: پیامِ من را طرفِ مقابل دیده؟
@@ -516,6 +563,30 @@ function chat_unread_total($pdo, $actor) {
 //  $key برای کاربرانِ وب‌اپ و شرکت‌ها از سمتِ سرور تعیین می‌شود
 // ---------------------------------------------------------------------
 function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
+    // ---- حضور و پروفایل (به مایگریشنِ ۰۲۱ نیاز ندارد) ----
+    if ($action === 'chat_offline') { presence_off($pdo, $actor['kind'], $actor['id']); return ['ok' => true]; }
+    presence_touch($pdo, $actor['kind'], $actor['id']);   // هر درخواستِ پیام‌رسان یعنی «کاربر الان این‌جاست»
+    if ($action === 'chat_ping') return ['ok' => true, 'unread' => chat_ready($pdo) ? chat_unread_total($pdo, $actor) : 0];
+    if ($action === 'chat_me') {
+        $me = prof_get($pdo, $actor['kind'], $actor['id']);
+        return ['ok' => true, 'name' => $actor['name'], 'avatar' => $me['avatar'] ?? null, 'ready' => prof_ready($pdo)];
+    }
+    if ($action === 'chat_set_avatar') {   // عکسِ پروفایلِ خودم: یکی از آماده‌ها، بارگذاری، یا حذف
+        if (!prof_ready($pdo)) return ['ok' => false, 'error' => PROF_SCHEMA_MSG];
+        $value = (string)($data['avatar'] ?? '');
+        if (!empty($files['avatar'])) {
+            $saved = prof_avatar_store($files['avatar'], strtolower($actor['kind']) . '_' . intval($actor['id']));
+            if (!$saved['ok']) return $saved;
+            $value = $saved['path'];
+        }
+        return prof_set_avatar($pdo, $actor['kind'], $actor['id'], $value);
+    }
+    if ($action === 'chat_avatar_upload') { // فقط مدیر: عکس برای فرمِ ساخت/ویرایشِ کاربر (مسیرش در همان فرم ذخیره می‌شود)
+        if ($actor['kind'] !== 'STAFF' || ($actor['role'] ?? '') !== 'ADMIN') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
+        if (!prof_ready($pdo)) return ['ok' => false, 'error' => PROF_SCHEMA_MSG];
+        return prof_avatar_store($files['avatar'] ?? null, 'u');
+    }
+
     if (!chat_ready($pdo)) return ['ok' => false, 'error' => CHAT_SCHEMA_MSG];
     if ($action === 'chat_threads') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
@@ -537,7 +608,8 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
                     'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id)];
         case 'chat_poll':
             chat_mark_read($pdo, $actor, $type, $id);
-            return ['ok' => true, 'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id)];
+            return ['ok' => true, 'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id),
+                    'presence' => chat_peer_presence($pdo, $actor, $type, $id)];
         case 'chat_send':
             $ref = $data['ref'] ?? null;
             if (is_string($ref)) $ref = json_decode($ref, true);

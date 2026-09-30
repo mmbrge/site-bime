@@ -13,6 +13,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_profile_core.php';
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'این بخش فقط برای مدیر کل است.'], JSON_UNESCAPED_UNICODE);
@@ -39,9 +40,10 @@ try {
     if ($action === 'list') {
         $cols = $ready ? ', personnel_code, bale_chat_id IS NOT NULL AND bot_linked_at IS NOT NULL AS bot_linked, bot_linked_at, is_deleted, deleted_at' : '';
         $where = ($ready && empty($data['include_deleted'])) ? 'WHERE COALESCE(is_deleted, 0) = 0' : '';
-        $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols FROM users $where ORDER BY created_at DESC")->fetchAll();
+        $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         foreach ($users as &$u) {
             $u['bot_linked'] = !empty($u['bot_linked']);
+            $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             if ($ready) {
                 $st = $pdo->prepare("SELECT created_at, browser, device FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method <> 'LOGOUT' ORDER BY id DESC LIMIT 1");
                 $st->execute([$u['id']]);
@@ -56,7 +58,7 @@ try {
         // کاربرانِ شرکت‌ها
         $cWhere = $ready ? (empty($data['include_deleted']) ? 'WHERE COALESCE(cpu.is_deleted, 0) = 0' : '') : 'WHERE cpu.is_active = 1';
         $cCols = $ready ? ', (cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked, cpu.is_deleted, cpu.deleted_at' : '';
-        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at $cCols,
+        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at $cCols, " . prof_cols($pdo, 'cpu') . ",
                                       GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR '، ') AS company_names, GROUP_CONCAT(c.id) AS company_ids
                                  FROM company_portal_users cpu
                                  LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
@@ -66,6 +68,7 @@ try {
         foreach ($cUsers as &$u) {
             $u['type'] = 'COMPANY';
             $u['role'] = 'COMPANY';
+            $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             $u['bot_linked'] = !empty($u['bot_linked']);
             $u['company_ids'] = $u['company_ids'] ? array_map('intval', explode(',', $u['company_ids'])) : [];
             if ($ready) {
@@ -80,7 +83,18 @@ try {
 
         $pending = 0;
         if ($ready) { auth_purge_old_resets($pdo); $pending = intval($pdo->query("SELECT COUNT(*) FROM password_reset_requests WHERE status = 'PENDING'")->fetchColumn()); }
-        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me]);
+        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me,
+             'profile_ready' => prof_ready($pdo)]);
+    }
+
+    // فقط حضور (برای به‌روزرسانیِ زنده‌ی ستونِ «آخرین بازدید» بدونِ بارگذاریِ دوباره‌ی کلِ فهرست)
+    if ($action === 'presence') {
+        $out = [];
+        if (prof_ready($pdo)) {
+            foreach ($pdo->query("SELECT id, " . prof_cols($pdo, 'users') . " FROM users")->fetchAll() as $r) $out['STAFF:' . $r['id']] = prof_presence($r);
+            foreach ($pdo->query("SELECT id, " . prof_cols($pdo, 'company_portal_users') . " FROM company_portal_users")->fetchAll() as $r) $out['COMPANY:' . $r['id']] = prof_presence($r);
+        }
+        out(['ok' => true, 'presence' => $out]);
     }
 
     if ($action === 'create' && ($data['role'] ?? '') === 'COMPANY') {
@@ -105,6 +119,7 @@ try {
         $ins = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $ins->execute([$newId, $cid]);
         $pdo->commit();
+        if (!empty($data['avatar'])) prof_set_avatar($pdo, 'COMPANY', $newId, $data['avatar']);
         out(['ok' => true, 'user_id' => $newId]);
     }
 
@@ -129,7 +144,9 @@ try {
             $pdo->prepare("INSERT INTO users (username, password_hash, full_name, role, mobile_number) VALUES (?, ?, ?, ?, ?)")
                 ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $fullName, $role, $mobile]);
         }
-        out(['ok' => true, 'user_id' => $pdo->lastInsertId()]);
+        $newId = intval($pdo->lastInsertId());
+        if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
+        out(['ok' => true, 'user_id' => $newId]);
     }
 
     // ویرایشِ کامل (نام کاربری عوض نمی‌شود) - با رمزِ مدیر
@@ -160,6 +177,7 @@ try {
         $ins = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $ins->execute([$id, $cid]);
         $pdo->commit();
+        if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'COMPANY', $id, (string)$data['avatar']);
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
             auth_unlink_bot($pdo, 'COMPANY', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");
         }
@@ -189,6 +207,7 @@ try {
         $pdo->prepare("UPDATE users SET full_name = ?, role = ?, mobile_number = ?, personnel_code = ? WHERE id = ?")
             ->execute([$fullName, $role, $mobile, trim(p2e_digits($data['personnel_code'] ?? '')) ?: null, $id]);
         if ($password !== '') $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
+        if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
             auth_unlink_bot($pdo, 'STAFF', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");

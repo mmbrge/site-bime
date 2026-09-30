@@ -47,7 +47,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=1"></script>
-<script src="../chat-ui.js?v=1"></script>
+<script src="../chat-ui.js?v=2"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -111,9 +111,13 @@ if (!$companies) {
 
 <div class="max-w-3xl mx-auto p-4 pb-20">
     <div class="flex items-center justify-between py-5">
-        <div>
+        <div class="flex items-center gap-3">
+            <!-- عکسِ پروفایل: با کلیک عوض می‌شود و در گفتگو با «بیمه با ما» دیده می‌شود -->
+            <button type="button" id="me-avatar" onclick="changeMyAvatar()" title="عکسِ پروفایل" class="relative hover:scale-105 transition-transform"></button>
+            <div>
             <h1 class="font-black text-lg"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'چند شرکت'; ?></h1>
             <p class="text-xs text-slate-400"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?></p>
+            </div>
         </div>
         <div class="flex items-center gap-3">
             <span id="notif-bell-mount" class="inline-flex"></span>
@@ -902,6 +906,33 @@ function openChatModal() {
     if (!portalChat) mountPortalChat(); else { portalChat.poll(); setTimeout(refreshChatUnread, 1500); }
 }
 function closeChatModal() { closeModal('chat-modal'); refreshChatUnread(); }
+
+// «آنلاین / آخرین بازدید»: حضور هر ۱۰ ثانیه ثبت می‌شود و با بستنِ صفحه «آفلاین»
+if (window.ChatUI) ChatUI.heartbeat({
+    ping: () => portalChatCall('chat_ping', {}),
+    offline: () => { const fd = new FormData(); fd.append('action', 'chat_offline'); navigator.sendBeacon && navigator.sendBeacon('../api/company_portal_actions.php', fd); },
+    every: 10000,
+});
+// ---- عکسِ پروفایل ----
+let myAvatar = null;
+const myName = <?php echo json_encode($_SESSION['company_user_full_name'] ?? '', JSON_UNESCAPED_UNICODE); ?>;
+function paintMyAvatar() {
+    const el = document.getElementById('me-avatar');
+    if (el && window.ChatUI) el.innerHTML = ChatUI.avatarHtml(myAvatar, myName, {size: 46}) + '<span class="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px] shadow ring-2 ring-white"><i class="fas fa-camera"></i></span>';
+}
+async function loadMyAvatar() { try { const d = await portalChatCall('chat_me', {}); if (d.ok) { myAvatar = d.avatar; paintMyAvatar(); } } catch (e) {} }
+async function changeMyAvatar() {
+    const r = await ChatUI.pickAvatar({current: myAvatar || '', name: myName});
+    if (!r) return;
+    let d;
+    try {
+        if (r.file) { const fd = new FormData(); fd.append('avatar', r.file, 'avatar.jpg'); d = await portalChatUpload('chat_set_avatar', fd); }
+        else d = await portalChatCall('chat_set_avatar', {avatar: r.avatar});
+    } catch (e) { d = {ok: false, error: 'خطا در اتصال به سرور.'}; }
+    if (!d.ok) { showToast(d.error || 'ذخیره نشد.'); return; }
+    myAvatar = d.avatar; paintMyAvatar(); showToast('عکسِ پروفایل ذخیره شد.');
+}
+paintMyAvatar(); loadMyAvatar();
 
 loadRequests();
 

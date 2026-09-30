@@ -16,6 +16,8 @@
     const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const en = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // نتیجه‌ی جستجو: متن با بخشِ پیداشده‌ی زردرنگ
+    const highlight = (s, q) => { const t = esc(s), k = esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return t.replace(new RegExp(k, 'gi'), x => `<mark class="cx-mark">${x}</mark>`).replace(/\n/g, '<br>'); };
     const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
     const EMOJI = '😀 😁 😂 🙂 😊 😍 😎 🤔 😅 😢 😡 👍 👎 👏 🙏 🤝 💪 🎉 ❤️ 💯 ✅ ❌ ⚠️ ❓ ⏳ 📎 📄 📷 🚗 🚙 🛻 🚚 🔧 📞 💬 📌 ⭐ 🔥 👌 😉'.split(' ');
     const TYPE_META = { PERSON: ['کارکنان', 'fa-user', '#0ea5e9'], COMPANY: ['شرکت', 'fa-building', '#8b5cf6'], STAFF: ['همکار', 'fa-user-tie', '#10b981'] };
@@ -31,6 +33,144 @@
     const dayLabel = d => d === todayJ ? 'امروز' : d === yestJ ? 'دیروز' : fa(d);
     const initials = s => { const w = String(s || '؟').trim().split(/\s+/); return (w[0] || '؟').charAt(0) + (w[1] ? w[1].charAt(0) : ''); };
     const hue = s => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+    const pad2 = n => String(n).padStart(2, '0');
+    // تاریخِ شمسیِ یک Date به شکلِ 1405/07/08 (ارقامِ لاتین، برای مقایسه)
+    const jdate = d => { try { return en(new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
+    // تاریخی که کاربر تایپ کرده (۱۴۰۵/۷/۱ یا 1405-07-01) => 1405/07/01
+    const normJ = s => { const p = en(s).trim().split(/[\/\-.\s]+/).filter(Boolean); if (p.length !== 3 || p[0].length !== 4) return ''; return p[0] + '/' + pad2(p[1]) + '/' + pad2(p[2]); };
+
+    // ---- عکس‌های آماده‌ی پروفایل (preset:1 تا preset:16) ----
+    const PRESETS = [['🦁', '#fbbf24', '#ea580c'], ['🐼', '#94a3b8', '#1e293b'], ['🦊', '#fdba74', '#c2410c'], ['🐯', '#fde047', '#f97316'],
+        ['🐨', '#cbd5e1', '#475569'], ['🦉', '#c4b5fd', '#6d28d9'], ['🐬', '#7dd3fc', '#1d4ed8'], ['🌸', '#fbcfe8', '#db2777'],
+        ['🌿', '#86efac', '#15803d'], ['🚀', '#a5b4fc', '#4338ca'], ['⭐', '#fef08a', '#f59e0b'], ['🎯', '#fda4af', '#be123c'],
+        ['🚗', '#67e8f9', '#0e7490'], ['🛡️', '#6ee7b7', '#047857'], ['👨‍💼', '#93c5fd', '#2563eb'], ['👩‍💼', '#f9a8d4', '#a21caf']];
+    const avatarUrl = av => (av && !/^preset:/.test(av)) ? '/' + String(av).replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/') : null;
+    // عکسِ پروفایل: عکسِ آماده، عکسِ بارگذاری‌شده، یا حروفِ اولِ نام. o: {cls, type, online, size}
+    function avatarHtml(av, name, o) {
+        injectCss(); o = o || {};
+        const m = /^preset:(\d+)$/.exec(av || ''), pr = m && PRESETS[Number(m[1]) - 1], url = avatarUrl(av);
+        const bg = pr ? `linear-gradient(135deg,${pr[1]},${pr[2]})` : `linear-gradient(135deg,hsl(${hue(name)},70%,55%),hsl(${(hue(name) + 40) % 360},70%,45%))`;
+        const inner = url ? `<img src="${esc(url)}" alt="" loading="lazy">` : pr ? `<em>${pr[0]}</em>` : esc(initials(name));
+        const tm = o.type && TYPE_META[o.type];
+        const sz = o.size ? `width:${o.size}px;height:${o.size}px;font-size:${Math.round(o.size * .36)}px;` : '';
+        return `<span class="cx-av ${o.cls || ''}" style="${sz}background:${bg}">${inner}${tm ? `<small style="color:${tm[2]}"><i class="fas ${tm[1]}"></i></small>` : ''}${o.online ? '<b class="cx-on" title="آنلاین"></b>' : ''}</span>`;
+    }
+    // «آنلاین» / «آخرین بازدید ...» از {online, ago}؛ at = لحظه‌ی دریافت از سرور (تا زمان هم جلو برود)
+    function seenLabel(p, at, group) {
+        if (!p) return '';
+        if (p.online) return group ? 'کارشناسان آنلاین هستند' : 'آنلاین';
+        const pre = group ? 'آخرین حضورِ کارشناس: ' : 'آخرین بازدید: ';
+        if (p.ago === null || p.ago === undefined) return group ? '' : 'هنوز وارد نشده';
+        const ago = p.ago + Math.max(0, Math.round((Date.now() - (at || Date.now())) / 1000));
+        if (ago < 60) return pre + 'لحظاتی پیش';
+        if (ago < 3600) return pre + fa(Math.floor(ago / 60)) + ' دقیقه پیش';
+        const d = new Date(Date.now() - ago * 1000), hm = fa(pad2(d.getHours()) + ':' + pad2(d.getMinutes())), jd = jdate(d);
+        if (jd === jdate(new Date())) return pre + 'امروز ساعت ' + hm;
+        if (jd === jdate(new Date(Date.now() - 864e5))) return pre + 'دیروز ساعت ' + hm;
+        if (ago < 7 * 86400) return pre + fa(Math.floor(ago / 86400)) + ' روز پیش';
+        return pre + fa(jd) + ' ساعت ' + hm;
+    }
+
+    // ---- پنجره‌های تایید / ورودیِ متن (به‌جای confirm و prompt مرورگر) ----
+    // dialog({title, message, ok, cancel, danger, icon, input: {value, placeholder}, theme}) => Promise<true|false|متن|null>
+    function dialog(o) {
+        injectCss();
+        return new Promise(resolve => {
+            const ov = document.createElement('div');
+            ov.className = 'cx-dlg-ov' + (o.theme === 'dark' ? ' dark' : '');
+            ov.innerHTML = `<div class="cx-dlg"><div class="cx-dlg-ic ${o.danger ? 'danger' : ''}"><i class="fas ${o.icon || (o.danger ? 'fa-trash' : o.input ? 'fa-pen' : 'fa-circle-question')}"></i></div>
+                <b class="cx-dlg-t"></b><p class="cx-dlg-m"></p>${o.input ? '<input class="cx-dlg-in">' : ''}
+                <div class="cx-dlg-b"><button class="cx-dlg-ok ${o.danger ? 'danger' : ''}"></button><button class="cx-dlg-no"></button></div></div>`;
+            ov.querySelector('.cx-dlg-t').textContent = o.title || '';
+            const msg = ov.querySelector('.cx-dlg-m'); msg.textContent = o.message || ''; if (!o.message) msg.remove();
+            ov.querySelector('.cx-dlg-ok').textContent = o.ok || (o.danger ? 'بله، حذف شود' : 'تایید');
+            ov.querySelector('.cx-dlg-no').textContent = o.cancel || 'انصراف';
+            const inp = ov.querySelector('.cx-dlg-in');
+            if (inp) { inp.value = (o.input.value || ''); inp.placeholder = o.input.placeholder || ''; }
+            const done = v => { ov.classList.remove('on'); document.removeEventListener('keydown', key, true); setTimeout(() => ov.remove(), 220); resolve(v); };
+            const ok = () => done(inp ? inp.value : true), no = () => done(inp ? null : false);
+            const key = e => { if (e.key === 'Escape') { e.preventDefault(); no(); } if (e.key === 'Enter' && (inp || document.activeElement === ov.querySelector('.cx-dlg-ok'))) { e.preventDefault(); ok(); } };
+            ov.querySelector('.cx-dlg-ok').onclick = ok; ov.querySelector('.cx-dlg-no').onclick = no;
+            ov.onclick = e => { if (e.target === ov) no(); };
+            document.addEventListener('keydown', key, true);
+            document.body.appendChild(ov);
+            requestAnimationFrame(() => ov.classList.add('on'));
+            setTimeout(() => (inp || ov.querySelector('.cx-dlg-ok')).focus(), 60);
+        });
+    }
+    function miniToast(msg, type) {
+        injectCss();
+        const t = document.createElement('div');
+        t.className = 'cx-toast ' + (type || ''); t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.classList.add('out'), 2300); setTimeout(() => t.remove(), 2700);
+    }
+
+    // ---- انتخابِ عکسِ پروفایل: عکس‌های آماده، گالری/سیستم، یا بدونِ عکس ----
+    // pickAvatar({current, name, theme}) => Promise<{avatar:'preset:N'|''} | {file: Blob} | null>
+    function pickAvatar(o) {
+        injectCss();
+        return new Promise(resolve => {
+            let sel = o.current || '', blob = null, blobUrl = null;
+            const ov = document.createElement('div');
+            ov.className = 'cx-dlg-ov' + (o.theme === 'dark' ? ' dark' : '');
+            ov.innerHTML = `<div class="cx-dlg cx-pick"><b class="cx-dlg-t">عکسِ پروفایل</b>
+                <div class="cx-pick-pv"></div>
+                <div class="cx-pick-g">${PRESETS.map((p, i) => `<button type="button" data-p="preset:${i + 1}" style="background:linear-gradient(135deg,${p[1]},${p[2]})">${p[0]}</button>`).join('')}</div>
+                <div class="cx-pick-a"><label class="cx-pick-up"><i class="fas fa-image"></i> انتخاب از گالری / سیستم<input type="file" accept="image/*" hidden></label>
+                    <button type="button" class="cx-pick-none"><i class="fas fa-font"></i> بدونِ عکس</button></div>
+                <div class="cx-dlg-b"><button class="cx-dlg-ok">ذخیره</button><button class="cx-dlg-no">انصراف</button></div></div>`;
+            const pv = ov.querySelector('.cx-pick-pv');
+            const paint = () => {
+                pv.innerHTML = blobUrl ? `<span class="cx-av" style="width:96px;height:96px"><img src="${blobUrl}" alt=""></span>` : avatarHtml(sel, o.name || '', { size: 96 });
+                ov.querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', !blob && b.dataset.p === sel));
+            };
+            ov.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { sel = b.dataset.p; blob = null; blobUrl = null; paint(); });
+            ov.querySelector('.cx-pick-none').onclick = () => { sel = ''; blob = null; blobUrl = null; paint(); };
+            ov.querySelector('input[type=file]').onchange = async e => {
+                const f = e.target.files[0]; if (!f) return;
+                try { blob = await squareImage(f, 360); blobUrl = URL.createObjectURL(blob); paint(); }
+                catch (err) { miniToast('این فایل عکس نیست یا باز نشد.', 'error'); }
+            };
+            const done = v => { ov.classList.remove('on'); setTimeout(() => ov.remove(), 220); resolve(v); };
+            ov.querySelector('.cx-dlg-ok').onclick = () => done(blob ? { file: blob } : { avatar: sel });
+            ov.querySelector('.cx-dlg-no').onclick = () => done(null);
+            ov.onclick = e => { if (e.target === ov) done(null); };
+            document.body.appendChild(ov); paint();
+            requestAnimationFrame(() => ov.classList.add('on'));
+        });
+    }
+    // برشِ مربعیِ وسطِ عکس و کوچک کردن (حجمِ کم برای بارگذاری)
+    function squareImage(file, size) {
+        return new Promise((res, rej) => {
+            const img = new Image(), url = URL.createObjectURL(file);
+            img.onload = () => {
+                const s = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas');
+                c.width = c.height = size;
+                c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+                URL.revokeObjectURL(url);
+                c.toBlob(b => b ? res(b) : rej(new Error('blob')), 'image/jpeg', .88);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+            img.src = url;
+        });
+    }
+
+    // ---- «زنده‌ام»: هر چند ثانیه حضور را به سرور می‌گوید و با بستنِ صفحه «آفلاین» می‌شود ----
+    // heartbeat({ping: () => Promise<json>, offline: () => void, every: 10000, onUnread(n)})
+    function heartbeat(o) {
+        let busy = false;
+        const tick = async () => {
+            if (busy) return; busy = true;
+            try { const d = await o.ping(); if (d && d.ok && o.onUnread && d.unread !== undefined) o.onUnread(d.unread); } catch (e) {}
+            busy = false;
+        };
+        tick();
+        const t = setInterval(tick, o.every || 10000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+        window.addEventListener('pagehide', () => { try { o.offline && o.offline(); } catch (e) {} });
+        return { stop() { clearInterval(t); }, now: tick };
+    }
 
     // ------------------------------------------------------------------ استایل
     function injectCss() {
@@ -190,6 +330,60 @@
 .cx-drop.show{display:flex;animation:cxFade .2s both}
 .cx-skel{height:52px;border-radius:14px;margin:6px;background:linear-gradient(90deg,var(--soft),var(--hover),var(--soft));background-size:200% 100%;animation:cxShim 1.2s infinite}
 .cx-back{display:none}
+.cx-av img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+.cx-av em{font-style:normal;font-size:1.35em;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
+.cx-av .cx-on{position:absolute;bottom:-2px;right:-2px;width:13px;height:13px;border-radius:50%;background:#22c55e;border:2.5px solid var(--panel,#fff);animation:cxPulse 2.2s infinite}
+.cx-pr{font-weight:800}
+.cx-pr.on{color:#16a34a}
+.cx-dark .cx-pr.on{color:#4ade80}
+.cx-row.them{align-items:flex-end;gap:6px}
+.cx-mav{width:30px;flex-shrink:0;align-self:flex-end}
+.cx-mav .cx-av{width:30px;height:30px;border-radius:10px;font-size:11px;animation:cxPop .3s both}
+.cx-head-tools{display:flex;align-items:center;gap:6px}
+.cx-fq{width:0;opacity:0;border:1px solid var(--line);background:var(--soft);color:var(--text);border-radius:12px;padding:0;height:36px;font-family:inherit;font-size:12px;outline:none;transition:width .35s cubic-bezier(.2,.9,.3,1),opacity .25s,padding .35s}
+.cx-head.cx-finding .cx-fq{width:min(230px,38vw);opacity:1;padding:0 12px}
+.cx-fq:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.cx-head.cx-finding .cx-find{background:linear-gradient(135deg,var(--me1),var(--me2));color:#fff}
+.cx-fdates{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s cubic-bezier(.2,.9,.3,1);background:var(--panel);border-bottom:1px solid transparent;position:relative;z-index:1}
+.cx-fdates>div{overflow:hidden;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:0 14px;font-size:11px;color:var(--muted)}
+.cx-fdates.open{grid-template-rows:1fr;border-bottom-color:var(--line)}
+.cx-fdates.open>div{padding:8px 14px}
+.cx-fdates input{width:104px;border:1px solid var(--line);background:var(--soft);color:var(--text);border-radius:10px;padding:5px 8px;font-family:inherit;font-size:11.5px;text-align:center;outline:none;direction:ltr}
+.cx-fdates input:focus{border-color:var(--acc)}
+.cx-fdates .cx-chip{padding:4px 9px;font-size:10.5px}
+.cx-fdates .cx-fn{margin-right:auto;font-weight:900;color:var(--acc)}
+mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
+.cx-dlg-ov{position:fixed;inset:0;z-index:2147483602;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;transition:opacity .2s;direction:rtl;font-family:inherit}
+.cx-dlg-ov.on{opacity:1}
+.cx-dlg{width:min(380px,100%);background:#fff;color:#0f172a;border-radius:24px;padding:22px 20px 16px;text-align:center;box-shadow:0 30px 70px -20px rgba(15,23,42,.55);transform:scale(.88) translateY(14px);transition:transform .28s cubic-bezier(.2,.9,.3,1.3)}
+.cx-dlg-ov.on .cx-dlg{transform:none}
+.cx-dlg-ov.dark .cx-dlg{background:linear-gradient(160deg,#1e1b4b,#0f172a);color:#e2e8f0;border:1px solid rgba(255,255,255,.12)}
+.cx-dlg-ic{width:56px;height:56px;border-radius:18px;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 12px 24px -12px #6366f1;animation:cxPop .4s both}
+.cx-dlg-ic.danger{background:linear-gradient(135deg,#f43f5e,#e11d48);box-shadow:0 12px 24px -12px #e11d48}
+.cx-dlg-t{display:block;font-size:15px;font-weight:900;margin-bottom:6px}
+.cx-dlg-m{font-size:12.5px;line-height:1.9;margin:0 0 14px;opacity:.75;white-space:pre-line}
+.cx-dlg-in{width:100%;border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;font-family:inherit;font-size:13px;margin-bottom:14px;outline:none;background:#f8fafc;color:inherit}
+.cx-dlg-ov.dark .cx-dlg-in{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+.cx-dlg-b{display:flex;gap:8px}
+.cx-dlg-b button{flex:1;border:0;border-radius:14px;padding:11px 8px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;transition:transform .15s}
+.cx-dlg-b button:active{transform:scale(.96)}
+.cx-dlg-ok{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 10px 20px -12px #6366f1}
+.cx-dlg-ok.danger{background:linear-gradient(135deg,#f43f5e,#e11d48);box-shadow:0 10px 20px -12px #e11d48}
+.cx-dlg-no{background:#f1f5f9;color:#475569}
+.cx-dlg-ov.dark .cx-dlg-no{background:rgba(255,255,255,.1);color:#e2e8f0}
+.cx-pick{width:min(420px,100%)}
+.cx-pick-pv{display:flex;justify-content:center;margin:6px 0 14px}
+.cx-pick-pv .cx-av{border-radius:30px;box-shadow:0 16px 30px -14px rgba(15,23,42,.6);animation:cxPop .35s both}
+.cx-pick-g{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;margin-bottom:12px}
+.cx-pick-g button{aspect-ratio:1;border:0;border-radius:13px;font-size:19px;cursor:pointer;transition:transform .15s,box-shadow .2s;box-shadow:inset 0 0 0 0 transparent}
+.cx-pick-g button:hover{transform:scale(1.1)}
+.cx-pick-g button.on{box-shadow:0 0 0 3px #fff,0 0 0 5px #6366f1;transform:scale(1.08)}
+.cx-pick-a{display:flex;gap:8px;margin-bottom:14px}
+.cx-pick-a>*{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed #c7d2fe;border-radius:14px;padding:9px 6px;font-size:11.5px;font-weight:800;color:#4f46e5;background:rgba(99,102,241,.06);cursor:pointer;font-family:inherit}
+.cx-dlg-ov.dark .cx-pick-a>*{color:#a5b4fc;border-color:rgba(165,180,252,.35)}
+.cx-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:2147483603;background:#0f172a;color:#fff;padding:10px 18px;border-radius:14px;font-size:12.5px;font-weight:700;box-shadow:0 14px 30px -12px rgba(0,0,0,.5);animation:cxSlide .25s both;direction:rtl;font-family:inherit;transition:opacity .3s}
+.cx-toast.error{background:#e11d48}.cx-toast.success{background:#059669}.cx-toast.out{opacity:0}
+@keyframes cxPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
 @keyframes cxIn{from{opacity:0;transform:translateY(12px) scale(.94)}to{opacity:1;transform:none}}
 @keyframes cxFade{from{opacity:0}to{opacity:1}}
 @keyframes cxPop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
@@ -205,6 +399,10 @@
   .cx.cx-full:not(.cx-conv-open) .cx-main{display:none}
   .cx-back{display:inline-flex}
   .cx-msg{max-width:86%}
+  .cx-head.cx-finding .cx-head-b{display:none}
+  .cx-head.cx-finding .cx-fq{width:100%;flex:1}
+  .cx-head.cx-finding .cx-head-tools{flex:1}
+  .cx-pick-g{grid-template-columns:repeat(4,1fr)}
 }`;
         document.head.appendChild(st);
     }
@@ -228,7 +426,7 @@
         }
         destroy() { clearInterval(this.pollTimer); clearInterval(this.listTimer); document.removeEventListener('click', this._docClick); this.el.innerHTML = ''; }
         $(s) { return this.el.querySelector(s); }
-        toast(m, t) { if (window.showToast) showToast(m, t || 'info'); else if (this.o.toast) this.o.toast(m); else alert(m); }
+        toast(m, t) { if (window.showToast) showToast(m, t || 'info'); else if (this.o.toast) this.o.toast(m); else miniToast(m, t); }
         async call(action, data) {
             try { return await this.o.call(action, Object.assign({ key: this.key }, data || {})); }
             catch (e) { return { ok: false, error: 'خطا در ارتباط با سرور.' }; }
@@ -273,15 +471,14 @@
             box.innerHTML = chips.map(([k, l, n]) => `<button class="cx-chip ${this.filter === k ? 'on' : ''}" data-f="${k}">${l}${n ? ' · ' + fa(n) : ''}</button>`).join('');
             box.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { this.filter = b.dataset.f; this.renderChips(); this.renderThreads(); });
         }
-        avatar(title, type, cls = '') {
-            const m = TYPE_META[type] || TYPE_META.STAFF;
-            return `<span class="cx-av ${cls}" style="background:linear-gradient(135deg,hsl(${hue(title)},70%,55%),hsl(${(hue(title) + 40) % 360},70%,45%))">${esc(initials(title))}<small style="color:${m[2]}"><i class="fas ${m[1]}"></i></small></span>`;
+        avatar(title, type, av, presence) {
+            return avatarHtml(av, title, { type: type || 'STAFF', online: presence && presence.online });
         }
         renderThreads() {
             const list = this.threads.filter(t => this.filter === 'all' || (this.filter === 'unread' ? t.unread : t.type === this.filter));
             const box = this.$('.cx-threads');
             box.innerHTML = list.length ? list.map((t, i) => `<div class="cx-th ${t.key === this.key ? 'on' : ''}" data-k="${t.key}" style="animation-delay:${Math.min(i, 12) * 25}ms">
-                ${this.avatar(t.title, t.type)}
+                ${this.avatar(t.title, t.type, t.avatar, t.presence)}
                 <div class="cx-th-b"><div class="cx-th-t"><b>${esc(t.title)}</b><span>${t.last_date === todayJ ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
                 <div class="cx-th-l"><p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</div></div></div>`).join('')
                 : `<div style="padding:30px 10px;text-align:center;color:var(--muted)"><i class="fas fa-inbox" style="font-size:28px;opacity:.4"></i><p>گفتگویی نیست.</p></div>`;
@@ -303,7 +500,7 @@
                 const d = await this.call('chat_contacts', { q: inp.value.trim() });
                 const bd = m.querySelector('.cx-mbd');
                 if (!d.ok) { bd.innerHTML = `<p style="color:#e11d48;text-align:center">${esc(d.error)}</p>`; return; }
-                bd.innerHTML = d.contacts.length ? d.contacts.map(c => `<div class="cx-th" data-k="${c.key}">${this.avatar(c.title, c.type)}<div class="cx-th-b"><div class="cx-th-t"><b>${esc(c.title)}</b><span>${(TYPE_META[c.type] || [])[0] || ''}</span></div><div class="cx-th-l"><p>${esc(fa(c.sub || ''))}</p></div></div></div>`).join('')
+                bd.innerHTML = d.contacts.length ? d.contacts.map(c => `<div class="cx-th" data-k="${c.key}">${this.avatar(c.title, c.type, c.avatar, c.presence)}<div class="cx-th-b"><div class="cx-th-t"><b>${esc(c.title)}</b><span>${(TYPE_META[c.type] || [])[0] || ''}</span></div><div class="cx-th-l"><p>${c.presence && c.presence.online ? '<span class="cx-pr on">آنلاین</span> · ' : ''}${esc(fa(c.sub || ''))}</p></div></div></div>`).join('')
                     : '<p style="text-align:center;color:var(--muted);padding:14px">کسی پیدا نشد.</p>';
                 bd.querySelectorAll('[data-k]').forEach(el => el.onclick = () => { close(); this.open(el.dataset.k); });
             };
@@ -314,6 +511,7 @@
         // ---------------- یک گفتگو
         async open(key) {
             this.key = key; this.msgs = []; this.sig = ''; this.seen = new Set(); this.topic = null; this.topicFilter = null; this.replyTo = null; this.editing = null; this.file = null; this.newBelow = 0;
+            this.search = null; this.presence = null;
             this.root.classList.add('cx-conv-open');
             if (this.o.mode === 'full') this.renderThreads();
             const main = this.$('.cx-main');
@@ -323,6 +521,7 @@
             if (this.key !== key) return;
             if (!d.ok) { main.innerHTML = `<div class="cx-empty"><i class="fas fa-triangle-exclamation" style="font-size:30px;color:#f59e0b"></i><b>${esc(d.error)}</b></div>`; return; }
             this.head = d.head; this.refs = d.refs || [];
+            this.presence = d.head.presence || null; this.presenceAt = Date.now();
             this.renderConv();
             this.setMessages(d.messages, true);
             this.setTyping(d.typing);
@@ -335,10 +534,14 @@
             const main = this.$('.cx-main');
             main.innerHTML = `
                 <div class="cx-head">${full ? '<button class="cx-ib cx-back" title="بازگشت"><i class="fas fa-arrow-right"></i></button>' : ''}
-                    ${this.avatar(h.title, h.type)}
-                    <div class="cx-head-b"><b>${esc(h.title)}</b><span class="cx-hsub">${esc(fa(h.sub || ''))}</span></div>
-                    ${this.refs.length ? `<button class="cx-ib cx-refs-btn" title="درخواست‌ها"><i class="fas fa-folder-tree"></i></button>` : ''}
-                    <button class="cx-ib cx-find" title="جستجو در گفتگو"><i class="fas fa-magnifying-glass"></i></button></div>
+                    ${this.avatar(h.title, h.type, h.avatar, this.presence)}
+                    <div class="cx-head-b"><b>${esc(h.title)}</b><span class="cx-hsub"></span></div>
+                    <div class="cx-head-tools"><input class="cx-fq" placeholder="جستجو در پیام‌ها...">
+                    <button class="cx-ib cx-find" title="جستجو در گفتگو (متن و تاریخ)"><i class="fas fa-magnifying-glass"></i></button>
+                    ${this.refs.length ? `<button class="cx-ib cx-refs-btn" title="درخواست‌ها"><i class="fas fa-folder-tree"></i></button>` : ''}</div></div>
+                <div class="cx-fdates"><div><i class="fas fa-calendar-days"></i> از <input class="cx-f-from" placeholder="۱۴۰۵/۰۷/۰۱" inputmode="numeric"> تا <input class="cx-f-to" placeholder="۱۴۰۵/۰۷/۳۰" inputmode="numeric">
+                    <button class="cx-chip" data-r="0">امروز</button><button class="cx-chip" data-r="7">۷ روزِ اخیر</button><button class="cx-chip" data-r="30">۳۰ روزِ اخیر</button><button class="cx-chip" data-r="">همه</button>
+                    <span class="cx-fn"></span></div></div>
                 ${h.channel ? `<div class="cx-chan"><i class="fas fa-circle-info"></i> ${esc(h.channel)}</div>` : ''}
                 <div class="cx-filterslot"></div>
                 <div class="cx-body"></div>
@@ -364,7 +567,7 @@
             this.$('.cx-send').onclick = () => this.send();
             this.$('.cx-file-in').onchange = e => { if (e.target.files[0]) this.attach(e.target.files[0]); e.target.value = ''; };
             this.$('.cx-emo-btn').onclick = e => { e.stopPropagation(); this.emoji(); };
-            this.$('.cx-find').onclick = () => this.findInChat();
+            this.bindFind();
             const tb = this.$('.cx-topic'); if (tb) tb.onclick = () => this.openRefs('pick');
             const rb = this.$('.cx-refs-btn'); if (rb) rb.onclick = () => this.openRefs();
             // کشیدن و رها کردنِ فایل
@@ -373,7 +576,7 @@
             main.ondragleave = () => { if (--dc <= 0) { dc = 0; drop.classList.remove('show'); } };
             main.ondragover = e => e.preventDefault();
             main.ondrop = e => { e.preventDefault(); dc = 0; drop.classList.remove('show'); const f = (e.dataTransfer.files || [])[0]; if (f) this.attach(f); };
-            this.renderTopic(); this.renderBar(); this.renderFilter();
+            this.renderTopic(); this.renderBar(); this.renderFilter(); this.renderSub();
             if (this.refs.length) this.bindRefs();
             setTimeout(() => ta.focus(), 60);
         }
@@ -394,19 +597,26 @@
         renderMessages(first) {
             const body = this.$('.cx-body');
             if (!body) return;
-            const list = this.topicFilter ? this.msgs.filter(m => m.ref && m.ref.type === this.topicFilter.type && m.ref.id === this.topicFilter.id) : this.msgs;
+            let list = this.topicFilter ? this.msgs.filter(m => m.ref && m.ref.type === this.topicFilter.type && m.ref.id === this.topicFilter.id) : this.msgs;
+            const sr = this.searchActive() ? this.search : null;
+            if (sr) {
+                const q = sr.q.toLowerCase();
+                list = list.filter(m => !m.deleted && (!q || String(m.text || '').toLowerCase().includes(q) || (m.file && String(m.file.name).toLowerCase().includes(q)) || String(m.sender || '').toLowerCase().includes(q))
+                    && (!sr.from || m.date >= sr.from) && (!sr.to || m.date <= sr.to));
+                const n = this.$('.cx-fn'); if (n) n.textContent = fa(list.length) + ' پیام';
+            }
             if (!list.length) {
-                body.innerHTML = `<div class="cx-empty" style="height:100%"><div class="cx-big" style="width:70px;height:70px;font-size:28px"><i class="fas fa-hand-wave"></i></div>
-                    <b style="color:var(--text)">${this.topicFilter ? 'پیامی با این موضوع نیست' : 'هنوز پیامی رد و بدل نشده'}</b><span>${this.topicFilter ? '' : 'اولین پیام را بفرستید 👋'}</span></div><div class="cx-typing-bubble"><i></i><i></i><i></i></div>`;
+                body.innerHTML = `<div class="cx-empty" style="height:100%"><div class="cx-big" style="width:70px;height:70px;font-size:28px"><i class="fas ${sr ? 'fa-magnifying-glass' : 'fa-hand-wave'}"></i></div>
+                    <b style="color:var(--text)">${sr ? 'پیامی با این جستجو پیدا نشد' : this.topicFilter ? 'پیامی با این موضوع نیست' : 'هنوز پیامی رد و بدل نشده'}</b><span>${sr || this.topicFilter ? '' : 'اولین پیام را بفرستید 👋'}</span></div><div class="cx-typing-bubble"><i></i><i></i><i></i></div>`;
                 return;
             }
-            let html = '', lastDay = '', prev = null;
-            for (const m of list) {
-                if (m.date !== lastDay) { html += `<div class="cx-day"><span>${dayLabel(m.date)}</span></div>`; lastDay = m.date; prev = null; }
-                const grouped = prev && prev.mine === m.mine && prev.sender === m.sender && (m.ts - prev.ts) < 300;
-                html += this.msgHtml(m, grouped, !first && !this.seen.has(m.id));
-                prev = m;
-            }
+            // کدام پیام‌ها پشتِ هم از یک نفرند (فقط آخرینِ هر دسته عکسِ فرستنده را نشان می‌دهد)
+            const grp = list.map((m, i) => { const p = list[i - 1]; return !!(p && p.date === m.date && p.mine === m.mine && p.sender === m.sender && (m.ts - p.ts) < 300); });
+            let html = '', lastDay = '';
+            list.forEach((m, i) => {
+                if (m.date !== lastDay) { html += `<div class="cx-day"><span>${dayLabel(m.date)}</span></div>`; lastDay = m.date; }
+                html += this.msgHtml(m, grp[i], !first && !this.seen.has(m.id), !grp[i + 1]);
+            });
             html += '<div class="cx-typing-bubble"><i></i><i></i><i></i></div>';
             body.innerHTML = html;
             body.querySelectorAll('.cx-msg').forEach(el => {
@@ -426,9 +636,11 @@
             });
             this.setTyping(this._typing);
         }
-        msgHtml(m, grouped, isNew) {
+        msgHtml(m, grouped, isNew, lastOfGroup) {
             const side = m.mine ? 'me' : 'them';
-            if (m.deleted) return `<div class="cx-row ${side} ${grouped ? '' : 'gap'}"><div class="cx-msg cx-del ${isNew ? 'cx-in' : ''}" data-id="${m.id}"><i class="fas fa-ban"></i> این پیام حذف شد · ${fa(m.time)}</div></div>`;
+            // عکسِ فرستنده کنارِ آخرین پیامِ هر دسته (فقط پیام‌های طرفِ مقابل)
+            const mav = m.mine ? '' : `<span class="cx-mav">${lastOfGroup ? avatarHtml(m.avatar, m.sender, {}) : ''}</span>`;
+            if (m.deleted) return `<div class="cx-row ${side} ${grouped ? '' : 'gap'}"><div class="cx-msg cx-del ${isNew ? 'cx-in' : ''}" data-id="${m.id}"><i class="fas fa-ban"></i> این پیام حذف شد · ${fa(m.time)}</div>${mav}</div>`;
             const f = m.file;
             const file = !f ? '' : f.image ? `<img class="cx-img" src="${esc(f.url)}" alt="">`
                 : f.audio ? `<audio class="cx-audio" controls preload="none" src="${esc(f.url)}"></audio>`
@@ -439,9 +651,9 @@
                 ${!grouped && showSender ? `<div class="cx-sender">${esc(m.mine ? (this.o.mode === 'full' ? m.sender : 'شما') : m.sender)}</div>` : ''}
                 ${m.ref ? `<span class="cx-ref" title="نمایشِ همه‌ی پیام‌های این موضوع"><i class="fas ${REF_ICON[m.ref.type] || 'fa-tag'}"></i><span>${esc(fa(m.ref.label))}</span></span>` : ''}
                 ${m.reply ? `<span class="cx-reply" data-to="${m.reply.id}"><b>${esc(m.reply.sender)}</b><span>${esc(m.reply.text)}</span></span>` : ''}
-                ${file}${m.text ? `<div>${linkify(m.text)}</div>` : ''}
-                <div class="cx-meta">${m.mine ? `<i class="fas ${m.read ? 'fa-check-double cx-seen' : 'fa-check'}" title="${m.read ? 'دیده شد' : 'ارسال شد'}"></i>` : ''}<span>${fa(m.time)}</span>${m.edited ? '<span>ویرایش‌شده</span>' : ''}</div>
-            </div></div>`;
+                ${file}${m.text ? `<div>${this.searchActive() && this.search.q ? highlight(m.text, this.search.q) : linkify(m.text)}</div>` : ''}
+                <div class="cx-meta">${m.mine ? `<i class="fas ${m.read ? 'fa-check-double cx-seen' : 'fa-check'}" title="${m.read ? 'دیده شد' : 'ارسال شد'}"></i>` : ''}<span>${fa(m.time)}</span>${m.edited ? '<span>ویرایش‌شده</span>' : ''}${this.searchActive() ? `<span>${fa(m.date)}</span>` : ''}</div>
+            </div>${mav}</div>`;
         }
         nearBottom() { const b = this.$('.cx-body'); return !b || b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
         scrollBottom(smooth) { const b = this.$('.cx-body'); if (!b) return; if (!smooth) { b.style.scrollBehavior = 'auto'; b.scrollTop = b.scrollHeight; b.style.scrollBehavior = ''; } else b.scrollTop = b.scrollHeight; this.stick = true; this.newBelow = 0; this.fab(); }
@@ -451,7 +663,7 @@
             f.innerHTML = `<i class="fas fa-chevron-down"></i>${this.newBelow ? `<span class="cx-badge">${fa(this.newBelow)}</span>` : ''}`;
         }
         jump(id) {
-            if (this.topicFilter) { this.topicFilter = null; this.renderFilter(); this.renderMessages(); }
+            if (this.topicFilter || this.searchActive()) { this.topicFilter = null; this.closeFind(true); this.renderFilter(); this.renderMessages(); }
             const el = this.$(`.cx-msg[data-id="${id}"]`);
             if (!el) return this.toast('پیامِ اصلی پیدا نشد.', 'warning');
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -460,7 +672,7 @@
         setTyping(on) {
             this._typing = on;
             const t = this.$('.cx-typing-bubble'); if (t) t.classList.toggle('show', !!on);
-            const s = this.$('.cx-hsub'); if (s && this.head) { s.innerHTML = on ? '<span class="cx-typing">در حال نوشتن...</span>' : esc(fa(this.head.sub || '')); }
+            this.renderSub();
             if (on && this.nearBottom()) this.scrollBottom(true);
         }
         async poll() {
@@ -470,7 +682,24 @@
             const d = await this.call('chat_poll', { key });
             this._polling = false;
             if (!d.ok || key !== this.key) return;
+            if (d.presence !== undefined) { this.presence = d.presence; this.presenceAt = Date.now(); this.renderPresenceDot(); }
             this.setMessages(d.messages); this.setTyping(d.typing);
+        }
+        // زیرِ نامِ طرفِ مقابل: «در حال نوشتن...» یا «آنلاین / آخرین بازدید» و مشخصات
+        renderSub() {
+            const s = this.$('.cx-hsub'); if (!s || !this.head) return;
+            if (this._typing) { s.innerHTML = '<span class="cx-typing">در حال نوشتن...</span>'; return; }
+            const group = this.head.type !== 'STAFF' && this.o.mode === 'single';
+            const lbl = seenLabel(this.presence, this.presenceAt, group);
+            const sub = lbl && group ? '' : fa(this.head.sub || '');
+            s.innerHTML = (lbl ? `<span class="cx-pr ${this.presence && this.presence.online ? 'on' : ''}">${esc(lbl)}</span>` : '') + (lbl && sub ? ' · ' : '') + esc(sub);
+        }
+        renderPresenceDot() {
+            const av = this.$('.cx-head .cx-av'); if (!av) return;
+            const on = !!(this.presence && this.presence.online), dot = av.querySelector('.cx-on');
+            if (on && !dot) av.insertAdjacentHTML('beforeend', '<b class="cx-on" title="آنلاین"></b>');
+            if (!on && dot) dot.remove();
+            this.renderSub();
         }
         typingPing() { const now = Date.now(); if (now - (this._tp || 0) < 2500) return; this._tp = now; this.call('chat_typing', {}); }
 
@@ -537,7 +766,7 @@
         reply(m) { this.editing = null; this.replyTo = m; this.renderBar(); this.$('.cx-ta').focus(); }
         edit(m) { this.replyTo = null; this.editing = m; const ta = this.$('.cx-ta'); ta.value = m.text || ''; ta.dispatchEvent(new Event('input')); this.renderBar(); ta.focus(); }
         async del(m) {
-            const ok = await (window.uiConfirm ? uiConfirm('حذفِ پیام', 'این پیام برای هر دو طرف «حذف شد» نمایش داده می‌شود.') : Promise.resolve(confirm('پیام حذف شود؟')));
+            const ok = await dialog({ title: 'حذفِ پیام', message: 'این پیام برای هر دو طرف «این پیام حذف شد» نمایش داده می‌شود.', danger: true, theme: this.o.theme });
             if (!ok) return;
             const d = await this.call('chat_delete', { id: m.id });
             if (!d.ok) return this.toast(d.error, 'error');
@@ -556,12 +785,38 @@
                 ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.textContent.length;
             });
         }
-        findInChat() {
-            const q = prompt('جستجو در همین گفتگو:');
-            if (!q) return;
-            const hit = [...this.msgs].reverse().find(m => !m.deleted && String(m.text || '').includes(q));
-            if (!hit) return this.toast('پیدا نشد.', 'warning');
-            this.jump(hit.id);
+        // ---------------- جستجو در گفتگو: متن + بازه‌ی تاریخ (کنارِ دکمه‌ی جستجو باز می‌شود)
+        searchActive() { return !!(this.search && (this.search.q || this.search.from || this.search.to)); }
+        bindFind() {
+            const head = this.$('.cx-head'), q = this.$('.cx-fq'), from = this.$('.cx-f-from'), to = this.$('.cx-f-to'), dates = this.$('.cx-fdates');
+            const apply = () => {
+                this.search = { q: q.value.trim(), from: normJ(from.value), to: normJ(to.value) };
+                const n = this.$('.cx-fn'); if (n && !this.searchActive()) n.textContent = '';
+                this.renderMessages(); this.scrollBottom();
+            };
+            let t; const later = () => { clearTimeout(t); t = setTimeout(apply, 220); };
+            q.oninput = later; from.oninput = later; to.oninput = later;
+            q.onkeydown = e => { if (e.key === 'Escape') this.closeFind(); };
+            this.$('.cx-find').onclick = () => {
+                if (head.classList.contains('cx-finding')) { if (q.value || from.value || to.value) { q.focus(); return; } this.closeFind(); return; }
+                head.classList.add('cx-finding'); dates.classList.add('open'); setTimeout(() => q.focus(), 120);
+            };
+            dates.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+                const r = b.dataset.r;
+                from.value = r === '' ? '' : fa(jdate(new Date(Date.now() - Math.max(0, Number(r) - 1) * 864e5)));
+                to.value = r === '' ? '' : fa(jdate(new Date()));
+                dates.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', x === b && r !== ''));
+                apply();
+            });
+        }
+        closeFind(silent) {
+            const head = this.$('.cx-head'); if (!head) return;
+            head.classList.remove('cx-finding'); this.$('.cx-fdates').classList.remove('open');
+            ['.cx-fq', '.cx-f-from', '.cx-f-to'].forEach(s => { const e = this.$(s); if (e) e.value = ''; });
+            this.$('.cx-fdates').querySelectorAll('[data-r]').forEach(x => x.classList.remove('on'));
+            const n = this.$('.cx-fn'); if (n) n.textContent = '';
+            const was = this.searchActive(); this.search = null;
+            if (was && !silent) { this.renderMessages(); this.scrollBottom(); }
         }
         lightbox(src) {
             const lb = document.createElement('div');
@@ -580,6 +835,7 @@
             if (m.text) items.push(['fa-copy', 'کپیِ متن', () => { navigator.clipboard && navigator.clipboard.writeText(m.text); this.toast('کپی شد.', 'success'); }]);
             if (m.file) items.push(['fa-download', 'دانلودِ فایل', () => { const a = document.createElement('a'); a.href = m.file.url; a.download = m.file.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }]);
             if (m.reply) items.push(['fa-arrow-turn-up', 'رفتن به پیامِ اصلی', () => this.jump(m.reply.id)]);
+            if (this.searchActive() || this.topicFilter) items.push(['fa-location-crosshairs', 'نمایشِ این پیام در گفتگو', () => this.jump(m.id)]);
             if (canRef) items.push(['fa-tag', m.ref ? 'تغییرِ موضوعِ پیام' : 'تعیینِ موضوعِ پیام (درخواست)', () => this.openRefs('message', m)]);
             if (m.ref) items.push(['fa-filter', 'همه‌ی پیام‌های همین موضوع', () => this.setFilter(m.ref)]);
             if (m.can_modify) {
@@ -653,5 +909,5 @@
         }
     }
 
-    window.ChatUI = { mount: (el, o) => new Chat(el, o), fa, esc };
+    window.ChatUI = { mount: (el, o) => new Chat(el, o), fa, esc, avatarHtml, avatarUrl, seenLabel, pickAvatar, dialog, heartbeat, toast: miniToast, PRESETS };
 })();

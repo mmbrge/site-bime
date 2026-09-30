@@ -535,7 +535,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></p>
                 </div>
-                <div class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></div>
+                <button type="button" id="me-avatar" onclick="document.getElementById('profile-modal').classList.add('active')" title="عکس و پروفایل" class="w-11 h-11 rounded-2xl overflow-visible flex items-center justify-center hover:scale-105 transition-transform"><span class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></span></button>
             </div>
         </div>
     </header>
@@ -1876,7 +1876,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
                         <th class="p-3 text-right">نام</th><th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نقش</th>
-                        <th class="p-3 text-right">شرکت / کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین ورود</th><th class="p-3 text-right"></th>
+                        <th class="p-3 text-right">شرکت / کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین بازدید</th><th class="p-3 text-right"></th>
                     </tr></thead>
                     <tbody id="su-body"><tr><td colspan="7" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
@@ -2691,6 +2691,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div id="su-company-list" class="border rounded-xl p-2 max-h-40 overflow-y-auto text-xs"></div>
                     <p class="text-[10px] text-slate-400 mt-1">اگر چند شرکت انتخاب شود، کاربر در پنلش بین آن‌ها جابه‌جا می‌شود.</p>
                 </div>
+                <div class="flex items-center gap-3 mb-4 p-2 rounded-2xl bg-slate-50 border border-slate-100">
+                    <button type="button" id="su-avatar-pv" onclick="pickUserAvatar('su')" title="انتخابِ عکس"></button>
+                    <div class="flex-1"><p class="text-xs font-bold text-slate-600">عکسِ پروفایل</p><p class="text-[10px] text-slate-400">یکی از عکس‌های آماده یا از گالری/سیستم؛ بعداً خودِ کاربر هم می‌تواند عوضش کند.</p></div>
+                    <button type="button" onclick="pickUserAvatar('su')" class="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap"><i class="fas fa-camera ml-1"></i>انتخاب</button>
+                    <input type="hidden" id="su-avatar">
+                </div>
                 <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی *</label></div>
                 <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری *</label></div>
                 <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور * (حداقل ۶)</label></div>
@@ -2710,6 +2716,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <p class="text-[11px] text-slate-400 mb-4">نام کاربری تغییر نمی‌کند. اگر شماره عوض شود، کاربر از ربات بیرون می‌آید و پیام می‌گیرد که با شماره‌ی جدید دوباره وارد شود.</p>
             <input type="hidden" id="esu-id"><input type="hidden" id="esu-type">
             <div class="float-input"><input type="text" id="esu-username" dir="ltr" placeholder=" " disabled class="bg-slate-100"><label>نام کاربری (ثابت)</label></div>
+            <div class="flex items-center gap-3 mb-4 p-2 rounded-2xl bg-slate-50 border border-slate-100">
+                <button type="button" id="esu-avatar-pv" onclick="pickUserAvatar('esu')" title="تغییرِ عکس"></button>
+                <div class="flex-1"><p class="text-xs font-bold text-slate-600">عکسِ پروفایل</p><p class="text-[10px] text-slate-400">در پیام‌رسان و همه‌جای پنل همین دیده می‌شود.</p></div>
+                <button type="button" onclick="pickUserAvatar('esu')" class="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap"><i class="fas fa-camera ml-1"></i>تغییر</button>
+                <input type="hidden" id="esu-avatar"><input type="hidden" id="esu-avatar-changed">
+            </div>
             <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
             <div id="esu-staff-box">
                 <div class="float-input">
@@ -2927,6 +2939,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content w-full max-w-md p-8 relative">
             <button type="button" onclick="document.getElementById('profile-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h2 class="text-xl font-black mb-6 text-slate-800 text-center border-b border-slate-100 pb-3"><i class="fas fa-user-edit text-blue-500 ml-2"></i>ویرایش پروفایل من</h2>
+            <!-- عکسِ پروفایل: در پیام‌رسان و فهرستِ کاربران همه‌جا همین دیده می‌شود -->
+            <div class="flex flex-col items-center gap-2 mb-5">
+                <button type="button" id="my-avatar-big" onclick="changeMyAvatar()" class="relative group" title="تغییرِ عکس"></button>
+                <button type="button" onclick="changeMyAvatar()" class="text-xs font-bold text-blue-600 hover:underline"><i class="fas fa-camera ml-1"></i>تغییرِ عکسِ پروفایل</button>
+            </div>
             
             <form method="POST" action="">
                 <input type="hidden" name="action" value="update_profile">
@@ -3149,7 +3166,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=1"></script>
-    <script src="chat-ui.js?v=1"></script>
+    <script src="chat-ui.js?v=2"></script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -3383,6 +3400,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         const uiConfirm = (title, message, opts = {}) => new Promise(res => showConfirm(title, message, () => res(true), {...opts, onCancel: () => res(false)}));
         const uiPrompt = (title, value = '', opts = {}) => new Promise(res => showPrompt(title, value, v => res(v), {...opts, onCancel: () => res(null)}));
+        // در دسترسِ اسکریپت‌های جدا (گزارش بازدید، پیام‌رسان و ...) تا هیچ‌جا پنجره‌ی confirm/prompt مرورگر باز نشود
+        window.uiConfirm = uiConfirm; window.uiPrompt = uiPrompt; window.showAlert = showAlert;
         const p2e = s => s ? s.toString().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)) : '';
 
         // رویدادهای مربوط به کپی ارقام
@@ -6046,12 +6065,39 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
             staffUsersCache = data.users;
+            presenceAt = Date.now();
             staffCompanies = data.companies || [];
             staffMeId = Number(data.me);
             document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
             renderStaffUsers();
             loadResetRequests(data.pending_resets);
         }
+        // «آنلاین» سبز یا «آخرین بازدید ...»؛ هر ۵ ثانیه از سرور تازه می‌شود (فقط وقتی همین صفحه باز است)
+        let presenceAt = Date.now();
+        function presenceCell(p) {
+            if (!window.ChatUI || !p) return '<span class="text-slate-300">—</span>';
+            const l = ChatUI.seenLabel(p, presenceAt).replace('آخرین بازدید: ', '');
+            return p.online ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-black"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                            : `<span class="text-slate-400">${l}</span>`;
+        }
+        async function refreshStaffPresence() {
+            if (document.getElementById('tab-staff-users')?.classList.contains('hidden') || document.hidden || !staffUsersCache.length) return;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'presence'})});
+                const d = await res.json();
+                if (!d.ok) return;
+                presenceAt = Date.now();
+                staffUsersCache.forEach(u => {
+                    const p = d.presence[u.type + ':' + u.id]; if (!p) return;
+                    u.presence = p;
+                    const td = document.querySelector(`[data-pres="${u.type}:${u.id}"]`);
+                    if (td) td.innerHTML = presenceCell(p);
+                    const dot = td && td.parentElement.querySelector('.cx-av');
+                    if (dot) { const on = dot.querySelector('.cx-on'); if (p.online && !on && Number(u.is_deleted) !== 1) dot.insertAdjacentHTML('beforeend', '<b class="cx-on"></b>'); if (!p.online && on) on.remove(); }
+                });
+            } catch (e) {}
+        }
+        setInterval(refreshStaffPresence, 5000);
         function setUserTypeFilter(v) {
             userTypeFilter = v;
             document.querySelectorAll('#su-type-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
@@ -6073,12 +6119,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                     : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
                 const isMe = !co && Number(u.id) === staffMeId;
                 return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
-                    <td class="p-3 font-bold">${del ? '' : botDot(u.bot_linked)} ${u.full_name}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</td>
+                    <td class="p-3 font-bold"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name, {size: 34, online: !del && u.presence && u.presence.online}) : ''}<span>${del ? '' : botDot(u.bot_linked)} ${u.full_name}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</span></span></td>
                     <td class="p-3 font-mono">${u.username}</td>
                     <td class="p-3">${roleChip}</td>
                     <td class="p-3 text-slate-500">${co ? (u.company_names || '—') : `<span class="font-mono">${faDigits(u.personnel_code || '') || '—'}</span>`}</td>
                     <td class="p-3 font-mono text-slate-500" dir="ltr">${faDigits(u.mobile_number || '') || '—'}</td>
-                    <td class="p-3 text-slate-400">${u.last_login_jalali ? faDigits(u.last_login_jalali) : '—'}</td>
+                    <td class="p-3" data-pres="${u.type}:${u.id}" title="${u.last_login_jalali ? 'آخرین ورود: ' + faDigits(u.last_login_jalali) : ''}">${presenceCell(u.presence)}</td>
                     <td class="p-3 whitespace-nowrap">${del ? '' : `
                         ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
                         <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
@@ -6107,8 +6153,28 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (msg) document.getElementById(prefix + '-mobile').focus();
         }
 
+        // انتخابِ عکسِ پروفایل در فرمِ ساخت/ویرایشِ کاربر (عکسِ گالری همان لحظه بارگذاری و مسیرش در فرم نگه داشته می‌شود)
+        function paintUserAvatar(prefix) {
+            const pv = document.getElementById(prefix + '-avatar-pv');
+            if (pv && window.ChatUI) pv.innerHTML = ChatUI.avatarHtml(document.getElementById(prefix + '-avatar').value || null, document.getElementById(prefix + '-fullname').value || '؟', {size: 52});
+        }
+        async function pickUserAvatar(prefix) {
+            const r = await ChatUI.pickAvatar({current: document.getElementById(prefix + '-avatar').value, name: document.getElementById(prefix + '-fullname').value});
+            if (!r) return;
+            let val = r.avatar || '';
+            if (r.file) {
+                const fd = new FormData(); fd.append('avatar', r.file, 'avatar.jpg');
+                const d = await chatUpload('chat_avatar_upload', fd);
+                if (!d.ok) { showToast(d.error || 'بارگذاریِ عکس ممکن نشد.', 'error'); return; }
+                val = d.path;
+            }
+            document.getElementById(prefix + '-avatar').value = val;
+            if (prefix === 'esu') document.getElementById('esu-avatar-changed').value = '1';
+            paintUserAvatar(prefix);
+        }
         function openAddUserModal() {
-            ['su-fullname','su-username','su-password','su-mobile','su-personnel'].forEach(id => document.getElementById(id).value = '');
+            ['su-fullname','su-username','su-password','su-mobile','su-personnel','su-avatar'].forEach(id => document.getElementById(id).value = '');
+            paintUserAvatar('su');
             document.getElementById('su-role').value = '';
             document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.remove('active'));
             document.getElementById('su-fields').classList.add('hidden');
@@ -6139,6 +6205,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 password: document.getElementById('su-password').value,
                 mobile_number: p2e(document.getElementById('su-mobile').value.trim()),
                 personnel_code: document.getElementById('su-personnel').value.trim(),
+                avatar: document.getElementById('su-avatar').value,
             };
             if (role === 'COMPANY') payload.company_ids = pickedCompanies('su');
             if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
@@ -6162,6 +6229,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('esu-type-badge').textContent = co ? 'کاربر شرکت' : 'کاربر داخلی';
             document.getElementById('esu-username').value = u.username;
             document.getElementById('esu-fullname').value = u.full_name || '';
+            document.getElementById('esu-avatar').value = u.avatar || '';
+            document.getElementById('esu-avatar-changed').value = '';
+            paintUserAvatar('esu');
             document.getElementById('esu-staff-box').classList.toggle('hidden', co);
             document.getElementById('esu-company-box').classList.toggle('hidden', !co);
             if (co) renderCompanyPicker('esu', u.company_ids || []);
@@ -6178,6 +6248,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const type = g('esu-type');
             const body = {action: 'update', type, id: Number(g('esu-id')), full_name: g('esu-fullname').trim(),
                 mobile_number: p2e(g('esu-mobile').trim()), password: g('esu-password'), admin_password: g('esu-admin-pass')};
+            if (g('esu-avatar-changed')) body.avatar = g('esu-avatar');
             if (type === 'COMPANY') {
                 body.company_ids = pickedCompanies('esu');
                 if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
@@ -8484,7 +8555,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         : `<span class="text-xs text-slate-400">بدون چت بله</span>`;
                     tbody.innerHTML += `
                         <tr class="hover:bg-blue-50/30">
-                            <td class="p-4">${u.full_name || '-'}</td>
+                            <td class="p-4"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name || '؟', {size: 34, online: u.presence && u.presence.online}) : ''}<span>${u.full_name || '-'}${u.presence ? `<span class="block text-[10px] font-normal ${u.presence.online ? 'text-emerald-600 font-bold' : 'text-slate-400'}">${ChatUI.seenLabel(u.presence, Date.now())}</span>` : ''}</span></span></td>
                             <td class="p-4 font-mono" dir="ltr">${e2p(u.national_code) || '-'}</td>
                             <td class="p-4 font-mono" dir="ltr">${e2p(u.personnel_code) || '-'}</td>
                             <td class="p-4">${u.company_name || '-'}</td>
@@ -8763,12 +8834,36 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!chatUI) chatUI = ChatUI.mount(document.getElementById('chat-root'), {mode: 'full', theme: 'light', call: chatCall, upload: chatUpload, openKey: key || null, onUnread: setChatBadge});
             else if (key) chatUI.open(key);
         }
-        async function pollChatBadge() {
-            if (chatUI && !document.getElementById('tab-tickets').classList.contains('hidden')) return; // خودِ پیام‌رسان شمارنده را به‌روز می‌کند
-            try { const d = await chatCall('chat_unread', {}); if (d && d.ok) setChatBadge(d.unread); } catch (e) {}
+        // «آنلاین / آخرین بازدید»: هر ۱۰ ثانیه حضور را ثبت می‌کند (همان پاسخ شمارِ پیام‌های نخوانده را هم می‌آورد)
+        // و با بستنِ صفحه فوراً «آفلاین» می‌شود
+        if (window.ChatUI) ChatUI.heartbeat({
+            ping: () => chatCall('chat_ping', {}),
+            offline: () => { const fd = new FormData(); fd.append('action', 'chat_offline'); navigator.sendBeacon && navigator.sendBeacon(CHAT_API, fd); },
+            onUnread: setChatBadge, every: 10000,
+        });
+
+        // ---- عکسِ پروفایلِ خودم (هدر و «ویرایش پروفایل») ----
+        let myAvatar = null;
+        const myName = <?php echo json_encode($_SESSION['full_name'] ?? '', JSON_UNESCAPED_UNICODE); ?>;
+        function paintMyAvatar() {
+            if (!window.ChatUI) return;
+            const h = document.getElementById('me-avatar'), b = document.getElementById('my-avatar-big');
+            if (h) h.innerHTML = ChatUI.avatarHtml(myAvatar, myName, {size: 44});
+            if (b) b.innerHTML = ChatUI.avatarHtml(myAvatar, myName, {size: 96}) + '<span class="absolute -bottom-1 -left-1 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg text-xs"><i class="fas fa-camera"></i></span>';
         }
-        pollChatBadge();
-        setInterval(pollChatBadge, 15000);
+        async function loadMyAvatar() { try { const d = await chatCall('chat_me', {}); if (d.ok) { myAvatar = d.avatar; paintMyAvatar(); } } catch (e) {} }
+        async function changeMyAvatar() {
+            const r = await ChatUI.pickAvatar({current: myAvatar || '', name: myName});
+            if (!r) return;
+            let d;
+            if (r.file) { const fd = new FormData(); fd.append('avatar', r.file, 'avatar.jpg'); d = await chatUpload('chat_set_avatar', fd); }
+            else d = await chatCall('chat_set_avatar', {avatar: r.avatar});
+            if (!d.ok) { showToast(d.error || 'ذخیره نشد.', 'error'); return; }
+            myAvatar = d.avatar; paintMyAvatar();
+            showToast('عکسِ پروفایل ذخیره شد.', 'success');
+            if (typeof staffUsersCache !== 'undefined' && staffUsersCache.length) loadStaffUsers();
+        }
+        loadMyAvatar();
 
         function switchGoftegoSub(which) {
             ['messenger','tickets','botchats','staffchat','companychat'].forEach(k => {

@@ -1,0 +1,4 @@
+# فقط عکسِ پروفایل در این پوشه ذخیره می‌شود؛ هیچ اسکریپتی اجرا نشود
+<FilesMatch "\.(php|phtml|phar|php[0-9])$">
+    Require all denied
+</FilesMatch>
