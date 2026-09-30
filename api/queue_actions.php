@@ -320,7 +320,7 @@ try {
                 }
                 $dbPath = ltrim(str_replace($siteRoot, '', $finalDiskPath), '/');
 
-                $pdo->prepare("UPDATE policy_cases SET status = 'ISSUED', plate = COALESCE(plate, ?), folder_path = ?, issued_file_path = ? WHERE id = ?")
+                $pdo->prepare("UPDATE policy_cases SET status = 'ISSUED', issued_at = COALESCE(issued_at, NOW()), plate = COALESCE(plate, ?), folder_path = ?, issued_file_path = ? WHERE id = ?")
                     ->execute([$plate, $caseFolder, $dbPath, $matchedCase['id']]);
                 notify_case_stage($pdo, $matchedCase['id'], 'بیمه‌نامه صادر شده ✅');
                 $pdo->prepare("UPDATE introductions SET used_quota = used_quota + 1 WHERE id = ?")->execute([$matchedCase['introduction_id']]);

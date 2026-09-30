@@ -846,22 +846,11 @@ try {
         sync_intro_group_message($pdo, $case['introduction_id']);
         $newIntroFolder = sync_intro_folder($pdo, $siteRoot, $case['introduction_id']);
 
-        // نام پوشه‌ی معرفی‌نامه شاملِ شمارنده‌ی صادره است و همین حالا عوض شد؛ پس مسیرهای
-        // ذخیره‌شده‌ی این پرونده باید با مسیر جدید هماهنگ شوند
-        if ($newIntroFolder) {
-            $updatedCaseFolder = $newIntroFolder . '/' . $caseFolderName;
-            if ($updatedCaseFolder !== $caseFolder) {
-                $oldRel2 = ltrim(str_replace($siteRoot, '', $caseFolder), '/');
-                $newRel2 = ltrim(str_replace($siteRoot, '', $updatedCaseFolder), '/');
-                $relPath = str_replace($oldRel2, $newRel2, $relPath);
-                $pdo->prepare("UPDATE policy_cases SET folder_path = ?, issued_file_path = ? WHERE id = ?")
-                    ->execute([$updatedCaseFolder, $relPath, $caseId]);
-                $pdo->prepare("UPDATE case_documents SET file_path = REPLACE(file_path, ?, ?) WHERE case_id = ?")
-                    ->execute([$oldRel2, $newRel2, $caseId]);
-                $pdo->prepare("UPDATE health_inspections SET photos_folder_path = REPLACE(photos_folder_path, ?, ?), photos = REPLACE(photos, ?, ?) WHERE case_id = ?")
-                    ->execute([$caseFolder, $updatedCaseFolder, $oldRel2, $newRel2, $caseId]);
-            }
-        }
+        // sync_intro_folder پوشه‌ی این بیمه‌نامه را در ماهِ درستش گذاشت (ماهِ معرفی‌نامه یا، اگر صدور در ماهِ
+        // دیگری بود، پوشه‌ی معرفی‌نامه در ماهِ صدور) و همه‌ی مسیرهای ذخیره‌شده را هم اصلاح کرد
+        $cur = $pdo->prepare("SELECT issued_file_path FROM policy_cases WHERE id = ?");
+        $cur->execute([$caseId]);
+        $relPath = $cur->fetchColumn() ?: $relPath;
 
         $stmt = $pdo->prepare("SELECT pc.person_id, p.bale_chat_id FROM policy_cases pc JOIN persons p ON pc.person_id = p.id WHERE pc.id = ?");
         $stmt->execute([$caseId]);
