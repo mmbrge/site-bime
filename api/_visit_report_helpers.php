@@ -433,7 +433,9 @@ function vr_rebuild_zip($siteRoot, $photosDir, $zipAbs) {
 
 // ساختِ PDF و Word برای یک گزارش (در پوشه‌ی خودش)
 function vr_render_files($pdo, $cat, array $values, $folderAbs, $dateDot, $plateDisplay) {
+    rpt_trace('#layout:start');
     [$layout, $assetDir] = vr_layout($pdo, $cat);
+    rpt_trace('#layout:' . count($layout['items'] ?? []) . 'items');
     if (!is_dir($folderAbs)) @mkdir($folderAbs, 0775, true);
     $pdf = $folderAbs . '/' . build_health_report_filename($dateDot, $plateDisplay, 'pdf');
     $docx = $folderAbs . '/' . build_health_report_filename($dateDot, $plateDisplay, 'docx');

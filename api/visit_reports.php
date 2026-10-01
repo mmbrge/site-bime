@@ -13,11 +13,20 @@ session_start();
 ini_set('display_errors', '0');
 // اگر خطای جدیِ PHP پیش آمد (مثلاً فایلی ناقص آپلود شده یا نسخه‌ی PHP قدیمی است)، به‌جای صفحه‌ی خالی/HTML
 // همان پیامِ خطا به‌صورت JSON برگردانده می‌شود تا در پنل دیده شود
+// کمی حافظه‌ی رزرو تا اگر حافظه تمام شد، همین گزارشِ خطا (همراهِ ردِ مراحل) هنوز ساخته شود
+$GLOBALS['__vr_reserve'] = str_repeat(' ', 1048576);
 register_shutdown_function(function () {
+    $GLOBALS['__vr_reserve'] = null;
     $e = error_get_last();
     if (!$e || !in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) return;
+    $msg = 'خطای سرور: ' . $e['message'] . ' (' . basename($e['file']) . ':' . $e['line'] . ')';
+    if (stripos($e['message'], 'memory') !== false && function_exists('rpt_trace_text')) {
+        $diag = 'PHP ' . PHP_VERSION . ' · jit=' . ini_get('pcre.jit') . ' · ' . rpt_trace_text();
+        error_log('[visit_reports] ' . $e['message'] . ' | ' . $diag);
+        $msg .= "\n\nمسیرِ مصرفِ حافظه (برای پشتیبانی): " . $diag;
+    }
     if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
-    echo json_encode(['ok' => false, 'error' => 'خطای سرور: ' . $e['message'] . ' (' . basename($e['file']) . ':' . $e['line'] . ')'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
 });
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
@@ -34,6 +43,7 @@ if (isset($data['p']) && is_string($data['p'])) {
     if (is_array($dec)) $data = $dec + ['action' => $data['action'] ?? ''];
 }
 $action = $data['action'] ?? ($_GET['action'] ?? '');
+rpt_trace('#req:' . $action);
 
 function vr_out($a) { while (ob_get_level()) ob_end_clean(); header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 // فایلِ دودوییِ ساخته‌شده (PDF/Word) بدونِ هیچ خروجیِ ناخواسته‌ای قبلش

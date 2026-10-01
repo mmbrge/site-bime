@@ -590,13 +590,16 @@ function rpt_align($jc, $bidi) {
 function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array $opts = []) {
     $opts += ['fontMap' => [], 'fontScale' => 1.0, 'lineHeight' => 1.1, 'debug' => false, 'defaultSize' => $layout['defaults']['size'] ?? 11];
     rpt_memory_floor();
+    rpt_trace('#pdf:start');
     $pdf = new RptPdf();
     rpt_register_fonts($pdf, $opts['fontMap']);
+    rpt_trace('#pdf:fonts');
     $pdf->setCellHeightRatio($opts['lineHeight']);
     $W = $layout['page']['w']; $H = $layout['page']['h'];
     // اندازه‌گیریِ ارتفاعِ متنِ هر کادر روی یک PDFِ جدا (بی‌عکس) انجام می‌شود؛ startTransaction کلِ سند
     // (همراهِ عکس‌های فرم) را برای هر کادر کپی می‌کرد و حافظه‌ی سرور تمام می‌شد
     $opts['_measure'] = rpt_measure_pdf($opts, $W, $H);
+    rpt_trace('#pdf:measure');
     $byPage = [];
     foreach ($layout['items'] as $it) if (empty($it['hidden'])) $byPage[$it['page']][] = $it;
     for ($p = 0; $p < max(1, intval($layout['pages'])); $p++) {
@@ -615,18 +618,39 @@ function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array
         foreach ($late as &$lt) if (strtoupper((string)($lt['fill'] ?? '')) === '#FFFFFF') $lt['fill'] = null;
         unset($lt);
         $items = array_merge(array_diff_key($items, $late), $late);
-        foreach ($items as $it) {
+        foreach ($items as $k => $it) {
             $x = $it['x'] + ($it['dx'] ?? 0); $y = $it['y'] + ($it['dy'] ?? 0);
             if ($it['type'] === 'image') rpt_draw_image($pdf, $it, $x, $y, $assetDir);
             else rpt_draw_box($pdf, $it, $x, $y, $values, $opts, $W);
+            rpt_trace('p' . ($p + 1) . ':' . ($it['type'] === 'image' ? 'img:' . basename((string)$it['file']) : 'box' . $k));
         }
+        rpt_trace('#pdf:page' . ($p + 1));
     }
     $pdf->Output($destPdf, 'F');
+    rpt_trace('#pdf:output');
     $opts['_measure']->pdf->_destroy(true);
     $pdf->_destroy(true);
     unset($pdf, $opts);
     gc_collect_cycles();
+    rpt_trace('#pdf:freed');
     return is_file($destPdf);
+}
+
+// ردِ مصرفِ حافظه در مراحلِ ساختِ گزارش: اگر حافظه تمام شود، پیامِ خطا نشان می‌دهد کدام مرحله/کادر/عکس آن را خورده
+function rpt_trace($stage) {
+    $u = memory_get_usage(); $r = memory_get_usage(true);
+    $t = &$GLOBALS['__rpt_trace'];
+    if (!is_array($t)) $t = [];
+    $last = $t ? end($t) : null;
+    // فقط مرحله‌های اصلی (با «#») یا جهشِ بیش از ۸ مگابایت ثبت می‌شود تا فهرست کوتاه بماند
+    if ($stage[0] !== '#' && $last && abs($r - $last[2]) < 8388608 && abs($u - $last[1]) < 8388608) return;
+    $t[] = [ltrim($stage, '#'), $u, $r];
+    if (count($t) > 60) array_splice($t, 1, count($t) - 60);
+}
+function rpt_trace_text() {
+    $out = [];
+    foreach ((array)($GLOBALS['__rpt_trace'] ?? []) as [$s, $u, $r]) $out[] = $s . ' ' . round($u / 1048576) . '/' . round($r / 1048576) . 'MB';
+    return implode(' → ', $out);
 }
 
 // حدِ حافظه برای ساختِ گزارش (فرم‌های پرعکس)؛ اگر میزبان اجازه ندهد همان مقدارِ قبلی می‌ماند
@@ -795,6 +819,7 @@ function rpt_map_var_runs($xml, callable $cb) {
 
 function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
     rpt_memory_floor();
+    rpt_trace('#docx:start');
     if (!@copy($tplPath, $destPath)) return false;
     $z = new ZipArchive();
     if ($z->open($destPath) !== true) return false;
@@ -810,7 +835,12 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
     for ($i = 0; $i < $z->numFiles; $i++) {
         $n = $z->getNameIndex($i);
         if (!preg_match('#^word/(document|header\d*|footer\d*)\.xml$#', $n)) continue;
-        $xml = rpt_merge_placeholders($z->getFromIndex($i));
+        $raw = $z->getFromIndex($i);
+        rpt_trace('#docx:' . basename($n) . ':' . round(strlen((string)$raw) / 1024) . 'KB');
+        $xml = rpt_merge_placeholders($raw);
+        unset($raw);
+        if (!is_string($xml)) { error_log('[rpt_fill_docx] merge failed: ' . preg_last_error()); continue; }
+        rpt_trace('#docx:merged');
         // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
         $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll) {
             $font = $fontAll;
@@ -821,8 +851,12 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
             }
             return $fill($run, $font === '' ? null : !rpt_font_is_latin($font));
         });
+        rpt_trace('#docx:runs');
         $xml = $fill($xml, null);   // جا مانده‌ها (بیرون از run)
         $z->addFromString($n, $xml);
+        unset($xml);
     }
-    return $z->close();
+    $ok = $z->close();
+    rpt_trace('#docx:done');
+    return $ok;
 }
