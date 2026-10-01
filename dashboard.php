@@ -53,6 +53,18 @@ HTML;
     $vrMenuHtml = str_replace('{{VR_SETTINGS}}', ($_SESSION['role'] ?? '') === 'ADMIN'
         ? '<div class="menu-sep"></div><a href="#" onclick="switchTab(\'vr-settings\')" id="nav-vr-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات گزارش</a>' : '', $vrMenuHtml) . "\n";
 }
+// همان «گزارش بازدید» به شکلِ زیرمنوی درختیِ «صدور بیمه» (برای همه به‌جز کاربر پارسیان)
+$vrSubHtml = !$vrAccess ? '' : '                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-file-circle-check ml-2"></i><span class="ms-t">گزارش بازدید<small>ساخت، صادرشده، تنظیمات</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">گزارش بازدید</div>
+                                <a href="#" onclick="switchTab(\'vr-build\')" id="nav-vr-build" class="nav-item menu-link"><i class="fas fa-file-circle-plus ml-2"></i> ساخت گزارش بازدید</a>
+                                <a href="#" onclick="switchTab(\'vr-list\')" id="nav-vr-list" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> گزارش‌های صادرشده</a>'
+    . (($_SESSION['role'] ?? '') === 'ADMIN' ? '
+                                <a href="#" onclick="switchTab(\'vr-settings\')" id="nav-vr-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات گزارش</a>' : '') . '
+                            </div>
+                        </div>
+';
 // منوی «گفتگوها»: پیام‌رسانِ یکپارچه برای همه‌ی نقش‌ها (مدیر، اپراتور، مالی، همکار، پارسیان)
 $chatNavHtml = '<a href="#" onclick="switchTab(\'tickets\')" id="nav-tickets" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-comments ml-1"></i> گفتگوها'
     . ' <span id="chat-nav-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span></a>' . "\n";
@@ -355,6 +367,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .menu-link.active-sub > i:first-child { background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff; box-shadow: 0 4px 10px -4px rgba(37,99,235,.6); }
         .menu-sep { margin: 6px 10px; background: linear-gradient(90deg, transparent, #e2e8f0, transparent); }
         @keyframes menuIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        /* ---- زیرمنوی درختی (menu-sub): در دسکتاپ کنارِ منو باز می‌شود، در موبایل زیرِ خودش و تو‌رفته ---- */
+        .menu-sub { position: relative; }
+        .menu-sub-trigger { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 11px; font-weight: 700; color: #475569;
+                            background: none; border: 0; cursor: pointer; text-align: right; white-space: nowrap; font-size: inherit; font-family: inherit; transition: background .15s, color .15s; }
+        .menu-sub-trigger > i:first-child { margin: 0 !important; width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
+                                            font-size: 12px; background: #f1f5f9; color: #64748b; flex-shrink: 0; transition: background .2s, color .2s, transform .2s; }
+        .menu-sub-trigger .ms-t { flex: 1; display: flex; flex-direction: column; line-height: 1.4; }
+        .menu-sub-trigger .ms-t small { font-size: 9.5px; font-weight: 600; color: #94a3b8; }
+        .menu-sub-trigger .ms-arrow { font-size: 9px; opacity: .45; transition: transform .2s, opacity .2s; margin-right: 6px; }
+        .menu-sub-trigger:hover, .menu-sub.open > .menu-sub-trigger { background: #f8fafc; color: #2563eb; }
+        .menu-sub-trigger:hover > i:first-child, .menu-sub.open > .menu-sub-trigger > i:first-child { background: #dbeafe; color: #2563eb; transform: scale(1.07); }
+        .menu-sub.open > .menu-sub-trigger .ms-arrow { opacity: .9; }
+        .menu-sub-trigger.sub-active { color: #1d4ed8; }
+        .menu-sub-trigger.sub-active > i:first-child, .menu-sub.open > .menu-sub-trigger.sub-active > i:first-child { background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff; }
+        .menu-sub-trigger.sub-active .ms-t small { color: #60a5fa; }
+        .menu-subpanel { display: none; }
+        .menu-sub.open > .menu-subpanel { display: block; }
+        @keyframes subIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+        @keyframes subInFlip { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+        @media (min-width: 1024px) {
+            .menu-subpanel { position: absolute; top: -8px; right: calc(100% + 10px); min-width: 220px; background: #fff; border: 1px solid #eef2f7; border-radius: 16px;
+                             padding: 8px; z-index: 61; box-shadow: 0 22px 48px -14px rgba(15,23,42,.28), 0 0 0 1px rgba(15,23,42,.03); }
+            .menu-sub.open > .menu-subpanel { animation: subIn .16s ease-out; }
+            /* پلِ نامرئی بینِ گزینه و زیرمنو تا با حرکتِ موس بسته نشود */
+            .menu-subpanel::before { content: ''; position: absolute; top: 0; bottom: 0; right: -12px; width: 12px; }
+            .menu-sub.flip > .menu-subpanel { right: auto; left: calc(100% + 10px); }
+            .menu-sub.flip > .menu-subpanel::before { right: auto; left: -12px; }
+            .menu-sub.flip.open > .menu-subpanel { animation-name: subInFlip; }
+            .menu-sub.flip .ms-arrow { transform: rotate(180deg); }
+            .menu-subpanel .ms-head { font-size: 10px; font-weight: 800; color: #94a3b8; padding: 2px 8px 6px; border-bottom: 1px dashed #e2e8f0; margin-bottom: 4px; }
+        }
+        @media (max-width: 1023px) {
+            .menu-sub.open > .menu-subpanel { margin: 2px 24px 6px 0; padding-right: 10px; border-right: 2px dashed #cbd5e1; }
+            .menu-sub.open > .menu-sub-trigger .ms-arrow { transform: rotate(-90deg); }
+            .menu-subpanel .ms-head { display: none; }
+        }
         @media (min-width: 1024px) {
             #main-nav { align-items: center; gap: 3px !important; padding: 4px !important; border-radius: 16px;
                         background: rgba(241,245,249,.78); border: 1px solid rgba(226,232,240,.95); box-shadow: inset 0 1px 0 rgba(255,255,255,.85); }
@@ -373,12 +421,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                  border-left: 1px solid #eef2f7; border-top: 1px solid #eef2f7; transform: rotate(45deg); }
             .menu-group.open .menu-panel, .menu-group:focus-within .menu-panel { animation: menuIn .18s ease-out; }
             /* پنجره‌های کم‌عرض‌تر: فاصله‌ها کمتر، نامِ برند و روزِ هفته‌ی ساعت پنهان تا سربرگ در یک خط بماند */
-            @media (max-width: 1439px) {
+            @media (max-width: 1279px) {
                 #main-nav > a.nav-item, #main-nav .menu-trigger { padding: 6px 7px !important; gap: 4px; }
                 .brand-name { display: none !important; }
                 .hdr-clock .hc-w { display: none; }
             }
-            @media (max-width: 1260px) { #main-nav .menu-trigger .fa-chevron-down { display: none; } #main-nav > a.nav-item > i:first-child, #main-nav .menu-trigger > i:first-child { display: none; } }
+            @media (max-width: 1100px) { #main-nav .menu-trigger .fa-chevron-down { display: none; } }
             @media (max-width: 1140px) {
                 header.glass-header { padding-left: 12px !important; padding-right: 12px !important; }
                 header.glass-header > div:first-child { gap: 10px !important; }
@@ -459,6 +507,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .hdr-clock .hc-sep { color: #94a3b8; }
         .hdr-clock .hc-t { color: #4338ca; min-width: 46px; display: inline-block; text-align: left; direction: ltr; }
         @media (max-width: 640px) { .hdr-clock .hc-w { display: none; } }
+        /* موبایل: سربرگ در عرضِ صفحه جا شود (دکمه‌ی ویرایش پنهان؛ خودِ عکسِ پروفایل هم همان را باز می‌کند) */
+        @media (max-width: 640px) {
+            header.glass-header { padding-left: 10px !important; padding-right: 10px !important; }
+            header.glass-header > div:first-child { gap: 10px !important; }
+            header.glass-header > div:last-child { gap: 8px !important; }
+            header.glass-header > div:last-child > div:last-child { padding-right: 8px !important; gap: 6px !important; }
+            .hdr-edit-btn { display: none !important; }
+            .hdr-user-name { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .hdr-clock { font-size: 9px; padding: 1px 5px; }
+        }
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
@@ -511,6 +569,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>
                 <span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>
             </div>
+            <!-- منوی اصلی: پنج بخش؛ کارهای مرتبط داخلِ زیرمنوهای درختی (menu-sub) کنارِ هم آمده‌اند -->
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
                 <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml; ?>
@@ -521,74 +580,75 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <?php endif; ?>
                 <?php echo $chatNavHtml; ?>
 
-                <?php if (!$isLiaison): ?>
-                <!-- ===== عملیات بیمه: خطِ کارِ پرسنلی، از پرونده تا صدور ===== -->
+                <!-- ===== صدور بیمه: کارکنان، شرکت‌ها، لیست صدور/صادره‌ها و گزارش بازدید ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-file-shield ml-1"></i> عملیات بیمه
+                        <i class="fas fa-file-shield ml-1"></i> صدور بیمه
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                         <span id="ops-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
                     </button>
                     <div class="menu-panel">
-                        <a href="#" onclick="switchTab('records')" id="nav-records" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> مدیریت پرونده‌ها</a>
-                        <a href="#" onclick="switchTab('health')" id="nav-health" class="nav-item menu-link"><i class="fas fa-heart-pulse ml-2"></i> بازدید سلامت و مدارک</a>
-                        <a href="#" onclick="switchTab('approved-reviews')" id="nav-approved-reviews" class="nav-item menu-link"><i class="fas fa-circle-check ml-2"></i> بازدیدهای تاییدشده</a>
-                        <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <?php if (!$isParsian) echo $vrMenuHtml; ?>
-
-                <?php if ($canSeeCompanies): ?>
-                <!-- ===== شرکت‌ها: خطِ کارِ شرکتی، کنارِ عملیات بیمه چون هر دو «مسیرِ رسیدن به صدور»اند ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-building ml-1"></i> شرکت‌ها
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('companies-requests')" id="nav-companies-requests" class="nav-item menu-link"><i class="fas fa-file-lines ml-2"></i> درخواست‌های شرکتی</a>
-                        <a href="#" onclick="switchTab('companies-inbox')" id="nav-companies-inbox" class="nav-item menu-link"><i class="fas fa-inbox ml-2"></i> صندوق ورودی مدارک</a>
-                        <a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a>
                         <?php if (!$isLiaison): ?>
-                        <a href="#" onclick="switchTab('companies-manage')" id="nav-companies-manage" class="nav-item menu-link"><i class="fas fa-gear ml-2"></i> مدیریت شرکت‌ها</a>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-id-card ml-2"></i><span class="ms-t">کارکنان (کسر از حقوق)<small>پرونده، بازدید سلامت، صدور</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">کارکنان (کسر از حقوق)</div>
+                                <a href="#" onclick="switchTab('records')" id="nav-records" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> مدیریت پرونده‌ها</a>
+                                <a href="#" onclick="switchTab('health')" id="nav-health" class="nav-item menu-link"><i class="fas fa-heart-pulse ml-2"></i> بازدید سلامت و مدارک</a>
+                                <a href="#" onclick="switchTab('approved-reviews')" id="nav-approved-reviews" class="nav-item menu-link"><i class="fas fa-circle-check ml-2"></i> بازدیدهای تاییدشده</a>
+                                <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
+                            </div>
+                        </div>
                         <?php endif; ?>
+                        <?php if ($canSeeCompanies): ?>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-building ml-2"></i><span class="ms-t">شرکت‌ها<small>درخواست، مدارک، مدیریت</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">شرکت‌ها</div>
+                                <a href="#" onclick="switchTab('companies-requests')" id="nav-companies-requests" class="nav-item menu-link"><i class="fas fa-file-lines ml-2"></i> درخواست‌های شرکتی</a>
+                                <a href="#" onclick="switchTab('companies-inbox')" id="nav-companies-inbox" class="nav-item menu-link"><i class="fas fa-inbox ml-2"></i> صندوق ورودی مدارک</a>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('companies-manage')" id="nav-companies-manage" class="nav-item menu-link"><i class="fas fa-gear ml-2"></i> مدیریت شرکت‌ها</a><?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-stamp ml-2"></i><span class="ms-t">صدور و صادره‌ها<small>لیست صدور و بیمه‌نامه‌های صادره</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">صدور و صادره‌ها</div>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> لیست صدور</a><?php endif; ?>
+                                <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+<?php echo $vrSubHtml; ?>
                     </div>
                 </div>
-                <?php endif; ?>
 
-                <?php if ($canSeeCompanies): ?>
-                <!-- ===== صدور و صادره‌ها: لیست صدورِ شرکتی، و فهرست یکپارچه‌ی
-                     صادره‌های شرکتی و کارکنان ===== -->
+                <!-- ===== مالی: داشبورد، اقساط و دریافت‌ها، تسویه و گزارش‌ها ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-stamp ml-1"></i> صدور و صادره‌ها
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <?php if (!$isLiaison): // همکار بیمه با ما فقط «صادره‌ها» را می‌بیند، نه لیست صدور ?>
-                        <a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> لیست صدور</a>
-                        <?php endif; ?>
-                        <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <!-- ===== حسابداری: همه‌ی مالی یک‌جا، «تنظیمات مالی» هم که قبلاً زیر «سامانه» بود
-                     به همین‌جا آمد تا کنارِ بقیه‌ی مالی باشد (فقط مدیر کل می‌بیند) ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-calculator ml-1"></i> حسابداری
+                        <i class="fas fa-calculator ml-1"></i> مالی
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
-                        <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link"><i class="fas fa-list-ol ml-2"></i> اقساط بیمه‌نامه‌ها</a>
-                        <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
-                        <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-hand-holding-dollar ml-2"></i> دریافت‌ها و چک‌ها</a>
-                        <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه با پاسارگاد</a>
-                        <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-list-ol ml-2"></i><span class="ms-t">اقساط و دریافت‌ها<small>اقساط، صورتحساب، چک</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">اقساط و دریافت‌ها</div>
+                                <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link"><i class="fas fa-list-ol ml-2"></i> اقساط بیمه‌نامه‌ها</a>
+                                <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
+                                <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-hand-holding-dollar ml-2"></i> دریافت‌ها و چک‌ها</a>
+                            </div>
+                        </div>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-scale-balanced ml-2"></i><span class="ms-t">تسویه و گزارش‌ها<small>پاسارگاد، مغایرت، شرکت‌ها</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">تسویه و گزارش‌ها</div>
+                                <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه با پاسارگاد</a>
+                                <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
+                                <?php if ($canSeeCompanies): ?><a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a><?php endif; ?>
+                            </div>
+                        </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <div class="menu-sep"></div>
                         <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
@@ -596,49 +656,34 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
 
-                <!-- ===== بایگانی: گروهِ مستقل برای همه (قبلاً زیر «سامانه» بود که جایش نبود،
-                     و برای همکار شرکت‌ها یک گروهِ تکراری جدا داشت) ===== -->
+                <!-- ===== بایگانی و مدیریت: بایگانی، کاربران و سامانه ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-archive ml-1"></i> بایگانی
+                        <i class="fas fa-sliders ml-1"></i> بایگانی و مدیریت
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab('filemanager')" id="nav-filemanager" class="nav-item menu-link"><i class="fas fa-folder-tree ml-2"></i> بایگانی فایل‌ها</a>
-                    </div>
-                </div>
-
-                <?php if (!$isLiaison): ?>
-                <!-- ===== ارتباطات و کاربران: هر دو فهرستِ «آدم‌ها» (مشتری‌های ربات و کاربران
-                     داخلیِ پنل) کنار هم آمدند؛ قبلاً در دو منوی جدا بودند ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-comments ml-1"></i> ارتباطات و کاربران
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-users ml-2"></i> کاربران ربات بله</a>
-                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
-                        <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a>
-                        <a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a>
+                        <?php if (!$isLiaison): ?>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-users ml-2"></i><span class="ms-t">کاربران<small>ربات بله، کاربران پنل، لاگ ورود</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">کاربران</div>
+                                <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-robot ml-2"></i> کاربران ربات بله</a>
+                                <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a><a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a><?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-gears ml-2"></i><span class="ms-t">سامانه<small>صف پردازش و تنظیمات</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">سامانه</div>
+                                <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR</a>
+                                <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a><?php endif; ?>
+                            </div>
+                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
-
-                <!-- ===== سامانه: فقط چیزهای فنیِ خودِ سیستم ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-sliders ml-1"></i> سامانه
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR</a>
-                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
-                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
                 <?php endif; /* !$isParsian */ ?>
             </nav>
         </div>
@@ -647,7 +692,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <span id="notif-bell-mount" class="inline-flex"></span>
             <a href="logout.php" class="text-red-400 hover:text-red-600 transition-colors hover-target text-xl" title="خروج از سیستم"><i class="fas fa-power-off"></i></a>
             <div class="flex items-center gap-3 border-r border-slate-300 pr-5">
-                <button onclick="document.getElementById('profile-modal').classList.add('active')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
+                <button onclick="document.getElementById('profile-modal').classList.add('active')" class="hdr-edit-btn w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
                     <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></p>
@@ -4630,7 +4675,38 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const CLOSE_DELAY = 220;
         let menuCloseTimer = null;
 
+        // زیرمنوهای درختی: در دسکتاپ با هاور (کمی مکث تا حرکتِ اریبِ موس زیرمنوی دیگری باز نکند) یا کلیک؛
+        // اگر کنارِ منو جا نشود، سمتِ دیگر باز می‌شود و از پایینِ صفحه هم بیرون نمی‌زند
+        function closeMenuSubs(scope, keep) {
+            (scope || document).querySelectorAll('.menu-sub.open').forEach(sb => {
+                if (keep && (sb === keep || sb.contains(keep))) return;
+                sb.classList.remove('open');
+                const t = sb.querySelector('.menu-sub-trigger'); if (t) t.setAttribute('aria-expanded', 'false');
+            });
+        }
+        function openMenuSub(sub) {
+            clearTimeout(sub._mt);
+            closeMenuSubs(sub.closest('.menu-panel'), sub);
+            sub.classList.add('open');
+            const t = sub.querySelector('.menu-sub-trigger'); if (t) t.setAttribute('aria-expanded', 'true');
+            if (window.innerWidth < 1024) return;
+            const sp = sub.querySelector('.menu-subpanel');
+            sub.classList.remove('flip'); sp.style.top = '';
+            let r = sp.getBoundingClientRect();
+            if (r.left < 8) { sub.classList.add('flip'); r = sp.getBoundingClientRect(); }
+            const over = r.bottom - (window.innerHeight - 8);
+            if (over > 0) sp.style.top = (-8 - over) + 'px';
+        }
+        function toggleMenuSub(btn, e) {
+            if (e) e.stopPropagation();
+            const sub = btn.closest('.menu-sub');
+            const hover = window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
+            if (sub.classList.contains('open') && !hover) { closeMenuSubs(sub.parentElement); return; }
+            openMenuSub(sub);
+        }
+
         function closeAllMenuGroups() {
+            closeMenuSubs();
             document.querySelectorAll('.menu-group.open').forEach(g => {
                 g.classList.remove('open');
                 const t = g.querySelector('.menu-trigger');
@@ -4661,6 +4737,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     if (!desktopHover.matches) return;
                     clearTimeout(menuCloseTimer);
                     menuCloseTimer = setTimeout(closeAllMenuGroups, CLOSE_DELAY);
+                });
+            });
+            document.querySelectorAll('.menu-sub').forEach(sub => {
+                sub.addEventListener('mouseenter', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(sub._mt); sub._mt = setTimeout(() => openMenuSub(sub), 110);
+                });
+                sub.addEventListener('mouseleave', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(sub._mt);
+                    sub._mt = setTimeout(() => { sub.classList.remove('open'); }, 260);
                 });
             });
             // انتخابِ یک گزینه باید منو را ببندد (قبلاً بعد از رفتن به تب، منو باز می‌ماند).
@@ -6871,6 +6958,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const grp = activeNav.closest('.menu-group');
                 if (grp) grp.querySelector('.menu-trigger').classList.add('text-blue-600');
             }
+            // زیرمنوی درختیِ والد هم نشانه‌دار می‌شود
+            document.querySelectorAll('.menu-sub-trigger.sub-active').forEach(t => t.classList.remove('sub-active'));
+            const activeSub = activeNav && activeNav.closest('.menu-sub');
+            if (activeSub) activeSub.querySelector('.menu-sub-trigger').classList.add('sub-active');
             // گروه‌های باز را ببند تا منو تمیز بماند
             document.querySelectorAll('.menu-group').forEach(g => {
                 g.classList.remove('open');
