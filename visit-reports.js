@@ -42,14 +42,28 @@
     async function api(action, body = {}) {
         const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, p: b64(JSON.stringify(body)) }) });
         const txt = await res.text();
-        try { return JSON.parse(txt); } catch (e) { return { ok: false, error: badResponse(res.status, txt) }; }
+        try { return JSON.parse(txt); } catch (e) { return { ok: false, error: await withTrace(res.status, badResponse(res.status, txt)) }; }
+    }
+    // سرور بدونِ پیامِ PHP قطع شد (۵۰۳/۵۰۰، معمولاً هاست پروسه را به‌خاطرِ حافظه کشته): مراحلِ ثبت‌شده‌ی ساختِ گزارش
+    // از فایلِ رد خوانده و زیرِ پیام نشان داده می‌شود تا معلوم باشد کجا گیر کرده
+    async function withTrace(status, msg) {
+        if (status && status < 500) return msg;
+        try {
+            const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'last_trace', p: b64('{}') }) });
+            const d = await r.json();
+            if (d.ok && d.trace && d.age !== null && d.age < 900) {
+                const lines = d.trace.trim().split('\n');
+                return msg + '\n\nمراحلِ ثبت‌شده تا لحظه‌ی قطع (برای پشتیبانی): ' + lines.slice(0, 1).concat(lines.slice(1).slice(-14)).join(' → ');
+            }
+        } catch (e) { /* همان پیامِ اصلی */ }
+        return msg;
     }
     function apiForm(fd, onProgress) {
         return new Promise((resolve) => {
             const x = new XMLHttpRequest();
             x.open('POST', API);
             if (onProgress) x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
-            x.onload = () => { try { resolve(JSON.parse(x.responseText)); } catch (e) { resolve({ ok: false, error: x.status === 413 ? 'حجمِ فایل‌ها بیش از حدِ مجازِ سرور است.' : badResponse(x.status, x.responseText) }); } };
+            x.onload = async () => { try { resolve(JSON.parse(x.responseText)); } catch (e) { resolve({ ok: false, error: x.status === 413 ? 'حجمِ فایل‌ها بیش از حدِ مجازِ سرور است.' : await withTrace(x.status, badResponse(x.status, x.responseText)) }); } };
             x.onerror = () => resolve({ ok: false, error: 'خطای شبکه؛ اتصال را بررسی کنید.' });
             x.send(fd);
         });

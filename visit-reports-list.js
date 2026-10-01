@@ -83,6 +83,7 @@
         if (!d.ok) { list.innerHTML = `<div class="vr-card p-8 text-center text-red-500 font-bold text-sm">${esc(d.error)}</div>`; return; }
         const first = !st.data;
         st.data = d;
+        isAdminList = !!d.is_admin;
         const fBox = document.getElementById('vrl-filters');
         if (first) {
             fBox.innerHTML = filtersHtml(d.filters, d.is_admin);
@@ -100,6 +101,7 @@
         } else list.innerHTML = `<div class="space-y-2 vr-stagger">${d.rows.map(rowHtml).join('')}</div>`;
         list.querySelectorAll('[data-open]').forEach(el => el.onclick = () => VR.openDetail(Number(el.dataset.open)));
         list.querySelectorAll('[data-dl]').forEach(el => el.onclick = e => { e.stopPropagation(); const r = (lastRows || []).find(x => x.id === Number(el.dataset.dl)); if (r) downloadPopup(r); });
+        list.querySelectorAll('[data-purge]').forEach(el => el.onclick = async e => { e.stopPropagation(); const r = (lastRows || []).find(x => x.id === Number(el.dataset.purge)); if (r) await purgeReport(r); });
         const pages = Math.ceil(d.total / d.per_page);
         const pg = document.getElementById('vrl-pager');
         pg.innerHTML = pages > 1 ? `<button class="vr-btn vr-btn-s !py-1.5" ${st.page <= 1 ? 'disabled' : ''} data-pg="${st.page - 1}"><i class="fas fa-chevron-right"></i></button>
@@ -108,6 +110,19 @@
         pg.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { st.page = Number(b.dataset.pg); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
     }
 
+    let isAdminList = false;
+    const isLinked = r => !!(r.health_inspection_id || r.case_id || r.company_plate_id);
+    // حذفِ کامل از بایگانی و همه‌جا (مدیر کل، با رمزِ خودش)؛ فقط گزارشی که به پلاک/درخواستی وصل نیست
+    async function purgeReport(r) {
+        if (isLinked(r)) return toast('این گزارش به پلاک/درخواستی وصل است؛ اول اتصالش را قطع کنید.', 'error');
+        const pw = await askPassword('حذفِ کاملِ گزارش', `گزارش ${esc(r.report_no)}${r.insured_name ? ' (' + esc(r.insured_name) + ')' : ''} و همه‌ی فایل‌هایش (PDF، Word، عکس‌ها و نسخه‌های قبلی) از بایگانی، فهرست و دفترِ اکسل برای همیشه پاک می‌شود و برگشت‌پذیر نیست. برای تایید رمزِ خودتان را وارد کنید.`);
+        if (pw === null) return false;
+        const d = await api('purge', { id: r.id, password: pw });
+        if (!d.ok) { toast(d.error, 'error'); return false; }
+        toast('گزارش به‌طورِ کامل حذف شد.', 'info');
+        window.dispatchEvent(new CustomEvent('vr:changed', { detail: r }));
+        return true;
+    }
     function linksChips(r) {
         const out = [];
         if (r.health_inspection_id) out.push(['health']); else if (r.case_id) out.push(['case']);
@@ -132,6 +147,8 @@
                 ${r.version > 1 ? `<span class="vr-chip bg-amber-50 text-amber-600"><i class="fas fa-code-branch"></i> نسخه ${fa(r.version)}</span>` : ''}
                 ${r.photos_count ? `<span class="vr-chip bg-slate-100 text-slate-500"><i class="fas fa-image"></i> ${fa(r.photos_count)}</span>` : ''}
                 <button type="button" data-dl="${r.id}" class="vr-chip bg-indigo-50 text-indigo-600 hover:bg-indigo-100" title="دانلود زیپ یا فایل گزارش"><i class="fas fa-download"></i> دانلود</button>
+                ${isAdminList ? (isLinked(r) ? `<span class="vr-chip bg-slate-50 text-slate-300 cursor-not-allowed" title="به پلاک/درخواستی وصل است؛ برای حذف اول اتصالش را قطع کنید"><i class="fas fa-trash"></i></span>`
+                    : `<button type="button" data-purge="${r.id}" class="vr-chip bg-rose-50 text-rose-600 hover:bg-rose-100" title="حذفِ کامل از بایگانی و همه‌جا"><i class="fas fa-trash"></i> حذف</button>`) : ''}
             </div></div>`;
     }
 
@@ -215,8 +232,10 @@
                     </div>
                     ${r.can_admin && r.archive_path ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-folder"><i class="fas fa-folder-open text-amber-500"></i> نمایشِ پوشه در بایگانی</button>` : ''}
                     ${active && r.can_edit ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-edit !text-amber-700 !border-amber-200"><i class="fas fa-pen-to-square"></i> ویرایش گزارش</button>` : ''}
-                    ${r.can_admin ? (active ? `<button type="button" class="vr-btn vr-btn-r w-full vr-d-del"><i class="fas fa-trash"></i> حذف (انتقال به «حذف شده»)</button>`
-                        : `<div class="grid grid-cols-2 gap-2"><button type="button" class="vr-btn vr-btn-g vr-d-restore"><i class="fas fa-rotate-left"></i> بازگردانی</button><button type="button" class="vr-btn vr-btn-r vr-d-purge"><i class="fas fa-fire"></i> حذف همیشگی</button></div>`) : ''}
+                    ${r.can_admin ? (active ? `<div class="grid grid-cols-2 gap-2"><button type="button" class="vr-btn vr-btn-s vr-d-del !text-rose-600 !border-rose-200"><i class="fas fa-box-archive"></i> انتقال به «حذف شده»</button>
+                        <button type="button" class="vr-btn vr-btn-r vr-d-purge" ${r.links.length ? 'disabled title="به پلاک/درخواستی وصل است؛ اول اتصالش را قطع کنید"' : ''}><i class="fas fa-trash"></i> حذفِ کامل</button></div>
+                        ${r.links.length ? '<p class="text-[10px] text-slate-400 font-bold">حذفِ کامل فقط برای گزارشی است که به پلاک/درخواستی وصل نیست.</p>' : ''}`
+                        : `<div class="grid grid-cols-2 gap-2"><button type="button" class="vr-btn vr-btn-g vr-d-restore"><i class="fas fa-rotate-left"></i> بازگردانی</button><button type="button" class="vr-btn vr-btn-r vr-d-purge" ${r.links.length ? 'disabled' : ''}><i class="fas fa-fire"></i> حذف همیشگی</button></div>`) : ''}
                 </div>
                 <div class="vr-card p-5 vr-fade-up"><p class="vr-sec-title mb-3 !text-xs">اتصال‌ها</p>
                     ${r.links.length ? r.links.map(l => `<div class="flex items-center gap-2 text-xs font-bold mb-2"><span class="vr-chip ${LINK_FA[l.type][2]}"><i class="fas ${LINK_FA[l.type][1]}"></i></span><span class="text-slate-600">${esc(l.title)}</span></div>`).join('')
@@ -250,12 +269,7 @@
             toast('گزارش حذف شد.', 'info'); m.close(); changed();
         });
         on('.vr-d-restore', async () => { const d = await api('restore', { id: r.id }); if (!d.ok) return toast(d.error, 'error'); toast('گزارش بازگردانده شد.', 'info'); reload(); changed(); });
-        on('.vr-d-purge', async () => {
-            const pw = await askPassword('حذفِ همیشگی', `پوشه و همه‌ی فایل‌های گزارش ${esc(r.report_no)} برای همیشه پاک می‌شود و برگشت‌پذیر نیست. رمزِ خودتان را وارد کنید.`);
-            if (pw === null) return;
-            const d = await api('purge', { id: r.id, password: pw }); if (!d.ok) return toast(d.error, 'error');
-            toast('برای همیشه پاک شد.', 'info'); m.close(); changed();
-        });
+        on('.vr-d-purge', async () => { if (await purgeReport(r)) m.close(); });
         m.body.querySelectorAll('.vr-d-link').forEach(b => b.onclick = async () => {
             const label = LINK_FA[b.dataset.type][0];
             if (!await confirmBox('اتصال گزارش', `فایلِ PDFِ گزارش با نام‌گذاریِ استاندارد در پوشه‌ی این ${label} قرار می‌گیرد${b.dataset.type === 'health' ? ' و اگر بازدید منتظرِ گزارش است، تاییدِ نهایی می‌شود' : ''}. ادامه می‌دهید؟`)) return;

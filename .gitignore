@@ -60,3 +60,6 @@ backup/
 # عکس‌های پروفایلِ کاربران (روی هاست بارگذاری می‌شوند)
 uploads/avatars/*
 !uploads/avatars/.htaccess
+
+# ردِ حافظه‌ی ساختِ گزارش بازدید (روی هاست ساخته می‌شود)
+report_assets/logs/

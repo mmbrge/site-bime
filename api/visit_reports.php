@@ -43,7 +43,6 @@ if (isset($data['p']) && is_string($data['p'])) {
     if (is_array($dec)) $data = $dec + ['action' => $data['action'] ?? ''];
 }
 $action = $data['action'] ?? ($_GET['action'] ?? '');
-rpt_trace('#req:' . $action);
 
 function vr_out($a) { while (ob_get_level()) ob_end_clean(); header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 // فایلِ دودوییِ ساخته‌شده (PDF/Word) بدونِ هیچ خروجیِ ناخواسته‌ای قبلش
@@ -62,6 +61,18 @@ $user = vr_current_user($pdo);
 if (!$user) vr_fail('ابتدا وارد پنل شوید.');
 if (!vr_ready($pdo)) vr_fail(VR_SCHEMA_MSG);
 $isAdmin = $user['is_admin'];
+// ردِ حافظه‌ی ساختِ گزارش در فایل (برای وقتی که هاست پروسه را می‌کشد و پیامِ خطایی برنمی‌گردد)
+function vr_trace_file($uid) { $d = dirname(__DIR__) . '/report_assets/logs'; if (!is_dir($d)) @mkdir($d, 0775, true); return $d . '/trace_u' . intval($uid) . '.log'; }
+if (in_array($action, ['issue', 'edit', 'preview', 'test_build'], true)) {
+    $GLOBALS['__rpt_trace_file'] = vr_trace_file($user['id']);
+    @file_put_contents($GLOBALS['__rpt_trace_file'], date('Y-m-d H:i:s') . ' ' . $action . ' · PHP ' . PHP_VERSION . ' · limit ' . ini_get('memory_limit') . ' · jit=' . ini_get('pcre.jit') . "\n");
+    rpt_trace('#req:' . $action);
+}
+if ($action === 'last_trace') {
+    $f = vr_trace_file($user['id']);
+    $txt = is_file($f) ? (string)file_get_contents($f, false, null, max(0, filesize($f) - 6000)) : '';
+    vr_out(['ok' => true, 'trace' => $txt, 'age' => is_file($f) ? time() - filemtime($f) : null]);
+}
 function vr_need_admin() { global $isAdmin; if (!$isAdmin) vr_fail('این بخش فقط برای مدیر کل است.'); }
 
 function vr_check_password($pdo, $userId, $pwd) {
@@ -853,20 +864,38 @@ try {
     }
 
     // حذفِ همیشگی (فقط از «حذف‌شده‌ها»، با رمزِ مدیر)
+    // حذفِ کامل (فقط مدیر کل، با رمزِ خودش): پوشه‌ی گزارش (PDF، Word، عکس‌ها، ZIP و نسخه‌های قبلی) از بایگانی
+    // یا «حذف شده» پاک می‌شود، رکوردها از دیتابیس و ردیفش از دفترِ اکسل. گزارشی که به بازدیدِ سلامت، درخواستِ
+    // کارکنان یا ردیفِ شرکتی وصل است پاک نمی‌شود (اول باید اتصالش قطع شود)
     if ($action === 'purge') {
         $r = vr_load($pdo, $data['id'] ?? 0);
-        if (!$r || $r['status'] !== 'DELETED') vr_fail('فقط گزارش‌های حذف‌شده را می‌شود برای همیشه پاک کرد.');
+        if (!$r) vr_fail('گزارش پیدا نشد.');
+        if (!empty($r['health_inspection_id']) || !empty($r['case_id']) || !empty($r['company_plate_id']))
+            vr_fail('این گزارش به پلاک/درخواستی وصل است؛ اول از «اتصال‌ها» اتصالش را قطع کنید، بعد حذف کنید.');
         if (!vr_check_password($pdo, $user['id'], (string)($data['password'] ?? ''))) vr_fail('رمز عبورِ مدیر (رمز خودتان) نادرست است.', ['password' => true]);
+        $root = vr_archive_root($siteRoot);
         $dir = vr_abs($siteRoot, $r['folder_path']);
-        if ($dir && is_dir($dir) && strpos($dir, vr_trash_root($siteRoot)) === 0) {
-            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        $real = $dir && is_dir($dir) ? realpath($dir) : false;
+        $realRoot = realpath($root);
+        // فقط پوشه‌ای داخلِ بایگانیِ گزارش‌ها (نه خودِ ریشه) پاک می‌شود
+        if ($real && $realRoot && strpos($real, $realRoot . DIRECTORY_SEPARATOR) === 0) {
+            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($real, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
             foreach ($rii as $f) $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname());
-            @rmdir($dir);
+            @rmdir($real);
+            // پوشه‌های خالیِ بالاتر (صادرکننده/نوع/ماه/سال) هم پاک می‌شوند
+            $d = dirname($real);
+            while (strlen($d) > strlen($realRoot) && strpos($d, $realRoot) === 0 && basename($d) !== 'حذف شده' && @rmdir($d)) $d = dirname($d);
         }
+        // فایل‌هایی که بیرون از پوشه مانده‌اند (نسخه‌های قدیمی که جابه‌جا شده‌اند)
+        foreach ([$r['pdf_path'], $r['docx_path'], $r['zip_path']] as $rel) { $a = vr_abs($siteRoot, $rel); if ($a && is_file($a) && strpos(realpath($a), (string)$realRoot) === 0) @unlink($a); }
+        $vs = $pdo->prepare("SELECT pdf_path, docx_path FROM visit_report_versions WHERE report_id = ?");
+        $vs->execute([$r['id']]);
+        foreach ($vs->fetchAll() as $v) foreach ([$v['pdf_path'], $v['docx_path']] as $rel) { $a = vr_abs($siteRoot, $rel); if ($a && is_file($a) && strpos(realpath($a), (string)$realRoot) === 0) @unlink($a); }
         $pdo->prepare("DELETE FROM visit_report_photos WHERE report_id = ?")->execute([$r['id']]);
         $pdo->prepare("DELETE FROM visit_report_versions WHERE report_id = ?")->execute([$r['id']]);
         $pdo->prepare("DELETE FROM visit_reports WHERE id = ?")->execute([$r['id']]);
-        vr_audit($pdo, $user['id'], 'VR_DELETE', $r['id'], 'حذف همیشگی · ' . $r['report_no']);
+        vr_write_register($pdo, $siteRoot);
+        vr_audit($pdo, $user['id'], 'VR_DELETE', $r['id'], 'حذفِ کامل · ' . $r['report_no'] . ' · ' . ($r['plate_display'] ?: '') . ' · ' . $r['insured_name']);
         vr_out(['ok' => true]);
     }
 

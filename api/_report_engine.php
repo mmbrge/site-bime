@@ -646,6 +646,8 @@ function rpt_trace($stage) {
     if ($stage[0] !== '#' && $last && abs($r - $last[2]) < 8388608 && abs($u - $last[1]) < 8388608) return;
     $t[] = [ltrim($stage, '#'), $u, $r];
     if (count($t) > 60) array_splice($t, 1, count($t) - 60);
+    // هم‌زمان در فایل هم نوشته می‌شود: اگر هاست خودِ پروسه را بکشد (خطای ۵۰۳)، مرحله‌ی آخر از همین فایل خوانده می‌شود
+    if (!empty($GLOBALS['__rpt_trace_file'])) @file_put_contents($GLOBALS['__rpt_trace_file'], date('H:i:s') . ' ' . ltrim($stage, '#') . ' ' . round($u / 1048576) . '/' . round($r / 1048576) . "MB\n", FILE_APPEND);
 }
 function rpt_trace_text() {
     $out = [];
@@ -654,7 +656,7 @@ function rpt_trace_text() {
 }
 
 // حدِ حافظه برای ساختِ گزارش (فرم‌های پرعکس)؛ اگر میزبان اجازه ندهد همان مقدارِ قبلی می‌ماند
-function rpt_memory_floor($mb = 1024) {
+function rpt_memory_floor($mb = 640) {
     $cur = trim((string)ini_get('memory_limit'));
     if ($cur === '-1') return;
     $n = intval($cur); $u = strtoupper(substr($cur, -1));
