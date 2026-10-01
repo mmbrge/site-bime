@@ -46,8 +46,10 @@ if (!$companies) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="../notif-bell.js?v=1"></script>
-<script src="../chat-ui.js?v=3"></script>
+<script src="../notif-bell.js?v=2"></script>
+<script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
+<script src="../iran-time.js?v=1"></script>
+<script src="../chat-ui.js?v=4"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>

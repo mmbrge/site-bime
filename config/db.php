@@ -19,6 +19,10 @@ if ($password === '') {
     die('❌ رمز دیتابیس تنظیم نشده. فایل config/db.local.php را بر اساس config/db.example.php بسازید.');
 }
 
+// همه‌ی ساعت‌های سایت (ثبت و نمایش) به وقتِ ایران و بر اساسِ ساعتِ سرور: PHP و MySQL هر دو روی ایران
+// (ایران از ۱۴۰۱ ساعتِ تابستانی ندارد؛ همیشه +03:30)
+date_default_timezone_set('Asia/Tehran');
+
 try {
     // ایجاد اتصال ایمن با PDO
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
@@ -26,6 +30,8 @@ try {
     // تنظیمات خطاگیری و امنیت
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    // NOW() و CURRENT_TIMESTAMPِ دیتابیس هم مثلِ date()ِ PHP به وقتِ ایران
+    try { $pdo->exec("SET time_zone = '" . date('P') . "'"); } catch (Throwable $e) {}
 
 } catch (PDOException $e) {
     // جزئیات خطا فقط در لاگ سرور ثبت می‌شود، نه در خروجی عمومی

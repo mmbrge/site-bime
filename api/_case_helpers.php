@@ -127,8 +127,26 @@ function run_document_ocr_verbose($absFilePath) {
     if (!file_exists($scriptPath)) return ['data' => null, 'debug' => "اسکریپت OCR پیدا نشد: {$scriptPath}"];
     if (!file_exists($absFilePath)) return ['data' => null, 'debug' => "فایل ورودی پیدا نشد: {$absFilePath}"];
 
-    $command = "export PYTHONIOENCODING=utf8; " . escapeshellarg($pythonEnv) . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($absFilePath) . " 2>&1";
+    // موتور (مثل ربات و صفحه‌ی تست OCR) فایل را از یک مسیرِ لاتین می‌خواند؛ مسیرهای فارسیِ بایگانی
+    // (مثل «موقت/...») را خوب باز نمی‌کند. پس همیشه یک کپیِ موقت با نامِ لاتین در queue/pending ساخته
+    // می‌شود. عکسِ WEBP هم به JPG تبدیل می‌شود (موتور فقط PDF/JPG/PNG می‌خواند).
+    $ext = strtolower(pathinfo($absFilePath, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) return ['data' => null, 'debug' => 'فرمتِ فایل برای موتورِ تشخیص مناسب نیست (فقط PDF/عکس).'];
+    $stageDir = dirname(__DIR__) . '/queue/pending';
+    if (!is_dir($stageDir)) @mkdir($stageDir, 0777, true);
+    $stage = $stageDir . '/ocr_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . ($ext === 'webp' ? 'jpg' : ($ext === 'jpeg' ? 'jpg' : $ext));
+    $staged = false;
+    if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
+        $im = @imagecreatefromwebp($absFilePath);
+        if ($im) { $staged = @imagejpeg($im, $stage, 92); imagedestroy($im); }
+    } elseif ($ext !== 'webp') {
+        $staged = @copy($absFilePath, $stage);
+    }
+    if (!$staged) return ['data' => null, 'debug' => 'آماده‌سازیِ فایل برای موتورِ تشخیص ممکن نشد.'];
+
+    $command = "export PYTHONIOENCODING=utf8; " . escapeshellarg($pythonEnv) . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($stage) . " 2>&1";
     $output = shell_exec($command);
+    @unlink($stage);
     if ($output === null || trim($output) === '') {
         return ['data' => null, 'debug' => 'اسکریپت پایتون هیچ خروجی‌ای برنگرداند.'];
     }

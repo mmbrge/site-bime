@@ -200,7 +200,8 @@ function vr_produce($pdo, $siteRoot, $user, $cat, array $fields, array $form, $d
     $issuerName = $existing ? $existing['issuer_name'] : $user['name'];
     $values = vr_build_values($cat, $fields, $form, ['date' => $dateDot, 'issuer_name' => $issuerName, 'report_no' => $reportNo]);
     [$visitorId, $visitorName] = vr_visitor_from_form($form, $fields, $pdo, $cat['id']);
-    $targetFolder = vr_report_folder($siteRoot, $dateDot, $cat['insurer'], $plateDisplay, $form['insured']['name']);
+    $issuerDir = vr_issuer_dir($pdo, $existing ? $existing['issuer_user_id'] : $user['id'], $issuerName);
+    $targetFolder = vr_report_folder($siteRoot, $dateDot, $cat['insurer'], $plateDisplay, $form['insured']['name'], $issuerDir);
     $photosName = build_health_photos_folder_name($dateDot, $plateDisplay);
 
     $version = 1;
@@ -823,7 +824,8 @@ try {
         $r = vr_load($pdo, $data['id'] ?? 0);
         if (!$r || $r['status'] !== 'DELETED') vr_fail('گزارش پیدا نشد.');
         $src = vr_abs($siteRoot, $r['folder_path']);
-        $dest = vr_unique_dir(vr_report_folder($siteRoot, $r['report_date'], $r['insurer'], $r['plate_display'], $r['insured_name']));
+        $dest = vr_unique_dir(vr_report_folder($siteRoot, $r['report_date'], $r['insurer'], $r['plate_display'], $r['insured_name'],
+                                               vr_issuer_dir($pdo, $r['issuer_user_id'], $r['issuer_name'])));
         @mkdir(dirname($dest), 0775, true);
         $newRel = $r['folder_path'];
         if (is_dir($src) && @rename($src, $dest)) {

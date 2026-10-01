@@ -446,7 +446,8 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
     $extractedJson = null;
     $ext = pathinfo($safe_filename, PATHINFO_EXTENSION);
 
-    if (strtolower($ext) === 'pdf') {
+    // معرفی‌نامه/بیمه‌نامه‌ای که به‌صورت عکس (JPG/PNG) فرستاده شود هم با همان موتور خوانده می‌شود
+    if (in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png'], true)) {
         $pipelineResult = runExtractionPipeline($physical_path);
         if (!empty($pipelineResult['ok'])) {
             $status = 'DONE';

@@ -701,7 +701,7 @@ try {
         }
 
         $ocrData = null; $ocrDebug = null;
-        if (strtolower($ext) === 'pdf') {
+        if (in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {   // موتور هم PDF و هم عکس را می‌خواند
             $ocrResult = run_document_ocr_verbose($tempPath);
             $ocrData = $ocrResult['data'];
             $ocrDebug = $ocrResult['debug'];

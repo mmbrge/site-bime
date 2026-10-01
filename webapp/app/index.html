@@ -6,7 +6,8 @@
 <title>بیمه با ما</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-<script src="/chat-ui.js?v=3"></script>
+<script src="/iran-time.js?v=1"></script>
+<script src="/chat-ui.js?v=4"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -370,10 +371,11 @@ function gregorianToJalali(gy, gm, gd) {
 }
 function startLiveClock() {
     function tick() {
-        const now = new Date();
-        const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth()+1, now.getDate());
+        // وقتِ ایران بر اساسِ ساعتِ سرور (iran-time.js)، نه ساعتِ گوشیِ کاربر
+        const p = window.IrTime ? IrTime.parts() : (n => ({jy: 0, H: n.getHours(), M: n.getMinutes(), S: n.getSeconds(), g: n}))(new Date());
+        const [jy, jm, jd] = window.IrTime ? [p.jy, p.jm, p.jd] : gregorianToJalali(p.g.getFullYear(), p.g.getMonth()+1, p.g.getDate());
         document.getElementById('live-date').textContent = `${toFa(jd)} ${JALALI_MONTHS[jm-1]} ${toFa(jy)}`;
-        const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0'), ss = String(now.getSeconds()).padStart(2,'0');
+        const hh = String(p.H).padStart(2,'0'), mm = String(p.M).padStart(2,'0'), ss = String(p.S).padStart(2,'0');
         document.getElementById('live-time').textContent = toFa(`${hh}:${mm}:${ss}`);
     }
     tick();

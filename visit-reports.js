@@ -766,7 +766,7 @@
             const catId = this.cat.id;
             const write = () => {
                 if (!this.cat || this.cat.id !== catId) return;   // نوع عوض شده؛ داده‌ی نوعِ تازه زیرِ نامِ قبلی ذخیره نشود
-                try { localStorage.setItem(this.draftKey(), JSON.stringify({ form: this.collect(), date: this.$(`#${this.id('date')}`).value, at: Date.now() })); } catch (e) {}
+                try { localStorage.setItem(this.draftKey(), JSON.stringify({ form: this.collect(), date: this.$(`#${this.id('date')}`).value, at: window.IrTime ? IrTime.now() : Date.now() })); } catch (e) {}
             };
             if (now) write(); else this._dt = setTimeout(write, 700);
         }
@@ -775,10 +775,10 @@
             let d = null;
             try { d = JSON.parse(localStorage.getItem(this.draftKey()) || 'null'); } catch (e) {}
             const slot = this.$('.vr-draft-slot');
-            if (!d || !slot || Date.now() - d.at > 7 * 86400000) return;
-            const t = new Date(d.at);
+            if (!d || !slot || (window.IrTime ? IrTime.now() : Date.now()) - d.at > 7 * 86400000) return;
+            const at = window.IrTime ? IrTime.hm(d.at) : new Date(d.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' });
             slot.innerHTML = `<div class="vr-card p-3 flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50/80 vr-pop"><i class="fas fa-clock-rotate-left text-amber-500"></i>
-                <p class="text-xs font-bold text-amber-800 flex-1">پیش‌نویسِ ذخیره‌نشده‌ای از ${fa(t.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }))} برای این نوع گزارش دارید${d.form.insured && d.form.insured.name ? ' (' + esc(d.form.insured.name) + ')' : ''}.</p>
+                <p class="text-xs font-bold text-amber-800 flex-1">پیش‌نویسِ ذخیره‌نشده‌ای از ${fa(at)} برای این نوع گزارش دارید${d.form.insured && d.form.insured.name ? ' (' + esc(d.form.insured.name) + ')' : ''}.</p>
                 <button type="button" class="vr-btn vr-btn-p !py-1.5 !text-[11px] vr-d-yes">بازیابی</button><button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vr-d-no">حذف</button></div>`;
             slot.querySelector('.vr-d-yes').onclick = () => { this.applyForm(d.form, false, true); if (d.date) this.$(`#${this.id('date')}`).value = d.date; slot.innerHTML = ''; };
             slot.querySelector('.vr-d-no').onclick = () => { this.clearDraft(); slot.innerHTML = ''; };

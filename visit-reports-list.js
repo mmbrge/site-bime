@@ -124,7 +124,8 @@
             <div class="col-span-6 sm:col-span-3 min-w-0"><p class="text-xs font-black text-slate-700 truncate">${esc(r.insured_name)}</p>
                 <p class="text-[10px] text-slate-400 font-bold truncate">${esc(r.vehicle_type || '')}${r.model_year ? ' · ' + fa(r.model_year) : ''}${r.car_value ? ' · ' + money(r.car_value) + ' ریال' : ''}</p></div>
             <div class="col-span-7 sm:col-span-2 text-[10px] font-bold text-slate-500 leading-5"><p><i class="fas fa-calendar-day text-slate-300 ml-1"></i>${fa(r.report_date.replace(/\./g, '/'))}</p>
-                <p class="truncate"><i class="fas fa-user-check text-slate-300 ml-1"></i>${esc(r.visitor_name || '—')}</p><p class="truncate"><i class="fas fa-pen-nib text-slate-300 ml-1"></i>${esc(r.issuer_name || '')}</p></div>
+                <p class="truncate"><i class="fas fa-user-check text-slate-300 ml-1"></i>${esc(r.visitor_name || '—')}</p><p class="truncate"><i class="fas fa-pen-nib text-slate-300 ml-1"></i>${esc(r.issuer_name || '')}</p>
+                <p class="truncate" title="ایجاد${r.updated_jalali ? ' · آخرین ویرایش: ' + fa(r.updated_jalali.replace(/\./g, '/')) : ''}"><i class="fas fa-clock text-slate-300 ml-1"></i><span dir="ltr">${fa(String(r.created_jalali || '').replace(/\./g, '/'))}</span>${r.updated_jalali ? ` <span class="text-amber-500">· ویرایش <span dir="ltr">${fa(r.updated_jalali.replace(/\./g, '/'))}</span></span>` : ''}</p></div>
             <div class="col-span-5 sm:col-span-2 flex flex-wrap gap-1 justify-end">
                 ${r.status === 'DELETED' ? '<span class="vr-chip bg-red-100 text-red-600"><i class="fas fa-trash"></i> حذف‌شده</span>' : ''}
                 ${linksChips(r)}

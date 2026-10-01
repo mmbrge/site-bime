@@ -22,20 +22,19 @@
     const EMOJI = '😀 😁 😂 🙂 😊 😍 😎 🤔 😅 😢 😡 👍 👎 👏 🙏 🤝 💪 🎉 ❤️ 💯 ✅ ❌ ⚠️ ❓ ⏳ 📎 📄 📷 🚗 🚙 🛻 🚚 🔧 📞 💬 📌 ⭐ 🔥 👌 😉'.split(' ');
     const TYPE_META = { PERSON: ['کارکنان', 'fa-user', '#0ea5e9'], COMPANY: ['شرکت', 'fa-building', '#8b5cf6'], STAFF: ['همکار', 'fa-user-tie', '#10b981'] };
     const REF_ICON = { CASE: 'fa-file-shield', COMPANY_REQUEST: 'fa-building-circle-check', VISIT_REPORT: 'fa-file-circle-check' };
-    const todayJ = (() => {
-        try { return en(new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())).replace(/[^\d/]/g, ''); }
-        catch (e) { return ''; }
-    })();
-    const yestJ = (() => {
-        try { return en(new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - 864e5))).replace(/[^\d/]/g, ''); }
-        catch (e) { return ''; }
-    })();
-    const dayLabel = d => d === todayJ ? 'امروز' : d === yestJ ? 'دیروز' : fa(d);
+    // همه‌ی «امروز/دیروز/ساعت»ها به وقتِ ایران و بر اساسِ ساعتِ سرور (iran-time.js)، نه ساعتِ سیستمِ کاربر
+    const nowMs = () => window.IrTime ? IrTime.now() : Date.now();
+    const dayLabel = d => d === jdate(nowMs()) ? 'امروز' : d === jdate(nowMs() - 864e5) ? 'دیروز' : fa(d);
     const initials = s => { const w = String(s || '؟').trim().split(/\s+/); return (w[0] || '؟').charAt(0) + (w[1] ? w[1].charAt(0) : ''); };
     const hue = s => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
     const pad2 = n => String(n).padStart(2, '0');
-    // تاریخِ شمسیِ یک Date به شکلِ 1405/07/08 (ارقامِ لاتین، برای مقایسه)
-    const jdate = d => { try { return en(new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
+    // تاریخِ شمسیِ یک لحظه (Date یا میلی‌ثانیه) به وقتِ ایران به شکلِ 1405/07/08 (ارقامِ لاتین، برای مقایسه)
+    const jdate = d => {
+        const ms = typeof d === 'number' ? d : +d;
+        if (window.IrTime) return IrTime.jdate(ms);
+        try { return en(new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tehran' }).format(new Date(ms))).replace(/[^\d/]/g, ''); } catch (e) { return ''; }
+    };
+    const hmIr = ms => window.IrTime ? IrTime.hm(ms) : (d => pad2(d.getHours()) + ':' + pad2(d.getMinutes()))(new Date(ms));
     // تاریخی که کاربر تایپ کرده (۱۴۰۵/۷/۱ یا 1405-07-01) => 1405/07/01
     const normJ = s => { const p = en(s).trim().split(/[\/\-.\s]+/).filter(Boolean); if (p.length !== 3 || p[0].length !== 4) return ''; return p[0] + '/' + pad2(p[1]) + '/' + pad2(p[2]); };
 
@@ -64,9 +63,9 @@
         const ago = p.ago + Math.max(0, Math.round((Date.now() - (at || Date.now())) / 1000));
         if (ago < 60) return pre + 'لحظاتی پیش';
         if (ago < 3600) return pre + fa(Math.floor(ago / 60)) + ' دقیقه پیش';
-        const d = new Date(Date.now() - ago * 1000), hm = fa(pad2(d.getHours()) + ':' + pad2(d.getMinutes())), jd = jdate(d);
-        if (jd === jdate(new Date())) return pre + 'امروز ساعت ' + hm;
-        if (jd === jdate(new Date(Date.now() - 864e5))) return pre + 'دیروز ساعت ' + hm;
+        const t = nowMs() - ago * 1000, hm = fa(hmIr(t)), jd = jdate(t);
+        if (jd === jdate(nowMs())) return pre + 'امروز ساعت ' + hm;
+        if (jd === jdate(nowMs() - 864e5)) return pre + 'دیروز ساعت ' + hm;
         if (ago < 7 * 86400) return pre + fa(Math.floor(ago / 86400)) + ' روز پیش';
         return pre + fa(jd) + ' ساعت ' + hm;
     }
@@ -539,7 +538,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             if (!box.querySelector('[data-pk]')) { box.classList.remove('cx-settled'); setTimeout(() => box.classList.add('cx-settled'), 700); }
             patchList(box, list.map((t, i) => ['t:' + t.key, `<div class="cx-th ${t.key === this.key ? 'on' : ''}" data-k="${t.key}" style="animation-delay:${Math.min(i, 12) * 25}ms">
                 ${this.avatar(t.title, t.type, t.avatar, t.presence)}
-                <div class="cx-th-b"><div class="cx-th-t"><b>${t.closed ? '<i class="fas fa-lock" style="font-size:10px;color:#e11d48" title="گفتگو قطع شده"></i> ' : ''}${esc(t.title)}</b><span>${t.last_date === todayJ ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
+                <div class="cx-th-b"><div class="cx-th-t"><b>${t.closed ? '<i class="fas fa-lock" style="font-size:10px;color:#e11d48" title="گفتگو قطع شده"></i> ' : ''}${esc(t.title)}</b><span>${t.last_date === jdate(nowMs()) ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
                 <div class="cx-th-l"><p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</div></div></div>`]),
                 n => {
                     n.onclick = () => this.open(n.dataset.k);
@@ -886,8 +885,8 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             };
             dates.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
                 const r = b.dataset.r;
-                from.value = r === '' ? '' : fa(jdate(new Date(Date.now() - Math.max(0, Number(r) - 1) * 864e5)));
-                to.value = r === '' ? '' : fa(jdate(new Date()));
+                from.value = r === '' ? '' : fa(jdate(nowMs() - Math.max(0, Number(r) - 1) * 864e5));
+                to.value = r === '' ? '' : fa(jdate(nowMs()));
                 dates.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', x === b && r !== ''));
                 apply();
             });

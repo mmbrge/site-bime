@@ -373,10 +373,21 @@ function vr_record_columns(array $fields, array $values) {
 function vr_archive_root($siteRoot) { return archive_root($siteRoot) . '/بایگانی گزارشات بازدید'; }
 function vr_trash_root($siteRoot) { return vr_archive_root($siteRoot) . '/حذف شده'; }
 
-function vr_report_folder($siteRoot, $dateDot, $insurer, $plateDisplay, $insuredName) {
+// $issuerDir: پوشه‌ی صادرکننده (vr_issuer_dir) زیرِ پوشه‌ی نوع؛ گزارش‌های مدیر کل مستقیم داخلِ پوشه‌ی نوع می‌مانند
+function vr_report_folder($siteRoot, $dateDot, $insurer, $plateDisplay, $insuredName, $issuerDir = '') {
     [$jy, $jm] = array_map('intval', explode('.', $dateDot));
     $name = sanitize_folder_name(name_join(['(' . $dateDot . ') ' . (plate_for_filename($plateDisplay) ?: 'بدون‌پلاک'), $insuredName]));
-    return vr_archive_root($siteRoot) . '/' . $jy . '/' . jalali_month_name($jm) . '/' . sanitize_folder_name(vr_insurer_fa($insurer)) . '/' . $name;
+    return vr_archive_root($siteRoot) . '/' . $jy . '/' . jalali_month_name($jm) . '/' . sanitize_folder_name(vr_insurer_fa($insurer))
+         . ($issuerDir !== '' ? '/' . $issuerDir : '') . '/' . $name;
+}
+// گزارشی که کاربرِ دیگری (غیر از مدیر کل، مثلاً کاربر پارسیان) صادر کرده: داخلِ پوشه‌ی نوع، یک پوشه به نامِ همان کاربر
+function vr_issuer_dir($pdo, $issuerId, $issuerName) {
+    $role = '';
+    if (intval($issuerId)) {
+        try { $st = $pdo->prepare("SELECT role FROM users WHERE id = ?"); $st->execute([intval($issuerId)]); $role = (string)$st->fetchColumn(); } catch (Throwable $e) {}
+    }
+    if ($role === 'ADMIN' || trim((string)$issuerName) === '') return '';
+    return sanitize_folder_name(trim((string)$issuerName));
 }
 function vr_rel($siteRoot, $abs) { return $abs ? ltrim(str_replace($siteRoot, '', $abs), '/') : null; }
 function vr_abs($siteRoot, $rel) { return $rel ? $siteRoot . '/' . ltrim($rel, '/') : null; }
@@ -884,5 +895,6 @@ function vr_row_out($r) {
             'health_inspection_id' => $r['health_inspection_id'] ? intval($r['health_inspection_id']) : null,
             'case_id' => $r['case_id'] ? intval($r['case_id']) : null, 'company_plate_id' => $r['company_plate_id'] ? intval($r['company_plate_id']) : null,
             'created_at' => $r['created_at'], 'created_jalali' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at'])),
-            'updated_at' => $r['updated_at'], 'has_docx' => !empty($r['docx_path']), 'has_zip' => !empty($r['zip_path'])];
+            'updated_at' => $r['updated_at'], 'updated_jalali' => $r['updated_at'] ? jalali_from_gregorian_ts_dotted(strtotime($r['updated_at'])) . ' ' . date('H:i', strtotime($r['updated_at'])) : null,
+            'has_docx' => !empty($r['docx_path']), 'has_zip' => !empty($r['zip_path'])];
 }

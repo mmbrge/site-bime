@@ -345,6 +345,49 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         @media (max-width: 1023px) {
             .menu-panel { padding-right: 14px; border-right: 2px solid #e2e8f0; margin: 2px 6px 6px 0; }
         }
+        /* ===== ظاهرِ منوی بالا: نوارِ قرصی، دکمه‌های نرم، بخشِ فعال با رنگِ برند، زیرمنوی کارتی با آیکونِ قاب‌دار ===== */
+        .menu-link { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 11px; font-weight: 700; }
+        .menu-link > i:first-child { margin: 0 !important; width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
+                                     font-size: 12px; background: #f1f5f9; color: #64748b; flex-shrink: 0; transition: background .2s, color .2s, transform .2s; }
+        .menu-link:hover { background: #f8fafc; }
+        .menu-link:hover > i:first-child { background: #dbeafe; color: #2563eb; transform: scale(1.07); }
+        .menu-link.active-sub { background: #eff6ff; }
+        .menu-link.active-sub > i:first-child { background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff; box-shadow: 0 4px 10px -4px rgba(37,99,235,.6); }
+        .menu-sep { margin: 6px 10px; background: linear-gradient(90deg, transparent, #e2e8f0, transparent); }
+        @keyframes menuIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @media (min-width: 1024px) {
+            #main-nav { align-items: center; gap: 3px !important; padding: 4px !important; border-radius: 16px;
+                        background: rgba(241,245,249,.78); border: 1px solid rgba(226,232,240,.95); box-shadow: inset 0 1px 0 rgba(255,255,255,.85); }
+            #main-nav > a.nav-item, #main-nav .menu-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px !important; border-radius: 12px;
+                        color: #475569; white-space: nowrap; transition: background .2s, color .2s, box-shadow .2s; }
+            #main-nav > a.nav-item > i:first-child, #main-nav .menu-trigger > i:first-child { margin: 0 !important; font-size: 12px; }
+            #main-nav .menu-trigger .fa-chevron-down { margin: 0 !important; opacity: .55; }
+            #main-nav > a.nav-item:hover, #main-nav .menu-trigger:hover, #main-nav .menu-group:hover .menu-trigger, #main-nav .menu-group.open .menu-trigger {
+                        background: #fff; color: #2563eb; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+            /* بخشِ فعال (خودِ لینک یا گروهی که زیرمنوی فعال دارد) */
+            #main-nav > a.nav-item.text-blue-600, #main-nav .menu-group .menu-trigger.text-blue-600, #main-nav .menu-group:hover .menu-trigger.text-blue-600 {
+                        background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff !important; box-shadow: 0 6px 16px -6px rgba(37,99,235,.65); }
+            .menu-panel { min-width: 240px; padding: 8px; border-radius: 18px; border-color: #eef2f7;
+                          box-shadow: 0 22px 48px -14px rgba(15,23,42,.28), 0 0 0 1px rgba(15,23,42,.03); }
+            .menu-panel::after { content: ''; position: absolute; top: -6px; right: 24px; width: 11px; height: 11px; background: #fff;
+                                 border-left: 1px solid #eef2f7; border-top: 1px solid #eef2f7; transform: rotate(45deg); }
+            .menu-group.open .menu-panel, .menu-group:focus-within .menu-panel { animation: menuIn .18s ease-out; }
+            /* پنجره‌های کم‌عرض‌تر: فاصله‌ها کمتر، نامِ برند و روزِ هفته‌ی ساعت پنهان تا سربرگ در یک خط بماند */
+            @media (max-width: 1439px) {
+                #main-nav > a.nav-item, #main-nav .menu-trigger { padding: 6px 7px !important; gap: 4px; }
+                .brand-name { display: none !important; }
+                .hdr-clock .hc-w { display: none; }
+            }
+            @media (max-width: 1260px) { #main-nav .menu-trigger .fa-chevron-down { display: none; } #main-nav > a.nav-item > i:first-child, #main-nav .menu-trigger > i:first-child { display: none; } }
+            @media (max-width: 1140px) {
+                header.glass-header { padding-left: 12px !important; padding-right: 12px !important; }
+                header.glass-header > div:first-child { gap: 10px !important; }
+                #main-nav { font-size: 11px !important; }
+                #main-nav > a.nav-item, #main-nav .menu-trigger { padding: 6px 5px !important; }
+                .hdr-user-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            }
+            @media (hover: hover) and (pointer: fine) { .menu-group:hover .menu-panel { animation: menuIn .18s ease-out; } }
+        }
         /* ---- ثبت دستیِ معرفی‌نامه / انتخابِ معرفی‌نامه ---- */
         .mi-box { padding: 0 !important; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; border-radius: 26px; }
         .mi-head { position: relative; display: flex; align-items: center; gap: 14px; padding: 20px 22px; color: #fff; background: linear-gradient(135deg, #4f46e5, #2563eb 60%, #0ea5e9); overflow: hidden; }
@@ -408,7 +451,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .rec-v small { font-size: 12px; font-weight: 700; opacity: .85; margin-right: 4px; }
         .rec-s { font-size: 11px; opacity: .88; margin-top: 4px; position: relative; z-index: 1; min-height: 16px; }
         @keyframes recIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+        /* ساعتِ ایران زیرِ نام و نقشِ کاربر (iran-time.js، بر اساسِ ساعتِ سرور) */
+        .hdr-clock { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 1px 7px; border-radius: 999px; width: max-content;
+                     font-size: 10px; font-weight: 800; color: #0369a1; background: linear-gradient(90deg, #e0f2fe, #ede9fe); border: 1px solid #bae6fd;
+                     font-variant-numeric: tabular-nums; white-space: nowrap; direction: rtl; }
+        .hdr-clock i { font-size: 9px; color: #0284c7; }
+        .hdr-clock .hc-sep { color: #94a3b8; }
+        .hdr-clock .hc-t { color: #4338ca; min-width: 46px; display: inline-block; text-align: left; direction: ltr; }
+        @media (max-width: 640px) { .hdr-clock .hc-w { display: none; } }
 </style>
+<script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
+<script src="iran-time.js?v=1"></script>
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="h-screen flex flex-col">
@@ -456,7 +509,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </button>
             <div class="flex items-center gap-2.5 font-black text-lg lg:text-xl hover-target bg-gradient-to-l from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                 <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>
-                <span class="hidden sm:inline tracking-tight">بیمه با ما</span>
+                <span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>
             </div>
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
@@ -596,8 +649,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="flex items-center gap-3 border-r border-slate-300 pr-5">
                 <button onclick="document.getElementById('profile-modal').classList.add('active')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
-                    <p class="text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
+                    <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></p>
+                    <p id="hdr-clock" class="hdr-clock" title="تاریخ و ساعتِ ایران (ساعتِ سرور)"><i class="far fa-clock"></i><span class="hc-d"></span><span class="hc-sep">-</span><span class="hc-t"></span></p>
                 </div>
                 <button type="button" id="me-avatar" onclick="document.getElementById('profile-modal').classList.add('active')" title="عکس و پروفایل" class="w-11 h-11 rounded-2xl overflow-visible flex items-center justify-center hover:scale-105 transition-transform"><span class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></span></button>
             </div>
@@ -1691,12 +1745,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="saveSiteUrlSetting()" class="w-full bg-violet-500 hover:bg-violet-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-violet-500/20 hover-target transition-all text-xs">
                         <i class="fas fa-save ml-2"></i> ذخیره آدرس سایت
                     </button>
-                </div>
-
-                <div class="card p-6 border-amber-100 bg-gradient-to-br from-white to-amber-50/30">
-                    <h3 class="font-bold text-slate-700 mb-2 border-b border-amber-100 pb-3"><i class="fas fa-bell text-amber-500 ml-2"></i>اعلان‌های مدیر کل</h3>
-                    <p class="text-xs text-slate-500 leading-relaxed mt-2">فعالیت‌های پرسنل (درخواست جدید، بازدید سلامت، تکمیل مدارک، تیکت و پیام پشتیبانی) برای همه‌ی کاربرانِ «مدیر کل» ذخیره می‌شود.</p>
-                    <p class="text-xs text-slate-500 leading-relaxed mt-2">مدیر در <strong>ربات بله‌ی شرکت‌ها</strong> (بعد از ورود با شماره‌ی خودش) دکمه‌ی <strong>«🔔 اعلان‌ها»</strong> را می‌زند و همه را در یک پیام می‌بیند؛ بعد از دیدن پاک می‌شوند. وقتی اعلانِ تازه برسد، یک پیامِ کوتاه «اعلان تازه دارید» هم می‌گیرد.</p>
                 </div>
 
                 <div class="card p-6 border-teal-100 bg-gradient-to-br from-white to-teal-50/30 md:col-span-2">
@@ -3326,14 +3374,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
-    <script src="notif-bell.js?v=1"></script>
-    <script src="chat-ui.js?v=3"></script>
+    <script src="notif-bell.js?v=2"></script>
+    <script src="chat-ui.js?v=4"></script>
     <script src="table-count.js?v=2"></script>
+    <script>
+        // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
+        if (window.IrTime) IrTime.mountClock(document.getElementById('hdr-clock'), {render: (el, p, date, time) => {
+            const d = el.querySelector('.hc-d'), t = el.querySelector('.hc-t'), dh = `<span class="hc-w">${p.wd} </span>${date}`;
+            if (d.innerHTML !== dh) d.innerHTML = dh;
+            t.textContent = time;
+        }});
+    </script>
     <script src="money-input.js?v=1"></script>
-    <script src="finance-ui.js?v=1"></script>
+    <script src="finance-ui.js?v=2"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=7"></script>
-    <script src="visit-reports-list.js?v=4"></script>
+    <script src="visit-reports.js?v=8"></script>
+    <script src="visit-reports-list.js?v=5"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=4"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
     <?php endif; ?>
     <script>
@@ -3448,6 +3504,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // مسیرهای ذخیره‌شده ممکن است شامل فاصله، پرانتز یا حروف فارسی باشند (نام پوشه‌های بایگانی)؛
         // برای اینکه مرورگر/سرور همیشه درست بارشان کند، هر بخش از مسیر را جداگانه encode می‌کنیم
         const encodeFilePath = p => (p || '').split('/').map(encodeURIComponent).join('/');
+
+        // «اکنون» به وقتِ ایران و بر اساسِ ساعتِ سرور، به شکلِ رشته‌ی MySQL (برای پیام‌هایی که هنوز از سرور برنگشته‌اند)
+        const irNowStr = () => new Date((window.IrTime ? IrTime.now() : Date.now()) + 12600000).toISOString().slice(0, 19).replace('T', ' ');
 
         // ---- تبدیل هر تاریخ (میلادی/رشته‌ی MySQL) به شمسی، برای نمایش یکدست در کل پنل ----
         function toJalali(input, withTime = true) {
@@ -3912,13 +3971,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let recPeriod = {p: 'all', from: '', to: ''};
         let currentRecordsFiltered = [];
         const recEn = s => String(s || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-        const recJ = d => { try { return recEn(new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year: 'numeric', month: '2-digit', day: '2-digit'}).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
+        // «امروز» و بازه‌ها به وقتِ ایران و بر اساسِ ساعتِ سرور (iran-time.js)، نه ساعتِ سیستمِ کاربر
+        const recNow = () => window.IrTime ? IrTime.now() : Date.now();
+        const recJ = d => { if (window.IrTime) return IrTime.jdate(+d); try { return recEn(new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tehran'}).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
         const recNorm = s => { const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/.exec(recEn(s).trim()); return m ? `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}` : ''; };
         function recPeriodRange(p) {
-            const today = recJ(new Date());
+            const today = recJ(recNow());
             if (p === 'all') return {from: '', to: ''};
             if (p === 'month') return {from: today.slice(0, 8) + '01', to: today};
-            const d = new Date(); d.setMonth(d.getMonth() - Number(p)); d.setDate(d.getDate() + 1);
+            const d = new Date(recNow()); d.setUTCMonth(d.getUTCMonth() - Number(p)); d.setUTCDate(d.getUTCDate() + 1);
             return {from: recJ(d), to: today};
         }
         document.querySelectorAll('#rec-period [data-p]').forEach(b => b.onclick = () => {
@@ -4206,7 +4267,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 ${fmIconFor('dir')}
                                 <p class="text-xs font-bold text-slate-700 mt-2 break-words">${item.name}</p>
                                 <p class="text-[10px] text-slate-400 mt-1">${e2p(item.file_count)} فایل</p>
-                                <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified, false)}</span></p>
+                                <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
+                                <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
                             </div>
                             <a href="api/file_manager.php?action=zip_folder&path=${encodeURIComponent(item.path)}" class="mt-3 block text-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-file-zipper ml-1"></i>دانلود ZIP این پوشه</a>
                         </div>`;
@@ -4217,8 +4279,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             ${preview}
                             <p class="text-[11px] font-bold text-slate-700 mt-2 break-words" dir="ltr">${item.name}</p>
                             <p class="text-[10px] text-slate-400">${item.size}</p>
-                            <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created, false)}</span></p>
-                            <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified, false)}</span></p>
+                            <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
+                            <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
                             <a href="${item.download_url}" class="mt-2 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a>
                         </div>`;
                     }
@@ -7474,7 +7536,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         function todayJalali() {
-            try { return new Intl.DateTimeFormat('fa-IR-u-nu-arabext', {year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
+            if (window.IrTime) return IrTime.fa(IrTime.jdate());
+            try { return new Intl.DateTimeFormat('fa-IR-u-nu-arabext', {year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Tehran'}).format(new Date()); }
             catch(e) { return ''; }
         }
 
@@ -9106,9 +9169,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!data.ok) { showToast(data.error || 'خطا در ارسال پیام', 'error'); return; }
                 if (userMsgDest === 'app') {
                     showToast('پیام در مینی‌اپ کاربر ثبت شد.', 'success');
-                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📱 (به مینی‌اپ) ' + text, new Date().toISOString(), null, null, 0);
+                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📱 (به مینی‌اپ) ' + text, irNowStr(), null, null, 0);
                 } else {
-                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, text, new Date().toISOString(), null, data.id || null);
+                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, text, irNowStr(), null, data.id || null);
                 }
                 document.getElementById('user-chat-body').scrollTop = document.getElementById('user-chat-body').scrollHeight;
             } catch(e) { showToast('خطا در ارسال پیام', 'error'); }
@@ -9163,7 +9226,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('action', 'send_file');
             fd.append('person_id', personId);
             fd.append('file', fileInput.files[0]);
-            document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', new Date().toISOString());
+            document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', irNowStr());
             try {
                 await fetch('api/user_actions.php', { method: 'POST', body: fd });
                 showToast('فایل ارسال شد.', 'success');
@@ -9385,7 +9448,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('action', 'send_file');
             fd.append('ticket_id', currentTicketId);
             fd.append('file', fileInput.files[0]);
-            document.getElementById('ticket-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', new Date().toISOString());
+            document.getElementById('ticket-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', irNowStr());
             try {
                 await fetch('api/ticket_actions.php', { method: 'POST', body: fd });
                 showToast('فایل ارسال شد.', 'success');

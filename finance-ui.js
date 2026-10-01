@@ -166,7 +166,7 @@
     function filterBar() {
         const b = window.finBoot || (typeof finBoot !== 'undefined' ? finBoot : null) || { periods: [], companies: [] };
         const years = [...new Set((b.periods || []).map(p => String(p.title || '').replace(/[^\d۰-۹]/g, '')).filter(Boolean))];
-        const y = new Date().getFullYear() - 621;
+        const y = window.IrTime ? IrTime.parts().jy : new Date().getFullYear() - 621;
         const yearOpts = [...new Set([...years.map(v => v.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))), String(y), String(y - 1)])].sort().reverse();
         const sel = (id, opts, label) => `<div><label class="text-[10px] font-bold text-slate-500 block mb-1">${label}</label><select id="${id}" class="fd-f border-2 border-slate-100 focus:border-indigo-400 rounded-xl px-3 py-2 text-xs font-bold bg-white min-w-[110px]">${opts}</select></div>`;
         return `<div class="card p-4 bg-white/80 backdrop-blur">

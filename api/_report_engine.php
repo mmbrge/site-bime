@@ -36,7 +36,7 @@ const RPT_NS = [
 // داخلِ آکولادها به‌هم می‌چسبانیم تا هر متغیر یک‌جا بماند (ساختار XML سالم می‌ماند).
 function rpt_merge_placeholders($xml) {
     $xml = preg_replace('/(?<=\{)(<[^>]*>)+(?=\{)|(?<=\})(<[^>]*>)+(?=\})/', '', $xml);
-    return preg_replace_callback('/\{\{(?:(?!\}\}).)*/s', fn($m) => preg_replace('/<[^>]*>/', '', $m[0]), $xml);
+    return preg_replace_callback('/\{\{.*?(?=\}\}|\z)/s', fn($m) => preg_replace('/<[^>]*>/', '', $m[0]), $xml);
 }
 
 // فهرستِ همه‌ی متغیرهای {{ ... }} یک قالب Word
@@ -413,6 +413,12 @@ function rpt_png_strip_opaque_alpha($path) {
 // ---------------------------------------------------------------------
 //  ۲) ساختِ PDF با TCPDF
 // ---------------------------------------------------------------------
+// پوشه‌ی موقتِ جدا برای TCPDF: موقعِ پاک‌سازی هر عکسی که مسیرش با این پوشه شروع شود پاک می‌شود
+if (!defined('K_PATH_CACHE')) {
+    $rptCache = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/';
+    if (!is_dir($rptCache)) @mkdir($rptCache, 0775, true);
+    define('K_PATH_CACHE', is_dir($rptCache) ? $rptCache : rtrim(sys_get_temp_dir(), '/') . '/');
+}
 require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
 
 class RptPdf extends TCPDF {
@@ -583,10 +589,14 @@ function rpt_align($jc, $bidi) {
 // $values: مقدار هر متغیر؛ $opts: ['fontMap' => ..., 'fontScale' => 1, 'defaultSize' => ..., 'debug' => false]
 function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array $opts = []) {
     $opts += ['fontMap' => [], 'fontScale' => 1.0, 'lineHeight' => 1.1, 'debug' => false, 'defaultSize' => $layout['defaults']['size'] ?? 11];
+    rpt_memory_floor();
     $pdf = new RptPdf();
     rpt_register_fonts($pdf, $opts['fontMap']);
     $pdf->setCellHeightRatio($opts['lineHeight']);
     $W = $layout['page']['w']; $H = $layout['page']['h'];
+    // اندازه‌گیریِ ارتفاعِ متنِ هر کادر روی یک PDFِ جدا (بی‌عکس) انجام می‌شود؛ startTransaction کلِ سند
+    // (همراهِ عکس‌های فرم) را برای هر کادر کپی می‌کرد و حافظه‌ی سرور تمام می‌شد
+    $opts['_measure'] = rpt_measure_pdf($opts, $W, $H);
     $byPage = [];
     foreach ($layout['items'] as $it) if (empty($it['hidden'])) $byPage[$it['page']][] = $it;
     for ($p = 0; $p < max(1, intval($layout['pages'])); $p++) {
@@ -612,7 +622,43 @@ function rpt_render_pdf(array $layout, $assetDir, array $values, $destPdf, array
         }
     }
     $pdf->Output($destPdf, 'F');
+    $opts['_measure']->pdf->_destroy(true);
+    $pdf->_destroy(true);
+    unset($pdf, $opts);
+    gc_collect_cycles();
     return is_file($destPdf);
+}
+
+// حدِ حافظه برای ساختِ گزارش (فرم‌های پرعکس)؛ اگر میزبان اجازه ندهد همان مقدارِ قبلی می‌ماند
+function rpt_memory_floor($mb = 1024) {
+    $cur = trim((string)ini_get('memory_limit'));
+    if ($cur === '-1') return;
+    $n = intval($cur); $u = strtoupper(substr($cur, -1));
+    $curMb = $u === 'G' ? $n * 1024 : ($u === 'M' ? $n : ($u === 'K' ? $n / 1024 : $n / 1048576));
+    if ($curMb < $mb) @ini_set('memory_limit', $mb . 'M');
+}
+
+function rpt_measure_pdf(array $opts, $W, $H) {
+    $m = new RptPdf();
+    rpt_register_fonts($m, $opts['fontMap']);
+    $m->setCellHeightRatio($opts['lineHeight']);
+    $m->AddPage($W > $H ? 'L' : 'P', [$W, $H]);
+    return (object)['pdf' => $m, 'n' => 0, 'W' => $W, 'H' => $H];
+}
+
+// ارتفاعِ HTMLِ یک کادر با همان قلم‌ها و تنظیمات؛ هر ۶۰ اندازه‌گیری صفحه‌ی موقت عوض می‌شود تا بزرگ نشود
+function rpt_measure_html($ms, RptPdf $pdf, $iw, $x, $y, $html) {
+    if (++$ms->n % 60 === 0) {
+        $ms->pdf->AddPage($ms->W > $ms->H ? 'L' : 'P', [$ms->W, $ms->H]);
+        $ms->pdf->deletePage($ms->pdf->getPage() - 1);
+    }
+    $m = $ms->pdf;
+    $m->SetFont($pdf->getFontFamily(), $pdf->getFontStyle(), $pdf->getFontSizePt());
+    $m->setRTL(true);
+    $m->writeHTMLCell($iw, 0, $x, $y, $html, 0, 1, false, true, '', true);
+    $h = $m->GetY() - $y;
+    $m->setRTL(false);
+    return $h;
 }
 
 function rpt_hex_rgb($hex) {
@@ -710,11 +756,15 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
             $tx -= ['center' => $expand / 2, 'right' => $expand][$alignFirst] ?? 0;
             $iw += $expand;
         }
-        $pdf->startTransaction();
-        $pdf->setRTL(true);
-        $pdf->writeHTMLCell($iw, 0, $pageW - ($tx + $iw), $y + $it, $html, 0, 1, false, true, '', true);
-        $textH = $pdf->GetY() - ($y + $it);
-        $pdf->rollbackTransaction(true);
+        if (isset($opts['_measure'])) {
+            $textH = rpt_measure_html($opts['_measure'], $pdf, $iw, $pageW - ($tx + $iw), $y + $it, $html);
+        } else {
+            $pdf->startTransaction();
+            $pdf->setRTL(true);
+            $pdf->writeHTMLCell($iw, 0, $pageW - ($tx + $iw), $y + $it, $html, 0, 1, false, true, '', true);
+            $textH = $pdf->GetY() - ($y + $it);
+            $pdf->rollbackTransaction(true);
+        }
         $offY = ['ctr' => ($ih - $textH) / 2, 'b' => $ih - $textH][$box['anchor'] ?? 't'] ?? 0;
         $pdf->setRTL(true);
         $pdf->writeHTMLCell($iw, 0, $pageW - ($tx + $iw), $y + $it + $offY, $html, 0, 1, false, true, '', true);
@@ -726,7 +776,25 @@ function rpt_draw_box(RptPdf $pdf, $box, $x, $y, $values, $opts, $pageW) {
 // ---------------------------------------------------------------------
 //  ۳) نسخه‌ی Word پرشده (مثل برنامه‌ی ویندوزی)
 // ---------------------------------------------------------------------
+// فقط runهایی که {{ دارند به $cb داده می‌شوند. پیمایشِ خطی با strpos است، نه یک regex روی کلِ سند: روی
+// قالب‌های بزرگ (کادرهای متنِ تودرتو) regex حافظه‌ی سرور را تمام می‌کرد. درونی‌ترین run (کادرِ متن) انتخاب می‌شود.
+function rpt_map_var_runs($xml, callable $cb) {
+    $out = ''; $pos = 0; $len = strlen($xml);
+    while ($pos < $len && ($p = strpos($xml, '{{', $pos)) !== false) {
+        $back = $p - $len;
+        $s = max((int)strrpos($xml, '<w:r>', $back), (int)strrpos($xml, '<w:r ', $back));
+        $e = strpos($xml, '</w:r>', $p);
+        $sOk = $s >= $pos && ($s > 0 || strncmp($xml, '<w:r', 4) === 0);
+        if (!$sOk || $e === false) { $out .= substr($xml, $pos, $p + 2 - $pos); $pos = $p + 2; continue; }
+        $e += 6;
+        $out .= substr($xml, $pos, $s - $pos) . $cb(substr($xml, $s, $e - $s));
+        $pos = $e;
+    }
+    return $out . substr($xml, $pos);
+}
+
 function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
+    rpt_memory_floor();
     if (!@copy($tplPath, $destPath)) return false;
     $z = new ZipArchive();
     if ($z->open($destPath) !== true) return false;
@@ -744,9 +812,7 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
         if (!preg_match('#^word/(document|header\d*|footer\d*)\.xml$#', $n)) continue;
         $xml = rpt_merge_placeholders($z->getFromIndex($i));
         // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
-        $xml = preg_replace_callback('#<w:r\b[^>]*>(?:(?!</w:r>).)*</w:r>#s', function ($m) use ($fill, $fontAll) {
-            $run = $m[0];
-            if (strpos($run, '{{') === false) return $run;
+        $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll) {
             $font = $fontAll;
             if ($font === '' && preg_match('#<w:rFonts\b([^>]*)/?>#', $run, $rf)) {
                 foreach (['w:cs', 'w:ascii', 'w:hAnsi'] as $attr) {
@@ -754,7 +820,7 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
                 }
             }
             return $fill($run, $font === '' ? null : !rpt_font_is_latin($font));
-        }, $xml);
+        });
         $xml = $fill($xml, null);   // جا مانده‌ها (بیرون از run)
         $z->addFromString($n, $xml);
     }

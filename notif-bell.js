@@ -49,11 +49,13 @@
 
     // زمانِ اعلان به شمسی و با رقم فارسی: «همین الان»، «۵ دقیقه پیش»، یا «۴ مهر، ۱۰:۲۰»
     function timeFa(ms) {
-        const diff = Math.floor((Date.now() - ms) / 1000);
+        // بر اساسِ ساعتِ سرور و وقتِ ایران (iran-time.js)، نه ساعتِ سیستمِ کاربر
+        const diff = Math.floor(((window.IrTime ? IrTime.now() : Date.now()) - ms) / 1000);
         if (diff < 60) return 'همین الان';
         if (diff < 3600) return fa(Math.floor(diff / 60)) + ' دقیقه پیش';
+        if (window.IrTime) { const p = IrTime.parts(ms); return fa(p.jd) + ' ' + p.month + '، ' + fa(String(p.H).padStart(2, '0') + ':' + String(p.M).padStart(2, '0')); }
         try {
-            return new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-arabext', {month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date(ms));
+            return new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-arabext', {month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tehran'}).format(new Date(ms));
         } catch (e) { return ''; }
     }
 
