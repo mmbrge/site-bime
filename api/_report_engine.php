@@ -819,12 +819,17 @@ function rpt_map_var_runs($xml, callable $cb) {
     return $out . substr($xml, $pos);
 }
 
+// قالب فقط خوانده می‌شود و خروجی یک ZIPِ تازه است. قبلاً قالب کپی و فایل‌ها «درجا» جایگزین می‌شدند؛ روی بعضی
+// نسخه‌های libzip جایگزینی یک ورودیِ تازه اضافه می‌کرد، تعدادِ فایل‌ها بالا می‌رفت و همان document.xml بی‌پایان
+// دوباره پردازش می‌شد تا حافظه تمام شود (خطای ۵۰۳ / memory exhausted هنگامِ صدورِ گزارش)
 function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
     rpt_memory_floor();
     rpt_trace('#docx:start');
-    if (!@copy($tplPath, $destPath)) return false;
-    $z = new ZipArchive();
-    if ($z->open($destPath) !== true) return false;
+    $src = new ZipArchive();
+    if ($src->open($tplPath) !== true) return false;
+    @unlink($destPath);
+    $dst = new ZipArchive();
+    if ($dst->open($destPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) { $src->close(); return false; }
     $fontAll = trim((string)($opts['fontAll'] ?? ''));
     $fill = function ($xml, $persian) use ($values) {
         return preg_replace_callback('/\{\{\s*([A-Za-z0-9_\x{0600}-\x{06FF}]+)\s*\}\}/u', function ($m) use ($values, $persian) {
@@ -834,31 +839,41 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
             return str_replace("\n", '</w:t><w:br/><w:t xml:space="preserve">', $v);
         }, $xml);
     };
-    for ($i = 0; $i < $z->numFiles; $i++) {
-        $n = $z->getNameIndex($i);
-        if (!preg_match('#^word/(document|header\d*|footer\d*)\.xml$#', $n)) continue;
-        $raw = $z->getFromIndex($i);
-        rpt_trace('#docx:' . basename($n) . ':' . round(strlen((string)$raw) / 1024) . 'KB');
-        $xml = rpt_merge_placeholders($raw);
-        unset($raw);
-        if (!is_string($xml)) { error_log('[rpt_fill_docx] merge failed: ' . preg_last_error()); continue; }
-        rpt_trace('#docx:merged');
-        // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
-        $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll) {
-            $font = $fontAll;
-            if ($font === '' && preg_match('#<w:rFonts\b([^>]*)/?>#', $run, $rf)) {
-                foreach (['w:cs', 'w:ascii', 'w:hAnsi'] as $attr) {
-                    if (preg_match('#' . $attr . '="([^"]+)"#', $rf[1], $fm)) { $font = $fm[1]; break; }
-                }
-            }
-            return $fill($run, $font === '' ? null : !rpt_font_is_latin($font));
-        });
-        rpt_trace('#docx:runs');
-        $xml = $fill($xml, null);   // جا مانده‌ها (بیرون از run)
-        $z->addFromString($n, $xml);
-        unset($xml);
+    $count = $src->numFiles;   // ثابت: قالب تغییر نمی‌کند
+    $seen = [];
+    for ($i = 0; $i < $count; $i++) {
+        $n = $src->getNameIndex($i);
+        if ($n === false || isset($seen[$n])) continue;   // ورودیِ تکراری در قالب فقط یک بار نوشته می‌شود
+        $seen[$n] = true;
+        $data = $src->getFromIndex($i);
+        if ($data === false) continue;
+        if (substr($n, -1) === '/') { $dst->addEmptyDir(rtrim($n, '/')); continue; }
+        if (preg_match('#^word/(document|header\d*|footer\d*)\.xml$#', $n)) {
+            rpt_trace('#docx:' . basename($n) . ':' . round(strlen($data) / 1024) . 'KB');
+            $xml = rpt_merge_placeholders($data);
+            if (is_string($xml)) {
+                rpt_trace('#docx:merged');
+                // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
+                $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll) {
+                    $font = $fontAll;
+                    if ($font === '' && preg_match('#<w:rFonts\b([^>]*)/?>#', $run, $rf)) {
+                        foreach (['w:cs', 'w:ascii', 'w:hAnsi'] as $attr) {
+                            if (preg_match('#' . $attr . '="([^"]+)"#', $rf[1], $fm)) { $font = $fm[1]; break; }
+                        }
+                    }
+                    return $fill($run, $font === '' ? null : !rpt_font_is_latin($font));
+                });
+                rpt_trace('#docx:runs');
+                $out = $fill($xml, null);   // جا مانده‌ها (بیرون از run)
+                if (is_string($out)) $data = $out;
+                unset($xml, $out);
+            } else error_log('[rpt_fill_docx] merge failed: ' . preg_last_error());
+        }
+        $dst->addFromString($n, $data);
+        unset($data);
     }
-    $ok = $z->close();
+    $src->close();
+    $ok = $dst->close();
     rpt_trace('#docx:done');
     return $ok;
 }
