@@ -42,7 +42,7 @@
                 <div id="vrl-filters" class="hidden grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-100"></div>
             </div>
             <div id="vrl-list" class="space-y-2"></div>
-            <div id="vrl-pager" class="flex items-center justify-center gap-2 py-2"></div>
+            <div id="vrl-pager" class="flex flex-wrap items-center justify-between gap-2 py-2"></div>
         </div>`;
         root.querySelector('#vrl-q').addEventListener('input', () => { clearTimeout(st.timer); st.timer = setTimeout(() => { st.page = 1; load(); }, 350); });
         root.querySelector('#vrl-toggle').onclick = () => root.querySelector('#vrl-filters').classList.toggle('hidden');
@@ -101,12 +101,30 @@
         } else list.innerHTML = `<div class="space-y-2 vr-stagger">${d.rows.map(rowHtml).join('')}</div>`;
         list.querySelectorAll('[data-open]').forEach(el => el.onclick = () => VR.openDetail(Number(el.dataset.open)));
         list.querySelectorAll('[data-dl]').forEach(el => el.onclick = e => { e.stopPropagation(); const r = (lastRows || []).find(x => x.id === Number(el.dataset.dl)); if (r) downloadPopup(r); });
-        list.querySelectorAll('[data-purge]').forEach(el => el.onclick = async e => { e.stopPropagation(); const r = (lastRows || []).find(x => x.id === Number(el.dataset.purge)); if (r) await purgeReport(r); });
+        list.querySelectorAll('[data-act]').forEach(el => el.onclick = async e => {
+            e.stopPropagation();
+            const r = (lastRows || []).find(x => x.id === Number(el.dataset.rid)); if (!r) return;
+            const changed = () => window.dispatchEvent(new CustomEvent('vr:changed', { detail: r }));
+            const act = el.dataset.act;
+            if (act === 'dl') downloadPopup(r);
+            else if (act === 'open') VR.openDetail(r.id);
+            else if (act === 'edit') VR.openEditor(r.id, changed);
+            else if (act === 'folder') { if (typeof window.switchTab === 'function') { switchTab('filemanager'); if (typeof window.fmOpen === 'function') fmOpen(r.archive_path); } }
+            else if (act === 'purge') await purgeReport(r);
+            else if (act === 'restore') { const d = await api('restore', { id: r.id }); if (!d.ok) return toast(d.error, 'error'); toast('گزارش بازگردانده شد.', 'info'); changed(); }
+            else if (act === 'trash') {
+                if (!await confirmBox('حذف گزارش', `گزارش ${r.report_no} به پوشه‌ی «حذف شده» منتقل می‌شود و از دفترِ اکسل حذف می‌شود؛ بعداً قابلِ بازگردانی است.`, { danger: true, ok: 'حذف' })) return;
+                const d = await api('delete', { id: r.id }); if (!d.ok) return toast(d.error, 'error');
+                toast('گزارش به «حذف شده» رفت.', 'info'); changed();
+            }
+        });
         const pages = Math.ceil(d.total / d.per_page);
         const pg = document.getElementById('vrl-pager');
-        pg.innerHTML = pages > 1 ? `<button class="vr-btn vr-btn-s !py-1.5" ${st.page <= 1 ? 'disabled' : ''} data-pg="${st.page - 1}"><i class="fas fa-chevron-right"></i></button>
-            <span class="text-xs font-bold text-slate-500">صفحه ${fa(st.page)} از ${fa(pages)} · ${fa(d.total)} گزارش</span>
-            <button class="vr-btn vr-btn-s !py-1.5" ${st.page >= pages ? 'disabled' : ''} data-pg="${st.page + 1}"><i class="fas fa-chevron-left"></i></button>` : (d.total ? `<span class="text-xs font-bold text-slate-400">${fa(d.total)} گزارش</span>` : '');
+        // شمارنده مثلِ «تعداد ردیف»ِ زیرِ جدول‌های پنل (table-count.js)
+        const count = `<div class="vr-count"><span class="tc-dot"></span>تعداد گزارش: <b>${fa(d.total || 0)}</b>${pages > 1 ? `<span class="text-slate-400 font-bold">· نمایشِ ${fa(d.rows.length)} گزارش در این صفحه</span>` : ''}</div>`;
+        pg.innerHTML = count + (pages > 1 ? `<div class="flex items-center gap-2"><button class="vr-btn vr-btn-s !py-1.5" ${st.page <= 1 ? 'disabled' : ''} data-pg="${st.page - 1}"><i class="fas fa-chevron-right"></i></button>
+            <span class="text-xs font-bold text-slate-500">صفحه ${fa(st.page)} از ${fa(pages)}</span>
+            <button class="vr-btn vr-btn-s !py-1.5" ${st.page >= pages ? 'disabled' : ''} data-pg="${st.page + 1}"><i class="fas fa-chevron-left"></i></button></div>` : '');
         pg.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { st.page = Number(b.dataset.pg); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
     }
 
@@ -122,6 +140,27 @@
         toast('گزارش به‌طورِ کامل حذف شد.', 'info');
         window.dispatchEvent(new CustomEvent('vr:changed', { detail: r }));
         return true;
+    }
+    // دکمه‌های عملیاتِ هر ردیف (همان‌هایی که در پنجره‌ی جزئیات هست)
+    function rowActs(r) {
+        const b = (act, ic, label, cls, extra = '') => `<button type="button" data-act="${act}" data-rid="${r.id}" class="vr-ra ${cls}" ${extra}><i class="fas ${ic}"></i><span>${label}</span></button>`;
+        const out = [
+            `<a class="vr-ra text-indigo-700 bg-indigo-50 hover:bg-indigo-100" target="_blank" href="${fileUrl(r.id, 'pdf', '&inline=1')}" onclick="event.stopPropagation()"><i class="fas fa-file-pdf"></i><span>مشاهده PDF</span></a>`,
+            b('dl', 'fa-download', 'دانلود', 'text-sky-700 bg-sky-50 hover:bg-sky-100'),
+            b('open', 'fa-circle-info', 'جزئیات', 'text-slate-600 bg-slate-100 hover:bg-slate-200'),
+        ];
+        if (r.can_edit) out.push(b('edit', 'fa-pen-to-square', 'ویرایش', 'text-amber-700 bg-amber-50 hover:bg-amber-100'));
+        if (isAdminList && r.archive_path) out.push(b('folder', 'fa-folder-open', 'پوشه در بایگانی', 'text-violet-700 bg-violet-50 hover:bg-violet-100'));
+        if (isAdminList && r.status === 'ACTIVE') {
+            out.push(b('trash', 'fa-box-archive', 'انتقال به «حذف شده»', 'text-rose-600 bg-white border border-rose-200 hover:bg-rose-50'));
+            out.push(isLinked(r) ? `<span class="vr-ra text-slate-300 bg-slate-50 cursor-not-allowed" title="به پلاک/درخواستی وصل است؛ برای حذف اول اتصالش را قطع کنید"><i class="fas fa-trash"></i><span>حذفِ کامل</span></span>`
+                : b('purge', 'fa-trash', 'حذفِ کامل', 'text-white bg-rose-500 hover:bg-rose-600'));
+        }
+        if (isAdminList && r.status === 'DELETED') {
+            out.push(b('restore', 'fa-rotate-left', 'بازگردانی', 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'));
+            if (!isLinked(r)) out.push(b('purge', 'fa-fire', 'حذف همیشگی', 'text-white bg-rose-500 hover:bg-rose-600'));
+        }
+        return out.join('');
     }
     function linksChips(r) {
         const out = [];
@@ -146,10 +185,8 @@
                 ${linksChips(r)}
                 ${r.version > 1 ? `<span class="vr-chip bg-amber-50 text-amber-600"><i class="fas fa-code-branch"></i> نسخه ${fa(r.version)}</span>` : ''}
                 ${r.photos_count ? `<span class="vr-chip bg-slate-100 text-slate-500"><i class="fas fa-image"></i> ${fa(r.photos_count)}</span>` : ''}
-                <button type="button" data-dl="${r.id}" class="vr-chip bg-indigo-50 text-indigo-600 hover:bg-indigo-100" title="دانلود زیپ یا فایل گزارش"><i class="fas fa-download"></i> دانلود</button>
-                ${isAdminList ? (isLinked(r) ? `<span class="vr-chip bg-slate-50 text-slate-300 cursor-not-allowed" title="به پلاک/درخواستی وصل است؛ برای حذف اول اتصالش را قطع کنید"><i class="fas fa-trash"></i></span>`
-                    : `<button type="button" data-purge="${r.id}" class="vr-chip bg-rose-50 text-rose-600 hover:bg-rose-100" title="حذفِ کامل از بایگانی و همه‌جا"><i class="fas fa-trash"></i> حذف</button>`) : ''}
-            </div></div>`;
+            </div>
+            <div class="col-span-12 flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 vr-row-acts">${rowActs(r)}</div></div>`;
     }
 
     // ------------------------------------------------------------------

@@ -152,6 +152,13 @@
     .vr-check path{stroke:#10b981;stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:50;stroke-dashoffset:50;animation:vrDraw .4s .5s ease forwards}
     @keyframes vrDraw{to{stroke-dashoffset:0}}
     .vr-chip{display:inline-flex;align-items:center;gap:.3rem;font-size:.66rem;font-weight:800;padding:.18rem .55rem;border-radius:9999px}
+    .vr-ra{display:inline-flex;align-items:center;gap:.35rem;font-size:.68rem;font-weight:800;padding:.32rem .65rem;border-radius:.6rem;transition:background .15s,transform .15s;cursor:pointer;white-space:nowrap}
+    .vr-ra:hover{transform:translateY(-1px)} .vr-ra i{font-size:.7rem}
+    .vr-count{display:flex;align-items:center;gap:6px;padding:8px 16px;font-size:11px;font-weight:800;color:#64748b;background:linear-gradient(90deg,#f8fafc,#fcfdff);border:1px solid #eef2f7;border-radius:12px}
+    .vr-count b{color:#334155;font-size:12px}
+    .vr-count .tc-dot{width:6px;height:6px;border-radius:50%;background:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+    .vr-pv{height:76vh;overflow:auto;background:#e2e8f0;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:14px;user-select:none;-webkit-user-select:none}
+    .vr-pv canvas{background:#fff;box-shadow:0 8px 24px -10px rgba(15,23,42,.35);border-radius:4px;max-width:100%;height:auto !important;pointer-events:none}
     .vr-sticky{position:sticky;bottom:0;z-index:20}
     .vr-skel{background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%);background-size:400% 100%;animation:vrSk 1.4s ease infinite;border-radius:.75rem}
     @keyframes vrSk{0%{background-position:100% 50%}100%{background-position:0 50%}}
@@ -195,11 +202,11 @@
     }
 
     // رمزِ پنل (برای ویرایش و حذفِ همیشگی)
-    function askPassword(title, hint) {
+    function askPassword(title, hint, placeholder) {
         return new Promise(resolve => {
             const m = modal({ title, icon: 'fa-lock', width: '26rem', onClose: () => resolve(null), html: `
                 <p class="text-xs text-slate-500 font-bold leading-6 mb-3">${hint || ''}</p>
-                <input type="password" class="vr-in vr-pw" autocomplete="current-password" placeholder="رمز عبورِ پنلِ خودتان">
+                <input type="password" class="vr-in vr-pw" autocomplete="current-password" placeholder="${placeholder || 'رمز عبورِ پنلِ خودتان'}">
                 <p class="vr-pw-err text-[11px] text-red-500 font-bold mt-2 hidden">رمز را وارد کنید.</p>
                 <div class="flex gap-2 mt-4"><button class="vr-btn vr-btn-p flex-1 vr-pw-ok"><i class="fas fa-check"></i> تایید</button><button class="vr-btn vr-btn-s vr-pw-cancel">انصراف</button></div>` });
             const inp = m.body.querySelector('.vr-pw');
@@ -233,10 +240,45 @@
         document.body.appendChild(ov);
     }
 
+    // ---- نمایشِ PDF فقط برای دیدن (pdf.js، بدونِ نوارِ دانلود/چاپ) ----
+    const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+    let pdfjsLoading = null;
+    function loadPdfJs() {
+        if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+        if (!pdfjsLoading) pdfjsLoading = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = PDFJS + 'pdf.min.js';
+            s.onload = () => { if (!window.pdfjsLib) { pdfjsLoading = null; return reject(new Error('pdf.js')); } pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; resolve(pdfjsLib); };
+            s.onerror = () => { pdfjsLoading = null; reject(new Error('بارگذاریِ نمایشگر')); };
+            document.head.appendChild(s);
+        });
+        return pdfjsLoading;
+    }
+    async function renderPdfView(box, buf, note) {
+        const lib = await loadPdfJs();
+        const doc = await lib.getDocument({ data: new Uint8Array(buf), cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/', useSystemFonts: false, disableFontFace: true }).promise;
+        box.innerHTML = '';
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const avail = Math.max(320, box.clientWidth - 28);
+        for (let i = 1; i <= doc.numPages; i++) {
+            const page = await doc.getPage(i);
+            const base = page.getViewport({ scale: 1 });
+            const cssScale = Math.min(1.6, avail / base.width);
+            const vp = page.getViewport({ scale: cssScale * dpr * 1.25 });
+            const c = document.createElement('canvas');
+            c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+            c.style.width = Math.round(base.width * cssScale) + 'px';
+            box.appendChild(c);
+            await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        }
+        if (note) note.textContent = `این فقط پیش‌نمایش است (${fa(doc.numPages)} صفحه)، ذخیره نشده و قابلِ دانلود نیست.`;
+        doc.destroy();
+    }
+
     function plateHtml(p) {
         const m = String(p || '').match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
         if (!m) return p ? `<span class="font-bold text-slate-600">${esc(p)}</span>` : '<span class="text-slate-400 text-xs">بدون پلاک</span>';
-        return `<span class="vr-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;
+        return `<span class="ir-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;
     }
 
     // ------------------------------------------------------------------
@@ -855,10 +897,14 @@
                 const res = await fetch(API, { method: 'POST', body: fd });
                 const type = res.headers.get('Content-Type') || '';
                 if (type.includes('pdf')) {
-                    const url = URL.createObjectURL(await res.blob());
-                    const m = modal({ title: 'پیش‌نمایشِ گزارش', icon: 'fa-eye', width: '60rem', html: `<iframe src="${url}" class="w-full rounded-xl border border-slate-200 bg-white" style="height:78vh"></iframe>
-                        <p class="text-[11px] text-slate-400 font-bold mt-2">این فقط پیش‌نمایش است و ذخیره نشده است.</p>`, onClose: () => URL.revokeObjectURL(url) });
+                    // فقط نمایش (بدونِ دکمه‌ی دانلود/چاپِ نمایشگرِ PDFِ مرورگر): صفحه‌ها روی صفحه کشیده می‌شوند
+                    const buf = await res.arrayBuffer();
+                    const m = modal({ title: 'پیش‌نمایشِ گزارش', icon: 'fa-eye', width: '60rem', html: `<div class="vr-pv" oncontextmenu="return false"><p class="text-xs font-bold text-slate-500 py-10"><i class="fas fa-spinner fa-spin ml-1"></i> در حال آماده‌سازیِ پیش‌نمایش...</p></div>
+                        <p class="text-[11px] text-slate-400 font-bold mt-2 vr-pv-note">این فقط پیش‌نمایش است، ذخیره نشده و قابلِ دانلود نیست.</p>` });
                     m.setTitle('پیش‌نمایشِ گزارش', esc(this.cat.name));
+                    const box = m.body.querySelector('.vr-pv');
+                    try { await renderPdfView(box, buf, m.body.querySelector('.vr-pv-note')); }
+                    catch (e) { box.innerHTML = `<p class="text-xs font-bold text-red-500 py-10 text-center">نمایشِ پیش‌نمایش ممکن نشد (${esc(e.message || e)}). اتصال را بررسی کنید و دوباره امتحان کنید.</p>`; }
                 } else {
                     const txt = await res.text();
                     let d = null; try { d = JSON.parse(txt); } catch (e) {}
@@ -903,7 +949,9 @@
             const err = this.validate(form);
             if (err) { toast(err, 'error'); return; }
             if (this.mode === 'edit') {
-                const pw = await askPassword('تاییدِ ویرایش', 'برای ذخیره‌ی ویرایش، رمزِ پنلِ کاربریِ خودتان را وارد کنید. فایل‌های قبلی با «(old)» در همان پوشه نگه داشته می‌شوند.');
+                const custom = !!(bootCache && bootCache.edit_pw_custom);
+                const pw = await askPassword('تاییدِ ویرایش', (custom ? 'برای ذخیره‌ی ویرایش، «رمزِ ویرایشِ گزارش» را که مدیر کل برایتان تعیین کرده وارد کنید.' : 'برای ذخیره‌ی ویرایش، رمزِ پنلِ کاربریِ خودتان را وارد کنید.')
+                    + ' فایل‌های قبلی با «(old)» در همان پوشه نگه داشته می‌شوند.', custom ? 'رمزِ ویرایشِ گزارش' : 'رمز عبورِ پنلِ خودتان');
                 if (pw === null) return;
                 fd.append('password', pw);
                 fd.append('remove_photos', JSON.stringify([...this.removePhotos]));

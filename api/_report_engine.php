@@ -822,6 +822,24 @@ function rpt_map_var_runs($xml, callable $cb) {
 // قالب فقط خوانده می‌شود و خروجی یک ZIPِ تازه است. قبلاً قالب کپی و فایل‌ها «درجا» جایگزین می‌شدند؛ روی بعضی
 // نسخه‌های libzip جایگزینی یک ورودیِ تازه اضافه می‌کرد، تعدادِ فایل‌ها بالا می‌رفت و همان document.xml بی‌پایان
 // دوباره پردازش می‌شد تا حافظه تمام شود (خطای ۵۰۳ / memory exhausted هنگامِ صدورِ گزارش)
+// کدهای لاتین (شماره شاسی، شماره موتور، ...) در Word: اگر مقدارِ متغیرِ یک run حرفِ لاتین دارد و خودِ run متنِ فارسی
+// ندارد، علامتِ «راست‌به‌چپ» (<w:rtl/>) از run برداشته می‌شود. وگرنه Word آن را با قلمِ فارسی و رقم‌های فارسی
+// می‌نوشت (NAS۸۷۱۱۰۰R...) در حالی که PDF درست (NAS871100R...) نشانش می‌داد
+function rpt_ltr_code_run($run, array $values) {
+    if (strpos($run, '<w:rtl') === false) return $run;
+    if (!preg_match_all('/\{\{\s*([A-Za-z0-9_\x{0600}-\x{06FF}]+)\s*\}\}/u', $run, $mm)) return $run;
+    $latin = false;
+    foreach ($mm[1] as $k) {
+        $v = (string)($values[$k] ?? '');
+        if (preg_match('/[\x{0600}-\x{06FF}]/u', $v)) return $run;   // مقدارِ فارسی: دست نمی‌خورد
+        if (preg_match('/[A-Za-z]/', $v)) $latin = true;
+    }
+    if (!$latin) return $run;
+    $text = preg_replace('/\{\{.*?\}\}/su', '', implode('', preg_match_all('#<w:t(?:\s[^>]*)?>(.*?)</w:t>#s', $run, $tm) ? $tm[1] : []));
+    if (preg_match('/[\x{0600}-\x{06FF}]/u', $text)) return $run;      // run متنِ ثابتِ فارسی هم دارد
+    return preg_replace('#<w:rtl(?:\s+w:val="(?:1|true|on)")?\s*/>#', '', $run);
+}
+
 function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
     rpt_memory_floor();
     rpt_trace('#docx:start');
@@ -854,7 +872,8 @@ function rpt_fill_docx($tplPath, $destPath, array $values, array $opts = []) {
             if (is_string($xml)) {
                 rpt_trace('#docx:merged');
                 // هر run جدا: عددهای مقدار مطابقِ قلمِ همان run (یا «قلمِ همه‌ی کادرها») فارسی یا لاتین نوشته می‌شوند
-                $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll) {
+                $xml = rpt_map_var_runs($xml, function ($run) use ($fill, $fontAll, $values) {
+                    $run = rpt_ltr_code_run($run, $values);
                     $font = $fontAll;
                     if ($font === '' && preg_match('#<w:rFonts\b([^>]*)/?>#', $run, $rf)) {
                         foreach (['w:cs', 'w:ascii', 'w:hAnsi'] as $attr) {

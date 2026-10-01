@@ -520,6 +520,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
+<link rel="stylesheet" href="plate.css?v=1">
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="h-screen flex flex-col">
@@ -2898,6 +2899,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
                 <p id="su-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
                 <div class="float-input" id="su-personnel-box"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
+                <div id="su-rpw-box">
+                    <div class="float-input mb-1"><input type="text" id="su-rpw" dir="ltr" placeholder=" " autocomplete="off"><label><i class="fas fa-file-pen ml-1 text-violet-500"></i>رمزِ ویرایشِ گزارش بازدید (اختیاری)</label></div>
+                    <p class="text-[10px] text-slate-400 font-bold -mt-0 mb-4">برای ویرایشِ گزارشِ صادرشده همین رمز پرسیده می‌شود؛ خالی بماند = رمزِ پنلِ خودِ کاربر.</p>
+                </div>
                 <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
             </div>
         </div>
@@ -2933,6 +2938,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="esu-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل</label></div>
             <p id="esu-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
             <div class="float-input"><input type="text" id="esu-password" dir="ltr" placeholder=" " autocomplete="new-password"><label>رمز عبورِ جدید (خالی = بدون تغییر)</label></div>
+            <div id="esu-rpw-box" class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 mb-4">
+                <p class="text-[11px] font-black text-violet-700 mb-2"><i class="fas fa-file-pen ml-1"></i>رمزِ ویرایشِ گزارش بازدید <span id="esu-rpw-state" class="font-bold text-[10px] rounded-full px-2 py-0.5 mr-1"></span></p>
+                <div class="float-input !mb-2"><input type="text" id="esu-rpw" dir="ltr" placeholder=" " autocomplete="off"><label>رمزِ جدید (خالی = بدون تغییر)</label></div>
+                <label class="flex items-center gap-2 text-[11px] font-bold text-slate-500 cursor-pointer"><input type="checkbox" id="esu-rpw-clear"> برداشتنِ رمزِ جداگانه (برگشت به رمزِ پنلِ خودِ کاربر)</label>
+            </div>
             <div class="border-t pt-3 mt-2">
                 <div class="float-input"><input type="password" id="esu-admin-pass" dir="ltr" placeholder=" " autocomplete="current-password"><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
             </div>
@@ -3433,9 +3443,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=2"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=9"></script>
-    <script src="visit-reports-list.js?v=6"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=4"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
+    <script src="visit-reports.js?v=10"></script>
+    <script src="visit-reports-list.js?v=7"></script>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -3492,15 +3502,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function plateSplitHtml(id, value) {
             const v = parseStoredPlate(value);
             const fa = x => x ? e2p(x) : '';
-            const cls = 'psplit-part text-center border border-slate-300 rounded-lg p-2 text-sm bg-white w-full';
-            return `<div class="psplit grid gap-1.5 items-center" style="grid-template-columns:1fr 1fr 1.3fr 1.4fr" dir="ltr" data-target="${id}">
-                <input type="text" inputmode="numeric" maxlength="2" data-part="p4" placeholder="۱۲" value="${fa(v.p4)}" class="${cls}">
-                <input type="text" maxlength="3" data-part="letter" placeholder="الف" value="${v.letter}" list="plate-letters-dl" class="${cls}">
-                <input type="text" inputmode="numeric" maxlength="3" data-part="p2" placeholder="۳۴۵" value="${fa(v.p2)}" class="${cls}">
-                <div class="flex items-center gap-1 border border-slate-300 rounded-lg px-1 bg-white">
-                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input type="text" inputmode="numeric" maxlength="2" data-part="p1" placeholder="۶۷" value="${fa(v.p1)}" class="psplit-part text-center text-sm w-full outline-none p-2 bg-transparent">
-                </div>
+            // ظاهرِ پلاکِ واقعی (plate.css): نوارِ آبی، [۲ رقم][حرف][۳ رقم][ایران/۲ رقم]
+            return `<div class="psplit ir-pin" dir="ltr" data-target="${id}">
+                <span class="ip-flag"></span>
+                <input type="text" inputmode="numeric" maxlength="2" data-part="p4" placeholder="۱۲" value="${fa(v.p4)}" class="psplit-part ip-cell" aria-label="دو رقمِ اول">
+                <input type="text" maxlength="3" data-part="letter" placeholder="الف" value="${v.letter}" list="plate-letters-dl" class="psplit-part ip-cell ip-letter" aria-label="حرف">
+                <input type="text" inputmode="numeric" maxlength="3" data-part="p2" placeholder="۳۴۵" value="${fa(v.p2)}" class="psplit-part ip-cell ip-wide" aria-label="سه رقم">
+                <span class="ip-ir"><small>ایران</small><input type="text" inputmode="numeric" maxlength="2" data-part="p1" placeholder="۶۷" value="${fa(v.p1)}" class="psplit-part" aria-label="کدِ ایران"></span>
                 <input type="hidden" id="${id}" value="${value ? String(value).replace(/"/g, '') : ''}">
             </div>`;
         }
@@ -3536,16 +3544,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (full && next) box.querySelector(`[data-part="${next}"]`).focus();
         });
 
+        // پلاک با ظاهرِ پلاکِ واقعی (plate.css) در همه‌ی جدول‌ها و کارت‌های پنل
+        function irPlateHtml(p4, letter, p2, p1) {
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            return `<span class="ir-plate"><span class="flag"></span><span>${e2p(String(p4 || ''))}</span><span>${esc(letter)}</span><span>${e2p(String(p2 || ''))}</span><span class="ir"><small>ایران</small>${e2p(String(p1 || ''))}</span></span>`;
+        }
         function formatPlateHtml(plate) {
             if (!plate) return '-';
-            const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+            const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
             if (!m) return plate;
             const [, region, suffix, letter, prefix] = m;
-            const seg = s => `<span>${e2p(s)}</span>`;
-            return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">` +
-                seg(prefix) + `<span>${letter}</span>` + seg(suffix) + `<span>ایران</span>` + seg(region) +
-                `</span>`;
+            return irPlateHtml(prefix, letter, suffix, region);
         }
+        window.formatPlateHtml = formatPlateHtml;
         // مسیرهای ذخیره‌شده ممکن است شامل فاصله، پرانتز یا حروف فارسی باشند (نام پوشه‌های بایگانی)؛
         // برای اینکه مرورگر/سرور همیشه درست بارشان کند، هر بخش از مسیر را جداگانه encode می‌کنیم
         const encodeFilePath = p => (p || '').split('/').map(encodeURIComponent).join('/');
@@ -4789,10 +4800,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // مرورگر ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
         function fmtPlateHtml(p) {
             if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
-            const seg = v => `<span>${e2p(v || '')}</span>`;
-            return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">`
-                + seg(p.plate_p4) + `<span>${p.plate_letter || ''}</span>` + seg(p.plate_p2)
-                + `<span>ایران</span>` + seg(p.plate_p1) + `</span>`;
+            return irPlateHtml(p.plate_p4, p.plate_letter, p.plate_p2, p.plate_p1);
         }
 
         async function loadCompanyRequests() {
@@ -5773,7 +5781,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.request_kind_fa}</td>
                     <td class="p-3 font-bold">${r.insured_name || '—'}</td>
                     <td class="p-3">${r.company_name || '—'}</td>
-                    <td class="p-3" dir="ltr">${r.plate || r.chassis_no || '—'}</td>
+                    <td class="p-3">${r.plate ? formatPlateHtml(r.plate) : `<span dir="ltr">${r.chassis_no || '—'}</span>`}</td>
                     <td class="p-3">${r.insurance_type_fa}</td>
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
                     <td class="p-3">${r.car_name || '—'}</td>
@@ -5879,7 +5887,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const rows = data.installments.map(i => `
                 <tr class="border-t border-slate-100 text-[11px]">
                     <td class="p-2"><input type="checkbox" class="cinst-cb" value="${i.id}" data-amount="${i.amount - i.settled_amount}" ${i.settled_to_pasargad || i.collected < i.amount ? 'disabled' : ''}></td>
-                    <td class="p-2 plate-display">${i.plate_display || '—'}</td>
+                    <td class="p-2">${i.plate_display ? formatPlateHtml(i.plate_display) : '—'}</td>
                     <td class="p-2">#${i.inst_number}</td>
                     <td class="p-2 font-mono">${Number(i.amount).toLocaleString('fa-IR')}</td>
                     <td class="p-2 font-mono ${i.collected >= i.amount ? 'text-emerald-600' : 'text-amber-600'}">${Number(i.collected).toLocaleString('fa-IR')}</td>
@@ -6692,7 +6700,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             paintUserAvatar(prefix);
         }
         function openAddUserModal() {
-            ['su-fullname','su-username','su-password','su-mobile','su-personnel','su-avatar'].forEach(id => document.getElementById(id).value = '');
+            ['su-fullname','su-username','su-password','su-mobile','su-personnel','su-avatar','su-rpw'].forEach(id => document.getElementById(id).value = '');
             paintUserAvatar('su');
             document.getElementById('su-role').value = '';
             document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.remove('active'));
@@ -6709,6 +6717,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (liaison) document.querySelectorAll('input[name="su-panel"]').forEach(r => { r.checked = r.value === 'COMPANY_LIAISON'; });
             document.getElementById('su-company-box').classList.toggle('hidden', !co);
             document.getElementById('su-personnel-box').classList.toggle('hidden', co);
+            document.getElementById('su-rpw-box').classList.toggle('hidden', co);
             if (co) renderCompanyPicker('su');
             const f = document.getElementById('su-fields');
             f.classList.remove('hidden'); f.classList.remove('su-fade'); void f.offsetWidth; f.classList.add('su-fade');
@@ -6725,6 +6734,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 mobile_number: p2e(document.getElementById('su-mobile').value.trim()),
                 personnel_code: document.getElementById('su-personnel').value.trim(),
                 avatar: document.getElementById('su-avatar').value,
+                report_edit_password: role === 'COMPANY' ? '' : document.getElementById('su-rpw').value,
             };
             if (role === 'COMPANY') payload.company_ids = pickedCompanies('su');
             if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
@@ -6734,6 +6744,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const data = await res.json();
             if (data.ok) {
                 showToast('کاربر ثبت شد.', 'success');
+                if (data.warning) showToast(data.warning, 'warning');
                 closeModal('add-staff-user-modal');
                 loadStaffUsers();
             } else { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('su', data.error); }
@@ -6758,6 +6769,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('esu-mobile').value = u.mobile_number || '';
             document.getElementById('esu-password').value = '';
             document.getElementById('esu-admin-pass').value = '';
+            document.getElementById('esu-rpw').value = ''; document.getElementById('esu-rpw-clear').checked = false;
+            document.getElementById('esu-rpw-box').classList.toggle('hidden', co);
+            const rst = document.getElementById('esu-rpw-state');
+            rst.textContent = u.has_report_pw ? 'تعیین شده' : 'همان رمزِ پنل';
+            rst.className = 'font-bold text-[10px] rounded-full px-2 py-0.5 mr-1 ' + (u.has_report_pw ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500');
             showMobileErr('esu', '');
             openModal('edit-staff-user-modal');
         }
@@ -6771,7 +6787,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (type === 'COMPANY') {
                 body.company_ids = pickedCompanies('esu');
                 if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
-            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); }
+            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); body.report_edit_password = g('esu-rpw'); body.report_edit_password_clear = document.getElementById('esu-rpw-clear').checked; }
             showMobileErr('esu', '');
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             const data = await res.json();
@@ -7405,7 +7421,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-2">${l.person_name || '-'}</td>
                             ${i.kind === 'SUMMARY' ? `<td class="p-2 text-center">${e2p(l.policy_count)}</td>`
                               : i.kind === 'PERSONNEL' ? `<td class="p-2 text-center">${l.company_name || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.personnel_code) || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.national_code) || '-'}</td>`
-                              : `<td class="p-2 text-center" dir="ltr">${l.plate || '-'}</td><td class="p-2 text-center" dir="ltr">${l.policy_number || '-'}</td>`}
+                              : `<td class="p-2 text-center">${l.plate ? formatPlateHtml(l.plate) : '-'}</td><td class="p-2 text-center" dir="ltr">${l.policy_number || '-'}</td>`}
                             <td class="p-2 text-center">${money(l.total_premium)}</td>
                             <td class="p-2 text-center">${money(l.monthly_amount)}</td></tr>`).join('') + `</tbody></table>
                     </div>
@@ -7572,7 +7588,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="p-2 text-center">${r.can_settle ? `<input type="checkbox" class="psg-cb" value="${r.id}" data-amount="${r.amount}">` : '<span class="text-slate-300">—</span>'}</td>
                         <td class="p-2">${r.company_name || '-'}</td>
                         <td class="p-2">${r.insured_name || '-'}</td>
-                        <td class="p-2 text-center" dir="ltr">${r.plate || '-'}</td>
+                        <td class="p-2 text-center">${r.plate ? formatPlateHtml(r.plate) : '-'}</td>
                         <td class="p-2 text-center" dir="ltr">
                             <span id="psg-pol-${r.id}">${r.policy_number || '-'}</span>
                             ${r.policy_number ? `<button onclick="copyToClipboard('${r.policy_number}','شماره بیمه‌نامه')" class="text-slate-400 hover:text-indigo-600 mr-1"><i class="fas fa-copy"></i></button>` : ''}

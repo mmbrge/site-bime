@@ -29,6 +29,21 @@ $ready = auth_schema_ready($pdo);
 function out($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 
 // تاییدِ عملیاتِ حساس با رمزِ خودِ مدیر
+// رمزِ جداگانه‌ی ویرایشِ گزارش بازدید (مایگریشن ۰۲۴): $pwd خالی = دست نخورد؛ $clear = برداشتن (برگشت به رمزِ پنل)
+function staff_set_report_pw($pdo, $id, $pwd, $clear) {
+    try {
+        if ($clear) $pdo->prepare("UPDATE users SET report_edit_password_hash = NULL WHERE id = ?")->execute([$id]);
+        elseif ($pwd !== '') $pdo->prepare("UPDATE users SET report_edit_password_hash = ? WHERE id = ?")->execute([password_hash($pwd, PASSWORD_DEFAULT), $id]);
+        return true;
+    } catch (Throwable $e) { return false; }
+}
+function staff_report_pw_ready($pdo) {
+    static $ok = null;
+    if ($ok === null) { try { $pdo->query("SELECT report_edit_password_hash FROM users LIMIT 0"); $ok = true; } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
+const STAFF_REPORT_PW_MSG = 'برای «رمزِ ویرایشِ گزارش»، مایگریشن migrations/024_report_edit_password.sql را اجرا کنید.';
+
 function require_admin_password($pdo, $me, $pwd) {
     $st = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
     $st->execute([$me]);
@@ -40,9 +55,11 @@ try {
     if ($action === 'list') {
         $cols = $ready ? ', personnel_code, bale_chat_id IS NOT NULL AND bot_linked_at IS NOT NULL AS bot_linked, bot_linked_at, is_deleted, deleted_at' : '';
         $where = ($ready && empty($data['include_deleted'])) ? 'WHERE COALESCE(is_deleted, 0) = 0' : '';
+        if (staff_report_pw_ready($pdo)) $cols .= ', report_edit_password_hash IS NOT NULL AS has_report_pw';
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         foreach ($users as &$u) {
             $u['bot_linked'] = !empty($u['bot_linked']);
+            $u['has_report_pw'] = !empty($u['has_report_pw']);
             $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             if ($ready) {
                 $st = $pdo->prepare("SELECT created_at, browser, device FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method <> 'LOGOUT' ORDER BY id DESC LIMIT 1");
@@ -146,7 +163,10 @@ try {
         }
         $newId = intval($pdo->lastInsertId());
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
-        out(['ok' => true, 'user_id' => $newId]);
+        $rpw = (string)($data['report_edit_password'] ?? '');
+        $warn = null;
+        if ($rpw !== '') { if (strlen($rpw) < 4) $warn = 'رمزِ ویرایشِ گزارش باید حداقل ۴ کاراکتر باشد؛ ثبت نشد.'; elseif (!staff_set_report_pw($pdo, $newId, $rpw, false)) $warn = STAFF_REPORT_PW_MSG; }
+        out(['ok' => true, 'user_id' => $newId, 'warning' => $warn]);
     }
 
     // ویرایشِ کامل (نام کاربری عوض نمی‌شود) - با رمزِ مدیر
@@ -200,6 +220,10 @@ try {
         if ($fullName === '' || !$role) out(['ok' => false, 'error' => 'نام و نقش الزامی است.']);
         if ($mobileIn !== '' && !$mobile) out(['ok' => false, 'error' => 'شماره موبایل معتبر نیست (مثل ۰۹۱۲۱۲۳۴۵۶۷).']);
         if ($password !== '' && strlen($password) < 6) out(['ok' => false, 'error' => 'رمز عبورِ جدید باید حداقل ۶ کاراکتر باشد.']);
+        $rpw = (string)($data['report_edit_password'] ?? '');
+        $rpwClear = !empty($data['report_edit_password_clear']);
+        if ($rpw !== '' && strlen($rpw) < 4) out(['ok' => false, 'error' => 'رمزِ ویرایشِ گزارش باید حداقل ۴ کاراکتر باشد.']);
+        if (($rpw !== '' || $rpwClear) && !staff_report_pw_ready($pdo)) out(['ok' => false, 'error' => STAFF_REPORT_PW_MSG]);
         if ($id === $me && $role !== 'ADMIN') out(['ok' => false, 'error' => 'نمی‌توانید نقشِ خودتان را از مدیر کل خارج کنید.']);
 
         $phoneChanged = auth_norm_phone($u['mobile_number']) !== (string)$mobile;
@@ -207,6 +231,7 @@ try {
         $pdo->prepare("UPDATE users SET full_name = ?, role = ?, mobile_number = ?, personnel_code = ? WHERE id = ?")
             ->execute([$fullName, $role, $mobile, trim(p2e_digits($data['personnel_code'] ?? '')) ?: null, $id]);
         if ($password !== '') $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
+        if ($rpw !== '' || $rpwClear) staff_set_report_pw($pdo, $id, $rpw, $rpwClear);
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
         if ($phoneChanged && !empty($u['bale_chat_id'])) {

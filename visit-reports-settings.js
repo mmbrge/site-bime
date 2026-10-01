@@ -402,7 +402,13 @@
             </div>
             <div class="vr-card p-5 vr-fade-up space-y-3">
                 <p class="vr-sec-title !text-xs">قلم‌هایی که قالب‌ها استفاده کرده‌اند</p>
-                <div class="flex flex-wrap gap-1.5">${b.word_fonts.map(w => `<span class="vr-chip ${mapped.includes(w) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${mapped.includes(w) ? '<i class="fas fa-check"></i>' : ''} ${esc(w)}</span>`).join('') || '—'}</div>
+                <p class="text-[10px] text-slate-400 font-bold leading-5">برای اینکه PDF دقیقاً مثلِ Word شود، قلم‌های نارنجی را (فایلِ TTFِ همان قلم از ویندوز، پوشه‌ی C:\\Windows\\Fonts) با همان نام آپلود کنید؛ روی هرکدام بزنید تا نامش در فرم نوشته شود. مثلاً تیکِ «✔» در Word با قلمِ «Segoe UI Symbol» (فایل seguisym.ttf) کشیده می‌شود.</p>
+                <div class="flex flex-wrap gap-1.5">${b.word_fonts.map(w => {
+                    const builtin = /^(vazir|vazirmatn)$/i.test(w) ? 'وزیر (همراهِ سایت)' : /^arial( narrow)?$/i.test(w) ? 'جایگزین: Helvetica' : '';
+                    const st = mapped.includes(w) ? ['bg-emerald-50 text-emerald-600', '<i class="fas fa-check"></i>', 'آپلود شده'] : builtin ? ['bg-sky-50 text-sky-600', '<i class="fas fa-circle-info"></i>', builtin]
+                        : ['bg-amber-50 text-amber-700 cursor-pointer hover:bg-amber-100', '<i class="fas fa-triangle-exclamation"></i>', 'آپلود نشده؛ در PDF با قلمِ جایگزین ساخته می‌شود'];
+                    return `<span class="vr-chip ${st[0]}" title="${esc(st[2])}" ${!mapped.includes(w) && !builtin ? `data-wf="${esc(w)}"` : ''}>${st[1]} ${esc(w)}</span>`;
+                }).join('') || '—'}</div>
                 <p class="vr-sec-title !text-xs pt-3">قلم‌های بارگذاری‌شده</p>
                 ${b.fonts.map(f => `<div class="flex items-center gap-2 p-2 rounded-xl bg-slate-50 text-xs font-bold"><i class="fas fa-font text-indigo-400"></i><span class="flex-1">${esc(f.word_name)}${f.bold_file ? ' <span class="vr-chip bg-white text-slate-500">+Bold</span>' : ''}</span><button type="button" class="vr-btn vr-btn-r !py-1 !text-[10px]" data-fd="${f.id}"><i class="fas fa-trash"></i></button></div>`).join('') || '<p class="text-[11px] text-slate-400 font-bold">هنوز قلمی بارگذاری نشده.</p>'}
             </div></div>`;
@@ -413,6 +419,7 @@
             const d = await apiForm(fd); if (!d.ok) return toast(d.error, 'error');
             toast('قلم اضافه شد.', 'info'); await loadBoot(); renderFonts(body);
         };
+        body.querySelectorAll('[data-wf]').forEach(x => x.onclick = () => { const i = body.querySelector('.vrs-fw'); i.value = x.dataset.wf; i.focus(); i.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
         body.querySelectorAll('[data-fd]').forEach(x => x.onclick = async () => { const d = await api('set_font_delete', { id: Number(x.dataset.fd) }); if (!d.ok) return toast(d.error, 'error'); await loadBoot(); renderFonts(body); });
     }
 

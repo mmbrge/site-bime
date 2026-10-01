@@ -49,6 +49,7 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
+<link rel="stylesheet" href="../plate.css?v=1">
 <script src="../chat-ui.js?v=4"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -446,14 +447,12 @@ function addPlateRow(containerId) {
     row.className = 'plate-row border rounded-lg p-2 mb-1';
     row.innerHTML = `
         <div class="flex items-center gap-2">
-            <div class="grid grid-cols-4 gap-1 flex-1" dir="ltr">
-                <input class="plate-p4 text-center border rounded-lg p-2 text-xs" maxlength="2" placeholder="۱۲">
-                <input class="plate-letter text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="الف">
-                <input class="plate-p2 text-center border rounded-lg p-2 text-xs" maxlength="3" placeholder="۳۴۵">
-                <div class="flex items-center gap-1 border rounded-lg px-1">
-                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input class="plate-p1 text-center text-xs w-full outline-none" maxlength="2" placeholder="۶۷">
-                </div>
+            <div class="ir-pin sm flex-1" dir="ltr">
+                <span class="ip-flag"></span>
+                <input class="plate-p4 ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲">
+                <input class="plate-letter ip-cell ip-letter" maxlength="3" placeholder="الف">
+                <input class="plate-p2 ip-cell ip-wide" maxlength="3" inputmode="numeric" placeholder="۳۴۵">
+                <span class="ip-ir"><small>ایران</small><input class="plate-p1" maxlength="2" inputmode="numeric" placeholder="۶۷"></span>
             </div>
             <button type="button" onclick="this.closest('.plate-row').remove()" aria-label="حذف این پلاک" title="حذف این پلاک" class="text-red-400 hover:text-red-600 shrink-0">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>

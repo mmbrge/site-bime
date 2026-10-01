@@ -81,6 +81,20 @@ function vr_check_password($pdo, $userId, $pwd) {
     $hash = $st->fetchColumn();
     return $pwd !== '' && $hash && password_verify((string)$pwd, $hash);
 }
+// رمزِ ویرایشِ گزارش: اگر مدیر کل برای این کاربر رمزِ جداگانه گذاشته (مایگریشن ۰۲۴)، همان؛ وگرنه رمزِ پنلِ خودش
+function vr_edit_password_hash($pdo, $userId) {
+    try {
+        $st = $pdo->prepare("SELECT report_edit_password_hash FROM users WHERE id = ?");
+        $st->execute([$userId]);
+        $h = $st->fetchColumn();
+        return $h ? (string)$h : null;
+    } catch (Throwable $e) { return null; }   // مایگریشن ۰۲۴ هنوز اجرا نشده
+}
+function vr_check_edit_password($pdo, $userId, $pwd) {
+    $h = vr_edit_password_hash($pdo, $userId);
+    if ($h === null) return vr_check_password($pdo, $userId, $pwd);
+    return $pwd !== '' && password_verify((string)$pwd, $h);
+}
 
 function vr_load($pdo, $id) {
     $st = $pdo->prepare("SELECT * FROM visit_reports WHERE id = ?");
@@ -460,7 +474,7 @@ try {
                        'fields' => $fields, 'visitors' => vr_visitors($pdo, $c['id']), 'insureds' => vr_insureds($pdo, $c['id'])];
         }
         [$jy, $jm, $jd] = jalali_from_gregorian_ts(time());
-        vr_out(['ok' => true, 'user' => $user, 'is_admin' => $isAdmin, 'categories' => $cats,
+        vr_out(['ok' => true, 'user' => $user, 'is_admin' => $isAdmin, 'edit_pw_custom' => vr_edit_password_hash($pdo, $user['id']) !== null, 'categories' => $cats,
                 'today' => sprintf('%04d/%02d/%02d', $jy, $jm, $jd), 'time' => vr_rounded_time(),
                 'can_link' => $isAdmin, 'can_health' => $user['role'] !== 'PARSIAN']);
     }
@@ -610,7 +624,8 @@ try {
         if ($action === 'edit') {
             $existing = vr_load_visible($pdo, $data['id'] ?? 0, $user);
             if ($existing['status'] !== 'ACTIVE') vr_fail('گزارشِ حذف‌شده را نمی‌شود ویرایش کرد.');
-            if (!vr_check_password($pdo, $user['id'], (string)($data['password'] ?? ''))) vr_fail('رمز عبورِ پنلِ شما نادرست است.', ['password' => true]);
+            if (!vr_check_edit_password($pdo, $user['id'], (string)($data['password'] ?? '')))
+                vr_fail(vr_edit_password_hash($pdo, $user['id']) !== null ? 'رمزِ ویرایشِ گزارش نادرست است.' : 'رمز عبورِ پنلِ شما نادرست است.', ['password' => true]);
             $cat = vr_category($pdo, $existing['category_id']);
         } else {
             $cat = vr_category($pdo, $data['category_id'] ?? 0);
@@ -688,7 +703,16 @@ try {
         $sort = ['new' => 'id DESC', 'old' => 'id ASC', 'date' => 'report_date_g DESC, id DESC', 'value' => 'car_value DESC, id DESC'][$data['sort'] ?? 'new'] ?? 'id DESC';
         $st = $pdo->prepare("SELECT * FROM visit_reports WHERE $where ORDER BY $sort LIMIT $per OFFSET " . (($page - 1) * $per));
         $st->execute($params);
-        $rows = array_map('vr_row_out', $st->fetchAll());
+        // دکمه‌های عملیاتِ همان ردیف (مثلِ پنجره‌ی جزئیات): ویرایش، پوشه در بایگانی
+        $catCache = [];
+        $rows = array_map(function ($raw) use ($pdo, $user, $isAdmin, $siteRoot, &$catCache) {
+            $o = vr_row_out($raw);
+            $cid = intval($raw['category_id']);
+            if (!array_key_exists($cid, $catCache)) $catCache[$cid] = vr_category($pdo, $cid);
+            $o['can_edit'] = $raw['status'] === 'ACTIVE' && $catCache[$cid] && vr_can_issue($catCache[$cid], $user);
+            if ($isAdmin && $raw['folder_path']) $o['archive_path'] = ltrim(str_replace(archive_root($siteRoot), '', vr_abs($siteRoot, $raw['folder_path'])), '/');
+            return $o;
+        }, $st->fetchAll());
         // آمار (در محدوده‌ی دسترسیِ همین کاربر)
         [$w0, $p0] = vr_list_where($pdo, [], $user);
         [$jy, $jm] = jalali_from_gregorian_ts(time());

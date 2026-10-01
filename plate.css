@@ -1,0 +1,36 @@
+/* فایل: plate.css
+   ظاهرِ یکسانِ پلاکِ ایران در همه‌ی پنل‌ها (جدول‌ها و فیلدهای ورود):
+   [نوارِ آبی][۲ رقم][حرف][۳ رقم][ایران / ۲ رقم]  - همیشه چپ‌به‌راست، مستقل از متنِ راست‌به‌چپِ اطراف */
+
+/* ---- نمایش (جدول‌ها، کارت‌ها) ---- */
+.ir-plate { display: inline-flex; align-items: stretch; direction: ltr; unicode-bidi: isolate; vertical-align: middle; white-space: nowrap;
+            border: 2px solid #1e293b; border-radius: 7px; overflow: hidden; background: #fff; color: #0f172a;
+            font-weight: 900; font-size: 12.5px; line-height: 1; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+.ir-plate > span { display: flex; align-items: center; justify-content: center; padding: 4px 5px; }
+.ir-plate > .flag { background: #1d4ed8; width: 8px; padding: 0; }
+.ir-plate > .ir { flex-direction: column; border-left: 2px solid #1e293b; padding: 2px 5px; font-size: 11.5px; gap: 1px; }
+.ir-plate > .ir small { font-size: 7px; font-weight: 800; color: #334155; }
+.ir-plate.sm { font-size: 11px; border-width: 1.5px; border-radius: 6px; }
+.ir-plate.sm > span { padding: 3px 4px; }
+.ir-plate.sm > .ir { border-left-width: 1.5px; font-size: 10px; }
+.ir-plate.sm > .flag { width: 6px; }
+
+/* ---- فیلدِ ورود (چهار خانه داخلِ قابِ پلاک) ---- */
+.ir-pin { display: flex !important; align-items: stretch; direction: ltr; unicode-bidi: isolate; height: 46px; width: 100%;
+          border: 2px solid #1e293b; border-radius: 10px; overflow: hidden; background: #fff;
+          box-shadow: 0 1px 2px rgba(15,23,42,.08); transition: border-color .2s, box-shadow .2s; }
+.ir-pin:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.16); }
+.ir-pin .ip-flag { width: 14px; flex-shrink: 0; background: linear-gradient(180deg, #2563eb, #1d4ed8); }
+.ir-pin input { border: 0 !important; outline: 0 !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important;
+                text-align: center; font-weight: 900; font-size: 15px; color: #0f172a; min-width: 0; padding: 0 2px !important; height: 100%; font-family: inherit; }
+.ir-pin input::placeholder { color: #cbd5e1; font-weight: 700; }
+.ir-pin input:focus { background: #eff6ff !important; }
+.ir-pin .ip-cell { flex: 1 1 0; }
+.ir-pin .ip-letter { flex: 1.05 1 0; }
+.ir-pin .ip-wide { flex: 1.45 1 0; }
+.ir-pin .ip-cell + .ip-cell { border-left: 1px dashed #cbd5e1 !important; }
+.ir-pin .ip-ir { flex: 1.15 1 0; display: flex; flex-direction: column; align-items: stretch; border-left: 2px solid #1e293b; min-width: 0; }
+.ir-pin .ip-ir small { font-size: 9px; font-weight: 800; color: #334155; text-align: center; line-height: 1; padding-top: 3px; }
+.ir-pin .ip-ir input { flex: 1; width: 100%; font-size: 14px; }
+.ir-pin.sm { height: 38px; border-width: 1.5px; }
+.ir-pin.sm input { font-size: 13px; }
