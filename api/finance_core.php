@@ -647,9 +647,10 @@ function fin_read_spreadsheet($path) {
     if (preg_match_all('/<row[^>]*>(.*?)<\/row>/s', $sheet, $rm)) {
         foreach ($rm[1] as $rowXml) {
             $cells = [];
-            if (preg_match_all('/<c([^>]*)>(.*?)<\/c>/s', $rowXml, $cm, PREG_SET_ORDER)) {
+            // سلولِ خالی در اکسل خودبسته است (<c r="E2" s="1"/>) و نباید سلولِ بعدی را ببلعد
+            if (preg_match_all('/<c\b([^>]*?)(?:\/>|>(.*?)<\/c>)/s', $rowXml, $cm, PREG_SET_ORDER)) {
                 foreach ($cm as $cell) {
-                    $attr = $cell[1]; $inner = $cell[2];
+                    $attr = $cell[1]; $inner = $cell[2] ?? '';
                     // شماره‌ی ستون از مرجع سلول (مثل C5) استخراج می‌شود تا سلول‌های خالی جا نیفتند
                     $colIdx = 0;
                     if (preg_match('/r="([A-Z]+)\d+"/', $attr, $rmch)) {
@@ -701,9 +702,10 @@ function fin_read_xlsx_fallback($path) {
     if (preg_match_all('/<row[^>]*>(.*?)<\/row>/s', $sheet, $rm)) {
         foreach ($rm[1] as $rowXml) {
             $cells = [];
-            if (preg_match_all('/<c([^>]*)>(.*?)<\/c>/s', $rowXml, $cm, PREG_SET_ORDER)) {
+            // سلولِ خالی در اکسل خودبسته است (<c r="E2" s="1"/>) و نباید سلولِ بعدی را ببلعد
+            if (preg_match_all('/<c\b([^>]*?)(?:\/>|>(.*?)<\/c>)/s', $rowXml, $cm, PREG_SET_ORDER)) {
                 foreach ($cm as $cell) {
-                    $attr = $cell[1]; $inner = $cell[2];
+                    $attr = $cell[1]; $inner = $cell[2] ?? '';
                     $colIdx = count($cells);
                     if (preg_match('/r="([A-Z]+)\d+"/', $attr, $rmch)) {
                         $letters = $rmch[1]; $colIdx = 0;

@@ -1422,3 +1422,147 @@ function company_last_request_defaults($pdo, $companyId) {
     } catch (Throwable $e) {}
     return $out;
 }
+
+// =====================================================================
+//  ورودِ شرکت‌ها از اکسل: ستون‌ها (برای راهنما، فایلِ نمونه و تشخیصِ سرستون)
+//  key => [عنوانِ سرستون در فایلِ نمونه, نام‌های قابل‌قبولِ دیگر, الزامی؟, توضیح, نمونه‌ی ۱, نمونه‌ی ۲]
+// =====================================================================
+function company_import_columns() {
+    return [
+        'name'            => ['نام شرکت', ['شرکت', 'نام', 'company', 'name', 'عنوان شرکت'], true, 'نامِ کاملِ شرکت؛ اگر از قبل ثبت شده باشد، همان شرکت به‌روز می‌شود.', 'شرکت نمونه‌ی صنعتی آرین', 'شرکت آرین پخش'],
+        'economic_code'   => ['کد اقتصادی', ['شناسه ملی', 'کد اقتصادی/شناسه ملی', 'economic code', 'شناسه'], false, 'کد اقتصادی یا شناسه‌ی ملیِ شرکت.', '411111111111', '14000000000'],
+        'phone'           => ['تلفن', ['شماره تماس', 'تلفن تماس', 'phone', 'موبایل'], false, 'شماره‌ی تماسِ شرکت.', '02188888888', '09121234567'],
+        'address'         => ['آدرس', ['نشانی', 'address'], false, 'نشانیِ شرکت.', 'تهران، خیابان ولیعصر، پلاک ۱', 'کرج، شهرک صنعتی'],
+        'parent'          => ['شرکت مادر', ['مادر', 'شرکت اصلی', 'parent'], false, 'اگر زیرمجموعه است، نامِ شرکتِ مادر (ثبت‌شده یا در همین فایل). خالی = مستقل.', '', 'شرکت نمونه‌ی صنعتی آرین'],
+        'payment_terms'   => ['نحوه تسویه', ['تسویه', 'نحوه پرداخت', 'payment'], false, 'یکی از: «قسطی»، «نقدی ۳۰ روزه»، «نقدی فوری». خالی = مشخص نشده.', 'قسطی', 'نقدی ۳۰ روزه'],
+        'allowed_insurers'=> ['بیمه‌گر مجاز', ['بیمه گر مجاز', 'بیمه‌گر', 'بیمه گر', 'insurer'], false, 'یکی از: «پاسارگاد»، «ایران»، «هردو». خالی = هردو.', 'هردو', 'پاسارگاد'],
+        'installment_count' => ['تعداد اقساط', ['اقساط', 'تعداد قسط', 'installments'], false, 'عدد؛ برای تسویه‌ی قسطی (مثلاً ۹).', '9', ''],
+        'first_due_offset_months' => ['سررسید اول (ماه بعد)', ['سررسید اول', 'ماه سررسید', 'فاصله ماه'], false, 'اولین قسط چند ماه بعد از تاریخ صدور است (۰ = همان ماه).', '1', '0'],
+        'first_due_offset_days'   => ['روز اضافه', ['+ روز', 'روز', 'فاصله روز'], false, 'چند روز به سررسیدِ اول اضافه شود.', '0', '0'],
+        'bale_group_chat_id' => ['شناسه گروه بله', ['گروه بله', 'شناسه گروه', 'chat id'], false, 'اختیاری؛ شناسه‌ی گروهِ بله‌ی شرکت.', '', ''],
+    ];
+}
+
+function company_import_norm_value($key, $v) {
+    $v = trim(p2e_digits((string)$v));
+    $n = company_normalize_header($v);
+    if ($key === 'payment_terms') {
+        if ($v === '') return null;
+        if (mb_strpos($n, 'قسط') !== false || $n === 'installment') return 'INSTALLMENT';
+        if (mb_strpos($n, 'فوری') !== false || $n === 'cash_immediate' || $n === 'نقدی') return 'CASH_IMMEDIATE';
+        if (mb_strpos($n, '30') !== false || mb_strpos($n, 'مهلت') !== false || $n === 'cash_net30') return 'CASH_NET30';
+        return false;
+    }
+    if ($key === 'allowed_insurers') {
+        if ($v === '') return null;   // خالی: شرکتِ تازه «هردو»، شرکتِ موجود بدونِ تغییر
+        $p = mb_strpos($n, 'پاسارگاد') !== false || $n === 'pasargad'; $i = mb_strpos($n, 'ایران') !== false || $n === 'iran';
+        if (mb_strpos($n, 'هردو') !== false || mb_strpos($n, 'هر دو') !== false || $n === 'both' || ($p && $i)) return 'BOTH';
+        if ($p) return 'PASARGAD';
+        if ($i) return 'IRAN';
+        return false;
+    }
+    if (in_array($key, ['installment_count', 'first_due_offset_months', 'first_due_offset_days'], true)) {
+        if ($v === '') return null;
+        return preg_match('/^\d{1,3}$/', $v) ? intval($v) : false;
+    }
+    if ($key === 'phone') {   // اکسل صفرِ اولِ شماره‌ای که عدد تایپ شده را می‌اندازد
+        $v = preg_replace('/[\s\-]+/', '', $v);
+        if (preg_match('/^[1-9]\d{9}$/', $v)) $v = '0' . $v;
+        return $v === '' ? null : $v;
+    }
+    if (in_array($key, ['economic_code', 'bale_group_chat_id'], true)) return $v === '' ? null : preg_replace('/\s+/', '', $v);
+    return $v === '' ? null : preg_replace('/\s+/u', ' ', $v);
+}
+
+// خواندن و بررسیِ فایل: ['rows' => [[line, data, status (new|update|error|dup), errors, warnings], ...], 'columns' => [...], 'unknown' => [...]]
+function company_import_parse($pdo, $path) {
+    if (!function_exists('fin_read_spreadsheet')) return ['error' => 'ماژول خواندن اکسل در دسترس نیست.'];
+    $table = fin_read_spreadsheet($path);
+    if (!$table || count($table) < 2) return ['error' => 'فایل خوانده نشد یا ردیفی ندارد. سرستون‌ها باید در ردیفِ اول باشند (از فایلِ نمونه استفاده کنید).'];
+    $cols = company_import_columns();
+    $lookup = [];
+    foreach ($cols as $k => $c) { $lookup[company_normalize_header($c[0])] = $k; foreach ($c[1] as $a) $lookup[company_normalize_header($a)] = $k; }
+    $header = array_shift($table);
+    $idx = []; $unknown = [];
+    foreach ($header as $i => $h) {
+        $nh = company_normalize_header(preg_replace('/\s*\*\s*$/u', '', (string)$h));
+        if ($nh === '') continue;
+        if (isset($lookup[$nh]) && !isset($idx[$lookup[$nh]])) $idx[$lookup[$nh]] = $i; else $unknown[] = (string)$h;
+    }
+    if (!isset($idx['name'])) return ['error' => 'ستونِ «نام شرکت» پیدا نشد. سرستون‌ها را مطابقِ راهنما بنویسید.', 'unknown' => $unknown];
+    $existing = [];
+    foreach ($pdo->query("SELECT id, name FROM companies") as $r) $existing[company_normalize_header($r['name'])] = (int)$r['id'];
+    $rows = []; $seen = []; $fileNames = [];
+    foreach ($table as $li => $cells) {
+        if (!array_filter(array_map(fn($x) => trim((string)$x), $cells), 'strlen')) continue;
+        $d = []; $errors = []; $warn = [];
+        foreach ($idx as $k => $i) {
+            $val = company_import_norm_value($k, $cells[$i] ?? '');
+            if ($val === false) { $errors[] = '«' . $cols[$k][0] . '» نامعتبر است: ' . trim((string)($cells[$i] ?? '')); $val = null; }
+            $d[$k] = $val;
+        }
+        if (empty($d['name'])) $errors[] = 'نام شرکت خالی است.';
+        $nk = company_normalize_header($d['name'] ?? '');
+        $status = $errors ? 'error' : (isset($existing[$nk]) ? 'update' : 'new');
+        if (!$errors && isset($seen[$nk])) { $status = 'dup'; $errors[] = 'این شرکت در ردیفِ ' . fa_digits($seen[$nk]) . ' همین فایل هم آمده.'; }
+        if (!$errors) { $seen[$nk] = $li + 2; $fileNames[$nk] = true; }
+        if (($d['payment_terms'] ?? null) === 'INSTALLMENT' && empty($d['installment_count'])) $warn[] = 'تسویه قسطی است ولی تعداد اقساط خالی است.';
+        $rows[] = ['line' => $li + 2, 'data' => $d, 'status' => $status, 'errors' => $errors, 'warnings' => $warn, 'existing_id' => $existing[$nk] ?? null];
+    }
+    // شرکتِ مادر باید ثبت‌شده یا در همین فایل باشد
+    foreach ($rows as &$r) {
+        $p = $r['data']['parent'] ?? null;
+        if (!$p || $r['status'] === 'error' || $r['status'] === 'dup') continue;
+        $pk = company_normalize_header($p);
+        if ($pk === company_normalize_header($r['data']['name'])) { $r['errors'][] = 'شرکت نمی‌تواند مادرِ خودش باشد.'; $r['status'] = 'error'; }
+        elseif (!isset($existing[$pk]) && !isset($fileNames[$pk])) $r['warnings'][] = 'شرکتِ مادر «' . $p . '» پیدا نشد؛ بدونِ مادر ثبت می‌شود.';
+    }
+    unset($r);
+    return ['rows' => $rows, 'columns' => array_keys($idx), 'unknown' => $unknown];
+}
+
+// ثبت: شرکت‌های تازه ساخته و موجودها (اگر $update) فقط با خانه‌های پرِ فایل به‌روز می‌شوند؛ بعد شرکتِ مادر وصل می‌شود
+function company_import_commit($pdo, array $rows, $update) {
+    $created = 0; $updated = 0; $skipped = 0; $ids = [];
+    $fields = ['economic_code', 'phone', 'address', 'payment_terms', 'allowed_insurers', 'installment_count', 'first_due_offset_months', 'first_due_offset_days', 'bale_group_chat_id'];
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $r) {
+            if (!in_array($r['status'], ['new', 'update'], true)) { $skipped++; continue; }
+            $d = $r['data'];
+            $nk = company_normalize_header($d['name']);
+            if ($r['status'] === 'new') {
+                $pdo->prepare("INSERT INTO companies (name, kind, payment_terms, economic_code, address, phone, bale_group_chat_id, allowed_insurers, installment_count, first_due_offset_months, first_due_offset_days)
+                               VALUES (?, 'INSURANCE_CLIENT', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$d['name'], $d['payment_terms'] ?? null, $d['economic_code'] ?? null, $d['address'] ?? null, $d['phone'] ?? null, $d['bale_group_chat_id'] ?? null,
+                               $d['allowed_insurers'] ?? 'BOTH', $d['installment_count'] ?? null, intval($d['first_due_offset_months'] ?? 0), intval($d['first_due_offset_days'] ?? 0)]);
+                $ids[$nk] = (int)$pdo->lastInsertId(); $created++;
+            } else {
+                $id = (int)$r['existing_id']; $ids[$nk] = $id;
+                if (!$update) { $skipped++; continue; }
+                $set = ["kind = IF(kind = 'PERSONNEL_EMPLOYER', 'BOTH', kind)"]; $vals = [];
+                foreach ($fields as $f) if (isset($d[$f])) { $set[] = "`$f` = ?"; $vals[] = $d[$f]; }
+                $vals[] = $id;
+                $pdo->prepare("UPDATE companies SET " . implode(', ', $set) . " WHERE id = ?")->execute($vals);
+                $updated++;
+            }
+        }
+        // شرکتِ مادر
+        $all = [];
+        foreach ($pdo->query("SELECT id, name FROM companies") as $c) $all[company_normalize_header($c['name'])] = (int)$c['id'];
+        $setParent = $pdo->prepare("UPDATE companies SET parent_id = ? WHERE id = ?");
+        foreach ($rows as $r) {
+            if (empty($r['data']['parent']) || !in_array($r['status'], ['new', 'update'], true)) continue;
+            if ($r['status'] === 'update' && !$update) continue;
+            $cid = $ids[company_normalize_header($r['data']['name'])] ?? null;
+            $pid = $all[company_normalize_header($r['data']['parent'])] ?? null;
+            if ($cid && $pid && $cid !== $pid) $setParent->execute([$pid, $cid]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        error_log('[company_import_commit] ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'ثبت در دیتابیس ممکن نشد.'];
+    }
+    return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped];
+}

@@ -722,8 +722,56 @@ try {
                               LEFT JOIN companies parent ON parent.id = c.parent_id
                               WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') ORDER BY c.name");
         $companiesList = $stmt->fetchAll();
-        foreach ($companiesList as &$c) { $c['created_at_jalali'] = $c['created_at'] ? jd(strtotime($c['created_at'])) : null; }
+        // آمار برای کارت‌های صفحه‌ی شرکت‌ها: کاربرانِ پنل، درخواست‌ها، درخواست‌های باز، صادره‌ها
+        $stat = ['users' => [], 'req' => [], 'open' => [], 'issued' => []];
+        try {
+            foreach ($pdo->query("SELECT company_id, COUNT(*) n FROM company_portal_user_companies GROUP BY company_id") as $r) $stat['users'][(int)$r['company_id']] = (int)$r['n'];
+            foreach ($pdo->query("SELECT company_id, COUNT(*) n, SUM(status NOT IN ('ISSUED','CANCELLED')) o FROM company_requests GROUP BY company_id") as $r) { $stat['req'][(int)$r['company_id']] = (int)$r['n']; $stat['open'][(int)$r['company_id']] = (int)$r['o']; }
+            foreach ($pdo->query("SELECT cr.company_id, COUNT(*) n FROM company_request_plates p JOIN company_requests cr ON cr.id = p.request_id WHERE p.status = 'ISSUED' GROUP BY cr.company_id") as $r) $stat['issued'][(int)$r['company_id']] = (int)$r['n'];
+        } catch (Throwable $e) {}
+        foreach ($companiesList as &$c) {
+            $c['created_at_jalali'] = $c['created_at'] ? jd(strtotime($c['created_at'])) : null;
+            $cid = (int)$c['id'];
+            $c['users_count'] = $stat['users'][$cid] ?? 0; $c['requests_count'] = $stat['req'][$cid] ?? 0;
+            $c['open_requests'] = $stat['open'][$cid] ?? 0; $c['issued_count'] = $stat['issued'][$cid] ?? 0;
+        }
         echo json_encode(['ok' => true, 'companies' => $companiesList], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ورودِ شرکت‌ها از اکسل: فایلِ نمونه، راهنمای ستون‌ها، پیش‌نمایش و ثبت ----
+    if ($action === 'company_import_sample' || ($_GET['action'] ?? '') === 'company_import_sample') {
+        require_admin_only();
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $cols = company_import_columns();
+        $headers = array_map(fn($c) => $c[0] . ($c[2] ? ' *' : ''), array_values($cols));
+        $rows = [array_map(fn($c) => $c[4], array_values($cols)), array_map(fn($c) => $c[5], array_values($cols))];
+        $path = xlsx_build($headers, $rows, 'شرکت‌ها');
+        xlsx_send($path, 'نمونه ورود شرکت‌ها.xlsx');
+        exit;
+    }
+    if ($action === 'company_import_columns') {
+        $out = [];
+        foreach (company_import_columns() as $k => $c) $out[] = ['key' => $k, 'title' => $c[0], 'aliases' => $c[1], 'required' => $c[2], 'note' => $c[3], 'example' => $c[4] !== '' ? $c[4] : $c[5]];
+        echo json_encode(['ok' => true, 'columns' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (($_POST['action'] ?? '') === 'company_import') {
+        require_admin_only();
+        if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ اکسل (xlsx) یا CSV.'], JSON_UNESCAPED_UNICODE); exit; }
+        $tmp = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cimport_') . '.' . $ext;
+        if (!is_dir(dirname($tmp))) @mkdir(dirname($tmp), 0777, true);
+        move_uploaded_file($_FILES['file']['tmp_name'], $tmp);
+        $parsed = company_import_parse($pdo, $tmp);
+        @unlink($tmp);
+        if (!empty($parsed['error'])) { echo json_encode(['ok' => false] + $parsed, JSON_UNESCAPED_UNICODE); exit; }
+        $sum = ['new' => 0, 'update' => 0, 'error' => 0, 'dup' => 0];
+        foreach ($parsed['rows'] as $r) $sum[$r['status']]++;
+        if (empty($_POST['commit'])) { echo json_encode(['ok' => true, 'preview' => true, 'summary' => $sum] + $parsed, JSON_UNESCAPED_UNICODE); exit; }
+        $res = company_import_commit($pdo, $parsed['rows'], !empty($_POST['update_existing']));
+        echo json_encode($res + ['summary' => $sum], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

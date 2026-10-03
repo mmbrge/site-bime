@@ -649,6 +649,32 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         border-right: 1px solid #edf1f6; }
     #iq-detail-modal table tbody tr:nth-child(even), #il-detail-modal table tbody tr:nth-child(even), #creq-detail-modal table tbody tr:nth-child(even) { background: #fbfcfe; }
     #iq-detail-modal table tbody tr:hover, #il-detail-modal table tbody tr:hover, #creq-detail-modal table tbody tr:hover { background: #eef2ff; }
+    /* صفحه‌ی شرکت‌ها */
+    .cmx-hero{position:relative;overflow:hidden;border-radius:24px;padding:22px;color:#fff;background:linear-gradient(125deg,#1e1b4b 0%,#3730a3 45%,#0e7490 100%);box-shadow:0 18px 40px -18px rgba(55,48,163,.55)}
+    .cmx-hero:before{content:'';position:absolute;left:-60px;top:-80px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.08)}
+    .cmx-hero:after{content:'';position:absolute;left:120px;bottom:-110px;width:220px;height:220px;border-radius:50%;background:rgba(34,211,238,.15)}
+    .cmx-hero-ic{width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;font-size:22px;backdrop-filter:blur(4px)}
+    .cmx-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:900;padding:9px 14px;border-radius:12px;transition:all .15s}
+    .cmx-btn-w{background:#fff;color:#3730a3}.cmx-btn-w:hover{background:#eef2ff}
+    .cmx-btn-g{background:#10b981;color:#fff}.cmx-btn-g:hover{background:#059669}
+    .cmx-btn-t{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.3)}.cmx-btn-t:hover{background:rgba(255,255,255,.24)}
+    .cmx-kpi{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:10px 14px}
+    .cmx-kpi b{display:block;font-size:22px;font-weight:900}.cmx-kpi span{font-size:11px;opacity:.85}
+    .cmx-card{background:#fff;border:2px solid #e2e8f0;border-radius:20px;overflow:hidden;transition:all .18s;display:flex;flex-direction:column}
+    .cmx-card:hover{border-color:#a5b4fc;box-shadow:0 14px 30px -16px rgba(79,70,229,.45);transform:translateY(-2px)}
+    .cmx-card-top{padding:14px 16px;display:flex;gap:12px;align-items:center;border-bottom:2px solid #f1f5f9;background:linear-gradient(180deg,#f8fafc,#fff)}
+    .cmx-av{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px;flex-shrink:0}
+    .cmx-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px}
+    .cmx-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 12px}
+    .cmx-stat{background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;text-align:center;padding:6px 2px}
+    .cmx-stat b{display:block;font-size:15px;font-weight:900;color:#1e293b}.cmx-stat span{font-size:9.5px;color:#64748b;font-weight:700}
+    .cmx-act{display:flex;gap:6px;padding:10px 12px;border-top:2px solid #f1f5f9;margin-top:auto}
+    .cmx-act button{flex:1;font-size:11px;font-weight:800;padding:7px;border-radius:10px}
+    .cmx-sec{border:2px solid #eef2f7;border-radius:16px;padding:12px;margin-bottom:12px}
+    .cmx-sec h4{font-size:12px;font-weight:900;color:#4338ca;margin-bottom:10px}
+    .cmi-step{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#059669;color:#fff;align-items:center;justify-content:center;font-size:10px;margin-left:4px}
+    .cmi-cols td,.cmi-cols th{padding:7px 9px;border-top:1px solid #e2e8f0;vertical-align:top}
+    .cmi-cols th{background:#f1f5f9;font-weight:800;color:#334155;border-top:0}
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
@@ -2445,30 +2471,32 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if (!$isLiaison): ?>
         <!-- ======================= تب مدیریت شرکت‌ها (فقط ادمین) ======================= -->
-        <div id="tab-companies-manage" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="flex items-center justify-between flex-wrap gap-3">
-                <h1 class="text-2xl font-black text-slate-800">مدیریت شرکت‌های درخواست‌کننده</h1>
-                <div class="flex gap-2">
-                    <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
-                    <button onclick="resetCompanyForm(); openModal('add-company-modal')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن شرکت</button>
-                    <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-users ml-1"></i>کاربرانِ شرکت‌ها</button>
+        <div id="tab-companies-manage" class="tab-content max-w-7xl mx-auto w-full space-y-5 flex-1 hidden">
+            <div class="cmx-hero">
+                <div class="flex items-start justify-between gap-4 flex-wrap relative">
+                    <div class="flex items-center gap-3">
+                        <span class="cmx-hero-ic"><i class="fas fa-building"></i></span>
+                        <div><h1 class="text-2xl font-black">شرکت‌های طرف قرارداد</h1>
+                            <p class="text-[12px] opacity-85 mt-0.5">تعریفِ شرکت‌ها، شرکتِ مادر، نحوه‌ی تسویه، قسط‌بندی و بیمه‌گرِ مجاز؛ یکی‌یکی یا یک‌جا از اکسل</p></div>
+                    </div>
+                    <div class="flex gap-2 flex-wrap">
+                        <button onclick="resetCompanyForm(); openModal('add-company-modal')" class="cmx-btn cmx-btn-w"><i class="fas fa-plus"></i>افزودن شرکت</button>
+                        <button onclick="openCompanyImport()" class="cmx-btn cmx-btn-g"><i class="fas fa-file-excel"></i>ورود از اکسل</button>
+                        <a href="api/company_actions.php?action=company_import_sample" class="cmx-btn cmx-btn-t"><i class="fas fa-download"></i>اکسلِ نمونه</a>
+                    </div>
                 </div>
+                <div id="cm-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 relative"></div>
             </div>
-            <div class="card overflow-x-auto">
-                <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-3 text-right">شرکت</th><th class="p-3 text-right">شرکت مادر</th>
-                        <th class="p-3 text-right">نحوه‌ی تسویه</th><th class="p-3 text-right">اقساط</th>
-                        <th class="p-3 text-right">بیمه‌گر مجاز</th><th class="p-3 text-right">تاریخ ایجاد</th>
-                        <th class="p-3 text-right"></th>
-                    </tr></thead>
-                    <tbody id="cm-companies-body"><tr><td colspan="4" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
-                </table>
+            <div class="card p-3 flex flex-wrap items-center gap-2">
+                <div class="relative flex-1 min-w-[220px]"><i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                    <input type="search" id="cm-q" oninput="renderCompanyCards()" placeholder="جستجو: نام شرکت، کد اقتصادی، تلفن، شرکت مادر..." class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl pr-8 pl-3 py-2 text-xs"></div>
+                <select id="cm-f-pay" onchange="renderCompanyCards()" class="border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی روش‌های تسویه</option><option value="INSTALLMENT">قسطی</option><option value="CASH_NET30">نقدی ۳۰ روزه</option><option value="CASH_IMMEDIATE">نقدی فوری</option><option value="NONE">مشخص نشده</option></select>
+                <select id="cm-f-ins" onchange="renderCompanyCards()" class="border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی بیمه‌گرها</option><option value="BOTH">هردو</option><option value="PASARGAD">فقط پاسارگاد</option><option value="IRAN">فقط ایران</option></select>
+                <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt ml-1"></i>بروزرسانی</button>
+                <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-users ml-1"></i>کاربرانِ شرکت‌ها</button>
+                <span id="cm-count" class="mr-auto text-[11px] font-bold text-slate-400"></span>
             </div>
-            <div class="card p-4 flex items-center justify-between gap-3 flex-wrap bg-emerald-50/40 border-emerald-100">
-                <p class="text-xs text-slate-600"><i class="fas fa-circle-info text-emerald-600 ml-1"></i>افزودن، ویرایش، حذف و پیام به کاربرانِ شرکت‌ها حالا در صفحه‌ی «کاربران» انجام می‌شود.</p>
-                <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold">رفتن به کاربرانِ شرکت‌ها</button>
-            </div>
+            <div id="cm-cards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"><p class="text-center text-slate-400 text-xs py-10 col-span-full">در حال بارگذاری...</p></div>
         </div>
         <?php endif; ?>
         <?php endif; ?>
@@ -2943,56 +2971,99 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <!-- مودال افزودن/ویرایش شرکت -->
     <div id="add-company-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-lg p-6 relative max-h-[85vh] overflow-y-auto">
-            <button type="button" onclick="closeModal('add-company-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-4"><span id="cm-form-title">افزودن شرکت جدید</span></h3>
-            <input type="hidden" id="cm-company-id">
-            <div class="float-input"><input type="text" id="cm-company-name" placeholder=" "><label>نام شرکت</label></div>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="float-input"><input type="text" id="cm-economic-code" dir="ltr" placeholder=" "><label>کد اقتصادی</label></div>
-                <div class="float-input"><input type="text" id="cm-phone" dir="ltr" placeholder=" "><label>شماره تماس</label></div>
+        <div class="modal-content w-full max-w-2xl p-0 relative max-h-[90vh] overflow-y-auto">
+            <div class="p-5 text-white relative" style="background:linear-gradient(125deg,#1e1b4b,#3730a3 55%,#0e7490)">
+                <button type="button" onclick="closeModal('add-company-modal')" class="absolute top-4 left-4 text-white/70 hover:text-white hover-target text-xl"><i class="fas fa-times"></i></button>
+                <p class="text-[11px] opacity-80">مشخصات، تسویه و قسط‌بندیِ شرکت</p>
+                <h3 class="font-black text-lg"><i class="fas fa-building ml-1"></i><span id="cm-form-title">افزودن شرکت جدید</span></h3>
             </div>
-            <div class="float-input"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
-            <div class="float-input">
-                <select id="cm-parent-company"><option value="">شرکت مستقل / خودش مادر است</option></select>
-                <label>شرکت مادر (اگر زیرمجموعه است)</label>
-            </div>
-            <div class="float-input">
-                <select id="cm-group-select" onchange="document.getElementById('cm-group-manual').value = this.value === '__manual__' ? '' : this.value">
-                    <option value="">بدون گروه (بعداً قابل تنظیم است)</option>
-                    <option value="__manual__">-- وارد کردن دستی شناسه‌ی گروه --</option>
-                </select>
-                <label>گروه بله‌ی مرتبط</label>
-                <input type="text" id="cm-group-manual" placeholder="اگر گروه در لیست نبود، شناسه‌ی چت را اینجا بنویسید" dir="ltr" class="mt-2">
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="float-input">
-                    <select id="cm-payment-terms">
-                        <option value="">مشخص نشده</option>
-                        <option value="INSTALLMENT">قسطی</option>
-                        <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
-                        <option value="CASH_IMMEDIATE">نقدی - فوری</option>
-                    </select>
-                    <label>نحوه‌ی تسویه</label>
+            <div class="p-5">
+                <input type="hidden" id="cm-company-id">
+                <div class="cmx-sec">
+                    <h4><i class="fas fa-id-card ml-1"></i>مشخصات</h4>
+                    <div class="float-input"><input type="text" id="cm-company-name" placeholder=" "><label>نام شرکت *</label></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="float-input"><input type="text" id="cm-economic-code" dir="ltr" placeholder=" "><label>کد اقتصادی / شناسه ملی</label></div>
+                        <div class="float-input"><input type="text" id="cm-phone" dir="ltr" placeholder=" "><label>شماره تماس</label></div>
+                    </div>
+                    <div class="float-input !mb-0"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
                 </div>
-                <div class="float-input">
-                    <select id="cm-allowed-insurers">
-                        <option value="BOTH">پاسارگاد و ایران (هردو)</option>
-                        <option value="PASARGAD">فقط پاسارگاد</option>
-                        <option value="IRAN">فقط ایران</option>
-                    </select>
-                    <label>بیمه‌گر(های) مجاز برای این شرکت</label>
+                <div class="cmx-sec">
+                    <h4><i class="fas fa-sitemap ml-1"></i>ارتباط‌ها</h4>
+                    <div class="float-input">
+                        <select id="cm-parent-company"><option value="">شرکت مستقل / خودش مادر است</option></select>
+                        <label>شرکت مادر (اگر زیرمجموعه است)</label>
+                    </div>
+                    <div class="float-input !mb-0">
+                        <select id="cm-group-select" onchange="document.getElementById('cm-group-manual').value = this.value === '__manual__' ? '' : this.value">
+                            <option value="">بدون گروه (بعداً قابل تنظیم است)</option>
+                            <option value="__manual__">-- وارد کردن دستی شناسه‌ی گروه --</option>
+                        </select>
+                        <label>گروه بله‌ی مرتبط</label>
+                        <input type="text" id="cm-group-manual" placeholder="اگر گروه در لیست نبود، شناسه‌ی چت را اینجا بنویسید" dir="ltr" class="mt-2">
+                    </div>
+                </div>
+                <div class="cmx-sec">
+                    <h4><i class="fas fa-sack-dollar ml-1"></i>تسویه، بیمه‌گر و قسط‌بندی</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="float-input">
+                            <select id="cm-payment-terms">
+                                <option value="">مشخص نشده</option>
+                                <option value="INSTALLMENT">قسطی</option>
+                                <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
+                                <option value="CASH_IMMEDIATE">نقدی - فوری</option>
+                            </select>
+                            <label>نحوه‌ی تسویه</label>
+                        </div>
+                        <div class="float-input">
+                            <select id="cm-allowed-insurers">
+                                <option value="BOTH">پاسارگاد و ایران (هردو)</option>
+                                <option value="PASARGAD">فقط پاسارگاد</option>
+                                <option value="IRAN">فقط ایران</option>
+                            </select>
+                            <label>بیمه‌گر(های) مجاز</label>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="float-input !mb-0"><input type="number" id="cm-inst-count" min="1" placeholder=" "><label>تعداد اقساط</label></div>
+                        <div class="float-input !mb-0"><input type="number" id="cm-offset-months" min="0" value="0" placeholder=" "><label>سررسید اول (ماه بعد)</label></div>
+                        <div class="float-input !mb-0"><input type="number" id="cm-offset-days" min="0" value="0" placeholder=" "><label>+ روز</label></div>
+                    </div>
+                    <p class="text-[10.5px] text-slate-400 mt-2">سررسیدِ قسطِ اول از «تاریخ صدورِ داخلِ بیمه‌نامه» به‌علاوه‌ی این فاصله حساب می‌شود.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="resetCompanyForm()" class="px-4 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold">فرم خالی</button>
+                    <button onclick="createCompany()" class="flex-1 text-white font-black py-2.5 rounded-xl text-sm shadow-lg" style="background:linear-gradient(120deg,#4338ca,#6366f1)"><i class="fas fa-check ml-1"></i>ذخیره‌ی شرکت</button>
                 </div>
             </div>
-            <p class="text-xs font-bold text-slate-500 mb-2">تنظیمات قسط‌بندی</p>
-            <div class="grid grid-cols-3 gap-3">
-                <div class="float-input"><input type="number" id="cm-inst-count" min="1" placeholder=" "><label>تعداد اقساط</label></div>
-                <div class="float-input"><input type="number" id="cm-offset-months" min="0" value="0" placeholder=" "><label>سررسید اول (ماه بعد)</label></div>
-                <div class="float-input"><input type="number" id="cm-offset-days" min="0" value="0" placeholder=" "><label>+ روز</label></div>
+        </div>
+    </div>
+
+    <!-- ورودِ شرکت‌ها از اکسل: راهنمای ستون‌ها، فایلِ نمونه، پیش‌نمایش و ثبت -->
+    <div id="company-import-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-4xl p-0 relative max-h-[92vh] overflow-y-auto">
+            <div class="p-5 text-white relative" style="background:linear-gradient(125deg,#064e3b,#059669 55%,#0e7490)">
+                <button type="button" onclick="closeModal('company-import-modal')" class="absolute top-4 left-4 text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+                <p class="text-[11px] opacity-85">سه قدم: فایلِ نمونه را بگیرید ← پرش کنید ← بارگذاری و پیش‌نمایش، بعد ثبت</p>
+                <h3 class="font-black text-lg"><i class="fas fa-file-excel ml-1"></i>ورودِ شرکت‌ها از اکسل</h3>
             </div>
-            <div class="flex gap-2">
-                <button onclick="createCompany()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت شرکت</button>
-                <button onclick="resetCompanyForm()" class="px-4 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold">فرم جدید</button>
+            <div class="p-5 space-y-4">
+                <div class="grid md:grid-cols-3 gap-3">
+                    <a href="api/company_actions.php?action=company_import_sample" class="cmx-sec !mb-0 hover:border-emerald-300 hover:bg-emerald-50/40 block">
+                        <p class="text-[11px] font-black text-emerald-700"><span class="cmi-step">۱</span>دانلودِ اکسلِ نمونه</p>
+                        <p class="text-[10.5px] text-slate-500 mt-1">سرستون‌ها آماده‌اند و دو ردیفِ مثال دارد؛ ردیف‌های مثال را پاک و شرکت‌های خودتان را بنویسید.</p></a>
+                    <div class="cmx-sec !mb-0"><p class="text-[11px] font-black text-emerald-700"><span class="cmi-step">۲</span>انتخابِ فایل</p>
+                        <input type="file" id="cmi-file" accept=".xlsx,.xls,.csv" class="w-full text-[11px] mt-2"></div>
+                    <div class="cmx-sec !mb-0"><p class="text-[11px] font-black text-emerald-700"><span class="cmi-step">۳</span>بررسی و ثبت</p>
+                        <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 mt-2"><input type="checkbox" id="cmi-update" checked>شرکت‌های موجود (هم‌نام) به‌روز شوند</label>
+                        <button type="button" onclick="companyImport(false)" class="mt-2 w-full text-white font-black rounded-lg py-1.5" style="background:#0e7490;font-size:12px"><i class="fas fa-magnifying-glass ml-1"></i>پیش‌نمایش</button></div>
+                </div>
+                <div id="cmi-result"></div>
+                <details class="cmx-sec !mb-0" open>
+                    <summary class="text-[12px] font-black text-indigo-700 cursor-pointer"><i class="fas fa-book-open ml-1"></i>راهنمای ستون‌ها</summary>
+                    <p class="text-[11px] text-slate-500 mt-2 mb-2">ردیفِ اول سرستون است؛ ترتیبِ ستون‌ها مهم نیست و ستونِ اضافه نادیده گرفته می‌شود. فقط «نام شرکت» الزامی است. اگر شرکتی با همین نام ثبت شده باشد، به‌روز می‌شود (خانه‌های خالی، مقدارِ قبلی را عوض نمی‌کنند).</p>
+                    <div class="overflow-x-auto"><table class="w-full text-[11px] text-right cmi-cols no-count border-2 border-slate-200 rounded-xl overflow-hidden"><thead><tr><th>سرستون</th><th>الزامی</th><th>توضیح و مقدارهای مجاز</th><th>نام‌های قابل‌قبولِ دیگر</th><th>مثال</th></tr></thead><tbody id="cmi-cols"></tbody></table></div>
+                </details>
             </div>
         </div>
     </div>
@@ -7296,21 +7367,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
             companiesCache = data.companies;
 
-            const tbody = document.getElementById('cm-companies-body');
-            tbody.innerHTML = data.companies.length ? data.companies.map(c => `
-                <tr class="border-t border-slate-100">
-                    <td class="p-3 font-bold">${c.name}</td>
-                    <td class="p-3 text-slate-500">${c.parent_name || '—'}</td>
-                    <td class="p-3 text-slate-500">${PAY_FA[c.payment_terms] || '—'}</td>
-                    <td class="p-3 text-slate-500">${c.installment_count ? c.installment_count + ' قسط' : '—'}</td>
-                    <td class="p-3 text-slate-500">${CM_INSURER_FA[c.allowed_insurers] || 'پاسارگاد و ایران'}</td>
-                    <td class="p-3 text-slate-400 font-mono">${faDigits(c.created_at_jalali) || '—'}</td>
-                    <td class="p-3 flex gap-2">
-                        <button onclick="editCompany(${c.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
-                        <button onclick="deleteCompanyRow(${c.id}, '${(c.name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
-                    </td>
-                </tr>
-            `).join('') : '<tr><td colspan="7" class="text-center p-6 text-slate-400">شرکتی ثبت نشده.</td></tr>';
+            renderCompanyCards();
 
             const parentSel = document.getElementById('cm-parent-company');
             parentSel.innerHTML = '<option value="">شرکت مستقل / خودش مادر است</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -7340,6 +7397,128 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </td>
                     </tr>`).join('') : '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
             }
+        }
+
+
+        // ---------- صفحه‌ی شرکت‌ها: کارت‌ها، آمار و جستجو ----------
+        const CMX_COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#db2777', '#7c3aed', '#0d9488', '#2563eb'];
+        function renderCompanyCards() {
+            const box = document.getElementById('cm-cards');
+            if (!box) return;
+            const list = companiesCache || [];
+            const n = k => list.reduce((a, c) => a + Number(c[k] || 0), 0);
+            const kpi = (v, t, ic) => `<div class="cmx-kpi"><span><i class="fas ${ic} ml-1"></i>${t}</span><b>${e2pNum(v)}</b></div>`;
+            const kp = document.getElementById('cm-kpis');
+            if (kp) kp.innerHTML = kpi(list.length, 'شرکت', 'fa-building') + kpi(list.filter(c => Number(c.users_count) > 0).length, 'دارای کاربرِ پنل', 'fa-user-check')
+                + kpi(n('open_requests'), 'درخواستِ باز', 'fa-folder-open') + kpi(n('issued_count'), 'بیمه‌نامه‌ی صادره', 'fa-file-circle-check');
+            const q = (document.getElementById('cm-q').value || '').trim().toLowerCase();
+            const fp = document.getElementById('cm-f-pay').value, fi = document.getElementById('cm-f-ins').value;
+            const rows = list.filter(c => {
+                if (fp === 'NONE' ? c.payment_terms : (fp && c.payment_terms !== fp)) return false;
+                if (fi && (c.allowed_insurers || 'BOTH') !== fi) return false;
+                if (!q) return true;
+                return [c.name, c.economic_code, c.phone, c.parent_name, c.address].join(' ').toLowerCase().includes(q) || faDigits([c.economic_code, c.phone].join(' ')).includes(q);
+            });
+            document.getElementById('cm-count').textContent = `${e2pNum(rows.length)} از ${e2pNum(list.length)} شرکت`;
+            if (!rows.length) { box.innerHTML = `<div class="col-span-full card p-10 text-center text-slate-400 text-sm"><i class="fas fa-building text-3xl mb-2 block text-slate-300"></i>${list.length ? 'شرکتی با این جستجو/فیلتر نیست.' : 'هنوز شرکتی ثبت نشده؛ «افزودن شرکت» یا «ورود از اکسل» را بزنید.'}</div>`; return; }
+            const children = {};
+            list.forEach(c => { if (c.parent_id) children[c.parent_id] = (children[c.parent_id] || 0) + 1; });
+            const ins = {BOTH: ['پاسارگاد + ایران', 'bg-violet-100 text-violet-700'], PASARGAD: ['پاسارگاد', 'bg-sky-100 text-sky-700'], IRAN: ['ایران', 'bg-rose-100 text-rose-700']};
+            box.innerHTML = rows.map(c => {
+                const col = CMX_COLORS[Number(c.id) % CMX_COLORS.length];
+                const iv = ins[c.allowed_insurers || 'BOTH'] || ins.BOTH;
+                const safe = (c.name || '').replace(/'/g, '');
+                return `<div class="cmx-card">
+                    <div class="cmx-card-top">
+                        <div class="cmx-av" style="background:linear-gradient(135deg,${col},${col}cc)">${(c.name || '؟').replace(/^شرکت\s*/, '').trim().charAt(0) || '؟'}</div>
+                        <div class="min-w-0 flex-1">
+                            <p class="font-black text-slate-800 truncate" title="${c.name}">${c.name}</p>
+                            <p class="text-[10.5px] text-slate-400 truncate">${c.parent_name ? `<i class="fas fa-sitemap ml-1"></i>زیرمجموعه‌ی ${c.parent_name}` : (children[c.id] ? `<i class="fas fa-crown ml-1 text-amber-500"></i>شرکتِ مادرِ ${e2pNum(children[c.id])} شرکت` : 'شرکتِ مستقل')}</p>
+                        </div>
+                        ${c.bale_group_chat_id ? '<span class="cmx-chip bg-emerald-50 text-emerald-700" title="گروه بله وصل است"><i class="fas fa-paper-plane"></i>بله</span>' : ''}
+                    </div>
+                    <div class="px-4 pt-3 flex flex-wrap gap-1.5">
+                        <span class="cmx-chip ${c.payment_terms ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'}"><i class="fas fa-sack-dollar"></i>${PAY_FA[c.payment_terms] || 'تسویه: مشخص نشده'}</span>
+                        ${c.installment_count ? `<span class="cmx-chip bg-indigo-50 text-indigo-700"><i class="fas fa-list-ol"></i>${e2pNum(c.installment_count)} قسط${Number(c.first_due_offset_months) ? ` | اولی ${e2pNum(c.first_due_offset_months)} ماه بعد` : ''}</span>` : ''}
+                        <span class="cmx-chip ${iv[1]}"><i class="fas fa-shield-halved"></i>${iv[0]}</span>
+                    </div>
+                    <div class="px-4 pt-2 text-[10.5px] text-slate-500 space-y-0.5">
+                        ${c.economic_code ? `<p><i class="fas fa-hashtag ml-1 text-slate-300"></i>کد اقتصادی: <span dir="ltr">${faDigits(c.economic_code)}</span></p>` : ''}
+                        ${c.phone ? `<p><i class="fas fa-phone ml-1 text-slate-300"></i><span dir="ltr">${faDigits(c.phone)}</span></p>` : ''}
+                        ${c.address ? `<p class="truncate" title="${c.address}"><i class="fas fa-location-dot ml-1 text-slate-300"></i>${c.address}</p>` : ''}
+                    </div>
+                    <div class="cmx-stats">
+                        <div class="cmx-stat"><b>${e2pNum(c.users_count || 0)}</b><span>کاربر</span></div>
+                        <div class="cmx-stat"><b>${e2pNum(c.requests_count || 0)}</b><span>درخواست</span></div>
+                        <div class="cmx-stat"><b class="${Number(c.open_requests) ? 'text-amber-600' : ''}">${e2pNum(c.open_requests || 0)}</b><span>باز</span></div>
+                        <div class="cmx-stat"><b class="text-emerald-700">${e2pNum(c.issued_count || 0)}</b><span>صادره</span></div>
+                    </div>
+                    <p class="px-4 text-[10px] text-slate-400">ثبت: ${faDigits(c.created_at_jalali) || '—'}</p>
+                    <div class="cmx-act">
+                        <button onclick="editCompany(${c.id})" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        <button onclick="cmOpenRequests(${c.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700"><i class="fas fa-folder-open ml-1"></i>درخواست‌ها</button>
+                        <button onclick="deleteCompanyRow(${c.id}, '${safe}')" class="bg-red-50 hover:bg-red-100 text-red-600" style="flex:0 0 auto;padding:7px 12px" title="حذف"><i class="fas fa-trash-can"></i></button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        function cmOpenRequests(id) {
+            switchTab('companies-requests');
+            let tries = 0;   // فهرستِ شرکت‌ها در فیلتر بعد از بارگذاریِ تب پر می‌شود
+            const t = setInterval(() => {
+                const sel = document.getElementById('creq-company');
+                if (sel && [...sel.options].some(o => o.value === String(id))) { clearInterval(t); sel.value = String(id); loadCompanyRequests(); }
+                else if (++tries > 30) clearInterval(t);
+            }, 100);
+        }
+
+        // ---------- ورودِ شرکت‌ها از اکسل ----------
+        async function openCompanyImport() {
+            document.getElementById('cmi-file').value = '';
+            document.getElementById('cmi-result').innerHTML = '';
+            openModal('company-import-modal');
+            const tb = document.getElementById('cmi-cols');
+            if (tb.dataset.ok) return;
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'company_import_columns'})})).json();
+            if (!d.ok) return;
+            tb.dataset.ok = '1';
+            tb.innerHTML = d.columns.map(c => `<tr><td class="font-black text-slate-800 whitespace-nowrap">${c.title}</td><td>${c.required ? '<span class="text-rose-600 font-black">بله</span>' : '<span class="text-slate-400">خیر</span>'}</td>
+                <td class="text-slate-600">${c.note}</td><td class="text-slate-400">${c.aliases.join('، ')}</td><td class="whitespace-nowrap" dir="auto">${c.example ? faDigits(c.example) : '—'}</td></tr>`).join('');
+        }
+        async function companyImport(commit) {
+            const f = document.getElementById('cmi-file').files[0];
+            const out = document.getElementById('cmi-result');
+            if (!f) { showToast('اول فایلِ اکسل را انتخاب کنید.', 'warning'); return; }
+            if (commit && !(await uiConfirm('ثبتِ شرکت‌ها', 'ردیف‌های سالمِ فایل ثبت شوند؟ ردیف‌های دارای خطا کنار گذاشته می‌شوند.', {ok: 'بله، ثبت شود'}))) return;
+            out.innerHTML = '<p class="text-center text-xs text-slate-400 py-4"><i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ فایل...</p>';
+            const fd = new FormData();
+            fd.append('action', 'company_import'); fd.append('file', f);
+            if (commit) { fd.append('commit', '1'); if (document.getElementById('cmi-update').checked) fd.append('update_existing', '1'); }
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { out.innerHTML = `<div class="rounded-xl border-2 border-red-200 bg-red-50 text-red-700 text-xs font-bold p-3">${d.error || 'خطا'}${(d.unknown || []).length ? `<p class="font-normal mt-1">سرستون‌های ناشناخته: ${d.unknown.join('، ')}</p>` : ''}</div>`; return; }
+            if (commit) {
+                out.innerHTML = `<div class="rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-bold p-4"><i class="fas fa-circle-check ml-1"></i>${e2pNum(d.created)} شرکتِ تازه ثبت و ${e2pNum(d.updated)} شرکت به‌روز شد${d.skipped ? `؛ ${e2pNum(d.skipped)} ردیف کنار گذاشته شد` : ''}.</div>`;
+                showToast('شرکت‌ها ثبت شدند.', 'success');
+                loadCompanyManage();
+                return;
+            }
+            const sm = d.summary || {};
+            const ST = {new: ['تازه', 'bg-emerald-100 text-emerald-700'], update: ['به‌روزرسانی', 'bg-sky-100 text-sky-700'], error: ['خطا', 'bg-red-100 text-red-700'], dup: ['تکراری', 'bg-amber-100 text-amber-800']};
+            const INS = {BOTH: 'هردو', PASARGAD: 'پاسارگاد', IRAN: 'ایران'};
+            const ok = (sm.new || 0) + (sm.update || 0);
+            out.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-2">
+                    <span class="cmx-chip bg-emerald-100 text-emerald-700">${e2pNum(sm.new || 0)} تازه</span><span class="cmx-chip bg-sky-100 text-sky-700">${e2pNum(sm.update || 0)} به‌روزرسانی</span>
+                    <span class="cmx-chip bg-red-100 text-red-700">${e2pNum(sm.error || 0)} خطا</span><span class="cmx-chip bg-amber-100 text-amber-800">${e2pNum(sm.dup || 0)} تکراری</span>
+                    ${(d.unknown || []).length ? `<span class="text-[10.5px] text-slate-400">ستون‌های نادیده: ${d.unknown.join('، ')}</span>` : ''}
+                    <button type="button" onclick="companyImport(true)" ${ok ? '' : 'disabled'} class="mr-auto text-white text-xs font-black rounded-xl px-4 py-2 disabled:opacity-40" style="background:#059669"><i class="fas fa-check ml-1"></i>ثبتِ ${e2pNum(ok)} شرکت</button></div>
+                <div class="overflow-x-auto max-h-[45vh] border-2 border-slate-200 rounded-xl"><table class="w-full text-[11px] text-right whitespace-nowrap cmi-cols no-count"><thead class="sticky top-0"><tr><th>ردیف</th><th>وضعیت</th><th>نام شرکت</th><th>مادر</th><th>تسویه</th><th>اقساط</th><th>بیمه‌گر</th><th>کد اقتصادی</th><th>تلفن</th><th>پیام</th></tr></thead><tbody>
+                ${d.rows.map(r => { const x = r.data, st = ST[r.status] || ['', '']; return `<tr class="${r.status === 'error' ? 'bg-red-50/50' : ''}">
+                    <td>${e2pNum(r.line)}</td><td><span class="cmx-chip ${st[1]}">${st[0]}</span></td><td class="font-bold">${x.name || '—'}</td><td>${x.parent || '—'}</td>
+                    <td>${PAY_FA[x.payment_terms] || '—'}</td><td>${x.installment_count ? e2pNum(x.installment_count) : '—'}</td><td>${INS[x.allowed_insurers] || '—'}</td>
+                    <td dir="ltr">${faDigits(x.economic_code || '') || '—'}</td><td dir="ltr">${faDigits(x.phone || '') || '—'}</td>
+                    <td class="whitespace-normal min-w-[200px]">${r.errors.map(e => `<p class="text-red-600 font-bold">${e}</p>`).join('')}${r.warnings.map(w => `<p class="text-amber-700">${w}</p>`).join('')}</td></tr>`; }).join('')}
+                </tbody></table></div>`;
         }
 
         function resetCompanyForm() {
