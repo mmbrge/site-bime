@@ -73,6 +73,20 @@ $vrSubHtml = !$vrAccess ? '' : '                        <div class="menu-sub">
 // منوی «گفتگوها»: پیام‌رسانِ یکپارچه برای همه‌ی نقش‌ها (مدیر، اپراتور، مالی، همکار، پارسیان)
 $chatNavHtml = '<a href="#" onclick="switchTab(\'tickets\')" id="nav-tickets" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-comments ml-1"></i> گفتگوها'
     . ' <span id="chat-nav-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span></a>' . "\n";
+// منوی «اطلاعات پرسنلی»: کارکرد من (همه) و کارکرد پرسنل (مدیر کل؛ برای دسترسیِ سفارشی در مرورگر کنترل می‌شود)
+$personnelMenuHtml = '
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-id-badge ml-1"></i> اطلاعات پرسنلی
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab(\'my-work\')" id="nav-my-work" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-calendar-check ml-2"></i> کارکرد من <small class="text-[10px] text-slate-400 font-bold mr-1">حضور، شرح کار، مرخصی</small></a>'
+    . ((($_SESSION['role'] ?? '') === 'ADMIN') ? '
+                        <a href="#" onclick="switchTab(\'staff-work\')" id="nav-staff-work" class="nav-item menu-link"><i class="fas fa-users-viewfinder ml-2"></i> کارکرد پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">همه، تأییدِ مرخصی، تنظیمات</small></a>' : '') . '
+                    </div>
+                </div>
+';
 // نوارِ زبانه‌های «مرکز صدور»: سه بخشِ در حال صدور، صادره‌ها و صدور گروهی در یک صفحه
 function issuance_nav($active, $isLiaison) {
     $items = [];
@@ -740,7 +754,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <!-- منوی اصلی: پنج بخش؛ کارهای مرتبط داخلِ زیرمنوهای درختی (menu-sub) کنارِ هم آمده‌اند -->
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
-                <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml; ?>
+                <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
                 <?php if (!$isParsian): ?>
 
                 <?php if (!$isLiaison): ?>
@@ -769,6 +783,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <a href="#" onclick="switchTab('health')" id="nav-health" class="nav-item menu-link"><i class="fas fa-heart-pulse ml-2"></i> بازدید سلامت و مدارک</a>
                                 <a href="#" onclick="switchTab('approved-reviews')" id="nav-approved-reviews" class="nav-item menu-link"><i class="fas fa-circle-check ml-2"></i> بازدیدهای تاییدشده</a>
                                 <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
+                                <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR <small class="text-[10px] text-slate-400 font-bold mr-1">درخواست‌های ربات</small></a>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -823,6 +838,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
 
+<?php echo $personnelMenuHtml; ?>
                 <!-- ===== بایگانی و مدیریت: بایگانی، کاربران و سامانه ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
@@ -840,14 +856,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a><a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a><?php endif; ?>
                             </div>
                         </div>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-gears ml-2"></i><span class="ms-t">سامانه<small>صف پردازش و تنظیمات</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">سامانه</div>
-                                <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR</a>
-                                <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم</a><?php endif; ?>
-                            </div>
-                        </div>
+                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
+                        <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم <small class="text-[10px] text-slate-400 font-bold mr-1">ربات، مرخصی، پشتیبان‌گیری</small></a>
+                        <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -871,6 +883,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </header>
 
     <main class="flex-1 overflow-y-auto p-6 lg:p-8 flex flex-col z-10">
+        <!-- ===== اطلاعات پرسنلی ===== -->
+        <div id="tab-my-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-my-root"></div></div>
+        <div id="tab-staff-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-staff-root"></div></div>
         
         <!-- ======================= تب داشبورد و آمار ======================= -->
         <?php if ($vrAccess): ?>
@@ -1829,6 +1844,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php if($_SESSION['role'] === 'ADMIN'): ?>
         <div id="tab-settings" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-cogs text-purple-500 ml-2"></i>تنظیمات و مدیریت سیستم</h1>
+            <div class="card p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-indigo-100 pb-3"><i class="fas fa-calendar-check text-indigo-500 ml-2"></i>تنظیماتِ کارکرد و مرخصی <small class="text-[11px] text-slate-400 font-bold mr-1">مرخصیِ ماهانه، ساعتِ کار، تعطیلات</small></h3>
+                <div id="wk-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -3714,6 +3733,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
+    <script src="work-log.js?v=1"></script>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
@@ -3737,7 +3757,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-settings',
-            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings'];
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -5925,11 +5945,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="k">شماره بیمه‌نامه</span>${editable ? `<input id="bdl-pn-${it.i}" dir="ltr" value="${bdlEsc(pn)}">` : `<b dir="ltr">${val(pn)}</b>`}</div>
                         <div><span class="k">حق بیمه (ریال)</span>${editable ? `<input id="bdl-pr-${it.i}" class="money-input" dir="ltr" inputmode="numeric" value="${bdlEsc(prem)}">` : `<b>${d.premium ? money(d.premium) : val('')}</b>`}</div>
                         ${d.national_id ? `<div><span class="k">کد / شناسه ملی</span><b dir="ltr">${faDigits(bdlEsc(d.national_id))}</b></div>` : ''}
+                        ${d.phone ? `<div><span class="k">تلفن بیمه‌گذار</span><b dir="ltr">${faDigits(bdlEsc(d.phone))}</b></div>` : ''}
+                        ${d.central_no ? `<div><span class="k">کد یکتای بیمه مرکزی</span><b dir="ltr">${faDigits(bdlEsc(d.central_no))}</b></div>` : ''}
                         ${d.car_name || d.model_year ? `<div><span class="k">خودرو</span>${bdlEsc([d.car_kind, d.car_name].filter(Boolean).join(' · '))}${d.model_year ? ` <span class="text-slate-400">مدل ${faDigits(d.model_year)}</span>` : ''}</div>` : ''}
                         ${d.engine_no ? `<div><span class="k">شماره موتور</span><b dir="ltr">${bdlEsc(d.engine_no)}</b></div>` : ''}
                         ${d.start_date ? `<div><span class="k">مدت بیمه</span>${faDigits(d.start_date)}${d.end_date ? ` تا ${faDigits(d.end_date)}` : ''}</div>` : ''}
                         ${d.car_value ? `<div><span class="k">ارزش خودرو (ریال)</span>${money(d.car_value)}</div>` : ''}
+                        ${d.total_value && d.total_value !== d.car_value ? `<div><span class="k">جمعِ سرمایه (ریال)</span>${money(d.total_value)}</div>` : ''}
                         ${d.liability ? `<div><span class="k">تعهد مالی (ریال)</span>${money(d.liability)}</div>` : ''}
+                        ${d.diya ? `<div><span class="k">تعهد بدنی / دیه (ریال)</span>${money(d.diya)}</div>` : ''}
+                        ${d.driver_cover ? `<div><span class="k">حوادث راننده (ریال)</span>${money(d.driver_cover)}</div>` : ''}
+                        ${d.capacity || d.cylinders ? `<div><span class="k">ظرفیت / سیلندر</span>${faDigits(bdlEsc([d.capacity, d.cylinders ? d.cylinders + ' سیلندر' : ''].filter(Boolean).join(' · ')))}</div>` : ''}
+                        ${d.address ? `<div style="grid-column:1/-1"><span class="k">نشانی بیمه‌گذار</span>${faDigits(bdlEsc(d.address))}${d.postal_code ? ` <span class="text-slate-400">(کد پستی ${faDigits(bdlEsc(d.postal_code))})</span>` : ''}</div>` : ''}
                         ${d.prev_expiry ? `<div><span class="k">انقضای بیمه‌نامه‌ی قبلی</span>${faDigits(d.prev_expiry)}${d.prev_insurer ? ` <span class="text-slate-400">(${bdlEsc(d.prev_insurer)})</span>` : ''}</div>` : ''}
                         ${d.issue_date ? `<div><span class="k">تاریخ صدور</span>${faDigits(d.issue_date)}</div>` : ''}
                     </div>
@@ -8351,7 +8378,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
-            if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); }
+            if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
+            if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
+            if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId === 'approved-reviews') loadApprovedReviews();

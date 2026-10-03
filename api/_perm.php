@@ -56,6 +56,10 @@ function perm_catalog() {
             'queue' => ['صف پردازش OCR', ['view', 'edit']],
             'settings' => ['تنظیمات سیستم و پشتیبان‌گیری', ['view', 'edit', 'export']],
         ]],
+        ['اطلاعات پرسنلی', [
+            'my-work' => ['کارکرد من و مرخصی', ['view', 'create', 'edit', 'export']],
+            'staff-work' => ['کارکرد پرسنل، تأیید مرخصی و تنظیمات', ['view', 'edit', 'export']],
+        ]],
     ];
 }
 function perm_pages() {
@@ -69,19 +73,20 @@ function perm_role_defaults($role) {
     $pages = perm_pages();
     $full = function (array $keys) use ($pages) { $o = []; foreach ($keys as $k) if (isset($pages[$k])) $o[$k] = $pages[$k][1]; return $o; };
     $fin = ['fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile'];
+    $mine = ['my-work' => $pages['my-work'][1]];   // «کارکرد من» برای همه
     if ($role === 'ADMIN') return $full(array_keys($pages));
-    if ($role === 'PARSIAN') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'vr-build' => ['view', 'create'], 'vr-list' => ['view', 'edit', 'export']];
+    if ($role === 'PARSIAN') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'vr-build' => ['view', 'create'], 'vr-list' => ['view', 'edit', 'export']] + $mine;
     if ($role === 'COMPANY_LIAISON') {
         $d = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'export'], 'companies-inbox' => ['view'],
               'issued-list' => ['view', 'export'], 'companies-finance' => ['view', 'export'], 'filemanager' => ['view', 'export']];
         foreach ($fin as $k) $d[$k] = array_values(array_diff($pages[$k][1], ['delete']));   // مالی: همه جز حذف
-        return $d;
+        return $d + $mine;
     }
     $base = $full(['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'filemanager', 'users', 'queue']);
     $base['records'] = ['view', 'create', 'edit', 'export'];
     $base['cases'] = ['view', 'edit', 'export'];
     if ($role === 'FINANCE') $base += $full($fin);
-    return $base;
+    return $base + $mine;
 }
 
 function perm_ensure($pdo) {
@@ -252,6 +257,12 @@ function perm_api_map() {
             'list' => 'filemanager:view', 'search' => 'filemanager:view', 'download_url' => 'filemanager:view', 'download' => 'filemanager:view',
             'zip_folder' => 'filemanager:export', 'zip_range' => 'filemanager:export',
         ]],
+        'work_actions' => ['pages' => ['my-work'], 'elevate' => false, 'actions' => [
+            'settings_get' => 'any', 'month' => 'my-work:view|staff-work:view', 'day' => 'my-work:view|staff-work:view', 'report' => 'my-work:view|staff-work:view',
+            'save_day' => 'my-work:edit|staff-work:edit', 'leave_add' => 'my-work:create|staff-work:edit', 'leave_delete' => 'my-work:edit|staff-work:edit',
+            'profile_save' => 'my-work:edit|staff-work:edit', 'export' => 'my-work:export|staff-work:export',
+            'settings_save' => 'staff-work:edit', 'leave_decide' => 'staff-work:edit', 'pending_leaves' => 'staff-work:view', 'staff_overview' => 'staff-work:view',
+        ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [
             'bootstrap' => 'vr-build:view|vr-list:view|vr-settings:view', 'last_trace' => 'vr-build:create|vr-list:edit|vr-settings:view',
@@ -275,6 +286,99 @@ function perm_request_action() {
     return is_array($j) && isset($j['action']) ? (string)$j['action'] : '';
 }
 
+function perm_request_data() {
+    static $j = null;
+    if ($j === null) {
+        $raw = @file_get_contents('php://input');
+        $j = ($raw !== false && $raw !== '') ? (json_decode($raw, true) ?: []) : [];
+        if (!is_array($j)) $j = [];
+    }
+    return $j + $_POST + $_GET;
+}
+
+// ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
+// هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
+const PERM_TRACK_SKIP = ['ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+                         'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
+                         'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
+function perm_activity_labels() {
+    return [
+        'company_actions.mark_issued' => 'ثبتِ صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_issue' => 'صدورِ گروهی از فایلِ بیمه‌گر', 'company_actions.bundle_analyze' => 'بررسیِ فایلِ صدورِ گروهی',
+        'company_actions.admin_create_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.admin_create_full_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.edit_request' => 'ویرایشِ درخواستِ شرکتی',
+        'company_actions.delete_request' => 'حذفِ درخواستِ شرکتی', 'company_actions.admin_add_plate' => 'افزودنِ ردیف به درخواستِ شرکتی', 'company_actions.assign_document' => 'تخصیصِ مدرک از صندوقِ ورودی',
+        'company_actions.reject_document' => 'ردِ مدرکِ شرکتی', 'company_actions.upload_row_doc' => 'بارگذاریِ مدرکِ ردیف', 'company_actions.admin_upload_plate_doc' => 'بارگذاریِ مدرکِ ردیف',
+        'company_actions.delete_row_doc' => 'حذفِ مدرکِ ردیف', 'company_actions.set_row_stage' => 'تغییرِ مرحله‌ی ردیف', 'company_actions.update_row' => 'ویرایشِ ردیفِ درخواست',
+        'company_actions.set_row_coverages' => 'ویرایشِ پوشش‌های ردیف', 'company_actions.delete_row' => 'حذفِ ردیفِ درخواست', 'company_actions.import_letter_rows' => 'ورودِ ردیف‌ها از نامه',
+        'company_actions.create_company' => 'ثبتِ شرکت', 'company_actions.update_company' => 'ویرایشِ شرکت', 'company_actions.delete_company' => 'حذفِ شرکت', 'company_actions.company_import' => 'ورودِ شرکت‌ها از اکسل',
+        'company_actions.create_portal_user' => 'ساختِ کاربرِ شرکت', 'company_actions.save_issue_info' => 'ثبتِ اطلاعاتِ صدور', 'company_actions.retry_folder_transfer' => 'تلاشِ دوباره برای بایگانی',
+        'company_actions.create_company_payment' => 'ثبتِ پرداختِ شرکت', 'company_actions.settle_company_pasargad' => 'تسویه با بیمه‌گر',
+        'company_actions.download_issued_zip' => 'خروجیِ زیپِ صادره‌ها', 'company_actions.download_folder_zip' => 'دانلودِ پوشه‌ی مدارک',
+        'finance_actions.ledger_register' => 'ثبتِ دریافت / پرداخت', 'finance_actions.ledger_void' => 'ابطالِ سندِ مالی', 'finance_actions.ledger_cheque_status' => 'تغییرِ وضعیتِ چک',
+        'finance_actions.create_invoice' => 'صدورِ صورتحساب', 'finance_actions.deactivate_invoice' => 'ابطالِ صورتحساب', 'finance_actions.reconcile' => 'مغایرت‌گیری با اکسل',
+        'finance_actions.override_reconcile' => 'تأییدِ دستیِ مغایرت', 'finance_actions.save_settings' => 'تغییرِ تنظیماتِ مالی', 'finance_actions.regenerate_installments' => 'بازسازیِ اقساط',
+        'finance_actions.export_installments' => 'خروجیِ اکسلِ اقساط', 'finance_actions.export_master' => 'خروجیِ اکسلِ مالی', 'finance_actions.upload_template' => 'بارگذاریِ قالبِ صورتحساب',
+        'visit_reports.issue' => 'صدورِ گزارشِ بازدید', 'visit_reports.edit' => 'ویرایشِ گزارشِ بازدید', 'visit_reports.delete' => 'حذفِ گزارشِ بازدید', 'visit_reports.restore' => 'بازگردانیِ گزارشِ بازدید',
+        'visit_reports.export_excel' => 'خروجیِ اکسلِ گزارش‌های بازدید', 'visit_reports.folder_zip' => 'دانلودِ پوشه‌ی گزارشِ بازدید', 'visit_reports.link' => 'اتصالِ گزارشِ بازدید به درخواست',
+        'case_actions.confirm_issue_policy' => 'صدورِ بیمه‌نامه‌ی کارکنان', 'case_actions.approve_doc' => 'تأییدِ مدرکِ کارکنان', 'case_actions.approve_all_docs' => 'تأییدِ همه‌ی مدارکِ کارکنان',
+        'case_actions.reject_doc' => 'ردِ مدرکِ کارکنان', 'case_actions.request_fix' => 'درخواستِ اصلاحِ مدارک', 'case_actions.approve_health' => 'تأییدِ بازدیدِ سلامت',
+        'case_actions.reject_health' => 'ردِ بازدیدِ سلامت', 'case_actions.review_health_photo' => 'بررسیِ عکسِ بازدیدِ سلامت', 'case_actions.upload_health_report' => 'بارگذاریِ گزارشِ بازدیدِ سلامت',
+        'case_actions.delete_case' => 'حذفِ درخواستِ کارکنان', 'case_actions.admin_upload_case_doc' => 'بارگذاریِ مدرکِ کارکنان', 'case_actions.download_docs_zip' => 'دانلودِ مدارکِ کارکنان',
+        'record_actions.create_intro' => 'ثبتِ معرفی‌نامه', 'record_actions.create_manual' => 'ثبتِ دستیِ پرونده', 'record_actions.create_manual_request' => 'ثبتِ دستیِ درخواستِ کارکنان',
+        'record_actions.create_case_for_intro' => 'ساختِ درخواست از معرفی‌نامه', 'record_actions.edit' => 'ویرایشِ پرونده', 'record_actions.change_status' => 'تغییرِ وضعیتِ پرونده',
+        'record_actions.delete' => 'حذفِ پرونده', 'record_actions.reset_all' => 'پاک‌سازیِ کلِ سامانه', 'records.export' => 'خروجیِ اکسلِ پرونده‌ها',
+        'queue_actions.approve' => 'تأییدِ صفِ پردازش OCR', 'queue_actions.reject' => 'ردِ صفِ پردازش OCR',
+        'staff_users_actions.create' => 'ساختِ کاربر', 'staff_users_actions.update' => 'ویرایشِ کاربر', 'staff_users_actions.delete' => 'حذفِ کاربر', 'staff_users_actions.perm_save' => 'تعیینِ دسترسیِ کاربر',
+        'staff_users_actions.handle_reset' => 'رسیدگی به درخواستِ بازیابیِ رمز', 'user_actions.send_message' => 'پیام به کاربرِ ربات', 'ticket_actions.reply' => 'پاسخ به تیکت',
+        'backup_actions.create' => 'پشتیبان‌گیری', 'backup_actions.restore' => 'بازگردانیِ پشتیبان', 'backup_actions.download' => 'دانلودِ فایلِ پشتیبان',
+        'file_manager.zip_folder' => 'خروجیِ زیپ از بایگانی', 'file_manager.zip_range' => 'خروجیِ زیپ از بایگانی', 'settings_actions.save_quota' => 'تغییرِ تنظیماتِ سامانه',
+    ];
+}
+function perm_activity_ref(array $d) {
+    $parts = [];
+    $pick = function ($k) use ($d) { $v = $d[$k] ?? null; return is_scalar($v) ? trim((string)$v) : ''; };
+    if (($v = $pick('policy_number')) !== '') $parts[] = 'بیمه‌نامه ' . $v;
+    if (($v = $pick('request_id')) !== '') $parts[] = 'درخواست #' . $v;
+    if (($v = $pick('plate_id')) !== '') $parts[] = 'ردیف #' . $v;
+    if (($v = $pick('case_id')) !== '') $parts[] = 'پرونده #' . $v;
+    if (($v = $pick('amount')) !== '' && preg_match('/\d/', $v)) $parts[] = 'مبلغ ' . $v;
+    foreach (['full_name', 'name', 'title'] as $k) if (($v = $pick($k)) !== '') { $parts[] = mb_substr($v, 0, 60); break; }
+    if (!$parts && ($v = $pick('id')) !== '') $parts[] = '#' . $v;
+    return implode(' · ', array_slice($parts, 0, 3));
+}
+function perm_track($pdo, $key, $action) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        require_once __DIR__ . '/_work_track.php';
+        $uid = intval($_SESSION['user_id']);
+        if (intval($_SESSION['_wk_seen'] ?? 0) < time() - 60) { $_SESSION['_wk_seen'] = time(); wk_touch_presence($pdo, $uid); }
+        $map = perm_api_map();
+        $m = $map[$key] ?? null;
+        if (!$m || $key === 'work_actions' || !empty($m['loose']) || in_array($action, PERM_TRACK_SKIP, true) || $action === '') return;
+        $spec = $m['actions'][$action] ?? null;
+        $op = perm_classify($action);
+        if ($spec !== null) {
+            $first = explode('|', $spec)[0];
+            $op = strpos($first, ':') !== false ? explode(':', $first)[1] : 'view';
+        } elseif ($key === 'visit_reports' && strpos($action, 'set_') === 0) {
+            $op = perm_classify(substr($action, 4)) === 'view' ? 'view' : 'edit';
+        }
+        if ($op === 'view') return;
+        $page = explode(':', explode('|', $spec ?? ($m['pages'][0] . ':' . $op))[0])[0];
+        $labels = perm_activity_labels();
+        $label = $labels[$key . '.' . $action] ?? ((['create' => 'ثبت', 'edit' => 'ویرایش', 'delete' => 'حذف', 'export' => 'خروجی'][$op] ?? 'کار') . ' در «' . (perm_pages()[$page][0] ?? $page) . '»');
+        $ref = perm_activity_ref(perm_request_data());
+        if ($op === 'export') { wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref); return; }
+        // فقط اگر عملیات موفق بود (پاسخ «ok: true» داد)
+        ob_start();
+        register_shutdown_function(function () use ($pdo, $uid, $page, $action, $op, $label, $ref) {
+            $buf = ob_get_level() ? (string)ob_get_contents() : '';
+            if (preg_match('/"ok"\s*:\s*true/', substr($buf, 0, 600))) wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref);
+        });
+    } catch (Throwable $e) { error_log('[perm_track] ' . $e->getMessage()); }
+}
+
 function perm_deny($msg) {
     if (!headers_sent()) { header('Content-Type: application/json; charset=utf-8'); }
     echo json_encode(['ok' => false, 'error' => $msg, 'perm_denied' => true], JSON_UNESCAPED_UNICODE);
@@ -284,8 +388,10 @@ function perm_deny($msg) {
 // در ابتدای هر API پنل صدا زده می‌شود (بعد از اتصالِ دیتابیس)؛ برای کاربرانِ بدونِ دسترسیِ سفارشی هیچ کاری نمی‌کند
 function perm_gate($pdo, $file) {
     if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['user_id']) || perm_is_elevated()) return;
-    if (($_SESSION['role'] ?? '') === 'ADMIN') return;
+    if (session_name() === 'bime_company_portal') return;
     $key = basename($file, '.php');
+    perm_track($pdo, $key, perm_request_action());   // «کارکرد من»: حضور و کارهای انجام‌شده
+    if (($_SESSION['role'] ?? '') === 'ADMIN') return;
     $map = perm_api_map();
     if (!isset($map[$key])) return;
     $perms = perm_user_custom($pdo, $_SESSION['user_id']);

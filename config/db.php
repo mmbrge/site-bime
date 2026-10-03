@@ -45,7 +45,7 @@ try {
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
     if (($_SESSION['role'] ?? '') === 'PARSIAN' && session_name() !== 'bime_company_portal') {
         $__vrScript = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
-        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php'];
+        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php', '/api/work_actions.php'];
         $__vrOk = false;
         foreach ($__vrAllowed as $__a) if (substr($__vrScript, -strlen($__a)) === $__a) { $__vrOk = true; break; }
         // اگر مدیر کل برایش دسترسیِ سفارشی تعیین کرده، همان دسترسی‌ها (api/_perm.php) تعیین‌کننده است
