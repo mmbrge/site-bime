@@ -11,6 +11,7 @@ require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/finance_core.php';
 require_once __DIR__ . '/_company_helpers.php';
+require_once __DIR__ . '/_fin_ledger.php';
 
 // فیلترهای مشترکِ داشبورد/اقساط/اکسل (دوره با شناسه‌ی billing_periods هم پذیرفته می‌شود)
 function fin_request_filters($pdo, array $src) {
@@ -42,6 +43,122 @@ $isAdmin = ($role === 'ADMIN');
 try { fin_ensure_schema($pdo); } catch (Throwable $e) { error_log('[finance schema] ' . $e->getMessage()); }
 
 try {
+    // =================================================================
+    //  مرکز اقساط و پرداخت (دریافت از بیمه‌گذار / پرداخت به بیمه‌گر)
+    // =================================================================
+    if ($action === 'ledger_meta') {
+        fin_ledger_ensure($pdo);
+        echo json_encode(['ok' => true, 'methods' => FIN_METHODS, 'insurers' => FIN_INSURERS, 'is_admin' => $isAdmin,
+                          'rule_collect_before_pay' => (fin_settings($pdo)['rule_collect_before_pay'] ?? '0') === '1',
+                          'companies' => $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_installments') {
+        fin_ledger_ensure($pdo);
+        $src = $data + $_GET;
+        $f = fin_request_filters($pdo, $src);
+        foreach (['stage', 'insurer', 'insurer_status', 'min_delay'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
+        $rows = fin_ledger_rows($pdo, $f);
+        if (!empty($src['export'])) {
+            require_once __DIR__ . '/_xlsx_writer.php';
+            $stageFa = ['US' => 'بدهکار به ما', 'INSURER' => 'بدهکار به بیمه‌گر', 'SETTLED' => 'تسویه‌ی نهایی'];
+            $headers = ['ردیف', 'کد رهگیری', 'منبع', 'شرکت', 'بیمه‌گذار', 'پرسنل', 'کد پرسنلی', 'کد ملی', 'پلاک', 'شماره بیمه‌نامه', 'نوع بیمه', 'بیمه‌گر',
+                        'قسط', 'تاریخ صدور', 'سررسید', 'مبلغ قسط', 'دریافت‌شده', 'مانده‌ی دریافت', 'پرداخت به بیمه‌گر', 'مانده‌ی بیمه‌گر', 'تأخیر (روز)', 'مرحله', 'صورتحساب'];
+            $x = [];
+            foreach ($rows as $i => $r) {
+                $x[] = [$i + 1, $r['tracking_code'], $r['source'] === 'C' ? 'شرکتی' : 'کارکنان', $r['company_name'], $r['insured'], $r['source'] === 'P' ? $r['holder_name'] : '',
+                        $r['personnel_code'], $r['national_code'], $r['plate'], $r['policy_number'], insurance_type_fa($r['insurance_type']), $r['insurer_fa'],
+                        $r['inst_number'], fa_digits($r['issue_jalali']), fa_digits($r['due_jalali']), $r['amount'], $r['paid'], $r['remaining'],
+                        $r['paid_insurer'], $r['insurer_remaining'], $r['delay_days'], $stageFa[$r['stage']] ?? '', $r['is_invoiced'] ? 'دارد' : 'ندارد'];
+            }
+            $path = xlsx_build($headers, $x, 'اقساط', [0, 15, 16, 17, 18, 19, 20]);
+            xlsx_send($path, 'مرکز اقساط ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
+            exit;
+        }
+        $lim = max(100, min(5000, intval($src['limit'] ?? 1500)));
+        echo json_encode(['ok' => true, 'summary' => fin_ledger_summary($rows), 'total_rows' => count($rows), 'rows' => array_slice($rows, 0, $lim)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (($_POST['action'] ?? '') === 'ledger_register') {
+        $items = json_decode((string)($_POST['items'] ?? '[]'), true);
+        $res = fin_ledger_register($pdo, $_POST, is_array($items) ? $items : [], intval($_SESSION['user_id']));
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_history') {
+        $src = ($data['source'] ?? ($_GET['source'] ?? '')) === 'C' ? 'C' : 'P';
+        $id = intval($data['id'] ?? ($_GET['id'] ?? 0));
+        echo json_encode(['ok' => true, 'history' => fin_ledger_history($pdo, $src, $id)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_list') {
+        $src = $data + $_GET;
+        $rows = fin_ledger_list($pdo, $src);
+        $sum = ['IN' => 0, 'OUT' => 0, 'cheque_pending' => 0, 'count' => count($rows)];
+        foreach ($rows as $r) { if ($r['status'] === 'ACTIVE') $sum[$r['direction']] += $r['amount']; if ($r['cheque_no'] && ($r['cheque_status'] ?? '') === 'PENDING' && $r['status'] === 'ACTIVE') $sum['cheque_pending'] += $r['amount']; }
+        if (!empty($src['export'])) {
+            require_once __DIR__ . '/_xlsx_writer.php';
+            $headers = ['ردیف', 'نوع', 'تاریخ', 'طرف حساب', 'بیمه‌گر', 'مبلغ (ریال)', 'روش', 'شماره پیگیری', 'شماره چک', 'بانک', 'سررسید چک', 'وضعیت چک', 'تعداد قسط', 'توضیح', 'وضعیت'];
+            $chq = ['PENDING' => 'در انتظار وصول', 'CLEARED' => 'وصول شد', 'BOUNCED' => 'برگشتی'];
+            $x = [];
+            foreach ($rows as $i => $r) {
+                $x[] = [$i + 1, $r['direction'] === 'IN' ? 'دریافت از بیمه‌گذار' : 'پرداخت به بیمه‌گر', fa_digits($r['paid_jalali']), $r['party'], $r['insurer_fa'],
+                        $r['amount'], $r['method_fa'], $r['reference_no'], $r['cheque_no'], $r['cheque_bank'], fa_digits($r['cheque_due_jalali'] ?? ''),
+                        $chq[$r['cheque_status'] ?? ''] ?? '', $r['items_count'], $r['note'], $r['status'] === 'VOID' ? 'باطل' : 'فعال'];
+            }
+            $path = xlsx_build($headers, $x, 'دریافت و پرداخت', [0, 5, 12]);
+            xlsx_send($path, 'دریافت‌ها و پرداخت‌ها ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
+            exit;
+        }
+        echo json_encode(['ok' => true, 'rows' => array_slice($rows, 0, 1500), 'summary' => $sum], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_receipt') {
+        fin_ledger_ensure($pdo);
+        $id = intval($data['id'] ?? ($_GET['id'] ?? 0));
+        $st = $pdo->prepare("SELECT * FROM fin_receipts WHERE id = ?");
+        $st->execute([$id]);
+        $rc = $st->fetch();
+        if (!$rc) { echo json_encode(['ok' => false, 'error' => 'سند پیدا نشد.']); exit; }
+        $rc['files'] = json_decode((string)$rc['files'], true) ?: [];
+        $rc['method_fa'] = fin_method_fa($rc['method']);
+        $rc['insurer_fa'] = $rc['insurer'] ? fin_insurer_fa($rc['insurer']) : '';
+        $ln = $pdo->prepare("SELECT * FROM fin_receipt_lines WHERE receipt_id = ?");
+        $ln->execute([$id]);
+        $lines = [];
+        $byKey = [];
+        foreach (fin_unified_installments($pdo, []) as $u) $byKey[$u['source'] . $u['id']] = $u;
+        foreach ($ln->fetchAll() as $l) {
+            $u = $byKey[$l['source'] . $l['installment_id']] ?? null;
+            $lines[] = ['source' => $l['source'], 'installment_id' => (int)$l['installment_id'], 'amount' => (int)$l['amount'],
+                        'insured' => $u['insured'] ?? '', 'company_name' => $u['company_name'] ?? '', 'plate' => $u['plate'] ?? '',
+                        'policy_number' => $u['policy_number'] ?? '', 'inst_number' => $u['inst_number'] ?? '', 'tracking_code' => $u['tracking_code'] ?? ''];
+        }
+        echo json_encode(['ok' => true, 'receipt' => $rc, 'lines' => $lines], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_void') {
+        if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند سند را باطل کند.']); exit; }
+        echo json_encode(fin_ledger_void($pdo, intval($data['id'] ?? 0)), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'ledger_cheque_status') {
+        fin_ledger_ensure($pdo);
+        $id = intval($data['id'] ?? 0);
+        $stv = in_array($data['status'] ?? '', ['PENDING', 'CLEARED', 'BOUNCED'], true) ? $data['status'] : 'PENDING';
+        if (($data['kind'] ?? 'R') === 'R') {
+            $pdo->prepare("UPDATE fin_receipts SET cheque_status = ? WHERE id = ?")->execute([$stv, $id]);
+            $lc = $pdo->prepare("SELECT legacy_cheque_id FROM fin_receipts WHERE id = ?");
+            $lc->execute([$id]);
+            if ($cid = $lc->fetchColumn()) $pdo->prepare("UPDATE cheques SET status = ? WHERE id = ?")->execute([$stv, $cid]);
+        } else {
+            // چکِ ثبت‌شده با روشِ قبلی (از رویِ شناسه‌ی دریافت)
+            $pdo->prepare("UPDATE cheques SET status = ? WHERE id = (SELECT cheque_id FROM payments WHERE id = ?)")->execute([$stv, $id]);
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     // =================================================================
     //  فهرست دوره‌ها و شرکت‌ها (برای پرکردن فیلترها)
     // =================================================================

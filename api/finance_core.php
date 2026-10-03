@@ -1482,6 +1482,7 @@ function fin_unified_installments($pdo, array $f = []) {
                 'plate' => $r['plate'], 'insurance_type' => $r['insurance_type'], 'policy_number' => $r['policy_number'],
                 'premium' => (int)money_to_int($r['total_premium']), 'is_invoiced' => (int)$r['is_invoiced'],
                 'issue_jalali' => sprintf('%04d/%02d/%02d', $iy, $im, $id), 'period' => sprintf('%04d-%02d', $py, $pm),
+                'insurer' => 'PASARGAD',
             ];
         }
     }
@@ -1493,7 +1494,7 @@ function fin_unified_installments($pdo, array $f = []) {
             $st = $pdo->prepare("
                 SELECT ci.id, ci.plate_id AS ref_id, ci.inst_number, ci.amount, ci.due_jalali, ci.due_date, ci.tracking_code,
                        COALESCE(ci.settled_to_pasargad,0) AS settled, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no,
-                       crp.insurance_type, crp.policy_number, crp.total_premium, crp.issued_at, cr.id AS request_id,
+                       crp.insurance_type, crp.policy_number, crp.total_premium, crp.issued_at, cr.id AS request_id, cr.insurer,
                        c.id AS company_id, c.name AS company_name,
                        COALESCE((SELECT SUM(a.amount) FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id
                                  WHERE a.installment_id = ci.id AND cp.target = 'US'),0) AS paid
@@ -1516,6 +1517,7 @@ function fin_unified_installments($pdo, array $f = []) {
                     'insured' => $r['company_name'], 'holder_name' => $r['company_name'], 'personnel_code' => null, 'national_code' => null,
                     'plate' => $plate, 'insurance_type' => $r['insurance_type'], 'policy_number' => $r['policy_number'],
                     'premium' => (int)money_to_int($r['total_premium']), 'is_invoiced' => 0, 'request_id' => (int)$r['request_id'],
+                    'insurer' => $r['insurer'] ?: 'PASARGAD',
                     'issue_jalali' => sprintf('%04d/%02d/%02d', $iy, $im, $id), 'period' => sprintf('%04d-%02d', $py, $pm),
                 ];
             }

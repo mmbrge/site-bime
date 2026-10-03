@@ -68,6 +68,28 @@ $vrSubHtml = !$vrAccess ? '' : '                        <div class="menu-sub">
 // منوی «گفتگوها»: پیام‌رسانِ یکپارچه برای همه‌ی نقش‌ها (مدیر، اپراتور، مالی، همکار، پارسیان)
 $chatNavHtml = '<a href="#" onclick="switchTab(\'tickets\')" id="nav-tickets" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-comments ml-1"></i> گفتگوها'
     . ' <span id="chat-nav-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span></a>' . "\n";
+// نوارِ زبانه‌های «مرکز صدور»: سه بخشِ در حال صدور، صادره‌ها و صدور گروهی در یک صفحه
+function issuance_nav($active, $isLiaison) {
+    $items = [];
+    if (!$isLiaison) $items[] = ['issue-queue', 'fa-list-check', 'در حال صدور', 'iss-n-queue'];
+    $items[] = ['issued-list', 'fa-file-circle-check', 'صادره‌ها', 'iss-n-issued'];
+    if (!$isLiaison) $items[] = ['issue-group', 'fa-layer-group', 'صدور گروهی', 'iss-n-group'];
+    $h = '<div class="iss-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-stamp"></i></span><div><b>مرکز صدور</b><small>همه‌ی ردیف‌های شرکتی و کارکنان، از درخواست تا صادره</small></div></div><div class="iss-nav">';
+    foreach ($items as [$tab, $ic, $label, $badge]) {
+        $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
+    }
+    return $h . '</div></div>';
+}
+// نوارِ زبانه‌های «مرکز مالی»: همه‌ی بخش‌های مالی در یک جا
+function finance_nav($active, $canSeeCompanies = true) {
+    $items = [['fin-dashboard', 'fa-chart-pie', 'داشبورد'], ['fin-installments', 'fa-list-ol', 'مرکز اقساط'], ['fin-payments', 'fa-arrow-right-arrow-left', 'دریافت و پرداخت'],
+              ['fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها'], ['fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری']];
+    if ($canSeeCompanies) $items[] = ['companies-finance', 'fa-sack-dollar', 'گزارش شرکت‌ها'];
+    if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['fin-settings', 'fa-sliders', 'تنظیمات'];
+    $h = '<div class="iss-hub fin-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-calculator"></i></span><div><b>مرکز مالی</b><small>اقساطِ کارکنان و شرکتی، دریافت از بیمه‌گذار، پرداخت به بیمه‌گر، چک‌ها و صورتحساب</small></div></div><div class="iss-nav">';
+    foreach ($items as [$tab, $ic, $label]) $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . '</button>';
+    return $h . '</div></div>';
+}
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'همکار بیمه با ما · پنل پارسیان'][$role] ?? $role;
@@ -319,6 +341,44 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .rows-table .col-checklist { width: 52%; min-width: 430px; }
         /* عرضِ مودالِ جزئیاتِ درخواست - بدون وابستگی به کلاس‌های دلخواهِ Tailwind */
         .creq-wide-modal { width: 96vw; max-width: 1400px; }
+        /* مرکز صدور: سرتیتر و زبانه‌ها */
+        .iss-hub { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 20px;
+                   background: linear-gradient(120deg, #0f766e, #0d9488 45%, #4f46e5); color: #fff; box-shadow: 0 10px 30px -12px rgba(13,148,136,.55); }
+        .iss-hub-title { display: flex; align-items: center; gap: 12px; }
+        .iss-hub-title b { display: block; font-size: 19px; font-weight: 900; }
+        .iss-hub-title small { display: block; font-size: 11px; opacity: .85; }
+        .iss-hub-ic { width: 44px; height: 44px; border-radius: 14px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 19px; }
+        .iss-nav { display: flex; gap: 4px; background: rgba(255,255,255,.16); padding: 4px; border-radius: 14px; flex-wrap: wrap; }
+        .iss-nav button { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #fff; padding: 8px 14px; border-radius: 11px; transition: .15s; }
+        .iss-nav button:hover { background: rgba(255,255,255,.14); }
+        .iss-nav button.on { background: #fff; color: #0f766e; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+        .iss-nav .iss-n:empty { display: none; }
+        .iss-nav .iss-n { font-size: 10px; background: rgba(255,255,255,.25); border-radius: 999px; padding: 1px 7px; }
+        .iss-nav button.on .iss-n { background: #ccfbf1; color: #0f766e; }
+        .fin-hub { background: linear-gradient(120deg, #1e1b4b, #4338ca 50%, #be185d); box-shadow: 0 10px 30px -12px rgba(67,56,202,.55); }
+        .fin-hub .iss-nav button.on { color: #4338ca; }
+        .fh-stages button { font-size: 12px; font-weight: 800; padding: 8px 14px; border-radius: 12px; background: #f1f5f9; color: #475569; transition: .15s; }
+        .fh-stages button:hover { background: #e2e8f0; }
+        .fh-stages button.on { background: #1e1b4b; color: #fff; box-shadow: 0 4px 12px -4px rgba(30,27,75,.5); }
+        .fh-stages .fh-n { font-size: 10px; background: rgba(148,163,184,.3); border-radius: 999px; padding: 1px 7px; margin-right: 4px; }
+        .fh-bar { position: sticky; top: 8px; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border: 1px solid #c7d2fe; background: rgba(255,255,255,.96); backdrop-filter: blur(4px); }
+        .fh-table thead tr { background: #eef2ff; color: #3730a3; font-weight: 800; }
+        .fh-prog { height: 4px; border-radius: 999px; background: #f1f5f9; overflow: hidden; margin-top: 3px; }
+        .fh-prog span { display: block; height: 100%; border-radius: 999px; }
+        .fh-overdue td:first-child { box-shadow: inset -3px 0 0 #ef4444; }
+        .iss-chips button { font-size: 11px; font-weight: 800; padding: 5px 11px; border-radius: 999px; background: #f1f5f9; color: #475569; border: 1px solid transparent; }
+        .iss-chips button.on { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+        /* کارت «اطلاعات صدور» در پاپ‌آپ‌ها */
+        .ii-sec { border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; background: #fff; }
+        .ii-sec h5 { font-size: 11.5px; font-weight: 900; color: #334155; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .ii-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 10px; }
+        .ii-f label { display: block; font-size: 9.5px; color: #94a3b8; font-weight: 700; margin-bottom: 2px; }
+        .ii-f .ii-w { display: flex; align-items: center; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; }
+        .ii-f .ii-w:focus-within { border-color: #14b8a6; background: #fff; }
+        .ii-f input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; font-size: 11.5px; font-weight: 700; color: #0f172a; padding: 5px 8px; }
+        .ii-f button { color: #cbd5e1; padding: 0 7px; font-size: 11px; }
+        .ii-f button:hover { color: #0d9488; }
+        .ii-ro { font-size: 11.5px; font-weight: 700; color: #0f172a; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 9px; padding: 5px 8px; display: flex; justify-content: space-between; gap: 6px; min-height: 30px; align-items: center; }
         .itpl-paper { background: #fff; width: 794px; max-width: 100%; min-height: 1000px; margin: 0 auto; padding: 56px 52px; box-shadow: 0 4px 18px rgba(15,23,42,.12);
                       font-family: 'B Nazanin', 'Vazirmatn', Tahoma, sans-serif; font-size: 15px; color: #000; line-height: 1.7; }
         .itpl-paper table td { font-size: 12px; text-align: center; }
@@ -642,6 +702,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span id="ops-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
                     </button>
                     <div class="menu-panel">
+                        <?php if ($canSeeCompanies): ?>
+                        <a href="#" onclick="switchTab('<?php echo $isLiaison ? 'issued-list' : 'issue-queue'; ?>')" class="nav-item menu-link font-black text-teal-700"><i class="fas fa-stamp ml-2"></i> مرکز صدور <small class="text-[10px] text-slate-400 font-bold mr-1">در حال صدور · صادره · گروهی</small></a>
+                        <div class="menu-sep"></div>
+                        <?php endif; ?>
                         <?php if (!$isLiaison): ?>
                         <div class="menu-sub">
                             <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-id-card ml-2"></i><span class="ms-t">کارکنان (کسر از حقوق)<small>پرونده، بازدید سلامت، صدور</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
@@ -668,8 +732,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-stamp ml-2"></i><span class="ms-t">صدور و صادره‌ها<small>لیست صدور و بیمه‌نامه‌های صادره</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
                             <div class="menu-subpanel">
                                 <div class="ms-head">صدور و صادره‌ها</div>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> لیست صدور</a><?php endif; ?>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> در حال صدور</a><?php endif; ?>
                                 <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-group')" id="nav-issue-group" class="nav-item menu-link"><i class="fas fa-layer-group ml-2"></i> صدور گروهی (فایل بیمه‌گر)</a><?php endif; ?>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -685,22 +750,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
+                        <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-list-ol ml-2"></i> مرکز اقساط <small class="text-[10px] text-slate-400 font-bold mr-1">دریافت و پرداخت روی هر قسط</small></a>
+                        <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-arrow-right-arrow-left ml-2"></i> دریافت‌ها، پرداخت‌ها و چک‌ها</a>
+                        <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
                         <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-list-ol ml-2"></i><span class="ms-t">اقساط و دریافت‌ها<small>اقساط، صورتحساب، چک</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-scale-balanced ml-2"></i><span class="ms-t">گزارش‌ها و ابزار<small>مغایرت، شرکت‌ها، تسویه‌های قبلی</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
                             <div class="menu-subpanel">
-                                <div class="ms-head">اقساط و دریافت‌ها</div>
-                                <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link"><i class="fas fa-list-ol ml-2"></i> اقساط بیمه‌نامه‌ها</a>
-                                <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
-                                <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-hand-holding-dollar ml-2"></i> دریافت‌ها و چک‌ها</a>
-                            </div>
-                        </div>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-scale-balanced ml-2"></i><span class="ms-t">تسویه و گزارش‌ها<small>پاسارگاد، مغایرت، شرکت‌ها</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">تسویه و گزارش‌ها</div>
-                                <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه با پاسارگاد</a>
+                                <div class="ms-head">گزارش‌ها و ابزار</div>
                                 <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
                                 <?php if ($canSeeCompanies): ?><a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a><?php endif; ?>
+                                <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه‌ی گروهی با پاسارگاد (روش قبلی)</a>
                             </div>
                         </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
@@ -1681,6 +1740,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= داشبورد مالی ======================= -->
         <div id="tab-fin-dashboard" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-dashboard', $canSeeCompanies); ?>
             <div class="relative overflow-hidden rounded-3xl bg-gradient-to-l from-slate-900 via-indigo-900 to-violet-900 p-6 md:p-8 text-white shadow-2xl">
                 <div class="absolute -left-16 -top-16 w-64 h-64 rounded-full bg-indigo-500/20 blur-2xl"></div>
                 <div class="absolute left-40 -bottom-20 w-56 h-56 rounded-full bg-fuchsia-500/20 blur-2xl"></div>
@@ -1700,37 +1760,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <!-- ======================= اقساط بیمه‌نامه‌ها ======================= -->
-        <div id="tab-fin-installments" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="flex justify-between items-center">
+        <div id="tab-fin-installments" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo finance_nav('fin-installments', $canSeeCompanies); ?>
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-ol text-indigo-500 ml-2"></i>اقساط بیمه‌نامه‌ها</h1>
-                    <p class="text-xs text-slate-400 mt-1">اقساط پرسنلی (کسر از حقوق) و شرکتی در یک فهرست؛ هر قسط با کد رهگیری ۱۰ رقمی</p>
+                    <h2 class="text-lg font-black text-slate-800"><i class="fas fa-list-ol text-indigo-500 ml-2"></i>مرکز اقساط</h2>
+                    <p class="text-xs text-slate-400 mt-1">همه‌ی اقساطِ کارکنان (کسر از حقوق) و شرکتی، ردیف‌به‌ردیف. هر قسط اول از بیمه‌گذار دریافت می‌شود و بعد به بیمه‌گر (پاسارگاد یا هر بیمه‌گرِ دیگر) پرداخت می‌شود؛ روی هر ردیف یا چند ردیف با هم، دریافت یا پرداخت (کامل یا جزئی) ثبت کنید.</p>
                 </div>
-                <button onclick="loadFinInstallments()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
+                <button onclick="FinHub.reloadInstallments()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-lg font-bold text-sm self-start"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
             </div>
-            <div class="card p-4 flex flex-wrap gap-3 items-end">
-                <div><label class="text-[10px] text-slate-500 block mb-1">منبع</label><select id="inst-f-source" class="border rounded-lg px-3 py-2 text-xs">
-                    <option value="">پرسنلی + شرکتی</option><option value="P">پرسنلی</option><option value="C">شرکتی</option></select></div>
-                <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="inst-f-period" class="border rounded-lg px-3 py-2 text-xs"></select></div>
-                <div><label class="text-[10px] text-slate-500 block mb-1">شرکت</label><select id="inst-f-company" class="border rounded-lg px-3 py-2 text-xs"></select></div>
-                <div><label class="text-[10px] text-slate-500 block mb-1">وضعیت</label>
-                    <select id="inst-f-status" class="border rounded-lg px-3 py-2 text-xs">
-                        <option value="">همه</option><option value="OPEN">باز (مانده‌دار)</option><option value="OVERDUE">معوق</option>
-                        <option value="UPCOMING">سررسید ۳۰ روز آینده</option><option value="UNPAID">پرداخت‌نشده</option>
-                        <option value="PARTIAL">ناقص</option><option value="PAID">تسویه‌شده</option>
-                    </select>
-                </div>
-                <div class="flex-1 min-w-[180px]"><label class="text-[10px] text-slate-500 block mb-1">جستجو (نام/پلاک/بیمه‌نامه/کد رهگیری)</label>
-                    <input type="text" id="inst-f-q" class="border rounded-lg px-3 py-2 text-xs w-full" oninput="debouncedInstallments()"></div>
-                <button onclick="loadFinInstallments()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">اعمال فیلتر</button>
-                <a id="inst-export" href="#" onclick="exportInstallments(event)" class="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-file-excel ml-1"></i>خروجی اکسل</a>
-                <a href="#" onclick="exportInstallments(event, 'export_master')" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold" title="هر بیمه‌نامه یک ردیف با همه‌ی اقساطش"><i class="fas fa-table ml-1"></i>بانک جامع اقساط</a>
-            </div>
-            <div class="card p-0 overflow-x-auto"><div id="fin-installments-body"></div></div>
+            <div id="fh-root" class="space-y-3"></div>
         </div>
-
         <!-- ======================= مغایرت‌گیری ======================= -->
         <div id="tab-fin-reconcile" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-reconcile', $canSeeCompanies); ?>
             <div>
                 <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-scale-balanced text-amber-500 ml-2"></i>مغایرت‌گیری با اکسل پاسارگاد</h1>
                 <p class="text-xs text-slate-400 mt-1">پیش از صدور صورتحساب، فهرست پاسارگاد را با اطلاعات پنل تطبیق دهید.</p>
@@ -1750,6 +1793,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= صورتحساب‌ها ======================= -->
         <div id="tab-fin-invoices" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-invoices', $canSeeCompanies); ?>
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-file-invoice text-blue-500 ml-2"></i>صورتحساب‌ها</h1>
@@ -1768,26 +1812,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <!-- ======================= دریافت‌ها و چک‌ها ======================= -->
-        <div id="tab-fin-payments" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="flex justify-between items-center">
-                <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-hand-holding-dollar text-emerald-500 ml-2"></i>دریافت‌ها و چک‌ها</h1>
-                    <p class="text-xs text-slate-400 mt-1">ثبت پرداخت شرکت‌ها و پیگیری وضعیت چک‌ها</p>
-                </div>
-                <button onclick="openNewPayment()" class="bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-plus ml-1"></i> ثبت دریافت</button>
+        <div id="tab-fin-payments" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo finance_nav('fin-payments', $canSeeCompanies); ?>
+            <div>
+                <h2 class="text-lg font-black text-slate-800"><i class="fas fa-arrow-right-arrow-left text-rose-500 ml-2"></i>دریافت‌ها، پرداخت‌ها و چک‌ها</h2>
+                <p class="text-xs text-slate-400 mt-1">دو دفتر: دریافت از بیمه‌گذار/شرکت، و پرداخت به بیمه‌گر. ثبت‌های قبلیِ سایت هم این‌جا دیده می‌شوند. وضعیتِ هر چک را همین‌جا عوض کنید.</p>
             </div>
-            <div class="card p-4 flex flex-wrap gap-3 items-end">
-                <div><label class="text-[10px] text-slate-500 block mb-1">شرکت</label><select id="pay-f-company" onchange="loadPayments()" class="border rounded-lg px-3 py-2 text-xs"></select></div>
-            </div>
-            <div class="card p-0 overflow-x-auto"><div id="fin-payments-body"></div></div>
-            <div class="card p-4">
-                <h3 class="font-bold text-sm text-slate-700 mb-3"><i class="fas fa-money-check ml-1"></i> چک‌ها</h3>
-                <div id="fin-cheques-body" class="overflow-x-auto"></div>
-            </div>
+            <div id="fl-root" class="space-y-3"></div>
+            <!-- عنصرهای قدیمی که برخی توابعِ قبلی هنوز به آن‌ها اشاره می‌کنند -->
+            <div class="hidden"><select id="pay-f-company"></select><div id="fin-payments-body"></div><div id="fin-cheques-body"></div></div>
         </div>
-
         <!-- ======================= تسویه با پاسارگاد ======================= -->
         <div id="tab-fin-pasargad" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-pasargad', $canSeeCompanies); ?>
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-building-columns text-purple-500 ml-2"></i>تسویه با پاسارگاد</h1>
@@ -1958,6 +1995,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= تنظیمات مالی ======================= -->
         <div id="tab-fin-settings" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-settings', $canSeeCompanies); ?>
             <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-money-check-dollar text-emerald-500 ml-2"></i>تنظیمات مالی</h1>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2161,12 +2199,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- ======================= تب درخواست‌های شرکتی ======================= -->
         <!-- ============ لیست صدور (جامع: ردیف‌های شرکتی + پرونده‌های کارکنان) ============ -->
         <div id="tab-issue-queue" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('issue-queue', $isLiaison); ?>
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-list-check text-teal-500 ml-2"></i>لیست صدور</h1>
-                    <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند - شرکتی و کارکنان. با صدور هر ردیف، از این فهرست بیرون می‌رود. ستون‌هایی که به آن نوع مربوط نیستند با — نشان داده می‌شوند.</p>
+                    <h2 class="text-lg font-black text-slate-800"><i class="fas fa-list-check text-teal-500 ml-2"></i>در حال صدور</h2>
+                    <p class="text-xs text-slate-400 mt-1">همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند - شرکتی و کارکنان. روی هر ردیف بزنید تا پنجره‌ی همان نوع (کارکنان یا شرکتی) با همه‌ی اطلاعات برای صدور باز شود.</p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="exportIssueQueueExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-file-excel ml-1"></i> خروجی اکسل</button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
                     <button onclick="openIntroPicker()" class="bg-gradient-to-l from-teal-600 to-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-teal-500/30 hover:brightness-110 transition-all"><i class="fas fa-plus ml-1"></i> درخواست جدید کارکنان</button>
                     <?php endif; ?>
@@ -2230,6 +2270,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="iq-month" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs" title="ماهِ ثبتِ درخواست"><option value="">همه‌ی ماه‌ها (ثبت درخواست)</option></select>
                 <input type="text" id="iq-exp-from" oninput="debouncedIssueQueue()" placeholder="انقضا از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="iq-exp-to" oninput="debouncedIssueQueue()" placeholder="انقضا تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+                <select id="iq-insurer" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                <div class="col-span-2 md:col-span-4 lg:col-span-8 flex flex-wrap items-center gap-2 iss-chips" id="iq-expq">
+                    <span class="text-[11px] font-black text-slate-500"><i class="fas fa-hourglass-half ml-1 text-orange-500"></i>انقضا:</span>
+                    <button type="button" data-v="" class="on" onclick="setIqExpQuick(this)">همه</button>
+                    <button type="button" data-v="expired" onclick="setIqExpQuick(this)">منقضی‌شده</button>
+                    <button type="button" data-v="7" onclick="setIqExpQuick(this)">تا ۷ روز</button>
+                    <button type="button" data-v="15" onclick="setIqExpQuick(this)">تا ۱۵ روز</button>
+                    <button type="button" data-v="30" onclick="setIqExpQuick(this)">تا ۳۰ روز</button>
+                    <button type="button" data-v="60" onclick="setIqExpQuick(this)">تا ۶۰ روز</button>
+                    <button type="button" onclick="resetIssueQueueFilters()" class="!bg-white !text-slate-500 border !border-slate-200 mr-auto"><i class="fas fa-eraser ml-1"></i>پاک‌کردنِ فیلترها</button>
+                </div>
             </div>
 
             <div class="card overflow-hidden">
@@ -2250,9 +2301,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= صادره‌ها (شرکتی + کارکنان) ======================= -->
         <div id="tab-issued-list" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('issued-list', $isLiaison); ?>
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-file-circle-check text-emerald-500 ml-2"></i>صادره‌ها</h1>
+                    <h2 class="text-lg font-black text-slate-800"><i class="fas fa-file-circle-check text-emerald-500 ml-2"></i>صادره‌ها</h2>
                     <p class="text-xs text-slate-400 mt-1">همه‌ی بیمه‌نامه‌های صادرشده - شرکتی و کارکنان - با همه‌ی اطلاعاتی که داریم.</p>
                 </div>
                 <div class="flex gap-2">
@@ -2287,6 +2339,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="il-month" onchange="jMonthToRange(this.value, 'il-from', 'il-to'); loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="ماهِ صدور"><option value="">همه‌ی ماه‌ها (صدور)</option></select>
                 <input type="text" id="il-from" oninput="debouncedIssuedList()" placeholder="صدور از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-to" oninput="debouncedIssuedList()" placeholder="صدور تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+                <select id="il-kind" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
+                <select id="il-insurer" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                <input type="text" id="il-exp-from" oninput="debouncedIssuedList()" placeholder="انقضای قبلی از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
+                <input type="text" id="il-exp-to" oninput="debouncedIssuedList()" placeholder="انقضای قبلی تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
             </div>
 
             <div class="card overflow-hidden">
@@ -2304,6 +2360,31 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
         </div>
+
+        <?php if (!$isLiaison): ?>
+        <!-- ======================= صدور گروهی (فایلِ خروجیِ بیمه‌گر) ======================= -->
+        <div id="tab-issue-group" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('issue-group', $isLiaison); ?>
+            <div class="grid lg:grid-cols-3 gap-4">
+                <div class="card p-5 lg:col-span-2">
+                    <h2 class="text-lg font-black text-slate-800 mb-1"><i class="fas fa-layer-group text-indigo-500 ml-2"></i>صدور گروهی از فایلِ خروجیِ بیمه‌گر</h2>
+                    <p class="text-xs text-slate-500 leading-6">درخواستِ شرکت را انتخاب کنید و فایلِ PDFی را که سایتِ بیمه‌گر داده (چند بیمه‌نامه پشتِ سرِ هم) بارگذاری کنید. صفحه‌های هر بیمه‌نامه جدا و شناسایی می‌شود، روی ردیفِ همان درخواست می‌نشیند، مغایرت‌ها نشان داده می‌شود و ردیف‌هایی که به مرحله‌ی صدور رسیده‌اند یک‌جا صادر و بایگانی می‌شوند.</p>
+                </div>
+                <div class="card p-5 grid grid-cols-3 gap-2 text-center">
+                    <div class="rounded-xl bg-indigo-50 p-2"><p class="text-[10px] font-bold text-indigo-700">درخواست باز</p><p id="ig-c-req" class="text-xl font-black text-indigo-800">۰</p></div>
+                    <div class="rounded-xl bg-slate-50 p-2"><p class="text-[10px] font-bold text-slate-600">ردیفِ صادرنشده</p><p id="ig-c-rows" class="text-xl font-black text-slate-700">۰</p></div>
+                    <div class="rounded-xl bg-emerald-50 p-2"><p class="text-[10px] font-bold text-emerald-700">آماده‌ی صدور</p><p id="ig-c-ready" class="text-xl font-black text-emerald-700">۰</p></div>
+                </div>
+            </div>
+            <div class="card p-4 flex flex-wrap gap-2 items-center">
+                <input type="search" id="ig-q" oninput="clearTimeout(window._igT); window._igT = setTimeout(loadIssueGroup, 350)" placeholder="جستجو: شرکت، شماره‌ی درخواست..." class="border rounded-lg px-3 py-2 text-xs flex-1 min-w-[200px]">
+                <select id="ig-company" onchange="loadIssueGroup()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="ig-insurer" onchange="loadIssueGroup()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                <button onclick="loadIssueGroup()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
+            </div>
+            <div id="ig-body" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+        </div>
+        <?php endif; ?>
 
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
@@ -2366,6 +2447,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <!-- ======================= تب گزارش مالی شرکت‌ها ======================= -->
         <div id="tab-companies-finance" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('companies-finance', $canSeeCompanies); ?>
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">گزارش مالی شرکت‌ها</h1>
                 <div class="flex items-center gap-2 flex-wrap">
@@ -2707,8 +2789,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <div id="iq-detail-modal" class="modal-overlay">
         <div class="modal-content creq-wide-modal p-6 relative max-h-[92vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('iq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">پرونده‌ی صدور</h3>
-            <p class="text-[11px] text-slate-400 mb-4">اطلاعات شرکت و ردیف، مدارک، و خودِ صدور - همه یک‌جا.</p>
+            <div id="iq-detail-head" class="rounded-2xl p-4 mb-4 text-white" style="background:linear-gradient(120deg,#4338ca,#6366f1)">
+                <h3 class="font-black text-lg" id="iq-detail-title">پرونده‌ی صدور</h3>
+                <p class="text-[11px] opacity-90" id="iq-detail-sub">اطلاعات، مدارک، و خودِ صدور - همه یک‌جا.</p>
+            </div>
             <div id="iq-detail-body"></div>
         </div>
     </div>
@@ -3542,6 +3626,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=3"></script>
+    <script src="finance-hub.js?v=2"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
     <script src="visit-reports-list.js?v=7"></script>
@@ -5421,9 +5506,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             unknown:   ['شناسایی نشد', 'bg-red-100 text-red-700', 'fa-circle-question'],
         };
 
-        function openBundleModal(requestId) {
+        function openBundleModal(requestId, from) {
             // اگر همین درخواست یک بررسیِ باز دارد، همان را نشان بده (مثلاً بعد از تکمیلِ مراحلِ یک ردیف)
             if (!BDL || BDL.requestId !== requestId) BDL = {requestId, token: null, items: [], filter: 'all', results: {}};
+            BDL.returnTo = from === 'group' ? 'group' : 'detail';
             document.getElementById('creq-detail-modal').classList.remove('active');
             document.getElementById('bundle-modal').classList.add('active');
             if (BDL.token) { bundleRender(); bundleShow('result'); }
@@ -5431,6 +5517,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function closeBundleModal() {
             document.getElementById('bundle-modal').classList.remove('active');
+            if (BDL && BDL.returnTo === 'group') { loadIssueGroup(); return; }
             if (BDL && BDL.requestId) openCompanyRequestDetail(BDL.requestId);
         }
         function bundleShow(part) {
@@ -6018,7 +6105,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 expiry_from: document.getElementById('iq-exp-from').value.trim(),
                 expiry_to: document.getElementById('iq-exp-to').value.trim(),
                 req_month: (document.getElementById('iq-month') || {}).value || '',
+                insurer: (document.getElementById('iq-insurer') || {}).value || '',
+                expiry_quick: iqExpQuick,
             };
+            window._iqLastPayload = payload;
             jMonthOptions(document.getElementById('iq-month'), 'همه‌ی ماه‌ها (ثبت درخواست)');
             let data;
             try {
@@ -6027,6 +6117,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
 
             issueQueueCache = data.rows || [];
+            document.querySelectorAll('.iss-n-queue').forEach(el => { el.textContent = data.counts.total ? e2pNum(data.counts.total) : ''; });
             document.getElementById('iq-c-total').textContent = e2pNum(data.counts.total);
             document.getElementById('iq-c-ready').textContent = e2pNum(data.counts.ready);
             document.getElementById('iq-c-waiting').textContent = e2pNum(data.counts.waiting);
@@ -6070,6 +6161,253 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }).join('');
         }
 
+        // انتخابِ سریعِ بازه‌ی انقضا و پاک‌کردنِ فیلترها
+        let iqExpQuick = '';
+        function setIqExpQuick(btn) {
+            iqExpQuick = btn.dataset.v || '';
+            document.querySelectorAll('#iq-expq button[data-v]').forEach(b => b.classList.toggle('on', b === btn));
+            loadIssueQueue();
+        }
+        function resetIssueQueueFilters() {
+            ['iq-q', 'iq-exp-from', 'iq-exp-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            ['iq-company', 'iq-readiness', 'iq-missing', 'iq-type', 'iq-kind', 'iq-stage', 'iq-month', 'iq-insurer'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+            const all = document.querySelector('#iq-expq button[data-v=""]');
+            iqExpQuick = '';
+            document.querySelectorAll('#iq-expq button[data-v]').forEach(b => b.classList.toggle('on', b === all));
+            loadIssueQueue();
+        }
+        // خروجی اکسلِ «در حال صدور» با همان فیلترهای فعلی
+        function exportIssueQueueExcel() {
+            const p = Object.assign({}, window._iqLastPayload || {action: 'issue_queue'}, {export: '1'});
+            Object.keys(p).forEach(k => { if (p[k] === '' || p[k] === null || p[k] === undefined) delete p[k]; });
+            window.location.href = COMPANY_API + '?' + new URLSearchParams(p).toString();
+            showToast('فایل اکسل در حال آماده‌سازی است...', 'success');
+        }
+
+        // ===================== صدور گروهی (فهرستِ درخواست‌ها) =====================
+        let igCompaniesLoaded = false;
+        async function loadIssueGroup() {
+            const body = document.getElementById('ig-body');
+            if (!body) return;
+            if (!igCompaniesLoaded) {
+                igCompaniesLoaded = true;
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
+                    if (d.ok) document.getElementById('ig-company').innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (d.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                }).catch(() => { igCompaniesLoaded = false; });
+            }
+            body.innerHTML = '<p class="col-span-full text-center text-xs text-slate-400 py-10">در حال بارگذاری...</p>';
+            let d;
+            try {
+                d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                    action: 'group_issue_requests', q: document.getElementById('ig-q').value.trim(),
+                    company_id: document.getElementById('ig-company').value, insurer: document.getElementById('ig-insurer').value})})).json();
+            } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { body.innerHTML = `<p class="col-span-full text-center text-xs text-red-500 py-10">${d.error || 'خطا'}</p>`; return; }
+            const rows = d.rows || [];
+            const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
+            document.getElementById('ig-c-req').textContent = e2pNum(rows.length);
+            document.getElementById('ig-c-rows').textContent = e2pNum(sum('open_rows'));
+            document.getElementById('ig-c-ready').textContent = e2pNum(sum('ready_rows'));
+            document.querySelectorAll('.iss-n-group').forEach(el => { el.textContent = rows.length ? e2pNum(rows.length) : ''; });
+            if (!rows.length) { body.innerHTML = '<div class="col-span-full card p-10 text-center text-slate-400 text-sm"><i class="fas fa-circle-check text-3xl text-emerald-300 mb-2 block"></i>درخواستِ بازی که ردیفِ صادرنشده داشته باشد نیست.</div>'; return; }
+            body.innerHTML = rows.map(r => {
+                const dte = r.days_to_expiry;
+                const expCls = dte === null ? 'bg-slate-100 text-slate-500' : (dte < 0 ? 'bg-red-100 text-red-700' : (dte <= 15 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'));
+                const ready = Number(r.ready_rows || 0), open = Number(r.open_rows || 0);
+                return `<div class="card p-4 hover:shadow-lg transition">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0"><p class="font-black text-slate-800 truncate">${r.company_name}</p>
+                            <p class="text-[11px] text-slate-400">درخواست #${e2pNum(r.id)} · ${r.request_kind_fa} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
+                        <span class="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${expCls}">${dte === null ? 'بدون انقضا' : (dte < 0 ? `${e2pNum(-dte)} روز گذشته` : `نزدیک‌ترین انقضا: ${e2pNum(dte)} روز`)}</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1.5 my-3 text-center">
+                        <div class="rounded-lg bg-slate-50 p-1.5"><p class="text-[9px] text-slate-500">صادرنشده</p><p class="font-black text-slate-700">${e2pNum(open)}</p></div>
+                        <div class="rounded-lg bg-emerald-50 p-1.5"><p class="text-[9px] text-emerald-700">آماده</p><p class="font-black text-emerald-700">${e2pNum(ready)}</p></div>
+                        <div class="rounded-lg bg-cyan-50 p-1.5"><p class="text-[9px] text-cyan-700">بدنه</p><p class="font-black text-cyan-800">${e2pNum(r.body_rows)}</p></div>
+                        <div class="rounded-lg bg-blue-50 p-1.5"><p class="text-[9px] text-blue-700">ثالث</p><p class="font-black text-blue-800">${e2pNum(r.third_rows)}</p></div>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden mb-3"><div class="h-full bg-gradient-to-l from-emerald-500 to-teal-400" style="width:${open ? Math.round(ready * 100 / open) : 0}%"></div></div>
+                    <div class="flex gap-2">
+                        <button onclick="openBundleModal(${r.id}, 'group')" class="flex-1 text-[12px] font-black text-white px-3 py-2 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی</button>
+                        <button onclick="openCompanyRequestDetail(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl">جزئیات</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // =================================================================
+        //  «اطلاعات صدور»: مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو و بیمه‌نامه‌ی درخواستی؛
+        //  همه قابلِ کپی (تکی یا یک‌جا) و قابلِ تکمیل/ذخیره، برای واردکردن در سایتِ بیمه‌گر
+        // =================================================================
+        const iiEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        let IIROW = null;
+        function iiDefaults(r) {
+            const ii = Object.assign({}, r.issue_info || {});
+            const isP = r.source === 'PERSONNEL';
+            const pick = (k, v) => { if (!ii[k] && v) ii[k] = String(v); };
+            pick('insured_name', isP ? r.insured_name : r.company_name);
+            pick('insured_national_id', isP ? r.national_id : '');
+            pick('insured_phone', isP ? (r.insured_phone || r.mobile_number) : r.company_phone);
+            pick('insured_address', isP ? r.insured_address : r.company_address);
+            pick('insured_postal_code', r.insured_postal_code);
+            pick('insured_birth_date', r.insured_birth_date);
+            pick('car_system', r.car_system); pick('car_type', r.car_type); pick('car_model_year', r.car_model_year);
+            pick('car_color', r.car_color); pick('car_usage', r.car_usage);
+            pick('chassis_no', r.chassis_no); pick('engine_no', r.engine_no); pick('vin', r.vin);
+            pick('no_claim_years', r.no_claim_years);
+            return ii;
+        }
+        function iiField(k, label, v, opts = {}) {
+            return `<div class="ii-f ${opts.wide ? 'col-span-2' : ''}"><label>${label}</label><div class="ii-w">
+                <input data-ii="${k}" value="${iiEsc(v || '')}" ${opts.ltr ? 'dir="ltr"' : ''} placeholder="${iiEsc(opts.ph || '')}">
+                <button type="button" title="کپی" onclick="iiCopyOne(this)"><i class="far fa-copy"></i></button></div></div>`;
+        }
+        function iiRo(label, v, opts = {}) {
+            if (v === null || v === undefined || v === '') v = '';
+            const shown = opts.html ? v : iiEsc(opts.digits ? faDigits(v) : v);
+            return `<div class="ii-f"><label>${label}</label><div class="ii-ro"><span ${opts.ltr ? 'dir="ltr"' : ''}>${shown || '<span class="text-slate-300">—</span>'}</span>
+                ${v ? `<button type="button" class="text-slate-300 hover:text-teal-600" title="کپی" onclick="copyValue('${String(opts.copy || v).replace(/'/g, '').replace(/<[^>]*>/g, '')}', '${label}')"><i class="far fa-copy text-[11px]"></i></button>` : ''}</div></div>`;
+        }
+        function issueInfoCardHtml(r) {
+            IIROW = r;
+            const ii = iiDefaults(r);
+            const isP = r.source === 'PERSONNEL';
+            const plate = r.plate_display || '';
+            const plateHtml = /ایران/.test(plate) ? formatPlateHtml(plate) : iiEsc(plate);
+            const kindLine = [r.insurance_type_fa, r.request_kind_fa && r.request_kind !== 'NEW_POLICY' ? r.request_kind_fa : ''].filter(Boolean).join(' · ');
+            return `
+            <div class="space-y-3 mb-4" id="ii-card">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <h4 class="text-sm font-black text-slate-700"><i class="fas fa-clipboard-list text-teal-500 ml-1"></i>اطلاعات برای صدور</h4>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="iiCopyAll()" class="text-[11px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 px-3 py-1.5 rounded-xl"><i class="far fa-copy ml-1"></i>کپیِ همه‌ی اطلاعات</button>
+                        <button type="button" onclick="iiSave()" class="text-[11px] font-bold bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-save ml-1"></i>ذخیره‌ی تغییرات</button>
+                    </div>
+                </div>
+                <div class="ii-sec" style="background:linear-gradient(180deg,#f0fdfa,#fff)">
+                    <h5><i class="fas fa-file-shield text-teal-600"></i>بیمه‌نامه‌ی درخواستی</h5>
+                    <div class="ii-grid">
+                        ${iiRo('نوع بیمه / درخواست', kindLine)}
+                        ${iiRo('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                        ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
+                        ${iiRo('خودرو (درخواست)', r.car_name)}
+                        ${r.insurance_type === 'BODY' ? iiRo('ارزش خودرو (ریال)', r.car_value || r.estimated_car_value ? money(r.car_value || r.estimated_car_value) : '', {copy: String(r.car_value || r.estimated_car_value || '')}) : iiRo('تعهد مالی (ریال)', (r.liability_limit || r.liability_limit_case) ? money(r.liability_limit || r.liability_limit_case) : '', {copy: String(r.liability_limit || r.liability_limit_case || '')})}
+                        ${iiRo('انقضای بیمه‌نامه‌ی قبلی', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {digits: true})}
+                        ${r.ref_policy_number ? iiRo('بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true}) : ''}
+                        ${isP && r.prev_body_insurance ? iiRo('بیمه‌ی بدنه‌ی قبلی', r.prev_body_insurance) : ''}
+                        ${isP && r.ownership_choice ? iiRo('مدرک مالکیت', r.ownership_choice) : ''}
+                    </div>
+                    ${(r.coverages_fa || []).length ? `<div class="mt-2"><span class="text-[10px] font-bold text-violet-700 ml-1">پوشش‌ها:</span>${r.coverages_fa.map(c => `<span class="inline-block text-[10.5px] bg-white border border-violet-200 text-violet-800 rounded-lg px-2 py-0.5 ml-1 mb-1">${iiEsc(c)}</span>`).join('')}</div>` : ''}
+                    ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 mt-2"><b>خواسته‌ی الحاقیه:</b> ${iiEsc(r.endorsement_request)}</p>` : ''}
+                    ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 mt-2"><b>دلیل فسخ:</b> ${iiEsc(r.cancellation_reason)}</p>` : ''}
+                </div>
+                <div class="grid lg:grid-cols-2 gap-3">
+                    <div class="ii-sec">
+                        <h5><i class="fas fa-user-shield text-indigo-500"></i>بیمه‌گذار ${isP && r.relationship ? `<span class="text-[10px] font-bold text-slate-400">(${iiEsc(r.relationship)} پرسنل)</span>` : ''}</h5>
+                        <div class="ii-grid">
+                            ${iiField('insured_name', 'نام بیمه‌گذار', ii.insured_name)}
+                            ${iiField('insured_national_id', isP ? 'کد ملی' : 'شناسه ملی', ii.insured_national_id, {ltr: true})}
+                            ${iiField('insured_phone', 'تلفن', ii.insured_phone, {ltr: true})}
+                            ${iiField('insured_postal_code', 'کد پستی', ii.insured_postal_code, {ltr: true})}
+                            ${isP ? iiField('insured_birth_date', 'تاریخ تولد', ii.insured_birth_date, {ltr: true}) : ''}
+                            ${iiField('insured_address', 'نشانی', ii.insured_address, {wide: true})}
+                        </div>
+                    </div>
+                    <div class="ii-sec">
+                        <h5><i class="fas fa-id-card text-amber-500"></i>مالک خودرو <span class="text-[10px] font-bold text-slate-400">(از کارت/سند خودرو)</span>
+                            <button type="button" onclick="iiOwnerFromInsured()" class="mr-auto text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg">مالک = بیمه‌گذار</button></h5>
+                        <div class="ii-grid">
+                            ${iiField('owner_name', 'نام مالک', ii.owner_name)}
+                            ${iiField('owner_national_id', 'کد / شناسه ملی مالک', ii.owner_national_id, {ltr: true})}
+                            ${iiField('owner_phone', 'تلفن مالک', ii.owner_phone, {ltr: true})}
+                            ${iiField('owner_address', 'نشانی مالک', ii.owner_address, {wide: true})}
+                        </div>
+                    </div>
+                </div>
+                <div class="ii-sec">
+                    <h5><i class="fas fa-car-side text-sky-500"></i>مشخصات کامل خودرو</h5>
+                    <div class="ii-grid">
+                        ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
+                        ${iiField('car_kind', 'نوع (سواری، وانت...)', ii.car_kind)}
+                        ${iiField('car_system', 'سیستم', ii.car_system)}
+                        ${iiField('car_type', 'تیپ', ii.car_type)}
+                        ${iiField('car_model_year', 'مدل (سال ساخت)', ii.car_model_year, {ltr: true})}
+                        ${iiField('car_color', 'رنگ', ii.car_color)}
+                        ${iiField('car_usage', 'کاربری', ii.car_usage)}
+                        ${iiField('car_capacity', 'ظرفیت', ii.car_capacity, {ltr: true})}
+                        ${iiField('car_cylinders', 'تعداد سیلندر', ii.car_cylinders, {ltr: true})}
+                        ${iiField('chassis_no', 'شماره شاسی', ii.chassis_no, {ltr: true})}
+                        ${iiField('engine_no', 'شماره موتور', ii.engine_no, {ltr: true})}
+                        ${iiField('vin', 'VIN', ii.vin, {ltr: true})}
+                    </div>
+                </div>
+                <div class="ii-sec">
+                    <h5><i class="fas fa-clock-rotate-left text-rose-500"></i>سابقه و یادداشت</h5>
+                    <div class="ii-grid">
+                        ${iiField('prev_insurer', 'بیمه‌گر قبلی', ii.prev_insurer)}
+                        ${iiField('prev_policy_number', 'شماره بیمه‌نامه‌ی قبلی', ii.prev_policy_number || r.ref_policy_number, {ltr: true})}
+                        ${iiField('no_claim_years', 'سال‌های عدم خسارت', ii.no_claim_years, {ltr: true})}
+                        ${iiField('note', 'یادداشت صدور', ii.note, {wide: true})}
+                    </div>
+                </div>
+            </div>`;
+        }
+        function iiCollect() {
+            const out = {};
+            document.querySelectorAll('#ii-card [data-ii]').forEach(el => { out[el.dataset.ii] = el.value.trim(); });
+            return out;
+        }
+        function iiCopyOne(btn) {
+            const inp = btn.parentElement.querySelector('input');
+            if (inp && inp.value.trim()) copyValue(inp.value.trim(), btn.closest('.ii-f').querySelector('label').textContent);
+        }
+        function iiOwnerFromInsured() {
+            const v = iiCollect();
+            const set = (k, val) => { const el = document.querySelector(`#ii-card [data-ii="${k}"]`); if (el && val) el.value = val; };
+            set('owner_name', v.insured_name); set('owner_national_id', v.insured_national_id); set('owner_phone', v.insured_phone); set('owner_address', v.insured_address);
+        }
+        function iiCopyAll() {
+            const r = IIROW || {};
+            const v = iiCollect();
+            const L = (label, val) => val ? `${label}: ${val}` : '';
+            const lines = [
+                '— بیمه‌نامه‌ی درخواستی —', L('نوع بیمه', r.insurance_type_fa), L('نوع درخواست', r.request_kind_fa), L('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'),
+                L('پلاک', r.plate_display), L('ارزش خودرو', r.car_value ? Number(r.car_value).toLocaleString('en-US') : ''), L('تعهد مالی', r.liability_limit ? Number(r.liability_limit).toLocaleString('en-US') : ''),
+                L('انقضای قبلی', r.expiry_date_jalali), (r.coverages_fa || []).length ? L('پوشش‌ها', r.coverages_fa.join('، ')) : '',
+                '', '— بیمه‌گذار —', L('نام', v.insured_name), L('کد/شناسه ملی', v.insured_national_id), L('تلفن', v.insured_phone), L('کد پستی', v.insured_postal_code), L('تاریخ تولد', v.insured_birth_date), L('نشانی', v.insured_address),
+                '', '— مالک —', L('نام', v.owner_name), L('کد/شناسه ملی', v.owner_national_id), L('تلفن', v.owner_phone), L('نشانی', v.owner_address),
+                '', '— خودرو —', L('نوع', v.car_kind), L('سیستم', v.car_system), L('تیپ', v.car_type), L('مدل', v.car_model_year), L('رنگ', v.car_color), L('کاربری', v.car_usage),
+                L('ظرفیت', v.car_capacity), L('سیلندر', v.car_cylinders), L('شاسی', v.chassis_no), L('موتور', v.engine_no), L('VIN', v.vin),
+                '', L('بیمه‌گر قبلی', v.prev_insurer), L('بیمه‌نامه‌ی قبلی', v.prev_policy_number), L('سال‌های عدم خسارت', v.no_claim_years), L('یادداشت', v.note),
+            ].filter((x, i, a) => x !== '' || (a[i - 1] && a[i - 1] !== ''));
+            const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            const done = () => showToast('همه‌ی اطلاعات کپی شد.', 'success');
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done).catch(() => {});
+            else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }
+        }
+        async function iiSave() {
+            const r = IIROW; if (!r) return;
+            let d;
+            try {
+                d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'save_issue_info', source: r.source, id: r.id, info: iiCollect()})})).json();
+            } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            r.issue_info = d.info || {};
+            showToast('اطلاعات صدور ذخیره شد.', 'success');
+        }
+
+        function iqSetHead(src, r) {
+            const head = document.getElementById('iq-detail-head');
+            const isP = src === 'PERSONNEL';
+            head.style.background = isP ? 'linear-gradient(120deg,#1d4ed8,#0ea5e9)' : 'linear-gradient(120deg,#4338ca,#7c3aed)';
+            document.getElementById('iq-detail-title').innerHTML = isP
+                ? `<i class="fas fa-id-card ml-1"></i>پرونده‌ی صدورِ کارکنان — ${iiEsc(r.holder_name || '')}`
+                : `<i class="fas fa-building ml-1"></i>پرونده‌ی صدورِ شرکتی — ${iiEsc(r.company_name || '')}`;
+            document.getElementById('iq-detail-sub').textContent = isP
+                ? 'معرفی‌نامه، اطلاعاتِ پرسنل و بیمه‌گذار، مالک و خودرو، مدارک و صدور - همه یک‌جا.'
+                : 'نامه‌ی درخواست، اطلاعاتِ شرکت، مالک و خودرو، مدارک و صدور - همه یک‌جا.';
+        }
+
         function openIssueQueueDetail(source, rowId) {
             const r = issueQueueCache.find(x => String(x.id) === String(rowId) && x.source === source);
             if (!r) { showToast('ردیف پیدا نشد.', 'error'); return; }
@@ -6094,6 +6432,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این ردیف ثبت نشده.</p>';
 
             const chips = (r.checklist || []).map(it => checklistChip(r, it, true)).join('');
+            iqSetHead('COMPANY', r);
 
             document.getElementById('iq-detail-body').innerHTML = `
                 <div class="grid md:grid-cols-2 gap-4 mb-4">
@@ -6122,23 +6461,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
 
-                <div class="border border-slate-200 rounded-xl p-3 mb-4">
-                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات این ردیف</h4>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-                        ${infoCell('پلاک / شماره شاسی', r.plate_display, {ltr: true, plate: true})}
-                        ${infoCell('نوع بیمه', r.insurance_type_fa)}
-                        ${infoCell('تاریخ انقضا', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {date: true})}
-                        ${infoCell('خودرو', r.car_name)}
-                        ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
-                        ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : '')}
-                        ${infoCell('تعهد مالی', r.liability_limit ? money(r.liability_limit) + ' ریال' : '')}
-                        ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
-                    </div>
-                    ${r.insurance_type === 'BODY' ? `<div class="mt-2 bg-violet-50 border border-violet-100 rounded-lg p-2"><p class="text-[10px] font-bold text-violet-700 mb-1"><i class="fas fa-list-check ml-1"></i>پوشش‌های درخواستی</p>
-                        ${(r.coverages_fa || []).length ? r.coverages_fa.map(c => `<span class="inline-block text-[10.5px] bg-white border border-violet-200 text-violet-800 rounded-lg px-2 py-0.5 ml-1 mb-1">${c}</span>`).join('') : '<span class="text-[10.5px] text-amber-600">مشخص نشده</span>'}</div>` : ''}
-                    ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mt-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
-                    ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mt-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
-                </div>
+                ${issueInfoCardHtml(r)}
 
                 <div class="grid md:grid-cols-2 gap-4 mb-4">
                     <div class="border border-slate-200 rounded-xl p-3">
@@ -6185,6 +6508,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این پرونده ثبت نشده.</p>';
 
             const dash = '';
+            iqSetHead('PERSONNEL', r);
             document.getElementById('iq-detail-body').innerHTML = `
                 <div class="grid md:grid-cols-2 gap-4 mb-4">
                     <div class="border border-slate-200 rounded-xl p-3">
@@ -6214,24 +6538,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
 
-                <div class="border border-slate-200 rounded-xl p-3 mb-4">
-                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات خودرو</h4>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-                        <div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
-                            <p class="text-[9px] text-slate-400">پلاک</p>
-                            <p class="plate-display text-[11px] font-bold text-slate-700">${formatPlateHtml(r.plate_display)}
-                                <button onclick="copyValue('${String(r.plate_display || '').replace(/'/g, "")}', 'پلاک')" title="کپی پلاک" class="text-slate-300 hover:text-blue-500 mr-1">
-                                    <i class="far fa-copy text-[10px]"></i></button>
-                            </p>
-                        </div>
-                        ${infoCell('نوع بیمه', r.insurance_type_fa)}
-                        ${infoCell('خودرو', r.car_name)}
-                        ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
-                        ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
-                        ${infoCell('ارزش خودرو', r.car_value ? money(r.car_value) + ' ریال' : dash)}
-                    </div>
-                    ${(r.coverages_fa || []).length ? `<p class="text-[10.5px] text-violet-700 mt-2"><b>پوشش‌ها:</b> ${r.coverages_fa.join('، ')}</p>` : ''}
-                </div>
+                ${issueInfoCardHtml(r)}
 
                 <div class="border border-slate-200 rounded-xl p-3 mb-4">
                     <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارک ثبت‌شده (تک‌به‌تک)</h4>
@@ -6272,6 +6579,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 company_id: (document.getElementById('il-company') || {}).value || '',
                 issued_from: document.getElementById('il-from').value.trim(),
                 issued_to: document.getElementById('il-to').value.trim(),
+                request_kind: (document.getElementById('il-kind') || {}).value || '',
+                insurer: (document.getElementById('il-insurer') || {}).value || '',
+                expiry_from: ((document.getElementById('il-exp-from') || {}).value || '').trim(),
+                expiry_to: ((document.getElementById('il-exp-to') || {}).value || '').trim(),
             };
         }
 
@@ -6295,6 +6606,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             issuedListCache = data.rows || [];
             const c = data.counts;
+            document.querySelectorAll('.iss-n-issued').forEach(el => { el.textContent = c.total ? e2pNum(c.total) : ''; });
             document.getElementById('il-c-total').textContent = e2pNum(c.total);
             document.getElementById('il-c-company').textContent = e2pNum(c.company);
             document.getElementById('il-c-personnel').textContent = e2pNum(c.personnel);
@@ -6391,6 +6703,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // خروجی اکسل، دقیقاً با همان فیلترهایی که الان روی جدول اعمال شده
         function exportIssuedExcel() {
             const f = issuedFilters();
+            Object.keys(f).forEach(k => { if (f[k] === '') delete f[k]; });
             const qs = new URLSearchParams({action: 'issued_list', export: '1', ...f}).toString();
             window.location.href = COMPANY_API + '?' + qs;
             showToast('فایل اکسل در حال آماده‌سازی است...', 'success');
@@ -7535,6 +7848,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId.startsWith('fin-')) initFinance(tabId);
             if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
             if (tabId === 'issued-list') loadIssuedList();
+            if (tabId === 'issue-group') loadIssueGroup();
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();
@@ -7581,10 +7895,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const b = await ensureFinBoot();
             if (!b) return;
             if (tabId === 'fin-dashboard')    loadFinDashboard();
-            if (tabId === 'fin-installments') loadFinInstallments();
+            if (tabId === 'fin-installments') { if (window.FinHub) FinHub.initInstallments(); }
             if (tabId === 'fin-settings')     loadFinanceSettings();
             if (tabId === 'fin-invoices')     loadInvoices();
-            if (tabId === 'fin-payments')     { loadPayments(); loadCheques(); }
+            if (tabId === 'fin-payments')     { if (window.FinHub) FinHub.initLedger(); }
             if (tabId === 'fin-pasargad')     loadPasargad();
         }
 

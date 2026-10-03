@@ -180,6 +180,9 @@ try {
     if ($action === 'issue_queue') {
         // «لیست صدور» کارِ مدیر است؛ همکار بیمه با ما فقط صادره‌ها را می‌بیند
         if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE); exit; }
+        $data = $data + $_GET;   // خروجی اکسل با همان فیلترها از راهِ GET می‌آید
+        $isExport = !empty($data['export']);
+        company_ensure_issue_info_cols($pdo);
         $src = $data['source'] ?? 'ALL';   // ALL | COMPANY | PERSONNEL
         $out = []; $ready = 0; $waiting = 0;
         $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
@@ -212,6 +215,10 @@ try {
         // بازه‌ی تاریخ انقضا (شمسی داده می‌شود، میلادی مقایسه می‌شود)
         if ($expFrom) { $where[] = "crp.expiry_date >= ?"; $params[] = $expFrom; }
         if ($expTo)   { $where[] = "crp.expiry_date <= ?"; $params[] = $expTo; }
+        // انتخابِ سریعِ انقضا: منقضی‌شده / تا ۷، ۱۵ یا ۳۰ روزِ آینده
+        $expQuick = (string)($data['expiry_quick'] ?? '');
+        if ($expQuick === 'expired') { $where[] = "crp.expiry_date < CURDATE()"; }
+        elseif (in_array($expQuick, ['7', '15', '30', '60'], true)) { $where[] = "crp.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL " . intval($expQuick) . " DAY)"; }
 
         if ($q !== '') {
             $like = '%' . $q . '%';
@@ -288,6 +295,7 @@ try {
             $r['national_id']     = $r['economic_code'];
             $r['period_title']    = null;
             $r['relationship']    = null;
+            $r['issue_info']      = issue_info_decode($r['issue_info'] ?? null);
             $out[] = $r;
         }
 
@@ -300,7 +308,8 @@ try {
             if (!empty($data['request_kind']) && $data['request_kind'] !== 'NEW_POLICY') $pw[] = "1=0";
             if (!empty($data['company_id'])) { $pw[] = "per.company_id = ?"; $pp[] = intval($data['company_id']); }
             if ($reqMonth) { $pw[] = "DATE(pc.created_at) BETWEEN ? AND ?"; $pp[] = $reqMonth[0]; $pp[] = $reqMonth[1]; }
-            if ($expFrom || $expTo) $pw[] = "1=0";  // پرونده‌ی کارکنان تاریخ انقضا ندارد
+            if ($expFrom || $expTo || $expQuick !== '') $pw[] = "1=0";  // پرونده‌ی کارکنان تاریخ انقضا ندارد
+            if (!empty($data['insurer']) && $data['insurer'] !== 'PASARGAD') $pw[] = "1=0";   // بیمه‌ی کارکنان همیشه پاسارگاد است
             if ($stageF !== '') {
                 if (in_array($stageF, $personnelStages, true)) { $pw[] = "pc.status = ?"; $pp[] = $stageF; }
                 else { $pw[] = "1=0"; }
@@ -391,6 +400,17 @@ try {
                         'is_ready' => $isReady, 'missing_docs' => $missing,
                         'checklist' => [], 'all_docs' => $caseDocs,
                         'skip_health_inspection' => 0, 'has_prev_body' => null,
+                        // مشخصاتِ کاملِ خودرو و بیمه‌گذار برای پاپ‌آپِ صدور
+                        'vin' => $c['vin'] ?? null, 'car_system' => $c['car_system'] ?? null, 'car_type' => $c['car_type'] ?? null,
+                        'car_model_year' => $c['car_model_year'] ?? null, 'car_color' => $c['car_color'] ?? null, 'car_usage' => $c['car_usage'] ?? null,
+                        'insured_phone' => $c['insured_phone'] ?? null, 'insured_address' => $c['insured_address'] ?? null,
+                        'insured_postal_code' => $c['insured_postal_code'] ?? null, 'insured_birth_date' => $c['insured_birth_date'] ?? null,
+                        'holder_national_code' => $c['holder_national_code'] ?? null, 'mobile_number' => $c['mobile_number'] ?? null,
+                        'ownership_choice' => $c['ownership_choice'] ?? null, 'prev_body_insurance' => $c['prev_body_insurance'] ?? null,
+                        'no_claim_years' => $c['no_claim_years'] ?? null, 'liability_limit_case' => $c['liability_limit'] ?? null,
+                        'estimated_car_value' => $c['estimated_car_value'] ?? null,
+                        'coverages_fa' => function_exists('company_coverages_fa') ? company_coverages_fa($c['selected_coverages'] ?? null) : [],
+                        'issue_info' => issue_info_decode($c['issue_info'] ?? null),
                     ];
                 }
             } catch (Throwable $e) {
@@ -398,9 +418,106 @@ try {
             }
         }
 
+        // ---------- خروجی اکسلِ «در حال صدور» با همین فیلترها ----------
+        if ($isExport) {
+            require_once __DIR__ . '/_xlsx_writer.php';
+            $headers = ['ردیف', 'منبع', 'شرکت / کارفرما', 'بیمه‌گذار', 'پرسنل', 'کد پرسنلی', 'کد ملی / اقتصادی',
+                        'پلاک / شاسی', 'شماره شاسی', 'شماره موتور', 'خودرو', 'نوع بیمه', 'نوع درخواست', 'بیمه‌گر',
+                        'تاریخ درخواست', 'تاریخ انقضا', 'روز تا انقضا', 'مرحله / وضعیت', 'مدارک', 'کمبودها',
+                        'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'پوشش‌ها', 'مالک', 'توضیح'];
+            $xr = [];
+            foreach ($out as $i => $r) {
+                $ii = (array)($r['issue_info'] ?? []);
+                $xr[] = [
+                    $i + 1, $r['source_fa'], $r['company_name'], $r['insured_name'], $r['holder_name'] ?? '', $r['personnel_code'] ?? '',
+                    $r['national_id'] ?? '', $r['plate_display'] ?? '', $r['chassis_no'] ?? '', $r['engine_no'] ?? '', $r['car_name'] ?? '',
+                    $r['insurance_type_fa'], $r['request_kind_fa'], (($r['insurer'] ?? '') === 'IRAN' ? 'ایران' : 'پاسارگاد'),
+                    fa_digits($r['request_date_jalali'] ?? ''), fa_digits($r['expiry_date_jalali'] ?? ''),
+                    $r['days_to_expiry'] === null ? '' : $r['days_to_expiry'],
+                    $r['source'] === 'PERSONNEL' ? case_status_fa($r['status']) : ($r['status_fa'] ?? ''),
+                    $r['is_ready'] ? 'کامل' : 'ناقص', implode('، ', array_values((array)$r['missing_docs'])),
+                    $r['car_value'] ?? '', $r['liability_limit'] ?? '', implode('، ', (array)($r['coverages_fa'] ?? [])),
+                    $ii['owner_name'] ?? '', $r['endorsement_request'] ?? ($r['cancellation_reason'] ?? ($r['request_text'] ?? '')),
+                ];
+            }
+            $path = xlsx_build($headers, $xr, 'در حال صدور', [0, 16, 20, 21]);
+            xlsx_send($path, 'لیست در حال صدور ' . fa_digits(str_replace('/', '-', jd(time()))) . '.xlsx');
+            exit;
+        }
+
         echo json_encode(['ok' => true, 'rows' => $out,
                           'counts' => ['total' => count($out), 'ready' => $ready, 'waiting' => $waiting],
                           'doc_types' => company_doc_types()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- ذخیره‌ی «اطلاعات صدور» (مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو) از پاپ‌آپِ صدور ----
+    if ($action === 'save_issue_info') {
+        if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE); exit; }
+        company_ensure_issue_info_cols($pdo);
+        $source = ($data['source'] ?? '') === 'PERSONNEL' ? 'PERSONNEL' : 'COMPANY';
+        $id = intval($data['id'] ?? 0);
+        $in = is_array($data['info'] ?? null) ? $data['info'] : [];
+        $info = [];
+        foreach (issue_info_fields() as $k => $label) {
+            if (!isset($in[$k])) continue;
+            $v = trim(mb_substr((string)$in[$k], 0, 500));
+            if ($v !== '') $info[$k] = $v;
+        }
+        $json = $info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null;
+        if ($source === 'COMPANY') {
+            $pdo->prepare("UPDATE company_request_plates SET issue_info = ?,
+                               chassis_no = COALESCE(NULLIF(?, ''), chassis_no), engine_no = COALESCE(NULLIF(?, ''), engine_no), vin = COALESCE(NULLIF(?, ''), vin)
+                           WHERE id = ?")
+                ->execute([$json, $info['chassis_no'] ?? '', $info['engine_no'] ?? '', $info['vin'] ?? '', $id]);
+        } else {
+            // برای کارکنان، فیلدهایی که ستونِ خودشان را دارند همان‌جا هم نوشته می‌شوند
+            $pdo->prepare("UPDATE policy_cases SET issue_info = ?,
+                               insured_name = COALESCE(NULLIF(?, ''), insured_name), insured_national_id = COALESCE(NULLIF(?, ''), insured_national_id),
+                               insured_phone = COALESCE(NULLIF(?, ''), insured_phone), insured_address = COALESCE(NULLIF(?, ''), insured_address),
+                               insured_postal_code = COALESCE(NULLIF(?, ''), insured_postal_code),
+                               car_system = COALESCE(NULLIF(?, ''), car_system), car_type = COALESCE(NULLIF(?, ''), car_type),
+                               car_model_year = COALESCE(NULLIF(?, ''), car_model_year), car_color = COALESCE(NULLIF(?, ''), car_color),
+                               car_usage = COALESCE(NULLIF(?, ''), car_usage), chassis_num = COALESCE(NULLIF(?, ''), chassis_num),
+                               engine_num = COALESCE(NULLIF(?, ''), engine_num), vin = COALESCE(NULLIF(?, ''), vin)
+                           WHERE id = ?")
+                ->execute([$json, $info['insured_name'] ?? '', $info['insured_national_id'] ?? '', $info['insured_phone'] ?? '',
+                           $info['insured_address'] ?? '', $info['insured_postal_code'] ?? '', $info['car_system'] ?? '', $info['car_type'] ?? '',
+                           $info['car_model_year'] ?? '', $info['car_color'] ?? '', $info['car_usage'] ?? '', $info['chassis_no'] ?? '',
+                           $info['engine_no'] ?? '', $info['vin'] ?? '', $id]);
+        }
+        echo json_encode(['ok' => true, 'info' => $info], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- درخواست‌هایی که ردیفِ صادرنشده دارند (برای بخش «صدور گروهی» در صفحه‌ی جامعِ صدور) ----
+    if ($action === 'group_issue_requests') {
+        require_admin_only();
+        $w = ["crp.status NOT IN ('ISSUED','CANCELLED')"]; $p = [];
+        if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
+        if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $p[] = $data['insurer']; }
+        $q = trim((string)($data['q'] ?? ''));
+        if ($q !== '') { $w[] = "(c.name LIKE ? OR cr.id = ? OR cr.request_text LIKE ?)"; array_push($p, "%$q%", intval(p2e_digits($q)), "%$q%"); }
+        $st = $pdo->prepare("SELECT cr.id, cr.company_id, cr.insurer, cr.request_kind, cr.created_at, c.name AS company_name,
+                                    COUNT(*) AS open_rows,
+                                    SUM(crp.status IN ('READY_FOR_ISSUE','WITH_BOSS','IN_ISSUANCE')) AS ready_rows,
+                                    SUM(crp.insurance_type = 'BODY') AS body_rows, SUM(crp.insurance_type = 'THIRDPARTY') AS third_rows,
+                                    MIN(crp.expiry_date) AS nearest_expiry
+                               FROM company_request_plates crp
+                               JOIN company_requests cr ON cr.id = crp.request_id
+                               JOIN companies c ON c.id = cr.company_id
+                              WHERE " . implode(' AND ', $w) . "
+                              GROUP BY cr.id ORDER BY MIN(crp.expiry_date) IS NULL, MIN(crp.expiry_date) ASC, cr.id DESC LIMIT 300");
+        $st->execute($p);
+        $rows = [];
+        foreach ($st->fetchAll() as $r) {
+            $r['created_jalali'] = jd(strtotime($r['created_at']));
+            $r['nearest_expiry_jalali'] = $r['nearest_expiry'] ? jd(strtotime($r['nearest_expiry'])) : null;
+            $r['days_to_expiry'] = $r['nearest_expiry'] ? (int)floor((strtotime($r['nearest_expiry']) - strtotime('today')) / 86400) : null;
+            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
+            $rows[] = $r;
+        }
+        echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -411,6 +528,11 @@ try {
     //  همین اکشن خروجی اکسل هم می‌دهد (export=1).
     // =================================================================
     if ($action === 'issued_list' || ($_GET['action'] ?? '') === 'issued_list') {
+        $data = $data + $_GET;   // خروجی اکسل (GET) هم همه‌ی فیلترها را داشته باشد، از جمله شرکت
+        company_ensure_issue_info_cols($pdo);
+        $expFromI = fin_jalali_to_date($data['expiry_from'] ?? '');
+        $expToI = fin_jalali_to_date($data['expiry_to'] ?? '');
+        $insurerF = $data['insurer'] ?? '';
         $src = $data['source'] ?? ($_GET['source'] ?? 'ALL');       // ALL | COMPANY | PERSONNEL
         $q   = trim($data['q'] ?? ($_GET['q'] ?? ''));
         $from = fin_jalali_to_date($data['issued_from'] ?? ($_GET['issued_from'] ?? ''));
@@ -429,6 +551,9 @@ try {
             if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
             if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
             if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
+            if ($expFromI) { $w[] = "crp.expiry_date >= ?"; $p[] = $expFromI; }
+            if ($expToI)   { $w[] = "crp.expiry_date <= ?"; $p[] = $expToI; }
+            if ($insurerF) { $w[] = "cr.insurer = ?"; $p[] = $insurerF; }
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone
@@ -461,6 +586,7 @@ try {
                     'issued_at' => $r['issued_at'], 'issued_at_jalali' => $r['issued_at'] ? jd(strtotime($r['issued_at'])) : null,
                     'status_fa' => company_plate_status_fa('ISSUED', $kind),
                     'folder_status' => $r['folder_status'], 'issued_file_path' => $r['issued_file_path'],
+                    'issue_info' => issue_info_decode($r['issue_info'] ?? null),
                 ];
             }
         }
@@ -475,6 +601,8 @@ try {
             if (!empty($data['company_id'])) { $w[] = "per.company_id = ?"; $p[] = intval($data['company_id']); }
             // نوع درخواست برای پرسنلی همیشه «صدور بیمه‌نامه‌ی جدید» است
             if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }
+            if ($expFromI || $expToI) { $w[] = "1=0"; }                       // انقضای قبلی برای کارکنان ثبت نمی‌شود
+            if ($insurerF && $insurerF !== 'PASARGAD') { $w[] = "1=0"; }
             try {
                 $stmt = $pdo->prepare("
                     SELECT pc.*, per.full_name AS holder_name, per.national_code AS holder_nid, per.mobile_number, per.personnel_code AS holder_pcode,
@@ -514,6 +642,7 @@ try {
                         'personnel_code' => $r['holder_pcode'] ?? null,
                         'intro_letter_j' => (!empty($r['intro_letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', $r['intro_letter_date'], $lm)) ? sprintf('%04d/%02d/%02d', $lm[1], $lm[2], $lm[3]) : null,
                         'intro_month_fa' => $r['introduction_id'] ? (function () use ($r) { [$y, $m] = intro_letter_month(['letter_date' => $r['intro_letter_date'], 'created_at' => $r['intro_created_at']]); return jalali_month_name($m) . ' ' . $y; })() : null,
+                        'issue_info' => issue_info_decode($r['issue_info'] ?? null),
                     ];
                 }
             } catch (Throwable $e) { /* اگر ستونی نبود، دست‌کم شرکتی‌ها نمایش داده شوند */ }

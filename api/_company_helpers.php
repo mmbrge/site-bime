@@ -1297,6 +1297,37 @@ function company_ensure_coverage_column($pdo) {
     } catch (Throwable $e) { error_log('[company coverages column] ' . $e->getMessage()); }
 }
 
+// «اطلاعات صدور» (مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو) که کارشناس هنگام صدور تکمیل می‌کند؛
+// برای ردیف شرکتی و پرونده‌ی کارکنان در یک ستونِ JSON ذخیره می‌شود (خودکار ساخته می‌شود)
+function company_ensure_issue_info_cols($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    foreach (['company_request_plates', 'policy_cases'] as $t) {
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE 'issue_info'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN issue_info TEXT NULL");
+        } catch (Throwable $e) { error_log('[issue_info column] ' . $e->getMessage()); }
+    }
+}
+
+// فیلدهای مجازِ «اطلاعات صدور»
+function issue_info_fields() {
+    return [
+        'owner_name' => 'نام مالک', 'owner_national_id' => 'کد/شناسه ملی مالک', 'owner_phone' => 'تلفن مالک', 'owner_address' => 'نشانی مالک',
+        'insured_name' => 'نام بیمه‌گذار', 'insured_national_id' => 'کد/شناسه ملی بیمه‌گذار', 'insured_phone' => 'تلفن بیمه‌گذار',
+        'insured_postal_code' => 'کد پستی بیمه‌گذار', 'insured_address' => 'نشانی بیمه‌گذار', 'insured_birth_date' => 'تاریخ تولد بیمه‌گذار',
+        'car_system' => 'سیستم', 'car_type' => 'تیپ', 'car_kind' => 'نوع خودرو', 'car_model_year' => 'مدل (سال ساخت)', 'car_color' => 'رنگ',
+        'car_usage' => 'کاربری', 'car_capacity' => 'ظرفیت', 'car_cylinders' => 'تعداد سیلندر', 'chassis_no' => 'شماره شاسی',
+        'engine_no' => 'شماره موتور', 'vin' => 'VIN', 'prev_insurer' => 'بیمه‌گر قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی',
+        'no_claim_years' => 'سال‌های عدم خسارت', 'note' => 'یادداشت صدور',
+    ];
+}
+
+function issue_info_decode($json) {
+    $d = json_decode((string)$json, true);
+    return is_array($d) ? $d : [];
+}
+
 // ورودی: آرایه/JSON پوشش‌ها، یا 'none' (فقط پوشش پایه)؛ خروجی: JSON تمیز یا null
 function company_clean_coverages($input) {
     if ($input === 'none') return '{}';
