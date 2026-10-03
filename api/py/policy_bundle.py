@@ -211,6 +211,43 @@ def row_values(spans, label, left_only=False):
     return out
 
 
+def inline_kv(spans, label):
+    """برچسب و مقدار در یک تکه: «نوع:    سواری» یا «۱۴۰۲    :مدل» → مقدار"""
+    rx1 = re.compile(r'^\s*(?:' + label + r')\s*:\s*(.+?)\s*$')
+    rx2 = re.compile(r'^\s*(.+?)\s*:\s*(?:' + label + r')\s*$')
+    for sp in spans:
+        t = sp['t']
+        if ':' not in t:
+            continue
+        m = rx1.match(t) or rx2.match(t)
+        if m:
+            v = m.group(1).strip(' -:')
+            if v and ':' not in v and not re.fullmatch(r'[-\s.]*', v):
+                return v
+    return ''
+
+
+def own_dates(label_span):
+    """تاریخ‌های داخلِ خودِ تکه‌ی برچسب («۱۴۰۵/۰۶/۱۶ ۱۱:۲۸:۰۸ :تاریخ صدور»)"""
+    return dates_in(label_span['t'])
+
+
+DATE_LABEL_RX = re.compile(r'تاریخ|مدت\s*بیمه|سررسید|مورخ')
+
+
+def row_dates(spans, label):
+    """تاریخِ یک برچسب: اول داخلِ خودِ تکه، بعد تکه‌های همان ردیف که برچسبِ تاریخِ دیگری ندارند"""
+    ds = own_dates(label)
+    if ds:
+        return ds
+    out = []
+    for v in row_values(spans, label):
+        if ':' in v['t'] and DATE_LABEL_RX.search(v['t']):
+            continue   # تاریخِ برچسبِ دیگری است (مثلاً «تاریخ انقضا» کنارِ «تاریخ صدور»)
+        out += dates_in(v['t'])
+    return out
+
+
 def clean_label_text(t):
     # برچسب‌ها گاهی به مقدار چسبیده‌اند («:کد اقتصادی411111651948»)؛ متنِ برچسب‌ها برداشته می‌شود
     return re.sub(r'[^:]*:', ' ', t) if ':' in t else t
@@ -269,6 +306,26 @@ PAYMENT_RX = re.compile(r'سند\s*دریافت|اعلامیه\s*آخرین\s*و
 
 def is_payment_page(text):
     return bool(PAYMENT_RX.search(normalize_text(text)[:600]))
+
+
+RECEIPT_RX = re.compile(r'سند\s*دریافت|رسید\s*پرداخت|فیش\s*واریز|پرداخت\s*الکترونیک')
+
+
+def receipt_info(text):
+    """صفحه‌ی فیشِ یک قسط («سند دریافت نقدی»): تاریخ، مبلغ و شماره‌ی فیش"""
+    t = normalize_text(text)
+    info = {}
+    ds = dates_in(t)
+    if ds:
+        info['date'] = ds[0]
+    amts = [int(m.replace(',', '').replace('٬', '')) for m in re.findall(r'(?<!\d)(\d{1,3}(?:[,٬]\d{3})+)(?!\d)', t)]
+    amts = [a for a in amts if 1000 <= a <= 10 ** 12]
+    if amts:
+        info['amount'] = max(amts)
+    m = re.search(r'شماره\s*فیش\s*:?\s*(\d{10,24})', t) or re.search(r'(\d{10,24})\s*:?\s*کد\s*شناسه', t) or re.search(r'(?<!\d)(0{2,}\d{12,20})(?!\d)', t)
+    if m:
+        info['fish'] = m.group(1)
+    return info
 
 
 def extract_layout(page):
@@ -345,12 +402,41 @@ def extract_layout(page):
             if d.get('national_id'):
                 break
 
-    # حق بیمه: «مبلغ قابل پرداخت» / «حق بیمه قابل پرداخت» / «جمع کل حق بیمه»
-    for lb in find_labels(sp, r'مبلغ\s*قابل\s*پرداخت|حق\s*بیمه\s*(?:قابل\s*پرداخت|نهایی|کل)|جمع\s*(?:کل\s*)?حق\s*بیمه'):
-        vals = [x for v in row_values(sp, lb) for x in money_values(v['t'])]
-        vals = [x for x in vals if 10000 <= x <= 10 ** 13]
-        if vals:
-            d['premium'] = str(max(vals)); break
+    # حق بیمه: «مبلغ قابل پرداخت» / «حق بیمه قابل پرداخت» / «جمع کل حق بیمه» / «جمع کل» (ثالث)
+    for prx in [r'مبلغ\s*قابل\s*پرداخت', r'حق\s*بیمه\s*(?:قابل\s*پرداخت|نهایی)', r'جمع\s*(?:کل\s*)?حق\s*بیمه', r'^\s*:?\s*جمع\s*کل\s*:?\s*$', r'حق\s*بیمه\s*کل']:
+        for lb in find_labels(sp, prx):
+            vals = money_values(clean_label_text(lb['t'])) + [x for v in row_values(sp, lb) for x in money_values(v['t'])]
+            vals = [x for x in vals if 10000 <= x <= 10 ** 13]
+            if vals:
+                d['premium'] = str(max(vals)); break
+        if d.get('premium'):
+            break
+
+    # برچسب و مقدار در یک تکه (قالبِ ثالثِ پاسارگاد): «نوع: سواری»، «سیستم: سایپا»، «۱۴۰۲ :مدل»، «M155... :شماره موتور»
+    for key, lab in [('car_kind', r'نوع'), ('car_system', r'سیستم'), ('car_tip', r'تیپ'), ('model_year', r'مدل'), ('color', r'رنگ'),
+                     ('usage', r'مورد\s*استفاده|کاربری'), ('engine_no', r'شماره\s*موتور'), ('chassis', r'شماره\s*شاسی'),
+                     ('capacity', r'ظرفیت'), ('cylinders', r'تعداد\s*سیلندر')]:
+        v = inline_kv(sp, lab)
+        if v:
+            d[key] = v
+    if d.get('chassis'):
+        tok = re.sub(r'[^A-Za-z0-9]', '', d.pop('chassis'))
+        if len(tok) == 17 and not d.get('vin'):
+            d['vin'] = tok.upper()
+        elif tok:
+            d['chassis_no'] = tok.upper()
+    if d.get('engine_no'):
+        d['engine_no'] = re.sub(r'[^A-Za-z0-9]', '', d['engine_no']).upper() or d.pop('engine_no')
+    if d.get('model_year'):
+        m = re.search(r'(1[34]\d{2}|19\d{2}|20\d{2})', d['model_year'])
+        if m: d['model_year'] = m.group(1)
+        else: d.pop('model_year')
+    inline_car = bool(d.get('car_system') or d.get('car_tip'))
+    if inline_car:
+        d['car_name'] = ' '.join(x for x in [d.get('car_system', ''), d.get('car_tip', '')] if x).strip()
+    if not d.get('national_id'):
+        m = re.search(r'(?<!\d)(\d{10})\s*:\s*کد\s*ملی', alltext)
+        if m: d['national_id'] = m.group(1)
 
     # شاسی و موتور
     for lb in find_labels(sp, r'شماره\s*(?:شاسی|موتور)|VIN'):
@@ -366,7 +452,7 @@ def extract_layout(page):
             break
 
     # خودرو: «نوع: سیستم: تیپ» (از راست به چپ)
-    for lb in find_labels(sp, r'سیستم'):
+    for lb in ([] if inline_car else find_labels(sp, r'سیستم')):
         vals = [v['t'] for v in row_values(sp, lb) if not re.fullmatch(r'[-\s]*', v['t'])]
         if vals:
             if len(vals) >= 3:
@@ -377,14 +463,14 @@ def extract_layout(page):
                 d['car_system'] = vals[0]
             d['car_name'] = ' '.join(x for x in [d.get('car_system', ''), d.get('car_tip', '')] if x).strip()
             break
-    for lb in find_labels(sp, r'^:?\s*مدل\s*:?$|:\s*مدل'):
+    for lb in ([] if d.get('model_year') else find_labels(sp, r'^:?\s*مدل\s*:?$|:\s*مدل')):
         for v in row_values(sp, lb):
             m = re.search(r'(?<!\d)(1[34]\d{2}|19\d{2}|20\d{2})(?!\d)', v['t'])
             if m:
                 d['model_year'] = m.group(1); break
         if d.get('model_year'):
             break
-    for lb in find_labels(sp, r'رنگ'):
+    for lb in ([] if d.get('color') else find_labels(sp, r'رنگ')):
         vals = row_values(sp, lb)
         if vals:
             d['color'] = vals[0]['t']
@@ -410,15 +496,25 @@ def extract_layout(page):
         if len(ds) == 1 and not d.get('start_date'):
             d['start_date'] = ds[0]
     for lb in find_labels(sp, r'تاریخ\s*صدور'):
-        ds = [x for v in row_values(sp, lb) for x in dates_in(v['t'])]
+        ds = row_dates(sp, lb)
         if ds:
             d['issue_date'] = ds[0]; break
     for lb in find_labels(sp, r'تاریخ\s*انقضا'):
-        ds = [x for v in row_values(sp, lb) for x in dates_in(v['t'])]
+        ds = row_dates(sp, lb)
         if ds:
             d['prev_expiry'] = ds[0]; break
     for lb in find_labels(sp, r'بیمه\s*نامه\s*سال\s*قبل'):
+        own = re.sub(r':?\s*بیمه\s*نامه\s*سال\s*قبل\s*:?', ' ', lb['t']).strip()
+        m = re.search(r'\d[\d/\-]{6,}\d', own)
+        if m:
+            d['prev_policy'] = m.group(0)
+            ins = re.sub(r'[\d/\-]+', ' ', own).replace('سهامی', ' ').strip(' -:')
+            if ins:
+                d['prev_insurer'] = re.sub(r'\s+', ' ', ins)
+            break
         for v in row_values(sp, lb):
+            if ':' in v['t'] and re.search(r'شماره\s*بیمه\s*نامه|تاریخ|واحد', v['t']):
+                continue
             t = v['t']
             if d.get('policy_num') and d['policy_num'] in t:
                 continue
@@ -450,7 +546,7 @@ def extract_policy(page, raw_text):
     except Exception:
         lay = {}
     for k, v in lay.items():
-        if v and (k not in base or not base.get(k) or base.get(k) in ('ناشناخته',) or k in ('plate', 'insured_name', 'premium', 'policy_num', 'vin', 'ins_type')):
+        if v:   # خواندن با جای متن دقیق‌تر از قواعدِ متنی است
             base[k] = v
     if not base.get('premium'):
         # «ریال129,612,000» یا «129,612,000 ریال» کنارِ «قابل پرداخت»
@@ -539,8 +635,35 @@ def main():
             seg = fitz.open(); seg.insert_pdf(doc, from_page=i, to_page=end); seg.save(os.path.join(outdir, sfn)); seg.close()
         except Exception as e:
             out({"ok": False, "error": "جدا کردنِ صفحه‌ها ممکن نشد.", "debug": str(e)[:300]}); return
+        # صفحه‌های فیشِ اقساط (هر قسط یک صفحه) جدا ذخیره می‌شوند تا هر کدام به ردیفِ قسطِ خودش وصل شود
+        receipts, statement = [], None
+        for j in range(pend + 1, end + 1):
+            tj = normalize_text(texts[j])[:600]
+            if RECEIPT_RX.search(tj):
+                info = receipt_info(texts[j])
+                rfn = "rcp_%03d_%02d.pdf" % (i + 1, len(receipts) + 1)
+                try:
+                    one = fitz.open(); one.insert_pdf(doc, from_page=j, to_page=j); one.save(os.path.join(outdir, rfn)); one.close()
+                except Exception:
+                    continue
+                info.update({'page': j, 'file': rfn})
+                receipts.append(info)
+            elif statement is None and re.search(r'اعلامیه\s*آخرین\s*وضعیت', tj):
+                statement = "stm_%03d.pdf" % (i + 1)
+                try:
+                    one = fitz.open(); one.insert_pdf(doc, from_page=j, to_page=j); one.save(os.path.join(outdir, statement)); one.close()
+                except Exception:
+                    statement = None
+        receipts.sort(key=lambda r: (r.get('date') or '9999', r['page']))
+        # تاریخ صدور اگر در صفحه‌ی اول نبود، از بقیه‌ی صفحه‌های همین بیمه‌نامه
+        if data is not None and not data.get('issue_date'):
+            for j in range(i + 1, pend + 1):
+                m = re.search(r'تاریخ\s*صدور[^\d]{0,40}(1[34]\d{2}/\d{1,2}/\d{1,2})', normalize_text(texts[j]))
+                if m:
+                    data['issue_date'] = dates_in(m.group(1))[0]; break
         policies.append({"page": i, "end": end, "policy_end": pend, "has_text": has_text, "file": fn, "seg_file": sfn,
-                         "similarity": sims[i], "counter": counters[i], "data": data, "missing": missing})
+                         "similarity": sims[i], "counter": counters[i], "data": data, "missing": missing,
+                         "receipts": receipts, "statement_file": statement})
     doc.close()
     out({"ok": True, "pages": n, "text_pages": text_pages, "split": split, "policies": policies})
 

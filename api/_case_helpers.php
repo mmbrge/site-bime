@@ -1802,3 +1802,63 @@ function health_retake_target($pdo, $session) {
     $insp['_retake_keys'] = $keys;
     return $insp;
 }
+
+// =====================================================================
+//  شناسه‌ی درخواست: عددِ ۵ رقمیِ یکتا (بین درخواست‌های شرکتی و کارکنان مشترک)؛
+//  وقتی ۵ رقمی‌ها رو به اتمام باشد ۶ رقمی و بعد ۷ رقمی ساخته می‌شود. ستون و مقدارِ ردیف‌های قبلی خودکار ساخته می‌شود.
+// =====================================================================
+function ref_codes_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;   // ALTER داخلِ تراکنش آن را بی‌صدا commit می‌کند
+    $done = true;
+    foreach (['company_requests', 'policy_cases'] as $t) {
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE 'ref_code'")->fetch()) {
+                $pdo->exec("ALTER TABLE `$t` ADD COLUMN ref_code VARCHAR(8) NULL, ADD UNIQUE KEY uq_{$t}_ref_code (ref_code)");
+            }
+            $ids = $pdo->query("SELECT id FROM `$t` WHERE ref_code IS NULL ORDER BY id LIMIT 2000")->fetchAll(PDO::FETCH_COLUMN);
+            $up = $pdo->prepare("UPDATE `$t` SET ref_code = ? WHERE id = ? AND ref_code IS NULL");
+            foreach ($ids as $id) $up->execute([ref_code_new($pdo), $id]);
+        } catch (Throwable $e) { error_log('[ref_codes_ensure ' . $t . '] ' . $e->getMessage()); }
+    }
+}
+
+function ref_code_new($pdo) {
+    $used = function ($code) use ($pdo) {
+        foreach (['company_requests', 'policy_cases'] as $t) {
+            try {
+                $st = $pdo->prepare("SELECT 1 FROM `$t` WHERE ref_code = ? LIMIT 1");
+                $st->execute([$code]);
+                if ($st->fetchColumn()) return true;
+            } catch (Throwable $e) {}
+        }
+        return false;
+    };
+    for ($len = 5; $len <= 8; $len++) {
+        $min = (int)('1' . str_repeat('0', $len - 1)); $max = (int)str_repeat('9', $len);
+        // اگر بیش از ۹۰٪ این طول پر شده، سراغِ طولِ بعدی
+        $cnt = 0;
+        foreach (['company_requests', 'policy_cases'] as $t) {
+            try { $cnt += (int)$pdo->query("SELECT COUNT(*) FROM `$t` WHERE CHAR_LENGTH(ref_code) = $len")->fetchColumn(); } catch (Throwable $e) {}
+        }
+        if ($cnt >= ($max - $min + 1) * 0.9) continue;
+        for ($i = 0; $i < 40; $i++) {
+            $code = (string)random_int($min, $max);
+            if (!$used($code)) return $code;
+        }
+    }
+    return (string)random_int(10000000, 99999999);
+}
+
+// شناسه‌ی یک ردیف (اگر هنوز ندارد همین حالا ساخته می‌شود)
+function ref_code_of($pdo, $table, $id) {
+    ref_codes_ensure($pdo);
+    $t = $table === 'policy_cases' ? 'policy_cases' : 'company_requests';
+    try {
+        $st = $pdo->prepare("SELECT ref_code FROM `$t` WHERE id = ?");
+        $st->execute([$id]);
+        $c = $st->fetchColumn();
+        if (!$c) { $c = ref_code_new($pdo); $pdo->prepare("UPDATE `$t` SET ref_code = ? WHERE id = ?")->execute([$c, $id]); }
+        return $c;
+    } catch (Throwable $e) { return null; }
+}

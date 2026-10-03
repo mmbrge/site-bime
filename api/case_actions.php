@@ -4,6 +4,8 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/finance_core.php';     // سررسیدِ اقساط و ستون‌های فیشِ اقساط
+require_once __DIR__ . '/_company_issue.php';   // خواندنِ فایلِ بیمه‌نامه با الگوریتمِ جای متن + جدا کردنِ فیش‌ها
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -700,19 +702,26 @@ try {
             @unlink($case['pending_policy_temp_path']);
         }
 
-        $ocrData = null; $ocrDebug = null;
-        if (in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {   // موتور هم PDF و هم عکس را می‌خواند
+        $ocrData = null; $ocrDebug = null; $single = null;
+        // ۱) همان الگوریتمِ صدورِ گروهی (جای متن در PDF): همه‌ی فیلدها + جدا کردنِ صفحه‌های فیشِ اقساط
+        $lay = policy_layout_extract($pdo, $tempPath);
+        if ($lay && $lay['data']) { $ocrData = $lay['data']; $single = $lay['single']; }
+        if (!$ocrData && in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {   // اسکن یا عکس: موتورِ قبلی
             $ocrResult = run_document_ocr_verbose($tempPath);
             $ocrData = $ocrResult['data'];
-            $ocrDebug = $ocrResult['debug'];
-        } else {
+            $ocrDebug = $ocrResult['debug'] ?: ($lay['debug'] ?? null);
+        } elseif (!$ocrData) {
             $ocrDebug = 'فقط فایل PDF قابل شناسایی خودکار است (این فایل ' . strtoupper($ext) . ' بود).';
         }
+        if ($ocrData) $ocrData = policy_data_aliases($ocrData);
+        $store = $ocrData;
+        if ($store && $single) $store['_single'] = $single;
 
         $pdo->prepare("UPDATE policy_cases SET pending_policy_temp_path = ?, pending_policy_orig_name = ?, ocr_extracted_data = ? WHERE id = ?")
-            ->execute([$tempPath, $_FILES['file']['name'], $ocrData ? json_encode($ocrData, JSON_UNESCAPED_UNICODE) : null, $caseId]);
+            ->execute([$tempPath, $_FILES['file']['name'], $store ? json_encode($store, JSON_UNESCAPED_UNICODE) : null, $caseId]);
 
-        echo json_encode(['ok' => true, 'ocr' => $ocrData, 'ocr_used' => (bool)$ocrData, 'ocr_debug' => $ocrDebug], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'ocr' => $ocrData, 'ocr_used' => (bool)$ocrData, 'ocr_debug' => $ocrDebug,
+                          'receipts' => $single['receipts'] ?? [], 'missing' => $single['missing'] ?? []], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -801,6 +810,11 @@ try {
             $pdo->prepare("UPDATE policy_cases SET folder_path = ? WHERE id = ?")->execute([$caseFolder, $caseId]);
         }
 
+        // اگر فایل صفحه‌های فیشِ اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه ذخیره می‌شود
+        $single = (!empty($ocrData['_single']['dir']) && is_dir($ocrData['_single']['dir'])) ? $ocrData['_single'] : null;
+        if ($single && !empty($single['receipts']) && is_file($single['dir'] . '/' . $single['pol'])) {
+            if (@copy($single['dir'] . '/' . $single['pol'], $tempPath . '.pol')) { @unlink($tempPath); @rename($tempPath . '.pol', $tempPath); }
+        }
         // مرحله ۲: فایل بیمه‌نامه‌ی نهایی ابتدا داخل خودِ پوشه‌ی درخواست ذخیره می‌شود
         $ext = pathinfo($case['pending_policy_orig_name'] ?: 'file.pdf', PATHINFO_EXTENSION) ?: 'pdf';
         $finalName = build_final_policy_filename($plateForName, $case['insured_name'], $policyNumForName, $vin, $ext);
@@ -819,6 +833,13 @@ try {
             ->execute([$policyNumber ?: null, $vin ?: null, $chassisNum ?: null, $engineNum ?: null, $totalPremium, $centralUniqueCode ?: null,
                        $carSystem ?: null, $carType ?: null, $carModelYear ?: null, $carColor ?: null, $carUsage ?: null, $policyIssueDate ?: null, $carValue, $caseId]);
         write_case_info_file($pdo, $caseFolder, $caseId);
+        // فیش‌های اقساط (صفحه‌های جداشده از فایل) کنارِ بیمه‌نامه در پوشه‌ی «فیش‌های اقساط»
+        $storedRc = ['receipts' => [], 'statement' => null];
+        if ($single) {
+            fin_ensure_receipt_cols($pdo);
+            $storedRc = policy_store_receipts($siteRoot, $caseFolder, $single['dir'], $single['receipts'] ?? [], $single['statement'] ?? null);
+            cbundle_rrmdir($single['dir']);
+        }
 
         // مرحله ۳: کل پوشه‌ی همین درخواست (شامل مدارک، عکس‌های بازدید و فایل بیمه‌نامه)
         // به «بایگانی صادره» کپی می‌شود - نه کل پوشه‌ی معرفی‌نامه
@@ -848,9 +869,21 @@ try {
 
         // sync_intro_folder پوشه‌ی این بیمه‌نامه را در ماهِ درستش گذاشت (ماهِ معرفی‌نامه یا، اگر صدور در ماهِ
         // دیگری بود، پوشه‌ی معرفی‌نامه در ماهِ صدور) و همه‌ی مسیرهای ذخیره‌شده را هم اصلاح کرد
+        $relBefore = $relPath;
         $cur = $pdo->prepare("SELECT issued_file_path FROM policy_cases WHERE id = ?");
         $cur->execute([$caseId]);
         $relPath = $cur->fetchColumn() ?: $relPath;
+        if ($storedRc['receipts'] || $storedRc['statement']) {
+            // اگر پوشه جابه‌جا شد، مسیرِ فیش‌ها هم با همان پوشه هماهنگ می‌شود
+            $oldDir = dirname($relBefore); $newDir = dirname($relPath);
+            $fix = fn($p) => ($p && $oldDir !== $newDir && strpos($p, $oldDir . '/') === 0) ? $newDir . substr($p, strlen($oldDir)) : $p;
+            foreach ($storedRc['receipts'] as &$rc) $rc['file'] = $fix($rc['file']);
+            unset($rc);
+            try {
+                $pdo->prepare("UPDATE policy_cases SET receipts_json = ?, statement_file = ? WHERE id = ?")
+                    ->execute([$storedRc['receipts'] ? json_encode($storedRc['receipts'], JSON_UNESCAPED_UNICODE) : null, $fix($storedRc['statement']), $caseId]);
+            } catch (Throwable $e) { error_log('[case receipts] ' . $e->getMessage()); }
+        }
 
         $stmt = $pdo->prepare("SELECT pc.person_id, p.bale_chat_id FROM policy_cases pc JOIN persons p ON pc.person_id = p.id WHERE pc.id = ?");
         $stmt->execute([$caseId]);

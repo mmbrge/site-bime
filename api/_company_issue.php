@@ -209,7 +209,8 @@ function cbundle_match($pdo, $requestId, array $policies) {
         $it = ['i' => $i, 'page' => intval($p['page']) + 1, 'end' => intval($p['end']) + 1,
                'policy_end' => intval($p['policy_end'] ?? $p['page']) + 1, 'file' => $p['file'], 'seg_file' => $p['seg_file'],
                'via_ocr' => !empty($p['via_ocr']), 'data' => $d, 'state' => 'unknown', 'message' => '', 'row' => null,
-               'missing_fields' => array_values((array)($p['missing'] ?? [])), 'diffs' => []];
+               'missing_fields' => array_values((array)($p['missing'] ?? [])), 'diffs' => [],
+               'receipts' => array_values((array)($p['receipts'] ?? [])), 'statement_file' => $p['statement_file'] ?? null];
         if (!cbundle_is_policy($d)) {
             $it['message'] = !empty($p['ocr_error']) ? 'خوانده نشد: ' . $p['ocr_error'] : 'این صفحه بیمه‌نامه‌ی معتبر تشخیص داده نشد (نوع، شماره یا پلاک/شاسی خوانده نشد).';
             $items[] = $it; continue;
@@ -259,4 +260,92 @@ function cbundle_match($pdo, $requestId, array $policies) {
         $items[] = $it;
     }
     return $items;
+}
+
+
+// =====================================================================
+//  فیشِ اقساط داخلِ فایلِ بیمه‌نامه: هر قسط یک صفحه‌ی «سند دریافت» دارد که policy_bundle.py جدا می‌کند.
+//  صفحه‌ها در پوشه‌ی بیمه‌نامه («فیش‌های اقساط») ذخیره و فهرستشان روی ردیف/پرونده نگه داشته می‌شود؛
+//  هر قسط فیشِ هم‌شماره‌ی خودش را نشان می‌دهد (fin_pair_receipts).
+// =====================================================================
+function policy_store_receipts($siteRoot, $destDir, $srcDir, array $receipts, $statement = null) {
+    $out = ['receipts' => [], 'statement' => null];
+    if (!$receipts && !$statement) return $out;
+    $rdir = rtrim($destDir, '/') . '/فیش‌های اقساط';
+    if (!is_dir($rdir)) @mkdir($rdir, 0755, true);
+    foreach (array_values($receipts) as $k => $r) {
+        $src = rtrim($srcDir, '/') . '/' . basename((string)($r['file'] ?? ''));
+        if (!is_file($src)) continue;
+        $name = sanitize_folder_name('فیش قسط ' . ($k + 1) . (!empty($r['date']) ? ' - ' . str_replace('/', '-', $r['date']) : '') . (!empty($r['amount']) ? ' - ' . number_format((int)$r['amount']) : '')) . '.pdf';
+        $dest = unique_dest_path($rdir . '/' . $name);
+        if (@copy($src, $dest)) {
+            $out['receipts'][] = ['n' => $k + 1, 'file' => ltrim(str_replace($siteRoot, '', $dest), '/'), 'date' => $r['date'] ?? null,
+                                  'amount' => isset($r['amount']) ? (int)$r['amount'] : null, 'fish' => $r['fish'] ?? null];
+        }
+    }
+    if ($statement) {
+        $src = rtrim($srcDir, '/') . '/' . basename($statement);
+        if (is_file($src)) {
+            $dest = unique_dest_path($rdir . '/اعلامیه وضعیت حق بیمه.pdf');
+            if (@copy($src, $dest)) $out['statement'] = ltrim(str_replace($siteRoot, '', $dest), '/');
+        }
+    }
+    return $out;
+}
+
+// فیش‌ها و تاریخ صدورِ خوانده‌شده از فایل را روی ردیفِ شرکتی می‌نشاند و اقساط را از تاریخِ صدورِ بیمه‌نامه دوباره می‌سازد
+function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, $statement, $issueDate) {
+    fin_ensure_receipt_cols($pdo);
+    $siteRoot = dirname(__DIR__);
+    $st = $pdo->prepare("SELECT folder_path, issued_file_path, total_premium FROM company_request_plates WHERE id = ?");
+    $st->execute([$plateId]);
+    $pl = $st->fetch();
+    if (!$pl) return;
+    $dest = $pl['folder_path'] && is_dir($pl['folder_path']) ? $pl['folder_path'] : ($pl['issued_file_path'] ? dirname($siteRoot . '/' . $pl['issued_file_path']) : null);
+    $stored = $dest ? policy_store_receipts($siteRoot, $dest, $srcDir, $receipts, $statement) : ['receipts' => [], 'statement' => null];
+    $issueDate = fin_parse_jalali($issueDate) ? vsprintf('%04d/%02d/%02d', fin_parse_jalali($issueDate)) : null;
+    $pdo->prepare("UPDATE company_request_plates SET receipts_json = ?, statement_file = ?, policy_issue_date = COALESCE(?, policy_issue_date) WHERE id = ?")
+        ->execute([$stored['receipts'] ? json_encode($stored['receipts'], JSON_UNESCAPED_UNICODE) : null, $stored['statement'], $issueDate, $plateId]);
+    // اقساط از تاریخِ صدورِ بیمه‌نامه (نه روزِ ثبت در سایت)؛ فقط اگر هنوز دریافتی روی‌شان ثبت نشده
+    if ($issueDate && $pl['total_premium']) {
+        $paid = $pdo->prepare("SELECT COUNT(*) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id WHERE ci.plate_id = ?");
+        $paid->execute([$plateId]);
+        if (!(int)$paid->fetchColumn()) company_generate_installments($pdo, $plateId);
+    }
+}
+
+
+// خواندنِ یک فایلِ بیمه‌نامه (تکی) با همان الگوریتمِ صدورِ گروهی: همه‌ی فیلدها + صفحه‌های بیمه‌نامه جدا از فیش‌های اقساط.
+// خروجی: ['data' => [...], 'single' => ['dir', 'pol', 'receipts', 'statement', 'missing']] یا null (فایلِ اسکن‌شده/خطا)
+function policy_layout_extract($pdo, $pdfPath) {
+    if (strtolower(pathinfo($pdfPath, PATHINFO_EXTENSION)) !== 'pdf' || !is_file($pdfPath)) return null;
+    $dir = dirname(__DIR__) . '/tmp_ocr/single_' . bin2hex(random_bytes(6));
+    @mkdir($dir, 0777, true);
+    $res = cbundle_run($pdo, $pdfPath, $dir);
+    $p = (!empty($res['ok']) && !empty($res['policies'])) ? $res['policies'][0] : null;
+    if (!$p || empty($p['data']) || !cbundle_is_policy($p['data'])) { cbundle_rrmdir($dir); return ['data' => null, 'debug' => $res['error'] ?? 'متنِ فایل خوانده نشد (شاید اسکن است).']; }
+    return ['data' => $p['data'], 'single' => ['dir' => $dir, 'pol' => $p['file'], 'receipts' => $p['receipts'] ?? [], 'statement' => $p['statement_file'] ?? null,
+                                                'missing' => $p['missing'] ?? [], 'policy_pages' => intval($p['policy_end']) - intval($p['page']) + 1, 'pages' => intval($res['pages'] ?? 0)]];
+}
+
+
+// خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
+function company_fill_from_policy($pdo, $plateId, $d) {
+    if (!is_array($d) || !$d) return;
+    try {
+        $pdo->prepare("UPDATE company_request_plates SET engine_no = COALESCE(NULLIF(engine_no, ''), ?), car_name = COALESCE(NULLIF(car_name, ''), ?) WHERE id = ?")
+            ->execute([($d['engine_no'] ?? '') ?: null, ($d['car_name'] ?? '') ?: null, $plateId]);
+    } catch (Throwable $e) { error_log('[company_fill_from_policy] ' . $e->getMessage()); }
+}
+
+
+// نام‌های قدیمیِ موتورِ تشخیص (فرم‌های صدور با این نام‌ها پر می‌شوند) از روی خروجیِ الگوریتمِ جای متن
+function policy_data_aliases($d) {
+    if (!is_array($d)) return $d;
+    $map = ['policy_number' => 'policy_num', 'total_premium' => 'premium', 'engine_num' => 'engine_no', 'unique_code' => 'central_no',
+            'car_color' => 'color', 'car_usage' => 'usage'];
+    foreach ($map as $old => $new) if (empty($d[$old]) && !empty($d[$new])) $d[$old] = $d[$new];
+    if (empty($d['chassis_num']) && !empty($d['chassis_no'])) $d['chassis_num'] = $d['chassis_no'];
+    if (empty($d['car_type'])) $d['car_type'] = trim(($d['car_kind'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['car_type'] ?? '');
+    return $d;
 }

@@ -63,13 +63,15 @@ try {
             require_once __DIR__ . '/_xlsx_writer.php';
             $stageFa = ['US' => 'بدهکار به ما', 'INSURER' => 'بدهکار به بیمه‌گر', 'SETTLED' => 'تسویه‌ی نهایی'];
             $headers = ['ردیف', 'کد رهگیری', 'منبع', 'شرکت', 'بیمه‌گذار', 'پرسنل', 'کد پرسنلی', 'کد ملی', 'پلاک', 'شماره بیمه‌نامه', 'نوع بیمه', 'بیمه‌گر',
-                        'قسط', 'تاریخ صدور', 'سررسید', 'مبلغ قسط', 'دریافت‌شده', 'مانده‌ی دریافت', 'پرداخت به بیمه‌گر', 'مانده‌ی بیمه‌گر', 'تأخیر (روز)', 'مرحله', 'صورتحساب'];
+                        'قسط', 'تاریخ صدور', 'سررسید', 'مبلغ قسط', 'دریافت‌شده', 'مانده‌ی دریافت', 'پرداخت به بیمه‌گر', 'مانده‌ی بیمه‌گر', 'تأخیر (روز)', 'مرحله', 'صورتحساب', 'ثبت‌کننده‌ی دریافت', 'ثبت‌کننده‌ی پرداخت به بیمه‌گر'];
+            $regs = fin_ledger_registrars($pdo);
             $x = [];
             foreach ($rows as $i => $r) {
                 $x[] = [$i + 1, $r['tracking_code'], $r['source'] === 'C' ? 'شرکتی' : 'کارکنان', $r['company_name'], $r['insured'], $r['source'] === 'P' ? $r['holder_name'] : '',
                         $r['personnel_code'], $r['national_code'], $r['plate'], $r['policy_number'], insurance_type_fa($r['insurance_type']), $r['insurer_fa'],
                         $r['inst_number'], fa_digits($r['issue_jalali']), fa_digits($r['due_jalali']), $r['amount'], $r['paid'], $r['remaining'],
-                        $r['paid_insurer'], $r['insurer_remaining'], $r['delay_days'], $stageFa[$r['stage']] ?? '', $r['is_invoiced'] ? 'دارد' : 'ندارد'];
+                        $r['paid_insurer'], $r['insurer_remaining'], $r['delay_days'], $stageFa[$r['stage']] ?? '', $r['is_invoiced'] ? 'دارد' : 'ندارد',
+                        implode('، ', $regs[$r['source']][$r['id']]['IN'] ?? []), implode('، ', $regs[$r['source']][$r['id']]['OUT'] ?? [])];
             }
             $path = xlsx_build($headers, $x, 'اقساط', [0, 15, 16, 17, 18, 19, 20]);
             xlsx_send($path, 'مرکز اقساط ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
@@ -85,6 +87,79 @@ try {
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // =================================================================
+    //  پیگیری: کدِ رهگیریِ قسط، شناسه‌ی درخواست (۵/۶ رقمی)، شماره‌ی پرونده‌ی کارکنان یا شماره‌ی بیمه‌نامه
+    // =================================================================
+    if ($action === 'track') {
+        ref_codes_ensure($pdo);
+        fin_ledger_ensure($pdo);
+        $raw = p2e_digits((string)($data['q'] ?? ($_GET['q'] ?? '')));
+        $codes = array_slice(array_values(array_unique(array_filter(array_map('trim', preg_split('/[\s,،;]+/u', $raw)), 'strlen'))), 0, 50);
+        if (!$codes) { echo json_encode(['ok' => false, 'error' => 'کدِ رهگیری یا شناسه‌ی درخواست را وارد کنید.']); exit; }
+        $all = fin_ledger_rows($pdo, []);
+        $byTrack = []; $byCase = []; $byPlate = [];
+        foreach ($all as $r) {
+            if ($r['tracking_code'] !== null && $r['tracking_code'] !== '') $byTrack[(string)$r['tracking_code']] = $r;
+            if ($r['source'] === 'P') $byCase[$r['ref_id']][] = $r; else $byPlate[$r['ref_id']][] = $r;
+        }
+        $instSum = function (array $rows) {
+            $s = ['count' => count($rows), 'amount' => 0, 'paid' => 0, 'remaining' => 0, 'paid_insurer' => 0, 'insurer_remaining' => 0];
+            foreach ($rows as $r) foreach (['amount', 'paid', 'remaining', 'paid_insurer', 'insurer_remaining'] as $k) $s[$k] += $r[$k];
+            return $s;
+        };
+        $jd = fn($ts) => $ts ? str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($ts))) : '';
+        $companyReq = function ($req) use ($pdo, $byPlate, $instSum, $jd) {
+            $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
+            $st->execute([$req['id']]);
+            $rows = []; $inst = [];
+            foreach ($st->fetchAll() as $p) {
+                $rows[] = ['id' => (int)$p['id'], 'plate' => company_row_label($p), 'insurance_type' => $p['insurance_type'], 'status' => $p['status'],
+                           'status_fa' => company_plate_status_fa($p['status'], $req['request_kind'] ?? 'NEW_POLICY'), 'policy_number' => $p['policy_number'] ?? '',
+                           'premium' => (int)money_to_int($p['total_premium'] ?? 0), 'expiry_jalali' => $p['expiry_date'] ? $jd($p['expiry_date']) : '',
+                           'car_name' => $p['car_name'] ?? '', 'chassis_no' => $p['chassis_no'] ?? ''];
+                foreach ($byPlate[(int)$p['id']] ?? [] as $i) $inst[] = $i;
+            }
+            return ['type' => 'company_request', 'id' => (int)$req['id'], 'ref_code' => $req['ref_code'], 'company_name' => $req['company_name'],
+                    'insurer' => $req['insurer'], 'request_kind_fa' => company_request_kind_fa($req['request_kind'] ?? 'NEW_POLICY'), 'status' => $req['status'],
+                    'created_jalali' => $jd($req['created_at']), 'requested_counts_fa' => company_requested_counts_fa($req['requested_counts'] ?? null),
+                    'request_text' => $req['request_text'], 'rows' => $rows, 'installments' => $inst, 'inst_summary' => $instSum($inst)];
+        };
+        $personCase = function ($c) use ($byCase, $instSum, $jd) {
+            $inst = $byCase[(int)$c['id']] ?? [];
+            return ['type' => 'personnel_case', 'id' => (int)$c['id'], 'ref_code' => $c['ref_code'], 'unique_code' => $c['unique_code'],
+                    'insured' => $c['insured_name'] ?: $c['full_name'], 'holder_name' => $c['full_name'], 'personnel_code' => $c['personnel_code'],
+                    'company_name' => $c['company_name'], 'plate' => $c['plate'], 'insurance_type' => $c['insurance_type'], 'status' => $c['status'],
+                    'status_fa' => case_status_fa($c['status']), 'policy_number' => $c['policy_number'], 'premium' => (int)money_to_int($c['total_premium'] ?? 0),
+                    'created_jalali' => $jd($c['created_at'] ?? null), 'issued_jalali' => $jd($c['issued_at'] ?? null),
+                    'installments' => $inst, 'inst_summary' => $instSum($inst)];
+        };
+        $caseSql = "SELECT pc.*, per.full_name, per.personnel_code, co.name AS company_name FROM policy_cases pc JOIN persons per ON per.id = pc.person_id
+                    LEFT JOIN companies co ON co.id = per.company_id WHERE ";
+        $reqSql = "SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE ";
+        $out = [];
+        foreach ($codes as $code) {
+            $m = []; $seen = [];
+            if (isset($byTrack[$code])) {
+                $r = $byTrack[$code];
+                $r['history'] = fin_ledger_history($pdo, $r['source'], $r['id']);
+                $m[] = ['type' => 'installment', 'row' => $r];
+            }
+            $st = $pdo->prepare($reqSql . "cr.ref_code = ?"); $st->execute([$code]);
+            foreach ($st->fetchAll() as $req) { $m[] = $companyReq($req); $seen['C' . $req['id']] = 1; }
+            $st = $pdo->prepare($caseSql . "(pc.ref_code = ? OR UPPER(pc.unique_code) = UPPER(?))"); $st->execute([$code, $code]);
+            foreach ($st->fetchAll() as $c) { $m[] = $personCase($c); $seen['P' . $c['id']] = 1; }
+            // شماره‌ی بیمه‌نامه
+            if (!$m && strlen($code) >= 5) {
+                $st = $pdo->prepare($reqSql . "cr.id IN (SELECT request_id FROM company_request_plates WHERE policy_number = ?)"); $st->execute([$code]);
+                foreach ($st->fetchAll() as $req) if (empty($seen['C' . $req['id']])) $m[] = $companyReq($req);
+                $st = $pdo->prepare($caseSql . "pc.policy_number = ?"); $st->execute([$code]);
+                foreach ($st->fetchAll() as $c) if (empty($seen['P' . $c['id']])) $m[] = $personCase($c);
+            }
+            $out[] = ['code' => $code, 'matches' => $m];
+        }
+        echo json_encode(['ok' => true, 'results' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'ledger_history') {
         $src = ($data['source'] ?? ($_GET['source'] ?? '')) === 'C' ? 'C' : 'P';
         $id = intval($data['id'] ?? ($_GET['id'] ?? 0));
@@ -98,13 +173,14 @@ try {
         foreach ($rows as $r) { if ($r['status'] === 'ACTIVE') $sum[$r['direction']] += $r['amount']; if ($r['cheque_no'] && ($r['cheque_status'] ?? '') === 'PENDING' && $r['status'] === 'ACTIVE') $sum['cheque_pending'] += $r['amount']; }
         if (!empty($src['export'])) {
             require_once __DIR__ . '/_xlsx_writer.php';
-            $headers = ['ردیف', 'نوع', 'تاریخ', 'طرف حساب', 'بیمه‌گر', 'مبلغ (ریال)', 'روش', 'شماره پیگیری', 'شماره چک', 'بانک', 'سررسید چک', 'وضعیت چک', 'تعداد قسط', 'توضیح', 'وضعیت'];
+            $headers = ['ردیف', 'نوع', 'تاریخ', 'طرف حساب', 'بیمه‌گر', 'مبلغ (ریال)', 'روش', 'شماره پیگیری', 'شماره چک', 'بانک', 'سررسید چک', 'وضعیت چک', 'تعداد قسط', 'توضیح', 'ثبت‌کننده', 'زمان ثبت', 'وضعیت', 'باطل‌کننده'];
             $chq = ['PENDING' => 'در انتظار وصول', 'CLEARED' => 'وصول شد', 'BOUNCED' => 'برگشتی'];
             $x = [];
             foreach ($rows as $i => $r) {
                 $x[] = [$i + 1, $r['direction'] === 'IN' ? 'دریافت از بیمه‌گذار' : 'پرداخت به بیمه‌گر', fa_digits($r['paid_jalali']), $r['party'], $r['insurer_fa'],
                         $r['amount'], $r['method_fa'], $r['reference_no'], $r['cheque_no'], $r['cheque_bank'], fa_digits($r['cheque_due_jalali'] ?? ''),
-                        $chq[$r['cheque_status'] ?? ''] ?? '', $r['items_count'], $r['note'], $r['status'] === 'VOID' ? 'باطل' : 'فعال'];
+                        $chq[$r['cheque_status'] ?? ''] ?? '', $r['items_count'], $r['note'], $r['created_by_name'] ?? '',
+                        !empty($r['created_at']) ? fa_digits(str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($r['created_at']))) . ' ' . date('H:i', strtotime($r['created_at']))) : '', $r['status'] === 'VOID' ? 'باطل' : 'فعال', $r['voided_by_name'] ?? ''];
             }
             $path = xlsx_build($headers, $x, 'دریافت و پرداخت', [0, 5, 12]);
             xlsx_send($path, 'دریافت‌ها و پرداخت‌ها ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
@@ -123,6 +199,9 @@ try {
         $rc['files'] = json_decode((string)$rc['files'], true) ?: [];
         $rc['method_fa'] = fin_method_fa($rc['method']);
         $rc['insurer_fa'] = $rc['insurer'] ? fin_insurer_fa($rc['insurer']) : '';
+        $rc['created_by_name'] = fin_user_name($pdo, $rc['created_by']);
+        $rc['voided_by_name'] = fin_user_name($pdo, $rc['voided_by'] ?? '');
+        $rc['created_at_j'] = $rc['created_at'] ? str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($rc['created_at']))) . ' ' . date('H:i', strtotime($rc['created_at'])) : '';
         $ln = $pdo->prepare("SELECT * FROM fin_receipt_lines WHERE receipt_id = ?");
         $ln->execute([$id]);
         $lines = [];
@@ -139,7 +218,7 @@ try {
     }
     if ($action === 'ledger_void') {
         if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند سند را باطل کند.']); exit; }
-        echo json_encode(fin_ledger_void($pdo, intval($data['id'] ?? 0)), JSON_UNESCAPED_UNICODE);
+        echo json_encode(fin_ledger_void($pdo, intval($data['id'] ?? 0), (string)($data['kind'] ?? 'R'), intval($_SESSION['user_id'])), JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'ledger_cheque_status') {

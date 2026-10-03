@@ -367,6 +367,7 @@ function nr_submit($chat, $acc, $t) {
     $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, ?, ?, ?, ?, ?, 'NEW')")
         ->execute([$companyId, $acc['user']['id'], $t['text'] ?? '', $insurer, $kind, $counts ? json_encode($counts) : null]);
     $requestId = intval($pdo->lastInsertId());
+    ref_code_of($pdo, 'company_requests', $requestId);
     if (!empty($t['letter']) && is_file($t['letter'])) {
         $siteRoot = dirname(__DIR__);
         $rel = ltrim(str_replace($siteRoot, '', $t['letter']), '/');

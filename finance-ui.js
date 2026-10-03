@@ -5,15 +5,26 @@
     const API = 'api/finance_actions.php';
     const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const num = v => fa(Math.round(+v || 0).toLocaleString('en-US'));
-    // مبلغ کوتاه برای محور و کارت‌ها: میلیون / میلیارد
+    // مبالغ در دیتابیس ریال است؛ در داشبورد به «تومان» نمایش داده می‌شود (ریال ÷ ۱۰)
+    const toToman = v => Math.round((+v || 0) / 10);
+    const num = v => fa(toToman(v).toLocaleString('en-US'));
+    // مبلغ کوتاه به تومان: ۳۳۲٬۰۰۰٬۰۰۰ ریال ← «۳۳.۲۰۰ میلیون»
     const short = v => {
-        v = +v || 0; const a = Math.abs(v);
-        if (a >= 1e9) return fa((v / 1e9).toFixed(a >= 1e10 ? 0 : 1)) + ' میلیارد';
-        if (a >= 1e6) return fa((v / 1e6).toFixed(a >= 1e7 ? 0 : 1)) + ' میلیون';
+        v = toToman(v); const a = Math.abs(v);
+        if (a >= 1e9) return fa((v / 1e9).toFixed(3)) + ' میلیارد';
+        if (a >= 1e6) return fa((v / 1e6).toFixed(3)) + ' میلیون';
         if (a >= 1e3) return fa(Math.round(v / 1e3)) + ' هزار';
         return fa(v);
     };
+    // محورِ نمودار: کوتاه‌تر
+    const axis = v => {
+        v = toToman(v); const a = Math.abs(v);
+        if (a >= 1e9) return fa(+(v / 1e9).toFixed(2)) + ' میلیارد';
+        if (a >= 1e6) return fa(+(v / 1e6).toFixed(1)) + ' م';
+        if (a >= 1e3) return fa(Math.round(v / 1e3)) + ' هزار';
+        return fa(v);
+    };
+    const UNIT = 'تومان';
     const MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
     const perLabel = k => { const [y, m] = String(k).split(/[-\/]/); return (MONTHS[(+m) - 1] || m) + ' ' + fa(String(y).slice(-2)); };
     const COLORS = { p: '#6366f1', c: '#06b6d4', paid: '#10b981', due: '#94a3b8', rem: '#f59e0b', over: '#ef4444', settled: '#3b82f6', partial: '#f59e0b', open: '#cbd5e1' };
@@ -53,12 +64,12 @@
         for (let t = 0; t <= ticks; t++) {
             const v = step * t, yy = y(v);
             g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="#e2e8f0" stroke-dasharray="${t ? '3 3' : ''}"/>
-                  <text x="${L - 6}" y="${yy + 4}" font-size="10" text-anchor="end" fill="#94a3b8">${short(v)}</text>`;
+                  <text x="${L - 6}" y="${yy + 4}" font-size="10" text-anchor="end" fill="#94a3b8">${axis(v)}</text>`;
         }
         labels.forEach((lab, i) => {
             const cx = L + cw * i + cw / 2;
             let acc = 0;
-            const tipHtml = `<b>${esc(lab)}</b><br>` + series.map(s => `<span style="color:${s.color}">●</span> ${esc(s.name)}: ${num(s.data[i])}`).join('<br>');
+            const tipHtml = `<b>${esc(lab)}</b><br>` + series.map(s => `<span style="color:${s.color}">●</span> ${esc(s.name)}: ${num(s.data[i])} ${UNIT}`).join('<br>');
             series.forEach((s, si) => {
                 const v = +s.data[i] || 0; if (!v && stacked) return;
                 let x, yTop, h;
@@ -86,7 +97,7 @@
         for (let t = 0; t <= ticks; t++) {
             const v = step * t, yy = y(v);
             g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="#e2e8f0" stroke-dasharray="${t ? '3 3' : ''}"/>
-                  <text x="${L - 6}" y="${yy + 4}" font-size="10" text-anchor="end" fill="#94a3b8">${short(v)}</text>`;
+                  <text x="${L - 6}" y="${yy + 4}" font-size="10" text-anchor="end" fill="#94a3b8">${axis(v)}</text>`;
         }
         series.forEach((s, si) => {
             const pts = s.data.map((v, i) => `${x(i)},${y(+v || 0)}`);
@@ -97,7 +108,7 @@
             s.data.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(+v || 0)}" r="3.5" fill="#fff" stroke="${s.color}" stroke-width="2"/>`; });
         });
         labels.forEach((lab, i) => {
-            const tipHtml = `<b>${esc(lab)}</b><br>` + series.map(s => `<span style="color:${s.color}">●</span> ${esc(s.name)}: ${num(s.data[i])}`).join('<br>');
+            const tipHtml = `<b>${esc(lab)}</b><br>` + series.map(s => `<span style="color:${s.color}">●</span> ${esc(s.name)}: ${num(s.data[i])} ${UNIT}`).join('<br>');
             const w = (W - L - R) / Math.max(1, n - 1);
             g += `<rect x="${x(i) - w / 2}" y="${T}" width="${w}" height="${H - T - B}" fill="transparent" data-tip="${esc(tipHtml)}"/>`;
             const every = Math.ceil(n / 12);
@@ -120,11 +131,11 @@
             const d = (a1 - a0 >= Math.PI * 2 - 0.02)
                 ? `M ${C} ${C - R} A ${R} ${R} 0 1 1 ${C - 0.01} ${C - R} L ${C - 0.01} ${C - r} A ${r} ${r} 0 1 0 ${C} ${C - r} Z`
                 : `M ${p(a0, R)} A ${R} ${R} 0 ${large} 1 ${p(a1, R)} L ${p(a1, r)} A ${r} ${r} 0 ${large} 0 ${p(a0, r)} Z`;
-            g += `<path d="${d}" fill="${it.color}" class="fin-slice" data-tip="${esc(`<b>${esc(it.label)}</b><br>${num(v)} ریال<br>${fa(((v / total) * 100).toFixed(1))}٪`)}"/>`;
+            g += `<path d="${d}" fill="${it.color}" class="fin-slice" data-tip="${esc(`<b>${esc(it.label)}</b><br>${num(v)} ${UNIT}<br>${fa(((v / total) * 100).toFixed(1))}٪`)}"/>`;
             a0 += (v / total) * Math.PI * 2;
         });
         g += `<text x="${C}" y="${C - 4}" text-anchor="middle" font-size="13" font-weight="900" fill="#1e293b">${short(total)}</text>
-              <text x="${C}" y="${C + 14}" text-anchor="middle" font-size="10" fill="#94a3b8">${esc(centerLabel || 'ریال')}</text>`;
+              <text x="${C}" y="${C + 14}" text-anchor="middle" font-size="10" fill="#94a3b8">${esc((centerLabel ? centerLabel + ' · ' : '') + UNIT)}</text>`;
         const legend = items.map(it => `<div class="flex items-center justify-between gap-3 text-[11px] py-1">
             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:${it.color}"></span>${esc(it.label)}</span>
             <b class="text-slate-700">${fa(total ? ((+it.value / total) * 100).toFixed(0) : 0)}٪</b></div>`).join('');
@@ -137,8 +148,8 @@
         const max = Math.max(...rows.map(r => r.amount), 1);
         return `<div class="space-y-2.5">` + rows.map(r => {
             const pPaid = (r.paid / max) * 100, pRem = (r.remaining / max) * 100, pOver = (r.overdue / max) * 100;
-            return `<div data-tip="${esc(`<b>${esc(r.name)}</b><br>جمع اقساط: ${num(r.amount)}<br>دریافت‌شده: ${num(r.paid)}<br>مانده: ${num(r.remaining)}<br>معوق: ${num(r.overdue)}<br>بیمه‌نامه: ${fa(r.policies)}`)}">
-                <div class="flex justify-between text-[11px] mb-1"><span class="font-bold text-slate-700 truncate">${esc(r.name)}</span><span class="text-slate-500">${short(r.amount)}</span></div>
+            return `<div data-tip="${esc(`<b>${esc(r.name)}</b><br>جمع اقساط: ${num(r.amount)} ${UNIT}<br>دریافت‌شده: ${num(r.paid)}<br>مانده: ${num(r.remaining)}<br>معوق: ${num(r.overdue)}<br>بیمه‌نامه: ${fa(r.policies)}`)}">
+                <div class="flex justify-between text-[11px] mb-1"><span class="font-bold text-slate-700 truncate">${esc(r.name)}</span><span class="text-slate-500">${short(r.amount)} ${UNIT}</span></div>
                 <div class="h-3 bg-slate-100 rounded-full overflow-hidden flex">
                     <div class="fin-grow h-full bg-emerald-500" style="width:${pPaid}%"></div>
                     <div class="fin-grow h-full bg-amber-400" style="width:${Math.max(0, pRem - pOver)}%"></div>
@@ -204,7 +215,7 @@
             <div class="absolute -left-6 -bottom-6 w-24 h-24 rounded-full bg-white/10"></div>
             <div class="absolute left-3 top-3 text-white/25 text-3xl"><i class="fas ${icon}"></i></div>
             <p class="text-[11px] text-white/80 font-bold relative">${title}</p>
-            <p class="text-xl md:text-2xl font-black mt-1 relative" title="${num(value)}${isCount ? '' : ' ریال'}">${isCount ? fa(value) : short(value)}</p>
+            <p class="text-xl md:text-2xl font-black mt-1 relative" title="${num(value)}${isCount ? '' : ' ' + UNIT}">${isCount ? fa(value) : short(value) + ' <span class="text-xs font-bold opacity-80">' + UNIT + '</span>'}</p>
             <p class="text-[10px] text-white/75 mt-1 relative">${sub}</p>${extra}</div>`;
     }
 
@@ -233,7 +244,7 @@
         body.innerHTML = `
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             ${kpiCard('حق بیمه‌ی کل', k.premium, `${fa(k.policies)} بیمه‌نامه · ${fa(k.companies)} شرکت`, 'from-indigo-500 to-violet-600', 'fa-file-shield')}
-            ${kpiCard('دریافت‌شده از شرکت‌ها / پرسنل', k.collected, `${fa(pct)}٪ از ${short(k.inst_amount)} اقساط`, 'from-emerald-500 to-teal-600', 'fa-hand-holding-dollar', progress)}
+            ${kpiCard('دریافت‌شده از شرکت‌ها / پرسنل', k.collected, `${fa(pct)}٪ از ${short(k.inst_amount)} ${UNIT} اقساط`, 'from-emerald-500 to-teal-600', 'fa-hand-holding-dollar', progress)}
             ${kpiCard('مانده‌ی وصول‌نشده', k.remaining, `${fa(k.inst_count)} قسط در این فیلتر`, 'from-amber-500 to-orange-600', 'fa-hourglass-half')}
             ${kpiCard('معوق (سررسید گذشته)', k.overdue, `${fa(k.overdue_count)} قسط معوق`, 'from-rose-500 to-red-600', 'fa-triangle-exclamation')}
             ${kpiCard('سررسید ۳۰ روز آینده', k.upcoming, `${fa(k.upcoming_count)} قسط`, 'from-sky-500 to-blue-600', 'fa-calendar-day')}
@@ -320,7 +331,7 @@
         const clr = state.alertTab === 'overdue' ? 'text-rose-600' : state.alertTab === 'upcoming' ? 'text-sky-600' : 'text-amber-600';
         box.innerHTML = `<table class="w-full text-[11px]"><thead class="bg-white sticky top-0 shadow-sm text-slate-500"><tr>
             <th class="p-2.5 text-right">منبع</th><th class="p-2.5 text-right">شرکت</th><th class="p-2.5 text-right">بیمه‌گذار</th><th class="p-2.5">پلاک</th>
-            <th class="p-2.5">قسط</th><th class="p-2.5">سررسید</th><th class="p-2.5">مبلغ</th><th class="p-2.5">مانده</th><th class="p-2.5">کد رهگیری</th></tr></thead><tbody>` +
+            <th class="p-2.5">قسط</th><th class="p-2.5">سررسید</th><th class="p-2.5">مبلغ (تومان)</th><th class="p-2.5">مانده (تومان)</th><th class="p-2.5">کد رهگیری</th></tr></thead><tbody>` +
             rows.map(r => `<tr class="border-t hover:bg-slate-50">
                 <td class="p-2.5"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${r.source === 'C' ? 'bg-cyan-100 text-cyan-700' : 'bg-indigo-100 text-indigo-700'}">${r.source === 'C' ? 'شرکتی' : 'پرسنلی'}</span></td>
                 <td class="p-2.5 font-bold text-slate-700">${esc(r.company_name)}</td><td class="p-2.5">${esc(r.insured || '-')}</td>

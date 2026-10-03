@@ -32,7 +32,7 @@
         const scroller = t.closest('.overflow-x-auto, .overflow-auto, .overflow-y-auto');
         const anchor = scroller || t;
         let box = t._tc;
-        if (!box) { box = document.createElement('div'); box.className = 'tbl-count'; t._tc = box; }
+        if (!box) { box = document.createElement('div'); box.className = 'tbl-count'; box._t = t; t._tc = box; boxes.add(box); }
         if (cardLike(anchor) && anchor !== t) {
             box.classList.add('inside');
             if (box.parentElement !== anchor || anchor.lastElementChild !== box) anchor.appendChild(box);
@@ -42,7 +42,14 @@
         }
         return box;
     }
+    const boxes = new Set();
+    // شمارنده‌ی جدول‌هایی که دوباره ساخته شده‌اند (فیلتر/جستجو) حذف می‌شود تا شمارنده‌ی قبلی تکرار نشود
+    function sweep() {
+        boxes.forEach(b => { if (!b._t || !b._t.isConnected || b._t.classList.contains('no-count')) { b.remove(); boxes.delete(b); } });
+        document.querySelectorAll('.tbl-count').forEach(b => { if (!boxes.has(b)) b.remove(); });
+    }
     function update() {
+        sweep();
         document.querySelectorAll('table').forEach(t => {
             if (t.classList.contains('no-count') || t.closest('.no-count')) return;
             const tb = t.tBodies[0]; if (!tb) return;

@@ -83,7 +83,7 @@ function issuance_nav($active, $isLiaison) {
 // نوارِ زبانه‌های «مرکز مالی»: همه‌ی بخش‌های مالی در یک جا
 function finance_nav($active, $canSeeCompanies = true) {
     $items = [['fin-dashboard', 'fa-chart-pie', 'داشبورد'], ['fin-installments', 'fa-list-ol', 'مرکز اقساط'], ['fin-payments', 'fa-arrow-right-arrow-left', 'دریافت و پرداخت'],
-              ['fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها'], ['fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری']];
+              ['fin-tracking', 'fa-magnifying-glass-location', 'پیگیری'], ['fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها'], ['fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری']];
     if ($canSeeCompanies) $items[] = ['companies-finance', 'fa-sack-dollar', 'گزارش شرکت‌ها'];
     if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['fin-settings', 'fa-sliders', 'تنظیمات'];
     $h = '<div class="iss-hub fin-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-calculator"></i></span><div><b>مرکز مالی</b><small>اقساطِ کارکنان و شرکتی، دریافت از بیمه‌گذار، پرداخت به بیمه‌گر، چک‌ها و صورتحساب</small></div></div><div class="iss-nav">';
@@ -630,6 +630,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             .hdr-user-name { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .hdr-clock { font-size: 9px; padding: 1px 5px; }
         }
+    .ancr-cnt{display:flex;flex-direction:column;gap:4px;background:#fff;border:2px solid #e0e7ff;border-radius:14px;padding:8px 10px}
+    .ancr-cnt span{font-size:11px;font-weight:800;color:#4338ca}
+    .ancr-cnt input{border:0;outline:0;font-size:18px;font-weight:900;color:#1e293b;width:100%;text-align:center;background:transparent}
+    .ancr-cnt:focus-within{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+    .trk-table thead th{background:#f1f5f9;color:#475569;font-weight:800;padding:8px 10px;border-bottom:2px solid #cbd5e1}
+    .trk-table tbody td{padding:8px 10px;border-top:1px solid #e2e8f0}
+    .trk-table tbody tr:hover{background:#f8fafc}
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
@@ -752,6 +759,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
                         <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-list-ol ml-2"></i> مرکز اقساط <small class="text-[10px] text-slate-400 font-bold mr-1">دریافت و پرداخت روی هر قسط</small></a>
                         <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-arrow-right-arrow-left ml-2"></i> دریافت‌ها، پرداخت‌ها و چک‌ها</a>
+                        <a href="#" onclick="switchTab('fin-tracking')" id="nav-fin-tracking" class="nav-item menu-link"><i class="fas fa-magnifying-glass-location ml-2"></i> پیگیری <small class="text-[10px] text-slate-400 font-bold mr-1">کد رهگیریِ قسط یا شناسه‌ی درخواست</small></a>
                         <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
                         <div class="menu-sub">
                             <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-scale-balanced ml-2"></i><span class="ms-t">گزارش‌ها و ابزار<small>مغایرت، شرکت‌ها، تسویه‌های قبلی</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
@@ -1708,6 +1716,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div id="fh-root" class="space-y-3"></div>
         </div>
+        <!-- ======================= پیگیری ======================= -->
+        <div id="tab-fin-tracking" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <?php echo finance_nav('fin-tracking', $canSeeCompanies); ?>
+            <div>
+                <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-magnifying-glass-location text-indigo-500 ml-2"></i>پیگیری</h1>
+                <p class="text-xs text-slate-400 mt-1">کدِ رهگیریِ قسط (۱۰ رقمی)، شناسه‌ی درخواست (۵ یا ۶ رقمی)، شماره‌ی پرونده‌ی کارکنان یا شماره‌ی بیمه‌نامه را بزنید؛ چند کد را با فاصله، ویرگول یا خطِ جدید جدا کنید.</p>
+            </div>
+            <div id="trk-root" class="space-y-4"></div>
+        </div>
         <!-- ======================= مغایرت‌گیری ======================= -->
         <div id="tab-fin-reconcile" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <?php echo finance_nav('fin-reconcile', $canSeeCompanies); ?>
@@ -1717,7 +1734,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div class="card p-5">
                 <div class="flex flex-wrap gap-3 items-end">
-                    <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="rec-period" class="border rounded-lg px-3 py-2 text-xs"></select></div>
+                    <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="recon-period" class="border rounded-lg px-3 py-2 text-xs"></select></div>
                     <label class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer">
                         <i class="fas fa-file-excel ml-1"></i> انتخاب فایل اکسل و بررسی
                         <input type="file" id="rec-file" class="hidden" accept=".xlsx,.xls,.csv" onchange="runReconcile()">
@@ -2510,32 +2527,47 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <!-- مودال ثبت دستیِ یک درخواست شرکتی (توسط خودمان، بدون نیاز به ثبت‌کننده‌ی شرکت) -->
     <div id="admin-new-creq-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative">
-            <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-4"><span id="ancr-modal-title">ثبت دستی درخواست شرکتی</span></h3>
-            <input type="hidden" id="ancr-request-id">
-            <div class="float-input">
-                <select id="ancr-company" onchange="ancrUpdateInsurerOptions()"><option value="">-- انتخاب شرکت --</option></select>
-                <label>شرکت</label>
+        <div class="modal-content w-full max-w-xl p-0 relative overflow-hidden">
+            <div class="p-5 text-white relative" style="background:linear-gradient(120deg,#1e3a8a,#4f46e5 60%,#7c3aed)">
+                <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="absolute top-4 left-4 text-white/70 hover:text-white hover-target text-xl"><i class="fas fa-times"></i></button>
+                <p class="text-[11px] opacity-80" id="ancr-modal-sub">درخواستِ شرکت را مثلِ نامه‌ی رسمی‌اش ثبت کنید</p>
+                <h3 class="font-black text-lg"><i class="fas fa-file-signature ml-1"></i><span id="ancr-modal-title">ثبت دستی درخواست شرکتی</span></h3>
+                <span id="ancr-code" class="hidden mt-2 inline-block text-[11px] font-black bg-white/20 rounded-full px-3 py-1"></span>
             </div>
-            <div class="float-input">
-                <select id="ancr-insurer"></select>
-                <label>بیمه‌گر</label>
+            <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                <input type="hidden" id="ancr-request-id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">شرکت</span>
+                        <select id="ancr-company" onchange="ancrUpdateInsurerOptions()" class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl px-3 py-2.5 text-sm font-bold"><option value="">-- انتخاب شرکت --</option></select></label>
+                    <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">بیمه‌گر</span>
+                        <select id="ancr-insurer" class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl px-3 py-2.5 text-sm font-bold"></select></label>
+                </div>
+                <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">نوع درخواست</span>
+                    <select id="ancr-kind" onchange="onAncrKindChange()" class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl px-3 py-2.5 text-sm font-bold">
+                        <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
+                        <option value="ENDORSEMENT">صدور الحاقیه</option>
+                        <option value="CANCELLATION">فسخ بیمه‌نامه</option>
+                    </select></label>
+                <p id="ancr-kind-hint" class="text-[11px] text-slate-400 -mt-2"></p>
+                <div class="rounded-2xl border-2 border-indigo-100 bg-indigo-50/40 p-3">
+                    <p class="text-[12px] font-black text-indigo-800 mb-2"><i class="fas fa-list-ol ml-1"></i>تعدادِ درخواستی (طبقِ نامه)</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <label class="ancr-cnt"><span>ثالث</span><input type="number" min="0" max="9999" id="ancr-cnt-THIRDPARTY" placeholder="۰"></label>
+                        <label class="ancr-cnt"><span>بدنه</span><input type="number" min="0" max="9999" id="ancr-cnt-BODY" placeholder="۰"></label>
+                        <label class="ancr-cnt"><span>الحاقیه</span><input type="number" min="0" max="9999" id="ancr-cnt-ENDORSEMENT" placeholder="۰"></label>
+                        <label class="ancr-cnt"><span>فسخ</span><input type="number" min="0" max="9999" id="ancr-cnt-CANCELLATION" placeholder="۰"></label>
+                    </div>
+                    <p class="text-[10.5px] text-slate-500 mt-2" id="ancr-cnt-sum"></p>
+                </div>
+                <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">توضیح / متن نامه (اختیاری)</span>
+                    <textarea id="ancr-text" rows="3" class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl p-3 text-sm"></textarea></label>
+                <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایل نامه (اختیاری)</span>
+                    <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full border-2 border-dashed border-slate-300 rounded-xl p-2.5 text-xs bg-slate-50"></label>
             </div>
-            <label class="text-xs font-bold text-slate-500 block mb-2">توضیح / متن نامه (اختیاری)</label>
-            <div class="float-input">
-                <select id="ancr-kind" onchange="onAncrKindChange()">
-                    <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
-                    <option value="ENDORSEMENT">صدور الحاقیه</option>
-                    <option value="CANCELLATION">فسخ بیمه‌نامه</option>
-                </select>
-                <label>نوع درخواست</label>
+            <div class="px-5 pb-5 pt-1 flex gap-2">
+                <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="px-5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm">انصراف</button>
+                <button onclick="submitAdminNewRequest()" id="ancr-submit" class="flex-1 text-white font-black py-2.5 rounded-xl text-sm shadow-lg" style="background:linear-gradient(120deg,#4338ca,#6366f1)"><i class="fas fa-check ml-1"></i>ثبت درخواست</button>
             </div>
-            <p id="ancr-kind-hint" class="text-[11px] text-slate-400 mb-2"></p>
-            <textarea id="ancr-text" rows="3" class="w-full border rounded-xl p-3 text-sm mb-4"></textarea>
-            <label class="text-xs font-bold text-slate-500 block mb-2">فایل نامه (اختیاری)</label>
-            <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full border rounded-xl p-2 text-xs mb-4">
-            <button onclick="submitAdminNewRequest()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت درخواست</button>
         </div>
     </div>
 
@@ -2684,7 +2716,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <!-- مودال ثبت صدور نهایی یک پلاک شرکتی -->
     <div id="cissue-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative">
+        <div class="modal-content w-full max-w-2xl p-6 relative max-h-[92vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('cissue-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-1">ثبت صدور بیمه‌نامه</h3>
             <p class="text-[11px] text-slate-400 mb-3">اول فایل بیمه‌نامه را بدهید تا اعتبارسنجی شود (پلاک و نوع بیمه با این ردیف مقایسه می‌شود)، بعد ثبت کنید.</p>
@@ -2696,6 +2728,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="cis-policy-number" dir="ltr" placeholder=" "><label>شماره بیمه‌نامه</label></div>
             <div class="float-input"><input type="text" id="cis-vin" dir="ltr" placeholder=" "><label>شماره شاسی (VIN)</label></div>
             <div class="float-input"><input type="text" id="cis-premium" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>حق بیمه (ریال)</label></div>
+            <div class="float-input"><input type="text" id="cis-issue-date" dir="ltr" placeholder=" "><label>تاریخ صدورِ داخلِ بیمه‌نامه (سررسیدِ اقساط از این تاریخ)</label></div>
+            <div id="cis-fields" class="hidden mb-3"></div>
             <button onclick="submitMarkIssued()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت صدور</button>
         </div>
     </div>
@@ -3527,7 +3561,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
     <script src="chat-ui.js?v=4"></script>
-    <script src="table-count.js?v=2"></script>
+    <script src="table-count.js?v=3"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
         if (window.IrTime) IrTime.mountClock(document.getElementById('hdr-clock'), {render: (el, p, date, time) => {
@@ -3537,8 +3571,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }});
     </script>
     <script src="money-input.js?v=1"></script>
-    <script src="finance-ui.js?v=3"></script>
-    <script src="finance-hub.js?v=2"></script>
+    <script src="finance-ui.js?v=4"></script>
+    <script src="finance-hub.js?v=3"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
     <script src="visit-reports-list.js?v=7"></script>
@@ -4991,7 +5025,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
             tbody.innerHTML = data.requests.map(r => `
                 <tr class="border-t border-slate-100 hover:bg-slate-50">
-                    <td class="p-3">#${r.id}</td>
+                    <td class="p-3">${reqCodeHtml(r)}</td>
                     <td class="p-3 font-bold">${r.company_name}</td>
                     <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}
                         ${r.request_kind && r.request_kind !== 'NEW_POLICY'
@@ -5037,20 +5071,50 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ancrCompaniesCache = data.ok ? data.companies : [];
             sel.innerHTML = '<option value="">-- انتخاب شرکت --</option>' + ancrCompaniesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         }
+        const ANCR_KEYS = ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'];
+        function ancrSetCounts(obj) {
+            ANCR_KEYS.forEach(k => { const el = document.getElementById('ancr-cnt-' + k); el.value = obj && Number(obj[k]) ? Number(obj[k]) : ''; el.oninput = ancrCountSum; });
+            ancrCountSum();
+        }
+        function ancrGetCounts() {
+            const o = {}; ANCR_KEYS.forEach(k => { o[k] = Math.max(0, parseInt(String(document.getElementById('ancr-cnt-' + k).value || '0').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)), 10) || 0); });
+            return o;
+        }
+        function ancrCountSum() {
+            const c = ancrGetCounts(), lab = {THIRDPARTY: 'ثالث', BODY: 'بدنه', ENDORSEMENT: 'الحاقیه', CANCELLATION: 'فسخ'};
+            const parts = ANCR_KEYS.filter(k => c[k]).map(k => `${e2pNum(c[k])} ${lab[k]}`);
+            document.getElementById('ancr-cnt-sum').textContent = parts.length ? 'جمع: ' + parts.join('، ') : 'اگر نامه تعداد مشخص کرده، این‌جا بنویسید تا با ردیف‌های ثبت‌شده مقایسه شود.';
+            // نوعِ درخواست از روی تعدادها پیشنهاد می‌شود
+            const kind = document.getElementById('ancr-kind');
+            if (c.THIRDPARTY + c.BODY > 0) kind.value = 'NEW_POLICY';
+            else if (c.ENDORSEMENT > 0) kind.value = 'ENDORSEMENT';
+            else if (c.CANCELLATION > 0) kind.value = 'CANCELLATION';
+            onAncrKindChange();
+        }
         async function openAdminNewRequestModal() {
             document.getElementById('ancr-modal-title').textContent = 'ثبت دستی درخواست شرکتی';
+            document.getElementById('ancr-modal-sub').textContent = 'درخواستِ شرکت را مثلِ نامه‌ی رسمی‌اش ثبت کنید';
+            document.getElementById('ancr-code').classList.add('hidden');
+            document.getElementById('ancr-submit').innerHTML = '<i class="fas fa-check ml-1"></i>ثبت درخواست';
             document.getElementById('ancr-request-id').value = '';
             document.getElementById('ancr-text').value = '';
             document.getElementById('ancr-letter-file').value = '';
             document.getElementById('ancr-kind').value = 'NEW_POLICY';
             onAncrKindChange();
+            ancrSetCounts(null);
             document.getElementById('ancr-company').disabled = false;
             await loadAncrCompanies();
             ancrUpdateInsurerOptions();
             openModal('admin-new-creq-modal');
         }
+        // شناسه‌ی ۵ رقمیِ درخواست (با دکمه‌ی کپی)
+        function reqCodeHtml(r, big) {
+            if (!r.ref_code) return `<span class="font-bold text-slate-500">#${e2pNum(r.id)}</span>`;
+            return `<span class="inline-flex items-center gap-1 ${big ? 'text-[12px] px-2.5 py-1' : 'text-[11px] px-2 py-0.5'} font-black rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 cursor-pointer" title="شناسه‌ی درخواست — برای کپی کلیک کنید" onclick="event.stopPropagation(); copyValue && copyValue('${r.ref_code}')"><i class="fas fa-hashtag text-[9px] opacity-60"></i>${e2pNum(r.ref_code)}</span>`;
+        }
         async function openEditRequestModal(requestId) {
-            document.getElementById('ancr-modal-title').textContent = `ویرایش درخواست #${requestId}`;
+            document.getElementById('ancr-modal-title').textContent = 'ویرایش درخواست';
+            document.getElementById('ancr-submit').innerHTML = '<i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تغییرات';
             document.getElementById('ancr-request-id').value = requestId;
             document.getElementById('ancr-letter-file').value = '';
             await loadAncrCompanies();
@@ -5064,6 +5128,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('ancr-kind').value = data.request.request_kind || 'NEW_POLICY';
             onAncrKindChange();
             document.getElementById('ancr-text').value = data.request.request_text || '';
+            ancrSetCounts(data.request.requested_counts_obj);
+            document.getElementById('ancr-kind').value = data.request.request_kind || 'NEW_POLICY';
+            onAncrKindChange();
+            const code = document.getElementById('ancr-code');
+            code.textContent = data.request.ref_code ? 'شناسه‌ی درخواست: ' + e2pNum(data.request.ref_code) : 'درخواست #' + e2pNum(requestId);
+            code.classList.remove('hidden');
+            document.getElementById('ancr-modal-sub').textContent = data.request.company_name || '';
             openModal('admin-new-creq-modal');
         }
         function ancrUpdateInsurerOptions() {
@@ -5089,10 +5160,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ? { action: 'edit_request', request_id: requestId,
                     insurer: document.getElementById('ancr-insurer').value,
                     request_kind: document.getElementById('ancr-kind').value,
+                    requested_counts: ancrGetCounts(),
                     request_text: document.getElementById('ancr-text').value.trim() }
                 : { action: 'admin_create_request', company_id: companyId,
                     insurer: document.getElementById('ancr-insurer').value,
                     request_kind: document.getElementById('ancr-kind').value,
+                    requested_counts: ancrGetCounts(),
                     request_text: document.getElementById('ancr-text').value.trim() };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
@@ -5355,6 +5428,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             document.getElementById('creq-detail-body').innerHTML = `
                 <div class="flex items-center gap-2 mb-3 flex-wrap">
+                    ${reqCodeHtml(r, true)}
                     <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
                     ${r.request_kind && r.request_kind !== 'NEW_POLICY'
                         ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
@@ -5637,6 +5711,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${d.issue_date ? `<div><span class="k">تاریخ صدور</span>${faDigits(d.issue_date)}</div>` : ''}
                     </div>
                     ${(it.missing_fields || []).length ? `<p class="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5"><i class="fas fa-triangle-exclamation ml-1"></i>از روی بیمه‌نامه خوانده نشد: <b>${it.missing_fields.map(bdlEsc).join('، ')}</b> — پیش‌نمایش را ببینید${editable ? ' و در صورت نیاز دستی وارد کنید' : ''}.</p>` : ''}`}
+                    ${(it.receipts || []).length ? `<div class="mt-2 text-[10.5px] text-indigo-700 font-bold"><i class="fas fa-receipt ml-1"></i>${faDigits(it.receipts.length)} فیشِ قسط پیدا شد (جمع ${money(it.receipts.reduce((a, r) => a + (Number(r.amount) || 0), 0))} ریال)؛ با صدور، هر فیش روی ردیفِ قسطِ خودش می‌نشیند و سررسیدها از تاریخ صدورِ ${faDigits(d.issue_date || '—')} حساب می‌شود.
+                        <div class="flex flex-wrap gap-1 mt-1 font-normal">${it.receipts.map((r, k) => `<a href="${pdfLink(r.file)}" target="_blank" class="bg-white border border-indigo-100 rounded-full px-2 py-0.5 hover:bg-indigo-50">قسط ${faDigits(k + 1)}: ${faDigits(r.date || '—')}</a>`).join('')}</div></div>` : ''}
                     ${editable && payPages > 0 ? `<label class="mt-2 inline-flex items-center gap-1.5 text-[10.5px] text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-pay-${it.i}" ${it._pay ? 'checked' : ''} onchange="bundleCollectEdits()" class="accent-indigo-600">صفحه‌های پرداخت و فیش (${faDigits(payPages)} صفحه) هم در فایلِ بیمه‌نامه‌ی بایگانی بیاید</label>` : ''}
                     ${matchHtml}${missingHtml}${resHtml}
                 </div>
@@ -5711,7 +5787,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const hardN = picks.filter(it => (it.diffs || []).some(x => x.level === 'hard')).length;
             const softN = picks.filter(it => (it.diffs || []).length && !(it.diffs || []).some(x => x.level === 'hard')).length;
             const warn = (hardN ? `\n⚠ ${faDigits(hardN)} مورد مغایرتِ مهم (پلاک/شاسی/نوع) با درخواست دارد!` : '') + (softN ? `\n${faDigits(softN)} مورد مغایرتِ جزئی دارد.` : '');
-            if (!confirm(`${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟${warn}`)) return;
+            if (!(await uiConfirm('صدور و بایگانی', `${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟${warn}`, {ok: 'بله، صادر شود', danger: hardN > 0}))) return;
             const payload = picks.map(it => ({
                 i: it.i,
                 policy_number: it._pn !== undefined ? it._pn : (it.data.policy_num || ''),
@@ -6145,7 +6221,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return `<div class="card p-4 hover:shadow-lg transition">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0"><p class="font-black text-slate-800 truncate">${r.company_name}</p>
-                            <p class="text-[11px] text-slate-400">درخواست #${e2pNum(r.id)} · ${r.request_kind_fa} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
+                            <p class="text-[11px] text-slate-400">درخواست ${r.ref_code ? 'شناسه‌ی ' + e2pNum(r.ref_code) : '#' + e2pNum(r.id)} · ${r.request_kind_fa} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
                         <span class="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${expCls}">${dte === null ? 'بدون انقضا' : (dte < 0 ? `${e2pNum(-dte)} روز گذشته` : `نزدیک‌ترین انقضا: ${e2pNum(dte)} روز`)}</span>
                     </div>
                     <div class="grid grid-cols-4 gap-1.5 my-3 text-center">
@@ -6557,7 +6633,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
-                    <td class="p-3 text-slate-500">${faDigits(r.issued_at_jalali) || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
                     <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a>` : '<span class="text-slate-300">—</span>'}</td>
                 </tr>`).join('');
@@ -6613,7 +6689,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
                     ${infoCell('تاریخ درخواست', r.request_date_jalali, {date: true})}
                     ${infoCell('تاریخ انقضا', r.expiry_date_jalali, {date: true})}
-                    ${infoCell('تاریخ صدور', r.issued_at_jalali, {date: true})}
+                    ${infoCell('تاریخ صدور (داخلِ بیمه‌نامه)', r.policy_issue_date || r.issued_at_jalali, {date: true})}
+                    ${r.policy_issue_date ? infoCell('ثبتِ صدور در سایت', r.issued_at_jalali, {date: true}) : ''}
                     ${infoCell('تاریخ صدور روی بیمه‌نامه', r.policy_issue_date, {ltr: true, date: true})}
                 </div>
                 ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mb-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
@@ -6990,9 +7067,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
         }
 
+        // همه‌ی فیلدهای خوانده‌شده از فایلِ بیمه‌نامه (همان الگوریتمِ صدورِ گروهی) + فیش‌های اقساطِ داخلِ فایل
+        const POLICY_FIELD_FA = {ins_company: 'بیمه‌گر', ins_type: 'نوع', policy_num: 'شماره بیمه‌نامه', plate: 'پلاک', insured_name: 'بیمه‌گذار', national_id: 'کد/شناسه ملی',
+            premium: 'حق بیمه (ریال)', issue_date: 'تاریخ صدور', start_date: 'شروع', end_date: 'پایان', vin: 'شاسی (VIN)', chassis_no: 'شماره شاسی', engine_no: 'موتور',
+            car_kind: 'نوع خودرو', car_system: 'سیستم', car_tip: 'تیپ', car_name: 'خودرو', model_year: 'مدل', color: 'رنگ', usage: 'کاربری', capacity: 'ظرفیت', cylinders: 'سیلندر',
+            car_value: 'ارزش خودرو', liability: 'تعهد مالی', prev_policy: 'بیمه‌نامه‌ی قبلی', prev_insurer: 'بیمه‌گرِ قبلی', prev_expiry: 'انقضای بیمه‌نامه‌ی قبلی', central_no: 'کد یکتا بیمه مرکزی'};
+        function policyFieldsBox(box, o, receipts) {
+            const keys = Object.keys(POLICY_FIELD_FA).filter(k => o[k] !== undefined && o[k] !== null && String(o[k]).trim() !== '');
+            if (!keys.length && !receipts.length) { box.className = 'hidden mb-3'; box.innerHTML = ''; return; }
+            const ltr = k => ['policy_num', 'vin', 'chassis_no', 'engine_no', 'prev_policy', 'central_no'].includes(k);
+            const val = k => k === 'plate' && /ایران/.test(o[k]) ? formatPlateHtml(o[k]) : (['premium', 'car_value', 'liability'].includes(k) ? money(o[k]) : (ltr(k) ? `<span dir="ltr">${o[k]}</span>` : faDigits(String(o[k]))));
+            box.className = 'mb-3 rounded-2xl border-2 border-emerald-100 bg-emerald-50/40 p-3';
+            box.innerHTML = `<p class="text-[11.5px] font-black text-emerald-800 mb-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>فیلدهای خوانده‌شده از فایل (${e2pNum(keys.length)} فیلد)</p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">${keys.map(k => `<div class="bg-white border border-emerald-100 rounded-lg px-2 py-1"><p class="text-[9.5px] text-slate-400">${POLICY_FIELD_FA[k]}</p><p class="text-[11px] font-bold text-slate-700 break-all">${val(k)}</p></div>`).join('')}</div>
+                ${receipts.length ? `<p class="text-[11px] font-bold text-indigo-700 mt-2"><i class="fas fa-receipt ml-1"></i>${e2pNum(receipts.length)} فیشِ قسط داخلِ فایل پیدا شد؛ بعد از ثبت، هر فیش روی ردیفِ قسطِ خودش می‌نشیند و صفحه‌های بیمه‌نامه جدا بایگانی می‌شوند.</p>
+                    <div class="flex flex-wrap gap-1 mt-1">${receipts.map((r, i) => `<span class="text-[10px] bg-white border border-indigo-100 rounded-full px-2 py-0.5">قسط ${e2pNum(i + 1)}: ${faDigits(r.date || '—')} | ${r.amount ? money(r.amount) : '—'}</span>`).join('')}</div>` : ''}`;
+        }
         function openMarkIssued(plateId) {
             document.getElementById('cis-plate-id').value = plateId;
-            ['cis-policy-number','cis-vin','cis-premium'].forEach(id => document.getElementById(id).value = '');
+            ['cis-policy-number','cis-vin','cis-premium','cis-issue-date'].forEach(id => document.getElementById(id).value = '');
+            const cf = document.getElementById('cis-fields'); cf.className = 'hidden mb-3'; cf.innerHTML = '';
             document.getElementById('cis-file').value = '';
             const note = document.getElementById('cis-ocr-note');
             note.className = 'hidden'; note.innerHTML = '';
@@ -7024,9 +7118,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return;
             }
             const o = data.ocr || {};
-            if (o.policy_number) document.getElementById('cis-policy-number').value = o.policy_number;
+            const pn = o.policy_num || o.policy_number, pr = o.premium || o.total_premium;
+            if (pn) document.getElementById('cis-policy-number').value = pn;
             if (o.vin) document.getElementById('cis-vin').value = o.vin;
-            if (o.total_premium) document.getElementById('cis-premium').value = mfmt(o.total_premium);
+            if (pr) document.getElementById('cis-premium').value = mfmt(pr);
+            if (o.issue_date) document.getElementById('cis-issue-date').value = o.issue_date;
+            policyFieldsBox(document.getElementById('cis-fields'), o, data.receipts || []);
             note.className = 'text-[11px] rounded-lg p-2 mb-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
                 ? `✓ فایل با این ردیف مطابقت دارد (پلاک ${o.plate || data.expected_plate || ''} · ${o.ins_type || ''}). فیلدهای شناسایی‌شده پر شدند؛ بررسی کنید و ثبت کنید.`
@@ -7040,6 +7137,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('policy_number', document.getElementById('cis-policy-number').value.trim());
             fd.append('vin', document.getElementById('cis-vin').value.trim());
             fd.append('total_premium', document.getElementById('cis-premium').value);
+            fd.append('issue_date', document.getElementById('cis-issue-date').value.trim());
             // اگر مرحله‌ی اعتبارسنجی انجام شده باشد، فایل از قبل روی سرور است؛ وگرنه
             // همین فایل مستقیم فرستاده می‌شود (مثلاً وقتی بیمه‌نامه عکس است و OCR ندارد)
             const fileInput = document.getElementById('cis-file');
@@ -7802,7 +7900,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 `<option value="${p.id}">${faDigits(p.title)}${p.status === 'CLOSED' ? ' (بسته)' : ''}</option>`).join('');
             const companyOpts = '<option value="">همه شرکت‌ها</option>' +
                 finBoot.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            ['fin-dash-period','rec-period','inv-f-period'].forEach(id => {
+            ['fin-dash-period','recon-period','inv-f-period'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) { el.innerHTML = periodOpts;
                           if (finBoot.current_period_id) el.value = finBoot.current_period_id; }
@@ -7822,6 +7920,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'fin-settings')     loadFinanceSettings();
             if (tabId === 'fin-invoices')     loadInvoices();
             if (tabId === 'fin-payments')     { if (window.FinHub) FinHub.initLedger(); }
+            if (tabId === 'fin-tracking')     { if (window.FinHub) FinHub.initTracking(); }
         }
 
         // ---------- داشبورد مالی ----------
@@ -8150,7 +8249,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.innerHTML = '<div class="card p-6 text-center text-slate-400 text-sm"><i class="fas fa-spinner fa-spin ml-2"></i>در حال تطبیق...</div>';
             const fd = new FormData();
             fd.append('action', 'reconcile');
-            fd.append('period_id', document.getElementById('rec-period').value);
+            fd.append('period_id', document.getElementById('recon-period').value);
             fd.append('file', file);
             try {
                 const res = await fetch(FIN_API, { method: 'POST', body: fd });
@@ -8317,7 +8416,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             showToast('این نسخه قالبِ فعال شد.', 'success'); loadInvTemplates();
         }
         async function itplDelete(id, isActive) {
-            if (!confirm(isActive ? 'قالبِ فعال حذف شود؟ تا قالبِ دیگری فعال نکنید، صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.' : 'این نسخه‌ی قالب حذف شود؟')) return;
+            if (!(await uiConfirm('حذف قالب', isActive ? 'قالبِ فعال حذف شود؟ تا قالبِ دیگری فعال نکنید، صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.' : 'این نسخه‌ی قالب حذف شود؟', {ok: 'حذف شود', danger: true}))) return;
             const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_delete', id }) });
             const d = await res.json();
             if (!d.ok) return showToast(d.error || 'خطا', 'error');
@@ -8862,7 +8961,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('policy-fields-wrap').style.display = 'block';
                 const o = data.ocr || {};
                 if (data.ocr_used) {
-                    statusEl.innerHTML = '✅ اطلاعات فایل شناسایی شد - لطفاً بررسی/ویرایش کنید، سپس تایید نهایی بزنید.';
+                    statusEl.innerHTML = '✅ اطلاعات فایل شناسایی شد - لطفاً بررسی/ویرایش کنید، سپس تایید نهایی بزنید.'
+                        + ((data.receipts || []).length ? `<br><span class="text-[11px] text-indigo-700 font-bold">${e2pNum(data.receipts.length)} فیشِ قسط داخلِ فایل پیدا شد؛ صفحه‌های بیمه‌نامه جدا ذخیره و هر فیش روی ردیفِ قسطِ خودش گذاشته می‌شود.</span>` : '')
+                        + ((data.missing || []).length ? `<br><span class="text-[11px] text-amber-700">خوانده نشد: ${data.missing.join('، ')}</span>` : '');
                     document.getElementById('final-ins-type').value = `${o.ins_type || '-'} (${o.ins_company || '-'})`;
                     document.getElementById('final-plate').value = o.plate || '';
                     document.getElementById('final-insured-name').value = o.insured_name || '';

@@ -10,6 +10,7 @@ require __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
 
 $session = require_company_portal_session($pdo);
+ref_codes_ensure($pdo);
 $allowedCompanyIds = $session['company_ids'];
 
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
@@ -44,11 +45,11 @@ try {
         $searchSql = ''; $searchParams = [];
         if ($q !== '') {
             $like = '%' . $q . '%';
-            $searchSql = " AND (cr.request_text LIKE ? OR c.name LIKE ? OR cr.id = ? OR EXISTS (
+            $searchSql = " AND (cr.request_text LIKE ? OR c.name LIKE ? OR cr.id = ? OR cr.ref_code = ? OR EXISTS (
                               SELECT 1 FROM company_request_plates crp WHERE crp.request_id = cr.id AND (
                                   crp.chassis_no LIKE ? OR crp.car_name LIKE ? OR crp.policy_number LIKE ?
                                   OR CONCAT_WS(' ', crp.plate_p4, crp.plate_letter, crp.plate_p2, crp.plate_p1) LIKE ?)))";
-            $searchParams = [$like, $like, intval($q), $like, $like, $like, $like];
+            $searchParams = [$like, $like, intval(p2e_digits($q)), p2e_digits($q), $like, $like, $like, $like];
         }
         $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name,
                        (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type = 'BODY') AS body_count,
@@ -359,6 +360,7 @@ try {
         $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind,
                         $counts ? json_encode($counts) : null]);
         $requestId = $pdo->lastInsertId();
+        ref_code_of($pdo, 'company_requests', $requestId);
 
         // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز؛ برای هر پلاک هم نوع بیمه‌ی
         // درخواستی‌اش - ثالث/بدنه - مشخص می‌شود؛ اگر «هردو» خواسته شده بود، سمتِ کلاینت

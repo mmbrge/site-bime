@@ -408,7 +408,7 @@ async function loadRequests() {
     box.innerHTML = data.requests.map(r => `
         <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick="openRequestDetail(${r.id})">
             <div class="flex items-center justify-between mb-1">
-                <span class="font-bold text-sm">درخواست #${faNum(r.id)}${r.company_name ? ' - ' + r.company_name : ''}</span>
+                <span class="font-bold text-sm">درخواست ${r.ref_code ? '<span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg px-2 py-0.5 text-[12px]">شناسه‌ی ' + faNum(r.ref_code) + '</span>' : '#' + faNum(r.id)}${r.company_name ? ' - ' + r.company_name : ''}</span>
                 <span class="flex items-center gap-1.5">
                     ${r.request_kind && r.request_kind !== 'NEW_POLICY'
                         ? `<span class="status-badge ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-600' : 'bg-rose-50 text-rose-600'}">${r.request_kind_fa}</span>` : ''}
@@ -719,6 +719,7 @@ async function openRequestDetail(id) {
             <div class="absolute -left-2 -bottom-8 w-20 h-20 bg-white/10 rounded-full"></div>
             <div class="relative flex items-center justify-between mb-3">
                 <span class="flex items-center gap-1.5">
+                    ${r.ref_code ? `<span class="status-badge bg-white text-indigo-700 font-black">شناسه‌ی ${faNum(r.ref_code)}</span>` : ''}
                     <span class="status-badge bg-white/20 backdrop-blur-sm">${STATUS_FA[r.status] || r.status}</span>
                     ${r.request_kind && r.request_kind !== 'NEW_POLICY'
                         ? `<span class="status-badge bg-white/30">${r.request_kind_fa}</span>` : ''}

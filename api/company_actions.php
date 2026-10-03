@@ -12,6 +12,7 @@ require_once __DIR__ . '/_company_issue.php';
 require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments (تابعی محض، بدون وابستگی)
 
 $actor = require_admin_or_liaison();
+ref_codes_ensure($pdo);   // شناسه‌ی ۵ رقمیِ درخواست‌ها (ستون و مقدارِ ردیف‌های قبلی خودکار)
 
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
 $schemaProblem = company_schema_problem($pdo);
@@ -224,8 +225,8 @@ try {
             $like = '%' . $q . '%';
             $where[] = "(c.name LIKE ? OR crp.chassis_no LIKE ? OR crp.car_name LIKE ? OR crp.ref_policy_number LIKE ?
                          OR CONCAT_WS(' ', crp.plate_p4, crp.plate_letter, crp.plate_p2, crp.plate_p1) LIKE ?
-                         OR cr.request_text LIKE ? OR cr.id = ?)";
-            array_push($params, $like, $like, $like, $like, $like, $like, intval($q));
+                         OR cr.request_text LIKE ? OR cr.id = ? OR cr.ref_code = ?)";
+            array_push($params, $like, $like, $like, $like, $like, $like, intval($q), p2e_digits($q));
         }
 
         $rows = [];
@@ -497,7 +498,7 @@ try {
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
         if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $p[] = $data['insurer']; }
         $q = trim((string)($data['q'] ?? ''));
-        if ($q !== '') { $w[] = "(c.name LIKE ? OR cr.id = ? OR cr.request_text LIKE ?)"; array_push($p, "%$q%", intval(p2e_digits($q)), "%$q%"); }
+        if ($q !== '') { $w[] = "(c.name LIKE ? OR cr.id = ? OR cr.ref_code = ? OR cr.request_text LIKE ?)"; array_push($p, "%$q%", intval(p2e_digits($q)), p2e_digits($q), "%$q%"); }
         $st = $pdo->prepare("SELECT cr.id, cr.company_id, cr.insurer, cr.request_kind, cr.created_at, c.name AS company_name,
                                     COUNT(*) AS open_rows,
                                     SUM(crp.status IN ('READY_FOR_ISSUE','WITH_BOSS','IN_ISSUANCE')) AS ready_rows,
@@ -584,6 +585,7 @@ try {
                     'request_date' => $r['request_created_at'], 'request_date_jalali' => jd(strtotime($r['request_created_at'])),
                     'expiry_date_jalali' => $r['expiry_date'] ? jd(strtotime($r['expiry_date'])) : null,
                     'issued_at' => $r['issued_at'], 'issued_at_jalali' => $r['issued_at'] ? jd(strtotime($r['issued_at'])) : null,
+                    'policy_issue_date' => $r['policy_issue_date'] ?? null,
                     'status_fa' => company_plate_status_fa('ISSUED', $kind),
                     'folder_status' => $r['folder_status'], 'issued_file_path' => $r['issued_file_path'],
                     'issue_info' => issue_info_decode($r['issue_info'] ?? null),
@@ -634,6 +636,7 @@ try {
                         'request_date' => $r['created_at'], 'request_date_jalali' => jd(strtotime($r['created_at'])),
                         'expiry_date_jalali' => null,
                         'issued_at' => $r['issued_at'], 'issued_at_jalali' => $r['issued_at'] ? jd(strtotime($r['issued_at'])) : null,
+                        'policy_issue_date' => $r['policy_issue_date'] ?? null,
                         'status_fa' => 'صادر شد',
                         'folder_status' => null, 'issued_file_path' => $r['issued_file_path'],
                         'unique_code' => $r['unique_code'] ?? null, 'central_unique_code' => $r['central_unique_code'] ?? null,
@@ -688,7 +691,7 @@ try {
                     $r['policy_number'], $r['ref_policy_number'], $r['car_name'], $r['car_system'], $r['car_type'],
                     $r['car_model_year'], $r['car_color'], $r['car_usage'], $r['vin'],
                     $r['car_value'], $r['liability_limit'], $r['total_premium'],
-                    fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits($r['issued_at_jalali']), $r['status_fa'],
+                    fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits(($r['policy_issue_date'] ?? '') ?: $r['issued_at_jalali']), $r['status_fa'],
                     $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
                     $r['personnel_code'] ?? '', fa_digits($r['intro_letter_j'] ?? ''), $r['intro_month_fa'] ?? '',
                 ];
@@ -916,10 +919,10 @@ try {
         $q = trim(p2e_digits((string)($data['q'] ?? '')));
         if ($q !== '') {
             $like = '%' . $q . '%';
-            $w[] = "(cr.id = ? OR c.name LIKE ? OR EXISTS (SELECT 1 FROM company_request_plates x WHERE x.request_id = cr.id AND
+            $w[] = "(cr.id = ? OR cr.ref_code = ? OR c.name LIKE ? OR EXISTS (SELECT 1 FROM company_request_plates x WHERE x.request_id = cr.id AND
                      (CONCAT_WS(' ', x.plate_p4, x.plate_letter, x.plate_p2, x.plate_p1) LIKE ? OR CONCAT(x.plate_p4, x.plate_letter, x.plate_p2, x.plate_p1) LIKE ?
                       OR x.chassis_no LIKE ? OR x.policy_number LIKE ? OR x.car_name LIKE ?)))";
-            array_push($params, intval($q), $like, $like, str_replace(' ', '', $like), $like, $like, $like);
+            array_push($params, intval($q), $q, $like, $like, str_replace(' ', '', $like), $like, $like, $like);
         }
         if ($w) $sql .= " WHERE " . implode(' AND ', $w);
         $sql .= " ORDER BY cr.created_at DESC LIMIT " . ($w ? 1000 : 300);
@@ -974,9 +977,11 @@ try {
         }
 
         $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
-        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, status) VALUES (?, NULL, ?, ?, ?, 'NEW')");
-        $stmt->execute([$companyId, $requestText ?: null, $insurer, $kind]);
-        echo json_encode(['ok' => true, 'request_id' => $pdo->lastInsertId()]);
+        $cnt = company_normalize_requested_counts($data['requested_counts'] ?? null);
+        $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, ?, 'NEW')");
+        $stmt->execute([$companyId, $requestText ?: null, $insurer, $kind, $cnt ? json_encode($cnt) : null]);
+        $newId = (int)$pdo->lastInsertId();
+        echo json_encode(['ok' => true, 'request_id' => $newId, 'ref_code' => ref_code_of($pdo, 'company_requests', $newId)]);
         exit;
     }
 
@@ -1076,6 +1081,7 @@ try {
         $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, ?, 'NEW')")
             ->execute([$companyId, trim($data['request_text'] ?? '') ?: null, $insurer, $kind, json_encode(company_normalize_requested_counts($counts))]);
         $requestId = (int)$pdo->lastInsertId();
+        ref_code_of($pdo, 'company_requests', $requestId);
         $ins = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
              car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
@@ -1118,6 +1124,10 @@ try {
         $kind = isset($data['request_kind']) ? company_valid_kind($data['request_kind']) : ($req['request_kind'] ?? 'NEW_POLICY');
         $pdo->prepare("UPDATE company_requests SET request_text = ?, insurer = ?, request_kind = ? WHERE id = ?")
             ->execute([$requestText ?: null, $insurer, $kind, $requestId]);
+        if (array_key_exists('requested_counts', $data)) {
+            $cnt = company_normalize_requested_counts($data['requested_counts']);
+            $pdo->prepare("UPDATE company_requests SET requested_counts = ? WHERE id = ?")->execute([$cnt ? json_encode($cnt) : null, $requestId]);
+        }
         // نوعِ درخواست در نامِ پوشه‌ها هست، پس اگر عوض شد پوشه‌ی ردیف‌ها هم باید جابه‌جا شود
         $stmt = $pdo->prepare("SELECT id FROM company_request_plates WHERE request_id = ? AND status <> 'ISSUED'");
         $stmt->execute([$requestId]);
@@ -1727,37 +1737,44 @@ try {
             @unlink($plate['pending_policy_temp_path']);
         }
 
-        $ocrData = null; $ocrDebug = null;
-        if (in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {   // موتور هم PDF و هم عکس را می‌خواند
+        $ocrData = null; $ocrDebug = null; $single = null;
+        // ۱) همان الگوریتمِ صدورِ گروهی (جای متن در PDF): همه‌ی فیلدها + جدا کردنِ صفحه‌های فیشِ اقساط
+        $lay = policy_layout_extract($pdo, $tempPath);
+        if ($lay && $lay['data']) { $ocrData = $lay['data']; $single = $lay['single']; }
+        // ۲) فایلِ اسکن‌شده یا عکس: موتورِ تشخیصِ قبلی
+        if (!$ocrData && in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {
             $ocrResult = run_document_ocr_verbose($tempPath);
             $ocrData = $ocrResult['data'];
-            $ocrDebug = $ocrResult['debug'];
-        } else {
-            $ocrDebug = 'فقط فایل PDF قابل شناسایی خودکار است (این فایل ' . strtoupper($ext) . ' بود).';
+            $ocrDebug = $ocrResult['debug'] ?: ($lay['debug'] ?? null);
         }
+        if ($ocrData) $ocrData = policy_data_aliases($ocrData);   // نام‌های قدیمی هم پر می‌شوند تا هر دو شکل کار کند
 
         // ---- اعتبارسنجی: فایل باید مربوط به همین ردیف باشد ----
         $expectedPlate = company_row_label($plate);
         $kind = $plate['request_kind'] ?? 'NEW_POLICY';
         if ($ocrData && ($ocrData['ins_type'] ?? '') !== 'ناشناخته' && ($ocrData['ins_type'] ?? '') !== 'معرفی‌نامه') {
             if (!empty($ocrData['plate']) && $expectedPlate && plate_core($ocrData['plate']) !== plate_core($expectedPlate)) {
-                @unlink($tempPath);
+                @unlink($tempPath); if ($single) cbundle_rrmdir($single['dir']);
                 echo json_encode(['ok' => false, 'error' => "⚠️ پلاک این ردیف «{$expectedPlate}» است، ولی پلاک شناسایی‌شده از فایل «{$ocrData['plate']}» است. این بیمه‌نامه مربوط به این ردیف نیست."]);
                 exit;
             }
             // فایلِ الحاقیه/فسخ نوعش «بدنه/ثالث» خوانده نمی‌شود، پس فقط پلاک ملاک است
             $expectedTypeFa = insurance_type_fa($plate['insurance_type']);
             if ($kind === 'NEW_POLICY' && $ocrData['ins_type'] !== $expectedTypeFa) {
-                @unlink($tempPath);
+                @unlink($tempPath); if ($single) cbundle_rrmdir($single['dir']);
                 echo json_encode(['ok' => false, 'error' => "⚠️ این ردیف «{$expectedTypeFa}» است، ولی فایلی که بارگذاری کردید «{$ocrData['ins_type']}» تشخیص داده شد. فایل درست را بارگذاری کنید."]);
                 exit;
             }
         }
 
+        $store = $ocrData;
+        if ($store && $single) $store['_single'] = $single;
         $pdo->prepare("UPDATE company_request_plates SET pending_policy_temp_path = ?, pending_policy_orig_name = ?, ocr_extracted_data = ? WHERE id = ?")
-            ->execute([$tempPath, $_FILES['policy_file']['name'], $ocrData ? json_encode($ocrData, JSON_UNESCAPED_UNICODE) : null, $plateId]);
+            ->execute([$tempPath, $_FILES['policy_file']['name'], $store ? json_encode($store, JSON_UNESCAPED_UNICODE) : null, $plateId]);
 
         echo json_encode(['ok' => true, 'ocr' => $ocrData, 'ocr_used' => (bool)$ocrData, 'ocr_debug' => $ocrDebug,
+                          'receipts' => $single['receipts'] ?? [], 'missing' => $single['missing'] ?? [],
+                          'policy_pages' => $single['policy_pages'] ?? null, 'pages' => $single['pages'] ?? null,
                           'expected_plate' => $expectedPlate], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1851,7 +1868,7 @@ try {
         $token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['token'] ?? ''));
         $file = basename((string)($_GET['file'] ?? ''));
         $path = cbundle_root() . '/b_' . $token . '/pages/' . $file;
-        if (!$token || !preg_match('/^(pol|seg)_\d{3}\.pdf$/', $file) || !is_file($path)) { http_response_code(404); exit; }
+        if (!$token || !preg_match('/^(?:(?:pol|seg|stm)_\d{3}|rcp_\d{3}_\d{2})\.pdf$/', $file) || !is_file($path)) { http_response_code(404); exit; }
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="' . $file . '"');
         header('Content-Length: ' . filesize($path));
@@ -1894,8 +1911,9 @@ try {
             if (!empty($r['ok'])) {
                 $done++;
                 // خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
-                $pdo->prepare("UPDATE company_request_plates SET engine_no = COALESCE(NULLIF(engine_no, ''), ?), car_name = COALESCE(NULLIF(car_name, ''), ?) WHERE id = ?")
-                    ->execute([($it['data']['engine_no'] ?? '') ?: null, ($it['data']['car_name'] ?? '') ?: null, $plateId]);
+                company_fill_from_policy($pdo, $plateId, $it['data'] ?? []);
+                // صفحه‌های فیشِ اقساط روی اقساطِ همین بیمه‌نامه؛ اقساط از تاریخِ صدورِ داخلِ بیمه‌نامه
+                company_attach_policy_extras($pdo, $plateId, $dir . '/pages', $it['receipts'] ?? [], $it['statement_file'] ?? null, $it['data']['issue_date'] ?? '');
             }
             $results[] = ['i' => $i, 'plate_id' => $plateId] + $r;
         }
@@ -1920,11 +1938,19 @@ try {
         if (!$plateId || $policyNumber === '') { echo json_encode(['ok' => false, 'error' => 'شماره‌ی بیمه‌نامه الزامی است.']); exit; }
         // فایلِ بیمه‌نامه: فایلِ موقتِ مرحله‌ی اعتبارسنجی، یا آپلودِ مستقیم
         $src = null; $srcName = null;
-        $st = $pdo->prepare("SELECT pending_policy_temp_path, pending_policy_orig_name FROM company_request_plates WHERE id = ?");
+        $st = $pdo->prepare("SELECT pending_policy_temp_path, pending_policy_orig_name, ocr_extracted_data FROM company_request_plates WHERE id = ?");
         $st->execute([$plateId]);
         $pend = $st->fetch();
+        $single = null;
+        $ocrSaved = $pend ? (json_decode((string)$pend['ocr_extracted_data'], true) ?: []) : [];
+        if (!empty($ocrSaved['_single']['dir']) && is_dir($ocrSaved['_single']['dir'])) $single = $ocrSaved['_single'];
         if ($pend && $pend['pending_policy_temp_path'] && is_file($pend['pending_policy_temp_path'])) {
             $src = $pend['pending_policy_temp_path']; $srcName = $pend['pending_policy_orig_name'] ?: 'policy.pdf';
+            // اگر فایل فیشِ اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه بایگانی می‌شود
+            if ($single && !empty($single['receipts']) && is_file($single['dir'] . '/' . $single['pol'])) {
+                $polCopy = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cpol_') . '.pdf';
+                if (@copy($single['dir'] . '/' . $single['pol'], $polCopy)) { @unlink($src); $src = $polCopy; $srcName = 'policy.pdf'; }
+            }
         } elseif (!empty($_FILES['issued_file']['tmp_name']) && is_uploaded_file($_FILES['issued_file']['tmp_name'])) {
             $tmpDir = dirname(__DIR__) . '/tmp_ocr';
             if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
@@ -1933,6 +1959,13 @@ try {
             if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) { $src = $tmp; $srcName = $_FILES['issued_file']['name']; }
         }
         $res = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $src, $srcName);
+        if (!empty($res['ok'])) {
+            $issueDate = trim(p2e_digits((string)($data['issue_date'] ?? ''))) ?: ($ocrSaved['issue_date'] ?? '');
+            company_attach_policy_extras($pdo, $plateId, $single['dir'] ?? '', $single['receipts'] ?? [], $single['statement'] ?? null, $issueDate);
+            company_fill_from_policy($pdo, $plateId, $ocrSaved);
+            $res['receipts'] = count($single['receipts'] ?? []);
+        }
+        if ($single) cbundle_rrmdir($single['dir']);
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }

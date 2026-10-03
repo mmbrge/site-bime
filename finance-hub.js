@@ -7,7 +7,10 @@
     const fa = v => (v === null || v === undefined || v === '') ? '' : String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const num = v => fa(Number(v || 0).toLocaleString('en-US'));
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-    const toast = (m, t) => (window.showToast ? showToast(m, t || 'info') : alert(m));
+    const toast = (m, t) => (window.showToast ? showToast(m, t || 'info') : console.log(m));
+    // دیالوگ‌های خودِ سایت (نه پنجره‌ی مرورگر)
+    const ask = (title, msg, opts) => (window.uiConfirm ? uiConfirm(title, msg, opts || {}) : Promise.resolve(false));
+    const info = (title, msg, type) => (window.showAlert ? showAlert(title, msg, type || 'info') : toast(title + ' — ' + msg, type));
     const plate = p => !p ? '<span class="text-slate-300">—</span>' : (/ایران/.test(p) && window.formatPlateHtml ? formatPlateHtml(p) : `<span dir="ltr" class="font-bold text-[11px]">${esc(p)}</span>`);
     const digits = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d]/g, '');
     const todayJ = () => (window.IrTime && IrTime.jdate) ? IrTime.jdate() : '';
@@ -91,6 +94,7 @@
                 <div class="text-[12px] font-bold text-slate-600" id="fh-selinfo">ردیفی انتخاب نشده</div>
                 <div class="flex flex-wrap gap-2">
                     <button type="button" id="fh-clear" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-xl">پاک‌کردنِ انتخاب</button>
+                    <button type="button" id="fh-info-sel" class="text-[12px] font-black text-white px-4 py-2 rounded-xl disabled:opacity-40" style="background:linear-gradient(120deg,#4338ca,#6366f1)"><i class="fas fa-circle-info ml-1"></i>اطلاعاتِ اقساطِ انتخاب‌شده</button>
                     <button type="button" id="fh-pay-in" class="text-[12px] font-black text-white px-4 py-2 rounded-xl disabled:opacity-40" style="background:linear-gradient(120deg,#e11d48,#f43f5e)"><i class="fas fa-hand-holding-dollar ml-1"></i>ثبت دریافت از بیمه‌گذار</button>
                     <button type="button" id="fh-pay-out" class="text-[12px] font-black text-white px-4 py-2 rounded-xl disabled:opacity-40" style="background:linear-gradient(120deg,#b45309,#f59e0b)"><i class="fas fa-building-columns ml-1"></i>ثبت پرداخت به بیمه‌گر</button>
                 </div>
@@ -107,6 +111,7 @@
                 window.location.href = API + '?' + new URLSearchParams(p).toString();
             };
             document.getElementById('fh-clear').onclick = () => { H.sel.clear(); renderTable(); };
+            document.getElementById('fh-info-sel').onclick = () => openMultiDetail([...H.sel.values()]);
             document.getElementById('fh-pay-in').onclick = () => openPayDialog('IN', [...H.sel.values()]);
             document.getElementById('fh-pay-out').onclick = () => openPayDialog('OUT', [...H.sel.values()]);
         }
@@ -182,6 +187,7 @@
                     <td class="p-2.5"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${st[1]}"><i class="fas ${st[2]} ml-0.5"></i>${st[0]}</span>${r.is_invoiced ? '<p class="text-[9.5px] text-blue-600 mt-0.5">دارای صورتحساب</p>' : ''}</td>
                     <td class="p-2.5"><div class="flex gap-1">
                         <button class="fh-act w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-a="info" data-k="${k}" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
+                        ${r.receipt ? `<a href="${filePath(r.receipt.file)}" target="_blank" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold" title="فیش پرداختیِ این قسط (از فایلِ بیمه‌نامه)"><i class="fas fa-receipt"></i>فیش</a>` : ''}
                         ${r.remaining > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600" data-a="in" data-k="${k}" title="ثبت دریافت"><i class="fas fa-hand-holding-dollar"></i></button>` : ''}
                         ${r.insurer_payable > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700" data-a="out" data-k="${k}" title="پرداخت به بیمه‌گر"><i class="fas fa-building-columns"></i></button>` : ''}
                     </div></td>
@@ -210,46 +216,76 @@
         document.getElementById('fh-selinfo').innerHTML = sel.length
             ? `<i class="fas fa-check-square text-indigo-600 ml-1"></i><b>${fa(sel.length)}</b> ردیف انتخاب شده · مانده‌ی دریافت: <b class="text-rose-600">${num(rem)}</b> · قابلِ پرداخت به بیمه‌گر: <b class="text-amber-700">${num(pay)}</b> ریال`
             : 'ردیف‌ها را تیک بزنید (یا تیکِ بالای جدول برای همه‌ی ردیف‌های این فیلتر) تا دریافت یا پرداخت را یک‌جا ثبت کنید.';
+        document.getElementById('fh-info-sel').disabled = !sel.length;
         document.getElementById('fh-pay-in').disabled = !sel.some(r => r.remaining > 0);
         document.getElementById('fh-pay-out').disabled = !sel.some(r => r.insurer_payable > 0);
     }
 
-    // ---------- جزئیات و سابقه‌ی یک قسط ----------
+    // ---------- جزئیات و سابقه‌ی یک قسط (و چند قسطِ انتخاب‌شده) ----------
+    function histHtml(hist) {
+        const isAdmin = META && META.is_admin;
+        if (!hist.length) return '<p class="text-[11px] text-slate-400">هنوز دریافت یا پرداختی برای این قسط ثبت نشده.</p>';
+        return `<div class="space-y-1.5">${hist.map(h => `<div class="flex flex-wrap items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 text-[11.5px]">
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${h.direction === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}">${h.direction === 'IN' ? 'دریافت از بیمه‌گذار' : 'پرداخت به بیمه‌گر'}</span>
+            <b>${num(h.amount)}</b> ریال <span class="text-slate-300">|</span> ${fa(h.paid_jalali) || '—'} <span class="text-slate-300">|</span> ${esc(h.method_fa)}
+            ${h.reference_no ? `<span class="text-slate-500">پیگیری: <span dir="ltr">${esc(h.reference_no)}</span></span>` : ''}
+            ${h.cheque_no ? `<span class="text-slate-500">چک ${fa(h.cheque_no)} ${h.cheque_status ? `<span class="text-[10px] px-1.5 rounded ${(CHQ[h.cheque_status] || ['', ''])[1]}">${(CHQ[h.cheque_status] || [''])[0]}</span>` : ''}</span>` : ''}
+            ${(h.files || []).map((f, i) => `<a href="${filePath(f)}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-paperclip"></i> فیش ${fa(i + 1)}</a>`).join(' ')}
+            <span class="text-[10.5px] text-slate-500 bg-slate-100 rounded-full px-2 py-0.5"><i class="fas fa-user-pen ml-1"></i>ثبت: ${esc(h.created_by_name || 'نامشخص')}</span>
+            ${isAdmin ? `<button type="button" class="fh-hvoid mr-auto text-[10.5px] font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg px-2 py-1" data-kind="${h.receipt_id ? 'R' : esc(h.legacy_kind || '')}" data-id="${h.receipt_id || h.legacy_id || ''}" data-dir="${h.direction}"><i class="fas fa-ban ml-1"></i>ابطال</button>` : ''}
+            ${h.note ? `<span class="text-slate-400 text-[10.5px] w-full">${esc(h.note)}</span>` : ''}
+        </div>`).join('')}</div>`;
+    }
+    function instBodyHtml(r, hist, compact) {
+        const row = (l, v) => `<div class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">${l}</p><p class="text-[11.5px] font-bold text-slate-700">${v || '—'}</p></div>`;
+        return `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    ${row('منبع', r.source === 'C' ? 'شرکتی' : 'کارکنان')}${row('پلاک', plate(r.plate))}${row('شماره بیمه‌نامه', `<span dir="ltr">${esc(r.policy_number || '')}</span>`)}${row('بیمه‌گر', esc(r.insurer_fa))}
+                    ${row('تاریخ صدور', fa(r.issue_jalali))}${row('سررسید', fa(r.due_jalali) + (r.delay_days ? ` <span class="text-red-500">(${fa(r.delay_days)} روز تأخیر)</span>` : ''))}${row('حق بیمه‌ی کل', num(r.premium))}${row('مبلغ قسط', num(r.amount))}
+                </div>
+                ${r.receipt ? `<a href="${filePath(r.receipt.file)}" target="_blank" class="flex flex-wrap items-center gap-2 rounded-xl border-2 border-sky-200 bg-sky-50 hover:bg-sky-100 px-3 py-2 text-[11.5px] text-sky-800">
+                    <i class="fas fa-receipt"></i><b>فیش پرداختیِ این قسط</b><span>تاریخ ${fa(r.receipt.date || '—')}</span>${r.receipt.amount ? `<span>مبلغ ${num(r.receipt.amount)} ریال</span>` : ''}${r.receipt.fish ? `<span dir="ltr" class="font-mono text-[10.5px]">${esc(r.receipt.fish)}</span>` : ''}<span class="mr-auto text-[10.5px] font-bold">بازکردن ←</span></a>` : ''}
+                <div class="grid md:grid-cols-2 gap-3">
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"><p class="text-[11px] font-black text-emerald-800 mb-1"><i class="fas fa-arrow-down ml-1"></i>دریافت از بیمه‌گذار</p>
+                        <p class="text-sm"><b>${num(r.paid)}</b> از ${num(r.amount)} ریال${r.remaining ? ` | <span class="text-rose-600 font-bold">مانده ${num(r.remaining)}</span>` : ' | <span class="text-emerald-700 font-bold">کامل</span>'}</p></div>
+                    <div class="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3"><p class="text-[11px] font-black text-indigo-800 mb-1"><i class="fas fa-arrow-up ml-1"></i>پرداخت به بیمه‌گر</p>
+                        <p class="text-sm"><b>${num(r.paid_insurer)}</b> از ${num(r.amount)} ریال${r.insurer_remaining ? ` | <span class="text-amber-700 font-bold">مانده ${num(r.insurer_remaining)}</span>` : ' | <span class="text-emerald-700 font-bold">کامل</span>'}</p></div>
+                </div>
+                <div>
+                    <p class="text-xs font-black text-slate-600 mb-2"><i class="fas fa-clock-rotate-left ml-1"></i>سابقه‌ی دریافت و پرداخت</p>
+                    ${histHtml(hist)}
+                </div>`;
+    }
+    function bindHistVoid(root, after) {
+        root.querySelectorAll('.fh-hvoid').forEach(b => b.onclick = () => voidDoc(b.dataset.kind, b.dataset.id, b.dataset.dir, after));
+    }
+    async function voidDoc(kind, id, dir, after) {
+        if (!id || !kind) return;
+        const ok = await ask('ابطالِ ' + (dir === 'OUT' ? 'پرداخت به بیمه‌گر' : 'دریافت از بیمه‌گذار'),
+            'این ' + (dir === 'OUT' ? 'پرداخت' : 'دریافت') + ' باطل شود؟ مبالغش از همه‌ی قسط‌هایش برداشته می‌شود و قسط‌ها به وضعیتِ قبل برمی‌گردند.' +
+            (dir === 'IN' ? '\nاگر روی این قسط‌ها پرداخت به بیمه‌گر ثبت شده باشد، اول باید آن پرداخت باطل شود.' : ''), {ok: 'بله، باطل شود', danger: true});
+        if (!ok) return;
+        const d = await api(null, {action: 'ledger_void', id, kind});
+        if (!d.ok) { info('ابطال انجام نشد', d.error || 'خطا', 'warning'); return; }
+        toast('سند باطل شد.', 'success');
+        if (typeof after === 'function') after();
+        if (document.getElementById('fh-root') && !document.getElementById('tab-fin-installments').classList.contains('hidden')) loadInstallments();
+        if (document.getElementById('fl-root') && !document.getElementById('tab-fin-payments').classList.contains('hidden')) loadLedger();
+    }
     async function openInstDetail(r) {
         const el = modal('fh-detail', '<p class="p-10 text-center text-slate-400 text-xs">در حال بارگذاری...</p>');
         const d = await api({action: 'ledger_history', source: r.source, id: r.id});
         const hist = (d.history || []);
         const st = STAGE[r.stage] || STAGE.US;
-        const row = (l, v) => `<div class="bg-slate-50 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">${l}</p><p class="text-[11.5px] font-bold text-slate-700">${v || '—'}</p></div>`;
         el.querySelector('.modal-content').innerHTML = `
             <div class="p-5 text-white rounded-t-[inherit]" style="background:linear-gradient(120deg,#312e81,#4f46e5)">
                 <button type="button" onclick="document.getElementById('fh-detail').classList.remove('active')" class="absolute top-4 left-4 text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
-                <p class="text-[11px] opacity-80">قسطِ ${fa(r.inst_number)} · کد رهگیری <span dir="ltr">${esc(r.tracking_code || '')}</span></p>
+                <p class="text-[11px] opacity-80">قسطِ ${fa(r.inst_number)} | کد رهگیری <span dir="ltr">${esc(r.tracking_code || '')}</span></p>
                 <h3 class="text-lg font-black">${esc(r.insured)} <span class="text-[12px] font-bold opacity-80">— ${esc(r.company_name)}</span></h3>
                 <span class="inline-block mt-2 text-[10.5px] font-bold px-2 py-1 rounded-full bg-white/20">${st[0]}</span>
             </div>
             <div class="p-5 space-y-4">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    ${row('منبع', r.source === 'C' ? 'شرکتی' : 'کارکنان')}${row('پلاک', plate(r.plate))}${row('شماره بیمه‌نامه', `<span dir="ltr">${esc(r.policy_number || '')}</span>`)}${row('بیمه‌گر', esc(r.insurer_fa))}
-                    ${row('تاریخ صدور', fa(r.issue_jalali))}${row('سررسید', fa(r.due_jalali) + (r.delay_days ? ` <span class="text-red-500">(${fa(r.delay_days)} روز تأخیر)</span>` : ''))}${row('حق بیمه‌ی کل', num(r.premium))}${row('مبلغ قسط', num(r.amount))}
-                </div>
-                <div class="grid md:grid-cols-2 gap-3">
-                    <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"><p class="text-[11px] font-black text-emerald-800 mb-1"><i class="fas fa-arrow-down ml-1"></i>دریافت از بیمه‌گذار</p>
-                        <p class="text-sm"><b>${num(r.paid)}</b> از ${num(r.amount)} ریال${r.remaining ? ` · <span class="text-rose-600 font-bold">مانده ${num(r.remaining)}</span>` : ' · <span class="text-emerald-700 font-bold">کامل</span>'}</p></div>
-                    <div class="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3"><p class="text-[11px] font-black text-indigo-800 mb-1"><i class="fas fa-arrow-up ml-1"></i>پرداخت به بیمه‌گر</p>
-                        <p class="text-sm"><b>${num(r.paid_insurer)}</b> از ${num(r.amount)} ریال${r.insurer_remaining ? ` · <span class="text-amber-700 font-bold">مانده ${num(r.insurer_remaining)}</span>` : ' · <span class="text-emerald-700 font-bold">کامل</span>'}</p></div>
-                </div>
-                <div>
-                    <p class="text-xs font-black text-slate-600 mb-2"><i class="fas fa-clock-rotate-left ml-1"></i>سابقه‌ی دریافت و پرداخت</p>
-                    ${hist.length ? `<div class="space-y-1.5">${hist.map(h => `<div class="flex flex-wrap items-center gap-2 border border-slate-100 rounded-xl px-3 py-2 text-[11.5px]">
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${h.direction === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}">${h.direction === 'IN' ? 'دریافت از بیمه‌گذار' : 'پرداخت به بیمه‌گر'}</span>
-                        <b>${num(h.amount)}</b> ریال <span class="text-slate-400">·</span> ${fa(h.paid_jalali) || '—'} <span class="text-slate-400">·</span> ${esc(h.method_fa)}
-                        ${h.reference_no ? `<span class="text-slate-500">پیگیری: <span dir="ltr">${esc(h.reference_no)}</span></span>` : ''}
-                        ${h.cheque_no ? `<span class="text-slate-500">چک ${fa(h.cheque_no)} ${h.cheque_status ? `<span class="text-[10px] px-1.5 rounded ${(CHQ[h.cheque_status] || ['', ''])[1]}">${(CHQ[h.cheque_status] || [''])[0]}</span>` : ''}</span>` : ''}
-                        ${(h.files || []).map((f, i) => `<a href="${filePath(f)}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-paperclip"></i> فیش ${fa(i + 1)}</a>`).join(' ')}
-                        ${h.note ? `<span class="text-slate-400 text-[10.5px] w-full">${esc(h.note)}</span>` : ''}
-                    </div>`).join('')}</div>` : '<p class="text-[11px] text-slate-400">هنوز دریافت یا پرداختی برای این قسط ثبت نشده.</p>'}
-                </div>
+                ${instBodyHtml(r, hist)}
                 <div class="flex flex-wrap gap-2 pt-1">
                     ${r.remaining > 0 ? `<button type="button" id="fhd-in" class="text-[12px] font-black text-white px-4 py-2 rounded-xl" style="background:linear-gradient(120deg,#e11d48,#f43f5e)"><i class="fas fa-hand-holding-dollar ml-1"></i>ثبت دریافت</button>` : ''}
                     ${r.insurer_payable > 0 ? `<button type="button" id="fhd-out" class="text-[12px] font-black text-white px-4 py-2 rounded-xl" style="background:linear-gradient(120deg,#b45309,#f59e0b)"><i class="fas fa-building-columns ml-1"></i>پرداخت به بیمه‌گر</button>` : ''}
@@ -258,6 +294,42 @@
         const bi = document.getElementById('fhd-in'), bo = document.getElementById('fhd-out');
         if (bi) bi.onclick = () => { closeModal('fh-detail'); openPayDialog('IN', [r]); };
         if (bo) bo.onclick = () => { closeModal('fh-detail'); openPayDialog('OUT', [r]); };
+        bindHistVoid(el, () => closeModal('fh-detail'));
+    }
+    // اطلاعاتِ چند قسطِ انتخاب‌شده با هم (هر قسط یک کارتِ تاشونده با همان جزئیاتِ پنجره‌ی تکی)
+    async function openMultiDetail(rows) {
+        if (!rows.length) return;
+        const el = modal('fh-detail', '<p class="p-10 text-center text-slate-400 text-xs">در حال بارگذاری...</p>', true);
+        const hists = await Promise.all(rows.slice(0, 80).map(r => api({action: 'ledger_history', source: r.source, id: r.id}).then(d => d.history || [])));
+        const sum = k => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+        el.querySelector('.modal-content').innerHTML = `
+            <div class="p-5 text-white rounded-t-[inherit]" style="background:linear-gradient(120deg,#312e81,#4f46e5)">
+                <button type="button" onclick="document.getElementById('fh-detail').classList.remove('active')" class="absolute top-4 left-4 text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+                <h3 class="text-lg font-black"><i class="fas fa-layer-group ml-1"></i>اطلاعاتِ ${fa(rows.length)} قسطِ انتخاب‌شده</h3>
+                <div class="flex flex-wrap gap-2 mt-2 text-[11px] font-bold">
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">جمعِ اقساط: ${num(sum('amount'))} ریال</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">دریافت‌شده: ${num(sum('paid'))}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">مانده‌ی دریافت: ${num(sum('remaining'))}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">پرداخت به بیمه‌گر: ${num(sum('paid_insurer'))}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">مانده‌ی بیمه‌گر: ${num(sum('insurer_remaining'))}</span>
+                </div>
+            </div>
+            <div class="p-4 space-y-2">
+                ${rows.slice(0, 80).map((r, i) => {
+                    const st = STAGE[r.stage] || STAGE.US;
+                    return `<details class="border-2 border-slate-200 rounded-2xl overflow-hidden" ${rows.length <= 3 ? 'open' : ''}>
+                        <summary class="cursor-pointer flex flex-wrap items-center gap-2 px-4 py-2.5 bg-slate-50 text-[12px]">
+                            <b class="text-slate-400">${fa(i + 1)}</b><b class="text-slate-800">${esc(r.insured)}</b><span class="text-slate-500">${esc(r.company_name)}</span>
+                            <span>${plate(r.plate)}</span><span class="text-slate-500">قسط ${fa(r.inst_number)} | سررسید ${fa(r.due_jalali)}</span>
+                            <b>${num(r.amount)}</b><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${st[1]}">${st[0]}</span>
+                            <span class="font-mono text-[10px] text-slate-400 mr-auto" dir="ltr">${esc(r.tracking_code || '')}</span>
+                        </summary>
+                        <div class="p-4 space-y-3">${instBodyHtml(r, hists[i] || [])}</div>
+                    </details>`;
+                }).join('')}
+                ${rows.length > 80 ? `<p class="text-[11px] text-slate-400 text-center">فقط ۸۰ قسطِ اول نمایش داده شد.</p>` : ''}
+            </div>`;
+        bindHistVoid(el, () => closeModal('fh-detail'));
     }
 
     // ---------- پنجره‌ی ثبتِ دریافت / پرداخت ----------
@@ -356,7 +428,7 @@
             }
             closeModal('fh-pay');
             toast(`${fa(d.applied)} قسط ثبت شد · ${num(d.total)} ریال${(d.rejected || []).length ? ` · ${fa(d.rejected.length)} ردیف رد شد` : ''}`, (d.rejected || []).length ? 'warning' : 'success');
-            if ((d.rejected || []).length) alert('ردیف‌های ردشده:\n' + d.rejected.map(x => `• ${x.label}: ${x.reason}`).join('\n'));
+            if ((d.rejected || []).length) info('ردیف‌های ردشده', d.rejected.map(x => `• ${x.label}: ${x.reason}`).join('\n'), 'warning');
             H.sel.clear();
             if (document.getElementById('fh-root') && !document.getElementById('tab-fin-installments').classList.contains('hidden')) loadInstallments();
             if (document.getElementById('fl-root') && !document.getElementById('tab-fin-payments').classList.contains('hidden')) loadLedger();
@@ -427,7 +499,7 @@
         const isAdmin = META && META.is_admin;
         box.innerHTML = `<table class="w-full text-right text-[11.5px] whitespace-nowrap fh-table no-count"><thead class="sticky top-0 z-10"><tr>
             <th class="p-2.5">تاریخ</th><th class="p-2.5">نوع</th><th class="p-2.5">طرف حساب</th><th class="p-2.5">مبلغ (ریال)</th><th class="p-2.5">روش</th><th class="p-2.5">پیگیری</th>
-            <th class="p-2.5">چک</th><th class="p-2.5 text-center">قسط</th><th class="p-2.5">فیش</th><th class="p-2.5">توضیح</th><th class="p-2.5"></th></tr></thead><tbody>
+            <th class="p-2.5">چک</th><th class="p-2.5 text-center">قسط</th><th class="p-2.5">فیش</th><th class="p-2.5">ثبت‌کننده</th><th class="p-2.5">توضیح</th><th class="p-2.5"></th></tr></thead><tbody>
             ${L.rows.map(r => {
                 const chq = r.cheque_no ? `<div class="text-[10.5px]"><b>${fa(r.cheque_no)}</b> ${esc(r.cheque_bank || '')}${r.cheque_due_jalali ? ` · سررسید ${fa(r.cheque_due_jalali)}` : ''}</div>
                     ${r.status === 'ACTIVE' && (r.is_new || r.direction === 'IN') ? `<select class="fl-chq border rounded px-1 py-0.5 text-[10px] mt-0.5 ${(CHQ[r.cheque_status] || ['', 'bg-slate-50'])[1]}" data-id="${r.id}" data-kind="${r.is_new ? 'R' : 'P'}">${Object.entries(CHQ).map(([k, v]) => `<option value="${k}" ${r.cheque_status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>` : `<span class="text-[10px]">${(CHQ[r.cheque_status] || [''])[0]}</span>`}` : '<span class="text-slate-300">—</span>';
@@ -442,9 +514,10 @@
                     <td class="p-2.5">${chq}</td>
                     <td class="p-2.5 text-center">${fa(r.items_count)}</td>
                     <td class="p-2.5">${(r.files || []).map((f, i) => `<a href="${filePath(f)}" target="_blank" class="text-blue-600 hover:underline ml-1"><i class="fas fa-paperclip"></i>${fa(i + 1)}</a>`).join('') || '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-2.5 text-[11px]"><b class="text-slate-700">${esc(r.created_by_name || '—')}</b>${r.status === 'VOID' && r.voided_by_name ? `<p class="text-[10px] text-red-500 no-underline">باطل: ${esc(r.voided_by_name)}</p>` : ''}</td>
                     <td class="p-2.5 max-w-[220px] truncate" title="${esc(r.note || '')}">${esc(r.note || '')}</td>
                     <td class="p-2.5"><div class="flex gap-1">${r.is_new ? `<button class="fl-view w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-id="${r.id}" title="اقلامِ این سند"><i class="fas fa-list"></i></button>` : ''}
-                        ${r.is_new && isAdmin && r.status === 'ACTIVE' ? `<button class="fl-void w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-600" data-id="${r.id}" title="باطل‌کردنِ سند"><i class="fas fa-ban"></i></button>` : ''}</div></td>
+                        ${isAdmin && r.status === 'ACTIVE' ? `<button class="fl-void w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-600" data-id="${r.id}" data-kind="${r.is_new ? 'R' : esc(r.legacy_kind || '')}" data-dir="${r.direction}" title="باطل‌کردن"><i class="fas fa-ban"></i></button>` : ''}</div></td>
                 </tr>`;
             }).join('')}</tbody></table>`;
         box.querySelectorAll('.fl-chq').forEach(s => s.onchange = async () => {
@@ -452,12 +525,7 @@
             toast(d.ok ? 'وضعیتِ چک به‌روز شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
             loadLedger();
         });
-        box.querySelectorAll('.fl-void').forEach(b => b.onclick = async () => {
-            if (!confirm('این سند باطل شود؟ مبالغش از اقساط برداشته می‌شود و قسط‌ها به وضعیتِ قبل برمی‌گردند.')) return;
-            const d = await api(null, {action: 'ledger_void', id: b.dataset.id});
-            toast(d.ok ? 'سند باطل شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
-            loadLedger();
-        });
+        box.querySelectorAll('.fl-void').forEach(b => b.onclick = () => voidDoc(b.dataset.kind, b.dataset.id, b.dataset.dir));
         box.querySelectorAll('.fl-view').forEach(b => b.onclick = () => openReceipt(b.dataset.id));
     }
     async function openReceipt(id) {
@@ -474,6 +542,7 @@
             <div class="p-5 space-y-3">
                 ${r.cheque_no ? `<p class="text-[12px] bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">چک ${fa(r.cheque_no)} ${esc(r.cheque_bank || '')} · سررسید ${fa(r.cheque_due_jalali || '')} · ${(CHQ[r.cheque_status] || [''])[0]}</p>` : ''}
                 ${r.reference_no ? `<p class="text-[12px]">شماره پیگیری: <b dir="ltr">${esc(r.reference_no)}</b></p>` : ''}
+                <p class="text-[12px] text-slate-600"><i class="fas fa-user-pen ml-1 text-slate-400"></i>ثبت‌کننده: <b>${esc(r.created_by_name || 'نامشخص')}</b>${r.created_at_j ? ` | ${fa(r.created_at_j)}` : ''}${r.status === 'VOID' ? ` | <span class="text-red-600">باطل‌شده توسطِ ${esc(r.voided_by_name || 'نامشخص')}</span>` : ''}</p>
                 ${r.note ? `<p class="text-[12px] text-slate-600">${esc(r.note)}</p>` : ''}
                 <div class="overflow-x-auto border border-slate-100 rounded-xl"><table class="w-full text-[11.5px] text-right whitespace-nowrap no-count"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-2">بیمه‌گذار</th><th class="p-2">شرکت</th><th class="p-2">پلاک</th><th class="p-2">بیمه‌نامه</th><th class="p-2 text-center">قسط</th><th class="p-2">مبلغ</th></tr></thead>
                     <tbody>${(d.lines || []).map(l => `<tr class="border-t border-slate-100"><td class="p-2 font-bold">${esc(l.insured)}</td><td class="p-2">${esc(l.company_name)}</td><td class="p-2">${plate(l.plate)}</td><td class="p-2" dir="ltr">${esc(l.policy_number)}</td><td class="p-2 text-center">${fa(l.inst_number)}</td><td class="p-2 font-black">${num(l.amount)}</td></tr>`).join('')}</tbody></table></div>
@@ -481,5 +550,111 @@
             </div>`;
     }
 
-    window.FinHub = {initInstallments, initLedger, reloadInstallments: loadInstallments, openPayDialog};
+    // =================================================================
+    //  پیگیری: کدِ رهگیریِ قسط / شناسه‌ی درخواست / شماره‌ی پرونده / شماره‌ی بیمه‌نامه
+    // =================================================================
+    const REQ_ST = {NEW: 'جدید', DOCS_PENDING: 'در انتظار مدارک', DOCS_REVIEW: 'در حال بررسی', READY_FOR_ISSUE: 'آماده‌ی صدور', ISSUED: 'صادر شده', CANCELLED: 'لغو شده'};
+    function initTracking() {
+        const root = document.getElementById('trk-root');
+        if (!root) return;
+        meta();
+        if (!root.dataset.built) {
+            root.dataset.built = '1';
+            root.innerHTML = `
+            <div class="card p-4">
+                <div class="flex flex-col md:flex-row gap-2">
+                    <textarea id="trk-q" rows="2" dir="ltr" placeholder="7041286026   43233   BM-11" class="flex-1 border-2 border-slate-200 focus:border-indigo-400 rounded-xl px-3 py-2 text-sm font-mono"></textarea>
+                    <button type="button" id="trk-go" class="text-white rounded-xl px-6 py-2 text-sm font-black" style="background:linear-gradient(120deg,#4338ca,#6366f1)"><i class="fas fa-magnifying-glass ml-1"></i>پیگیری</button>
+                </div>
+            </div>
+            <div id="trk-out" class="space-y-4"></div>`;
+            const go = () => runTracking();
+            document.getElementById('trk-go').onclick = go;
+            document.getElementById('trk-q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
+        }
+        setTimeout(() => { const q = document.getElementById('trk-q'); if (q) q.focus(); }, 50);
+    }
+    function instMiniTable(rows) {
+        if (!rows.length) return '<p class="text-[11px] text-slate-400">قسطی ساخته نشده.</p>';
+        return `<div class="overflow-x-auto border-2 border-slate-200 rounded-xl"><table class="w-full text-[11.5px] text-right whitespace-nowrap no-count trk-table"><thead><tr>
+            <th>کد رهگیری</th><th>پلاک</th><th>بیمه‌نامه</th><th class="text-center">قسط</th><th>سررسید</th><th>مبلغ</th><th>دریافت‌شده</th><th>مانده</th><th>به بیمه‌گر</th><th>مرحله</th><th></th></tr></thead><tbody>
+            ${rows.map(r => { const st = STAGE[r.stage] || STAGE.US; return `<tr>
+                <td class="font-mono text-[10.5px]" dir="ltr">${esc(r.tracking_code || '')}</td><td>${plate(r.plate)}</td><td dir="ltr" class="font-mono text-[10.5px]">${esc(r.policy_number || '—')}</td>
+                <td class="text-center font-black">${fa(r.inst_number)}</td><td class="${r.overdue ? 'text-red-600 font-black' : ''}">${fa(r.due_jalali)}</td><td class="font-bold">${num(r.amount)}</td>
+                <td class="text-emerald-700">${num(r.paid)}</td><td class="${r.remaining ? 'text-rose-600 font-bold' : 'text-slate-300'}">${num(r.remaining)}</td><td class="text-indigo-700">${num(r.paid_insurer)}</td>
+                <td><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${st[1]}">${st[0]}</span></td>
+                <td><div class="flex gap-1"><button type="button" class="trk-inst w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-k="${r.source}:${r.id}" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
+                    ${r.receipt ? `<a href="${filePath(r.receipt.file)}" target="_blank" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold"><i class="fas fa-receipt"></i>فیش</a>` : ''}</div></td></tr>`; }).join('')}
+            </tbody></table></div>`;
+    }
+    function sumChips(s) {
+        if (!s || !s.count) return '';
+        return `<div class="flex flex-wrap gap-2 text-[11px] font-bold">
+            <span class="bg-slate-100 rounded-full px-2.5 py-1">${fa(s.count)} قسط | ${num(s.amount)} ریال</span>
+            <span class="bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1">دریافت‌شده ${num(s.paid)}</span>
+            <span class="bg-rose-50 text-rose-700 rounded-full px-2.5 py-1">مانده ${num(s.remaining)}</span>
+            <span class="bg-indigo-50 text-indigo-700 rounded-full px-2.5 py-1">پرداخت به بیمه‌گر ${num(s.paid_insurer)}</span></div>`;
+    }
+    async function runTracking() {
+        const out = document.getElementById('trk-out');
+        const q = document.getElementById('trk-q').value.trim();
+        if (!q) return toast('کدی وارد نشده.', 'warning');
+        out.innerHTML = '<p class="p-10 text-center text-slate-400 text-xs">در حال جستجو...</p>';
+        const d = await api({action: 'track', q});
+        if (!d.ok) { out.innerHTML = `<p class="p-10 text-center text-red-500 text-xs">${esc(d.error || 'خطا')}</p>`; return; }
+        const instIndex = {};
+        out.innerHTML = d.results.map(res => {
+            if (!res.matches.length) return `<div class="card p-4 border-2 border-dashed border-slate-200 text-[12px] text-slate-500"><b class="font-mono" dir="ltr">${esc(res.code)}</b> — چیزی پیدا نشد.</div>`;
+            return res.matches.map(m => {
+                if (m.type === 'installment') {
+                    const r = m.row; instIndex[r.source + ':' + r.id] = r;
+                    const st = STAGE[r.stage] || STAGE.US;
+                    return `<div class="card overflow-hidden border-2 border-indigo-100">
+                        <div class="px-4 py-3 text-white flex flex-wrap items-center gap-2" style="background:linear-gradient(120deg,#312e81,#4f46e5)">
+                            <span class="text-[10.5px] bg-white/20 rounded-full px-2 py-0.5">قسط</span><b class="font-mono" dir="ltr">${esc(res.code)}</b>
+                            <b>${esc(r.insured)}</b><span class="opacity-80 text-[12px]">${esc(r.company_name)}</span>
+                            <span class="mr-auto text-[10.5px] font-bold px-2 py-1 rounded-full bg-white/20">${st[0]}</span></div>
+                        <div class="p-4 space-y-3">${instBodyHtml(r, r.history || [])}</div></div>`;
+                }
+                (m.installments || []).forEach(r => { instIndex[r.source + ':' + r.id] = r; });
+                if (m.type === 'company_request') {
+                    return `<div class="card overflow-hidden border-2 border-cyan-100">
+                        <div class="px-4 py-3 text-white flex flex-wrap items-center gap-2" style="background:linear-gradient(120deg,#155e75,#0891b2)">
+                            <span class="text-[10.5px] bg-white/20 rounded-full px-2 py-0.5">درخواست شرکتی</span><b>شناسه‌ی ${fa(m.ref_code || m.id)}</b>
+                            <b>${esc(m.company_name)}</b><span class="opacity-85 text-[12px]">${esc(m.request_kind_fa)} | بیمه ${m.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'} | ثبت ${fa(m.created_jalali)}</span>
+                            <span class="mr-auto text-[10.5px] font-bold px-2 py-1 rounded-full bg-white/20">${REQ_ST[m.status] || esc(m.status)}</span></div>
+                        <div class="p-4 space-y-3">
+                            ${m.requested_counts_fa ? `<p class="text-[12px] text-indigo-700 font-bold">تعدادِ درخواستی: ${esc(m.requested_counts_fa)}</p>` : ''}
+                            ${m.request_text ? `<p class="text-[12px] text-slate-600">${esc(m.request_text)}</p>` : ''}
+                            <div class="overflow-x-auto border-2 border-slate-200 rounded-xl"><table class="w-full text-[11.5px] text-right whitespace-nowrap no-count trk-table"><thead><tr><th>#</th><th>پلاک / شاسی</th><th>نوع</th><th>خودرو</th><th>وضعیت</th><th>بیمه‌نامه</th><th>حق بیمه</th><th>انقضای قبلی</th></tr></thead><tbody>
+                                ${m.rows.map((x, i) => `<tr><td>${fa(i + 1)}</td><td>${x.plate && /ایران/.test(x.plate) ? plate(x.plate) : `<span dir="ltr">${esc(x.plate || x.chassis_no || '—')}</span>`}</td><td>${x.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</td><td>${esc(x.car_name || '')}</td>
+                                    <td><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${x.status === 'ISSUED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${esc(x.status_fa)}</span></td>
+                                    <td dir="ltr" class="font-mono text-[10.5px]">${esc(x.policy_number || '—')}</td><td>${x.premium ? num(x.premium) : '—'}</td><td>${fa(x.expiry_jalali) || '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="text-center text-slate-400">ردیفی ثبت نشده.</td></tr>'}
+                            </tbody></table></div>
+                            <p class="text-xs font-black text-slate-600"><i class="fas fa-list-ol ml-1"></i>اقساط</p>${sumChips(m.inst_summary)}${instMiniTable(m.installments || [])}
+                            <button type="button" class="trk-open-req text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl" data-id="${m.id}"><i class="fas fa-up-right-from-square ml-1"></i>بازکردنِ درخواست</button>
+                        </div></div>`;
+                }
+                return `<div class="card overflow-hidden border-2 border-sky-100">
+                    <div class="px-4 py-3 text-white flex flex-wrap items-center gap-2" style="background:linear-gradient(120deg,#0c4a6e,#0284c7)">
+                        <span class="text-[10.5px] bg-white/20 rounded-full px-2 py-0.5">درخواست کارکنان</span><b>شناسه‌ی ${fa(m.ref_code || '')}</b><span class="font-mono text-[11px] opacity-85" dir="ltr">${esc(m.unique_code || '')}</span>
+                        <b>${esc(m.insured)}</b><span class="opacity-85 text-[12px]">${esc(m.company_name || '')}${m.personnel_code ? ' | کد پرسنلی ' + fa(m.personnel_code) : ''}</span>
+                        <span class="mr-auto text-[10.5px] font-bold px-2 py-1 rounded-full bg-white/20">${esc(m.status_fa)}</span></div>
+                    <div class="p-4 space-y-3">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11.5px]">
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">پلاک</p>${plate(m.plate)}</div>
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">نوع</p><b>${m.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</b></div>
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">بیمه‌نامه</p><b dir="ltr">${esc(m.policy_number || '—')}</b></div>
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5"><p class="text-[9.5px] text-slate-400">حق بیمه</p><b>${m.premium ? num(m.premium) : '—'}</b></div>
+                        </div>
+                        <p class="text-xs font-black text-slate-600"><i class="fas fa-list-ol ml-1"></i>اقساط</p>${sumChips(m.inst_summary)}${instMiniTable(m.installments || [])}
+                    </div></div>`;
+            }).join('');
+        }).join('');
+        out.querySelectorAll('.trk-inst').forEach(b => b.onclick = () => { const r = instIndex[b.dataset.k]; if (r) openInstDetail(r); });
+        out.querySelectorAll('.trk-open-req').forEach(b => b.onclick = () => { if (window.openCompanyRequestDetail) openCompanyRequestDetail(Number(b.dataset.id)); });
+        bindHistVoid(out, runTracking);
+    }
+
+    window.FinHub = {initInstallments, initLedger, initTracking, reloadInstallments: loadInstallments, openPayDialog};
 })();

@@ -63,7 +63,35 @@ function fin_ledger_ensure($pdo) {
             legacy_line_id BIGINT NULL,
             KEY idx_receipt (receipt_id), KEY idx_inst (source, installment_id), KEY idx_legacy (legacy_kind, legacy_id)
         ) DEFAULT CHARSET=utf8mb4");
+        $has = $pdo->query("SHOW COLUMNS FROM fin_receipts LIKE 'voided_by'")->fetch();
+        if (!$has) $pdo->exec("ALTER TABLE fin_receipts ADD COLUMN voided_by INT NULL AFTER voided_at");
     } catch (Throwable $e) { error_log('[fin_ledger_ensure] ' . $e->getMessage()); }
+}
+
+// نامِ ثبت‌کننده: created_by ممکن است شناسه‌ی کاربر یا (در ثبت‌های خیلی قدیمی) خودِ نام باشد
+function fin_user_name($pdo, $v) {
+    static $cache = null;
+    if ($cache === null) {
+        $cache = [];
+        try { foreach ($pdo->query("SELECT id, COALESCE(NULLIF(full_name,''), username) n FROM users") as $u) $cache[(int)$u['id']] = $u['n']; } catch (Throwable $e) {}
+    }
+    $v = trim((string)$v);
+    if ($v === '') return '';
+    if (ctype_digit($v)) return $cache[(int)$v] ?? ('کاربر ' . $v);
+    return $v;
+}
+
+// ثبت‌کننده‌های دریافت/پرداختِ هر قسط: ['P' => [id => ['IN' => [..], 'OUT' => [..]]], 'C' => [...]]
+function fin_ledger_registrars($pdo) {
+    $out = ['P' => [], 'C' => []];
+    $add = function ($src, $id, $dir, $by) use (&$out, $pdo) {
+        $n = fin_user_name($pdo, $by);
+        if ($n !== '' && !in_array($n, $out[$src][$id][$dir] ?? [], true)) $out[$src][(int)$id][$dir][] = $n;
+    };
+    try { foreach ($pdo->query("SELECT pa.installment_id i, pm.created_by b FROM payment_allocations pa JOIN payments pm ON pm.id = pa.payment_id") as $r) $add('P', $r['i'], 'IN', $r['b']); } catch (Throwable $e) {}
+    try { foreach ($pdo->query("SELECT l.installment_id i, s.created_by b FROM pasargad_settlement_lines l JOIN pasargad_settlements s ON s.id = l.settlement_id") as $r) $add('P', $r['i'], 'OUT', $r['b']); } catch (Throwable $e) {}
+    try { foreach ($pdo->query("SELECT a.installment_id i, cp.created_by b, cp.target t FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id") as $r) $add('C', $r['i'], $r['t'] === 'US' ? 'IN' : 'OUT', $r['b']); } catch (Throwable $e) {}
+    return $out;
 }
 
 // مبلغِ پرداخت‌شده به بیمه‌گر برای هر قسط: ['P' => [id => amount], 'C' => [...]]
@@ -296,32 +324,107 @@ function fin_ledger_register($pdo, array $in, array $items, $userId) {
     return ['ok' => true, 'receipt_id' => $rid, 'total' => $total, 'applied' => count($applied), 'rejected' => $rejected, 'files' => count($files)];
 }
 
-// باطل‌کردنِ یک سند: همه‌ی تخصیص‌ها و ردیف‌های قبلیِ ساخته‌شده پاک و وضعیتِ تسویه دوباره حساب می‌شود
-function fin_ledger_void($pdo, $id) {
-    fin_ledger_ensure($pdo);
-    $st = $pdo->prepare("SELECT * FROM fin_receipts WHERE id = ?");
+// پرداخت‌های فعالِ به بیمه‌گر روی این قسط‌ها (برای ترتیبِ ابطال: اول پرداخت به بیمه‌گر، بعد دریافت از ما)
+function fin_ledger_out_on($pdo, array $inst) {
+    $found = [];
+    $link = $pdo->prepare("SELECT r.id FROM fin_receipt_lines l JOIN fin_receipts r ON r.id = l.receipt_id WHERE l.legacy_kind = ? AND l.legacy_line_id = ? AND r.status = 'ACTIVE'");
+    foreach ($inst as [$src, $iid]) {
+        if ($src === 'P') {
+            $st = $pdo->prepare("SELECT l.id line_id, s.id pid, s.paid_jalali, l.amount FROM pasargad_settlement_lines l JOIN pasargad_settlements s ON s.id = l.settlement_id WHERE l.installment_id = ?");
+            $kind = 'PSG';
+        } else {
+            $st = $pdo->prepare("SELECT a.id line_id, cp.id pid, cp.paid_jalali, a.amount FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id WHERE a.installment_id = ? AND cp.target = 'PASARGAD'");
+            $kind = 'C_PSG';
+        }
+        $st->execute([$iid]);
+        foreach ($st->fetchAll() as $r) {
+            $link->execute([$kind, $r['line_id']]);
+            $rid = $link->fetchColumn();
+            $key = $rid ? 'R' . $rid : $kind . $r['pid'];
+            $found[$key] = $rid ? 'سندِ شماره‌ی ' . fa_digits($rid) : 'پرداختِ ثبت‌قبلی ' . fa_digits($r['paid_jalali'] ?: '');
+        }
+    }
+    return $found;
+}
+
+// اقلامِ یک ثبتِ قبلی (بدونِ سندِ تازه): [legacy tables] => [[source, installment_id, line_id, amount], ...]
+function fin_ledger_legacy_lines($pdo, $kind, $id) {
+    $map = ['P_PAY' => ['payment_allocations', 'payment_id', 'P'], 'C_PAY' => ['company_payment_allocations', 'payment_id', 'C'],
+            'PSG' => ['pasargad_settlement_lines', 'settlement_id', 'P'], 'C_PSG' => ['company_payment_allocations', 'payment_id', 'C']];
+    if (!isset($map[$kind])) return [];
+    [$tbl, $fk, $src] = $map[$kind];
+    $st = $pdo->prepare("SELECT id, installment_id, amount FROM `$tbl` WHERE `$fk` = ?");
     $st->execute([$id]);
-    $rc = $st->fetch();
-    if (!$rc) return ['ok' => false, 'error' => 'سند پیدا نشد.'];
-    if ($rc['status'] === 'VOID') return ['ok' => false, 'error' => 'این سند قبلاً باطل شده.'];
-    $lines = $pdo->prepare("SELECT * FROM fin_receipt_lines WHERE receipt_id = ?");
-    $lines->execute([$id]);
-    $lines = $lines->fetchAll();
+    return array_map(fn($r) => ['source' => $src, 'installment_id' => (int)$r['installment_id'], 'line_id' => (int)$r['id'], 'amount' => (int)$r['amount']], $st->fetchAll());
+}
+
+// باطل‌کردنِ یک سند (تازه: kind=R) یا یک ثبتِ قبلی (P_PAY | C_PAY | PSG | C_PSG):
+// همه‌ی تخصیص‌ها پاک و وضعیتِ تسویه دوباره حساب می‌شود. دریافت فقط وقتی باطل می‌شود که پرداختِ به بیمه‌گری روی همان قسط‌ها نمانده باشد.
+function fin_ledger_void($pdo, $id, $kind = 'R', $userId = null) {
+    fin_ledger_ensure($pdo);
+    $id = intval($id);
+    $kind = in_array($kind, ['R', 'P_PAY', 'C_PAY', 'PSG', 'C_PSG'], true) ? $kind : 'R';
+    $parentTbl = ['P_PAY' => 'payments', 'C_PAY' => 'company_payments', 'PSG' => 'pasargad_settlements', 'C_PSG' => 'company_payments'];
+    $lineTbl = ['P_PAY' => 'payment_allocations', 'C_PAY' => 'company_payment_allocations', 'PSG' => 'pasargad_settlement_lines', 'C_PSG' => 'company_payment_allocations'];
+    $rc = null; $work = [];   // $work: [[legacy_kind, legacy_id, line_id, source, installment_id]]
+    if ($kind === 'R') {
+        $st = $pdo->prepare("SELECT * FROM fin_receipts WHERE id = ?");
+        $st->execute([$id]);
+        $rc = $st->fetch();
+        if (!$rc) return ['ok' => false, 'error' => 'سند پیدا نشد.'];
+        if ($rc['status'] === 'VOID') return ['ok' => false, 'error' => 'این سند قبلاً باطل شده.'];
+        $dir = $rc['direction'];
+        $st = $pdo->prepare("SELECT * FROM fin_receipt_lines WHERE receipt_id = ?");
+        $st->execute([$id]);
+        foreach ($st->fetchAll() as $l) $work[] = [$l['legacy_kind'], (int)$l['legacy_id'], (int)$l['legacy_line_id'], $l['source'], (int)$l['installment_id'], (int)$l['amount']];
+    } else {
+        $chk = $pdo->prepare("SELECT COUNT(*) FROM fin_receipt_lines l JOIN fin_receipts r ON r.id = l.receipt_id WHERE l.legacy_kind = ? AND l.legacy_id = ?");
+        $chk->execute([$kind, $id]);
+        if ($chk->fetchColumn()) return ['ok' => false, 'error' => 'این ثبت به یک سند وصل است؛ همان سند را باطل کنید.'];
+        $st = $pdo->prepare("SELECT * FROM `{$parentTbl[$kind]}` WHERE id = ?");
+        $st->execute([$id]);
+        $rc = $st->fetch();
+        if (!$rc) return ['ok' => false, 'error' => 'این ثبت پیدا نشد (شاید قبلاً باطل شده).'];
+        $dir = in_array($kind, ['P_PAY', 'C_PAY'], true) ? 'IN' : 'OUT';
+        foreach (fin_ledger_legacy_lines($pdo, $kind, $id) as $l) $work[] = [$kind, $id, $l['line_id'], $l['source'], $l['installment_id'], $l['amount']];
+    }
+    // ترتیبِ ابطال
+    if ($dir === 'IN') {
+        $inst = [];
+        foreach ($work as $w) $inst[$w[3] . ':' . $w[4]] = [$w[3], $w[4]];
+        $outs = fin_ledger_out_on($pdo, array_values($inst));
+        if ($outs) return ['ok' => false, 'blocked' => array_values($outs),
+                           'error' => 'روی قسط‌های این دریافت، پرداخت به بیمه‌گر ثبت شده. اول آن پرداخت(ها) را باطل کنید: ' . implode('، ', array_values($outs))];
+    }
     $pdo->beginTransaction();
     try {
         $parents = [];
-        foreach ($lines as $l) {
-            $tbl = ['P_PAY' => 'payment_allocations', 'C_PAY' => 'company_payment_allocations', 'PSG' => 'pasargad_settlement_lines', 'C_PSG' => 'company_payment_allocations'][$l['legacy_kind']] ?? null;
-            if ($tbl && $l['legacy_line_id']) $pdo->prepare("DELETE FROM `$tbl` WHERE id = ?")->execute([$l['legacy_line_id']]);
-            $parents[$l['legacy_kind'] . ':' . $l['legacy_id']] = [$l['legacy_kind'], $l['legacy_id']];
+        foreach ($work as [$k, $pid, $lid]) {
+            if (isset($lineTbl[$k]) && $lid) $pdo->prepare("DELETE FROM `{$lineTbl[$k]}` WHERE id = ?")->execute([$lid]);
+            $parents[$k . ':' . $pid] = [$k, $pid];
         }
-        foreach ($parents as [$k, $pid]) {
-            $tbl = ['P_PAY' => 'payments', 'C_PAY' => 'company_payments', 'PSG' => 'pasargad_settlements', 'C_PSG' => 'company_payments'][$k] ?? null;
-            if ($tbl && $pid) $pdo->prepare("DELETE FROM `$tbl` WHERE id = ?")->execute([$pid]);
+        if ($kind !== 'R' && !$work) $parents[$kind . ':' . $id] = [$kind, $id];
+        foreach ($parents as [$k, $pid]) if (isset($parentTbl[$k]) && $pid) $pdo->prepare("DELETE FROM `{$parentTbl[$k]}` WHERE id = ?")->execute([$pid]);
+        if ($dir === 'OUT') foreach ($work as $w) fin_ledger_sync_settled($pdo, $w[3], $w[4]);
+        if ($kind === 'R') {
+            if ($rc['legacy_cheque_id']) { try { $pdo->prepare("DELETE FROM cheques WHERE id = ?")->execute([$rc['legacy_cheque_id']]); } catch (Throwable $e) {} }
+            $pdo->prepare("UPDATE fin_receipts SET status = 'VOID', voided_at = NOW(), voided_by = ? WHERE id = ?")->execute([$userId, $id]);
+        } else {
+            if ($kind === 'P_PAY' && !empty($rc['cheque_id'])) { try { $pdo->prepare("DELETE FROM cheques WHERE id = ?")->execute([$rc['cheque_id']]); } catch (Throwable $e) {} }
+            // ردِّ ثبتِ قبلی به‌صورتِ یک سندِ باطل‌شده در دفتر می‌ماند
+            $companyId = $rc['company_id'] ?? null;
+            if (!$companyId && !empty($rc['request_id'])) {
+                $q = $pdo->prepare("SELECT company_id FROM company_requests WHERE id = ?"); $q->execute([$rc['request_id']]); $companyId = $q->fetchColumn() ?: null;
+            }
+            $party = null;
+            if ($dir === 'OUT') $party = 'بیمه پاسارگاد';
+            elseif ($companyId) { $q = $pdo->prepare("SELECT name FROM companies WHERE id = ?"); $q->execute([$companyId]); $party = $q->fetchColumn() ?: null; }
+            $pdo->prepare("INSERT INTO fin_receipts (direction, party, company_id, insurer, amount, method, paid_jalali, paid_date, reference_no, files, note, items_count, status, created_by, voided_at, voided_by)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'VOID', ?, NOW(), ?)")
+                ->execute([$dir, $party, $companyId, $dir === 'OUT' ? 'PASARGAD' : null, intval($rc['amount']), $rc['method'] ?? 'TRANSFER',
+                           $rc['paid_jalali'] ?? null, $rc['paid_at'] ?? fin_jalali_to_date($rc['paid_jalali'] ?? ''), $rc['reference_no'] ?? null,
+                           $rc['receipts'] ?? null, trim('(ثبتِ قبلی) ' . ($rc['note'] ?? '')), count($work), $rc['created_by'] ?? null, $userId]);
         }
-        foreach ($lines as $l) if ($rc['direction'] === 'OUT') fin_ledger_sync_settled($pdo, $l['source'], $l['installment_id']);
-        if ($rc['legacy_cheque_id']) { try { $pdo->prepare("DELETE FROM cheques WHERE id = ?")->execute([$rc['legacy_cheque_id']]); } catch (Throwable $e) {} }
-        $pdo->prepare("UPDATE fin_receipts SET status = 'VOID', voided_at = NOW() WHERE id = ?")->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -335,23 +438,24 @@ function fin_ledger_void($pdo, $id) {
 function fin_ledger_history($pdo, $source, $id) {
     fin_ledger_ensure($pdo);
     $out = [];
-    $link = $pdo->prepare("SELECT r.id, r.method, r.cheque_no, r.cheque_status, r.files, r.status FROM fin_receipt_lines l JOIN fin_receipts r ON r.id = l.receipt_id WHERE l.legacy_kind = ? AND l.legacy_line_id = ?");
-    $add = function ($dir, $kind, $row) use (&$out, $link) {
+    $link = $pdo->prepare("SELECT r.id, r.method, r.cheque_no, r.cheque_status, r.files, r.status, r.created_by, r.created_at FROM fin_receipt_lines l JOIN fin_receipts r ON r.id = l.receipt_id WHERE l.legacy_kind = ? AND l.legacy_line_id = ?");
+    $add = function ($dir, $kind, $row) use (&$out, $link, $pdo) {
         $link->execute([$kind, $row['line_id']]);
         $rc = $link->fetch();
         $out[] = ['direction' => $dir, 'amount' => intval($row['amount']), 'paid_jalali' => $row['paid_jalali'], 'reference_no' => $row['reference_no'],
                   'method' => $rc ? $rc['method'] : ($row['method'] ?? null), 'method_fa' => fin_method_fa($rc ? $rc['method'] : ($row['method'] ?? '')),
                   'cheque_no' => $rc['cheque_no'] ?? null, 'cheque_status' => $rc['cheque_status'] ?? null, 'receipt_id' => $rc['id'] ?? null,
-                  'files' => json_decode((string)($rc['files'] ?? $row['receipts'] ?? ''), true) ?: [], 'note' => $row['note'] ?? '', 'created_at' => $row['created_at'] ?? null];
+                  'files' => json_decode((string)($rc['files'] ?? $row['receipts'] ?? ''), true) ?: [], 'note' => $row['note'] ?? '', 'created_at' => $rc['created_at'] ?? ($row['created_at'] ?? null),
+                  'created_by_name' => fin_user_name($pdo, $rc ? $rc['created_by'] : ($row['created_by'] ?? '')), 'legacy_kind' => $kind, 'legacy_id' => $row['pid'] ?? null];
     };
     try {
         if ($source === 'P') {
-            $st = $pdo->prepare("SELECT pa.id line_id, pa.amount, pm.paid_jalali, pm.reference_no, pm.method, pm.receipts, pm.note, NULL created_at FROM payment_allocations pa JOIN payments pm ON pm.id = pa.payment_id WHERE pa.installment_id = ? ORDER BY pa.id");
+            $st = $pdo->prepare("SELECT pa.id line_id, pm.id pid, pa.amount, pm.paid_jalali, pm.reference_no, pm.method, pm.receipts, pm.note, pm.created_by, NULL created_at FROM payment_allocations pa JOIN payments pm ON pm.id = pa.payment_id WHERE pa.installment_id = ? ORDER BY pa.id");
             $st->execute([$id]); foreach ($st->fetchAll() as $r) $add('IN', 'P_PAY', $r);
-            $st = $pdo->prepare("SELECT l.id line_id, l.amount, s.paid_jalali, s.reference_no, NULL method, s.receipts, s.note, NULL created_at FROM pasargad_settlement_lines l JOIN pasargad_settlements s ON s.id = l.settlement_id WHERE l.installment_id = ? ORDER BY l.id");
+            $st = $pdo->prepare("SELECT l.id line_id, s.id pid, l.amount, s.paid_jalali, s.reference_no, NULL method, s.receipts, s.note, s.created_by, NULL created_at FROM pasargad_settlement_lines l JOIN pasargad_settlements s ON s.id = l.settlement_id WHERE l.installment_id = ? ORDER BY l.id");
             $st->execute([$id]); foreach ($st->fetchAll() as $r) $add('OUT', 'PSG', $r);
         } else {
-            $st = $pdo->prepare("SELECT a.id line_id, a.amount, cp.paid_jalali, cp.reference_no, cp.method, cp.receipts, cp.note, cp.created_at, cp.target FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id WHERE a.installment_id = ? ORDER BY a.id");
+            $st = $pdo->prepare("SELECT a.id line_id, cp.id pid, a.amount, cp.paid_jalali, cp.reference_no, cp.method, cp.receipts, cp.note, cp.created_by, cp.created_at, cp.target FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id WHERE a.installment_id = ? ORDER BY a.id");
             $st->execute([$id]);
             foreach ($st->fetchAll() as $r) $add($r['target'] === 'US' ? 'IN' : 'OUT', $r['target'] === 'US' ? 'C_PAY' : 'C_PSG', $r);
         }
@@ -375,7 +479,9 @@ function fin_ledger_list($pdo, array $f) {
                    'insurer' => $r['insurer'], 'amount' => (int)$r['amount'], 'method' => $r['method'], 'paid_jalali' => $r['paid_jalali'], 'paid_date' => $r['paid_date'],
                    'reference_no' => $r['reference_no'], 'cheque_no' => $r['cheque_no'], 'cheque_bank' => $r['cheque_bank'], 'cheque_due_jalali' => $r['cheque_due_jalali'],
                    'cheque_status' => $r['cheque_status'], 'files' => json_decode((string)$r['files'], true) ?: [], 'note' => $r['note'],
-                   'items_count' => (int)$r['items_count'], 'status' => $r['status'], 'sources' => $r['sources']];
+                   'items_count' => (int)$r['items_count'], 'status' => $r['status'], 'sources' => $r['sources'],
+                   'created_by_name' => fin_user_name($pdo, $r['created_by']), 'created_at' => $r['created_at'],
+                   'voided_by_name' => fin_user_name($pdo, $r['voided_by'] ?? ''), 'voided_at' => $r['voided_at']];
     }
     $legacy = function ($sql, $kind, $dir, $srcCode) use ($pdo, &$rows, $linked) {
         try {
@@ -387,21 +493,22 @@ function fin_ledger_list($pdo, array $f) {
                            'reference_no' => $r['reference_no'], 'cheque_no' => $r['cheque_no'] ?? null, 'cheque_bank' => $r['bank_name'] ?? null,
                            'cheque_due_jalali' => $r['cheque_due'] ?? null, 'cheque_status' => $r['cheque_status'] ?? null,
                            'files' => json_decode((string)($r['receipts'] ?? ''), true) ?: [], 'note' => $r['note'], 'items_count' => (int)($r['items'] ?? 0),
-                           'status' => 'ACTIVE', 'sources' => $srcCode];
+                           'status' => 'ACTIVE', 'sources' => $srcCode, 'legacy_kind' => $kind,
+                           'created_by_name' => fin_user_name($pdo, $r['created_by'] ?? ''), 'created_at' => $r['created_at'] ?? null];
             }
         } catch (Throwable $e) { error_log('[fin_ledger_list ' . $kind . '] ' . $e->getMessage()); }
     };
-    $legacy("SELECT pm.id, pm.company_id, c.name party, pm.amount, pm.method, pm.paid_jalali, pm.paid_at, pm.reference_no, pm.receipts, pm.note,
+    $legacy("SELECT pm.id, pm.company_id, c.name party, pm.amount, pm.method, pm.paid_jalali, pm.paid_at, pm.reference_no, pm.receipts, pm.note, pm.created_by,
                     ch.cheque_no, ch.bank_name, ch.due_jalali cheque_due, ch.status cheque_status,
                     (SELECT COUNT(*) FROM payment_allocations WHERE payment_id = pm.id) items
                FROM payments pm LEFT JOIN companies c ON c.id = pm.company_id LEFT JOIN cheques ch ON ch.id = pm.cheque_id ORDER BY pm.id DESC LIMIT 2000", 'P_PAY', 'IN', 'P');
-    $legacy("SELECT cp.id, cr.company_id, c.name party, cp.amount, cp.method, cp.paid_jalali, cp.paid_at, cp.reference_no, cp.receipts, cp.note,
+    $legacy("SELECT cp.id, cr.company_id, c.name party, cp.amount, cp.method, cp.paid_jalali, cp.paid_at, cp.reference_no, cp.receipts, cp.note, cp.created_by, cp.created_at,
                     (SELECT COUNT(*) FROM company_payment_allocations WHERE payment_id = cp.id) items
                FROM company_payments cp JOIN company_requests cr ON cr.id = cp.request_id JOIN companies c ON c.id = cr.company_id WHERE cp.target = 'US' ORDER BY cp.id DESC LIMIT 2000", 'C_PAY', 'IN', 'C');
-    $legacy("SELECT s.id, s.company_id, 'بیمه پاسارگاد' party, s.amount, 'TRANSFER' method, s.paid_jalali, NULL paid_at, s.reference_no, s.receipts, s.note,
+    $legacy("SELECT s.id, s.company_id, 'بیمه پاسارگاد' party, s.amount, 'TRANSFER' method, s.paid_jalali, NULL paid_at, s.reference_no, s.receipts, s.note, s.created_by,
                     (SELECT COUNT(*) FROM pasargad_settlement_lines WHERE settlement_id = s.id) items
                FROM pasargad_settlements s ORDER BY s.id DESC LIMIT 2000", 'PSG', 'OUT', 'P');
-    $legacy("SELECT cp.id, cr.company_id, 'بیمه پاسارگاد' party, cp.amount, cp.method, cp.paid_jalali, cp.paid_at, cp.reference_no, cp.receipts, cp.note,
+    $legacy("SELECT cp.id, cr.company_id, 'بیمه پاسارگاد' party, cp.amount, cp.method, cp.paid_jalali, cp.paid_at, cp.reference_no, cp.receipts, cp.note, cp.created_by, cp.created_at,
                     (SELECT COUNT(*) FROM company_payment_allocations WHERE payment_id = cp.id) items
                FROM company_payments cp JOIN company_requests cr ON cr.id = cp.request_id WHERE cp.target = 'PASARGAD' ORDER BY cp.id DESC LIMIT 2000", 'C_PSG', 'OUT', 'C');
 
@@ -419,7 +526,7 @@ function fin_ledger_list($pdo, array $f) {
         if ($from && (!$pd || $pd < $from)) continue;
         if ($to && (!$pd || $pd > $to)) continue;
         if ($q !== '') {
-            $hay = mb_strtolower(p2e_digits(implode(' ', [$r['party'], $r['reference_no'], $r['cheque_no'], $r['note'], $r['amount'], $r['paid_jalali']])));
+            $hay = mb_strtolower(p2e_digits(implode(' ', [$r['party'], $r['reference_no'], $r['cheque_no'], $r['note'], $r['amount'], $r['paid_jalali'], $r['created_by_name'] ?? ''])));
             if (mb_strpos($hay, $q) === false) continue;
         }
         $r['method_fa'] = fin_method_fa($r['method']);

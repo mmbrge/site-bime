@@ -173,6 +173,47 @@ function fin_due_after($jy, $jm, $jd, $months) {
     return [$y, $m, $d];
 }
 
+// ستون‌های «فیشِ اقساط» و «تاریخ صدورِ داخلِ بیمه‌نامه» (خودکار، یک بار)
+function fin_ensure_receipt_cols($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    foreach ([['company_request_plates', 'receipts_json', 'TEXT NULL'], ['company_request_plates', 'statement_file', 'VARCHAR(500) NULL'],
+              ['company_request_plates', 'policy_issue_date', 'VARCHAR(12) NULL'],
+              ['policy_cases', 'receipts_json', 'TEXT NULL'], ['policy_cases', 'statement_file', 'VARCHAR(500) NULL']] as [$t, $c, $def]) {
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE " . $pdo->quote($c))->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def");
+        } catch (Throwable $e) { error_log('[fin_ensure_receipt_cols] ' . $e->getMessage()); }
+    }
+}
+
+// جفت‌کردنِ اقساط با فیش‌های فایلِ بیمه‌نامه: اگر تعدادشان برابر است به ترتیب، وگرنه نزدیک‌ترین تاریخِ سررسید
+// $insts: [[id, inst_number, due_jalali], ...] ؛ خروجی: [id => receipt]
+function fin_pair_receipts(array $insts, $receiptsJson) {
+    $rc = is_array($receiptsJson) ? $receiptsJson : (json_decode((string)$receiptsJson, true) ?: []);
+    if (!$rc || !$insts) return [];
+    usort($insts, fn($a, $b) => $a['inst_number'] <=> $b['inst_number']);
+    usort($rc, fn($a, $b) => strcmp((string)($a['date'] ?? ''), (string)($b['date'] ?? '')));
+    $out = [];
+    if (count($rc) === count($insts)) {
+        foreach ($insts as $k => $i) $out[$i['id']] = $rc[$k];
+        return $out;
+    }
+    $toDays = function ($j) { $p = fin_parse_jalali($j); return $p ? $p[0] * 372 + $p[1] * 31 + $p[2] : null; };
+    $used = [];
+    foreach ($insts as $i) {
+        $di = $toDays($i['due_jalali'] ?? ''); $best = null; $bd = PHP_INT_MAX;
+        foreach ($rc as $k => $r) {
+            if (isset($used[$k])) continue;
+            $dr = $toDays($r['date'] ?? '');
+            $dist = ($di !== null && $dr !== null) ? abs($di - $dr) : 100000 + $k;
+            if ($dist < $bd) { $bd = $dist; $best = $k; }
+        }
+        if ($best !== null && $bd <= 45) { $out[$i['id']] = $rc[$best]; $used[$best] = 1; }
+    }
+    return $out;
+}
+
 // کد رهگیری ۱۰ رقمیِ یکتا برای هر قسط (مثل tracking_id ماموت)
 function fin_tracking_code($pdo, $table = 'policy_installments') {
     $chk = $pdo->prepare("SELECT 1 FROM `$table` WHERE tracking_code = ? LIMIT 1");
@@ -1441,6 +1482,8 @@ function fin_kind_fa($k) {
 // =====================================================================
 function fin_unified_installments($pdo, array $f = []) {
     fin_ensure_schema($pdo);
+    fin_ensure_receipt_cols($pdo);
+    $receiptsOf = ['P' => [], 'C' => []];   // فیش‌های فایلِ بیمه‌نامه (برای دکمه‌ی «فیش پرداختی» روی هر قسط)
     $cutoff = intval(fin_settings($pdo)['period_cutoff_day']);
     $today = date('Y-m-d');
     $near = date('Y-m-d', strtotime('+30 days'));
@@ -1459,7 +1502,7 @@ function fin_unified_installments($pdo, array $f = []) {
         $st = $pdo->prepare("
             SELECT pi.id, pi.case_id AS ref_id, pi.inst_number, pi.amount, pi.due_jalali, pi.due_date, pi.tracking_code,
                    COALESCE(pi.settled_to_pasargad,0) AS settled, pc.plate, pc.insurance_type, pc.policy_number,
-                   pc.insured_name, pc.total_premium, pc.issued_at, pc.policy_issue_date, COALESCE(pc.is_invoiced,0) AS is_invoiced,
+                   pc.insured_name, pc.total_premium, pc.issued_at, pc.policy_issue_date, pc.receipts_json, COALESCE(pc.is_invoiced,0) AS is_invoiced,
                    p.full_name AS holder_name, p.personnel_code, p.national_code,
                    c.id AS company_id, c.name AS company_name,
                    COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.installment_id = pi.id),0) AS paid
@@ -1470,6 +1513,7 @@ function fin_unified_installments($pdo, array $f = []) {
             WHERE " . implode(' AND ', $w));
         $st->execute($p);
         foreach ($st->fetchAll() as $r) {
+            if (!empty($r['receipts_json'])) $receiptsOf['P'][(int)$r['ref_id']] = $r['receipts_json'];
             [$iy, $im, $id] = fin_issue_jalali($r['policy_issue_date'], $r['issued_at']);
             [$py, $pm] = $periodOf($iy, $im, $id);
             $rows[] = [
@@ -1494,7 +1538,7 @@ function fin_unified_installments($pdo, array $f = []) {
             $st = $pdo->prepare("
                 SELECT ci.id, ci.plate_id AS ref_id, ci.inst_number, ci.amount, ci.due_jalali, ci.due_date, ci.tracking_code,
                        COALESCE(ci.settled_to_pasargad,0) AS settled, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no,
-                       crp.insurance_type, crp.policy_number, crp.total_premium, crp.issued_at, cr.id AS request_id, cr.insurer,
+                       crp.insurance_type, crp.policy_number, crp.total_premium, crp.issued_at, crp.policy_issue_date, crp.receipts_json, cr.id AS request_id, cr.insurer,
                        c.id AS company_id, c.name AS company_name,
                        COALESCE((SELECT SUM(a.amount) FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id
                                  WHERE a.installment_id = ci.id AND cp.target = 'US'),0) AS paid
@@ -1505,7 +1549,8 @@ function fin_unified_installments($pdo, array $f = []) {
                 WHERE " . implode(' AND ', $w));
             $st->execute($p);
             foreach ($st->fetchAll() as $r) {
-                [$iy, $im, $id] = fin_issue_jalali(null, $r['issued_at']);
+                if (!empty($r['receipts_json'])) $receiptsOf['C'][(int)$r['ref_id']] = $r['receipts_json'];
+                [$iy, $im, $id] = fin_issue_jalali($r['policy_issue_date'] ?? null, $r['issued_at']);
                 [$py, $pm] = $periodOf($iy, $im, $id);
                 $plate = function_exists('company_row_label') ? company_row_label($r)
                        : trim("{$r['plate_p1']}ایران - {$r['plate_p2']} {$r['plate_letter']} {$r['plate_p4']}");
@@ -1531,7 +1576,18 @@ function fin_unified_installments($pdo, array $f = []) {
     $toS = $to ? sprintf('%04d/%02d/%02d', ...$to) : null;
     $dateField = ($f['date_field'] ?? 'due') === 'issue' ? 'issue_jalali' : 'due_jalali';
     $q = trim(p2e_digits((string)($f['q'] ?? '')));
+    // فیشِ هر قسط: اقساطِ هر بیمه‌نامه با فیش‌های داخلِ فایلش جفت می‌شوند
+    $pairs = [];
+    if ($receiptsOf['P'] || $receiptsOf['C']) {
+        $groups = [];
+        foreach ($rows as $r) if (isset($receiptsOf[$r['source']][$r['ref_id']])) $groups[$r['source'] . ':' . $r['ref_id']][] = ['id' => $r['id'], 'inst_number' => $r['inst_number'], 'due_jalali' => $r['due_jalali']];
+        foreach ($groups as $gk => $insts) {
+            [$gs, $gid] = explode(':', $gk);
+            foreach (fin_pair_receipts($insts, $receiptsOf[$gs][(int)$gid]) as $iid => $rc) $pairs[$gs . ':' . $iid] = $rc;
+        }
+    }
     foreach ($rows as $r) {
+        $r['receipt'] = $pairs[$r['source'] . ':' . $r['id']] ?? null;
         $r['remaining'] = max(0, $r['amount'] - $r['paid']);
         $r['pay_status'] = $r['remaining'] <= 0 ? 'PAID' : ($r['paid'] > 0 ? 'PARTIAL' : 'UNPAID');
         $r['overdue'] = $r['remaining'] > 0 && $r['due_date'] !== '' && $r['due_date'] < $today;

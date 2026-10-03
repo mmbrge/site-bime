@@ -1287,8 +1287,14 @@ function company_generate_installments($pdo, $plateId) {
     $comp = $stmt->fetch();
     $count = intval($comp['installment_count'] ?? 0) ?: 1;
 
-    $issuedTs = $plate['issued_at'] ? strtotime($plate['issued_at']) : time();
-    [$jy, $jm, $jd] = jalali_from_gregorian_ts($issuedTs);
+    // سررسیدها از «تاریخ صدورِ داخلِ بیمه‌نامه»؛ اگر خوانده نشده بود، روزِ ثبتِ صدور در سایت
+    $pj = (function_exists('fin_parse_jalali') && !empty($plate['policy_issue_date'])) ? fin_parse_jalali($plate['policy_issue_date']) : null;
+    if ($pj) {
+        [$jy, $jm, $jd] = $pj;
+    } else {
+        $issuedTs = $plate['issued_at'] ? strtotime($plate['issued_at']) : time();
+        [$jy, $jm, $jd] = jalali_from_gregorian_ts($issuedTs);
+    }
     [$fy, $fm] = company_add_months_jalali($jy, $jm, intval($comp['first_due_offset_months'] ?? 0));
     $fd = min($jd, company_jalali_month_len($fy, $fm));
     $firstTs = jalali_to_gregorian_ts($fy, $fm, $fd) + (intval($comp['first_due_offset_days'] ?? 0) * 86400);
