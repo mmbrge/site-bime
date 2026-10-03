@@ -48,6 +48,18 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
         $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php'];
         $__vrOk = false;
         foreach ($__vrAllowed as $__a) if (substr($__vrScript, -strlen($__a)) === $__a) { $__vrOk = true; break; }
+        // اگر مدیر کل برایش دسترسیِ سفارشی تعیین کرده، همان دسترسی‌ها (api/_perm.php) تعیین‌کننده است
+        if (!$__vrOk) {
+            try {
+                $__st = $pdo->prepare("SELECT perm_json FROM users WHERE id = ?");
+                $__st->execute([intval($_SESSION['user_id'] ?? 0)]);
+                $__pj = $__st->fetchColumn();
+                if ($__pj !== false && $__pj !== null && $__pj !== '') {
+                    require_once dirname(__DIR__) . '/api/_perm.php';
+                    $__vrOk = isset(perm_api_map()[basename($__vrScript, '.php')]);   // فقط APIهایی که دسترسیِ سفارشی کنترلشان می‌کند
+                }
+            } catch (Throwable $e) {}
+        }
         if (!$__vrOk) {
             if (strpos($__vrScript, '/api/') !== false) {
                 header('Content-Type: application/json; charset=utf-8');

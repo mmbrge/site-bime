@@ -15,6 +15,11 @@ if (!auth_staff_is_active($pdo, $_SESSION['user_id'])) {
     exit;
 }
 
+// دسترسیِ سفارشیِ صفحه به صفحه (api/_perm.php): اگر مدیر کل برای این کاربر تعیین کرده باشد، صفحه با چیدمانِ
+// کامل ساخته می‌شود و منوها و دکمه‌هایی که اجازه ندارد در مرورگر پنهان می‌شوند (بررسیِ اصلی در سرور است)
+require_once __DIR__ . '/api/_perm.php';
+$permBoot = perm_page_boot($pdo);
+$realRole = perm_real_role();
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
@@ -854,7 +859,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button onclick="document.getElementById('profile-modal').classList.add('active')" class="hdr-edit-btn w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
                     <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($realRole)); ?><?php if (!empty($permBoot['custom'])): ?> <span class="text-[9px] bg-violet-100 text-violet-700 rounded-full px-1.5 py-px mr-0.5" title="مدیر کل دسترسیِ صفحه‌به‌صفحه برای شما تعیین کرده است">دسترسی سفارشی</span><?php endif; ?></p>
                     <p id="hdr-clock" class="hdr-clock" title="تاریخ و ساعتِ ایران (ساعتِ سرور)"><i class="far fa-clock"></i><span class="hc-d"></span><span class="hc-sep">-</span><span class="hc-t"></span></p>
                 </div>
                 <button type="button" id="me-avatar" onclick="document.getElementById('profile-modal').classList.add('active')" title="عکس و پروفایل" class="w-11 h-11 rounded-2xl overflow-visible flex items-center justify-center hover:scale-105 transition-transform"><span class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></span></button>
@@ -3153,6 +3158,57 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <!-- ویرایش کاربر (همه‌چیز جز نام کاربری) - با رمزِ مدیر -->
+    <!-- دسترسیِ صفحه‌به‌صفحه‌ی یک کاربرِ پنل (فقط مدیر کل) -->
+    <div id="perm-modal" class="modal-overlay">
+        <div class="modal-content w-full max-w-4xl p-0 relative overflow-hidden" style="max-height:94vh; display:flex; flex-direction:column; margin:0 12px;">
+            <div class="px-6 py-4 text-white flex items-center gap-3" style="background:linear-gradient(120deg,#4f46e5,#7c3aed)">
+                <span class="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center text-lg"><i class="fas fa-user-lock"></i></span>
+                <div class="flex-1 min-w-0"><h3 class="font-black text-base">دسترسی‌های <span id="pm-name"></span></h3>
+                    <p class="text-[11px] text-white/80">برای هر صفحه تعیین کنید چه کاری بتواند بکند. نقش: <b id="pm-role"></b></p></div>
+                <button type="button" onclick="closeModal('perm-modal')" class="text-white/80 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="px-6 pt-4 pb-2 border-b border-slate-100 bg-slate-50/60">
+                <div class="pm-seg inline-flex rounded-xl bg-white border border-slate-200 p-1 text-xs font-black">
+                    <button type="button" data-m="role" onclick="pmSetMode('role')"><i class="fas fa-id-badge ml-1"></i>همان دسترسیِ پیش‌فرضِ نقش</button>
+                    <button type="button" data-m="custom" onclick="pmSetMode('custom')"><i class="fas fa-sliders ml-1"></i>سفارشی (صفحه به صفحه)</button>
+                </div>
+                <div id="pm-tools" class="flex flex-wrap items-center gap-1.5 mt-3 text-[11px]">
+                    <span class="text-slate-500 font-bold ml-1">الگوی سریع:</span>
+                    <button type="button" onclick="pmPreset('all')" class="pm-chip">همه‌چیز</button>
+                    <button type="button" onclick="pmPreset('view')" class="pm-chip">فقط مشاهده‌ی همه</button>
+                    <button type="button" onclick="pmPreset('viewexp')" class="pm-chip">مشاهده + خروجیِ همه</button>
+                    <button type="button" onclick="pmPreset('role')" class="pm-chip">از پیش‌فرضِ نقش</button>
+                    <button type="button" onclick="pmPreset('none')" class="pm-chip text-rose-600">پاک کردنِ همه</button>
+                    <select id="pm-copy" onchange="pmCopyFrom(this.value)" class="pm-chip bg-white"><option value="">کپی از کاربرِ دیگر…</option></select>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 py-4 no-count" id="pm-body"></div>
+            <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
+                <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
+                <input type="password" id="pm-admin-pass" placeholder="رمزِ خودتان برای تایید" class="border border-slate-200 rounded-xl px-3 py-2 text-xs w-48" autocomplete="new-password">
+                <button type="button" onclick="pmSave()" class="text-white text-xs font-black px-5 py-2.5 rounded-xl" style="background:linear-gradient(120deg,#4f46e5,#7c3aed)"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی دسترسی‌ها</button>
+            </div>
+        </div>
+    </div>
+    <style>
+        .pm-seg button { padding: 6px 12px; border-radius: 9px; color: #64748b; }
+        .pm-seg button.on { background: #4f46e5; color: #fff; box-shadow: 0 4px 12px -4px rgba(79,70,229,.6); }
+        .pm-chip { border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 4px 10px; font-weight: 700; color: #334155; }
+        .pm-chip:hover { border-color: #a5b4fc; background: #eef2ff; }
+        .pm-grp { border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; margin-bottom: 12px; }
+        .pm-grp h4 { background: #f8fafc; padding: 8px 12px; font-size: 12px; font-weight: 900; color: #334155; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e2e8f0; }
+        .pm-tbl { width: 100%; font-size: 12px; }
+        .pm-tbl th { font-size: 10.5px; color: #64748b; font-weight: 800; padding: 6px 4px; text-align: center; }
+        .pm-tbl th:first-child, .pm-tbl td:first-child { text-align: right; padding-right: 12px; }
+        .pm-tbl td { padding: 6px 4px; text-align: center; border-top: 1px solid #f1f5f9; }
+        .pm-tbl tr:hover td { background: #fafaff; }
+        .pm-tbl th button { color: #6366f1; font-size: 10px; display: block; margin: 2px auto 0; }
+        .pm-cb { width: 18px; height: 18px; accent-color: #4f46e5; cursor: pointer; }
+        .pm-na { color: #cbd5e1; }
+        .pm-row-all { font-size: 10px; color: #6366f1; font-weight: 800; margin-right: 6px; }
+        #pm-body.pm-locked { opacity: .55; pointer-events: none; filter: grayscale(.4); }
+        .su-chip.pc { background: #ede9fe; color: #6d28d9; }
+    </style>
     <div id="edit-staff-user-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
             <button type="button" onclick="closeModal('edit-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
@@ -3425,7 +3481,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <label>رمز عبور جدید (اختیاری)</label>
                 </div>
                 <div class="text-[11px] text-slate-500 mb-5 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <i class="fas fa-info-circle text-blue-500"></i> سطح دسترسی شما (<strong class="text-blue-600"><?php echo htmlspecialchars(role_fa($_SESSION['role'] ?? '')); ?></strong>) غیرقابل تغییر است.
+                    <i class="fas fa-info-circle text-blue-500"></i> سطح دسترسی شما (<strong class="text-blue-600"><?php echo htmlspecialchars(role_fa($realRole)) . (!empty($permBoot['custom']) ? ' - سفارشی' : ''); ?></strong>) غیرقابل تغییر است.
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-colors hover-target">ذخیره تغییرات</button>
             </form>
@@ -3665,6 +3721,74 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let currentRecordsData = [];
         let activeRowId = null;
         const IS_ADMIN = <?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? 'true' : 'false'; ?>;
+        // ---------- دسترسیِ سفارشیِ صفحه به صفحه ----------
+        // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
+        // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
+        const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
+            'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-settings',
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings'];
+        function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
+        const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
+        let permTab = 'dashboard';
+        window.permCan = permCan;
+        const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal';
+        const PERM_DOM_FN = /^(getElementById|querySelector|querySelectorAll|remove|add|toggle|contains|stopPropagation|preventDefault|closeModal|openModal|showToast|focus|click|blur|scrollIntoView|setTimeout|encodeURIComponent|Number|String|parseInt|faDigits|e2p|p2e|if|function|return|switchTab|toggleMenuGroup|toggleMenuSub|window|open|print)$/;
+        const PERM_FN_RULES = [
+            [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
+            [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
+            [/openCompanyVisitReport|openCaseVisitReport|buildHealthReport/, ['vr-build:create']],
+            [/creqPay|openPayDialog/, ['fin-installments:create', 'fin-payments:create']],
+            [/setRowStage/, ['companies-requests:edit', 'issue-queue:edit']],
+        ];
+        // کدام عملیات لازم است تا این دکمه دیده شود؟ (null = آزاد؛ «op» روی همین صفحه، «page:op» روی صفحه‌ی مشخص)
+        function permNeed(el) {
+            if (el.dataset.perm) return el.dataset.perm.split('|');
+            const oc = el.getAttribute('onclick') || '';
+            const fns = []; oc.replace(/([A-Za-z_$][\w$]*)\s*\(/g, (m, f) => { if (!PERM_DOM_FN.test(f)) fns.push(f); return m; });
+            const fn = fns.join(' ');
+            // کارهایی که مالِ صفحه‌ی دیگری‌اند (مثلاً «صدور گروهی» داخلِ جزئیاتِ درخواست)
+            for (const [re, spec] of PERM_FN_RULES) if (re.test(fn)) return spec;
+            let txt = (el.textContent || '').replace(/\s+/g, ' ').trim() + ' ' + (el.getAttribute('title') || '');
+            const ic = [...el.querySelectorAll('i')].map(i => i.className).join(' ');
+            const href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
+            const hrefAct = (href.match(/[?&]action=([a-z_]+)/) || [])[1] || '';
+            if (/حذف|ابطال|باطل کردن/.test(txt) || /(^|\s)(delete|remove|void|purge|deactivate)|Delete|Remove|Void|Purge|Deactivate/.test(fn) || /fa-trash|fa-user-slash/.test(ic) || /delete|void|purge/.test(hrefAct)) return ['delete'];
+            if (/خروجی|اکسل|زیپ|\bzip\b|ZIP/i.test(txt) || /export|Export|Excel|Zip|downloadAll/.test(fn) || /fa-file-excel|fa-file-export|fa-file-zipper/.test(ic) || /export|zip|excel/.test(hrefAct)) return ['export'];
+            if (/افزودن|جدید|ایمپورت|ورود از اکسل|ثبت دستی|بارگذاری|آپلود|صدورِ انتخاب|صدور و بایگانیِ/.test(txt) || /(^|\s)(create|add|new|import|upload|openAdd|openNew|openCreate|bundleIssue|bundleAnalyze)|Create|Import|Upload|New[A-Z]|Add[A-Z]/.test(fn) || /fa-plus|fa-file-import|fa-upload|fa-file-arrow-up|fa-cloud-arrow-up/.test(ic)) return ['create'];
+            if (/ویرایش|ذخیره|تایید|تأیید|(^|\s)رد(\s|$)|رد کردن|ثبت|صدور|تغییر وضعیت|تسویه|بازگردانی|اصلاح/.test(txt) || /(^|\s)(edit|save|update|submit|confirm|approve|reject|mark|change|retry|settle|pay|openEdit|openPay|regenerate|creqPay|restore)|Edit|Save|Update|Confirm|Approve|Reject|Issue/.test(fn) || /fa-pen|fa-floppy-disk|fa-save|fa-stamp/.test(ic)) {
+                return /ثبت|صدور/.test(txt) && !/ویرایش|ذخیره/.test(txt) ? ['create', 'edit'] : ['edit'];
+            }
+            return null;
+        }
+        const permCache = new WeakMap();
+        function permApply() {
+            if (!PERM.custom) return;
+            // منو و زبانه‌ها
+            document.querySelectorAll('[onclick*="switchTab("]').forEach(el => {
+                const m = (el.getAttribute('onclick') || '').match(/switchTab\(\s*'([a-z-]+)/);
+                if (m && !el.closest('#perm-modal')) el.classList.toggle('perm-hide', !permCan(m[1]));
+            });
+            document.querySelectorAll('#main-nav .menu-sub').forEach(sub => sub.classList.toggle('perm-hide', !sub.querySelector('.nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .menu-group').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
+            // دکمه‌های عملیات
+            document.querySelectorAll('button, a[onclick], a[href*="action="], label[onclick], [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
+                if (el.closest(PERM_SKIP) || /switchTab\(/.test(el.getAttribute('onclick') || '')) return;
+                let need = permCache.get(el);
+                if (need === undefined) { need = permNeed(el); permCache.set(el, need); }
+                if (!need) return;
+                const tab = el.closest('.tab-content');
+                const page = tab ? tab.id.slice(4) : permTab;
+                el.classList.toggle('perm-hide', !need.some(op => op.indexOf(':') > 0 ? permCan(op.split(':')[0], op.split(':')[1]) : permCan(page, op)));
+            });
+        }
+        let permQueued = false;
+        function permSchedule() { if (permQueued || !PERM.custom) return; permQueued = true; requestAnimationFrame(() => { permQueued = false; permApply(); }); }
+        if (PERM.custom) {
+            document.head.insertAdjacentHTML('beforeend', '<style>.perm-hide{display:none!important}</style>');
+            new MutationObserver(permSchedule).observe(document.body, {childList: true, subtree: true});
+            permApply();
+        }
         let activeRowNational = '';
         let isBotEnabledState = true;
         let currentQueueData = [];
@@ -4251,13 +4375,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» و «کاربر پارسیان» به این بخش دسترسی ندارند
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
-        loadStats();
-        loadDashCharts();
-        loadDashAlerts();
+        if (permCan('dashboard')) { loadStats(); loadDashCharts(); loadDashAlerts(); }
         <?php endif; ?>
         <?php if ($canSeeCompanies): ?>
-        loadCompanyInbox();
-        setInterval(loadCompanyInbox, 30000);
+        if (permCan('companies-inbox')) { loadCompanyInbox(); setInterval(loadCompanyInbox, 30000); }
         // همگام‌سازی خودکار: هر تبی که همین الان باز است، هر ۲۰ ثانیه خودش را تازه می‌کند
         setInterval(() => {
             const visible = id => document.getElementById('tab-' + id) && !document.getElementById('tab-' + id).classList.contains('hidden');
@@ -4273,6 +4394,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php if ($isParsian): ?>
         switchTab('vr-build');
         <?php endif; ?>
+        // دسترسیِ سفارشی بدونِ «داشبورد»: اولین صفحه‌ای که اجازه دارد
+        if (PERM.custom && !permCan('dashboard')) setTimeout(() => {   // بعد از اجرای کاملِ اسکریپت (ثابت‌های پایین‌تر آماده باشند)
+            const ft = permFirstTab();
+            if (ft) switchTab(ft);
+            else { document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+                   document.getElementById('tab-dashboard').insertAdjacentHTML('beforebegin', '<div class="max-w-xl mx-auto mt-16 text-center bg-white border border-slate-200 rounded-2xl p-8"><i class="fas fa-lock text-3xl text-slate-300 mb-3"></i><p class="font-black text-slate-700">هنوز به هیچ صفحه‌ای دسترسی ندارید.</p><p class="text-xs text-slate-500 mt-1">از مدیر کل بخواهید در «کاربران» دسترسی‌تان را تعیین کند.</p></div>'); }
+        }, 0);
 
         // ======================= کارتابل پرونده‌ها (معرفی‌نامه‌های کارکنان) =======================
         // بازه‌ی زمانی روی کارت‌ها و جدول با هم اثر دارد: جدول بر اساسِ تاریخِ صدورِ معرفی‌نامه (اگر نبود، تاریخِ ثبت)
@@ -7717,17 +7845,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const roleChip = co ? '<span class="su-chip co"><i class="fas fa-building ml-1"></i>کاربر شرکت</span>'
                                     : u.role === 'PARSIAN' ? '<span class="su-chip">همکار بیمه با ما</span> <span class="su-chip" style="background:#fff1f2;color:#be123c" title="فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش">پنل پارسیان</span>'
                                     : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
+                const permChip = !co && u.perm_custom ? ' <span class="su-chip pc" title="دسترسیِ صفحه‌به‌صفحه تعیین شده"><i class="fas fa-user-lock ml-1"></i>سفارشی</span>' : '';
                 const isMe = !co && Number(u.id) === staffMeId;
                 return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
                     <td class="p-3 font-bold"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name, {size: 34, online: !del && u.presence && u.presence.online}) : ''}<span>${del ? '' : botDot(u.bot_linked)} ${u.full_name}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</span></span></td>
                     <td class="p-3 font-mono">${u.username}</td>
-                    <td class="p-3">${roleChip}</td>
+                    <td class="p-3">${roleChip}${permChip}</td>
                     <td class="p-3 text-slate-500">${co ? (u.company_names || '—') : `<span class="font-mono">${faDigits(u.personnel_code || '') || '—'}</span>`}</td>
                     <td class="p-3 font-mono text-slate-500" dir="ltr">${faDigits(u.mobile_number || '') || '—'}</td>
                     <td class="p-3" data-pres="${u.type}:${u.id}" title="${u.last_login_jalali ? 'آخرین ورود: ' + faDigits(u.last_login_jalali) : ''}">${presenceCell(u.presence)}</td>
                     <td class="p-3 whitespace-nowrap">${del ? '' : `
                         ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
                         <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        ${!co && REAL_ADMIN && u.role !== 'ADMIN' ? `<button onclick="openPermEditor(${u.id})" class="text-violet-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-user-lock ml-1"></i>دسترسی‌ها</button>` : ''}
                         ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
                 </tr>`;
             }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
@@ -7887,6 +8017,115 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('esu', data.error); return; }
             showToast(data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.', 'success');
             closeModal('edit-staff-user-modal');
+            loadStaffUsers();
+        }
+        // ---------- ویرایشگرِ دسترسیِ صفحه‌به‌صفحه ----------
+        const REAL_ADMIN = <?php echo $realRole === 'ADMIN' ? 'true' : 'false'; ?>;
+        let PM = null;   // {user, catalog, ops, role_default, perms, mode}
+        async function openPermEditor(id) {
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_get', id})});
+            const d = await res.json();
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            const clone = o => JSON.parse(JSON.stringify(o || {}));
+            PM = {user: d.user, catalog: d.catalog, ops: d.ops, roleDef: clone(d.role_default), perms: d.custom ? clone(d.perms) : clone(d.role_default), mode: d.custom ? 'custom' : 'role'};
+            document.getElementById('pm-name').textContent = d.user.name;
+            document.getElementById('pm-role').textContent = ROLE_FA[d.user.role] || d.user.role;
+            document.getElementById('pm-admin-pass').value = '';
+            document.getElementById('pm-copy').innerHTML = '<option value="">کپی از کاربرِ دیگر…</option>' + (d.others || []).map(o => `<option value="${o.id}">${o.name} (${ROLE_FA[o.role] || o.role}${o.custom ? ' · سفارشی' : ''})</option>`).join('');
+            pmSetMode(PM.mode);
+            openModal('perm-modal');
+        }
+        function pmSetMode(m) {
+            if (!PM) return;
+            pmCollect();
+            PM.mode = m;
+            if (m === 'role') PM.perms = JSON.parse(JSON.stringify(PM.roleDef));
+            document.querySelectorAll('.pm-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+            document.getElementById('pm-tools').classList.toggle('hidden', m !== 'custom');
+            pmRender();
+        }
+        function pmRender() {
+            const ops = Object.keys(PM.ops);
+            const has = (k, op) => (PM.perms[k] || []).includes(op);
+            document.getElementById('pm-body').innerHTML = (PM.mode === 'role' ? `<p class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-circle-info ml-1"></i>این کاربر همان دسترسی‌هایی را دارد که نقشِ «${ROLE_FA[PM.user.role] || PM.user.role}» دارد (جدولِ زیر فقط نمایش است). برای تغییر، «سفارشی» را بزنید.</p>` : '')
+                + PM.catalog.map((g, gi) => `<div class="pm-grp"><h4><i class="fas fa-layer-group text-indigo-500"></i>${g.group}
+                    <button type="button" onclick="pmGroup(${gi}, true)" class="pm-row-all mr-auto">همه</button><button type="button" onclick="pmGroup(${gi}, false)" class="pm-row-all text-rose-500">هیچ</button></h4>
+                    <table class="pm-tbl"><thead><tr><th>صفحه</th>${ops.map(op => `<th>${PM.ops[op]}<button type="button" onclick="pmCol(${gi}, '${op}')">همه/هیچ</button></th>`).join('')}<th></th></tr></thead><tbody>
+                    ${g.pages.map(p => `<tr data-k="${p.key}"><td class="font-bold text-slate-700">${p.title}</td>
+                        ${ops.map(op => p.ops.includes(op) ? `<td><input type="checkbox" class="pm-cb" data-k="${p.key}" data-op="${op}" ${has(p.key, op) ? 'checked' : ''} onchange="pmChanged(this)"></td>` : '<td class="pm-na">—</td>').join('')}
+                        <td><button type="button" onclick="pmRow('${p.key}')" class="pm-row-all">همه/هیچ</button></td></tr>`).join('')}
+                    </tbody></table></div>`).join('');
+            document.getElementById('pm-body').classList.toggle('pm-locked', PM.mode !== 'custom');
+            pmSummary();
+        }
+        function pmCollect() {
+            if (!PM || PM.mode !== 'custom') return;
+            const out = {};
+            document.querySelectorAll('#pm-body .pm-cb:checked').forEach(cb => { (out[cb.dataset.k] = out[cb.dataset.k] || []).push(cb.dataset.op); });
+            PM.perms = out;
+        }
+        // هر عملیاتی جز «مشاهده» خودش «مشاهده» را هم روشن می‌کند؛ برداشتنِ «مشاهده» همه‌ی عملیاتِ آن صفحه را برمی‌دارد
+        function pmChanged(cb) {
+            const row = document.querySelectorAll(`#pm-body .pm-cb[data-k="${cb.dataset.k}"]`);
+            if (cb.dataset.op === 'view' && !cb.checked) row.forEach(x => { x.checked = false; });
+            if (cb.dataset.op !== 'view' && cb.checked) row.forEach(x => { if (x.dataset.op === 'view') x.checked = true; });
+            pmCollect(); pmSummary();
+        }
+        function pmRow(k) {
+            const row = [...document.querySelectorAll(`#pm-body .pm-cb[data-k="${k}"]`)];
+            const on = !row.every(x => x.checked);
+            row.forEach(x => { x.checked = on; });
+            pmCollect(); pmSummary();
+        }
+        function pmCol(gi, op) {
+            const keys = PM.catalog[gi].pages.map(p => p.key);
+            const cbs = [...document.querySelectorAll(`#pm-body .pm-cb[data-op="${op}"]`)].filter(x => keys.includes(x.dataset.k));
+            const on = !cbs.every(x => x.checked);
+            cbs.forEach(x => { x.checked = on; if (on && op !== 'view') { const v = document.querySelector(`#pm-body .pm-cb[data-k="${x.dataset.k}"][data-op="view"]`); if (v) v.checked = true; }
+                                               if (!on && op === 'view') document.querySelectorAll(`#pm-body .pm-cb[data-k="${x.dataset.k}"]`).forEach(y => { y.checked = false; }); });
+            pmCollect(); pmSummary();
+        }
+        function pmGroup(gi, on) {
+            const keys = PM.catalog[gi].pages.map(p => p.key);
+            document.querySelectorAll('#pm-body .pm-cb').forEach(x => { if (keys.includes(x.dataset.k)) x.checked = on; });
+            pmCollect(); pmSummary();
+        }
+        function pmPreset(kind) {
+            const out = {};
+            PM.catalog.forEach(g => g.pages.forEach(p => {
+                if (kind === 'all') out[p.key] = p.ops.slice();
+                else if (kind === 'view') out[p.key] = ['view'];
+                else if (kind === 'viewexp') out[p.key] = p.ops.filter(o => o === 'view' || o === 'export');
+            }));
+            PM.perms = kind === 'role' ? JSON.parse(JSON.stringify(PM.roleDef)) : out;
+            pmRender();
+        }
+        async function pmCopyFrom(id) {
+            if (!id) return;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_peek', id: Number(id)})});
+            const d = await res.json();
+            document.getElementById('pm-copy').value = '';
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            PM.perms = JSON.parse(JSON.stringify(d.perms || {}));
+            pmRender();
+            showToast('دسترسی‌ها کپی شد؛ برای ثبت «ذخیره» را بزنید.', 'info');
+        }
+        function pmSummary() {
+            const pages = Object.keys(PM.perms).filter(k => (PM.perms[k] || []).length);
+            const cnt = op => pages.filter(k => PM.perms[k].includes(op)).length;
+            document.getElementById('pm-summary').innerHTML = PM.mode !== 'custom' ? 'پیش‌فرضِ نقش' :
+                `<b>${e2pNum(pages.length)}</b> صفحه قابلِ مشاهده · ثبت در ${e2pNum(cnt('create'))} · ویرایش در ${e2pNum(cnt('edit'))} · حذف در ${e2pNum(cnt('delete'))} · خروجی در ${e2pNum(cnt('export'))}`;
+        }
+        async function pmSave() {
+            pmCollect();
+            const pass = document.getElementById('pm-admin-pass').value;
+            if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('pm-admin-pass').focus(); return; }
+            if (PM.mode === 'custom' && !Object.keys(PM.perms).length && !(await uiConfirm('بدونِ هیچ دسترسی', 'این کاربر به هیچ صفحه‌ای دسترسی نخواهد داشت. ادامه می‌دهید؟', {ok: 'بله، ذخیره شود', danger: true}))) return;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass})});
+            const d = await res.json();
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
+            closeModal('perm-modal');
             loadStaffUsers();
         }
         function openDeleteStaffUser(type, id) {
@@ -8050,6 +8289,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function switchTab(tabId, tabKey) {
             // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
+            if (PERM.custom && !permCan(tabId)) { showToast('به این بخش دسترسی ندارید.', 'error'); return; }
+            permTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
             if (!target) { showToast('این بخش هنوز در دسترس نیست.', 'error'); return; }
@@ -8104,6 +8345,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'vr-build' && window.VR) VR.initBuildTab();
             if (tabId === 'vr-list' && window.VR) VR.initListTab();
             if (tabId === 'vr-settings' && window.VR && VR.initSettingsTab) VR.initSettingsTab();
+            permSchedule();
         }
 
         // ======================= بخش مالی =======================

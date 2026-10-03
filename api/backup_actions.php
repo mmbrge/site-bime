@@ -11,6 +11,7 @@ session_start();
 if (!isset($_SESSION['user_id'])) { http_response_code(403); header('Content-Type: application/json; charset=utf-8'); echo json_encode(['ok' => false, 'error' => 'دسترسی ندارید.']); exit; }
 ini_set('display_errors', '0');
 require '../config/db.php';
+require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require_once __DIR__ . '/_backup_core.php';
 
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;

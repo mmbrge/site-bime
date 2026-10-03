@@ -11,6 +11,7 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
+require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_chat_access.php';
@@ -52,18 +53,87 @@ function require_admin_password($pdo, $me, $pwd) {
     if ($pwd === '' || !$hash || !password_verify($pwd, $hash)) out(['ok' => false, 'error' => 'رمز عبورِ مدیر (رمز خودتان) نادرست است.']);
 }
 
+// کاربرِ با دسترسیِ سفارشی (نه مدیر کلِ واقعی): به حسابِ مدیرانِ کل و حسابِ خودش دست نمی‌زند،
+// کسی را مدیر کل نمی‌کند و دسترسی‌ها را تغییر نمی‌دهد
+$realAdmin = perm_real_role() === 'ADMIN';
+if (!$realAdmin) {
+    if ($action === 'perm_save') out(['ok' => false, 'error' => 'تعیینِ دسترسی‌ها فقط کارِ مدیر کل است.']);
+    if (in_array($action, ['create', 'update', 'update_role', 'delete'], true)) {
+        if (($data['role'] ?? '') === 'ADMIN') out(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند کاربرِ «مدیر کل» بسازد یا نقشی را مدیر کل کند.']);
+        $tid = intval($data['id'] ?? 0);
+        if ($action !== 'create' && ($data['type'] ?? 'STAFF') !== 'COMPANY' && $tid) {
+            if ($tid === $me) out(['ok' => false, 'error' => 'حسابِ خودتان را از «ویرایش پروفایل» تغییر دهید.']);
+            $st = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+            $st->execute([$tid]);
+            if ($st->fetchColumn() === 'ADMIN') out(['ok' => false, 'error' => 'حسابِ مدیر کل را فقط مدیر کل تغییر می‌دهد.']);
+        }
+    }
+}
+
 try {
+    // ---- دسترسیِ سفارشیِ صفحه به صفحه (api/_perm.php) ----
+    if ($action === 'perm_get') {
+        perm_ensure($pdo);
+        $id = intval($data['id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, full_name, role, perm_json FROM users WHERE id = ?");
+        $st->execute([$id]);
+        $u = $st->fetch();
+        if (!$u) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
+        $cat = [];
+        foreach (perm_catalog() as [$g, $items]) {
+            $rows = [];
+            foreach ($items as $k => [$title, $ops]) $rows[] = ['key' => $k, 'title' => $title, 'ops' => $ops];
+            $cat[] = ['group' => $g, 'pages' => $rows];
+        }
+        $others = [];
+        foreach ($pdo->query("SELECT id, full_name, role, perm_json IS NOT NULL AS custom FROM users WHERE id <> " . $id . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll() as $o) {
+            if ($o['role'] !== 'ADMIN') $others[] = ['id' => intval($o['id']), 'name' => $o['full_name'], 'role' => $o['role'], 'custom' => !empty($o['custom'])];
+        }
+        out(['ok' => true, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
+             'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : []),
+             'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others]);
+    }
+    // دسترسیِ کاربرِ دیگر (برای «کپی از کاربر…»)
+    if ($action === 'perm_peek') {
+        perm_ensure($pdo);
+        $st = $pdo->prepare("SELECT role, perm_json FROM users WHERE id = ?");
+        $st->execute([intval($data['id'] ?? 0)]);
+        $u = $st->fetch();
+        if (!$u) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
+        out(['ok' => true, 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : perm_role_defaults($u['role']))]);
+    }
+    if ($action === 'perm_save') {
+        perm_ensure($pdo);
+        require_admin_password($pdo, $me, (string)($data['admin_password'] ?? ''));
+        $id = intval($data['id'] ?? 0);
+        $st = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+        $st->execute([$id]);
+        $role = $st->fetchColumn();
+        if ($role === false) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
+        if ($role === 'ADMIN') out(['ok' => false, 'error' => 'مدیر کل همیشه به همه‌چیز دسترسی دارد؛ برای محدود کردن، اول نقشش را عوض کنید.']);
+        if (($data['mode'] ?? '') !== 'custom') {
+            $pdo->prepare("UPDATE users SET perm_json = NULL WHERE id = ?")->execute([$id]);
+            out(['ok' => true, 'custom' => false]);
+        }
+        $perms = perm_sanitize($data['perms'] ?? []);
+        $pdo->prepare("UPDATE users SET perm_json = ? WHERE id = ?")->execute([json_encode((object)$perms, JSON_UNESCAPED_UNICODE), $id]);
+        out(['ok' => true, 'custom' => true, 'pages' => count($perms)]);
+    }
+
     if ($action === 'list') {
+        perm_ensure($pdo);
         $cols = $ready ? ', personnel_code, bale_chat_id IS NOT NULL AND bot_linked_at IS NOT NULL AS bot_linked, bot_linked_at, is_deleted, deleted_at' : '';
         $where = ($ready && empty($data['include_deleted'])) ? 'WHERE COALESCE(is_deleted, 0) = 0' : '';
         if (staff_report_pw_ready($pdo)) $cols .= ', report_edit_password_hash IS NOT NULL AS has_report_pw';
         chat_access_ensure($pdo);
         try { $pdo->query("SELECT chat_companies FROM users LIMIT 0"); $cols .= ', chat_companies'; } catch (Throwable $e) {}
+        $cols .= ', perm_json IS NOT NULL AS perm_custom';
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         foreach ($users as &$u) {
             $u['chat_companies'] = chat_companies_decode($u['chat_companies'] ?? null);
             $u['bot_linked'] = !empty($u['bot_linked']);
             $u['has_report_pw'] = !empty($u['has_report_pw']);
+            $u['perm_custom'] = !empty($u['perm_custom']) && $u['role'] !== 'ADMIN';
             $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             if ($ready) {
                 $st = $pdo->prepare("SELECT created_at, browser, device FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method <> 'LOGOUT' ORDER BY id DESC LIMIT 1");

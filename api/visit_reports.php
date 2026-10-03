@@ -29,6 +29,7 @@ register_shutdown_function(function () {
     echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
 });
 require '../config/db.php';
+require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';

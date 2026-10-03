@@ -3,6 +3,7 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
+require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_profile_core.php';
 

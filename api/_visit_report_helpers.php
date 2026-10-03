@@ -39,6 +39,8 @@ function vr_current_user($pdo) {
     $st->execute([intval($_SESSION['user_id'])]);
     $u = $st->fetch();
     if (!$u) return null;
+    // کاربرِ با دسترسیِ سفارشی که اجازه‌ی این عملیات را دارد، در همین درخواست مثلِ مدیر کل (api/_perm.php)
+    if (function_exists('perm_is_elevated') && perm_is_elevated()) $u['role'] = 'ADMIN';
     return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role'], 'is_admin' => $u['role'] === 'ADMIN'];
 }
 
