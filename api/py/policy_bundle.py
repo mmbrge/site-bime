@@ -453,7 +453,9 @@ def extract_layout(page):
 
     # خودرو: «نوع: سیستم: تیپ» (از راست به چپ)
     for lb in ([] if inline_car else find_labels(sp, r'سیستم')):
-        vals = [v['t'] for v in row_values(sp, lb) if not re.fullmatch(r'[-\s]*', v['t'])]
+        near = page.rect.width * 0.35   # فقط تکه‌های نزدیکِ برچسب؛ متنِ ستونِ دیگرِ صفحه مقدارِ سیستم نیست
+        vals = [v['t'] for v in row_values(sp, lb) if not re.fullmatch(r'[-\s]*', v['t']) and abs(v['x1'] - lb['x0']) < near
+                and not BAD_TEXT.search(v['t'])]
         if vals:
             if len(vals) >= 3:
                 d['car_kind'], d['car_system'], d['car_tip'] = vals[0], vals[1], vals[2]
@@ -535,6 +537,37 @@ def extract_layout(page):
     return d
 
 
+# مقدارِ اشتباهی که از ردیفِ کناری برداشته شده (مثلاً «5051/30000/1404:. شماره قرارداد8-1» به‌جای سیستمِ خودرو) دور ریخته می‌شود
+TEXT_FIELDS = ('car_kind', 'car_system', 'car_tip', 'car_name', 'color', 'usage', 'capacity', 'prev_insurer', 'insured_name')
+BAD_TEXT = re.compile(r':|شماره|قرارداد|ریال|تعهد|خسارت|بیمه\s*نامه|مبلغ|حداکثر|\d+/\d+')
+
+
+def clean_fields(d):
+    for k in TEXT_FIELDS:
+        v = (d.get(k) or '').strip()
+        if not v:
+            continue
+        bad = len(v) > 45 or (k != 'insured_name' and BAD_TEXT.search(v)) or (k == 'insured_name' and re.search(r'\d{3}|:', v))
+        if k == 'prev_insurer':
+            bad = len(v) > 40 or ':' in v or re.search(r'\d', v)
+        if bad:
+            d[k] = ''
+    pi = re.sub(r'\s+', ' ', (d.get('prev_insurer') or '').replace('شرکت', ' ')).strip(' -')
+    if pi:
+        # «سهامی بیمه» (بریده‌شده در PDF) و «سهامی بیمه ایران» همان بیمه ایران است
+        if pi in ('سهامی بیمه', 'سهامی بیمه ایران', 'بیمه ایران سهامی'):
+            pi = 'بیمه ایران'
+        d['prev_insurer'] = re.sub(r'^سهامی\s+', '', pi).strip()
+    if d.get('model_year') and not re.fullmatch(r'(1[34]\d{2}|19\d{2}|20\d{2})', str(d['model_year'])):
+        d['model_year'] = ''
+    if not d.get('car_name') or not d.get('car_system'):
+        d['car_name'] = ' '.join(x for x in [d.get('car_system', ''), d.get('car_tip', '')] if x).strip() or d.get('car_name', '')
+    for k in ('engine_no', 'vin', 'chassis_no'):
+        if d.get(k) and not re.fullmatch(r'[A-Za-z0-9]{5,25}', str(d[k])):
+            d[k] = re.sub(r'[^A-Za-z0-9]', '', str(d[k]))[:25]
+    return d
+
+
 CRITICAL = [('plate', 'پلاک'), ('insured_name', 'نام بیمه‌گذار'), ('premium', 'حق بیمه'), ('policy_num', 'شماره بیمه‌نامه')]
 
 
@@ -554,6 +587,7 @@ def extract_policy(page, raw_text):
         m = re.search(r'قابل\s*پرداخت[\s\S]{0,200}?(?:ریال\s*([\d,]{6,})|([\d,]{6,})\s*ریال)', t)
         if m:
             base['premium'] = (m.group(1) or m.group(2)).replace(',', '')
+    clean_fields(base)
     missing = [fa for k, fa in CRITICAL if not base.get(k)]
     if 'پلاک' in missing and base.get('vin'):
         missing.remove('پلاک')   # بدونِ پلاک (صفر/لیفتراک) با شماره‌ی شاسی شناخته می‌شود

@@ -1588,7 +1588,9 @@ function fin_unified_installments($pdo, array $f = []) {
             foreach (fin_pair_receipts($insts, $receiptsOf[$gs][(int)$gid]) as $iid => $rc) $pairs[$gs . ':' . $iid] = $rc;
         }
     }
+    $reqF = intval($f['request_id'] ?? 0);   // اقساطِ یک درخواستِ شرکتی (برای جزئیاتِ درخواست)
     foreach ($rows as $r) {
+        if ($reqF && ($r['source'] !== 'C' || intval($r['request_id'] ?? 0) !== $reqF)) continue;
         $r['receipt'] = $pairs[$r['source'] . ':' . $r['id']] ?? null;
         $r['remaining'] = max(0, $r['amount'] - $r['paid']);
         $r['pay_status'] = $r['remaining'] <= 0 ? 'PAID' : ($r['paid'] > 0 ? 'PARTIAL' : 'UNPAID');

@@ -6,7 +6,7 @@
 //  - صدورِ گروهی از فایلِ خروجیِ سایتِ بیمه‌گر (چند بیمه‌نامه در یک PDF): جدا کردنِ صفحه‌ها (api/py/policy_bundle.py)،
 //    شناسایی با همان منطقِ موتورِ تشخیص، پیدا کردنِ ردیفِ هر بیمه‌نامه و بررسیِ آمادگیِ صدور
 
-function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $srcFile = null, $srcOrigName = null) {
+function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $srcFile = null, $srcOrigName = null, $policyIssueDate = null) {
     $siteRoot = dirname(__DIR__);
     $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
     if (!$baseDir) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
@@ -49,7 +49,8 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     if (!company_kind_goes_to_sadere($kind)) {
         $folderStatus = is_dir($issuedDir) ? 'TRANSFERRED' : 'FAILED';
     } elseif (is_dir($issuedDir)) {
-        $folderStatus = company_copy_to_shared_sadere($siteRoot, $issuedDir, $issuedAt, $plate['insurance_type'], $issuedFolderName) ? 'TRANSFERRED' : 'FAILED';
+        // ماهِ «بایگانی صادره» از تاریخ صدورِ داخلِ بیمه‌نامه
+        $folderStatus = company_copy_to_shared_sadere($siteRoot, $issuedDir, policy_issue_ts($policyIssueDate, $issuedAt), $plate['insurance_type'], $issuedFolderName) ? 'TRANSFERRED' : 'FAILED';
     }
 
     $pdo->prepare("UPDATE company_request_plates SET status = 'ISSUED', policy_number = ?, vin = ?, total_premium = ?,
@@ -323,7 +324,13 @@ function policy_layout_extract($pdo, $pdfPath) {
     @mkdir($dir, 0777, true);
     $res = cbundle_run($pdo, $pdfPath, $dir);
     $p = (!empty($res['ok']) && !empty($res['policies'])) ? $res['policies'][0] : null;
-    if (!$p || empty($p['data']) || !cbundle_is_policy($p['data'])) { cbundle_rrmdir($dir); return ['data' => null, 'debug' => $res['error'] ?? 'متنِ فایل خوانده نشد (شاید اسکن است).']; }
+    if (!$p || empty($p['data']) || !cbundle_is_policy($p['data'])) {
+        cbundle_rrmdir($dir);
+        $why = $res['error'] ?? (($p && empty($p['has_text'])) ? 'فایل متن ندارد (اسکن/عکس است).' : 'بیمه‌نامه‌ی معتبر در فایل تشخیص داده نشد.');
+        if (!empty($res['debug'])) $why .= ' [' . mb_substr((string)$res['debug'], 0, 200) . ']';
+        error_log('[policy_layout_extract] ' . $why);
+        return ['data' => null, 'debug' => $why];
+    }
     return ['data' => $p['data'], 'single' => ['dir' => $dir, 'pol' => $p['file'], 'receipts' => $p['receipts'] ?? [], 'statement' => $p['statement_file'] ?? null,
                                                 'missing' => $p['missing'] ?? [], 'policy_pages' => intval($p['policy_end']) - intval($p['page']) + 1, 'pages' => intval($res['pages'] ?? 0)]];
 }
@@ -342,10 +349,56 @@ function company_fill_from_policy($pdo, $plateId, $d) {
 // نام‌های قدیمیِ موتورِ تشخیص (فرم‌های صدور با این نام‌ها پر می‌شوند) از روی خروجیِ الگوریتمِ جای متن
 function policy_data_aliases($d) {
     if (!is_array($d)) return $d;
+    $d = policy_data_clean($d);
     $map = ['policy_number' => 'policy_num', 'total_premium' => 'premium', 'engine_num' => 'engine_no', 'unique_code' => 'central_no',
             'car_color' => 'color', 'car_usage' => 'usage'];
     foreach ($map as $old => $new) if (empty($d[$old]) && !empty($d[$new])) $d[$old] = $d[$new];
     if (empty($d['chassis_num']) && !empty($d['chassis_no'])) $d['chassis_num'] = $d['chassis_no'];
     if (empty($d['car_type'])) $d['car_type'] = trim(($d['car_kind'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['car_type'] ?? '');
     return $d;
+}
+
+
+// مقدارهای اشتباهی که از ردیفِ کناریِ PDF برداشته شده‌اند (مثلاً «5051/30000/1404:. شماره قرارداد8-1» به‌جای سیستم)
+// دور ریخته می‌شوند - چه از الگوریتمِ جای متن آمده باشند چه از موتورِ قدیمی
+function policy_data_clean($d) {
+    if (!is_array($d)) return $d;
+    $bad = '/:|شماره|قرارداد|ریال|تعهد|خسارت|بیمه\s*نامه|مبلغ|حداکثر|\d+\/\d+/u';
+    foreach (['car_kind', 'car_system', 'car_tip', 'car_name', 'car_type', 'color', 'car_color', 'usage', 'car_usage', 'capacity'] as $k) {
+        if (!isset($d[$k]) || !is_string($d[$k])) continue;
+        $v = trim($d[$k]);
+        if ($v !== '' && (mb_strlen($v) > 45 || preg_match($bad, p2e_digits($v)))) $d[$k] = '';
+    }
+    if (!empty($d['model_year']) && !preg_match('/^(1[34]\d{2}|19\d{2}|20\d{2})$/', p2e_digits((string)$d['model_year']))) $d['model_year'] = '';
+    if (!empty($d['prev_insurer']) && (preg_match('/[:\d]/u', p2e_digits($d['prev_insurer'])) || mb_strlen($d['prev_insurer']) > 40)) $d['prev_insurer'] = '';
+    if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? ''));
+    return $d;
+}
+
+
+// فیلدهای فرمِ صدور (بعد از ویرایشِ کارشناس) → «اطلاعات صدور» (issue_info) + ستون‌های خودِ ردیف/پرونده
+function policy_fields_to_issue_info(array $f) {
+    $map = ['insured_name' => 'insured_name', 'national_id' => 'insured_national_id', 'phone' => 'insured_phone', 'car_system' => 'car_system',
+            'car_tip' => 'car_type', 'car_kind' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color', 'usage' => 'car_usage',
+            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin',
+            'prev_insurer' => 'prev_insurer', 'prev_policy' => 'prev_policy_number'];
+    $out = [];
+    foreach ($map as $from => $to) { $v = trim(mb_substr((string)($f[$from] ?? ''), 0, 300)); if ($v !== '') $out[$to] = $v; }
+    return $out;
+}
+function company_apply_policy_fields($pdo, $plateId, array $f) {
+    if (!$f) return;
+    company_ensure_issue_info_cols($pdo);
+    $st = $pdo->prepare("SELECT issue_info, ocr_extracted_data FROM company_request_plates WHERE id = ?");
+    $st->execute([$plateId]);
+    $row = $st->fetch();
+    if (!$row) return;
+    $info = array_merge(issue_info_decode($row['issue_info']), policy_fields_to_issue_info($f));
+    $ocr = json_decode((string)$row['ocr_extracted_data'], true) ?: [];
+    unset($ocr['_single']);
+    $carName = trim(($f['car_system'] ?? '') . ' ' . ($f['car_tip'] ?? ''));
+    $pdo->prepare("UPDATE company_request_plates SET issue_info = ?, ocr_extracted_data = ?,
+                          engine_no = COALESCE(NULLIF(?, ''), engine_no), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')) WHERE id = ?")
+        ->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, json_encode(array_merge($ocr, array_filter($f, 'strlen')), JSON_UNESCAPED_UNICODE),
+                   $f['engine_no'] ?? '', $carName, $plateId]);
 }

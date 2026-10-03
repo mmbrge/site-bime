@@ -1862,3 +1862,12 @@ function ref_code_of($pdo, $table, $id) {
         return $c;
     } catch (Throwable $e) { return null; }
 }
+
+// زمانِ «تاریخ صدورِ داخلِ بیمه‌نامه» (شمسی، مثل 1405/06/16) برای ماهِ «بایگانی صادره»؛ اگر نبود، $fallback
+function policy_issue_ts($jalali, $fallback = null) {
+    $j = trim(str_replace(['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'], ['0','1','2','3','4','5','6','7','8','9'], (string)$jalali));
+    if (preg_match('/^(1[34]\d{2})\D+(\d{1,2})\D+(\d{1,2})$/', $j, $m) && $m[2] >= 1 && $m[2] <= 12 && $m[3] >= 1 && $m[3] <= 31) {
+        return jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])) + 12 * 3600;
+    }
+    return $fallback ?: time();
+}

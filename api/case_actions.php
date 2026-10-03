@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/finance_core.php';     // سررسیدِ اقساط و ستون‌های فیشِ اقساط
+require_once __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_company_issue.php';   // خواندنِ فایلِ بیمه‌نامه با الگوریتمِ جای متن + جدا کردنِ فیش‌ها
 
 if (!isset($_SESSION['user_id'])) {
@@ -721,6 +722,7 @@ try {
             ->execute([$tempPath, $_FILES['file']['name'], $store ? json_encode($store, JSON_UNESCAPED_UNICODE) : null, $caseId]);
 
         echo json_encode(['ok' => true, 'ocr' => $ocrData, 'ocr_used' => (bool)$ocrData, 'ocr_debug' => $ocrDebug,
+                          'source' => $single ? 'layout' : ($ocrData ? 'engine' : null), 'layout_debug' => $single ? null : ($lay['debug'] ?? null),
                           'receipts' => $single['receipts'] ?? [], 'missing' => $single['missing'] ?? []], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -781,7 +783,8 @@ try {
         }
 
         // طبق توافق: پلاک بدون خط‌تیره‌ی داخلی، و شماره‌ی بیمه‌نامه با «∕» به‌جای «/» در نام‌گذاری استفاده می‌شود
-        $issuedTs = time();
+        // ماهِ «بایگانی صادره» از تاریخ صدورِ داخلِ بیمه‌نامه (نه روزِ ثبت در سایت)
+        $issuedTs = policy_issue_ts($policyIssueDate, time());
         $plateForName = plate_for_filename($case['plate']);
         $policyNumForName = policy_number_for_filename($policyNumber);
         $sadereBase = build_sadere_base_path($siteRoot, $issuedTs, $case['insurance_type']);
@@ -793,6 +796,8 @@ try {
         //  سپس همان پوشه (نه کل پوشه‌ی معرفی‌نامه) به «بایگانی صادره» کپی می‌شود.
         // ------------------------------------------------------------------
         $caseFolder = resolve_case_folder($pdo, $siteRoot, $case);
+        // درخواستی که هنوز هیچ مدرکی رویش بارگذاری نشده پوشه ندارد؛ همین حالا ساخته می‌شود
+        if ($caseFolder && !is_dir($caseFolder)) @mkdir($caseFolder, 0777, true);
         if ($caseFolder && is_dir($caseFolder)) {
             $renamedCaseFolder = dirname($caseFolder) . '/' . $caseFolderName;
             if ($caseFolder !== $renamedCaseFolder) {
@@ -833,6 +838,15 @@ try {
             ->execute([$policyNumber ?: null, $vin ?: null, $chassisNum ?: null, $engineNum ?: null, $totalPremium, $centralUniqueCode ?: null,
                        $carSystem ?: null, $carType ?: null, $carModelYear ?: null, $carColor ?: null, $carUsage ?: null, $policyIssueDate ?: null, $carValue, $caseId]);
         write_case_info_file($pdo, $caseFolder, $caseId);
+        // همه‌ی فیلدهای فرمِ صدور (همان‌طور که کارشناس ویرایش کرده) در «اطلاعات صدور»ِ پرونده
+        if (is_array($data['fields'] ?? null)) {
+            try {
+                company_ensure_issue_info_cols($pdo);
+                $q = $pdo->prepare("SELECT issue_info FROM policy_cases WHERE id = ?"); $q->execute([$caseId]);
+                $info = array_merge(issue_info_decode($q->fetchColumn()), policy_fields_to_issue_info(array_map(fn($v) => is_scalar($v) ? (string)$v : '', $data['fields'])));
+                $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, $caseId]);
+            } catch (Throwable $e) { error_log('[confirm_issue_policy fields] ' . $e->getMessage()); }
+        }
         // فیش‌های اقساط (صفحه‌های جداشده از فایل) کنارِ بیمه‌نامه در پوشه‌ی «فیش‌های اقساط»
         $storedRc = ['receipts' => [], 'statement' => null];
         if ($single) {

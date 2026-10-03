@@ -1821,6 +1821,7 @@ try {
             ->execute([$tempPath, $_FILES['policy_file']['name'], $store ? json_encode($store, JSON_UNESCAPED_UNICODE) : null, $plateId]);
 
         echo json_encode(['ok' => true, 'ocr' => $ocrData, 'ocr_used' => (bool)$ocrData, 'ocr_debug' => $ocrDebug,
+                          'source' => $single ? 'layout' : ($ocrData ? 'engine' : null), 'layout_debug' => $single ? null : ($lay['debug'] ?? null),
                           'receipts' => $single['receipts'] ?? [], 'missing' => $single['missing'] ?? [],
                           'policy_pages' => $single['policy_pages'] ?? null, 'pages' => $single['pages'] ?? null,
                           'expected_plate' => $expectedPlate], JSON_UNESCAPED_UNICODE);
@@ -1870,7 +1871,9 @@ try {
             $ocrCount++;
             $o = run_document_ocr_verbose($dir . '/pages/' . $p['file']);
             if ($o['data']) {
-                $p['data'] = $o['data'] + ['premium' => ''];
+                $p['data'] = policy_data_clean($o['data'] + ['premium' => '']);
+                if (empty($p['data']['policy_num']) && !empty($p['data']['policy_number'])) $p['data']['policy_num'] = $p['data']['policy_number'];
+                if (empty($p['data']['premium']) && !empty($p['data']['total_premium'])) $p['data']['premium'] = $p['data']['total_premium'];
                 $p['via_ocr'] = true;
                 $p['missing'] = [];
                 foreach (['plate' => 'پلاک', 'insured_name' => 'نام بیمه‌گذار', 'premium' => 'حق بیمه', 'policy_num' => 'شماره بیمه‌نامه'] as $fk => $fl) {
@@ -1944,6 +1947,14 @@ try {
             if ($status === 'ISSUED') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'قبلاً صادر شده.']; continue; }
             if (!in_array($status, ['READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'هنوز به مرحله‌ی صدور نرسیده.']; continue; }
             if (in_array($it['state'], ['mismatch', 'duplicate', 'unknown', 'no_match'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => $it['message'] ?: 'قابلِ صدور نیست.']; continue; }
+            // ویرایش‌های کاربر روی فرمِ کارت، روی داده‌ی خوانده‌شده می‌نشیند
+            if (is_array($pk['fields'] ?? null)) {
+                foreach ($pk['fields'] as $fk => $fv) {
+                    $fk = preg_replace('/[^a-z_]/', '', (string)$fk);
+                    if ($fk === '' || !is_scalar($fv) || in_array($fk, ['plate', 'ins_type', 'ins_company'], true)) continue;
+                    $it['data'][$fk] = trim((string)$fv);
+                }
+            }
             $policyNumber = trim((string)($pk['policy_number'] ?? ($it['data']['policy_num'] ?? '')));
             if ($policyNumber === '') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'شماره‌ی بیمه‌نامه خالی است.']; continue; }
             $vin = trim((string)($pk['vin'] ?? ($it['data']['vin'] ?? '')));
@@ -1954,12 +1965,13 @@ try {
             $work = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cbundle_') . '.pdf';
             @copy($src, $work);
             $pdo->prepare("UPDATE company_request_plates SET ocr_extracted_data = ? WHERE id = ?")->execute([json_encode($it['data'], JSON_UNESCAPED_UNICODE), $plateId]);
-            $r = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $premium, $work, 'policy.pdf');
+            $r = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $premium, $work, 'policy.pdf', $it['data']['issue_date'] ?? null);
             if (is_file($work)) @unlink($work);
             if (!empty($r['ok'])) {
                 $done++;
                 // خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
                 company_fill_from_policy($pdo, $plateId, $it['data'] ?? []);
+                company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', array_merge((array)($it['data'] ?? []), ['policy_num' => $policyNumber, 'premium' => (string)$premium, 'vin' => $vin])));
                 // صفحه‌های فیشِ اقساط روی اقساطِ همین بیمه‌نامه؛ اقساط از تاریخِ صدورِ داخلِ بیمه‌نامه
                 company_attach_policy_extras($pdo, $plateId, $dir . '/pages', $it['receipts'] ?? [], $it['statement_file'] ?? null, $it['data']['issue_date'] ?? '');
             }
@@ -2006,11 +2018,15 @@ try {
             $tmp = $tmpDir . '/' . uniqid('cissued_') . '.' . preg_replace('/[^a-z0-9]/', '', $ext);
             if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) { $src = $tmp; $srcName = $_FILES['issued_file']['name']; }
         }
-        $res = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $src, $srcName);
+        $issueDateIn = trim(p2e_digits((string)($data['issue_date'] ?? ''))) ?: ($ocrSaved['issue_date'] ?? '');
+        $res = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $src, $srcName, $issueDateIn);
         if (!empty($res['ok'])) {
             $issueDate = trim(p2e_digits((string)($data['issue_date'] ?? ''))) ?: ($ocrSaved['issue_date'] ?? '');
             company_attach_policy_extras($pdo, $plateId, $single['dir'] ?? '', $single['receipts'] ?? [], $single['statement'] ?? null, $issueDate);
             company_fill_from_policy($pdo, $plateId, $ocrSaved);
+            // همه‌ی فیلدهای فرمِ صدور (همان‌طور که کارشناس ویرایش کرده)
+            $fields = json_decode((string)($data['fields'] ?? ''), true);
+            if (is_array($fields)) company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', $fields));
             $res['receipts'] = count($single['receipts'] ?? []);
         }
         if ($single) cbundle_rrmdir($single['dir']);

@@ -333,7 +333,7 @@
     }
 
     // ---------- پنجره‌ی ثبتِ دریافت / پرداخت ----------
-    async function openPayDialog(dir, rows) {
+    async function openPayDialog(dir, rows, onDone) {
         const m = await meta();
         const list = rows.filter(r => dir === 'IN' ? r.remaining > 0 : r.insurer_payable > 0);
         if (!list.length) return toast(dir === 'IN' ? 'ردیفِ انتخاب‌شده‌ای مانده‌ی دریافت ندارد.' : 'ردیفِ انتخاب‌شده‌ای قابلِ پرداخت به بیمه‌گر نیست.', 'warning');
@@ -430,6 +430,7 @@
             toast(`${fa(d.applied)} قسط ثبت شد · ${num(d.total)} ریال${(d.rejected || []).length ? ` · ${fa(d.rejected.length)} ردیف رد شد` : ''}`, (d.rejected || []).length ? 'warning' : 'success');
             if ((d.rejected || []).length) info('ردیف‌های ردشده', d.rejected.map(x => `• ${x.label}: ${x.reason}`).join('\n'), 'warning');
             H.sel.clear();
+            if (typeof onDone === 'function') onDone(d);
             if (document.getElementById('fh-root') && !document.getElementById('tab-fin-installments').classList.contains('hidden')) loadInstallments();
             if (document.getElementById('fl-root') && !document.getElementById('tab-fin-payments').classList.contains('hidden')) loadLedger();
         };
@@ -656,5 +657,5 @@
         bindHistVoid(out, runTracking);
     }
 
-    window.FinHub = {initInstallments, initLedger, initTracking, reloadInstallments: loadInstallments, openPayDialog};
+    window.FinHub = {initInstallments, initLedger, initTracking, reloadInstallments: loadInstallments, openPayDialog, openInstDetail, STAGE};
 })();

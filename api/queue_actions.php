@@ -320,13 +320,28 @@ try {
                 }
                 $dbPath = ltrim(str_replace($siteRoot, '', $finalDiskPath), '/');
 
+                $issueJ = str_replace(['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'], ['0','1','2','3','4','5','6','7','8','9'], $extraFields['issue_date']);
                 $pdo->prepare("UPDATE policy_cases SET status = 'ISSUED', issued_at = COALESCE(issued_at, NOW()), plate = COALESCE(plate, ?), folder_path = ?, issued_file_path = ? WHERE id = ?")
                     ->execute([$plate, $caseFolder, $dbPath, $matchedCase['id']]);
+                // اطلاعاتِ بیمه‌نامه (مثل صدور از پنل) - خانه‌های خالی مقدارِ قبلی را عوض نمی‌کنند
+                $pdo->prepare("UPDATE policy_cases SET policy_number = COALESCE(NULLIF(?, ''), policy_number), vin = COALESCE(NULLIF(?, ''), vin),
+                                      chassis_num = COALESCE(NULLIF(?, ''), chassis_num), engine_num = COALESCE(NULLIF(?, ''), engine_num),
+                                      total_premium = COALESCE(NULLIF(?, ''), total_premium), central_unique_code = COALESCE(NULLIF(?, ''), central_unique_code),
+                                      car_system = COALESCE(NULLIF(?, ''), car_system), car_type = COALESCE(NULLIF(?, ''), car_type),
+                                      car_model_year = COALESCE(NULLIF(?, ''), car_model_year), car_color = COALESCE(NULLIF(?, ''), car_color),
+                                      policy_issue_date = COALESCE(NULLIF(?, ''), policy_issue_date), car_value = COALESCE(NULLIF(?, ''), car_value) WHERE id = ?")
+                    ->execute([$extraFields['policy_num'], $extraFields['vin'], $extraFields['chassis_num'], $extraFields['engine_num'], $extraFields['total_premium'],
+                               $extraFields['unique_code'], $extraFields['car_system'], $extraFields['car_type'], $extraFields['model_year'], $extraFields['car_color'],
+                               $issueJ, $extraFields['car_value'], $matchedCase['id']]);
+                // اقساط (مثل صدور از پنل؛ پرداختِ نقدیِ مستقیم قسط ندارد)
+                if (empty($matchedCase['is_direct_payment'])) {
+                    try { require_once __DIR__ . '/finance_core.php'; fin_generate_installments($pdo, $matchedCase['id']); } catch (Throwable $e) { error_log('[queue installments] ' . $e->getMessage()); }
+                }
                 notify_case_stage($pdo, $matchedCase['id'], 'بیمه‌نامه صادر شده ✅');
                 $pdo->prepare("UPDATE introductions SET used_quota = used_quota + 1 WHERE id = ?")->execute([$matchedCase['introduction_id']]);
 
                 // کپی (نه انتقال) پوشه‌ی کامل پرونده به «بایگانی صادره»، دسته‌بندی‌شده بر اساس تاریخ صدور و نوع بیمه
-                $sadereBase = build_sadere_base_path($siteRoot, time(), $matchedCase['insurance_type']);
+                $sadereBase = build_sadere_base_path($siteRoot, policy_issue_ts($issueJ, time()), $matchedCase['insurance_type']);
                 copy_dir_recursive($caseFolder, $sadereBase . '/' . basename($caseFolder));
 
                 // تعداد صادره‌ی معرفی‌نامه تغییر کرد -> نام پوشه‌ی معرفی‌نامه را هم بروز می‌کنیم

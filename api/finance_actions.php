@@ -57,7 +57,7 @@ try {
         fin_ledger_ensure($pdo);
         $src = $data + $_GET;
         $f = fin_request_filters($pdo, $src);
-        foreach (['stage', 'insurer', 'insurer_status', 'min_delay'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
+        foreach (['stage', 'insurer', 'insurer_status', 'min_delay', 'request_id'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
         $rows = fin_ledger_rows($pdo, $f);
         if (!empty($src['export'])) {
             require_once __DIR__ . '/_xlsx_writer.php';
