@@ -364,7 +364,7 @@ function policy_data_aliases($d) {
 function policy_data_clean($d) {
     if (!is_array($d)) return $d;
     $bad = '/:|شماره|قرارداد|ریال|تعهد|خسارت|بیمه\s*نامه|مبلغ|حداکثر|\d+\/\d+/u';
-    foreach (['car_kind', 'car_system', 'car_tip', 'car_name', 'car_type', 'color', 'car_color', 'usage', 'car_usage', 'capacity'] as $k) {
+    foreach (['car_kind', 'car_system', 'car_tip', 'car_name', 'car_type', 'color', 'car_color', 'usage', 'car_usage', 'capacity', 'cargo'] as $k) {
         if (!isset($d[$k]) || !is_string($d[$k])) continue;
         $v = trim($d[$k]);
         if ($v !== '' && (mb_strlen($v) > 45 || preg_match($bad, p2e_digits($v)))) $d[$k] = '';
@@ -381,9 +381,13 @@ function policy_fields_to_issue_info(array $f) {
     $map = ['insured_name' => 'insured_name', 'national_id' => 'insured_national_id', 'phone' => 'insured_phone', 'car_system' => 'car_system',
             'car_tip' => 'car_type', 'car_kind' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color', 'usage' => 'car_usage',
             'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin',
-            'prev_insurer' => 'prev_insurer', 'prev_policy' => 'prev_policy_number'];
+            'prev_insurer' => 'prev_insurer', 'prev_policy' => 'prev_policy_number',
+            'address' => 'insured_address', 'postal_code' => 'insured_postal_code', 'cargo' => 'car_cargo', 'central_no' => 'central_unique_code',
+            'start_date' => 'start_date', 'end_date' => 'end_date', 'prev_expiry' => 'prev_expiry', 'prev_claims' => 'prev_claims', 'ncd' => 'no_claim_discount',
+            'car_value' => 'car_value', 'total_value' => 'total_value', 'trailer_value' => 'trailer_value', 'extras_value' => 'extras_value',
+            'liability' => 'liability', 'diya' => 'diya_cover', 'driver_cover' => 'driver_cover', 'covers' => 'covers'];
     $out = [];
-    foreach ($map as $from => $to) { $v = trim(mb_substr((string)($f[$from] ?? ''), 0, 300)); if ($v !== '') $out[$to] = $v; }
+    foreach ($map as $from => $to) { $v = trim(mb_substr((string)($f[$from] ?? ''), 0, 600)); if ($v !== '') $out[$to] = $v; }
     return $out;
 }
 function company_apply_policy_fields($pdo, $plateId, array $f) {
@@ -401,4 +405,10 @@ function company_apply_policy_fields($pdo, $plateId, array $f) {
                           engine_no = COALESCE(NULLIF(?, ''), engine_no), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')) WHERE id = ?")
         ->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, json_encode(array_merge($ocr, array_filter($f, 'strlen')), JSON_UNESCAPED_UNICODE),
                    $f['engine_no'] ?? '', $carName, $plateId]);
+    // ارزشِ خودرو (بدنه) و تعهدِ مالی (ثالث) طبقِ خودِ بیمه‌نامه روی ردیف
+    $cv = intval(preg_replace('/\D/', '', p2e_digits((string)($f['car_value'] ?? ''))));
+    $li = intval(preg_replace('/\D/', '', p2e_digits((string)($f['liability'] ?? ''))));
+    foreach (['car_value' => $cv, 'liability_limit' => $li] as $col => $val) {
+        if ($val > 0) { try { $pdo->prepare("UPDATE company_request_plates SET $col = ? WHERE id = ?")->execute([$val, $plateId]); } catch (Throwable $e) {} }
+    }
 }

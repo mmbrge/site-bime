@@ -545,7 +545,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .mi-head h2 { font-size: 17px; font-weight: 900; }
         .mi-head p { font-size: 11.5px; opacity: .85; margin-top: 2px; }
         .mi-ic { width: 48px; height: 48px; border-radius: 16px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 21px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
-        .mi-x { position: absolute; left: 16px; top: 16px; width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.18); color: #fff; z-index: 1; transition: .2s; }
+        .mi-x { position: absolute; left: 16px; top: 16px; width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.18); color: #fff; z-index: 30; transition: .2s; }
+        .mi-head::after { pointer-events: none; }
+        /* دکمه‌ی بستنِ (×) پنجره‌ها همیشه رویِ همه: متنِ کم‌رنگ (opacity) یا تزئینِ سرتیتر که بعد از دکمه آمده، رویش نمی‌افتد و کلیک را نمی‌گیرد */
+        .modal-overlay button.absolute, .modal-content > button.absolute, button.absolute:has(> i.fa-times), button.absolute:has(> i.fa-xmark) { z-index: 30; }
         .mi-x:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
         .mi-body { padding: 18px 22px; overflow-y: auto; flex: 1; min-height: 0; }
         .mi-foot { display: flex; gap: 8px; padding: 14px 22px; border-top: 1px solid #eef2f7; background: #fbfcfe; }
@@ -2516,6 +2519,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ ©</p>
         </div>
     </main>
+    <script>
+        // پنجره‌های تمام‌صفحه‌ای که داخلِ <main> نوشته شده‌اند (نمایشگرِ عکس‌های بازدید، گالری، بزرگ‌نمایی، جزئیاتِ پرونده و ...)
+        // زیرِ سرتیترِ بالای صفحه می‌افتادند (main با z-10 لایه‌ی جدا می‌سازد) و دکمه‌ی بستنشان کلیک نمی‌خورد؛ به بدنه‌ی صفحه منتقل می‌شوند
+        document.querySelectorAll('main [id$="-modal"]').forEach(m => {
+            if (m.classList.contains('fixed') || m.classList.contains('modal-overlay') || getComputedStyle(m).position === 'fixed') document.body.appendChild(m);
+        });
+    </script>
 
     <!-- مودال جزئیات درخواست شرکتی -->
     <div id="creq-detail-modal" class="modal-overlay">
@@ -5805,7 +5815,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (sel) it._sel = sel.checked;
                 if (pay) it._pay = pay.checked;
                 const pf = document.getElementById('bdl-pf-' + it.i);
-                if (pf && pf.querySelector('input[data-pf]')) { it._f = pfCollect(pf); it._f.policy_num = it._pn !== undefined ? it._pn : it._f.policy_num; if (it._pr !== undefined) it._f.premium = String(it._pr).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
+                if (pf && pf.querySelector('[data-pf]')) { it._f = pfCollect(pf); it._f.policy_num = it._pn !== undefined ? it._pn : it._f.policy_num; if (it._pr !== undefined) it._f.premium = String(it._pr).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
                 const det = document.getElementById('bdl-det-' + it.i);
                 if (det) it._open = det.open;
             });
@@ -7260,13 +7270,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // کلیدها همان خروجیِ الگوریتمِ شناسایی‌اند؛ نام‌های قدیمیِ موتور (policy_number، total_premium، ...) هم خوانده می‌شوند
         const PF_GROUPS = [
             ['fa-file-shield', 'بیمه‌نامه', [['policy_num', 'شماره بیمه‌نامه', {ltr: 1, req: 1}], ['premium', 'حق بیمه‌ی کل (ریال)', {money: 1, req: 1}], ['issue_date', 'تاریخ صدور (سررسیدِ اقساط از این تاریخ)', {ltr: 1, req: 1, ph: '۱۴۰۵/۰۷/۱۰'}],
-                ['start_date', 'شروع', {ltr: 1}], ['end_date', 'پایان', {ltr: 1}], ['central_no', 'کد یکتای بیمه مرکزی', {ltr: 1}], ['car_value', 'ارزش خودرو (بدنه)', {money: 1}], ['liability', 'تعهد مالی (ثالث)', {money: 1}], ['ins_type', 'نوع (تشخیص)', {ro: 1}], ['ins_company', 'بیمه‌گر (تشخیص)', {ro: 1}]]],
-            ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}]]],
+                ['start_date', 'شروع', {ltr: 1}], ['end_date', 'پایان', {ltr: 1}], ['central_no', 'کد یکتای بیمه مرکزی', {ltr: 1}], ['ins_type', 'نوع (تشخیص)', {ro: 1}], ['ins_company', 'بیمه‌گر (تشخیص)', {ro: 1}]]],
+            ['fa-scale-balanced', 'سرمایه و تعهدات', [['car_value', 'ارزش خودرو (ریال)', {money: 1, only: 'بدنه'}], ['total_value', 'جمعِ سرمایه‌ی بیمه (ریال)', {money: 1, only: 'بدنه'}],
+                ['trailer_value', 'ارزش یدک (ریال)', {money: 1, only: 'بدنه'}], ['extras_value', 'ارزش وسایل اضافی (ریال)', {money: 1, only: 'بدنه'}],
+                ['liability', 'تعهد مالی (ریال)', {money: 1, only: 'ثالث'}], ['diya', 'تعهد بدنی / دیه (ریال)', {money: 1, only: 'ثالث'}], ['driver_cover', 'حوادث راننده (ریال)', {money: 1, only: 'ثالث'}],
+                ['ncd', 'تخفیف عدم خسارت', {wide: 1, only: 'ثالث'}], ['covers', 'پوشش‌های بیمه‌نامه', {wide: 1, only: 'بدنه'}]]],
+            ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}], ['postal_code', 'کد پستی', {ltr: 1}],
+                ['address', 'نشانی', {wide: 1}]]],
             ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['vin', 'شاسی (VIN)', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
-                ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}]]],
-            ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}]]],
+                ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}], ['cargo', 'اتاق بار']]],
+            ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}],
+                ['prev_claims', 'وضعیت خسارتِ سال قبل', {only: 'ثالث'}]]],
         ];
-        const PF_ALIAS = {policy_num: ['policy_number'], premium: ['total_premium'], engine_no: ['engine_num'], central_no: ['unique_code'], color: ['car_color'], usage: ['car_usage'], car_tip: ['car_type'], vin: ['chassis_num', 'chassis_no']};
+        const PF_ALIAS = {phone: ['insured_phone'], address: ['insured_address'], postal_code: ['insured_postal_code'], liability: ['liability_limit'], policy_num: ['policy_number'], premium: ['total_premium'], engine_no: ['engine_num'], central_no: ['unique_code'], color: ['car_color'], usage: ['car_usage'], car_tip: ['car_type'], vin: ['chassis_num', 'chassis_no']};
         function pfVal(o, k) {
             for (const kk of [k].concat(PF_ALIAS[k] || [])) { const v = o[kk]; if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim(); }
             return '';
@@ -7274,9 +7290,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // box: محلِ فرم؛ o: داده‌ی شناسایی؛ meta: {receipts, missing, source, layout_debug}
         function pfRender(box, o = {}, meta = {}) {
             const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+            // فیلدهای مخصوصِ بدنه/ثالث فقط وقتی نوعِ دیگری تشخیص داده شده و خالی‌اند پنهان می‌شوند
+            const insType = String(o.ins_type || o.insurance_type_fa || '');
             const field = (k, label, op = {}) => {
                 let v = pfVal(o, k);
+                if (op.only && insType && !insType.includes(op.only) && !v) return '';
                 if (op.money && v) v = mfmt(v);
+                if (op.wide) {
+                    return `<div class="ii-f" style="grid-column:1/-1"><label>${label}</label><div class="ii-w"><textarea data-pf="${k}" rows="2" class="w-full bg-transparent outline-none resize-y text-[12px] leading-6">${esc(v)}</textarea></div></div>`;
+                }
                 if (op.ro) return `<div class="ii-f"><label>${label}</label><div class="ii-ro">${v ? (op.plate && /ایران/.test(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
                 const miss = op.req && !v;
                 return `<div class="ii-f"><label>${label}${op.req ? ' <span class="text-rose-500">*</span>' : ''}</label><div class="ii-w ${miss ? 'pf-miss' : ''}">
@@ -7285,19 +7307,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const src = meta.source === 'layout' ? '<span class="cmx-chip bg-emerald-100 text-emerald-700"><i class="fas fa-wand-magic-sparkles"></i>خوانده‌شده با الگوریتمِ جای متن</span>'
                 : (meta.source === 'engine' ? `<span class="cmx-chip bg-amber-100 text-amber-800" title="${esc(meta.layout_debug || '')}"><i class="fas fa-triangle-exclamation"></i>با موتورِ قدیمی خوانده شد${meta.layout_debug ? ': ' + esc(meta.layout_debug) : ''}</span>` : '');
             const rc = meta.receipts || [];
+            const groupsHtml = PF_GROUPS.map(([ic, title, fields]) => { const inner = fields.map(f => field(f[0], f[1], f[2] || {})).join(''); return inner ? `<div class="ii-sec"><h5><i class="fas ${ic} text-teal-600"></i>${title}</h5><div class="ii-grid">${inner}</div></div>` : ''; }).join('');
             box.innerHTML = `${src || (meta.missing || []).length ? `<div class="flex flex-wrap items-center gap-1.5 mb-2">${src}${(meta.missing || []).length ? `<span class="cmx-chip bg-rose-50 text-rose-700">خوانده نشد: ${meta.missing.join('، ')}</span>` : ''}</div>` : ''}
-                <div class="space-y-2">${PF_GROUPS.map(([ic, title, fields]) => `<div class="ii-sec"><h5><i class="fas ${ic} text-teal-600"></i>${title}</h5><div class="ii-grid">${fields.map(f => field(f[0], f[1], f[2] || {})).join('')}</div></div>`).join('')}</div>
+                <div class="space-y-2">${groupsHtml}</div>
                 ${rc.length ? `<div class="ii-sec mt-2 border-indigo-200 bg-indigo-50/40"><h5><i class="fas fa-receipt text-indigo-600"></i>${e2pNum(rc.length)} فیشِ قسط داخلِ فایل</h5>
                     <p class="text-[10.5px] text-slate-500 mb-1">صفحه‌های خودِ بیمه‌نامه جدا بایگانی می‌شوند و هر فیش روی ردیفِ قسطِ خودش می‌نشیند.</p>
                     <div class="flex flex-wrap gap-1">${rc.map((r, i) => `<span class="text-[10px] bg-white border border-indigo-100 rounded-full px-2 py-0.5">قسط ${e2pNum(i + 1)}: ${faDigits(r.date || '—')} | ${r.amount ? money(r.amount) : '—'}</span>`).join('')}</div></div>` : ''}`;
-            box.querySelectorAll('input[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
+            box.querySelectorAll('[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
             if (window.MoneyInput && MoneyInput.apply) try { MoneyInput.apply(box); } catch (e) {}
         }
         function pfCollect(box) {
             const out = {};
-            box.querySelectorAll('input[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
-            ['premium', 'car_value', 'liability'].forEach(k => { if (out[k] !== undefined) out[k] = String(out[k]).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
-            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'phone', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            box.querySelectorAll('[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
+            ['premium', 'car_value', 'liability', 'total_value', 'trailer_value', 'extras_value', 'diya', 'driver_cover'].forEach(k => { if (out[k] !== undefined) out[k] = String(out[k]).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
             return out;
         }
         function pfCheck(box) {

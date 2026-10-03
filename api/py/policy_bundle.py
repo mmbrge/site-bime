@@ -263,6 +263,41 @@ def money_values(text):
     return vals
 
 
+# عدد به حروف («بیست و هشت میلیارد») → عدد؛ تعهداتِ بیمه‌نامه‌ی ثالث با حروف نوشته می‌شود
+FA_NUM = {'صفر': 0, 'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5, 'شش': 6, 'شیش': 6, 'هفت': 7, 'هشت': 8, 'نه': 9, 'ده': 10,
+          'یازده': 11, 'دوازده': 12, 'سیزده': 13, 'چهارده': 14, 'پانزده': 15, 'پونزده': 15, 'شانزده': 16, 'هفده': 17, 'هجده': 18, 'هیجده': 18,
+          'نوزده': 19, 'بیست': 20, 'سی': 30, 'چهل': 40, 'پنجاه': 50, 'شصت': 60, 'هفتاد': 70, 'هشتاد': 80, 'نود': 90,
+          'صد': 100, 'یکصد': 100, 'دویست': 200, 'سیصد': 300, 'چهارصد': 400, 'پانصد': 500, 'ششصد': 600, 'هفتصد': 700, 'هشتصد': 800, 'نهصد': 900}
+FA_SCALE = {'هزار': 10 ** 3, 'میلیون': 10 ** 6, 'ملیون': 10 ** 6, 'میلیارد': 10 ** 9, 'ملیارد': 10 ** 9, 'بیلیون': 10 ** 9}
+
+
+def fa_words_to_int(text):
+    toks = [t for t in re.split(r'[\s\u200c]+|(?<=\S)و(?=\s)', re.sub(r'ریال|تومان|حداکثر|تا', ' ', text or '')) if t and t != 'و']
+    total, cur, seen = 0, 0, False
+    for t in toks:
+        if re.fullmatch(r'\d+', t):
+            cur += int(t); seen = True
+        elif t in FA_NUM:
+            cur += FA_NUM[t]; seen = True
+        elif t in FA_SCALE:
+            total += (cur or 1) * FA_SCALE[t]; cur = 0; seen = True
+        elif seen:
+            break
+    return total + cur if seen else 0
+
+
+def amount_in(text):
+    """مبلغ از یک تکه: اول رقمی («5,000,000,000»)، بعد به حروف"""
+    vals = [v for v in money_values(text) if v >= 1000]
+    return max(vals) if vals else fa_words_to_int(text)
+
+
+def norm_phone(t):
+    t = re.sub(r'[\s\-()]', '', t or '')
+    m = re.search(r'(?<!\d)(0\d{7,10})(?!\d)', t)   # موبایل ۱۱ رقمی یا تلفنِ ثابت (گاهی بدونِ یک رقم چاپ شده)
+    return m.group(1) if m else ''
+
+
 DATE_RX = re.compile(r'(1[34]\d{2})/(\d{1,2})/(\d{1,2})')
 
 
@@ -438,7 +473,16 @@ def extract_layout(page):
         m = re.search(r'(?<!\d)(\d{10})\s*:\s*کد\s*ملی', alltext)
         if m: d['national_id'] = m.group(1)
 
-    # شاسی و موتور
+    # شاسی و موتور؛ برچسبِ دوتایی «شماره موتور: شماره شاسی» (بدنه) → مقدارِ اول موتور، دوم شاسی (از راست به چپ)
+    for lb in find_labels(sp, r'شماره\s*موتور.*شماره\s*شاسی|شماره\s*شاسی.*شماره\s*موتور'):
+        toks = [re.sub(r'[^A-Za-z0-9]', '', v['t']).upper() for v in row_values(sp, lb) if re.search(r'\d', v['t'])]
+        toks = [t for t in toks if len(t) >= 4]
+        first_engine = lb['t'].find('موتور') < lb['t'].find('شاسی')   # برچسبِ اولِ رشته = راست‌ترین = مقدارِ اول
+        if len(toks) >= 2:
+            eng, ch = (toks[0], toks[1]) if first_engine else (toks[1], toks[0])
+            if not d.get('engine_no'): d['engine_no'] = eng
+            if not d.get('vin') and not d.get('chassis_no'): d['vin'] = ch
+        break
     for lb in find_labels(sp, r'شماره\s*(?:شاسی|موتور)|VIN'):
         for v in row_values(sp, lb):
             for tok in re.findall(r'[A-Za-z0-9]{6,20}', v['t']):
@@ -528,17 +572,148 @@ def extract_layout(page):
                     d['prev_insurer'] = re.sub(r'\s+', ' ', ins)
                 break
         break
-    for lb in find_labels(sp, r'شماره\s*بیمه\s*مرکزی'):
+    for lb in find_labels(sp, r'شماره\s*بیمه\s*مرکزی|کد\s*یکتا'):
+        m = re.search(r'\d{8,}', lb['t'])
+        if m:
+            d['central_no'] = m.group(0); break
         for v in row_values(sp, lb):
             m = re.search(r'\d{8,}', v['t'])
             if m:
                 d['central_no'] = m.group(0); break
         break
+
+    # برچسب‌های تکی با مقدارِ جدا در سمتِ چپ (بدنه): ظرفیت، تعداد سیلندر، اتاق بار
+    for key, lab in [('capacity', r'^:?\s*ظرفیت\s*:?$'), ('cylinders', r'^:?\s*تعداد\s*سیلندر\s*:?$'), ('cargo', r'^:?\s*اتاق\s*بار\s*:?$')]:
+        if d.get(key):
+            continue
+        for lb in find_labels(sp, lab):
+            vals = [v for v in row_values(sp, lb, left_only=True) if not re.fullmatch(r'[-\s.]*', v['t'])]
+            if vals:
+                d[key] = vals[0]['t'].strip(); break
+    if not d.get('cargo'):
+        v = inline_kv(sp, r'اتاق\s*بار')
+        if v: d['cargo'] = v
+    if d.get('capacity'):
+        m = re.fullmatch(r'\s*(تن|نفر|کیلوگرم)\s*(\d+(?:[.,]\d+)?)\s*', d['capacity'])
+        if m: d['capacity'] = m.group(2) + ' ' + m.group(1)
+    if d.get('cylinders'):
+        m = re.search(r'\d+', d['cylinders'])
+        if m: d['cylinders'] = m.group(0)
+        else: d.pop('cylinders')
+
+    # اطلاعاتِ بیمه‌گذار (تلفن، نشانی، کد پستی): فقط در بلوکِ زیرِ برچسبِ «بیمه‌گذار»؛ تلفن و نشانیِ شرکت/واحدِ صدور جدا است
+    ins = [s for s in sp if re.search(r'بیمه\s*گ[ذز]ار\s*:|:\s*بیمه\s*گ[ذز]ار', s['t']) and not re.search(r'پیشنهاد', s['t'])]
+    if ins:
+        y0 = min(s['y0'] for s in ins)
+        block = [s for s in sp if y0 - 4 <= s['y0'] <= y0 + 62 and not re.search(r'آدرس|واحد\s*صدور|دورنگار|ذینفع', s['t'])]
+        bset = set(id(s) for s in block)
+        for s in block:
+            m = re.search(r'([0-9][0-9\-\s()]{7,}[0-9])\s*:\s*تلفن', s['t']) or re.search(r'تلفن\s*:\s*([0-9][0-9\-\s()]{7,}[0-9])', s['t'])
+            if m and norm_phone(m.group(1)):
+                d['phone'] = norm_phone(m.group(1)); break
+        if not d.get('phone'):
+            for lb in [s for s in block if re.fullmatch(r'\s*:?\s*تلفن\s*:?\s*', s['t'])]:
+                for v in row_values(sp, lb):
+                    if id(v) in bset and norm_phone(v['t']):
+                        d['phone'] = norm_phone(v['t']); break
+                if d.get('phone'): break
+        for lb in [s for s in block if re.search(r'کد\s*پستی', s['t'])]:
+            m = re.search(r'(?<!\d)(\d{10})(?!\d)', lb['t'])
+            vals = [m.group(1)] if m else [re.search(r'(?<!\d)(\d{10})(?!\d)', v['t']).group(1) for v in row_values(sp, lb) if re.search(r'(?<!\d)\d{10}(?!\d)', v['t'])]
+            if vals:
+                d['postal_code'] = vals[0]; break
+        for lb in [s for s in block if re.search(r'نشانی', s['t'])]:
+            parts = []
+            t = lb['t']
+            if re.search(r'نشانی\s*:\s*\S', t):   # «...پلاک 5 واحد41نشانی: استان البرز ، کرج ...»
+                before, after = re.split(r'نشانی\s*:', t, 1)
+                parts = [after.strip(), before.strip()]
+            else:
+                row = [v for v in row_values(sp, lb, left_only=True) if re.search(r'[آ-ی]{3,}', v['t']) and ':' not in v['t']]
+                if row:
+                    first = row[0]
+                    parts.append(first['t'])
+                    for v in sp:   # ادامه‌ی نشانی در خطِ بعد، راست‌چین با خطِ اول
+                        if v is not first and 4 < v['y0'] - first['y0'] < 20 and abs(v['x1'] - first['x1']) < 8 and ':' not in v['t'] \
+                                and re.search(r'[آ-ی]', v['t']) and not norm_phone(v['t']):
+                            parts.append(v['t'])
+            def fix_line(line):
+                # بخش‌های جداشده با «-» در PDF برعکس چیده می‌شوند («کوچه مفاخری- ... - استان تهران») و «12 پلاک» یعنی «پلاک 12»
+                if '-' in line:
+                    segs = [x.strip(' ،,') for x in line.split('-') if x.strip(' ،,')]
+                    segs = [re.sub(r'^(\d+)\s+(پلاک|طبقه|واحد|کوچه|خیابان|بلوک|ورودی)$', r'\2 \1', x) for x in segs]
+                    return '، '.join(reversed(segs))
+                return line
+            parts = [fix_line(p) for p in parts]
+            addr = ' '.join(p for p in parts if p)
+            m = re.match(r'^(.*?)\s*(استان\s.*)$', addr)
+            if m and m.group(1).strip():
+                addr = m.group(2) + ' ' + m.group(1)
+            addr = re.sub(r'\s+', ' ', addr).strip(' ،,-')
+            if len(addr) >= 8:
+                d['address'] = addr; break
+
+    # تعهداتِ بیمه‌گر (ثالث): مالی، بدنی (دیه) و حوادث راننده - رقمی یا به حروف
+    def commit_amount(rx):
+        for lb in [s for s in sp if re.search(rx, s['t'])]:
+            vals = [amount_in(v['t']) for v in sp if v is not lb and v['x1'] < lb['x0'] + 2 and same_row(v, lb, 0.2) and not re.search(r'^\s*ریال\s*$', v['t'])]
+            vals = [v for v in vals if v >= 10 ** 6]
+            own = amount_in(re.sub(rx, ' ', lb['t']))
+            if own >= 10 ** 6: vals.append(own)
+            if vals:
+                return str(max(vals))
+        return ''
+    if not d.get('liability'):
+        d['liability'] = commit_amount(r'خسارت\s*مالی|تعهد(?:ات)?\s*مالی')
+    d['diya'] = commit_amount(r'خسارت\s*بدنی|دیه')
+    d['driver_cover'] = commit_amount(r'حوادث\s*راننده\s*مسبب')
+
+    # تخفیفِ عدمِ خسارت (ثالث): «تخفیف ثالث 60 % سال8»
+    disc = []
+    for lb in [s for s in sp if re.fullmatch(r'\s*تخفیف\s*(ثالث|حوادث\s*راننده)\s*', s['t'])]:
+        row = ' '.join(v['t'] for v in sp if v is not lb and same_row(v, lb, 0.3) and v['x1'] < lb['x0'] + 2 and v['x0'] > lb['x0'] - 160)
+        pct = re.search(r'(\d{1,3})\s*%', row)
+        yrs = re.search(r'سال\s*(\d{1,2})|(\d{1,2})\s*سال', row)
+        if pct or yrs:
+            name = re.sub(r'\s*تخفیف\s*', '', lb['t']).strip()
+            y = (yrs.group(1) or yrs.group(2)) if yrs else ''
+            disc.append(name + ': ' + (y + ' سال' if y else '') + (' (' + pct.group(1) + '%)' if pct else ''))
+    if disc:
+        d['ncd'] = '، '.join(disc)
+    for lb in find_labels(sp, r'وضعیت\s*بیمه\s*نامه\s*قبلی'):
+        st = [v['t'] for v in sp if re.search(r'خسارت', v['t']) and 0 <= v['y0'] - lb['y0'] < 50 and abs(v['x1'] - lb['x1']) < 10 and ':' not in v['t']]
+        if st:
+            d['prev_claims'] = '، '.join(st)
+        break
+
+    # بدنه: جمعِ ارزش (سرمایه‌ی بیمه)، ارزشِ یدک و وسایلِ اضافی، و فهرستِ پوشش‌ها
+    for key, lab in [('total_value', r'^:?\s*جمع\s*:?$'), ('trailer_value', r'ارزش\s*یدک'), ('extras_value', r'ارزش\s*وسایل\s*اضافی')]:
+        for lb in find_labels(sp, lab):
+            vals = [x for v in row_values(sp, lb, left_only=True) for x in money_values(v['t'])]
+            if vals and max(vals) > 0:
+                d[key] = str(max(vals))
+            break
+    sh = [s for s in sp if re.search(r'شرح\s*\(?\s*حق\s*بیمه', s['t'])]
+    if sh:
+        y0 = sh[0]['y0']
+        end = min([s['y0'] for s in sp if s['y0'] > y0 and re.search(r'مبلغ\s*قابل\s*پرداخت', s['t'])] or [y0 + 260]) - 3
+        covers = []
+        for s in sorted([s for s in sp if y0 < s['y0'] < end], key=lambda s: s['y0']):
+            if re.search(r'تخفیف|تشدید|مالیات|عوارض|کسر|اضافه\s*هزار', s['t']):
+                continue
+            name = re.sub(r'-?\d{1,3}(?:[,٬.]\d{3})+|-?\d{4,}', ' ', s['t']).replace('ریال', ' ').replace('.', ' ')
+            name = re.sub(r'%?\d+%?|[()]', ' ', name)          # درصد و پرانتزهای برعکس‌شده‌ی PDF
+            name = re.sub(r'\s+', ' ', name).strip(' ،,-')
+            name = re.sub(r'\s+تا$', '', name)
+            if re.search(r'[آ-ی]{3,}', name) and name not in ('ریال',):
+                covers.append(name)
+        if covers:
+            d['covers'] = '؛ '.join(covers)
     return d
 
 
 # مقدارِ اشتباهی که از ردیفِ کناری برداشته شده (مثلاً «5051/30000/1404:. شماره قرارداد8-1» به‌جای سیستمِ خودرو) دور ریخته می‌شود
-TEXT_FIELDS = ('car_kind', 'car_system', 'car_tip', 'car_name', 'color', 'usage', 'capacity', 'prev_insurer', 'insured_name')
+TEXT_FIELDS = ('car_kind', 'car_system', 'car_tip', 'car_name', 'color', 'usage', 'capacity', 'cargo', 'prev_insurer', 'insured_name')
 BAD_TEXT = re.compile(r':|شماره|قرارداد|ریال|تعهد|خسارت|بیمه\s*نامه|مبلغ|حداکثر|\d+/\d+')
 
 
