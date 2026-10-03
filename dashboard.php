@@ -759,7 +759,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <div class="ms-head">گزارش‌ها و ابزار</div>
                                 <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
                                 <?php if ($canSeeCompanies): ?><a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a><?php endif; ?>
-                                <a href="#" onclick="switchTab('fin-pasargad')" id="nav-fin-pasargad" class="nav-item menu-link"><i class="fas fa-building-columns ml-2"></i> تسویه‌ی گروهی با پاسارگاد (روش قبلی)</a>
                             </div>
                         </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
@@ -1514,69 +1513,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <!-- ثبت دریافت جدید -->
-        <div id="pay-new-modal" class="fixed inset-0 bg-black/50 z-[1100] hidden items-start justify-center pt-20 px-4 pb-4 overflow-y-auto">
-            <div class="bg-white rounded-2xl w-full max-w-xl">
-                <div class="p-4 border-b flex justify-between items-center bg-emerald-50">
-                    <h3 class="font-bold text-emerald-700"><i class="fas fa-hand-holding-dollar ml-1"></i> ثبت دریافت از شرکت</h3>
-                    <button onclick="document.getElementById('pay-new-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
-                </div>
-                <form id="pay-new-form" class="p-4 space-y-3" onsubmit="return false;">
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">شرکت *</label>
-                            <select name="company_id" id="pay-new-company" onchange="loadPayInvoices()" class="border rounded-lg px-3 py-2 text-xs w-full"></select>
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">صورتحساب مرتبط</label>
-                            <select name="invoice_id" id="pay-invoice" class="border rounded-lg px-3 py-2 text-xs w-full"></select>
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">مبلغ (ریال) *</label>
-                            <input type="text" name="amount" class="money-input border rounded-lg px-3 py-2 text-xs w-full" dir="ltr" inputmode="numeric" placeholder="مثلاً ۵۰,۰۰۰,۰۰۰">
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">روش پرداخت</label>
-                            <select name="method" id="pay-method" onchange="onPayMethodChange()" class="border rounded-lg px-3 py-2 text-xs w-full">
-                                <option value="TRANSFER">واریز / حواله</option>
-                                <option value="CHEQUE">چک</option>
-                                <option value="CASH">نقدی</option>
-                                <option value="PAYROLL">کسر از حقوق</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">تاریخ پرداخت (شمسی)</label>
-                            <input type="text" name="paid_jalali" class="border rounded-lg px-3 py-2 text-xs w-full" dir="ltr" placeholder="۱۴۰۵/۰۷/۱۵">
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-slate-500 block mb-1">شماره فیش / پیگیری</label>
-                            <input type="text" name="reference_no" class="border rounded-lg px-3 py-2 text-xs w-full" dir="ltr">
-                        </div>
-                    </div>
 
-                    <div id="pay-cheque-fields" class="grid-cols-3 gap-3" style="display:none;">
-                        <div><label class="text-[10px] text-slate-500 block mb-1">شماره چک</label>
-                            <input type="text" name="cheque_no" class="border rounded-lg px-3 py-2 text-xs w-full" dir="ltr"></div>
-                        <div><label class="text-[10px] text-slate-500 block mb-1">بانک</label>
-                            <input type="text" name="bank_name" class="border rounded-lg px-3 py-2 text-xs w-full"></div>
-                        <div><label class="text-[10px] text-slate-500 block mb-1">سررسید چک</label>
-                            <input type="text" name="cheque_due" class="border rounded-lg px-3 py-2 text-xs w-full" dir="ltr" placeholder="۱۴۰۵/۰۸/۱۰"></div>
-                    </div>
-
-                    <div>
-                        <label class="text-[10px] text-slate-500 block mb-1">توضیحات</label>
-                        <textarea name="note" rows="2" class="border rounded-lg px-3 py-2 text-xs w-full"></textarea>
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-slate-500 block mb-1">فیش‌ها / تصاویر (چند فایل مجاز است)</label>
-                        <input type="file" name="receipts[]" multiple accept="image/*,application/pdf" class="text-xs w-full">
-                    </div>
-                    <p class="text-[10px] text-slate-400">مبلغ به‌صورت خودکار و به ترتیب سررسید به اقساط باز این شرکت تخصیص می‌یابد.</p>
-                    <button type="button" onclick="submitPayment()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs">
-                        <i class="fas fa-check ml-1"></i> ثبت دریافت و تخصیص خودکار
-                    </button>
-                </form>
-            </div>
-        </div>
 
         <!-- جزئیات صورتحساب -->
         <div id="inv-detail-modal" class="fixed inset-0 bg-black/50 z-[1100] hidden items-start justify-center pt-20 px-4 pb-4 overflow-y-auto">
@@ -1819,30 +1756,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <p class="text-xs text-slate-400 mt-1">دو دفتر: دریافت از بیمه‌گذار/شرکت، و پرداخت به بیمه‌گر. ثبت‌های قبلیِ سایت هم این‌جا دیده می‌شوند. وضعیتِ هر چک را همین‌جا عوض کنید.</p>
             </div>
             <div id="fl-root" class="space-y-3"></div>
-            <!-- عنصرهای قدیمی که برخی توابعِ قبلی هنوز به آن‌ها اشاره می‌کنند -->
-            <div class="hidden"><select id="pay-f-company"></select><div id="fin-payments-body"></div><div id="fin-cheques-body"></div></div>
         </div>
-        <!-- ======================= تسویه با پاسارگاد ======================= -->
-        <div id="tab-fin-pasargad" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <?php echo finance_nav('fin-pasargad', $canSeeCompanies); ?>
-            <div class="flex justify-between items-center">
-                <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-building-columns text-purple-500 ml-2"></i>تسویه با پاسارگاد</h1>
-                    <p class="text-xs text-slate-400 mt-1">اقساطی که از شرکت‌ها دریافت شده و باید به پاسارگاد پرداخت شود</p>
-                </div>
-                <button onclick="loadPasargad()" class="bg-purple-50 text-purple-600 hover:bg-purple-100 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
-            </div>
-            <div class="card p-4 flex flex-wrap gap-3 items-end">
-                <div><label class="text-[10px] text-slate-500 block mb-1">دوره</label><select id="psg-f-period" onchange="loadPasargad()" class="border rounded-lg px-3 py-2 text-xs"></select></div>
-                <div><label class="text-[10px] text-slate-500 block mb-1">شرکت</label><select id="psg-f-company" onchange="loadPasargad()" class="border rounded-lg px-3 py-2 text-xs"></select></div>
-                <button onclick="settleSelectedPasargad()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-check-double ml-1"></i> تسویه انتخاب‌شده‌ها</button>
-            </div>
-            <div class="card p-0 overflow-x-auto"><div id="fin-pasargad-body"></div></div>
-            <div class="card p-4">
-                <h3 class="font-bold text-sm text-slate-700 mb-3">تسویه‌های انجام‌شده</h3>
-                <div id="fin-psg-history" class="overflow-x-auto"></div>
-            </div>
-        </div>
+
 
         <!-- ======================= تب تنظیمات و ریست سیستم ======================= -->
         <?php if($_SESSION['role'] === 'ADMIN'): ?>
@@ -3213,19 +3128,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <!-- مودال ثبت تسویه با پاسارگاد (همراه با فیش) -->
-    <div id="psg-settle-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative">
-            <button type="button" onclick="closeModal('psg-settle-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">ثبت تسویه با پاسارگاد</h3>
-            <p id="psg-settle-summary" class="text-xs text-slate-500 mb-4"></p>
-            <div class="float-input"><input type="text" id="psg-settle-ref" dir="ltr" placeholder=" "><label>شماره پیگیری/مرجع</label></div>
-            <div class="float-input"><input type="text" id="psg-settle-jalali" dir="ltr" placeholder=" "><label>تاریخ پرداخت (شمسی)</label></div>
-            <div class="float-input"><input type="text" id="psg-settle-note" placeholder=" "><label>توضیحات</label></div>
-            <label class="text-xs font-bold text-slate-500 block mb-2">فیش‌های پرداختی (چند فایل مجاز)</label>
-            <input type="file" id="psg-settle-files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" class="mb-4 w-full text-xs">
-            <button onclick="submitPasargadSettle()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت تسویه</button>
-        </div>
-    </div>
+
 
     <!-- ثبت دستیِ معرفی‌نامه (فقط معرفی‌نامه؛ درخواست‌ها از «لیست صدور» ثبت می‌شوند) -->
     <div id="manual-intro-modal" class="modal-overlay">
@@ -7853,13 +7756,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             // در موبایل، بعد از انتخاب یک تب، منو خودکار بسته شود
             if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
-            // نکته: بارگذاریِ همه‌ی تب‌های مالی از یک جا انجام می‌شود، با
-            // initFinance(tabId) در پایینِ همین تابع (که اول bootstrap را می‌گیرد و
-            // کشویی‌های دوره/شرکت را پر می‌کند). قبلاً همین‌جا یک فهرستِ تکراری هم بود
-            // که سه اسمِ تابعِ منقضی داشت (loadReconcilePage / loadPasargadSettle /
-            // loadFinSettings که هیچ‌کدام وجود ندارند) و باعث می‌شد سه تبِ «مغایرت‌گیری
-            // با اکسل»، «تسویه با پاسارگاد» و «تنظیمات مالی» با ReferenceError متوقف
-            // شوند و هیچ‌وقت داده‌شان بار نشود؛ چهار تبِ دیگر هم دو بار بار می‌شدند.
+            // بارگذاریِ همه‌ی تب‌های مالی از یک جا انجام می‌شود: initFinance(tabId) در پایینِ همین تابع
+            // (که اول bootstrap را می‌گیرد و کشویی‌های دوره/شرکت را پر می‌کند)
             if (tabId === 'records') loadRecords();
             if (tabId === 'dashboard') { loadStats(); loadDashCharts(); loadDashAlerts(); }
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
@@ -7904,12 +7802,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 `<option value="${p.id}">${faDigits(p.title)}${p.status === 'CLOSED' ? ' (بسته)' : ''}</option>`).join('');
             const companyOpts = '<option value="">همه شرکت‌ها</option>' +
                 finBoot.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            ['fin-dash-period','inst-f-period','rec-period','inv-f-period','psg-f-period'].forEach(id => {
+            ['fin-dash-period','rec-period','inv-f-period'].forEach(id => {
                 const el = document.getElementById(id);
-                if (el) { el.innerHTML = (id === 'inst-f-period' ? '<option value="">همه دوره‌ها</option>' : '') + periodOpts;
+                if (el) { el.innerHTML = periodOpts;
                           if (finBoot.current_period_id) el.value = finBoot.current_period_id; }
             });
-            ['inst-f-company','inv-f-company','pay-f-company','psg-f-company'].forEach(id => {
+            ['inv-f-company'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = companyOpts;
             });
@@ -7924,79 +7822,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'fin-settings')     loadFinanceSettings();
             if (tabId === 'fin-invoices')     loadInvoices();
             if (tabId === 'fin-payments')     { if (window.FinHub) FinHub.initLedger(); }
-            if (tabId === 'fin-pasargad')     loadPasargad();
         }
 
         // ---------- داشبورد مالی ----------
         // داشبورد تحلیلی (کارت‌ها، نمودارها، هشدارها و فیلترها) در finance-ui.js است
         function loadFinDashboard() { if (window.FinUI) FinUI.dashboard(); }
-
-        // ---------- اقساط ----------
-        let instTimer = null;
-        function debouncedInstallments() { clearTimeout(instTimer); instTimer = setTimeout(loadFinInstallments, 400); }
-
-        function instParams(action) {
-            return new URLSearchParams({
-                action,
-                source: document.getElementById('inst-f-source').value || '',
-                period_id: document.getElementById('inst-f-period').value || '',
-                company_id: document.getElementById('inst-f-company').value || '',
-                status: document.getElementById('inst-f-status').value || '',
-                q: p2e(document.getElementById('inst-f-q').value || ''),
-            });
-        }
-
-        async function loadFinInstallments() {
-            const body = document.getElementById('fin-installments-body');
-            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
-            try {
-                const res = await fetch(`${FIN_API}?${instParams('installments')}`);
-                const d = await res.json();
-                if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
-                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">قسطی با این فیلترها یافت نشد.</p>'; return; }
-                const s = d.sum;
-                body.innerHTML = `
-                    <div class="p-3 bg-gradient-to-l from-indigo-50 to-white text-[11px] flex gap-6 flex-wrap border-b">
-                        <span>تعداد: <b>${e2p(d.total)}</b>${d.total > d.data.length ? ` <span class="text-slate-400">(نمایش ${e2p(d.data.length)} ردیف اول)</span>` : ''}</span>
-                        <span>جمع اقساط: <b>${money(s.amount)}</b> ریال</span>
-                        <span class="text-emerald-600">دریافت‌شده: <b>${money(s.paid)}</b></span>
-                        <span class="text-amber-600">مانده: <b>${money(s.remaining)}</b></span>
-                        <span class="text-rose-600">معوق: <b>${money(s.overdue)}</b></span>
-                    </div>
-                    <table class="w-full text-[11px]">
-                        <thead class="bg-slate-100 text-slate-600"><tr>
-                            <th class="p-2">منبع</th><th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th>
-                            <th class="p-2">پلاک</th><th class="p-2">نوع</th><th class="p-2">شماره بیمه‌نامه</th>
-                            <th class="p-2">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ</th>
-                            <th class="p-2">دریافت‌شده</th><th class="p-2">مانده</th><th class="p-2">وضعیت</th><th class="p-2">پاسارگاد</th><th class="p-2">صورتحساب</th><th class="p-2">کد رهگیری</th>
-                        </tr></thead><tbody>` +
-                    d.data.map(r => {
-                        const st = r.overdue ? ['معوق', 'bg-rose-100 text-rose-700'] : INST_ST[r.pay_status];
-                        return `<tr class="border-b hover:bg-indigo-50 ${r.overdue ? 'bg-rose-50/40' : ''}">
-                            <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${r.source === 'C' ? 'bg-cyan-100 text-cyan-700' : 'bg-indigo-100 text-indigo-700'}">${r.source === 'C' ? 'شرکتی' : 'پرسنلی'}</span></td>
-                            <td class="p-2">${r.company_name || '-'}</td>
-                            <td class="p-2">${r.insured || '-'}</td>
-                            <td class="p-2 text-center whitespace-nowrap">${r.plate ? formatPlateHtml(r.plate) : '-'}</td>
-                            <td class="p-2 text-center">${insurance_type_fa_js(r.insurance_type)}</td>
-                            <td class="p-2 text-center" dir="ltr">${e2p(r.policy_number || '-')}</td>
-                            <td class="p-2 text-center font-bold">${e2p(r.inst_number)}</td>
-                            <td class="p-2 text-center ${r.overdue ? 'text-rose-600 font-bold' : ''}" dir="ltr">${e2p(r.due_jalali)}</td>
-                            <td class="p-2 text-center">${money(r.amount)}</td>
-                            <td class="p-2 text-center text-emerald-600">${money(r.paid)}</td>
-                            <td class="p-2 text-center ${r.remaining > 0 ? 'text-amber-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
-                            <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[1]}">${st[0]}</span></td>
-                            <td class="p-2 text-center">${r.settled == 1 ? '<span class="text-blue-600">✓ تسویه</span>' : '<span class="text-slate-300">—</span>'}</td>
-                            <td class="p-2 text-center">${r.source === 'C' ? '<span class="text-slate-300">—</span>' : (r.is_invoiced == 1 ? '<span class="text-emerald-600">دارای صورتحساب</span>' : '<span class="text-slate-300">بدون صورتحساب</span>')}</td>
-                            <td class="p-2 text-center font-mono text-slate-400" dir="ltr">${e2p(r.tracking_code || '-')}</td>
-                        </tr>`;
-                    }).join('') + '</tbody></table>';
-            } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
-        }
-
-        function exportInstallments(ev, action = 'export_installments') {
-            ev.preventDefault();
-            window.open(`${FIN_API}?${instParams(action)}`, '_blank');
-        }
 
         // ---------- تنظیمات مالی ----------
         async function loadFinanceSettings() {
@@ -8303,233 +8133,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('inv-detail-modal').classList.add('flex');
             } catch(e) { showToast('خطا در اتصال', 'error'); }
         }
-        // ---------- دریافت‌ها ----------
-        const CHQ_ST = { PENDING: ['در جریان','bg-amber-100 text-amber-700'], CLEARED: ['وصول‌شده','bg-emerald-100 text-emerald-700'], BOUNCED: ['برگشتی','bg-red-100 text-red-700'] };
-
-        async function loadPayments() {
-            const body = document.getElementById('fin-payments-body');
-            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
-            const cid = document.getElementById('pay-f-company').value || '';
-            try {
-                const res = await fetch(`${FIN_API}?action=payments&company_id=${cid}`);
-                const d = await res.json();
-                if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
-                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">دریافتی ثبت نشده است.</p>'; return; }
-                body.innerHTML = `<table class="w-full text-[11px]">
-                    <thead class="bg-slate-100 text-slate-600"><tr>
-                        <th class="p-2 text-right">شرکت</th><th class="p-2">صورتحساب</th><th class="p-2">مبلغ</th>
-                        <th class="p-2">روش</th><th class="p-2">تاریخ</th><th class="p-2">مرجع</th>
-                        <th class="p-2">تخصیص‌یافته</th><th class="p-2">فیش</th></tr></thead><tbody>` +
-                    d.data.map(r => {
-                        const un = r.amount - r.allocated;
-                        let files = '—';
-                        try { const fs = JSON.parse(r.receipts || '[]');
-                              if (fs.length) files = fs.map((f,i) => `<a href="/${encodeFilePath(f)}" target="_blank" class="text-blue-600 underline">${e2p(i+1)}</a>`).join(' '); } catch(e){}
-                        return `<tr class="border-b hover:bg-emerald-50">
-                            <td class="p-2">${r.company_name || '-'}</td>
-                            <td class="p-2 text-center" dir="ltr">${r.invoice_no || '—'}</td>
-                            <td class="p-2 text-center font-bold text-emerald-600">${money(r.amount)}</td>
-                            <td class="p-2 text-center">${PAY_METHOD[r.method] || r.method}</td>
-                            <td class="p-2 text-center" dir="ltr">${e2p(r.paid_jalali) || '-'}</td>
-                            <td class="p-2 text-center" dir="ltr">${r.reference_no || '-'}</td>
-                            <td class="p-2 text-center">${money(r.allocated)}${un > 0 ? `<br><span class="text-[9px] text-amber-600">تخصیص‌نیافته: ${money(un)}</span>` : ''}</td>
-                            <td class="p-2 text-center">${files}</td></tr>`;
-                    }).join('') + '</tbody></table>';
-            } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
-        }
-
-        async function loadCheques() {
-            const body = document.getElementById('fin-cheques-body');
-            try {
-                const res = await fetch(`${FIN_API}?action=cheques`);
-                const d = await res.json();
-                if (!d.ok || !d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-xs p-4">چکی ثبت نشده است.</p>'; return; }
-                body.innerHTML = `<table class="w-full text-[11px]">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-2 text-right">شرکت</th><th class="p-2">شماره چک</th><th class="p-2">بانک</th>
-                        <th class="p-2">مبلغ</th><th class="p-2">سررسید</th><th class="p-2">وضعیت</th><th class="p-2">تغییر وضعیت</th></tr></thead><tbody>` +
-                    d.data.map(r => {
-                        const st = CHQ_ST[r.status] || CHQ_ST.PENDING;
-                        return `<tr class="border-b">
-                            <td class="p-2">${r.company_name || '-'}</td>
-                            <td class="p-2 text-center" dir="ltr">${r.cheque_no}</td>
-                            <td class="p-2 text-center">${r.bank_name || '-'}</td>
-                            <td class="p-2 text-center">${money(r.amount)}</td>
-                            <td class="p-2 text-center" dir="ltr">${e2p(r.due_jalali) || '-'}</td>
-                            <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[1]}">${st[0]}</span></td>
-                            <td class="p-2 text-center">
-                                <select onchange="setChequeStatus(${r.id}, this.value)" class="border rounded px-1 py-0.5 text-[10px]">
-                                    <option value="PENDING" ${r.status==='PENDING'?'selected':''}>در جریان</option>
-                                    <option value="CLEARED" ${r.status==='CLEARED'?'selected':''}>وصول‌شده</option>
-                                    <option value="BOUNCED" ${r.status==='BOUNCED'?'selected':''}>برگشتی</option>
-                                </select></td></tr>`;
-                    }).join('') + '</tbody></table>';
-            } catch(e) { body.innerHTML = '<p class="text-red-500 text-xs p-4">خطا در اتصال.</p>'; }
-        }
-
-        async function setChequeStatus(id, status) {
-            try {
-                await fetch(FIN_API, { method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ action:'set_cheque_status', id, status }) });
-                showToast('وضعیت چک به‌روز شد.', 'success');
-            } catch(e) { showToast('خطا در به‌روزرسانی', 'error'); }
-        }
-
-        function openNewPayment() {
-            document.getElementById('pay-new-modal').classList.remove('hidden');
-            document.getElementById('pay-new-modal').classList.add('flex');
-            document.getElementById('pay-new-company').innerHTML = document.getElementById('pay-f-company').innerHTML;
-            document.getElementById('pay-new-form').reset();
-            onPayMethodChange();
-            loadPayInvoices();
-        }
-
-        function onPayMethodChange() {
-            const m = document.getElementById('pay-method').value;
-            document.getElementById('pay-cheque-fields').style.display = m === 'CHEQUE' ? 'grid' : 'none';
-        }
-
-        async function loadPayInvoices() {
-            const cid = document.getElementById('pay-new-company').value;
-            const sel = document.getElementById('pay-invoice');
-            sel.innerHTML = '<option value="">— بدون صورتحساب (علی‌الحساب) —</option>';
-            if (!cid) return;
-            try {
-                const res = await fetch(`${FIN_API}?action=invoices&company_id=${cid}`);
-                const d = await res.json();
-                if (d.ok) sel.innerHTML += d.data.map(i =>
-                    `<option value="${i.id}">${i.invoice_no} — ${faDigits(i.period_title) || ''} — مانده ${money(i.total_amount - i.paid_amount)}</option>`).join('');
-            } catch(e) {}
-        }
-
-        async function submitPayment() {
-            const fd = new FormData(document.getElementById('pay-new-form'));
-            fd.append('action', 'create_payment');
-            if (!fd.get('company_id') || !fd.get('amount')) { showToast('شرکت و مبلغ الزامی است.', 'error'); return; }
-            showToast('در حال ثبت...', 'info');
-            try {
-                const res = await fetch(FIN_API, { method:'POST', body: fd });
-                const d = await res.json();
-                if (!d.ok) { showToast(d.error, 'error'); return; }
-                let msg = `تخصیص‌یافته به اقساط: ${money(d.allocated)} ریال`;
-                if (d.unallocated > 0) msg += `\n⚠️ تخصیص‌نیافته: ${money(d.unallocated)} ریال (قسط بازی برای تخصیص نمانده یا قانون تسویه‌ی پیوسته مانع شده)`;
-                showAlert('دریافت ثبت شد', msg, d.unallocated > 0 ? 'warning' : 'success');
-                document.getElementById('pay-new-modal').classList.add('hidden');
-                loadPayments(); loadCheques();
-            } catch(e) { showToast('خطا در اتصال', 'error'); }
-        }
-
-        // ---------- تسویه با پاسارگاد ----------
-        async function loadPasargad() {
-            const body = document.getElementById('fin-pasargad-body');
-            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
-            const q = new URLSearchParams({
-                action: 'pasargad_pending',
-                period_id: document.getElementById('psg-f-period').value || '',
-                company_id: document.getElementById('psg-f-company').value || '',
-            });
-            try {
-                const res = await fetch(`${FIN_API}?${q}`);
-                const d = await res.json();
-                if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
-                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">قسط تسویه‌نشده‌ای وجود ندارد.</p>'; return; }
-
-                const ready = d.data.filter(r => r.can_settle);
-                const sumReady = ready.reduce((s, r) => s + Number(r.amount), 0);
-                body.innerHTML = `
-                    <div class="p-3 bg-slate-50 text-[11px] flex gap-6 flex-wrap border-b">
-                        <span>کل اقساط تسویه‌نشده: <b>${e2p(d.data.length)}</b></span>
-                        <span class="text-emerald-600">آماده‌ی تسویه: <b>${e2p(ready.length)}</b> — ${money(sumReady)} ریال</span>
-                        ${d.rule_collect_before_pay ? '<span class="text-amber-600">قانون «اول دریافت، بعد پرداخت» فعال است</span>' : ''}
-                    </div>
-                    <table class="w-full text-[11px]">
-                    <thead class="bg-slate-100 text-slate-600"><tr>
-                        <th class="p-2"><input type="checkbox" onclick="togglePsgAll(this)"></th>
-                        <th class="p-2 text-right">شرکت</th><th class="p-2 text-right">بیمه‌گذار</th><th class="p-2">پلاک</th>
-                        <th class="p-2">شماره بیمه‌نامه</th><th class="p-2">قسط</th><th class="p-2">سررسید</th>
-                        <th class="p-2">مبلغ</th><th class="p-2">وصول‌شده</th><th class="p-2">وضعیت</th></tr></thead><tbody>` +
-                    d.data.map(r => `<tr class="border-b ${r.can_settle ? 'hover:bg-purple-50' : 'bg-slate-50 opacity-70'}">
-                        <td class="p-2 text-center">${r.can_settle ? `<input type="checkbox" class="psg-cb" value="${r.id}" data-amount="${r.amount}">` : '<span class="text-slate-300">—</span>'}</td>
-                        <td class="p-2">${r.company_name || '-'}</td>
-                        <td class="p-2">${r.insured_name || '-'}</td>
-                        <td class="p-2 text-center">${r.plate ? formatPlateHtml(r.plate) : '-'}</td>
-                        <td class="p-2 text-center" dir="ltr">
-                            <span id="psg-pol-${r.id}">${r.policy_number || '-'}</span>
-                            ${r.policy_number ? `<button onclick="copyToClipboard('${r.policy_number}','شماره بیمه‌نامه')" class="text-slate-400 hover:text-indigo-600 mr-1"><i class="fas fa-copy"></i></button>` : ''}
-                        </td>
-                        <td class="p-2 text-center font-bold">${e2p(r.inst_number)}</td>
-                        <td class="p-2 text-center" dir="ltr">${e2p(r.due_jalali)}</td>
-                        <td class="p-2 text-center">${money(r.amount)}</td>
-                        <td class="p-2 text-center ${r.fully_collected ? 'text-emerald-600' : 'text-amber-600'}">${money(r.paid)}</td>
-                        <td class="p-2 text-center">${r.can_settle
-                            ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">آماده</span>'
-                            : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-500">وصول نشده</span>'}</td>
-                    </tr>`).join('') + '</tbody></table>';
-                loadPsgHistory();
-            } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
-        }
-
-        function togglePsgAll(el) { document.querySelectorAll('.psg-cb').forEach(cb => cb.checked = el.checked); }
-
-        let psgPendingIds = [];
-        function settleSelectedPasargad() {
-            psgPendingIds = Array.from(document.querySelectorAll('.psg-cb:checked')).map(cb => Number(cb.value));
-            if (!psgPendingIds.length) { showToast('قسطی انتخاب نشده است.', 'error'); return; }
-            const total = Array.from(document.querySelectorAll('.psg-cb:checked')).reduce((s, cb) => s + Number(cb.dataset.amount), 0);
-            document.getElementById('psg-settle-summary').textContent = `${psgPendingIds.length} قسط به مبلغ ${money(total)} ریال`;
-            ['psg-settle-ref','psg-settle-note'].forEach(id => document.getElementById(id).value = '');
-            document.getElementById('psg-settle-jalali').value = todayJalali();
-            document.getElementById('psg-settle-files').value = '';
-            openModal('psg-settle-modal');
-        }
-
-        async function submitPasargadSettle() {
-            const fd = new FormData();
-            fd.append('action', 'settle_pasargad_with_receipt');
-            fd.append('installment_ids', JSON.stringify(psgPendingIds));
-            fd.append('reference_no', document.getElementById('psg-settle-ref').value.trim());
-            fd.append('paid_jalali', document.getElementById('psg-settle-jalali').value.trim());
-            fd.append('note', document.getElementById('psg-settle-note').value.trim());
-            fd.append('period_id', document.getElementById('psg-f-period').value || '');
-            fd.append('company_id', document.getElementById('psg-f-company').value || '');
-            const files = document.getElementById('psg-settle-files').files;
-            for (let i = 0; i < files.length; i++) fd.append('pasargad_receipts[]', files[i]);
-            try {
-                const res = await fetch(FIN_API, {method: 'POST', body: fd});
-                const d = await res.json();
-                if (!d.ok) { showToast(d.error, 'error'); return; }
-                closeModal('psg-settle-modal');
-                let msg = `${d.settled} قسط تسویه شد (${money(d.total)} ریال).`;
-                if (d.blocked) msg += ` ${d.blocked} قسط به‌دلیل وصول‌نشدن، تسویه نشد.`;
-                showToast(msg, 'success');
-                loadPasargad();
-            } catch(e) { showToast('خطا در اتصال', 'error'); }
-        }
-
+        // تاریخِ امروزِ شمسی (برای فرم‌های دریافت/پرداختِ هر درخواست شرکتی)
         function todayJalali() {
             if (window.IrTime) return IrTime.fa(IrTime.jdate());
             try { return new Intl.DateTimeFormat('fa-IR-u-nu-arabext', {year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Tehran'}).format(new Date()); }
             catch(e) { return ''; }
-        }
-
-        async function loadPsgHistory() {
-            const body = document.getElementById('fin-psg-history');
-            try {
-                const res = await fetch(`${FIN_API}?action=pasargad_history`);
-                const d = await res.json();
-                if (!d.ok || !d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-xs p-4">تسویه‌ای ثبت نشده است.</p>'; return; }
-                body.innerHTML = `<table class="w-full text-[11px]">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-2">تاریخ</th><th class="p-2 text-right">شرکت</th><th class="p-2">دوره</th>
-                        <th class="p-2">تعداد قسط</th><th class="p-2">مبلغ</th><th class="p-2">مرجع</th></tr></thead><tbody>` +
-                    d.data.map(r => `<tr class="border-b">
-                        <td class="p-2 text-center" dir="ltr">${e2p(r.paid_jalali) || toJalali(r.created_at)}</td>
-                        <td class="p-2">${r.company_name || 'همه'}</td>
-                        <td class="p-2 text-center">${faDigits(r.period_title) || '-'}</td>
-                        <td class="p-2 text-center">${e2p(r.line_count)}</td>
-                        <td class="p-2 text-center font-bold">${money(r.amount)}</td>
-                        <td class="p-2 text-center" dir="ltr">${r.reference_no || '-'}</td></tr>`).join('') + '</tbody></table>';
-            } catch(e) {}
         }
 
         // ---------- مغایرت‌گیری ----------
