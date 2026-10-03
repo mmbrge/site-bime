@@ -1611,6 +1611,7 @@ try {
 
     // ---- درجِ نهاییِ ردیف‌ها روی یک درخواست (بعد از دیدنِ پیش‌نمایش) ----
     if ($action === 'import_letter_rows' || ($_POST['action'] ?? '') === 'import_letter_rows') {
+        company_ensure_issue_info_cols($pdo);
         $requestId = intval($data['request_id'] ?? 0);
         $replace = !empty($data['replace_existing']);
 
@@ -1644,8 +1645,8 @@ try {
                               (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no,
                                is_new_vehicle, car_value, liability_limit, ref_policy_number, endorsement_request,
                                cancellation_reason, insurance_type, expiry_date,
-                               skip_health_inspection, has_prev_body, car_name, row_note)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                               skip_health_inspection, has_prev_body, car_name, row_note, issue_info)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
         foreach ($parsed['rows'] as $r) {
             $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
@@ -1655,7 +1656,7 @@ try {
                            $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
                            $r['ref_policy_number'], $r['endorsement_request'], $r['cancellation_reason'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
-                           $r['has_prev_body'], $r['car_name'], $r['row_note']]);
+                           $r['has_prev_body'], $r['car_name'], $r['row_note'], $r['issue_info'] ?? null]);
             $newIds[] = $pdo->lastInsertId();
             $created++;
         }

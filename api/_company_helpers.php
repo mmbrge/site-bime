@@ -633,6 +633,10 @@ function company_parse_plate_text($text) {
     if (preg_match('/(\d{2})\s*ایران\s*-?\s*(\d{3})\s*([^\d\s\-]{1,3})\s*(\d{2})/u', $t, $m)) {
         return ['p1' => $m[1], 'p2' => $m[2], 'letter' => trim($m[3]), 'p4' => $m[4]];
     }
+    // حالت ۲ب: نوشتارِ رایجِ نامه‌ها «۷۹۸ع۸۱-۱۱» (سه رقم، حرف، دو رقم، خط تیره، کد ایران)
+    if (preg_match('/(\d{3})\s*([^\d\s\-]{1,3})\s*(\d{2})\s*-\s*(?:ایران\s*)?(\d{2})(?!\d)/u', $t, $m)) {
+        return ['p2' => $m[1], 'letter' => trim($m[2]), 'p4' => $m[3], 'p1' => $m[4]];
+    }
     // حالت ۳: بدون «ایران»، فقط «31 ع 693 21»
     if (preg_match('/(\d{2})\s*([^\d\s\-]{1,3})\s*(\d{3})\s*[-\s]\s*(\d{2})/u', $t, $m)) {
         return ['p4' => $m[1], 'letter' => trim($m[2]), 'p2' => $m[3], 'p1' => $m[4]];
@@ -723,8 +727,23 @@ function company_parse_letter_rows($raw) {
         // ---- شناسه‌ی ردیف: یا پلاک، یا شماره شاسی ----
         // لیفتراک‌ها اصلاً پلاک ندارند و خودروهای صفرکیلومتر هنوز پلاک نگرفته‌اند؛
         // این‌ها فقط با شماره شاسی شناخته می‌شوند، پس نبودِ پلاک خطا نیست.
-        $plateText = $r['plate'] ?? trim(($r['plate_p4'] ?? '') . ' ' . ($r['plate_letter'] ?? '') . ' ' . ($r['plate_p2'] ?? '') . ' ایران ' . ($r['plate_p1'] ?? ''));
-        $plate = company_parse_plate_text($plateText);
+        // پلاکِ چهاربخشی (دقیق‌ترین حالت؛ هوش مصنوعی دیگر دو رقم و کد ایران را جابه‌جا نمی‌کند):
+        //   plate_two (دو رقمِ اول)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (کد ایران)
+        //   یا به شکلِ "plate": {"two": "81", "letter": "ع", "three": "798", "iran": "11"}
+        $pObj = is_array($r['plate'] ?? null) ? $r['plate'] : [];
+        $pTwo = p2e_digits(trim((string)($r['plate_two'] ?? ($pObj['two'] ?? ($r['plate_p4'] ?? '')))));
+        $pLet = trim((string)($r['plate_letter'] ?? ($pObj['letter'] ?? '')));
+        $pThree = p2e_digits(trim((string)($r['plate_three'] ?? ($pObj['three'] ?? ($r['plate_p2'] ?? '')))));
+        $pIran = p2e_digits(trim((string)($r['plate_iran'] ?? ($pObj['iran'] ?? ($r['plate_p1'] ?? '')))));
+        $plate = null;
+        if (preg_match('/^\d{2}$/', $pTwo) && preg_match('/^\d{3}$/', $pThree) && preg_match('/^\d{2}$/', $pIran) && $pLet !== '') {
+            $plate = ['p4' => $pTwo, 'letter' => $pLet === 'الف' ? 'الف' : mb_substr($pLet, 0, 3), 'p2' => $pThree, 'p1' => $pIran];
+            $plateText = "$pTwo $pLet $pThree ایران $pIran";
+        } else {
+            $plateText = is_string($r['plate'] ?? null) ? $r['plate'] : trim("$pTwo $pLet $pThree ایران $pIran");
+            $plate = company_parse_plate_text($plateText);
+            if (($pTwo !== '' || $pThree !== '' || $pIran !== '') && !$plate) $errors[] = "ردیف {$lineNo}: بخش‌های پلاک کامل نیست (دو رقم، حرف، سه رقم، کد ایران).";
+        }
         $chassis = trim((string)($r['chassis_no'] ?? ($r['chassis'] ?? ($r['vin'] ?? ''))));
         // اگر پلاک خوانده نشد ولی متنش شبیه شماره شاسی بود، همان را شاسی حساب کن
         if (!$plate && $chassis === '' && trim((string)$plateText) !== '' && preg_match('/^[A-Za-z0-9\-]{6,}$/', trim((string)$plateText))) {
@@ -766,9 +785,11 @@ function company_parse_letter_rows($raw) {
             // همه‌ی تاریخ‌های نمایشیِ سایت شمسی‌اند؛ تاریخ میلادی فقط برای ذخیره در دیتابیس است
             'expiry_date_jalali' => $expiry ? jalali_from_gregorian_ts_dotted(strtotime($expiry)) : null,
             'car_name' => trim((string)($r['car_name'] ?? ($r['car'] ?? ''))) ?: null,
+            'model_year' => p2e_digits(trim((string)($r['model_year'] ?? ($r['model'] ?? '')))) ?: null,
+            'prev_policy_number' => p2e_digits(trim((string)($r['prev_policy_number'] ?? ''))) ?: null,
             'row_note' => trim((string)($r['note'] ?? '')) ?: null,
-            // مخصوصِ الحاقیه و فسخ (برای صدور جدید هم شماره‌ی مرجع اختیاری است)
-            'ref_policy_number' => trim((string)($r['ref_policy_number'] ?? ($r['policy_number'] ?? ''))) ?: null,
+            // مخصوصِ الحاقیه و فسخ؛ برای صدورِ جدید (تمدید) شماره‌ی بیمه‌نامه‌ی قبلی همین‌جا می‌نشیند
+            'ref_policy_number' => trim(p2e_digits((string)($r['ref_policy_number'] ?? ($r['policy_number'] ?? ($r['prev_policy_number'] ?? ''))))) ?: null,
             'endorsement_request' => $endorseText ?: null,
             'cancellation_reason' => $cancelReason ?: null,
             'has_prev_body' => company_parse_yes_no($r['has_prev_body'] ?? ''),
@@ -777,6 +798,11 @@ function company_parse_letter_rows($raw) {
             'skip_health_inspection' => ($isNew || company_parse_yes_no($r['health_inspection'] ?? '') === 'NO') ? 1 : 0,
         ];
         $base['plate_display'] = company_row_label($base);
+        // مدل و بیمه‌نامه‌ی قبلی در «اطلاعات صدور»ِ ردیف هم می‌نشیند تا در پنجره‌ی صدور آماده باشد
+        $ii = array_filter(['car_model_year' => $base['model_year'], 'prev_policy_number' => $base['prev_policy_number'],
+                            'chassis_no' => $base['chassis_no'], 'engine_no' => $base['engine_no'],
+                            'prev_insurer' => trim((string)($r['prev_insurer'] ?? '')) ?: null]);
+        $base['issue_info'] = $ii ? json_encode($ii, JSON_UNESCAPED_UNICODE) : null;
 
         foreach ($type === 'BOTH' ? ['THIRDPARTY', 'BODY'] : [$type] as $t) {
             $rows[] = array_merge($base, ['insurance_type' => $t, 'insurance_type_fa' => insurance_type_fa($t)]);
@@ -835,8 +861,14 @@ function company_excel_column_map() {
         'car_value'      => ['ارزش خودرو', 'ارزش', 'ارزش روز', 'قیمت خودرو', 'car value', 'value'],
         'liability_limit'=> ['تعهد مالی', 'سقف تعهد', 'سقف تعهد مالی', 'تعهد', 'liability'],
         'insurance_type' => ['نوع بیمه', 'نوع بیمه نامه', 'نوع بیمه‌نامه', 'نوع بیمهنامه', 'نوع', 'type'],
-        'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'expiry'],
-        'car_name'       => ['خودرو', 'نام خودرو', 'سیستم', 'تیپ', 'مدل', 'car'],
+        'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'تاریخ اتمام بیمه نامه', 'تاریخ اتمام', 'expiry'],
+        'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'تیپ', 'car'],
+        'model_year'     => ['مدل', 'سال ساخت', 'مدل خودرو', 'model'],
+        'prev_policy_number' => ['شماره بیمه نامه قبلی', 'شماره بیمه‌نامه قبلی', 'بیمه نامه قبلی', 'شماره بیمه نامه سال قبل'],
+        'plate_two'      => ['دو رقم پلاک', 'دو رقم'],
+        'plate_letter'   => ['حرف پلاک', 'حرف'],
+        'plate_three'    => ['سه رقم پلاک', 'سه رقم'],
+        'plate_iran'     => ['کد ایران', 'ایران', 'کد شهر'],
         'has_prev_body'  => ['بیمه بدنه قبل', 'بدنه قبل', 'بیمه قبلی'],
         'health_inspection' => ['بازدید سلامت', 'بازدید'],
         'is_new_vehicle' => ['صفر کیلومتر', 'صفرکیلومتر', 'خودرو صفر', 'صفر'],

@@ -2876,7 +2876,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <!-- مودال ورودِ ردیف‌ها از نامه (خروجی هوش مصنوعی) -->
     <div id="letter-import-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div class="modal-content w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('letter-import-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-1">ورود ردیف‌ها از نامه</h3>
             <p class="text-[11px] text-slate-400 mb-3">نامه را به هوش مصنوعی بدهید و بگویید با یکی از این قالب‌ها خروجی بدهد، بعد خروجی را اینجا بچسبانید (یا فایلش را انتخاب کنید).</p>
@@ -2885,7 +2885,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-[11px] font-bold text-indigo-800">متنِ آماده برای هوش مصنوعی (همراهِ فایل نامه بفرستید):</p>
                     <button type="button" onclick="copyValue(document.getElementById('cli-ai-prompt').innerText, 'متن')" class="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 rounded-lg px-2 py-0.5"><i class="far fa-copy ml-1"></i>کپی</button>
                 </div>
-                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با این ساختار برگردان: در «letter.counts» تعدادِ درخواستی از هر نوع را بنویس با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ». در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)، plate (پلاک دقیقاً مثل نامه؛ اگر پلاک ندارد خالی بگذار و chassis_no و engine_no را بنویس)، insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخ انقضا به شمسی مثل 1405/07/30)، car_name، car_value (ارزش خودرو برای بدنه)، liability_limit (سقف تعهد برای ثالث)، has_prev_body («بله»/«خیر»)، policy_number (برای تغییر اطلاعات و فسخ)، change_request (برای تغییر اطلاعات: چه تغییری)، cancellation_reason (برای فسخ: دلیل) و note. هر فیلدی که در نامه نیست را خالی بگذار؛ چیزی حدس نزن.</p>
+                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با همان ساختارِ نمونه برگردان. در «letter.counts» تعدادِ درخواستی از هر نوع را با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ» بنویس. در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)؛ پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (دو رقمِ کدِ ایران، کنارِ کلمه‌ی «ایران»). مهم: در نامه‌ها پلاک معمولاً به شکلِ «۷۹۸ع۸۱-۱۱» نوشته می‌شود که یعنی plate_three=798، plate_letter=ع، plate_two=81 و عددِ بعد از خط تیره plate_iran=11؛ یا به شکلِ «۸۱ ع ۷۹۸ ایران ۱۱» که همان پلاک است. هیچ‌وقت کدِ ایران را با دو رقمِ اول جابه‌جا نکن. اگر خودرو پلاک ندارد، فیلدهای پلاک را خالی بگذار و chassis_no را بنویس. بقیه‌ی فیلدها: insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخِ انقضا/اتمامِ بیمه‌نامه‌ی فعلی به شمسی مثل 1405/07/30)، car_name (نوع خودرو)، model_year (مدل/سال ساخت)، chassis_no، engine_no، prev_policy_number (شماره‌ی بیمه‌نامه‌ی قبلی)، prev_insurer (بیمه‌گرِ قبلی)؛ فقط برای ثالث: liability_limit (تعهد مالی به ریال)؛ فقط برای بدنه: car_value (ارزش خودرو به ریال)، has_prev_body («بله»/«خیر»)، health_inspection («لازم»/«لازم نیست»)؛ برای تغییر اطلاعات و فسخ: policy_number، change_request (چه تغییری) یا cancellation_reason (دلیل)؛ و note برای هر توضیحِ دیگر. هر فیلدی که در نامه نیست یا به آن نوع بیمه مربوط نیست را نگذار یا خالی بگذار؛ چیزی حدس نزن.</p>
             </div>
             <input type="hidden" id="cli-request-id">
 
@@ -2894,37 +2894,45 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <p class="text-[11px] font-bold text-slate-600 mt-2 mb-1">قالب ۱ - JSON (دقیق‌تر، پیشنهاد می‌شود):</p>
 <pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto" dir="ltr">{
   "letter": {
-    "counts": { "ثالث": 3, "بدنه": 2, "تغییر اطلاعات": 1, "فسخ": 1 }
+    "counts": { "ثالث": 2, "بدنه": 1, "تغییر اطلاعات": 1, "فسخ": 1 }
   },
   "rows": [
     {
       "request": "صدور",
-      "plate": "31 ع 693 ایران 21",
-      "insurance_type": "بدنه",
-      "expiry_date": "1405/07/30",
-      "car_name": "پژو 206",
-      "car_value": "5,000,000,000",
-      "has_prev_body": "بله",
-      "health_inspection": "لازم",
-      "note": ""
+      "plate_two": "81", "plate_letter": "ع", "plate_three": "798", "plate_iran": "11",
+      "insurance_type": "ثالث",
+      "expiry_date": "1405/07/06",
+      "car_name": "پیلسان", "model_year": "1401", "chassis_no": "1000623",
+      "prev_policy_number": "1404/503",
+      "liability_limit": "8,000,000,000"
     },
     {
       "request": "صدور",
-      "plate": "12 ن 152 ایران 77",
-      "insurance_type": "ثالث",
-      "expiry_date": "1405/08/12",
-      "liability_limit": "1,000,000,000"
+      "plate_two": "31", "plate_letter": "ع", "plate_three": "693", "plate_iran": "21",
+      "insurance_type": "بدنه",
+      "expiry_date": "1405/07/30",
+      "car_name": "پژو 206", "model_year": "1400",
+      "car_value": "5,000,000,000",
+      "has_prev_body": "بله",
+      "health_inspection": "لازم"
+    },
+    {
+      "request": "صدور",
+      "plate_two": "", "plate_letter": "", "plate_three": "", "plate_iran": "",
+      "chassis_no": "NAAP13FE9KJ555555",
+      "insurance_type": "هردو",
+      "car_name": "لیفتراک", "car_value": "9,000,000,000", "liability_limit": "2,000,000,000"
     },
     {
       "request": "تغییر اطلاعات",
-      "plate": "44 ج 321 ایران 12",
+      "plate_two": "44", "plate_letter": "ج", "plate_three": "321", "plate_iran": "12",
       "insurance_type": "بدنه",
       "policy_number": "1405/123456",
       "change_request": "افزایش سرمایه به ۶ میلیارد"
     },
     {
       "request": "فسخ",
-      "plate": "53 ب 128 ایران 74",
+      "plate_two": "53", "plate_letter": "ب", "plate_three": "128", "plate_iran": "74",
       "insurance_type": "ثالث",
       "policy_number": "1405/654321",
       "cancellation_reason": "فروش خودرو"
@@ -2936,7 +2944,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     کافی است فایل اکسل را همین‌جا بدهید. ستون‌ها با <b>نامِ سرستون</b> شناخته می‌شوند،
                     پس ترتیبشان مهم نیست و ستون‌های اضافه نادیده گرفته می‌شوند. این نام‌ها شناخته می‌شوند:
                 </p>
-<pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto">نوع درخواست | پلاک | شماره شاسی | شماره موتور | ارزش خودرو | تعهد مالی | نوع بیمه نامه | تاریخ انقضا | خودرو | بیمه بدنه قبل | بازدید سلامت | شماره بیمه نامه | خواسته | دلیل فسخ | توضیحات</pre>
+<pre class="text-[10px] bg-white border rounded-lg p-2 overflow-x-auto">نوع درخواست | پلاک (یا: دو رقم | حرف | سه رقم | کد ایران) | شماره شاسی | شماره موتور | نوع خودرو | مدل | ارزش خودرو | تعهد مالی | نوع بیمه نامه | تاریخ انقضا | شماره بیمه نامه قبلی | بیمه بدنه قبل | بازدید سلامت | شماره بیمه نامه | خواسته | دلیل فسخ | توضیحات</pre>
                 <p class="text-[10px] text-slate-500 mt-1">
                     برای لیفتراک و خودروی صفرکیلومتر که پلاک ندارند، ستونِ «پلاک» را خالی بگذارید و فقط
                     «شماره شاسی» را پر کنید؛ تاریخ انقضا هم لازم نیست.
@@ -2952,7 +2960,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     • تاریخ‌ها شمسی‌اند (۱۴۰۵/۰۷/۳۰ یا ۱۴۰۵.۰۷.۳۰).<br>
                     • <b>has_prev_body</b>: «بله» یا «خیر» — برای بدنه، اگر بیمه بدنه قبلی دارد، بارگذاریش اجباری می‌شود.<br>
                     • <b>health_inspection</b>: «لازم» یا «لازم نیست» — برای خودروهایی که بازدید سلامت نمی‌خواهند «لازم نیست» بنویسد.<br>
-                    • پلاک را به هر شکلی بنویسد (با یا بدون «ایران») سیستم خودش تشخیص می‌دهد.
+                    • <b>پلاک</b> را با چهار فیلدِ جدا بنویسد: <b>plate_two</b> (دو رقم)، <b>plate_letter</b> (حرف)، <b>plate_three</b> (سه رقم)، <b>plate_iran</b> (کد ایران). مثلاً «۷۹۸ع۸۱-۱۱» در نامه یعنی دو رقم ۸۱، حرف ع، سه رقم ۷۹۸ و کد ایران ۱۱. فیلدِ قدیمیِ <b>plate</b> (یک رشته) هم هنوز پذیرفته می‌شود.<br>
+                    • <b>model_year</b> (مدل)، <b>prev_policy_number</b> (بیمه‌نامه‌ی قبلی) و <b>prev_insurer</b> در «اطلاعات صدور»ِ همان ردیف هم ثبت می‌شوند.
                 </p>
             </details>
 
@@ -6004,22 +6013,38 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { box.innerHTML = `<p class="text-xs text-red-500">${data.error || 'خطا'}</p>`; return; }
 
             const rows = data.rows || [];
+            // ستون‌ها بر اساسِ نوعِ ردیف‌ها: ثالث ← تعهد مالی؛ بدنه ← ارزش، بدنه‌ی قبل، بازدید؛ هر دو ← همه
+            const isEnd = x => !!(x.cancellation_reason || x.endorsement_request);
+            const hasThird = rows.some(x => x.insurance_type === 'THIRDPARTY');
+            const hasBody = rows.some(x => x.insurance_type === 'BODY');
+            const hasEnd = rows.some(isEnd);
+            const any = k => rows.some(x => x[k]);
+            const dash = '<span class="text-slate-300">—</span>';
+            const cols = [
+                ['درخواست', x => x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')],
+                ['پلاک / شاسی', x => rowIdentityHtml(x) + (x.plate_p1 && x.chassis_no ? `<p class="text-[9.5px] text-slate-400" dir="ltr">${x.chassis_no}</p>` : '')],
+                ['نوع', x => `<span class="font-bold ${x.insurance_type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">${x.insurance_type_fa}</span>`],
+                ['انقضا', x => faDigits(x.expiry_date_jalali) || (Number(x.is_new_vehicle) ? 'صفر کیلومتر' : dash)],
+                ['خودرو', x => (x.car_name || dash) + (x.model_year ? ` <span class="text-slate-400">مدل ${faDigits(x.model_year)}</span>` : '')],
+            ];
+            if (hasThird) cols.push(['تعهد مالی (ثالث)', x => x.insurance_type === 'THIRDPARTY' ? (x.liability_limit ? money(x.liability_limit) : '<span class="text-amber-600">نامشخص</span>') : dash]);
+            if (hasBody) {
+                cols.push(['ارزش خودرو (بدنه)', x => x.insurance_type === 'BODY' ? (x.car_value ? money(x.car_value) : '<span class="text-amber-600">نامشخص</span>') : dash]);
+                cols.push(['بدنه‌ی قبل', x => x.insurance_type === 'BODY' ? (x.has_prev_body === 'YES' ? 'دارد' : (x.has_prev_body === 'NO' ? 'ندارد' : dash)) : dash]);
+                cols.push(['بازدید سلامت', x => x.insurance_type === 'BODY' ? (Number(x.skip_health_inspection) ? 'لازم نیست' : 'لازم') : dash]);
+            }
+            if (any('ref_policy_number')) cols.push([hasEnd ? 'بیمه‌نامه‌ی مرجع / قبلی' : 'بیمه‌نامه‌ی قبلی', x => x.ref_policy_number ? `<span dir="ltr">${faDigits(x.ref_policy_number)}</span>` : dash]);
+            if (hasEnd) cols.push(['خواسته / دلیل', x => x.endorsement_request || x.cancellation_reason || dash]);
+            if (any('row_note')) cols.push(['توضیح', x => x.row_note ? `<span class="whitespace-normal">${x.row_note}</span>` : dash]);
+            const tc = rows.reduce((a, x) => { a[x.insurance_type] = (a[x.insurance_type] || 0) + 1; return a; }, {});
             box.innerHTML = `
                 ${(data.errors || []).length ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2 text-[10px] text-amber-700">${data.errors.map(x => '• ' + x).join('<br>')}</div>` : ''}
                 ${data.counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 mb-2">تعدادِ درخواستیِ نامه: ${data.counts_fa}</p>` : ''}
-                <p class="text-xs font-bold text-slate-600 mb-1">${e2pNum(rows.length)} ردیف شناسایی شد:</p>
-                <div class="max-h-52 overflow-y-auto border border-slate-100 rounded-lg">
-                    <table class="w-full text-right text-[10px]">
-                        <thead class="bg-slate-50 text-slate-500"><tr><th class="p-1.5">درخواست</th><th class="p-1.5">پلاک</th><th class="p-1.5">نوع</th><th class="p-1.5">انقضا</th><th class="p-1.5">خودرو</th><th class="p-1.5">بدنه قبل</th><th class="p-1.5">بازدید</th></tr></thead>
-                        <tbody>${rows.map(x => `<tr class="border-t border-slate-100">
-                            <td class="p-1.5">${x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')}</td>
-                            <td class="p-1.5">${rowIdentityHtml(x)}</td>
-                            <td class="p-1.5">${x.insurance_type_fa}</td>
-                            <td class="p-1.5">${faDigits(x.expiry_date_jalali) || '—'}</td>
-                            <td class="p-1.5">${x.car_name || '—'}</td>
-                            <td class="p-1.5">${x.has_prev_body === 'YES' ? 'دارد' : (x.has_prev_body === 'NO' ? 'ندارد' : '—')}</td>
-                            <td class="p-1.5">${Number(x.skip_health_inspection) ? 'لازم نیست' : 'لازم'}</td>
-                        </tr>`).join('')}</tbody>
+                <p class="text-xs font-bold text-slate-600 mb-1">${e2pNum(rows.length)} ردیف شناسایی شد${tc.THIRDPARTY ? `، ${e2pNum(tc.THIRDPARTY)} ثالث` : ''}${tc.BODY ? `، ${e2pNum(tc.BODY)} بدنه` : ''}. پلاک‌ها را با نامه مقایسه کنید:</p>
+                <div class="max-h-64 overflow-auto border border-slate-100 rounded-lg">
+                    <table class="w-full text-right text-[10px] no-count">
+                        <thead class="bg-slate-50 text-slate-500 sticky top-0"><tr>${cols.map(c => `<th class="p-1.5 whitespace-nowrap">${c[0]}</th>`).join('')}</tr></thead>
+                        <tbody>${rows.map(x => `<tr class="border-t border-slate-100">${cols.map(c => `<td class="p-1.5 whitespace-nowrap">${c[1](x)}</td>`).join('')}</tr>`).join('')}</tbody>
                     </table>
                 </div>`;
             document.getElementById('cli-commit-btn').classList.toggle('hidden', rows.length === 0);
