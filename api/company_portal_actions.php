@@ -532,7 +532,11 @@ try {
         if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'این پیام قابل تغییر نیست.']); exit; }
 
         if ($action === 'chat_delete_message') {
-            $pdo->prepare("DELETE FROM company_chat_messages WHERE id = ?")->execute([$messageId]);
+            // پیام فقط از دیدِ دو طرف پنهان می‌شود؛ مدیر کل در بایگانیِ گفتگوها آن را با نامِ حذف‌کننده می‌بیند
+            require_once __DIR__ . '/_chat_access.php';
+            chat_access_ensure($pdo);
+            $pdo->prepare("UPDATE company_chat_messages SET deleted_at = NOW(), deleted_by = ? WHERE id = ?")
+                ->execute([mb_substr(($session['full_name'] ?? 'کاربر شرکت') . ' (کاربر شرکت)', 0, 160), $messageId]);
         } else {
             $message = trim($data['message'] ?? '');
             if ($message === '') { echo json_encode(['ok' => false, 'error' => 'متن پیام خالی است.']); exit; }

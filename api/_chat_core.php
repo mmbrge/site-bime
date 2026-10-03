@@ -13,6 +13,7 @@
 
 require_once __DIR__ . '/_profile_core.php';
 require_once __DIR__ . '/_chat_state.php';
+require_once __DIR__ . '/_chat_access.php';
 
 function chat_ready($pdo) {
     static $ok = null;
@@ -45,7 +46,7 @@ function chat_can($pdo, $actor, $type, $id) {
     if ($actor['kind'] === 'COMPANY') return $type === 'C' && in_array($id, array_map('intval', $actor['company_ids']), true);
     $caps = chat_staff_caps($actor['role']);
     if ($type === 'P' || $type === 'T') return $caps['person'];
-    if ($type === 'C') return $caps['company'];
+    if ($type === 'C') return chat_scope_allows(chat_company_scope($pdo, $actor), $id);   // نقش‌ها و افرادی که مدیر برای گفتگو با شرکت‌ها تعیین کرده
     if ($type === 'S') return $id !== intval($actor['id']);
     return false;
 }
@@ -111,12 +112,14 @@ function chat_threads($pdo, $actor, $q = '') {
             }
         }
     }
-    if ($caps['company']) {
+    $cScope = chat_company_scope($pdo, $actor);
+    if ($cScope) {
         $st = $pdo->query("SELECT c.id, c.name,
                 (SELECT GROUP_CONCAT(cpu.full_name SEPARATOR '، ') FROM company_portal_user_companies cpuc JOIN company_portal_users cpu ON cpu.id = cpuc.portal_user_id WHERE cpuc.company_id = c.id) AS members,
                 m.id AS last_msg_id, m.message, m.file_path, m.sender_type, m.created_at,
                 (SELECT COUNT(*) FROM company_chat_messages x WHERE x.company_id = c.id AND x.sender_type = 'COMPANY' AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
-              FROM companies c JOIN company_chat_messages m ON m.id = (SELECT MAX(id) FROM company_chat_messages WHERE company_id = c.id AND deleted_at IS NULL)");
+              FROM companies c JOIN company_chat_messages m ON m.id = (SELECT MAX(id) FROM company_chat_messages WHERE company_id = c.id AND deleted_at IS NULL)
+             WHERE " . chat_scope_sql($cScope, 'c.id'));
         $cp = chat_company_presence_map($pdo);
         foreach ($st->fetchAll() as $c) {
             if (!$match([$c['name'], $c['members'], $c['message']])) continue;
@@ -172,8 +175,9 @@ function chat_contacts($pdo, $actor, $q) {
         foreach ($st->fetchAll() as $p) $out[] = ['key' => 'P:' . $p['id'], 'type' => 'PERSON', 'title' => $p['full_name'], 'sub' => trim($p['national_code'] . ' ' . $p['mobile_number']),
                                                   'avatar' => $p['avatar'] ?: null, 'presence' => prof_presence($p)];
     }
-    if ($caps['company']) {
-        $st = $pdo->prepare("SELECT id, name FROM companies WHERE name LIKE ? ORDER BY name LIMIT 15");
+    $cScope = chat_company_scope($pdo, $actor);
+    if ($cScope) {
+        $st = $pdo->prepare("SELECT id, name FROM companies WHERE name LIKE ? AND " . chat_scope_sql($cScope, 'id') . " ORDER BY name LIMIT 15");
         $st->execute([$like]);
         $cp = chat_company_presence_map($pdo);
         foreach ($st->fetchAll() as $c) $out[] = ['key' => 'C:' . $c['id'], 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => 'شرکت', 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null];
@@ -545,8 +549,16 @@ function chat_delete($pdo, $actor, $type, $id, $msgId) {
     $r = chat_find_row($pdo, $actor, $type, $id, $msgId);
     if (!$r || $r['deleted']) return ['ok' => false, 'error' => 'پیام پیدا نشد.'];
     if (!chat_can_modify($actor, $type, $r)) return ['ok' => false, 'error' => 'فقط پیام‌های خودتان را می‌توانید حذف کنید.'];
-    $pdo->prepare("UPDATE " . chat_table($type) . " SET deleted_at = NOW() WHERE id = ?")->execute([$r['id']]);
+    chat_mark_deleted($pdo, $actor, $type, [$r['id']]);
     return ['ok' => true];
+}
+// حذف برای همه: پیام پاک نمی‌شود؛ فقط از دیدِ دو طرف پنهان و برای بایگانیِ مدیر با نامِ حذف‌کننده نگه داشته می‌شود
+function chat_mark_deleted($pdo, $actor, $type, array $ids) {
+    chat_access_ensure($pdo);
+    foreach ($ids as $mid) {
+        try { $pdo->prepare("UPDATE " . chat_table($type) . " SET deleted_at = NOW(), deleted_by = ? WHERE id = ?")->execute([chat_actor_label($actor), intval($mid)]); }
+        catch (Throwable $e) { $pdo->prepare("UPDATE " . chat_table($type) . " SET deleted_at = NOW() WHERE id = ?")->execute([intval($mid)]); }
+    }
 }
 // موضوعِ یک پیامِ فرستاده‌شده را عوض می‌کند (کاربرانِ پنل روی همه‌ی پیام‌های گفتگوهای کارکنان/شرکت‌ها؛ بقیه فقط روی پیامِ خودشان)
 function chat_set_ref($pdo, $actor, $type, $id, $msgId, $ref) {
@@ -624,7 +636,7 @@ function chat_delete_many($pdo, $actor, $type, $id, $ids) {
         $r = $rows[$mid] ?? null;
         if (!$r || $r['deleted']) continue;
         if (!chat_can_modify($actor, $type, $r)) { $denied++; continue; }
-        $pdo->prepare("UPDATE " . chat_table($type) . " SET deleted_at = NOW() WHERE id = ?")->execute([$mid]);
+        chat_mark_deleted($pdo, $actor, $type, [$mid]);
         $ok++;
     }
     if (!$ok) return ['ok' => false, 'error' => $denied ? 'فقط پیام‌های خودتان را می‌توانید برای هر دو طرف حذف کنید.' : 'پیامی پیدا نشد.'];
@@ -665,7 +677,8 @@ function chat_unread_total($pdo, $actor) {
     if ($actor['kind'] === 'STAFF') {
         $caps = chat_staff_caps($actor['role']);
         if ($caps['person']) $n += intval($pdo->query("SELECT COUNT(*) FROM ticket_messages WHERE sender_type = 'CUSTOMER' AND COALESCE(is_read, '0') IN ('0', '') AND deleted_at IS NULL")->fetchColumn());
-        if ($caps['company']) $n += intval($pdo->query("SELECT COUNT(*) FROM company_chat_messages WHERE sender_type = 'COMPANY' AND is_read = 0 AND deleted_at IS NULL")->fetchColumn());
+        $cScope = chat_company_scope($pdo, $actor);
+        if ($cScope) $n += intval($pdo->query("SELECT COUNT(*) FROM company_chat_messages WHERE sender_type = 'COMPANY' AND is_read = 0 AND deleted_at IS NULL AND " . chat_scope_sql($cScope, 'company_id'))->fetchColumn());
         $st = $pdo->prepare("SELECT COUNT(*) FROM staff_chat_messages WHERE to_user_id = ? AND is_read = 0 AND deleted_at IS NULL");
         $st->execute([intval($actor['id'])]);
         $n += intval($st->fetchColumn());
@@ -712,7 +725,7 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
     if (!chat_ready($pdo)) return ['ok' => false, 'error' => CHAT_SCHEMA_MSG];
     if ($action === 'chat_threads') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
-        return ['ok' => true, 'threads' => chat_threads($pdo, $actor, $data['q'] ?? ''), 'caps' => chat_staff_caps($actor['role']) + ['admin' => ($actor['role'] ?? '') === 'ADMIN']];
+        return ['ok' => true, 'threads' => chat_threads($pdo, $actor, $data['q'] ?? ''), 'caps' => ['company' => (bool)chat_company_scope($pdo, $actor)] + chat_staff_caps($actor['role']) + ['admin' => ($actor['role'] ?? '') === 'ADMIN']];
     }
     if ($action === 'chat_contacts') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];

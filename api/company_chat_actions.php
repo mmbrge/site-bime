@@ -113,7 +113,10 @@ try {
         if ($senderType === false) { echo json_encode(['ok' => false, 'error' => 'پیام یافت نشد.']); exit; }
         if ($senderType !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط پیام‌های خودتان قابل حذف است.']); exit; }
 
-        $pdo->prepare("DELETE FROM company_chat_messages WHERE id = ?")->execute([$messageId]);
+        require_once __DIR__ . '/_chat_access.php';
+        chat_access_ensure($pdo);
+        $pdo->prepare("UPDATE company_chat_messages SET deleted_at = NOW(), deleted_by = ? WHERE id = ?")
+            ->execute([mb_substr((function () use ($pdo, $actor) { $q = $pdo->prepare("SELECT full_name FROM users WHERE id = ?"); $q->execute([intval($actor['user_id'])]); return $q->fetchColumn() ?: 'همکار'; })() . ' (همکار)', 0, 160), $messageId]);
         echo json_encode(['ok' => true]);
         exit;
     }

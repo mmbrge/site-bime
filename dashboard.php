@@ -637,6 +637,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     .trk-table thead th{background:#f1f5f9;color:#475569;font-weight:800;padding:8px 10px;border-bottom:2px solid #cbd5e1}
     .trk-table tbody td{padding:8px 10px;border-top:1px solid #e2e8f0}
     .trk-table tbody tr:hover{background:#f8fafc}
+    /* جدول‌های داخلِ پنجره‌های صدور: کادرِ پررنگ‌تر و منظم برای هر ردیف */
+    #iq-detail-modal table, #il-detail-modal table, #creq-detail-modal table, #bundle-modal table, #cissue-modal table {
+        border-collapse: separate; border-spacing: 0; border: 2px solid #cbd5e1; border-radius: 14px; overflow: hidden; }
+    #iq-detail-modal table thead th, #il-detail-modal table thead th, #creq-detail-modal table thead th, #bundle-modal table thead th {
+        background: #f1f5f9; color: #334155; font-weight: 800; border-bottom: 2px solid #cbd5e1; }
+    #iq-detail-modal table tbody td, #il-detail-modal table tbody td, #creq-detail-modal table tbody td, #bundle-modal table tbody td {
+        border-top: 1.5px solid #e2e8f0; }
+    #iq-detail-modal table th + th, #iq-detail-modal table td + td, #il-detail-modal table th + th, #il-detail-modal table td + td,
+    #creq-detail-modal table th + th, #creq-detail-modal table td + td, #bundle-modal table th + th, #bundle-modal table td + td {
+        border-right: 1px solid #edf1f6; }
+    #iq-detail-modal table tbody tr:nth-child(even), #il-detail-modal table tbody tr:nth-child(even), #creq-detail-modal table tbody tr:nth-child(even) { background: #fbfcfe; }
+    #iq-detail-modal table tbody tr:hover, #il-detail-modal table tbody tr:hover, #creq-detail-modal table tbody tr:hover { background: #eef2ff; }
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
@@ -1144,11 +1156,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex gap-2">
                     <button onclick="switchGoftegoSub('messenger')" id="goftego-sub-messenger" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">💬 پیام‌رسان</button>
                     <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 آرشیو کاملِ چت‌های ربات</button>
+                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><button onclick="switchGoftegoSub('archive')" id="goftego-sub-archive" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🗄 بایگانیِ همه‌ی گفتگوها</button><?php endif; ?>
                 </div>
                 <?php endif; ?>
             </div>
 
             <div id="goftego-panel-messenger"><div id="chat-root" style="height: calc(100vh - 200px); min-height: 520px;"></div></div>
+            <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><div id="goftego-panel-archive" class="hidden"><div id="chat-archive-root"></div></div><?php endif; ?>
 
             <div id="goftego-panel-botchats" class="hidden">
                 <div class="card overflow-hidden border-slate-200">
@@ -3041,6 +3055,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
                 <p id="su-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
                 <div class="float-input" id="su-personnel-box"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
+                <div id="su-chatco-box" class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 mb-4">
+                    <p class="text-[11px] font-black text-indigo-700 mb-2"><i class="fas fa-comments ml-1"></i>گفتگو با شرکت‌ها <span class="font-bold text-slate-400">(پیام‌رسانِ پنلِ شرکت‌ها)</span></p>
+                    <select id="su-chatco-mode" onchange="chatCoModeChange('su')" class="w-full border rounded-lg px-3 py-2 text-xs font-bold">
+                        <option value="ROLE">طبقِ نقش (از «بایگانی گفتگوها» تعیین می‌شود)</option><option value="ALL">با همه‌ی شرکت‌ها</option>
+                        <option value="LIST">فقط با شرکت‌های انتخابی</option><option value="NONE">با هیچ شرکتی</option>
+                    </select>
+                    <div id="suc-list-box" class="hidden mt-2">
+                        <input type="search" id="suc-company-q" oninput="filterCompanyPicker('suc')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1 bg-white">
+                        <div id="suc-company-list" class="border rounded-xl p-2 max-h-36 overflow-y-auto text-xs bg-white"></div>
+                    </div>
+                </div>
                 <div id="su-rpw-box">
                     <div class="float-input mb-1"><input type="text" id="su-rpw" dir="ltr" placeholder=" " autocomplete="off"><label><i class="fas fa-file-pen ml-1 text-violet-500"></i>رمزِ ویرایشِ گزارش بازدید (اختیاری)</label></div>
                     <p class="text-[10px] text-slate-400 font-bold -mt-0 mb-4">برای ویرایشِ گزارشِ صادرشده همین رمز پرسیده می‌شود؛ خالی بماند = رمزِ پنلِ خودِ کاربر.</p>
@@ -3080,6 +3105,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="esu-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل</label></div>
             <p id="esu-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
             <div class="float-input"><input type="text" id="esu-password" dir="ltr" placeholder=" " autocomplete="new-password"><label>رمز عبورِ جدید (خالی = بدون تغییر)</label></div>
+            <div id="esu-chatco-box" class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 mb-4">
+                    <p class="text-[11px] font-black text-indigo-700 mb-2"><i class="fas fa-comments ml-1"></i>گفتگو با شرکت‌ها <span class="font-bold text-slate-400">(پیام‌رسانِ پنلِ شرکت‌ها)</span></p>
+                    <select id="esu-chatco-mode" onchange="chatCoModeChange('esu')" class="w-full border rounded-lg px-3 py-2 text-xs font-bold">
+                        <option value="ROLE">طبقِ نقش (از «بایگانی گفتگوها» تعیین می‌شود)</option><option value="ALL">با همه‌ی شرکت‌ها</option>
+                        <option value="LIST">فقط با شرکت‌های انتخابی</option><option value="NONE">با هیچ شرکتی</option>
+                    </select>
+                    <div id="esuc-list-box" class="hidden mt-2">
+                        <input type="search" id="esuc-company-q" oninput="filterCompanyPicker('esuc')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1 bg-white">
+                        <div id="esuc-company-list" class="border rounded-xl p-2 max-h-36 overflow-y-auto text-xs bg-white"></div>
+                    </div>
+                </div>
             <div id="esu-rpw-box" class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 mb-4">
                 <p class="text-[11px] font-black text-violet-700 mb-2"><i class="fas fa-file-pen ml-1"></i>رمزِ ویرایشِ گزارش بازدید <span id="esu-rpw-state" class="font-bold text-[10px] rounded-full px-2 py-0.5 mr-1"></span></p>
                 <div class="float-input !mb-2"><input type="text" id="esu-rpw" dir="ltr" placeholder=" " autocomplete="off"><label>رمزِ جدید (خالی = بدون تغییر)</label></div>
@@ -3573,6 +3609,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
+    <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
     <script src="visit-reports-list.js?v=7"></script>
@@ -7567,6 +7604,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (prefix === 'esu') document.getElementById('esu-avatar-changed').value = '1';
             paintUserAvatar(prefix);
         }
+        // دسترسیِ گفتگو با شرکت‌ها در تعریفِ پرسنل
+        function chatCoModeChange(px) {
+            const m = document.getElementById(px + '-chatco-mode').value;
+            document.getElementById(px + 'c-list-box').classList.toggle('hidden', m !== 'LIST');
+        }
+        function chatCoSet(px, cc, role) {
+            const box = document.getElementById(px + '-chatco-box');
+            box.classList.toggle('hidden', role === 'COMPANY' || role === 'ADMIN');
+            document.getElementById(px + '-chatco-mode').value = (cc && cc.mode) || 'ROLE';
+            renderCompanyPicker(px + 'c', (cc && cc.ids) || []);
+            chatCoModeChange(px);
+        }
+        function chatCoValue(px) {
+            const m = document.getElementById(px + '-chatco-mode').value;
+            return m === 'LIST' ? pickedCompanies(px + 'c') : m;
+        }
         function openAddUserModal() {
             ['su-fullname','su-username','su-password','su-mobile','su-personnel','su-avatar','su-rpw'].forEach(id => document.getElementById(id).value = '');
             paintUserAvatar('su');
@@ -7587,6 +7640,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('su-personnel-box').classList.toggle('hidden', co);
             document.getElementById('su-rpw-box').classList.toggle('hidden', co);
             if (co) renderCompanyPicker('su');
+            chatCoSet('su', null, role);
             const f = document.getElementById('su-fields');
             f.classList.remove('hidden'); f.classList.remove('su-fade'); void f.offsetWidth; f.classList.add('su-fade');
             document.getElementById('su-fullname').focus();
@@ -7605,6 +7659,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 report_edit_password: role === 'COMPANY' ? '' : document.getElementById('su-rpw').value,
             };
             if (role === 'COMPANY') payload.company_ids = pickedCompanies('su');
+            else if (role !== 'ADMIN') payload.chat_companies = chatCoValue('su');
             if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
             if (role === 'COMPANY' && !payload.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
             showMobileErr('su', '');
@@ -7634,6 +7689,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('esu-company-box').classList.toggle('hidden', !co);
             if (co) renderCompanyPicker('esu', u.company_ids || []);
             else { document.getElementById('esu-role').value = u.role; document.getElementById('esu-personnel').value = u.personnel_code || ''; }
+            chatCoSet('esu', u.chat_companies, co ? 'COMPANY' : u.role);
             document.getElementById('esu-mobile').value = u.mobile_number || '';
             document.getElementById('esu-password').value = '';
             document.getElementById('esu-admin-pass').value = '';
@@ -7655,7 +7711,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (type === 'COMPANY') {
                 body.company_ids = pickedCompanies('esu');
                 if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
-            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); body.report_edit_password = g('esu-rpw'); body.report_edit_password_clear = document.getElementById('esu-rpw-clear').checked; }
+            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); body.report_edit_password = g('esu-rpw'); body.report_edit_password_clear = document.getElementById('esu-rpw-clear').checked;
+                     if (body.role !== 'ADMIN') body.chat_companies = chatCoValue('esu'); }
             showMobileErr('esu', '');
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             const data = await res.json();
@@ -10109,13 +10166,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         loadMyAvatar();
 
         function switchGoftegoSub(which) {
-            ['messenger','tickets','botchats','staffchat','companychat'].forEach(k => {
+            ['messenger','tickets','botchats','staffchat','companychat','archive'].forEach(k => {
                 const panel = document.getElementById('goftego-panel-' + k);
                 if (panel) panel.classList.toggle('hidden', which !== k);
                 const btn = document.getElementById('goftego-sub-' + k);
                 if (btn) btn.className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === k ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
             });
             if (which === 'botchats') loadBotChats();
+            if (which === 'archive' && window.ChatArchive) ChatArchive.init();
             if (which !== 'messenger') return;
             if (which === 'staffchat') loadStaffChatList();
             if (which === 'companychat') loadCompanyChatList();

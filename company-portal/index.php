@@ -58,7 +58,15 @@ if (!$companies) {
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
     body { font-family: 'Vazir', sans-serif; background: #f1f5f9; color: #334155; margin: 0; }
-    .card { background: #fff; border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1px solid #eef2f7; }
+    .card { background: #fff; border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1.5px solid #dbe3ee; }
+    /* ردیف‌های ریزِ درخواست: کادرِ پررنگ‌تر و منظم */
+    .prow { background:#fff; border:2px solid #cbd5e1; border-radius:16px; margin-bottom:10px; overflow:hidden; box-shadow:0 2px 8px rgba(15,23,42,.05); }
+    .prow-head { background:linear-gradient(90deg,#f8fafc,#f1f5f9); border-bottom:2px solid #e2e8f0; padding:10px 12px; }
+    .prow-body { padding:10px 12px; }
+    .prow-docs { border-top:1.5px dashed #cbd5e1; margin-top:10px; padding-top:8px; }
+    .prow-doc { display:flex; align-items:center; gap:8px; border:1.5px solid #e2e8f0; border-radius:10px; padding:6px 9px; background:#fff; transition:all .15s; }
+    .prow-doc:hover { border-color:#93c5fd; background:#eff6ff; }
+    .gdoc { border:1.5px solid #dbe3ee !important; }
     .float-input { position: relative; margin-bottom: 1.25rem; }
     .float-input input, .float-input select, .float-input textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; outline: none; transition: all .2s; }
     .float-input input:focus, .float-input select:focus, .float-input textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.1); }
@@ -659,11 +667,12 @@ async function openRequestDetail(id) {
         if (ext === 'zip') return ['fa-file-zipper', 'text-amber-500'];
         return ['fa-file', 'text-slate-400'];
     };
-    const docsHtml = data.documents.length ? data.documents.map(d => {
+    const generalDocs = data.documents.filter(d => !d.plate_id || !data.plates.some(p => String(p.id) === String(d.plate_id)));
+    const docsHtml = generalDocs.length ? generalDocs.map(d => {
         const [icon, color] = fileIcon(d.orig_name || d.file_path);
         const assigned = d.status === 'ASSIGNED';
         return `
-        <a href="../${d.file_path}" target="_blank" class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-3 mb-2 hover:shadow-md hover:border-blue-200 transition-all group">
+        <a href="../${d.file_path}" target="_blank" class="gdoc flex items-center justify-between gap-2 bg-white border rounded-xl p-3 mb-2 hover:shadow-md hover:border-blue-200 transition-all group">
             <div class="flex items-center gap-2.5 min-w-0">
                 <div class="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors"><i class="fas ${icon} ${color}"></i></div>
                 <div class="min-w-0">
@@ -673,15 +682,25 @@ async function openRequestDetail(id) {
             </div>
             <span class="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${assigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}">${assigned ? '✓ بررسی‌شده' : 'در انتظار بررسی'}</span>
         </a>`;
-    }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">هنوز مدرکی آپلود نشده.</p>';
+    }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">مدرکِ کلی (بدونِ ردیف) ندارد؛ مدارکِ هر ردیف داخلِ همان ردیف آمده است.</p>';
 
-    // ---- ریزِ درخواست: یک ردیف به ازای هر بیمه‌نامه‌ی درخواستی، با چک‌لیستِ مدارکش ----
+    // ---- ریزِ درخواست: یک ردیف به ازای هر بیمه‌نامه‌ی درخواستی، با چک‌لیست و مدارکِ همان ردیف ----
+    const rowDocHtml = d => {
+        const [icon, color] = fileIcon(d.orig_name || d.file_path);
+        const assigned = d.status === 'ASSIGNED';
+        return `<a href="../${d.file_path}" target="_blank" class="prow-doc">
+            <i class="fas ${icon} ${color}"></i>
+            <span class="min-w-0 flex-1"><span class="text-[11px] font-bold text-slate-700 truncate block">${d.doc_type_label || d.orig_name || 'فایل'}</span>
+                <span class="text-[9.5px] text-slate-400 truncate block">${d.orig_name || ''}${faNum(d.uploaded_at_jalali) ? ' · ' + faNum(d.uploaded_at_jalali) : ''}</span></span>
+            <span class="text-[9.5px] font-bold px-2 py-0.5 rounded-full shrink-0 ${assigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}">${assigned ? '✓ بررسی‌شده' : 'در انتظار'}</span></a>`;
+    };
     const rowsHtml = data.plates.length ? data.plates.map((p, idx) => {
         const missing = Object.values(p.missing_docs || {});
         const chips = (p.checklist || []).map(it => portalChecklistChip(p, it)).join('');
+        const myDocs = data.documents.filter(d => String(d.plate_id || '') === String(p.id));
         return `
-        <div class="bg-white border border-slate-100 rounded-xl p-3 mb-2">
-            <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div class="prow">
+            <div class="prow-head flex items-center justify-between gap-2 flex-wrap">
                 <div class="flex items-center gap-2.5 flex-wrap">
                     <span class="text-[10px] text-slate-300 font-bold">${faNum(idx + 1)}</span>
                     ${(p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4)
@@ -695,6 +714,7 @@ async function openRequestDetail(id) {
                 </div>
                 <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${PORTAL_ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-500'}">${p.status_fa || p.status}</span>
             </div>
+            <div class="prow-body">
             ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
             ${p.engine_no ? `<p class="text-[10px] text-slate-400 mb-1" dir="ltr">شماره موتور: ${p.engine_no}</p>` : ''}
             ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500 mb-1" dir="ltr">شماره بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
@@ -710,6 +730,11 @@ async function openRequestDetail(id) {
                     ${p.has_issued_file ? `<a href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${p.id}"
                         class="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded-lg">دانلود بیمه‌نامه</a>` : ''}
                 </div>` : ''}
+            <div class="prow-docs">
+                <p class="text-[10.5px] font-black text-slate-500 mb-1.5"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارکِ این ردیف ${myDocs.length ? '(' + faNum(myDocs.length) + ')' : ''}</p>
+                ${myDocs.length ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${myDocs.map(rowDocHtml).join('')}</div>` : '<p class="text-[10px] text-slate-400">هنوز مدرکی برای این ردیف ثبت نشده.</p>'}
+            </div>
+            </div>
         </div>`;
     }).join('') : '<p class="text-xs text-slate-400 bg-slate-50 rounded-xl p-4 text-center">ریزِ درخواست هنوز ثبت نشده؛ به‌محض ثبت، هر ردیف و مدارک لازمش همین‌جا نمایش داده می‌شود.</p>';
 
@@ -749,7 +774,7 @@ async function openRequestDetail(id) {
         <h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>ریز درخواست و مدارک هر ردیف</h4>
         ${rowsHtml}
 
-        <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>همه‌ی مدارک ارسالی</h4>
+        <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>مدارکِ کلیِ درخواست (نامه و مدارکی که به ردیفِ خاصی وصل نیستند)</h4>
         ${docsHtml}
     `;
     document.getElementById('doc-upload-input').value = '';

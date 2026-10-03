@@ -149,7 +149,11 @@ try {
     if ($action === 'delete_ticket_message') {
         $msgId = intval($data['message_id'] ?? 0);
         if (!$msgId) { echo json_encode(['ok' => false, 'error' => 'ورودی نامعتبر.']); exit; }
-        $pdo->prepare("DELETE FROM ticket_messages WHERE id = ? AND sender_type = 'ADMIN'")->execute([$msgId]);
+        require_once __DIR__ . '/_chat_access.php';
+        chat_access_ensure($pdo);
+        $by = $pdo->prepare("SELECT full_name FROM users WHERE id = ?"); $by->execute([intval($_SESSION['user_id'] ?? 0)]);
+        $pdo->prepare("UPDATE ticket_messages SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND sender_type = 'ADMIN'")
+            ->execute([mb_substr(($by->fetchColumn() ?: 'همکار') . ' (همکار)', 0, 160), $msgId]);
         echo json_encode(['ok' => true]);
         exit;
     }

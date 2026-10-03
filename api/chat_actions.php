@@ -29,6 +29,17 @@ try {
     $u = $st->fetch();
     if (!$u) chat_out(['ok' => false, 'error' => 'کاربر پیدا نشد.']);
     $actor = ['kind' => 'STAFF', 'id' => intval($u['id']), 'role' => $u['role'], 'name' => $u['full_name']];
+    // بایگانیِ کاملِ گفتگوها و تنظیمِ نقش‌هایی که با شرکت‌ها گفتگو می‌کنند - فقط مدیر کل
+    if (strpos((string)$action, 'archive_') === 0) {
+        if ($u['role'] !== 'ADMIN') chat_out(['ok' => false, 'error' => 'بایگانیِ گفتگوها فقط برای مدیر کل است.']);
+        require_once __DIR__ . '/_chat_archive.php';
+        if (!function_exists('fin_jalali_to_date')) require_once __DIR__ . '/finance_core.php';
+        if ($action === 'archive_threads') chat_out(['ok' => true, 'threads' => chat_archive_threads($pdo, $data + $_GET)]);
+        if ($action === 'archive_messages') chat_out(chat_archive_messages($pdo, (string)($data['key'] ?? ($_GET['key'] ?? ''))));
+        if ($action === 'archive_settings') chat_out(['ok' => true, 'roles' => chat_company_roles($pdo), 'role_options' => CHAT_COMPANY_ROLE_OPTIONS]);
+        if ($action === 'archive_save_roles') { chat_set_company_roles($pdo, (array)($data['roles'] ?? [])); chat_out(['ok' => true]); }
+        chat_out(['ok' => false, 'error' => 'اکشن نامعتبر.']);
+    }
     chat_out(chat_dispatch($pdo, $actor, $action, $data, $_FILES));
 } catch (Throwable $e) {
     error_log('[chat_actions] ' . $e->getMessage() . ' @' . $e->getLine());

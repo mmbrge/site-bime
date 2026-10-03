@@ -13,6 +13,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_chat_access.php';
 require_once __DIR__ . '/_profile_core.php';
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
@@ -56,8 +57,11 @@ try {
         $cols = $ready ? ', personnel_code, bale_chat_id IS NOT NULL AND bot_linked_at IS NOT NULL AS bot_linked, bot_linked_at, is_deleted, deleted_at' : '';
         $where = ($ready && empty($data['include_deleted'])) ? 'WHERE COALESCE(is_deleted, 0) = 0' : '';
         if (staff_report_pw_ready($pdo)) $cols .= ', report_edit_password_hash IS NOT NULL AS has_report_pw';
+        chat_access_ensure($pdo);
+        try { $pdo->query("SELECT chat_companies FROM users LIMIT 0"); $cols .= ', chat_companies'; } catch (Throwable $e) {}
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         foreach ($users as &$u) {
+            $u['chat_companies'] = chat_companies_decode($u['chat_companies'] ?? null);
             $u['bot_linked'] = !empty($u['bot_linked']);
             $u['has_report_pw'] = !empty($u['has_report_pw']);
             $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
@@ -162,6 +166,7 @@ try {
                 ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $fullName, $role, $mobile]);
         }
         $newId = intval($pdo->lastInsertId());
+        if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $newId]); } catch (Throwable $e) {} }
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
         $rpw = (string)($data['report_edit_password'] ?? '');
         $warn = null;
@@ -231,6 +236,7 @@ try {
         $pdo->prepare("UPDATE users SET full_name = ?, role = ?, mobile_number = ?, personnel_code = ? WHERE id = ?")
             ->execute([$fullName, $role, $mobile, trim(p2e_digits($data['personnel_code'] ?? '')) ?: null, $id]);
         if ($password !== '') $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
+        if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $id]); } catch (Throwable $e) {} }
         if ($rpw !== '' || $rpwClear) staff_set_report_pw($pdo, $id, $rpw, $rpwClear);
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
