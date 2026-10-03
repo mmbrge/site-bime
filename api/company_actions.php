@@ -27,6 +27,13 @@ $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
 
+// فایلی بزرگ‌تر از post_max_size کلِ فرم را خالی می‌کند (حتی action)؛ به‌جای «اکشن نامعتبر» علتِ واقعی گفته شود
+if ($action === '' && !$isJson && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && intval($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && empty($_POST) && empty($_FILES)) {
+    $lim = ini_get('post_max_size');
+    echo json_encode(['ok' => false, 'error' => 'حجمِ فایل از سقفِ مجازِ سرور (post_max_size = ' . $lim . ') بیشتر است. در cPanel ← Select PHP Version ← Options مقدارِ upload_max_filesize و post_max_size را بیشتر کنید (مثلاً 64M).'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
@@ -1641,7 +1648,7 @@ try {
         if (!$requestId) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.']); exit; }
         if (empty($_FILES['bundle']['tmp_name']) || !is_uploaded_file($_FILES['bundle']['tmp_name'])) {
             $code = $_FILES['bundle']['error'] ?? null;
-            echo json_encode(['ok' => false, 'error' => $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE ? 'حجمِ فایل بیش از حدِ مجازِ سرور است.' : 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit;
+            echo json_encode(['ok' => false, 'error' => $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE ? 'حجمِ فایل بیش از سقفِ مجازِ سرور است (upload_max_filesize = ' . ini_get('upload_max_filesize') . '). در cPanel ← Select PHP Version ← Options آن را بیشتر کنید (مثلاً 64M).' : 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit;
         }
         $name = (string)$_FILES['bundle']['name'];
         $head = (string)@file_get_contents($_FILES['bundle']['tmp_name'], false, null, 0, 5);
@@ -1667,7 +1674,14 @@ try {
             if ($ocrCount >= 30) { $p['ocr_error'] = 'تعدادِ صفحه‌های اسکن‌شده زیاد است (حداکثر ۳۰)'; continue; }
             $ocrCount++;
             $o = run_document_ocr_verbose($dir . '/pages/' . $p['file']);
-            if ($o['data']) { $p['data'] = $o['data'] + ['premium' => '']; $p['via_ocr'] = true; }
+            if ($o['data']) {
+                $p['data'] = $o['data'] + ['premium' => ''];
+                $p['via_ocr'] = true;
+                $p['missing'] = [];
+                foreach (['plate' => 'پلاک', 'insured_name' => 'نام بیمه‌گذار', 'premium' => 'حق بیمه', 'policy_num' => 'شماره بیمه‌نامه'] as $fk => $fl) {
+                    if (empty($p['data'][$fk]) && !($fk === 'plate' && !empty($p['data']['vin']))) $p['missing'][] = $fl;
+                }
+            }
             else $p['ocr_error'] = $o['debug'] ?: 'متنی خوانده نشد';
         }
         unset($p);
@@ -1683,7 +1697,8 @@ try {
                  'policies' => $policies, 'items' => $items];
         file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
         $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
-        echo json_encode(['ok' => true, 'token' => $token, 'pages' => intval($res['pages']), 'policies' => count($items), 'counts' => $cnt, 'items' => $items], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'token' => $token, 'pages' => intval($res['pages']), 'policies' => count($items), 'counts' => $cnt, 'items' => $items,
+                          'split' => $res['split'] ?? ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'bundle_recheck') {   // بعد از انجامِ مراحلِ باقی‌مانده: بررسیِ دوباره بدونِ بارگذاریِ مجدد
@@ -1746,7 +1761,12 @@ try {
             $pdo->prepare("UPDATE company_request_plates SET ocr_extracted_data = ? WHERE id = ?")->execute([json_encode($it['data'], JSON_UNESCAPED_UNICODE), $plateId]);
             $r = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $premium, $work, 'policy.pdf');
             if (is_file($work)) @unlink($work);
-            if (!empty($r['ok'])) $done++;
+            if (!empty($r['ok'])) {
+                $done++;
+                // خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
+                $pdo->prepare("UPDATE company_request_plates SET engine_no = COALESCE(NULLIF(engine_no, ''), ?), car_name = COALESCE(NULLIF(car_name, ''), ?) WHERE id = ?")
+                    ->execute([($it['data']['engine_no'] ?? '') ?: null, ($it['data']['car_name'] ?? '') ?: null, $plateId]);
+            }
             $results[] = ['i' => $i, 'plate_id' => $plateId] + $r;
         }
         // اگر هیچ بیمه‌نامه‌ی صادرنشده‌ای (آماده یا منتظرِ تکمیلِ مراحل) در فایل نماند، فایل‌های موقت پاک می‌شوند

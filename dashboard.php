@@ -5545,6 +5545,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
+        // مقایسه‌ی فیلد به فیلدِ بیمه‌نامه با ردیفِ درخواست
+        function bundleDiffsHtml(it) {
+            const diffs = it.diffs || [];
+            if (!diffs.length) return '<p class="mt-1.5 text-[10.5px] font-bold text-emerald-700"><i class="fas fa-circle-check ml-1"></i>پلاک/شاسی، نوع و اطلاعاتِ قابلِ مقایسه با درخواست یکی است.</p>';
+            const hard = diffs.some(x => x.level === 'hard');
+            return `<div class="mt-1.5 rounded-lg border ${hard ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'} p-2">
+                <p class="text-[10.5px] font-black ${hard ? 'text-red-700' : 'text-amber-800'} mb-1"><i class="fas fa-code-compare ml-1"></i>${faDigits(diffs.length)} فیلد با درخواست فرق دارد${hard ? ' — احتمالِ بیمه‌نامه‌ی اشتباه؛ حتماً بررسی کنید' : ''}:</p>
+                <div class="grid gap-1">${diffs.map(x => `<div class="text-[10.5px] flex flex-wrap items-center gap-1.5">
+                    <span class="font-black ${x.level === 'hard' ? 'text-red-700' : 'text-amber-800'} min-w-[90px]">${bdlEsc(x.label)}</span>
+                    <span class="text-slate-500">درخواست:</span><b class="text-slate-700" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && x.row ? formatPlateHtml(x.row) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.row || '—') : faDigits(bdlEsc(x.row || '—')))}</b>
+                    <i class="fas fa-arrow-left text-slate-400 text-[9px]"></i>
+                    <span class="text-slate-500">بیمه‌نامه:</span><b class="${x.level === 'hard' ? 'text-red-700' : 'text-amber-900'}" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && /ایران/.test(x.policy) ? formatPlateHtml(x.policy) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.policy || '—') : faDigits(bdlEsc(x.policy || '—')))}</b>
+                </div>`).join('')}</div></div>`;
+        }
+
         function bundleCardHtml(it) {
             const d = it.data || {}, row = it.row, res = BDL.results[it.i];
             const st = BDL_STATE[it.state] || BDL_STATE.unknown;
@@ -5552,6 +5567,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const done = res && res.ok;
             const pdfLink = file => `${COMPANY_API}?action=bundle_page&token=${BDL.token}&file=${encodeURIComponent(file)}`;
             const pages = it.end > it.page ? `صفحه‌ی ${faDigits(it.page)} تا ${faDigits(it.end)}` : `صفحه‌ی ${faDigits(it.page)}`;
+            const pe = it.policy_end || it.page;
+            const polPages = pe - it.page + 1, payPages = it.end - pe;
             const prem = it._pr !== undefined ? it._pr : (d.premium ? mfmt(d.premium) : '');
             const pn = it._pn !== undefined ? it._pn : (d.policy_num || '');
             const editable = selectable;
@@ -5567,6 +5584,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="status-badge ${rowStatusCls} text-[10px] font-bold px-2 py-0.5 rounded-full">${bdlEsc(row.status_fa || row.status)}</span>
                     ${row.other_request ? `<span class="bdl-pill bg-violet-100 text-violet-700"><i class="fas fa-share"></i>از درخواستِ دیگرِ همین شرکت (#${faDigits(row.request_id)})</span>` : '<span class="bdl-pill bg-indigo-50 text-indigo-700"><i class="fas fa-check"></i>درخواستش را داریم</span>'}
                     ${it.state === 'not_ready' || row.other_request ? `<button onclick="bundleOpenRow(${row.request_id})" class="text-[10px] font-bold text-blue-700 underline mr-auto">باز کردنِ درخواست برای تکمیلِ مراحل</button>` : ''}
+                    <div class="w-full">${bundleDiffsHtml(it)}</div>
                 </div>`;
             }
             let missingHtml = '';
@@ -5599,8 +5617,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span class="bdl-pill ${done ? 'bg-emerald-600 text-white' : st[1]}"><i class="fas ${done ? 'fa-circle-check' : st[2]}"></i>${done ? 'صادر و بایگانی شد' : st[0]}</span>
                         ${it.via_ocr ? '<span class="bdl-pill bg-sky-50 text-sky-700"><i class="fas fa-eye"></i>با OCR</span>' : ''}
                         ${BDL.expired ? '' : `<span class="mr-auto flex gap-2 text-[10.5px] font-bold">
-                            <a href="${pdfLink(it.file)}" target="_blank" class="text-indigo-700 hover:underline"><i class="fas fa-file-pdf ml-0.5"></i>صفحه‌ی بیمه‌نامه</a>
-                            ${it.end > it.page ? `<a href="${pdfLink(it.seg_file)}" target="_blank" class="text-slate-500 hover:underline"><i class="fas fa-file-invoice ml-0.5"></i>همراه با پرداخت‌ها</a>` : ''}
+                            <a href="${pdfLink(it.file)}" target="_blank" class="text-indigo-700 hover:underline"><i class="fas fa-file-pdf ml-0.5"></i>بیمه‌نامه (${faDigits(polPages)} صفحه)</a>
+                            ${it.end > it.page ? `<a href="${pdfLink(it.seg_file)}" target="_blank" class="text-slate-500 hover:underline"><i class="fas fa-file-invoice ml-0.5"></i>همه با پرداخت‌ها (${faDigits(it.end - it.page + 1)} صفحه)</a>` : ''}
                         </span>`}
                     </div>
                     ${it.state === 'unknown' ? '' : `<div class="bdl-kv">
@@ -5610,8 +5628,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="k">بیمه‌گذار</span>${val(d.insured_name)}</div>
                         <div><span class="k">شماره بیمه‌نامه</span>${editable ? `<input id="bdl-pn-${it.i}" dir="ltr" value="${bdlEsc(pn)}">` : `<b dir="ltr">${val(pn)}</b>`}</div>
                         <div><span class="k">حق بیمه (ریال)</span>${editable ? `<input id="bdl-pr-${it.i}" class="money-input" dir="ltr" inputmode="numeric" value="${bdlEsc(prem)}">` : `<b>${d.premium ? money(d.premium) : val('')}</b>`}</div>
-                    </div>`}
-                    ${editable && it.end > it.page ? `<label class="mt-2 inline-flex items-center gap-1.5 text-[10.5px] text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-pay-${it.i}" ${it._pay ? 'checked' : ''} onchange="bundleCollectEdits()" class="accent-indigo-600">صفحه‌های پرداخت و فیش هم در فایلِ بیمه‌نامه‌ی بایگانی بیاید</label>` : ''}
+                        ${d.national_id ? `<div><span class="k">کد / شناسه ملی</span><b dir="ltr">${faDigits(bdlEsc(d.national_id))}</b></div>` : ''}
+                        ${d.car_name || d.model_year ? `<div><span class="k">خودرو</span>${bdlEsc([d.car_kind, d.car_name].filter(Boolean).join(' · '))}${d.model_year ? ` <span class="text-slate-400">مدل ${faDigits(d.model_year)}</span>` : ''}</div>` : ''}
+                        ${d.engine_no ? `<div><span class="k">شماره موتور</span><b dir="ltr">${bdlEsc(d.engine_no)}</b></div>` : ''}
+                        ${d.start_date ? `<div><span class="k">مدت بیمه</span>${faDigits(d.start_date)}${d.end_date ? ` تا ${faDigits(d.end_date)}` : ''}</div>` : ''}
+                        ${d.car_value ? `<div><span class="k">ارزش خودرو (ریال)</span>${money(d.car_value)}</div>` : ''}
+                        ${d.liability ? `<div><span class="k">تعهد مالی (ریال)</span>${money(d.liability)}</div>` : ''}
+                        ${d.prev_expiry ? `<div><span class="k">انقضای بیمه‌نامه‌ی قبلی</span>${faDigits(d.prev_expiry)}${d.prev_insurer ? ` <span class="text-slate-400">(${bdlEsc(d.prev_insurer)})</span>` : ''}</div>` : ''}
+                        ${d.issue_date ? `<div><span class="k">تاریخ صدور</span>${faDigits(d.issue_date)}</div>` : ''}
+                    </div>
+                    ${(it.missing_fields || []).length ? `<p class="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5"><i class="fas fa-triangle-exclamation ml-1"></i>از روی بیمه‌نامه خوانده نشد: <b>${it.missing_fields.map(bdlEsc).join('، ')}</b> — پیش‌نمایش را ببینید${editable ? ' و در صورت نیاز دستی وارد کنید' : ''}.</p>` : ''}`}
+                    ${editable && payPages > 0 ? `<label class="mt-2 inline-flex items-center gap-1.5 text-[10.5px] text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-pay-${it.i}" ${it._pay ? 'checked' : ''} onchange="bundleCollectEdits()" class="accent-indigo-600">صفحه‌های پرداخت و فیش (${faDigits(payPages)} صفحه) هم در فایلِ بیمه‌نامه‌ی بایگانی بیاید</label>` : ''}
                     ${matchHtml}${missingHtml}${resHtml}
                 </div>
             </div>`;
@@ -5682,7 +5709,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!picks.length) return;
             const empty = picks.filter(it => !String(it._pn !== undefined ? it._pn : (it.data && it.data.policy_num) || '').trim());
             if (empty.length) { showToast(`شماره‌ی بیمه‌نامه‌ی ${empty.map(it => faDigits(it.i + 1)).join('، ')} خالی است.`, 'error'); return; }
-            if (!confirm(`${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟`)) return;
+            const hardN = picks.filter(it => (it.diffs || []).some(x => x.level === 'hard')).length;
+            const softN = picks.filter(it => (it.diffs || []).length && !(it.diffs || []).some(x => x.level === 'hard')).length;
+            const warn = (hardN ? `\n⚠ ${faDigits(hardN)} مورد مغایرتِ مهم (پلاک/شاسی/نوع) با درخواست دارد!` : '') + (softN ? `\n${faDigits(softN)} مورد مغایرتِ جزئی دارد.` : '');
+            if (!confirm(`${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟${warn}`)) return;
             const payload = picks.map(it => ({
                 i: it.i,
                 policy_number: it._pn !== undefined ? it._pn : (it.data.policy_num || ''),

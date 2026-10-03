@@ -125,7 +125,7 @@ function cbundle_run($pdo, $pdf, $outDir) {
         $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
         $s = proc_get_status($proc);
         if (!$s['running']) break;
-        if (time() - $start > 150) { proc_terminate($proc, 9); return ['ok' => false, 'error' => 'پردازشِ فایل بیش از حد طول کشید.']; }
+        if (time() - $start > 420) { proc_terminate($proc, 9); return ['ok' => false, 'error' => 'پردازشِ فایل بیش از حد طول کشید.']; }
         usleep(80000);
     }
     $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
@@ -153,6 +153,45 @@ function cbundle_is_policy($d) {
 }
 
 // نتیجه‌ی شناسایی => ردیفِ مربوط + وضعیتِ آمادگی
+// تاریخِ میلادیِ دیتابیس ← «1405/04/13»
+function cbundle_jdate($ymd) {
+    $ts = strtotime((string)$ymd);
+    if (!$ts) return '';
+    [$jy, $jm, $jd] = jalali_from_gregorian_ts($ts);
+    return sprintf('%04d/%02d/%02d', $jy, $jm, $jd);
+}
+
+// مغایرت‌های بیمه‌نامه‌ی خوانده‌شده با ردیفِ درخواست، فیلد به فیلد.
+// level: hard = احتمالاً بیمه‌نامه‌ی اشتباه / اطلاعاتِ غلط (پلاک، شاسی، نوع)؛ soft = بهتر است بررسی شود
+function cbundle_diffs($row, $d) {
+    $out = [];
+    $add = function ($field, $label, $rv, $pv, $level) use (&$out) { $out[] = ['field' => $field, 'label' => $label, 'row' => (string)$rv, 'policy' => (string)$pv, 'level' => $level]; };
+    $norm = function ($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); };
+    $rowPlate = company_plate_display($row['plate_p1'] ?? '', $row['plate_p2'] ?? '', $row['plate_letter'] ?? '', $row['plate_p4'] ?? '');
+    $polPlate = (string)($d['plate'] ?? '');
+    if ($rowPlate && $polPlate && plate_core($rowPlate) !== plate_core($polPlate)) $add('plate', 'پلاک', $rowPlate, $polPlate, 'hard');
+    elseif ($rowPlate && !$polPlate) $add('plate', 'پلاک', $rowPlate, 'در بیمه‌نامه خوانده نشد', 'soft');
+    $rowVin = trim((string)($row['chassis_no'] ?: ($row['vin'] ?? '')));
+    if ($rowVin !== '' && !empty($d['vin']) && !cbundle_vin_match($d['vin'], $rowVin)) $add('vin', 'شماره شاسی', $rowVin, $d['vin'], 'hard');
+    $ft = insurance_type_fa($row['insurance_type'] ?? '');
+    if (in_array($d['ins_type'] ?? '', ['بدنه', 'ثالث'], true) && in_array($ft, ['بدنه', 'ثالث'], true) && $ft !== $d['ins_type']) $add('type', 'نوع بیمه', $ft, $d['ins_type'], 'hard');
+    if (!empty($row['engine_no']) && !empty($d['engine_no']) && $norm($row['engine_no']) !== $norm($d['engine_no'])) $add('engine', 'شماره موتور', $row['engine_no'], $d['engine_no'], 'soft');
+    if (($row['insurance_type'] ?? '') === 'BODY' && intval($row['car_value'] ?? 0) > 0 && !empty($d['car_value']) && intval($row['car_value']) !== intval($d['car_value']))
+        $add('car_value', 'ارزش خودرو (ریال)', number_format((float)$row['car_value']), number_format((float)$d['car_value']), 'soft');
+    if (($row['insurance_type'] ?? '') === 'THIRDPARTY' && intval($row['liability_limit'] ?? 0) > 0 && !empty($d['liability']) && intval($row['liability_limit']) !== intval($d['liability']))
+        $add('liability', 'تعهد مالی (ریال)', number_format((float)$row['liability_limit']), number_format((float)$d['liability']), 'soft');
+    if (!empty($row['expiry_date']) && !empty($d['prev_expiry']) && preg_match('#^(\d{4})/(\d{1,2})/(\d{1,2})$#', p2e_digits($d['prev_expiry']), $m)) {
+        $pe = date('Y-m-d', jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])));
+        if ($pe !== substr((string)$row['expiry_date'], 0, 10)) $add('expiry', 'انقضای بیمه‌نامه‌ی قبلی', cbundle_jdate($row['expiry_date']), $d['prev_expiry'], 'soft');
+    }
+    // نامِ بیمه‌گذار با نامِ شرکتِ درخواست‌دهنده (بی‌توجه به «شرکت»، فاصله و ی/ک)
+    $nm = function ($v) { $v = str_replace(['ي', 'ك', "\u{200C}", 'ـ'], ['ی', 'ک', '', ''], (string)$v); return preg_replace('/\s+|شرکت|سهامی|خاص|عام|[()\-.]/u', '', $v); };
+    $comp = $nm($row['company_name'] ?? ''); $ins = $nm($d['insured_name'] ?? '');
+    if ($comp !== '' && $ins !== '' && mb_strpos($comp, $ins) === false && mb_strpos($ins, $comp) === false)
+        $add('insured', 'بیمه‌گذار', $row['company_name'], $d['insured_name'], 'soft');
+    return $out;
+}
+
 function cbundle_match($pdo, $requestId, array $policies) {
     $st = $pdo->prepare("SELECT cr.id, cr.company_id FROM company_requests cr WHERE cr.id = ?");
     $st->execute([$requestId]);
@@ -167,8 +206,10 @@ function cbundle_match($pdo, $requestId, array $policies) {
     $items = [];
     foreach ($policies as $i => $p) {
         $d = $p['data'] ?? null;
-        $it = ['i' => $i, 'page' => intval($p['page']) + 1, 'end' => intval($p['end']) + 1, 'file' => $p['file'], 'seg_file' => $p['seg_file'],
-               'via_ocr' => !empty($p['via_ocr']), 'data' => $d, 'state' => 'unknown', 'message' => '', 'row' => null];
+        $it = ['i' => $i, 'page' => intval($p['page']) + 1, 'end' => intval($p['end']) + 1,
+               'policy_end' => intval($p['policy_end'] ?? $p['page']) + 1, 'file' => $p['file'], 'seg_file' => $p['seg_file'],
+               'via_ocr' => !empty($p['via_ocr']), 'data' => $d, 'state' => 'unknown', 'message' => '', 'row' => null,
+               'missing_fields' => array_values((array)($p['missing'] ?? [])), 'diffs' => []];
         if (!cbundle_is_policy($d)) {
             $it['message'] = !empty($p['ocr_error']) ? 'خوانده نشد: ' . $p['ocr_error'] : 'این صفحه بیمه‌نامه‌ی معتبر تشخیص داده نشد (نوع، شماره یا پلاک/شاسی خوانده نشد).';
             $items[] = $it; continue;
@@ -191,7 +232,10 @@ function cbundle_match($pdo, $requestId, array $policies) {
                       'plate_p4' => $best['plate_p4'], 'chassis_no' => $best['chassis_no'], 'insurance_type' => $best['insurance_type'],
                       'insurance_type_fa' => insurance_type_fa($best['insurance_type']), 'status' => $best['status'],
                       'status_fa' => company_plate_status_fa($best['status'], $kind), 'kind' => $kind, 'policy_number' => $best['policy_number'],
-                      'car_name' => $best['car_name'], 'total_premium' => $best['total_premium']];
+                      'car_name' => $best['car_name'], 'total_premium' => $best['total_premium'], 'engine_no' => $best['engine_no'],
+                      'car_value' => $best['car_value'], 'liability_limit' => $best['liability_limit'], 'company_name' => $best['company_name'],
+                      'expiry_date' => $best['expiry_date'], 'expiry_date_jalali' => !empty($best['expiry_date']) ? cbundle_jdate($best['expiry_date']) : ''];
+        $it['diffs'] = cbundle_diffs($best, $d);
         if (isset($used[$best['id']])) { $it['state'] = 'duplicate'; $it['message'] = 'این ردیف در همین فایل یک بیمه‌نامه‌ی دیگر هم دارد (صفحه‌ی ' . $used[$best['id']] . ').'; $items[] = $it; continue; }
         $used[$best['id']] = $it['page'];
         if ($kind === 'NEW_POLICY' && in_array($d['ins_type'] ?? '', ['بدنه', 'ثالث'], true) && $d['ins_type'] !== insurance_type_fa($best['insurance_type'])) {
