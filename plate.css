@@ -24,6 +24,11 @@
 .ir-pin input { border: 0 !important; outline: 0 !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important;
                 text-align: center; font-weight: 900; font-size: 15px; color: #0f172a; min-width: 0; padding: 0 2px !important; height: 100%; font-family: inherit; }
 .ir-pin input::placeholder { color: #cbd5e1; font-weight: 700; }
+.ir-pin select { border: 0 !important; outline: 0 !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important;
+                 -webkit-appearance: none; appearance: none; text-align: center; text-align-last: center; font-weight: 900; font-size: 15px; color: #0f172a;
+                 min-width: 0; padding: 0 2px !important; height: 100%; font-family: inherit; cursor: pointer; }
+.ir-pin select:focus { background: #eff6ff !important; }
+.ir-pin select option { color: #0f172a; background: #fff; }
 .ir-pin input:focus { background: #eff6ff !important; }
 .ir-pin .ip-cell { flex: 1 1 0; }
 .ir-pin .ip-letter { flex: 1.05 1 0; }

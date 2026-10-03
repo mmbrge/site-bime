@@ -45,10 +45,7 @@
   }
   .topbar .user-info { font-size: 12px; color: #cbd5e1; }
   .topbar .user-info b { color: #fff; font-size: 13px; }
-  .topbar .plate-chip {
-    background: #ffffff; color: #111827; border: 1px solid #e5e7eb;
-    font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 8px; display: inline-block; margin-top: 2px;
-  }
+  .topbar .plate-chip { display: inline-block; margin-top: 3px; }
   .timers { display: flex; gap: 8px; }
   .timer-pill {
     background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1);
@@ -129,7 +126,7 @@
   .fs-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px;
             padding: 8px 12px; background: linear-gradient(180deg, rgba(0,0,0,.75), transparent); z-index: 3; }
   .fs-user { font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; }
-  .fs-plate { background: #fff; color: #111827; border-radius: 6px; padding: 2px 7px; font-size: 11px; margin-right: 6px; display: inline-block; }
+  .fs-plate { margin-right: 6px; display: inline-block; vertical-align: middle; }
   .fs-timers { margin-right: auto; display: flex; gap: 6px; }
   .fs-pill { background: rgba(255,255,255,.15); color: #fff; border-radius: 8px; padding: 3px 8px; font-size: 10.5px; font-weight: 700; }
   .fs-pill b { font-variant-numeric: tabular-nums; }
@@ -266,6 +263,7 @@
 
   input[type=file] { display: none; }
 </style>
+<link rel="stylesheet" href="/plate.css?v=2">
 </head>
 <body>
 
@@ -667,13 +665,10 @@ function fillAllTopbars(name, plate) {
 // خودش رندر می‌شود ولی چیدمان کلی همیشه دقیقاً چپ‌به‌راست و صحیح می‌ماند.
 function formatPlateHtml(plate) {
     if (!plate) return '';
-    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
-    const seg = s => `<span>${toFa(s)}</span>`;
-    return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">` +
-        seg(prefix) + `<span>${letter}</span>` + seg(suffix) + `<span>ایران</span>` + seg(region) +
-        `</span>`;
+    return `<span class="ir-plate"><span class="flag"></span><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span class="ir"><small>ایران</small>${toFa(region)}</span></span>`;
 }
 function showError(msg) {
   document.getElementById('error-text').textContent = msg;

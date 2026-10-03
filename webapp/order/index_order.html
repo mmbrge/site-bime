@@ -114,6 +114,7 @@
   .summary-row span:first-child { color: #94a3b8; }
   input[type=file] { display: none; }
 </style>
+<link rel="stylesheet" href="/plate.css?v=2">
 </head>
 <body>
 
@@ -210,14 +211,12 @@
   <div id="plate-vehicles-list"></div>
   <div class="form-card">
     <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی خودرو وارد کنید:</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr 1.5fr;gap:6px;direction:ltr;align-items:center;">
-      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;">
-      <select id="pl-letter" style="width:100%;box-sizing:border-box;"></select>
-      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;">
-      <div style="display:flex;align-items:center;gap:4px;">
-        <span style="font-size:12px;white-space:nowrap;opacity:.8;">ایران</span>
-        <input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;min-width:0;">
-      </div>
+    <div class="ir-pin" dir="ltr">
+      <span class="ip-flag"></span>
+      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" class="ip-cell">
+      <select id="pl-letter" class="ip-cell ip-letter"></select>
+      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" class="ip-cell ip-wide">
+      <span class="ip-ir"><small>ایران</small><input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric"></span>
     </div>
   </div>
   <button class="btn btn-primary" onclick="submitNewPlate()">✅ ثبت این پلاک</button>
@@ -378,10 +377,10 @@ function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
 function formatPlateHtml(plate) {
     if (!plate) return '';
-    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
-    return `<span class="plate-tag"><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span></span>`;
+    return `<span class="ir-plate"><span class="flag"></span><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span class="ir"><small>ایران</small>${toFa(region)}</span></span>`;
 }
 function fillLetterSelects() {
     ['pl-letter'].forEach(id => { const sel=document.getElementById(id); if(sel) sel.innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join(''); });

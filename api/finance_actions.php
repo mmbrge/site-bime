@@ -266,6 +266,125 @@ try {
     }
 
     // =================================================================
+    //  مدیریتِ قالب‌های صورتحساب (مثلِ قالب‌های گزارش بازدید):
+    //  فهرست + نسخه‌های قبلی، بررسیِ کدها، پیش‌نمایش با داده‌ی نمونه، دانلود، قالبِ آماده، فعال‌سازی/حذف
+    // =================================================================
+    if (in_array($action, ['tpl_list', 'tpl_activate', 'tpl_delete', 'tpl_download', 'tpl_preview', 'tpl_preview_file', 'tpl_starter'], true)) {
+        if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر به قالب‌های صورتحساب دسترسی دارد.']); exit; }
+        $siteRoot = dirname(__DIR__);
+        $getTpl = function ($id) use ($pdo) {
+            $st = $pdo->prepare("SELECT * FROM invoice_templates WHERE id = ?");
+            $st->execute([intval($id)]);
+            return $st->fetch();
+        };
+        $sendFile = function ($abs, $name, $type) {
+            header_remove('Content-Type');
+            header('Content-Type: ' . $type);
+            header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode($name));
+            header('Content-Length: ' . filesize($abs));
+            readfile($abs);
+            exit;
+        };
+        $previewDir = $siteRoot . '/tmp_ocr/inv_preview';
+
+        if ($action === 'tpl_list') {
+            $all = $pdo->query("SELECT id, kind, title, docx_path, uploaded_at, is_active FROM invoice_templates ORDER BY id DESC")->fetchAll();
+            $kinds = [];
+            foreach (['SUMMARY', 'PERSONNEL', 'DETAILED'] as $k) $kinds[$k] = ['kind' => $k, 'kind_fa' => fin_kind_fa($k), 'active' => null, 'history' => []];
+            foreach ($all as $t) {
+                $k = fin_kind($t['kind']);
+                $abs = $siteRoot . '/' . $t['docx_path'];
+                $t['exists'] = is_file($abs);
+                $t['size'] = $t['exists'] ? filesize($abs) : 0;
+                $t['uploaded_jalali'] = $t['uploaded_at'] ? jalali_from_gregorian_ts_dotted(strtotime($t['uploaded_at'])) : ($t['exists'] ? jalali_from_gregorian_ts_dotted(filemtime($abs)) : '');
+                if ((string)$t['is_active'] === '1' && !$kinds[$k]['active']) {
+                    $t['analysis'] = $t['exists'] ? fin_tpl_analyze($abs) : ['ok' => false, 'error' => 'فایلِ قالب روی سرور پیدا نشد.'];
+                    $kinds[$k]['active'] = $t;
+                } elseif (count($kinds[$k]['history']) < 10) {
+                    $kinds[$k]['history'][] = $t;
+                }
+            }
+            $catalog = [];
+            foreach (fin_invoice_var_catalog() as $code => $desc) $catalog[] = ['code' => $code, 'desc' => $desc];
+            echo json_encode(['ok' => true, 'kinds' => array_values($kinds), 'catalog' => $catalog, 'legacy' => fin_invoice_legacy_codes(),
+                              'pdf_converter' => fin_pdf_converter_available()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($action === 'tpl_activate') {
+            $t = $getTpl($data['id'] ?? 0);
+            if (!$t) { echo json_encode(['ok' => false, 'error' => 'قالب پیدا نشد.']); exit; }
+            if (!is_file($siteRoot . '/' . $t['docx_path'])) { echo json_encode(['ok' => false, 'error' => 'فایلِ این نسخه روی سرور نیست.']); exit; }
+            $pdo->prepare("UPDATE invoice_templates SET is_active = 0 WHERE kind = ?")->execute([$t['kind']]);
+            $pdo->prepare("UPDATE invoice_templates SET is_active = 1 WHERE id = ?")->execute([$t['id']]);
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+        if ($action === 'tpl_delete') {
+            $t = $getTpl($data['id'] ?? 0);
+            if (!$t) { echo json_encode(['ok' => false, 'error' => 'قالب پیدا نشد.']); exit; }
+            // فایلی که صورتحساب‌های قبلی از آن ساخته شده‌اند فقط از فهرست حذف می‌شود؛ خودِ صورتحساب‌ها فایلِ خودشان را دارند
+            $pdo->prepare("DELETE FROM invoice_templates WHERE id = ?")->execute([$t['id']]);
+            $abs = $siteRoot . '/' . $t['docx_path'];
+            if (is_file($abs) && strpos(realpath($abs), realpath($siteRoot . '/tmpl_invoice')) === 0) @unlink($abs);
+            echo json_encode(['ok' => true, 'was_active' => (string)$t['is_active'] === '1']);
+            exit;
+        }
+        if ($action === 'tpl_download') {
+            $t = $getTpl($_GET['id'] ?? 0);
+            $abs = $t ? $siteRoot . '/' . $t['docx_path'] : '';
+            if (!$t || !is_file($abs)) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'قالب پیدا نشد.']); exit; }
+            $name = 'قالب صورتحساب ' . preg_replace('/\s*\(.*\)\s*/u', '', fin_kind_fa($t['kind'])) . '.docx';
+            $sendFile($abs, $name, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        }
+        if ($action === 'tpl_starter') {
+            $kind = fin_kind($_GET['kind'] ?? '');
+            if (!is_dir($previewDir)) @mkdir($previewDir, 0777, true);
+            $tmp = $previewDir . '/starter_' . $kind . '_' . bin2hex(random_bytes(4)) . '.docx';
+            if (!fin_tpl_starter_docx($kind, $tmp)) { echo json_encode(['ok' => false, 'error' => 'ساختِ قالب ممکن نشد.']); exit; }
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            $sendFile($tmp, 'قالب آماده ' . preg_replace('/\s*\(.*\)\s*/u', '', fin_kind_fa($kind)) . '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        }
+        if ($action === 'tpl_preview') {
+            // نسخه‌ی مشخص (id) یا قالبِ فعالِ یک نوع (kind)
+            $t = !empty($data['id']) ? $getTpl($data['id']) : null;
+            if (!$t && !empty($data['kind'])) {
+                $st = $pdo->prepare("SELECT * FROM invoice_templates WHERE kind = ? AND is_active = 1 ORDER BY id DESC LIMIT 1");
+                $st->execute([fin_kind($data['kind'])]);
+                $t = $st->fetch();
+            }
+            if (!$t || !is_file($siteRoot . '/' . $t['docx_path'])) { echo json_encode(['ok' => false, 'error' => 'قالبی برای پیش‌نمایش پیدا نشد.']); exit; }
+            // پیش‌نمایش‌های قدیمی (بیش از یک ساعت) پاک می‌شوند
+            if (is_dir($previewDir)) foreach (glob($previewDir . '/p_*') ?: [] as $old) {
+                if (is_dir($old) && filemtime($old) < time() - 3600) { array_map('unlink', glob($old . '/*') ?: []); @rmdir($old); }
+            }
+            $token = bin2hex(random_bytes(8));
+            $dir = $previewDir . '/p_' . $token;
+            @mkdir($dir, 0777, true);
+            if (!is_file($previewDir . '/.htaccess')) @file_put_contents($previewDir . '/.htaccess', "Require all denied\nDeny from all\n");
+            $r = fin_tpl_render_preview($pdo, fin_kind($t['kind']), $siteRoot . '/' . $t['docx_path'], $dir);
+            if (empty($r['ok'])) { echo json_encode(['ok' => false, 'error' => $r['error'] ?? 'خطا'], JSON_UNESCAPED_UNICODE); exit; }
+            echo json_encode(['ok' => true, 'token' => $token, 'html' => $r['html'], 'has_pdf' => (bool)$r['pdf'], 'vars' => $r['vars'],
+                              'analysis' => fin_tpl_analyze($siteRoot . '/' . $t['docx_path'])], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($action === 'tpl_preview_file') {
+            $token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['token'] ?? ''));
+            $fmt = ($_GET['fmt'] ?? '') === 'pdf' ? 'pdf' : 'docx';
+            $abs = $previewDir . '/p_' . $token . '/preview.' . $fmt;
+            if (!$token || !is_file($abs)) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'پیش‌نمایش منقضی شده؛ دوباره بسازید.']); exit; }
+            if ($fmt === 'pdf') {
+                header_remove('Content-Type');
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: inline; filename="preview.pdf"');
+                header('Content-Length: ' . filesize($abs));
+                readfile($abs);
+                exit;
+            }
+            $sendFile($abs, 'پیش‌نمایش صورتحساب.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        }
+    }
+
+    // =================================================================
     //  آپلود قالب Word صورتحساب (فقط ADMIN)
     // =================================================================
     if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'upload_template') {
@@ -282,11 +401,13 @@ try {
         if (!move_uploaded_file($_FILES['file']['tmp_name'], $dest)) {
             echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.']); exit;
         }
+        $chk = fin_tpl_analyze($dest);
+        if (empty($chk['ok'])) { @unlink($dest); echo json_encode(['ok' => false, 'error' => $chk['error'] ?? 'فایلِ Word معتبر نیست.'], JSON_UNESCAPED_UNICODE); exit; }
         $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
         $pdo->prepare("UPDATE invoice_templates SET is_active = 0 WHERE kind = ?")->execute([$kind]);
         $pdo->prepare("INSERT INTO invoice_templates (kind, title, docx_path, is_active) VALUES (?, ?, ?, 1)")
             ->execute([$kind, $_FILES['file']['name'], $rel]);
-        echo json_encode(['ok' => true, 'path' => $rel], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'path' => $rel, 'analysis' => fin_tpl_analyze($dest)], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

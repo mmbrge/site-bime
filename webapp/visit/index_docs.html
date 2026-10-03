@@ -94,13 +94,14 @@
   @keyframes dcSpin { to { transform: rotate(360deg); } }
   .dc-text { font-size: 13px; color: #cbd5e1; font-weight: 700; margin: 0; }
 </style>
+<link rel="stylesheet" href="/plate.css?v=2">
 </head>
 <body>
 
 <div class="topbar">
   <a class="back-btn" href="index_visit.html?t=" id="back-link">›</a>
   <h2>📎 بازدید مدارک</h2>
-  <span class="plate-tag" id="header-plate"></span>
+  <span id="header-plate"></span>
 </div>
 
 <p class="desc" id="docs-hint">در حال بارگذاری...</p>
@@ -208,10 +209,10 @@ function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d
 // اجزا جابه‌جا نمایش داده می‌شوند - همان باگی که در هدر این صفحه دیده شد)
 function formatPlateHtml(plate) {
     if (!plate) return '';
-    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
-    return `<span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span>`;
+    return `<span class="ir-plate"><span class="flag"></span><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span class="ir"><small>ایران</small>${toFa(region)}</span></span>`;
 }
 
 let docsData = [];

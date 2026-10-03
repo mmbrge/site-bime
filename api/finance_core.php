@@ -829,22 +829,7 @@ function fin_render_invoice_files($pdo, $invoice, $folder, $companyName, $period
     $lines->execute([$invoice['id']]);
     $rows = $lines->fetchAll();
 
-    $monthly = array_sum(array_map(fn($r) => intval($r['monthly_amount']), $rows));
-    $instCount = intval(fin_settings($pdo)['default_installments']);
-
-    $vars = [
-        'شماره_صورتحساب' => $invoice['invoice_no'],
-        'تاریخ_صدور'     => jalali_from_gregorian_ts_dotted(time()),
-        'دوره'           => $period['title'],
-        'نام_شرکت'       => $companyName ?: 'کل دوره',
-        'جمع_کل'         => number_format((int)$invoice['total_amount']),
-        'جمع_کل_حروف'    => fin_num_to_words((int)$invoice['total_amount']),
-        'تعداد_بیمه_نامه'=> (string)($invoice['kind'] === 'SUMMARY'
-                              ? array_sum(array_map(fn($r) => intval($r['policy_count']), $rows))
-                              : count($rows)),
-        'قسط_ماهانه'     => number_format($monthly),
-        'تعداد_اقساط'    => (string)$instCount,
-    ];
+    $vars = fin_invoice_vars($invoice, $rows, $companyName, $period['title'], intval(fin_settings($pdo)['default_installments']));
 
     $opts = json_decode((string)($invoice['options_json'] ?? ''), true) ?: [];
     $opts['period_title'] = $period['title'];
@@ -860,6 +845,294 @@ function fin_render_invoice_files($pdo, $invoice, $folder, $companyName, $period
         $out['note'] = 'فایل Word ساخته شد، ولی تبدیل خودکار به PDF ممکن نشد. می‌توانید فایل Word را باز و دستی PDF بگیرید.';
     }
     return $out;
+}
+
+// مقدارِ کدهای {{...}}ِ قالبِ صورتحساب (هم صدورِ واقعی و هم پیش‌نمایشِ قالب از همین تابع می‌خوانند)
+function fin_invoice_vars($invoice, array $rows, $companyName, $periodTitle, $instCount) {
+    $monthly = array_sum(array_map(fn($r) => intval($r['monthly_amount'] ?? 0), $rows));
+    if ($invoice['kind'] === 'SUMMARY') {
+        $third = array_sum(array_map(fn($r) => intval($r['third_count'] ?? 0), $rows));
+        $body  = array_sum(array_map(fn($r) => intval($r['body_count'] ?? 0), $rows));
+        $count = array_sum(array_map(fn($r) => intval($r['policy_count'] ?? 0), $rows));
+    } else {
+        $body  = count(array_filter($rows, fn($r) => fin_is_body($r['insurance_type'] ?? '')));
+        $count = count($rows);
+        $third = $count - $body;
+    }
+    return [
+        'شماره_صورتحساب' => $invoice['invoice_no'],
+        'تاریخ_صدور'     => jalali_from_gregorian_ts_dotted(time()),
+        'دوره'           => $periodTitle,
+        'نام_شرکت'       => $companyName ?: 'کل دوره',
+        'نوع_صورتحساب'   => fin_kind_fa($invoice['kind']),
+        'جمع_کل'         => number_format((int)$invoice['total_amount']),
+        'جمع_کل_حروف'    => fin_num_to_words((int)$invoice['total_amount']),
+        'تعداد_بیمه_نامه'=> (string)$count,
+        'تعداد_ثالث'     => (string)$third,
+        'تعداد_بدنه'     => (string)$body,
+        'قسط_ماهانه'     => number_format($monthly),
+        'قسط_ماهانه_حروف'=> fin_num_to_words($monthly),
+        'تعداد_اقساط'    => (string)$instCount,
+    ];
+}
+
+// فهرستِ همه‌ی کدهای قابلِ استفاده در قالبِ صورتحساب، با توضیح (برای راهنما و بررسیِ قالب)
+function fin_invoice_var_catalog() {
+    return [
+        'شماره_صورتحساب'  => 'شماره‌ی صورتحساب (مثلاً SM49357-05-00012)',
+        'تاریخ_صدور'      => 'تاریخِ صدورِ صورتحساب (شمسی)',
+        'دوره'            => 'عنوانِ دوره‌ی مالی (مثلاً آبان ۱۴۰۵)',
+        'نام_شرکت'        => 'نامِ شرکت (در تجمیعی/تلفیقی: نامِ واردشده یا «کل دوره»)',
+        'نوع_صورتحساب'    => 'تجمیعی / تفکیکی / تلفیقی',
+        'جمع_کل'          => 'جمعِ کلِ حق بیمه (سه‌رقم‌سه‌رقم)',
+        'جمع_کل_حروف'     => 'جمعِ کل به حروف',
+        'تعداد_بیمه_نامه' => 'تعدادِ بیمه‌نامه‌ها',
+        'تعداد_ثالث'      => 'تعدادِ بیمه‌نامه‌های ثالث',
+        'تعداد_بدنه'      => 'تعدادِ بیمه‌نامه‌های بدنه',
+        'قسط_ماهانه'      => 'جمعِ قسطِ ماهانه',
+        'قسط_ماهانه_حروف' => 'جمعِ قسطِ ماهانه به حروف',
+        'تعداد_اقساط'     => 'تعدادِ اقساطِ پیش‌فرض',
+        'جدول'            => 'جدولِ ریزِ صورتحساب (ستون‌ها طبقِ تنظیماتِ همان نوع) - کلِ پاراگرافِ کد با جدول جایگزین می‌شود',
+    ];
+}
+// کدهای قدیمیِ جدول که هنوز پشتیبانی می‌شوند
+function fin_invoice_legacy_codes() { return ['جدول_کلی', 'جدول_تفکیکی', 'جدول_پرسنلی']; }
+
+// Word گاهی یک کد را در چند تکه (run) می‌شکند (غلط‌یاب، تغییرِ قلم، bookmark و ...). اگر متنِ یک پاراگراف
+// کدی دارد که در XML یک‌تکه نیست، کلِ متنِ آن پاراگراف در اولین تکه می‌نشیند تا کد قابلِ جایگزینی شود.
+function fin_docx_heal_codes($xml) {
+    $xml = preg_replace('/<\/w:t>\s*<\/w:r>\s*<w:r[^>]*>\s*(?:<w:rPr>.*?<\/w:rPr>)?\s*<w:t[^>]*>/s', '', $xml);
+    return preg_replace_callback('/<w:p\b[^>]*>.*?<\/w:p>/s', function ($m) {
+        $p = $m[0];
+        if (strpos($p, '{') === false) return $p;
+        if (!preg_match_all('/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/', $p, $tm)) return $p;
+        $text = implode('', $tm[1]);
+        if (!preg_match_all('/\{\{[^{}]{1,80}\}\}/u', $text, $codes)) return $p;
+        $broken = false;
+        foreach ($codes[0] as $c) if (strpos($p, $c) === false) { $broken = true; break; }
+        if (!$broken) return $p;
+        $i = 0;
+        return preg_replace_callback('/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/', function ($t) use (&$i, $text) {
+            return $i++ === 0 ? '<w:t xml:space="preserve">' . $text . '</w:t>' : '<w:t></w:t>';
+        }, $p);
+    }, $xml);
+}
+
+// بخش‌های متنیِ قالب که کدها در آن‌ها جایگزین می‌شوند: بدنه + سربرگ‌ها + پاورقی‌ها
+function fin_docx_parts(ZipArchive $zip) {
+    $parts = [];
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $n = $zip->getNameIndex($i);
+        if ($n === 'word/document.xml' || preg_match('#^word/(header|footer)\d*\.xml$#', $n)) $parts[] = $n;
+    }
+    return $parts;
+}
+
+// خواندن و بررسیِ قالب: کدهای به‌کاررفته، کدهای ناشناخته، وجودِ جدول و هشدارها
+function fin_tpl_analyze($docxAbs) {
+    $out = ['ok' => false, 'vars' => [], 'known' => [], 'unknown' => [], 'has_table' => false, 'warnings' => [], 'pages_hint' => null];
+    if (!class_exists('ZipArchive')) { $out['error'] = 'ZipArchive روی سرور فعال نیست.'; return $out; }
+    if (!is_file($docxAbs)) { $out['error'] = 'فایلِ قالب پیدا نشد.'; return $out; }
+    $zip = new ZipArchive();
+    if ($zip->open($docxAbs) !== true) { $out['error'] = 'فایل docx معتبر نیست.'; return $out; }
+    if ($zip->locateName('word/document.xml') === false) { $zip->close(); $out['error'] = 'این فایل سندِ Word نیست (document.xml ندارد).'; return $out; }
+    $catalog = fin_invoice_var_catalog();
+    $legacy = fin_invoice_legacy_codes();
+    $found = [];
+    $inHeader = [];
+    foreach (fin_docx_parts($zip) as $part) {
+        $xml = fin_docx_heal_codes((string)$zip->getFromName($part));
+        if (!preg_match_all('/\{\{([^{}<>]{1,80})\}\}/u', $xml, $m)) continue;
+        foreach ($m[1] as $v) {
+            $v = trim($v);
+            $found[$v] = true;
+            if ($part !== 'word/document.xml' && in_array($v, array_merge(['جدول'], $legacy), true)) $inHeader[] = $v;
+        }
+    }
+    $zip->close();
+    $out['ok'] = true;
+    $out['vars'] = array_keys($found);
+    foreach ($out['vars'] as $v) {
+        if (isset($catalog[$v]) || in_array($v, $legacy, true)) $out['known'][] = $v;
+        else $out['unknown'][] = $v;
+    }
+    $out['has_table'] = (bool)array_intersect($out['vars'], array_merge(['جدول'], $legacy));
+    if (!$out['has_table']) $out['warnings'][] = 'کدِ {{جدول}} در قالب نیست؛ صورتحساب بدونِ جدولِ ریز ساخته می‌شود.';
+    if ($inHeader) $out['warnings'][] = 'کدِ جدول در سربرگ/پاورقی است؛ جدول فقط در بدنه‌ی سند درج می‌شود.';
+    if ($out['unknown']) $out['warnings'][] = 'کدهای ناشناخته در خروجی همان‌طور خام می‌مانند: ' . implode('، ', $out['unknown']);
+    if (!in_array('جمع_کل', $out['vars'], true)) $out['warnings'][] = 'کدِ {{جمع_کل}} در قالب نیست.';
+    return $out;
+}
+
+// داده‌ی نمونه برای پیش‌نمایشِ قالب (شکلِ ردیف‌ها همان invoice_lines است)
+function fin_tpl_sample_rows($kind) {
+    if ($kind === 'SUMMARY') {
+        return [
+            ['person_name' => 'شرکت نمونه الف', 'company_name' => 'شرکت نمونه الف', 'policy_count' => 12, 'third_count' => 9, 'body_count' => 3, 'total_premium' => 1850000000, 'monthly_amount' => 205555556],
+            ['person_name' => 'شرکت نمونه ب', 'company_name' => 'شرکت نمونه ب', 'policy_count' => 5, 'third_count' => 5, 'body_count' => 0, 'total_premium' => 640000000, 'monthly_amount' => 71111111],
+            ['person_name' => 'شرکت نمونه ج', 'company_name' => 'شرکت نمونه ج', 'policy_count' => 3, 'third_count' => 1, 'body_count' => 2, 'total_premium' => 925000000, 'monthly_amount' => 102777778],
+        ];
+    }
+    $base = [
+        ['علی رضایی', '0012345678', '1024', '12ایران - 345 ب 66', 'ثالث', '2/49357/5051-0/1405/876', 98500000],
+        ['مریم احمدی', '0023456789', '1031', '44ایران - 555 د 11', 'بدنه', '2/49357/5052-0/1405/877', 154000000],
+        ['حسین کریمی', '0034567890', '1047', '13ایران - 111 ج 22', 'ثالث', '2/49357/5051-0/1405/878', 87250000],
+        ['زهرا موسوی', '0045678901', '1052', '20ایران - 742 ص 35', 'ثالث', '2/49357/5051-0/1405/879', 102300000],
+    ];
+    $rows = [];
+    foreach ($base as $i => $b) {
+        $rows[] = ['person_name' => $b[0], 'national_code' => $b[1], 'personnel_code' => $b[2], 'plate' => $b[3], 'insurance_type' => $b[4],
+                   'policy_number' => $b[5], 'total_premium' => $b[6], 'monthly_amount' => intdiv($b[6], 9), 'issue_date' => '1405/08/' . sprintf('%02d', 3 + $i * 4),
+                   'company_name' => $kind === 'PERSONNEL' && $i >= 2 ? 'شرکت نمونه ب' : 'شرکت نمونه الف'];
+    }
+    return $rows;
+}
+
+// ساختِ پیش‌نمایشِ قالب با داده‌ی نمونه و تنظیماتِ فعلیِ ستون‌ها؛ خروجی در $dir
+function fin_tpl_render_preview($pdo, $kind, $tplAbs, $dir) {
+    $s = fin_settings($pdo);
+    $rows = fin_tpl_sample_rows($kind);
+    $total = array_sum(array_map(fn($r) => intval($r['total_premium']), $rows));
+    $opts = [
+        'columns' => fin_invoice_columns($kind, json_decode((string)($s['inv_cols_' . $kind] ?? ''), true) ?: []),
+        'full_policy' => ($s['inv_full_policy'] ?? '1') === '1',
+        'company_subtotal' => ($s['inv_company_subtotal'] ?? '0') === '1',
+        'merge_company' => ($s['inv_merge_company'] ?? '0') === '1',
+        'period_title' => 'آبان ۱۴۰۵ (نمونه)',
+    ];
+    $invoice = ['id' => 0, 'kind' => $kind, 'invoice_no' => ($s['invoice_prefix'] ?? 'SM49357') . '-05-00000', 'total_amount' => $total];
+    $vars = fin_invoice_vars($invoice, $rows, $kind === 'DETAILED' ? 'شرکت نمونه الف' : 'شرکت نمونه (دستی)', $opts['period_title'], intval($s['default_installments'] ?? 9));
+    $docx = $dir . '/preview.docx';
+    if (!fin_fill_docx($tplAbs, $docx, $vars, $kind, $rows, $opts)) return ['ok' => false, 'error' => 'پرکردنِ قالب ممکن نشد (ZipArchive در دسترس نیست یا قالب خراب است).'];
+    $siteRoot = dirname(__DIR__);
+    $pdf = fin_docx_to_pdf($docx, $dir, $dir . '/preview.pdf', $siteRoot);
+    return ['ok' => true, 'docx' => $docx, 'pdf' => $pdf ? $dir . '/preview.pdf' : null, 'html' => fin_docx_to_html($docx), 'vars' => $vars];
+}
+
+// نمایشِ HTMLِ سادهٔ یک docx (پاراگراف، تراز، پررنگ، اندازه، جدول با ادغامِ خانه‌ها) برای پیش‌نمایش در پنل،
+// بدون نیاز به LibreOffice. هدف شبیه‌بودنِ کلیِ چیدمان است، نه کپیِ پیکسلی.
+function fin_docx_to_html($docxAbs) {
+    if (!class_exists('ZipArchive')) return '';
+    $zip = new ZipArchive();
+    if ($zip->open($docxAbs) !== true) return '';
+    $xml = (string)$zip->getFromName('word/document.xml');
+    $zip->close();
+    if ($xml === '') return '';
+    libxml_use_internal_errors(true);
+    $dom = new DOMDocument();
+    if (!$dom->loadXML($xml, LIBXML_NONET | LIBXML_COMPACT | LIBXML_PARSEHUGE)) return '';
+    $W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    $xp = new DOMXPath($dom);
+    $xp->registerNamespace('w', $W);
+    $attr = function ($el, $q) use ($xp, $W) {
+        $n = $xp->query($q, $el)->item(0);
+        return $n ? $n->getAttributeNS($W, 'val') : null;
+    };
+    $para = function ($p) use ($xp, $attr) {
+        $jc = $attr($p, 'w:pPr/w:jc');
+        $align = ['center' => 'center', 'left' => 'left', 'right' => 'right', 'both' => 'justify', 'start' => 'right', 'end' => 'left'][$jc] ?? '';
+        $html = '';
+        foreach ($xp->query('.//w:r', $p) as $r) {
+            $t = '';
+            foreach ($xp->query('w:t|w:tab|w:br', $r) as $c) {
+                if ($c->localName === 't') $t .= htmlspecialchars($c->textContent, ENT_QUOTES, 'UTF-8');
+                elseif ($c->localName === 'tab') $t .= '&emsp;';
+                else $t .= '<br>';
+            }
+            if ($t === '') continue;
+            $st = '';
+            if ($xp->query('w:rPr/w:b|w:rPr/w:bCs', $r)->length) $st .= 'font-weight:700;';
+            $sz = $attr($r, 'w:rPr/w:szCs') ?: $attr($r, 'w:rPr/w:sz');
+            if ($sz) $st .= 'font-size:' . round(intval($sz) / 2 * 1.333, 1) . 'px;';
+            $col = $attr($r, 'w:rPr/w:color');
+            if ($col && $col !== 'auto' && preg_match('/^[0-9A-Fa-f]{6}$/', $col)) $st .= 'color:#' . $col . ';';
+            $html .= $st ? '<span style="' . $st . '">' . $t . '</span>' : $t;
+        }
+        return '<p style="margin:0 0 4px;min-height:1em;' . ($align ? 'text-align:' . $align . ';' : '') . '">' . ($html === '' ? '&nbsp;' : $html) . '</p>';
+    };
+    $out = '';
+    $body = $xp->query('/w:document/w:body')->item(0);
+    if (!$body) return '';
+    foreach ($body->childNodes as $node) {
+        if (!($node instanceof DOMElement)) continue;
+        if ($node->localName === 'p') { $out .= $para($node); continue; }
+        if ($node->localName !== 'tbl') continue;
+        $out .= '<table style="border-collapse:collapse;margin:6px auto;width:100%">';
+        $rowsEl = $xp->query('w:tr', $node);
+        $grid = [];
+        foreach ($rowsEl as $ri => $tr) {
+            $ci = 0;
+            foreach ($xp->query('w:tc', $tr) as $tc) {
+                $span = max(1, intval($attr($tc, 'w:tcPr/w:gridSpan') ?: 1));
+                $vm = $xp->query('w:tcPr/w:vMerge', $tc)->item(0);
+                $grid[$ri][$ci] = ['tc' => $tc, 'span' => $span, 'vm' => $vm ? ($vm->getAttributeNS($W, 'val') === 'restart' ? 'restart' : 'continue') : null];
+                $ci += $span;
+            }
+        }
+        foreach ($grid as $ri => $cells) {
+            $out .= '<tr>';
+            foreach ($cells as $ci => $c) {
+                if ($c['vm'] === 'continue') continue;
+                $rs = 1;
+                if ($c['vm'] === 'restart') { for ($k = $ri + 1; isset($grid[$k][$ci]) && $grid[$k][$ci]['vm'] === 'continue'; $k++) $rs++; }
+                $shd = $xp->query('w:tcPr/w:shd', $c['tc'])->item(0);
+                $bg = $shd ? $shd->getAttributeNS($W, 'fill') : '';
+                $inner = '';
+                foreach ($xp->query('w:p', $c['tc']) as $p) $inner .= $para($p);
+                $out .= '<td' . ($c['span'] > 1 ? ' colspan="' . $c['span'] . '"' : '') . ($rs > 1 ? ' rowspan="' . $rs . '"' : '')
+                      . ' style="border:1px solid #333;padding:2px 4px;vertical-align:middle;' . ($bg && $bg !== 'auto' && preg_match('/^[0-9A-Fa-f]{6}$/', $bg) ? 'background:#' . $bg . ';' : '') . '">' . $inner . '</td>';
+            }
+            $out .= '</tr>';
+        }
+        $out .= '</table>';
+    }
+    return $out;
+}
+
+// قالبِ آماده‌ی شروع: یک docx ساده با سربرگ، کدهای اصلی و {{جدول}} که در Word قابلِ ویرایش است
+function fin_tpl_starter_docx($kind, $dest) {
+    if (!class_exists('ZipArchive')) return false;
+    $esc = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES | ENT_XML1, 'UTF-8');
+    $p = function ($text, $opts = []) use ($esc) {
+        $sz = $opts['sz'] ?? 24; $font = $opts['font'] ?? 'B Nazanin';
+        $rpr = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="' . $font . '" w:hint="cs"/>' . (!empty($opts['b']) ? '<w:b/><w:bCs/>' : '')
+             . '<w:sz w:val="' . $sz . '"/><w:szCs w:val="' . $sz . '"/>';
+        return '<w:p><w:pPr><w:bidi/><w:spacing w:after="80"/><w:jc w:val="' . ($opts['jc'] ?? 'right') . '"/></w:pPr>'
+             . ($text === '' ? '' : '<w:r><w:rPr>' . $rpr . '<w:rtl/></w:rPr><w:t xml:space="preserve">' . $esc($text) . '</w:t></w:r>') . '</w:p>';
+    };
+    $title = ['SUMMARY' => 'صورتحسابِ تجمیعیِ حق بیمه', 'DETAILED' => 'صورتحسابِ حق بیمه', 'PERSONNEL' => 'صورتحسابِ تلفیقیِ حق بیمه'][$kind] ?? 'صورتحساب';
+    $body = $p('شماره: {{شماره_صورتحساب}}', ['jc' => 'left', 'sz' => 20])
+          . $p('تاریخ: {{تاریخ_صدور}}', ['jc' => 'left', 'sz' => 20])
+          . $p($title, ['jc' => 'center', 'sz' => 32, 'b' => true, 'font' => 'B Titr'])
+          . $p('دوره‌ی {{دوره}}', ['jc' => 'center', 'sz' => 22])
+          . $p('')
+          . $p('مدیریتِ محترمِ {{نام_شرکت}}', ['b' => true, 'sz' => 26])
+          . $p('با سلام؛ احتراماً صورتحسابِ حق بیمه‌ی بیمه‌نامه‌های صادرشده در دوره‌ی {{دوره}} به شرحِ جدولِ زیر تقدیم می‌گردد:', ['sz' => 24])
+          . $p('{{جدول}}')
+          . $p('')
+          . $p('تعدادِ بیمه‌نامه‌ها: {{تعداد_بیمه_نامه}} (ثالث: {{تعداد_ثالث}} · بدنه: {{تعداد_بدنه}})', ['sz' => 22])
+          . $p('جمعِ کلِ حق بیمه: {{جمع_کل}} ریال ({{جمع_کل_حروف}} ریال)', ['sz' => 22, 'b' => true])
+          . $p('قسطِ ماهانه: {{قسط_ماهانه}} ریال در {{تعداد_اقساط}} قسط', ['sz' => 22])
+          . $p('')
+          . $p('با تشکر', ['jc' => 'left', 'sz' => 24, 'b' => true]);
+    $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+         . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+         . '<w:body>' . $body . '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1000" w:bottom="1134" w:left="1000" w:header="708" w:footer="708" w:gutter="0"/><w:bidi/></w:sectPr></w:body></w:document>';
+    $zip = new ZipArchive();
+    if ($zip->open($dest, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return false;
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    $zip->addFromString('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+    $zip->addFromString('word/document.xml', $doc);
+    $zip->close();
+    return true;
+}
+
+// آیا روی سرور ابزاری برای تبدیلِ docx به pdf هست؟ (برای پیام در صفحه‌ی قالب‌ها)
+function fin_pdf_converter_available() {
+    if (!function_exists('shell_exec')) return false;
+    foreach (['soffice', 'libreoffice'] as $bin) { $w = @shell_exec("command -v $bin 2>/dev/null"); if ($w && trim($w)) return true; }
+    return file_exists('/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3') && file_exists('/home/besiteir/ocr-paddle/docx_to_pdf.py');
 }
 
 // تبدیل docx به pdf - چند روش به‌ترتیب اولویت
@@ -900,12 +1173,19 @@ function fin_fill_docx($tplPath, $destPath, array $vars, $kind, array $rows, arr
     $xml = $zip->getFromName('word/document.xml');
     if ($xml === false) { $zip->close(); return false; }
 
-    // Word گاهی کدها را بین چند <w:t> تکه می‌کند؛ ابتدا تکه‌های مجاور را به‌هم می‌چسبانیم
-    $xml = preg_replace('/<\/w:t>\s*<\/w:r>\s*<w:r[^>]*>\s*(?:<w:rPr>.*?<\/w:rPr>)?\s*<w:t[^>]*>/s', '', $xml);
+    // Word گاهی کدها را بین چند <w:t> تکه می‌کند؛ تکه‌ها به‌هم چسبانده می‌شوند (fin_docx_heal_codes)
+    $xml = fin_docx_heal_codes($xml);
 
     $esc = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES | ENT_XML1, 'UTF-8');
     foreach ($vars as $k => $v) {
         $xml = str_replace('{{' . $k . '}}', $esc($v), $xml);
+    }
+    // کدهای سربرگ و پاورقی هم پر می‌شوند
+    foreach (fin_docx_parts($zip) as $part) {
+        if ($part === 'word/document.xml') continue;
+        $hx = fin_docx_heal_codes((string)$zip->getFromName($part));
+        foreach ($vars as $k => $v) $hx = str_replace('{{' . $k . '}}', $esc($v), $hx);
+        $zip->addFromString($part, $hx);
     }
 
     // ------------------------------------------------------------------

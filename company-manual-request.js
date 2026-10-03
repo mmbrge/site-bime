@@ -170,12 +170,11 @@
             ? `<div class="grid grid-cols-2 gap-2"><div><label class="lbl">شماره شاسی (VIN) *</label><input data-r="chassis" class="inp" dir="ltr" value="${esc(r.chassis)}"></div>
                <div><label class="lbl">شماره موتور</label><input data-r="engine" class="inp" dir="ltr" value="${esc(r.engine)}"></div></div>`
             // مثلِ بقیه‌ی فرم‌های پنل: چپ‌به‌راست [۲ رقم = p4] [حرف] [۳ رقم] [ایران + کد شهر = p1]
-            : `<div><label class="lbl">پلاک *</label><div class="flex gap-1 items-center" dir="ltr">
-                <input data-r="p4" class="inp text-center !w-14" maxlength="2" placeholder="۱۲" value="${esc(fa(r.p4))}">
-                <select data-r="letter" class="inp !w-24" dir="rtl">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
-                <input data-r="p2" class="inp text-center !w-16" maxlength="3" placeholder="۳۴۵" value="${esc(fa(r.p2))}">
-                <span class="text-[10px] text-slate-400 px-1">ایران</span>
-                <input data-r="p1" class="inp text-center !w-14" maxlength="2" placeholder="۶۷" value="${esc(fa(r.p1))}"></div></div>`;
+            : `<div><label class="lbl">پلاک *</label><div class="ir-pin" dir="ltr"><span class="ip-flag"></span>
+                <input data-r="p4" class="ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲" value="${esc(fa(r.p4))}">
+                <select data-r="letter" class="ip-cell ip-letter" dir="rtl">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                <input data-r="p2" class="ip-cell ip-wide" maxlength="3" inputmode="numeric" placeholder="۳۴۵" value="${esc(fa(r.p2))}">
+                <span class="ip-ir"><small>ایران</small><input data-r="p1" maxlength="2" inputmode="numeric" placeholder="۶۷" value="${esc(fa(r.p1))}"></span></div></div>`;
         const kindFields = isNew() ? (body ? `
                 <div><label class="lbl">ارزش خودرو (ریال) *</label><input data-r="carValue" class="inp money-input" value="${esc(money(r.carValue))}" placeholder="۵,۰۰۰,۰۰۰,۰۰۰"></div>
                 <div><label class="lbl">بیمه بدنه قبل</label><select data-r="prevBody" class="inp"><option value="">نامشخص</option><option value="YES" ${r.prevBody === 'YES' ? 'selected' : ''}>دارد</option><option value="NO" ${r.prevBody === 'NO' ? 'selected' : ''}>ندارد</option></select></div>

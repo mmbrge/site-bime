@@ -60,6 +60,7 @@
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
   .toast.show { opacity: 1; }
 </style>
+<link rel="stylesheet" href="/plate.css?v=2">
 </head>
 <body>
 
@@ -88,14 +89,12 @@
     <input type="text" id="guest-name" placeholder="نام شما (اختیاری)" style="font-size:12px; padding:9px 12px;">
   </div>
   <div class="field" style="margin-bottom:8px;">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr 1.5fr;gap:6px;direction:ltr;align-items:center;">
-      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;font-size:12px;padding:9px;">
-      <select id="pl-letter" style="width:100%;box-sizing:border-box;font-size:12px;padding:9px;"></select>
-      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;font-size:12px;padding:9px;">
-      <div style="display:flex;align-items:center;gap:4px;">
-        <span style="font-size:11px;white-space:nowrap;opacity:.8;">ایران</span>
-        <input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="width:100%;box-sizing:border-box;text-align:center;min-width:0;font-size:12px;padding:9px;">
-      </div>
+    <div class="ir-pin" dir="ltr">
+      <span class="ip-flag"></span>
+      <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" class="ip-cell">
+      <select id="pl-letter" class="ip-cell ip-letter"></select>
+      <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" class="ip-cell ip-wide">
+      <span class="ip-ir"><small>ایران</small><input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric"></span>
     </div>
   </div>
   <button class="btn btn-outline" style="font-size:12px; padding:11px;" onclick="startFreeHealth()">🚗 شروع بازدید سلامت برای این پلاک</button>
@@ -123,10 +122,10 @@ function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
 function formatPlateHtml(plate) {
     if (!plate) return '';
-    const m = plate.match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
+    const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
-    return `<span class="plate-tag"><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span>ایران</span><span>${toFa(region)}</span></span>`;
+    return `<span class="ir-plate"><span class="flag"></span><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span class="ir"><small>ایران</small>${toFa(region)}</span></span>`;
 }
 function fillLetterSelect() { document.getElementById('pl-letter').innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join(''); }
 

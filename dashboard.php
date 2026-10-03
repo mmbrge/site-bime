@@ -319,6 +319,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .rows-table .col-checklist { width: 52%; min-width: 430px; }
         /* عرضِ مودالِ جزئیاتِ درخواست - بدون وابستگی به کلاس‌های دلخواهِ Tailwind */
         .creq-wide-modal { width: 96vw; max-width: 1400px; }
+        .itpl-paper { background: #fff; width: 794px; max-width: 100%; min-height: 1000px; margin: 0 auto; padding: 56px 52px; box-shadow: 0 4px 18px rgba(15,23,42,.12);
+                      font-family: 'B Nazanin', 'Vazirmatn', Tahoma, sans-serif; font-size: 15px; color: #000; line-height: 1.7; }
+        .itpl-paper table td { font-size: 12px; text-align: center; }
+
+        /* صدورِ گروهی */
+        .bdl-hero { position: relative; padding: 20px 22px; color: #fff; background: linear-gradient(120deg, #4338ca, #7c3aed 60%, #db2777); border-radius: inherit; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+        .bdl-hero-ic { width: 46px; height: 46px; border-radius: 14px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .bdl-drop { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 34px 16px; border: 2px dashed #c7d2fe; border-radius: 18px; background: #f8faff; cursor: pointer; transition: .2s; }
+        .bdl-drop:hover, .bdl-drop.drag { border-color: #6366f1; background: #eef2ff; }
+        .bdl-spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid #e0e7ff; border-top-color: #6366f1; animation: bdlspin 0.9s linear infinite; }
+        @keyframes bdlspin { to { transform: rotate(360deg); } }
+        .bdl-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+        .bdl-stat { border-radius: 14px; padding: 10px 12px; border: 1px solid; }
+        .bdl-stat p:first-child { font-size: 10.5px; font-weight: 700; }
+        .bdl-stat p:last-child { font-size: 20px; font-weight: 900; line-height: 1.2; }
+        .bdl-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 14px; background: #fff; display: grid; grid-template-columns: auto 1fr; gap: 12px; transition: .2s; }
+        .bdl-card.sel { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+        .bdl-card.st-ready { border-right: 5px solid #10b981; }
+        .bdl-card.st-not_ready { border-right: 5px solid #f59e0b; background: #fffdf5; }
+        .bdl-card.st-issued { border-right: 5px solid #64748b; background: #f8fafc; }
+        .bdl-card.st-no_match, .bdl-card.st-unknown { border-right: 5px solid #ef4444; background: #fff8f8; }
+        .bdl-card.st-mismatch, .bdl-card.st-duplicate { border-right: 5px solid #f43f5e; background: #fff7f9; }
+        .bdl-card.res-ok { border-right-color: #059669; background: #ecfdf5; }
+        .bdl-card.res-err { border-right-color: #dc2626; }
+        .bdl-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+        .bdl-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; margin-top: 8px; }
+        .bdl-kv > div { font-size: 11px; color: #334155; min-width: 0; }
+        .bdl-kv .k { display: block; font-size: 9.5px; color: #94a3b8; font-weight: 700; }
+        .bdl-kv input { width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px 6px; font-size: 11px; font-weight: 700; }
+        .bdl-kv input:focus { outline: none; border-color: #6366f1; }
+        .bdl-match { margin-top: 8px; border-radius: 12px; padding: 8px 10px; background: #f1f5f9; font-size: 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .bdl-chk { width: 20px; height: 20px; accent-color: #4f46e5; cursor: pointer; margin-top: 2px; }
+        .bdl-filters button { font-size: 11px; font-weight: 800; padding: 5px 11px; border-radius: 999px; background: #f1f5f9; color: #475569; }
+        .bdl-filters button.on { background: #312e81; color: #fff; }
+        .bdl-bar { position: sticky; bottom: -20px; margin: 14px -20px -20px; padding: 12px 20px; background: rgba(255,255,255,.96); border-top: 1px solid #e2e8f0; backdrop-filter: blur(4px);
+                   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
         /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راستِ سایت، روی هم انباشته، هرکدام بعد از ۵ ثانیه خودش می‌رود */
         #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9999990; display: flex; flex-direction: column; gap: 8px;
@@ -499,6 +535,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .rec-v small { font-size: 12px; font-weight: 700; opacity: .85; margin-right: 4px; }
         .rec-s { font-size: 11px; opacity: .88; margin-top: 4px; position: relative; z-index: 1; min-height: 16px; }
         @keyframes recIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+        /* اعلان‌های داشبورد (انقضای نزدیک / کارکنانِ صادرنشده) */
+        .da-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+        .da-head h2 { font-size: 14px; font-weight: 900; }
+        .da-head p { font-size: 10.5px; opacity: .88; margin-top: 2px; }
+        .da-ic { width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+        .da-badge { min-width: 36px; height: 30px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.95); color: #0f172a; font-weight: 900; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+        .da-list { max-height: 400px; overflow-y: auto; }
+        .da-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background .15s; position: relative; }
+        .da-row:hover { background: #f8fafc; }
+        .da-row::before { content: ''; position: absolute; right: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 4px 0 0 4px; background: var(--u, #cbd5e1); }
+        .da-row .da-main { flex: 1; min-width: 0; }
+        .da-row .da-t { font-size: 12px; font-weight: 900; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .da-row .da-s { font-size: 10.5px; color: #64748b; font-weight: 700; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .da-pill { flex-shrink: 0; text-align: center; border-radius: 12px; padding: 5px 9px; font-weight: 900; font-size: 11px; line-height: 1.25; min-width: 64px; }
+        .da-pill small { display: block; font-size: 9px; font-weight: 700; opacity: .85; }
+        .da-chip { font-size: 9.5px; font-weight: 800; border-radius: 999px; padding: 1px 7px; }
+        .da-empty { text-align: center; color: #94a3b8; font-size: 12px; font-weight: 700; padding: 34px 10px; }
         /* ساعتِ ایران زیرِ نام و نقشِ کاربر (iran-time.js، بر اساسِ ساعتِ سرور) */
         .hdr-clock { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 1px 7px; border-radius: 999px; width: max-content;
                      font-size: 10px; font-weight: 800; color: #0369a1; background: linear-gradient(90deg, #e0f2fe, #ede9fe); border: 1px solid #bae6fd;
@@ -520,7 +573,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
-<link rel="stylesheet" href="plate.css?v=1">
+<link rel="stylesheet" href="plate.css?v=2">
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="h-screen flex flex-col">
@@ -783,6 +836,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                     <h3 class="text-2xl font-black text-slate-800 mt-2" id="stat-issued">۰</h3>
                     <p class="text-[11px] text-slate-400 mt-1">فرآیند صدور نهایی شده</p>
+                </div>
+            </div>
+
+            <!-- ===== اعلان‌های صدور: (۱) انقضای نزدیکِ بیمه‌نامه‌های شرکتیِ صادرنشده  (۲) درخواست‌های کارکنانِ صادرنشده ===== -->
+            <div id="dash-alerts" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="card p-0 overflow-hidden da-card">
+                    <div class="da-head" style="--c1:#f43f5e;--c2:#f97316">
+                        <span class="da-ic"><i class="fas fa-hourglass-half"></i></span>
+                        <div class="flex-1 min-w-0"><h2>انقضای نزدیکِ بیمه‌نامه‌های شرکتی</h2><p>صادرنشده‌هایی که تا <b id="da-days">۱۵</b> روزِ دیگر منقضی می‌شوند (یا گذشته‌اند) · روی هر ردیف بزنید</p></div>
+                        <span class="da-badge" id="da-c-count">—</span>
+                    </div>
+                    <div id="da-company" class="da-list"><p class="da-empty"><i class="fas fa-spinner fa-spin"></i></p></div>
+                </div>
+                <div class="card p-0 overflow-hidden da-card" id="da-personnel-card">
+                    <div class="da-head" style="--c1:#6366f1;--c2:#0ea5e9">
+                        <span class="da-ic"><i class="fas fa-user-clock"></i></span>
+                        <div class="flex-1 min-w-0"><h2>درخواست‌های کارکنانِ صادرنشده</h2><p>به ترتیبِ زمانِ ثبت (قدیمی‌ترها اول) · روی هر ردیف بزنید تا صفحه‌ی صدور باز شود</p></div>
+                        <span class="da-badge" id="da-p-count">—</span>
+                    </div>
+                    <div id="da-personnel" class="da-list"><p class="da-empty"><i class="fas fa-spinner fa-spin"></i></p></div>
                 </div>
             </div>
 
@@ -1983,42 +2056,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-[10px] text-slate-400 mt-2">قالب نهایی: <b dir="ltr" id="fs-inv-sample">SM49357-05-00001</b> (پیشوند - دو رقم سال - شمارنده ۵ رقمی)</p>
                 </div>
 
-                <div class="card p-6">
-                    <h3 class="font-bold text-slate-700 mb-4 border-b pb-3"><i class="fas fa-file-word text-indigo-500 ml-2"></i>قالب صورتحساب (Word)</h3>
-                    <div class="space-y-3">
-                        <div class="border rounded-xl p-3">
-                            <p class="text-xs font-bold mb-2">قالب کلی (کل دوره)</p>
-                            <div id="tpl-summary-current" class="text-[10px] text-slate-500 mb-2">—</div>
-                            <label class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer">
-                                انتخاب فایل .docx
-                                <input type="file" class="hidden" accept=".docx" onchange="uploadTemplate('SUMMARY', this)">
-                            </label>
-                        </div>
-                        <div class="border rounded-xl p-3">
-                            <p class="text-xs font-bold mb-2">قالب تلفیقی (ریز پرسنل)</p>
-                            <div id="tpl-personnel-current" class="text-[10px] text-slate-500 mb-2">—</div>
-                            <label class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer">
-                                انتخاب فایل .docx
-                                <input type="file" class="hidden" accept=".docx" onchange="uploadTemplate('PERSONNEL', this)">
-                            </label>
-                        </div>
-                        <div class="border rounded-xl p-3">
-                            <p class="text-xs font-bold mb-2">قالب تفکیکی (هر شرکت)</p>
-                            <div id="tpl-detailed-current" class="text-[10px] text-slate-500 mb-2">—</div>
-                            <label class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer">
-                                انتخاب فایل .docx
-                                <input type="file" class="hidden" accept=".docx" onchange="uploadTemplate('DETAILED', this)">
-                            </label>
-                        </div>
+                <div class="card p-6 md:col-span-2" id="inv-tpl-card">
+                    <div class="flex items-center justify-between flex-wrap gap-2 mb-4 border-b pb-3">
+                        <h3 class="font-bold text-slate-700"><i class="fas fa-file-word text-indigo-500 ml-2"></i>قالب‌های صورتحساب (Word)</h3>
+                        <div class="flex gap-1.5 flex-wrap" id="itpl-tabs"></div>
                     </div>
-                    <details class="mt-4">
-                        <summary class="text-xs font-bold text-blue-600 cursor-pointer">راهنمای کدهای جایگزینی</summary>
-                        <div class="text-[10.5px] text-slate-600 mt-2 space-y-1 leading-6">
-                            <p><b>عمومی:</b> <code dir="ltr">{{شماره_صورتحساب}} {{تاریخ_صدور}} {{دوره}} {{نام_شرکت}} {{جمع_کل}} {{جمع_کل_حروف}} {{تعداد_بیمه_نامه}} {{قسط_ماهانه}} {{تعداد_اقساط}}</code></p>
-                            <p><b>جدول:</b> <code dir="ltr">{{جدول}}</code> — در هر سه نوع یکسان است؛ ستون‌ها خودکار بر اساس نوع صورتحسابِ انتخابی چیده می‌شوند. اگر رکوردی نباشد، حذف می‌شود.</p>
-                            <p class="text-amber-600">نکته: کدها را در Notepad بنویسید و کپی کنید تا Word آن‌ها را تکه‌تکه نکند.</p>
-                        </div>
-                    </details>
+                    <div id="itpl-body"><p class="text-xs text-slate-400">در حال بارگذاری…</p></div>
                 </div>
             </div>
 
@@ -2184,6 +2227,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <option value="ISSUING">در حال صدور</option>
                     </optgroup>
                 </select>
+                <select id="iq-month" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs" title="ماهِ ثبتِ درخواست"><option value="">همه‌ی ماه‌ها (ثبت درخواست)</option></select>
                 <input type="text" id="iq-exp-from" oninput="debouncedIssueQueue()" placeholder="انقضا از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="iq-exp-to" oninput="debouncedIssueQueue()" placeholder="انقضا تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
             </div>
@@ -2239,6 +2283,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="il-type" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
                 </select>
+                <select id="il-company" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="il-month" onchange="jMonthToRange(this.value, 'il-from', 'il-to'); loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="ماهِ صدور"><option value="">همه‌ی ماه‌ها (صدور)</option></select>
                 <input type="text" id="il-from" oninput="debouncedIssuedList()" placeholder="صدور از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-to" oninput="debouncedIssuedList()" placeholder="صدور تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
             </div>
@@ -2278,11 +2324,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <?php endif; ?>
                 </div>
             </div>
+            <!-- فیلتر: هر شرکت، هر ماه، هر نوع؛ با خلاصه‌ی مرحله‌ی همه‌ی ردیف‌ها -->
+            <div class="card p-4 space-y-3">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <div class="relative lg:col-span-2"><i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                        <input type="search" id="creq-q" oninput="debouncedCompanyRequests()" placeholder="شماره درخواست، شرکت، پلاک، شاسی، بیمه‌نامه..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs"></div>
+                    <select id="creq-company" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی شرکت‌ها</option></select>
+                    <select id="creq-month" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی ماه‌ها</option></select>
+                    <select id="creq-kind" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
+                        <option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
+                    <select id="creq-insurer" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
+                        <option value="">پاسارگاد و ایران</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                </div>
+                <div id="creq-summary" class="flex flex-wrap items-center gap-2 text-[11px]"></div>
+            </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
                     <thead class="bg-slate-50 text-slate-500"><tr>
                         <th class="p-3 text-right">شماره</th><th class="p-3 text-right">شرکت</th>
                         <th class="p-3 text-right">بیمه‌گر</th><th class="p-3 text-right">ردیف‌ها (درخواستی / صادره)</th>
+                        <th class="p-3 text-right">مرحله‌ی ردیف‌ها</th>
                         <th class="p-3 text-right">وضعیت</th>
                         <th class="p-3 text-right">تاریخ ثبت</th><th class="p-3 text-right"></th>
                     </tr></thead>
@@ -2405,6 +2466,51 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
+    <!-- مودالِ پیش‌نمایشِ قالبِ صورتحساب با داده‌ی نمونه -->
+    <div id="itpl-preview-modal" class="modal-overlay">
+        <div class="modal-content creq-wide-modal p-6 relative max-h-[92vh] overflow-y-auto" style="max-width: 1100px;">
+            <button type="button" onclick="document.getElementById('itpl-preview-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-lg mb-1"><i class="fas fa-eye text-indigo-500 ml-1"></i>پیش‌نمایشِ قالب با داده‌ی نمونه</h3>
+            <p class="text-[11px] text-slate-400 mb-3">داده‌ها ساختگی‌اند؛ ستون‌ها و گزینه‌های جدول طبقِ «تنظیماتِ صدورِ صورتحساب» همین صفحه چیده شده‌اند (برای دیدنِ تغییرِ ستون‌ها اول ذخیره کنید).</p>
+            <div id="itpl-preview-body"></div>
+        </div>
+    </div>
+
+    <!-- مودالِ صدورِ گروهی: فایلِ خروجیِ سایتِ بیمه‌گر (چند بیمه‌نامه در یک PDF) -->
+    <div id="bundle-modal" class="modal-overlay" style="z-index: 1000000;">
+        <div class="modal-content creq-wide-modal p-0 relative max-h-[92vh] overflow-y-auto">
+            <div class="bdl-hero">
+                <button type="button" onclick="closeBundleModal()" class="absolute top-4 left-4 text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+                <div class="flex items-center gap-3">
+                    <div class="bdl-hero-ic"><i class="fas fa-layer-group"></i></div>
+                    <div>
+                        <h3 class="font-black text-lg">صدورِ گروهی</h3>
+                        <p class="text-[11px] text-white/80" id="bdl-sub">فایلِ خروجیِ سایتِ بیمه‌گر را بارگذاری کنید؛ بیمه‌نامه‌ها جدا، شناسایی و روی ردیف‌های همین درخواست نشانده می‌شوند.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5">
+                <div id="bdl-upload">
+                    <label id="bdl-drop" class="bdl-drop">
+                        <i class="fas fa-file-pdf text-4xl text-rose-500 mb-2"></i>
+                        <span class="font-black text-slate-700">فایلِ PDFِ بیمه‌نامه‌ها را اینجا رها کنید یا کلیک کنید</span>
+                        <span class="text-[11px] text-slate-400 mt-1">هر بیمه‌نامه چند صفحه دارد (بیمه‌نامه + صفحه‌های پرداخت و فیش)؛ صفحه‌ی بیمه‌نامه‌ی هر کدام خودکار پیدا می‌شود.</span>
+                        <span id="bdl-fname" class="text-xs font-bold text-blue-700 mt-2"></span>
+                        <input type="file" id="bdl-file" accept="application/pdf,.pdf" class="hidden" onchange="bundlePicked(this)">
+                    </label>
+                    <button id="bdl-analyze-btn" onclick="bundleAnalyze()" disabled class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-sm"><i class="fas fa-magnifying-glass-chart ml-1"></i>بررسی و شناسایی</button>
+                </div>
+                <div id="bdl-progress" class="hidden text-center py-10">
+                    <div class="bdl-spinner mx-auto mb-4"></div>
+                    <p class="font-black text-slate-700" id="bdl-progress-text">در حالِ جدا کردنِ صفحه‌ها و شناسایی…</p>
+                    <p class="text-[11px] text-slate-400 mt-1">بسته به تعدادِ صفحه‌ها ممکن است تا چند دقیقه طول بکشد؛ صفحه را نبندید.</p>
+                </div>
+                <div id="bdl-error" class="hidden"></div>
+                <div id="bdl-result" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- مودال ثبت دستیِ یک درخواست شرکتی (توسط خودمان، بدون نیاز به ثبت‌کننده‌ی شرکت) -->
     <div id="admin-new-creq-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-md p-6 relative">
@@ -2444,14 +2550,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <input type="hidden" id="aap-request-id">
             <!-- ترتیبِ نمایشی چپ‌به‌راست: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقمِ کد شهر].
                  شناسه‌ها عمداً عوض نشده‌اند: aap-p1 همان دو رقمِ کنارِ «ایران» است. -->
-            <div class="grid grid-cols-4 gap-2 mb-3 items-center" dir="ltr">
-                <input type="text" id="aap-p4" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="aap-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="aap-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-sm">
-                <div class="flex items-center gap-1 border rounded-lg px-1">
-                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input type="text" id="aap-p1" maxlength="2" placeholder="۶۷" class="text-center text-sm w-full outline-none p-2">
-                </div>
+            <div class="ir-pin mb-3" dir="ltr">
+                <span class="ip-flag"></span>
+                <input type="text" id="aap-p4" maxlength="2" inputmode="numeric" placeholder="۱۲" class="ip-cell">
+                <input type="text" id="aap-letter" maxlength="3" placeholder="الف" list="plate-letters-dl" class="ip-cell ip-letter">
+                <input type="text" id="aap-p2" maxlength="3" inputmode="numeric" placeholder="۳۴۵" class="ip-cell ip-wide">
+                <span class="ip-ir"><small>ایران</small><input type="text" id="aap-p1" maxlength="2" inputmode="numeric" placeholder="۶۷"></span>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-2 cursor-pointer">
                 <input type="checkbox" id="aap-isnew" onchange="toggleNoPlate('aap')"> پلاک ندارد (لیفتراک یا خودروی صفرکیلومتر)
@@ -2539,14 +2643,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک (اگر «پلاک جدید» را انتخاب کرده‌اید)</label>
             <!-- ترتیبِ نمایشی چپ‌به‌راست: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقمِ کد شهر].
                  شناسه‌ها عمداً عوض نشده‌اند: cit-p1 همان دو رقمِ کنارِ «ایران» است. -->
-            <div class="grid grid-cols-4 gap-2 mb-4 items-center" dir="ltr">
-                <input type="text" id="cit-p4" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="cit-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="cit-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-sm">
-                <div class="flex items-center gap-1 border rounded-lg px-1">
-                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input type="text" id="cit-p1" maxlength="2" placeholder="۶۷" class="text-center text-sm w-full outline-none p-2">
-                </div>
+            <div class="ir-pin mb-4" dir="ltr">
+                <span class="ip-flag"></span>
+                <input type="text" id="cit-p4" maxlength="2" inputmode="numeric" placeholder="۱۲" class="ip-cell">
+                <input type="text" id="cit-letter" maxlength="3" placeholder="الف" list="plate-letters-dl" class="ip-cell ip-letter">
+                <input type="text" id="cit-p2" maxlength="3" inputmode="numeric" placeholder="۳۴۵" class="ip-cell ip-wide">
+                <span class="ip-ir"><small>ایران</small><input type="text" id="cit-p1" maxlength="2" inputmode="numeric" placeholder="۶۷"></span>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input">
@@ -2627,14 +2729,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <h3 class="font-black text-lg mb-4">ویرایش ردیف</h3>
             <input type="hidden" id="cre-plate-id">
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک</label>
-            <div class="grid grid-cols-4 gap-2 mb-3 items-center" dir="ltr">
-                <input type="text" id="cre-p4" maxlength="2" placeholder="۱۲" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="cre-letter" maxlength="3" placeholder="الف" class="text-center border rounded-lg p-2 text-sm">
-                <input type="text" id="cre-p2" maxlength="3" placeholder="۳۴۵" class="text-center border rounded-lg p-2 text-sm">
-                <div class="flex items-center gap-1 border rounded-lg px-1">
-                    <span class="text-[10px] text-slate-400 whitespace-nowrap">ایران</span>
-                    <input type="text" id="cre-p1" maxlength="2" placeholder="۶۷" class="text-center text-sm w-full outline-none p-2">
-                </div>
+            <div class="ir-pin mb-3" dir="ltr">
+                <span class="ip-flag"></span>
+                <input type="text" id="cre-p4" maxlength="2" inputmode="numeric" placeholder="۱۲" class="ip-cell">
+                <input type="text" id="cre-letter" maxlength="3" placeholder="الف" list="plate-letters-dl" class="ip-cell ip-letter">
+                <input type="text" id="cre-p2" maxlength="3" inputmode="numeric" placeholder="۳۴۵" class="ip-cell ip-wide">
+                <span class="ip-ir"><small>ایران</small><input type="text" id="cre-p1" maxlength="2" inputmode="numeric" placeholder="۶۷"></span>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input">
@@ -3441,11 +3541,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }});
     </script>
     <script src="money-input.js?v=1"></script>
-    <script src="finance-ui.js?v=2"></script>
+    <script src="finance-ui.js?v=3"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
     <script src="visit-reports-list.js?v=7"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=2"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=3"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -3701,6 +3801,50 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (e.target === this) this.classList.remove('active');
             });
         });
+
+        // ---- اعلان‌های داشبورد: انقضای نزدیکِ ردیف‌های شرکتی + درخواست‌های کارکنانِ صادرنشده ----
+        async function loadDashAlerts() {
+            const cBox = document.getElementById('da-company'), pBox = document.getElementById('da-personnel');
+            if (!cBox) return;
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dashboard_alerts', days: 15})})).json(); }
+            catch (e) { cBox.innerHTML = pBox.innerHTML = '<p class="da-empty text-red-400">خطا در ارتباط با سرور.</p>'; return; }
+            if (!d.ok) { cBox.innerHTML = pBox.innerHTML = `<p class="da-empty text-red-400">${d.error || 'خطا'}</p>`; return; }
+            document.getElementById('da-days').textContent = e2pNum(d.days);
+            document.getElementById('da-c-count').textContent = e2pNum(d.company.length);
+            const urg = n => n < 0 ? ['#dc2626', 'bg-rose-600 text-white', `${e2pNum(-n)} روز`, 'گذشته'] : n === 0 ? ['#ef4444', 'bg-rose-500 text-white', 'امروز', 'منقضی می‌شود']
+                : n <= 3 ? ['#f97316', 'bg-orange-100 text-orange-700', `${e2pNum(n)} روز`, 'مانده'] : n <= 7 ? ['#f59e0b', 'bg-amber-100 text-amber-700', `${e2pNum(n)} روز`, 'مانده'] : ['#10b981', 'bg-emerald-50 text-emerald-700', `${e2pNum(n)} روز`, 'مانده'];
+            cBox.innerHTML = d.company.length ? d.company.map(r => {
+                const u = urg(r.days_left);
+                const ident = (r.plate_p1 || r.plate_p2 || r.plate_p4) ? fmtPlateHtml(r) : `<span class="text-[11px] font-bold" dir="ltr">${r.chassis_no || 'بدون شناسه'}</span>`;
+                return `<div class="da-row" style="--u:${u[0]}" onclick="dashOpenCompanyRow(${r.request_id})" title="بازکردنِ درخواست #${r.request_id}">
+                    <div class="da-main"><div class="da-t">${ident}<span>${r.company_name || ''}</span></div>
+                        <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
+                            <span class="da-chip ${CREQ_STAGE_COLOR[r.status] || 'bg-slate-100 text-slate-600'}">${r.status_fa}</span>
+                            <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                    <div class="da-pill ${u[1]}">${u[2]}<small>${u[3]}</small></div></div>`;
+            }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای در ۱۵ روزِ آینده منقضی نمی‌شود.</p>';
+            const pc = document.getElementById('da-personnel-card');
+            if (!d.show_personnel) { pc.classList.add('hidden'); document.getElementById('dash-alerts').classList.remove('lg:grid-cols-2'); return; }
+            document.getElementById('da-p-count').textContent = e2pNum(d.personnel.length);
+            const wait = n => n >= 14 ? ['#dc2626', 'bg-rose-100 text-rose-700'] : n >= 7 ? ['#f59e0b', 'bg-amber-100 text-amber-700'] : ['#6366f1', 'bg-indigo-50 text-indigo-700'];
+            pBox.innerHTML = d.personnel.length ? d.personnel.map(r => {
+                const w = wait(r.waiting_days);
+                return `<div class="da-row" style="--u:${w[0]}" onclick="dashOpenCase(${r.id})" title="بازکردنِ صفحه‌ی صدور">
+                    <div class="da-main"><div class="da-t"><span>${r.name || '—'}</span>${r.plate ? formatPlateHtml(r.plate) : ''}</div>
+                        <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
+                            <span class="da-chip bg-slate-100 text-slate-600">${CASE_STATUS_FA[r.status] || r.status}</span>
+                            ${r.employer ? `<span>${r.employer}</span>` : ''}${r.unique_code ? `<span dir="ltr">· ${r.unique_code}</span>` : ''}<span>· ثبت <b dir="ltr">${e2p(String(r.created_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                    <div class="da-pill ${w[1]}">${r.waiting_days ? e2pNum(r.waiting_days) + ' روز' : 'امروز'}<small>در انتظار</small></div></div>`;
+            }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>همه‌ی درخواست‌های کارکنان صادر شده‌اند.</p>';
+        }
+        function dashOpenCompanyRow(requestId) { openCompanyRequestDetail(requestId); }
+        function dashOpenCase(caseId) {
+            // مودالِ پرونده داخلِ تبِ دیگری است؛ برای اینکه از داشبورد هم دیده شود به body منتقل می‌شود
+            const m = document.getElementById('case-detail-modal');
+            if (m && m.closest('.tab-content')) document.body.appendChild(m);
+            openCase(caseId);
+        }
 
         async function loadStats() {
             try {
@@ -4002,6 +4146,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         checkBotStatus();
         loadStats();
         loadDashCharts();
+        loadDashAlerts();
         <?php endif; ?>
         <?php if ($canSeeCompanies): ?>
         loadCompanyInbox();
@@ -4803,14 +4948,50 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return irPlateHtml(p.plate_p4, p.plate_letter, p.plate_p2, p.plate_p1);
         }
 
+        // ماه‌های شمسی (از ماهِ جاری تا ۲۴ ماه قبل) برای فیلترها؛ مقدار: «1405/07»
+        const J_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+        function jMonthOptions(sel, firstLabel = 'همه‌ی ماه‌ها') {
+            if (!sel || sel.dataset.filled) return;
+            const now = window.IrTime ? IrTime.parts() : {jy: 1405, jm: 1};
+            let y = now.jy, m = now.jm, html = `<option value="">${firstLabel}</option>`;
+            for (let i = 0; i < 24; i++) {
+                html += `<option value="${y}/${String(m).padStart(2, '0')}">${J_MONTHS[m - 1]} ${e2p(String(y))}</option>`;
+                if (--m < 1) { m = 12; y--; }
+            }
+            sel.innerHTML = html; sel.dataset.filled = '1';
+        }
+        // ماهِ انتخاب‌شده => دو خانه‌ی «از / تا» (برای فیلترهایی که بازه‌ی تاریخ دارند)
+        function jMonthToRange(v, fromId, toId) {
+            const f = document.getElementById(fromId), t = document.getElementById(toId);
+            if (!v) { f.value = ''; t.value = ''; return; }
+            const [y, m] = v.split('/').map(Number);
+            f.value = e2p(`${y}/${String(m).padStart(2, '0')}/01`);
+            t.value = e2p(`${y}/${String(m).padStart(2, '0')}/${m <= 6 ? 31 : (m <= 11 ? 30 : 29)}`);
+        }
+        let creqTimer = null;
+        function debouncedCompanyRequests() { clearTimeout(creqTimer); creqTimer = setTimeout(loadCompanyRequests, 350); }
+        const CREQ_STAGE_COLOR = {PENDING: 'bg-amber-50 text-amber-700', READY_FOR_ISSUE: 'bg-emerald-50 text-emerald-700', WITH_BOSS: 'bg-violet-50 text-violet-700',
+                                  IN_ISSUANCE: 'bg-sky-50 text-sky-700', ISSUED: 'bg-teal-100 text-teal-800', CANCELLED: 'bg-slate-100 text-slate-500'};
+        const creqStageChips = list => (list || []).map(s => `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${CREQ_STAGE_COLOR[s.status] || 'bg-slate-100 text-slate-600'}">${s.status_fa} <b>${e2pNum(s.n)}</b></span>`).join(' ');
         async function loadCompanyRequests() {
             const status = document.getElementById('creq-status-filter').value;
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status})});
+            jMonthOptions(document.getElementById('creq-month'));
+            const g = id => (document.getElementById(id) || {}).value || '';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status,
+                company_id: g('creq-company'), month: g('creq-month'), request_kind: g('creq-kind'), insurer: g('creq-insurer'), q: g('creq-q').trim()})});
             const data = await res.json();
             const tbody = document.getElementById('creq-body');
-            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="7" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            const csel = document.getElementById('creq-company');
+            if (csel && !csel.dataset.filled && data.companies) {
+                csel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                csel.dataset.filled = '1';
+            }
+            const sm = data.summary || {};
+            document.getElementById('creq-summary').innerHTML = `<span class="font-black text-slate-600"><i class="fas fa-filter text-indigo-400 ml-1"></i>${e2pNum(sm.requests || 0)} درخواست · ${e2pNum(sm.rows || 0)} ردیف · ${e2pNum(sm.issued || 0)} صادرشده</span>
+                <span class="text-slate-300">|</span>${creqStageChips(sm.stages) || '<span class="text-slate-400">ردیفی نیست</span>'}`;
             companyRequestsCache = data.requests;
-            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
+            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
             tbody.innerHTML = data.requests.map(r => `
                 <tr class="border-t border-slate-100 hover:bg-slate-50">
                     <td class="p-3">#${r.id}</td>
@@ -4823,6 +5004,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span class="inline-block bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5 ml-1">بدنه ${e2pNum(r.body_count)} / ${e2pNum(r.body_issued)}</span>
                         <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث ${e2pNum(r.third_count)} / ${e2pNum(r.third_issued)}</span>
                     </td>
+                    <td class="p-3"><div class="flex flex-wrap gap-1 max-w-[260px]">${creqStageChips(r.row_stages) || '<span class="text-slate-300">—</span>'}</div></td>
                     <td class="p-3"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span></td>
                     <td class="p-3 text-slate-400" dir="ltr">${toJalali(r.created_at)}</td>
                     <td class="p-3 flex items-center gap-2">
@@ -5198,6 +5380,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
                     ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
+                    ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
                     ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی صادره‌ها</a>` : ''}
                 </div>
 
@@ -5221,6 +5404,311 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
             document.getElementById('creq-detail-modal').classList.add('active');
+        }
+
+        // =================================================================
+        //  صدورِ گروهی: بارگذاریِ فایلِ خروجیِ بیمه‌گر ← شناسایی ← صدور و بایگانیِ ردیف‌های آماده
+        // =================================================================
+        let BDL = null;   // {requestId, token, name, pages, items, filter, results:{i: res}}
+        const bdlEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const BDL_STATE = {
+            ready:     ['آماده‌ی صدور', 'bg-emerald-100 text-emerald-700', 'fa-circle-check'],
+            not_ready: ['نرسیده به صدور', 'bg-amber-100 text-amber-700', 'fa-hourglass-half'],
+            issued:    ['قبلاً صادر شده', 'bg-slate-200 text-slate-700', 'fa-box-archive'],
+            no_match:  ['درخواستی ندارد', 'bg-red-100 text-red-700', 'fa-link-slash'],
+            mismatch:  ['مغایرتِ نوع', 'bg-rose-100 text-rose-700', 'fa-triangle-exclamation'],
+            duplicate: ['تکراری در فایل', 'bg-rose-100 text-rose-700', 'fa-clone'],
+            unknown:   ['شناسایی نشد', 'bg-red-100 text-red-700', 'fa-circle-question'],
+        };
+
+        function openBundleModal(requestId) {
+            // اگر همین درخواست یک بررسیِ باز دارد، همان را نشان بده (مثلاً بعد از تکمیلِ مراحلِ یک ردیف)
+            if (!BDL || BDL.requestId !== requestId) BDL = {requestId, token: null, items: [], filter: 'all', results: {}};
+            document.getElementById('creq-detail-modal').classList.remove('active');
+            document.getElementById('bundle-modal').classList.add('active');
+            if (BDL.token) { bundleRender(); bundleShow('result'); }
+            else { bundleReset(); }
+        }
+        function closeBundleModal() {
+            document.getElementById('bundle-modal').classList.remove('active');
+            if (BDL && BDL.requestId) openCompanyRequestDetail(BDL.requestId);
+        }
+        function bundleShow(part) {
+            ['upload', 'progress', 'error', 'result'].forEach(k => document.getElementById('bdl-' + k).classList.toggle('hidden', k !== part && !(part === 'error' && k === 'upload')));
+        }
+        function bundleReset() {
+            if (BDL) { BDL.token = null; BDL.items = []; BDL.results = {}; BDL.filter = 'all'; BDL.expired = false; }
+            const f = document.getElementById('bdl-file'); f.value = '';
+            document.getElementById('bdl-fname').textContent = '';
+            document.getElementById('bdl-analyze-btn').disabled = true;
+            document.getElementById('bdl-sub').textContent = 'فایلِ خروجیِ سایتِ بیمه‌گر را بارگذاری کنید؛ بیمه‌نامه‌ها جدا، شناسایی و روی ردیف‌های همین درخواست نشانده می‌شوند.';
+            bundleShow('upload');
+        }
+        function bundlePicked(input) {
+            const f = input.files[0];
+            document.getElementById('bdl-fname').textContent = f ? `${f.name} · ${faDigits((f.size / 1048576).toFixed(1))} مگابایت` : '';
+            document.getElementById('bdl-analyze-btn').disabled = !f;
+            document.getElementById('bdl-error').classList.add('hidden');
+        }
+        (function () {   // کشیدن و رها کردنِ فایل
+            const drop = document.getElementById('bdl-drop');
+            if (!drop) return;
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+            drop.addEventListener('drop', e => {
+                const inp = document.getElementById('bdl-file');
+                if (e.dataTransfer.files.length) { inp.files = e.dataTransfer.files; bundlePicked(inp); }
+            });
+        })();
+        function bundleError(msg) {
+            const el = document.getElementById('bdl-error');
+            el.innerHTML = `<div class="mt-3 flex gap-3 items-start bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">
+                <i class="fas fa-circle-exclamation text-xl mt-0.5"></i>
+                <div><p class="font-black text-sm mb-1">فایل قابلِ استفاده نبود</p><p class="text-xs leading-6">${bdlEsc(msg)}</p></div></div>`;
+            bundleShow('error');
+        }
+
+        async function bundleAnalyze() {
+            const f = document.getElementById('bdl-file').files[0];
+            if (!f) return;
+            const fd = new FormData();
+            fd.append('action', 'bundle_analyze');
+            fd.append('request_id', BDL.requestId);
+            fd.append('bundle', f);
+            document.getElementById('bdl-progress-text').textContent = 'در حالِ جدا کردنِ صفحه‌ها و شناسایی…';
+            bundleShow('progress');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const txt = await res.text();
+                try { data = JSON.parse(txt); } catch (e) { data = {ok: false, error: res.ok ? 'پاسخِ نامعتبر از سرور.' : `خطای سرور (${res.status}).`}; }
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور. دوباره تلاش کنید.'}; }
+            if (!data.ok) { bundleError(data.error || 'خطا'); return; }
+            bundleLoad(data, f.name);
+        }
+        function bundleLoad(data, name) {
+            BDL.token = data.token; BDL.items = data.items || []; BDL.pages = data.pages; BDL.name = name || data.name || BDL.name || '';
+            BDL.results = {}; BDL.expired = false;
+            // پیش‌فرض: همه‌ی ردیف‌های آماده انتخاب‌شده
+            BDL.items.forEach(it => { it._sel = it.state === 'ready'; it._pay = false; });
+            bundleRender();
+            bundleShow('result');
+        }
+        async function bundleRecheck() {
+            if (!BDL || !BDL.token) return;
+            bundleCollectEdits();
+            const keep = {};
+            BDL.items.forEach(it => { keep[it.i] = {pn: it._pn, pr: it._pr, pay: it._pay}; });
+            document.getElementById('bdl-progress-text').textContent = 'بررسیِ دوباره‌ی وضعیتِ ردیف‌ها…';
+            bundleShow('progress');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'bundle_recheck', token: BDL.token})});
+                data = await res.json();
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (/منقضی/.test(data.error || '')) bundleReset(); else bundleShow('result'); return; }
+            bundleLoad(data);
+            BDL.items.forEach(it => { const k = keep[it.i]; if (k) { it._pn = k.pn; it._pr = k.pr; it._pay = k.pay; } });
+            bundleRender();
+            showToast('وضعیتِ ردیف‌ها به‌روز شد.', 'success');
+        }
+
+        function bundleCollectEdits() {
+            if (!BDL) return;
+            BDL.items.forEach(it => {
+                const pn = document.getElementById('bdl-pn-' + it.i), pr = document.getElementById('bdl-pr-' + it.i);
+                const sel = document.getElementById('bdl-sel-' + it.i), pay = document.getElementById('bdl-pay-' + it.i);
+                if (pn) it._pn = pn.value;
+                if (pr) it._pr = pr.value;
+                if (sel) it._sel = sel.checked;
+                if (pay) it._pay = pay.checked;
+            });
+        }
+        function bundleSetFilter(f) { bundleCollectEdits(); BDL.filter = f; bundleRender(); }
+        function bundleToggleAll(on) {
+            bundleCollectEdits();
+            BDL.items.forEach(it => { if (bundleSelectable(it)) it._sel = on; });
+            bundleRender();
+        }
+        function bundleAllPayments(on) { bundleCollectEdits(); BDL.items.forEach(it => { it._pay = on; }); bundleRender(); }
+        const bundleSelectable = it => it.state === 'ready' && !(BDL.results[it.i] && BDL.results[it.i].ok);
+
+        function bundleFilterMatch(it) {
+            const res = BDL.results[it.i];
+            switch (BDL.filter) {
+                case 'ready': return it.state === 'ready' && !(res && res.ok);
+                case 'not_ready': return it.state === 'not_ready';
+                case 'problem': return ['no_match', 'mismatch', 'duplicate'].includes(it.state);
+                case 'issued': return it.state === 'issued' || (res && res.ok);
+                case 'unknown': return it.state === 'unknown';
+                default: return true;
+            }
+        }
+
+        function bundleCardHtml(it) {
+            const d = it.data || {}, row = it.row, res = BDL.results[it.i];
+            const st = BDL_STATE[it.state] || BDL_STATE.unknown;
+            const selectable = bundleSelectable(it);
+            const done = res && res.ok;
+            const pdfLink = file => `${COMPANY_API}?action=bundle_page&token=${BDL.token}&file=${encodeURIComponent(file)}`;
+            const pages = it.end > it.page ? `صفحه‌ی ${faDigits(it.page)} تا ${faDigits(it.end)}` : `صفحه‌ی ${faDigits(it.page)}`;
+            const prem = it._pr !== undefined ? it._pr : (d.premium ? mfmt(d.premium) : '');
+            const pn = it._pn !== undefined ? it._pn : (d.policy_num || '');
+            const editable = selectable;
+            const val = v => v ? bdlEsc(v) : '<span class="text-slate-300">—</span>';
+            let matchHtml = '';
+            if (row) {
+                const rowStatusCls = ROW_STATUS_COLOR[row.status] || 'bg-slate-100 text-slate-600';
+                matchHtml = `<div class="bdl-match">
+                    <span class="font-black text-slate-500 text-[10px]"><i class="fas fa-link ml-1"></i>ردیفِ درخواست:</span>
+                    ${rowIdentityHtml(row)}
+                    <span class="text-[11px] font-bold">${bdlEsc(row.insurance_type_fa || '')}</span>
+                    ${row.car_name ? `<span class="text-[10px] text-slate-500">${bdlEsc(row.car_name)}</span>` : ''}
+                    <span class="status-badge ${rowStatusCls} text-[10px] font-bold px-2 py-0.5 rounded-full">${bdlEsc(row.status_fa || row.status)}</span>
+                    ${row.other_request ? `<span class="bdl-pill bg-violet-100 text-violet-700"><i class="fas fa-share"></i>از درخواستِ دیگرِ همین شرکت (#${faDigits(row.request_id)})</span>` : '<span class="bdl-pill bg-indigo-50 text-indigo-700"><i class="fas fa-check"></i>درخواستش را داریم</span>'}
+                    ${it.state === 'not_ready' || row.other_request ? `<button onclick="bundleOpenRow(${row.request_id})" class="text-[10px] font-bold text-blue-700 underline mr-auto">باز کردنِ درخواست برای تکمیلِ مراحل</button>` : ''}
+                </div>`;
+            }
+            let missingHtml = '';
+            if (it.state === 'not_ready') {
+                const steps = (it.missing || []).map(m => `<span class="bdl-pill bg-white border border-amber-200 text-amber-800"><i class="fas fa-xmark text-amber-500"></i>${bdlEsc(m)}</span>`).join(' ');
+                missingHtml = `<div class="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl p-2">
+                    <p class="font-black mb-1"><i class="fas fa-list-check ml-1"></i>مراحلِ باقی‌مانده پیش از صدور:</p>
+                    <div class="flex flex-wrap gap-1">${steps || ''}<span class="bdl-pill bg-white border border-amber-200 text-amber-800"><i class="fas fa-arrow-left text-amber-500"></i>رساندنِ ردیف به «آماده‌ی صدور»</span></div></div>`;
+            } else if (it.message && !done) {
+                const cls = it.state === 'issued' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-red-700 bg-red-50 border-red-100';
+                missingHtml = `<p class="mt-2 text-[11px] ${cls} border rounded-xl px-3 py-2"><i class="fas fa-circle-info ml-1"></i>${bdlEsc(it.message)}</p>`;
+            }
+            let resHtml = '';
+            if (res) {
+                resHtml = res.ok
+                    ? `<div class="mt-2 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                        <p class="font-black"><i class="fas fa-circle-check ml-1"></i>صادر شد${res.installments ? ` · ${faDigits(res.installments)} قسط ثبت شد` : ''}</p>
+                        <p class="mt-0.5">بایگانی: ${res.folder_status === 'TRANSFERRED' ? '<b>انجام شد</b>' : (res.folder_status === 'FAILED' ? '<b class="text-red-600">ناموفق (از جزئیاتِ درخواست «تلاش دوباره» بزنید)</b>' : bdlEsc(res.folder_status || '—'))}
+                        ${res.issued_file ? ` · <a href="../${encodeFilePath(res.issued_file)}" target="_blank" class="text-blue-700 underline">فایلِ بایگانی‌شده</a>` : ''}</p></div>`
+                    : `<p class="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2"><i class="fas fa-circle-xmark ml-1"></i>صادر نشد: ${bdlEsc(res.error || 'خطا')}</p>`;
+            }
+            return `<div class="bdl-card st-${it.state} ${it._sel && selectable ? 'sel' : ''} ${res ? (res.ok ? 'res-ok' : 'res-err') : ''}">
+                <div class="pt-0.5">${selectable
+                    ? `<input type="checkbox" id="bdl-sel-${it.i}" class="bdl-chk" ${it._sel ? 'checked' : ''} onchange="bundleCollectEdits(); bundleUpdateBar(); this.closest('.bdl-card').classList.toggle('sel', this.checked)">`
+                    : `<span class="w-5 h-5 rounded-md flex items-center justify-center ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}" title="${done ? 'صادر شد' : 'قابلِ انتخاب نیست'}"><i class="fas ${done ? 'fa-check' : 'fa-lock'} text-[10px]"></i></span>`}</div>
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-black text-slate-800 text-sm">بیمه‌نامه‌ی ${faDigits(it.i + 1)}</span>
+                        <span class="text-[10px] text-slate-400">${pages}</span>
+                        <span class="bdl-pill ${done ? 'bg-emerald-600 text-white' : st[1]}"><i class="fas ${done ? 'fa-circle-check' : st[2]}"></i>${done ? 'صادر و بایگانی شد' : st[0]}</span>
+                        ${it.via_ocr ? '<span class="bdl-pill bg-sky-50 text-sky-700"><i class="fas fa-eye"></i>با OCR</span>' : ''}
+                        ${BDL.expired ? '' : `<span class="mr-auto flex gap-2 text-[10.5px] font-bold">
+                            <a href="${pdfLink(it.file)}" target="_blank" class="text-indigo-700 hover:underline"><i class="fas fa-file-pdf ml-0.5"></i>صفحه‌ی بیمه‌نامه</a>
+                            ${it.end > it.page ? `<a href="${pdfLink(it.seg_file)}" target="_blank" class="text-slate-500 hover:underline"><i class="fas fa-file-invoice ml-0.5"></i>همراه با پرداخت‌ها</a>` : ''}
+                        </span>`}
+                    </div>
+                    ${it.state === 'unknown' ? '' : `<div class="bdl-kv">
+                        <div><span class="k">نوع / بیمه‌گر</span>${val(d.ins_type)} · ${val(d.ins_company)}</div>
+                        <div><span class="k">پلاک</span>${d.plate ? formatPlateHtml(d.plate) : val('')}</div>
+                        <div><span class="k">شماره شاسی</span><b dir="ltr">${val(d.vin)}</b></div>
+                        <div><span class="k">بیمه‌گذار</span>${val(d.insured_name)}</div>
+                        <div><span class="k">شماره بیمه‌نامه</span>${editable ? `<input id="bdl-pn-${it.i}" dir="ltr" value="${bdlEsc(pn)}">` : `<b dir="ltr">${val(pn)}</b>`}</div>
+                        <div><span class="k">حق بیمه (ریال)</span>${editable ? `<input id="bdl-pr-${it.i}" class="money-input" dir="ltr" inputmode="numeric" value="${bdlEsc(prem)}">` : `<b>${d.premium ? money(d.premium) : val('')}</b>`}</div>
+                    </div>`}
+                    ${editable && it.end > it.page ? `<label class="mt-2 inline-flex items-center gap-1.5 text-[10.5px] text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-pay-${it.i}" ${it._pay ? 'checked' : ''} onchange="bundleCollectEdits()" class="accent-indigo-600">صفحه‌های پرداخت و فیش هم در فایلِ بیمه‌نامه‌ی بایگانی بیاید</label>` : ''}
+                    ${matchHtml}${missingHtml}${resHtml}
+                </div>
+            </div>`;
+        }
+
+        function bundleRender() {
+            const items = BDL.items, cnt = {};
+            items.forEach(it => { cnt[it.state] = (cnt[it.state] || 0) + 1; });
+            const issuedNow = Object.values(BDL.results).filter(r => r.ok).length;
+            const detected = items.length - (cnt.unknown || 0);
+            const stat = (label, n, cls) => `<div class="bdl-stat ${cls}"><p>${label}</p><p>${e2pNum(n)}</p></div>`;
+            document.getElementById('bdl-sub').textContent = `${BDL.name || 'فایل'} · ${faDigits(BDL.pages || 0)} صفحه · ${faDigits(items.length)} بیمه‌نامه پیدا شد`;
+            const fbtn = (k, label, n) => `<button class="${BDL.filter === k ? 'on' : ''}" onclick="bundleSetFilter('${k}')">${label} <span class="opacity-70">${e2pNum(n)}</span></button>`;
+            const list = items.filter(bundleFilterMatch);
+            document.getElementById('bdl-result').innerHTML = `
+                <div class="bdl-stats mb-3">
+                    ${stat('شناسایی‌شده', detected, 'bg-indigo-50 border-indigo-100 text-indigo-800')}
+                    ${stat('شناسایی‌نشده', cnt.unknown || 0, (cnt.unknown ? 'bg-red-50 border-red-100 text-red-700' : 'bg-slate-50 border-slate-100 text-slate-500'))}
+                    ${stat('آماده‌ی صدور', Math.max(0, (cnt.ready || 0) - issuedNow), 'bg-emerald-50 border-emerald-100 text-emerald-800')}
+                    ${stat('نرسیده به صدور', cnt.not_ready || 0, 'bg-amber-50 border-amber-100 text-amber-800')}
+                    ${stat('بدونِ درخواست / مغایرت', (cnt.no_match || 0) + (cnt.mismatch || 0) + (cnt.duplicate || 0), 'bg-rose-50 border-rose-100 text-rose-700')}
+                    ${stat('صادرشده', (cnt.issued || 0) + issuedNow, 'bg-slate-50 border-slate-200 text-slate-700')}
+                </div>
+                ${cnt.unknown ? `<p class="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-triangle-exclamation ml-1"></i>${e2pNum(cnt.unknown)} بیمه‌نامه شناسایی نشد؛ پیش‌نمایشِ صفحه‌اش را ببینید و در صورتِ نیاز از «ثبت صدور»ِ همان ردیف دستی صادر کنید.</p>` : ''}
+                <div class="bdl-filters flex flex-wrap gap-1.5 mb-3">
+                    ${fbtn('all', 'همه', items.length)}
+                    ${fbtn('ready', 'آماده', Math.max(0, (cnt.ready || 0) - issuedNow))}
+                    ${fbtn('not_ready', 'نرسیده به صدور', cnt.not_ready || 0)}
+                    ${fbtn('problem', 'مشکل‌دار', (cnt.no_match || 0) + (cnt.mismatch || 0) + (cnt.duplicate || 0))}
+                    ${fbtn('issued', 'صادرشده', (cnt.issued || 0) + issuedNow)}
+                    ${fbtn('unknown', 'شناسایی‌نشده', cnt.unknown || 0)}
+                </div>
+                <div class="flex flex-col gap-2.5">${list.map(bundleCardHtml).join('') || '<p class="text-center text-xs text-slate-400 py-8">موردی در این دسته نیست.</p>'}</div>
+                <div class="bdl-bar">
+                    <div class="flex flex-wrap items-center gap-3 text-[11px]">
+                        <label class="inline-flex items-center gap-1.5 font-bold cursor-pointer"><input type="checkbox" id="bdl-all" class="accent-indigo-600" onchange="bundleToggleAll(this.checked)">انتخابِ همه‌ی آماده‌ها</label>
+                        <label class="inline-flex items-center gap-1.5 text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-allpay" class="accent-indigo-600" onchange="bundleAllPayments(this.checked)" ${items.length && items.every(it => it._pay) ? 'checked' : ''}>همه با صفحه‌های پرداخت</label>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="bundleReset()" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl"><i class="fas fa-file-arrow-up ml-1"></i>فایلِ دیگر</button>
+                        ${BDL.expired ? '' : `<button onclick="bundleRecheck()" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-2 rounded-xl"><i class="fas fa-rotate ml-1"></i>بررسیِ دوباره‌ی وضعیت‌ها</button>`}
+                        <button id="bdl-issue-btn" onclick="bundleIssue()" class="text-[12px] font-black text-white px-4 py-2 rounded-xl disabled:opacity-40" style="background:linear-gradient(120deg,#059669,#0d9488)"><i class="fas fa-stamp ml-1"></i><span id="bdl-issue-label">صدورِ انتخاب‌شده‌ها</span></button>
+                    </div>
+                </div>`;
+            bundleUpdateBar();
+        }
+        function bundleUpdateBar() {
+            const sel = BDL.items.filter(it => bundleSelectable(it) && (document.getElementById('bdl-sel-' + it.i) ? document.getElementById('bdl-sel-' + it.i).checked : it._sel));
+            const selectable = BDL.items.filter(bundleSelectable);
+            const btn = document.getElementById('bdl-issue-btn');
+            if (!btn) return;
+            btn.disabled = !sel.length;
+            document.getElementById('bdl-issue-label').textContent = sel.length ? `صدور و بایگانیِ ${faDigits(sel.length)} بیمه‌نامه` : 'موردی انتخاب نشده';
+            const all = document.getElementById('bdl-all');
+            all.checked = selectable.length > 0 && sel.length === selectable.length;
+            all.disabled = !selectable.length;
+        }
+        function bundleOpenRow(requestId) {
+            bundleCollectEdits();
+            document.getElementById('bundle-modal').classList.remove('active');
+            openCompanyRequestDetail(requestId);
+            showToast('بعد از تکمیلِ مراحل، دوباره «صدور گروهی» را بزنید و «بررسیِ دوباره» را انتخاب کنید.', 'info');
+        }
+
+        async function bundleIssue() {
+            bundleCollectEdits();
+            const picks = BDL.items.filter(it => bundleSelectable(it) && it._sel);
+            if (!picks.length) return;
+            const empty = picks.filter(it => !String(it._pn !== undefined ? it._pn : (it.data && it.data.policy_num) || '').trim());
+            if (empty.length) { showToast(`شماره‌ی بیمه‌نامه‌ی ${empty.map(it => faDigits(it.i + 1)).join('، ')} خالی است.`, 'error'); return; }
+            if (!confirm(`${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟`)) return;
+            const payload = picks.map(it => ({
+                i: it.i,
+                policy_number: it._pn !== undefined ? it._pn : (it.data.policy_num || ''),
+                total_premium: it._pr !== undefined ? it._pr : (it.data.premium || ''),
+                vin: it.data.vin || '',
+                with_payments: !!it._pay,
+            }));
+            const btn = document.getElementById('bdl-issue-btn');
+            btn.disabled = true;
+            document.getElementById('bdl-issue-label').textContent = 'در حالِ صدور و بایگانی…';
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'bundle_issue', token: BDL.token, items: payload})});
+                data = await res.json();
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور. وضعیت را با «بررسیِ دوباره» کنترل کنید.'}; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); bundleUpdateBar(); return; }
+            (data.results || []).forEach(r => {
+                BDL.results[r.i] = r;
+                const it = BDL.items.find(x => x.i === r.i);
+                if (r.ok && it && it.row) { it.row.status = 'ISSUED'; it.row.status_fa = 'صادر شد'; }
+            });
+            const okN = (data.results || []).filter(r => r.ok).length, badN = (data.results || []).length - okN;
+            showToast(`${faDigits(okN)} بیمه‌نامه صادر و بایگانی شد${badN ? ` · ${faDigits(badN)} مورد ناموفق` : ''}.`, badN ? 'warning' : 'success');
+            if (!data.left) BDL.expired = true;   // فایل‌های موقت پاک شدند؛ «بررسیِ دوباره» دیگر لازم نیست
+            bundleRender();
+            if (typeof loadCompanyRequests === 'function') loadCompanyRequests();
         }
 
         // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
@@ -5463,7 +5951,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const safe = String(value).replace(/'/g, "\\'");
             return `<div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
                 <p class="text-[9px] text-slate-400">${label}</p>
-                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${opts.date ? faDigits(value) : value}
+                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${opts.plate ? formatPlateHtml(value) : (opts.date ? faDigits(value) : value)}
                     <button onclick="copyValue('${safe}', '${label}')" title="کپی ${label}" class="text-slate-300 hover:text-blue-500 mr-1">
                         <i class="far fa-copy text-[10px]"></i></button>
                 </p></div>`;
@@ -5499,7 +5987,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 stage: document.getElementById('iq-stage').value,
                 expiry_from: document.getElementById('iq-exp-from').value.trim(),
                 expiry_to: document.getElementById('iq-exp-to').value.trim(),
+                req_month: (document.getElementById('iq-month') || {}).value || '',
             };
+            jMonthOptions(document.getElementById('iq-month'), 'همه‌ی ماه‌ها (ثبت درخواست)');
             let data;
             try {
                 data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
@@ -5605,7 +6095,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="border border-slate-200 rounded-xl p-3 mb-4">
                     <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات این ردیف</h4>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-                        ${infoCell('پلاک / شماره شاسی', r.plate_display, {ltr: true})}
+                        ${infoCell('پلاک / شماره شاسی', r.plate_display, {ltr: true, plate: true})}
                         ${infoCell('نوع بیمه', r.insurance_type_fa)}
                         ${infoCell('تاریخ انقضا', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {date: true})}
                         ${infoCell('خودرو', r.car_name)}
@@ -5749,12 +6239,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 q: document.getElementById('il-q').value.trim(),
                 source: document.getElementById('il-source').value,
                 insurance_type: document.getElementById('il-type').value,
+                company_id: (document.getElementById('il-company') || {}).value || '',
                 issued_from: document.getElementById('il-from').value.trim(),
                 issued_to: document.getElementById('il-to').value.trim(),
             };
         }
 
+        let ilCompaniesLoaded = false;
         async function loadIssuedList() {
+            jMonthOptions(document.getElementById('il-month'), 'همه‌ی ماه‌ها (صدور)');
+            if (!ilCompaniesLoaded) {
+                ilCompaniesLoaded = true;
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
+                    if (d.ok) document.getElementById('il-company').innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (d.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                }).catch(() => { ilCompaniesLoaded = false; });
+            }
             const tbody = document.getElementById('il-body');
             tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
             let data;
@@ -5826,7 +6325,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">خودرو</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
-                    ${infoCell('پلاک', r.plate, {ltr: true})}
+                    ${infoCell('پلاک', r.plate, {ltr: true, plate: true})}
                     ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
                     ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
                     ${infoCell('VIN', r.vin, {ltr: true})}
@@ -6013,7 +6512,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div>
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
                         <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
-                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlate(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">ثبت اطلاعات (تگ‌گذاری)</button>
@@ -6038,7 +6537,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div>
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
                         <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
-                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlate(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
@@ -6994,7 +7493,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // با اکسل»، «تسویه با پاسارگاد» و «تنظیمات مالی» با ReferenceError متوقف
             // شوند و هیچ‌وقت داده‌شان بار نشود؛ چهار تبِ دیگر هم دو بار بار می‌شدند.
             if (tabId === 'records') loadRecords();
-            if (tabId === 'dashboard') { loadStats(); loadDashCharts(); }
+            if (tabId === 'dashboard') { loadStats(); loadDashCharts(); loadDashAlerts(); }
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
@@ -7108,7 +7607,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${r.source === 'C' ? 'bg-cyan-100 text-cyan-700' : 'bg-indigo-100 text-indigo-700'}">${r.source === 'C' ? 'شرکتی' : 'پرسنلی'}</span></td>
                             <td class="p-2">${r.company_name || '-'}</td>
                             <td class="p-2">${r.insured || '-'}</td>
-                            <td class="p-2 text-center whitespace-nowrap">${e2p(r.plate || '-')}</td>
+                            <td class="p-2 text-center whitespace-nowrap">${r.plate ? formatPlateHtml(r.plate) : '-'}</td>
                             <td class="p-2 text-center">${insurance_type_fa_js(r.insurance_type)}</td>
                             <td class="p-2 text-center" dir="ltr">${e2p(r.policy_number || '-')}</td>
                             <td class="p-2 text-center font-bold">${e2p(r.inst_number)}</td>
@@ -7154,11 +7653,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     let cur = null; try { cur = JSON.parse(s['inv_cols_' + k] || 'null'); } catch (e) {}
                     window._fsCols[k] = FinUI.columnPicker(document.getElementById('fs-cols-' + k), k, b.column_pool, (Array.isArray(cur) && cur.length) ? cur : b.default_columns[k]);
                 });
-                (d.templates || []).forEach(t => {
-                    const map = { SUMMARY: 'tpl-summary-current', PERSONNEL: 'tpl-personnel-current', DETAILED: 'tpl-detailed-current' };
-                    const el = document.getElementById(map[t.kind]);
-                    if (el) el.innerHTML = `<span class="text-emerald-600">✓ بارگذاری‌شده</span> — ${toJalali(t.uploaded_at)}`;
-                });
+                loadInvTemplates();
             } catch(e) {}
         }
 
@@ -7728,21 +8223,151 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             `;
         }
 
-        async function uploadTemplate(kind, input) {
-            const file = input.files[0];
+        // ======================= قالب‌های صورتحساب (مثلِ قالب‌های گزارش بازدید) =======================
+        let ITPL = { kind: 'DETAILED', data: null };
+        const itplEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const ITPL_KIND_IC = { SUMMARY: 'fa-layer-group', PERSONNEL: 'fa-users', DETAILED: 'fa-building' };
+
+        async function loadInvTemplates() {
+            try {
+                const res = await fetch(FIN_API + '?action=tpl_list');
+                const d = await res.json();
+                if (!d.ok) { document.getElementById('itpl-body').innerHTML = `<p class="text-xs text-red-500">${itplEsc(d.error || 'خطا')}</p>`; return; }
+                ITPL.data = d;
+                renderInvTemplates();
+            } catch (e) { document.getElementById('itpl-body').innerHTML = '<p class="text-xs text-red-500">خطا در ارتباط با سرور.</p>'; }
+        }
+        function itplSetKind(k) { ITPL.kind = k; renderInvTemplates(); }
+
+        function renderInvTemplates() {
+            const d = ITPL.data; if (!d) return;
+            document.getElementById('itpl-tabs').innerHTML = d.kinds.map(k => {
+                const st = !k.active ? 'bg-red-400' : ((k.active.analysis && (k.active.analysis.unknown || []).length) || (k.active.analysis && !k.active.analysis.has_table) ? 'bg-amber-400' : 'bg-emerald-500');
+                return `<button onclick="itplSetKind('${k.kind}')" class="text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${ITPL.kind === k.kind ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                    <span class="w-2 h-2 rounded-full ${st}"></span><i class="fas ${ITPL_KIND_IC[k.kind]}"></i>${itplEsc(k.kind_fa)}</button>`;
+            }).join('');
+            const k = d.kinds.find(x => x.kind === ITPL.kind) || d.kinds[0];
+            const t = k.active, an = (t && t.analysis) || {};
+            const chips = (arr, cls) => (arr && arr.length) ? arr.map(v => `<span class="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-lg ${cls} ml-1 mb-1">{{${itplEsc(v)}}}</span>`).join('') : '<span class="text-[11px] text-slate-400">—</span>';
+            const unusedCodes = d.catalog.map(c => c.code).filter(c => !(an.vars || []).includes(c));
+            const hist = k.history.length ? k.history.map(h => `
+                <div class="flex items-center gap-2 text-[11px] border-b border-slate-100 py-1.5">
+                    <i class="fas fa-file-word text-slate-400"></i>
+                    <span class="font-bold text-slate-600 truncate flex-1" title="${itplEsc(h.title)}">${itplEsc(h.title || 'قالب')}</span>
+                    <span class="text-slate-400">${faDigits(h.uploaded_jalali || '')}</span>
+                    ${h.exists ? `<button onclick="itplPreview(${h.id})" class="text-indigo-600 hover:underline">پیش‌نمایش</button>
+                    <a href="${FIN_API}?action=tpl_download&id=${h.id}" class="text-slate-500 hover:underline">دانلود</a>
+                    <button onclick="itplActivate(${h.id})" class="text-emerald-600 hover:underline font-bold">فعال کن</button>` : '<span class="text-red-400">فایل نیست</span>'}
+                    <button onclick="itplDelete(${h.id}, false)" class="text-red-400 hover:text-red-600" title="حذفِ این نسخه"><i class="fas fa-trash-can"></i></button>
+                </div>`).join('') : '<p class="text-[11px] text-slate-400">نسخه‌ی قبلی‌ای نیست.</p>';
+            document.getElementById('itpl-body').innerHTML = `
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <p class="text-xs font-black text-slate-600"><i class="fas fa-file-word text-blue-600 ml-1"></i>قالبِ فعالِ «${itplEsc(k.kind_fa)}»</p>
+                    ${t ? `<div class="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
+                            <span class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg"><i class="fas fa-file-word"></i></span>
+                            <div class="min-w-0 flex-1"><p class="text-xs font-black text-slate-700 truncate">${itplEsc(t.title || 'قالب')}</p>
+                            <p class="text-[10.5px] text-slate-400">${t.exists ? `${faDigits(t.uploaded_jalali || '')} · ${faDigits((t.size / 1024).toFixed(0))} کیلوبایت · ${faDigits((an.vars || []).length)} کد` : '<span class="text-red-500">فایل روی سرور پیدا نشد</span>'}</p></div>
+                          </div>
+                          <div class="flex flex-wrap gap-2">
+                            ${t.exists ? `<button onclick="itplPreview(${t.id})" class="text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-eye ml-1"></i>پیش‌نمایش با داده‌ی نمونه</button>
+                            <a href="${FIN_API}?action=tpl_download&id=${t.id}" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-download ml-1"></i>دانلودِ قالب</a>` : ''}
+                            <button onclick="itplDelete(${t.id}, true)" class="text-[11px] font-bold bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-xl"><i class="fas fa-trash-can ml-1"></i>حذف</button>
+                          </div>`
+                        : `<p class="text-xs font-bold text-red-500 bg-red-50 border border-red-100 rounded-xl p-3"><i class="fas fa-triangle-exclamation ml-1"></i>هنوز قالبی برای این نوع بارگذاری نشده؛ صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.</p>`}
+                    <label id="itpl-drop" class="flex flex-col items-center gap-1.5 text-center p-5 border-2 border-dashed border-indigo-200 rounded-2xl bg-indigo-50/40 hover:bg-indigo-50 cursor-pointer transition">
+                        <i class="fas fa-cloud-arrow-up text-2xl text-indigo-400"></i>
+                        <span class="text-xs font-black text-slate-600">${t ? 'جایگزینیِ قالب' : 'بارگذاریِ قالب'} (فایلِ docx را رها کنید یا کلیک کنید)</span>
+                        <span class="text-[10px] text-slate-400">قالبِ فعلی پاک نمی‌شود و در «نسخه‌های قبلی» می‌ماند تا هر وقت خواستید برگردید</span>
+                        <input type="file" accept=".docx" class="hidden" onchange="itplUpload(this.files[0]); this.value=''">
+                    </label>
+                    <p id="itpl-up-st" class="text-[11px] font-bold"></p>
+                    <a href="${FIN_API}?action=tpl_starter&kind=${k.kind}" class="block text-center text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl py-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>دانلودِ قالبِ آماده‌ی شروع (با همه‌ی کدها) برای ویرایش در Word</a>
+                </div>
+                <div class="border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <p class="text-xs font-black text-slate-600"><i class="fas fa-stethoscope text-emerald-500 ml-1"></i>بررسیِ قالب</p>
+                    ${!t ? '<p class="text-[11px] text-slate-400">بعد از بارگذاری، کدهای قالب این‌جا بررسی می‌شوند.</p>' : (an.ok === false ? `<p class="text-[11px] text-red-500">${itplEsc(an.error || '')}</p>` : `
+                    <div class="flex flex-wrap gap-2 text-[11px] font-bold">
+                        <span class="px-2.5 py-1 rounded-lg ${an.has_table ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}"><i class="fas ${an.has_table ? 'fa-check' : 'fa-xmark'} ml-1"></i>جدولِ ریز ${an.has_table ? 'دارد' : 'ندارد'}</span>
+                        <span class="px-2.5 py-1 rounded-lg ${(an.unknown || []).length ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}">${(an.unknown || []).length ? `${faDigits(an.unknown.length)} کدِ ناشناخته` : 'همه‌ی کدها معتبرند'}</span>
+                    </div>
+                    ${(an.warnings || []).length ? `<ul class="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-2.5 space-y-1">${an.warnings.map(w => `<li><i class="fas fa-circle-exclamation ml-1"></i>${itplEsc(w)}</li>`).join('')}</ul>` : ''}
+                    <div><p class="text-[11px] font-black text-emerald-700 mb-1">کدهای معتبرِ به‌کاررفته:</p>${chips(an.known, 'bg-emerald-50 text-emerald-700')}</div>
+                    <div><p class="text-[11px] font-black text-red-500 mb-1">کدهای ناشناخته (در خروجی خام می‌مانند؛ احتمالاً غلطِ تایپی):</p>${chips(an.unknown, 'bg-red-50 text-red-600')}</div>
+                    <div><p class="text-[11px] font-black text-slate-500 mb-1">کدهایی که می‌توانید اضافه کنید:</p>${chips(unusedCodes, 'bg-slate-100 text-slate-500')}</div>`)}
+                    <details class="pt-1"><summary class="text-[11px] font-black text-slate-500 cursor-pointer">نسخه‌های قبلی (${faDigits(k.history.length)})</summary><div class="mt-2">${hist}</div></details>
+                </div>
+            </div>
+            <div class="border border-slate-200 rounded-2xl p-4 mt-4">
+                <p class="text-xs font-black text-slate-600 mb-2"><i class="fas fa-code text-blue-500 ml-1"></i>راهنمای کدها <span class="text-[10px] font-bold text-slate-400">(روی هر کد بزنید تا کپی شود و در Word بچسبانید)</span></p>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    ${d.catalog.map(c => `<button type="button" onclick="itplCopy('{{${itplEsc(c.code)}}}')" class="text-right border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50 rounded-xl px-2.5 py-1.5">
+                        <span class="text-[11px] font-black text-indigo-700">{{${itplEsc(c.code)}}}</span><span class="block text-[10px] text-slate-500">${itplEsc(c.desc)}</span></button>`).join('')}
+                </div>
+                <p class="text-[10.5px] text-slate-400 mt-2 leading-6">کدها در بدنه، سربرگ و پاورقیِ سند پر می‌شوند. اگر Word کدی را تکه‌تکه کرده باشد خودکار درست می‌شود. ستون‌های جدول، شماره‌ی کامل/کوتاهِ بیمه‌نامه، ردیفِ جمعِ هر شرکت و ادغامِ نامِ شرکت از «صدور صورتحساب (پیش‌فرض‌ها)» بالای همین صفحه می‌آیند.
+                ${d.pdf_converter ? '' : '<br><span class="text-amber-600">روی این سرور مبدلِ PDF (LibreOffice) پیدا نشد؛ صورتحساب به‌صورتِ Word ساخته می‌شود و پیش‌نمایش به شکلِ صفحه‌ی وب نمایش داده می‌شود.</span>'}</p>
+            </div>`;
+            const z = document.getElementById('itpl-drop');
+            ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.add('bg-indigo-100'); }));
+            ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('bg-indigo-100'); }));
+            z.addEventListener('drop', e => { if (e.dataTransfer.files[0]) itplUpload(e.dataTransfer.files[0]); });
+        }
+        function itplCopy(t) {
+            const done = () => showToast('کپی شد: ' + t, 'success');
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done).catch(() => {});
+            else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }
+        }
+        async function itplUpload(file) {
             if (!file) return;
+            const st = document.getElementById('itpl-up-st');
+            if (!/\.docx$/i.test(file.name)) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = 'فقط فایلِ docx پذیرفته می‌شود.'; return; }
+            st.className = 'text-[11px] font-bold text-indigo-500'; st.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ بارگذاری و بررسیِ قالب…';
             const fd = new FormData();
-            fd.append('action', 'upload_template');
-            fd.append('kind', kind);
-            fd.append('file', file);
-            showToast('در حال بارگذاری قالب...', 'info');
+            fd.append('action', 'upload_template'); fd.append('kind', ITPL.kind); fd.append('file', file);
             try {
                 const res = await fetch(FIN_API, { method: 'POST', body: fd });
                 const d = await res.json();
-                if (!d.ok) { showToast(d.error || 'خطا در بارگذاری', 'error'); return; }
-                showToast('قالب بارگذاری شد.', 'success');
-                loadFinanceSettings();
-            } catch(e) { showToast('خطا در اتصال', 'error'); }
+                if (!d.ok) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = d.error || 'خطا در بارگذاری'; return; }
+                const w = (d.analysis && d.analysis.warnings) || [];
+                showToast(w.length ? 'قالب فعال شد؛ هشدارها را ببینید.' : 'قالب بارگذاری و فعال شد.', w.length ? 'warning' : 'success');
+                await loadInvTemplates();
+            } catch (e) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = 'خطا در اتصال'; }
+        }
+        async function itplActivate(id) {
+            const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_activate', id }) });
+            const d = await res.json();
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast('این نسخه قالبِ فعال شد.', 'success'); loadInvTemplates();
+        }
+        async function itplDelete(id, isActive) {
+            if (!confirm(isActive ? 'قالبِ فعال حذف شود؟ تا قالبِ دیگری فعال نکنید، صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.' : 'این نسخه‌ی قالب حذف شود؟')) return;
+            const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_delete', id }) });
+            const d = await res.json();
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast('قالب حذف شد.', 'success'); loadInvTemplates();
+        }
+        async function itplPreview(id) {
+            const m = document.getElementById('itpl-preview-modal'), body = document.getElementById('itpl-preview-body');
+            body.innerHTML = '<div class="text-center py-16 text-slate-400"><i class="fas fa-spinner fa-spin text-2xl"></i><p class="text-xs mt-2">در حالِ ساختِ پیش‌نمایش…</p></div>';
+            m.classList.add('active');
+            let d;
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_preview', id }) });
+                d = await res.json();
+            } catch (e) { d = { ok: false, error: 'خطا در ارتباط با سرور.' }; }
+            if (!d.ok) { body.innerHTML = `<p class="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-4">${itplEsc(d.error || 'خطا')}</p>`; return; }
+            const f = fmt => `${FIN_API}?action=tpl_preview_file&token=${d.token}&fmt=${fmt}`;
+            const unk = (d.analysis && d.analysis.unknown) || [];
+            body.innerHTML = `
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <a href="${f('docx')}" class="text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-word ml-1"></i>دانلودِ خروجیِ Word</a>
+                    ${d.has_pdf ? `<a href="${f('pdf')}" target="_blank" class="text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-pdf ml-1"></i>بازکردنِ PDF</a>` : '<span class="text-[11px] text-slate-400 self-center">PDF روی این سرور ساخته نمی‌شود؛ نمای زیر شبیه‌سازیِ صفحه است.</span>'}
+                </div>
+                ${unk.length ? `<p class="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">کدهای ناشناخته که پر نشدند: ${unk.map(u => '{{' + itplEsc(u) + '}}').join('، ')}</p>` : ''}
+                ${d.has_pdf ? `<iframe src="${f('pdf')}#toolbar=0" class="w-full rounded-xl border mb-3" style="height:70vh"></iframe>` : ''}
+                <div class="bg-slate-200/70 rounded-2xl p-4 overflow-x-auto">
+                    <div class="itpl-paper no-count" dir="rtl">${d.html || '<p class="text-slate-400">نمایشی ساخته نشد.</p>'}</div>
+                </div>`;
         }
 
         // ======================= صدور بیمه‌نامه =======================

@@ -61,6 +61,17 @@ function company_kind_goes_to_sadere($kind) {
 // شناسه‌ی نمایشیِ یک ردیف: اگر پلاک دارد پلاک، وگرنه شماره شاسی (لیفتراک‌ها و
 // خودروهای صفرکیلومتر پلاک ندارند و فقط با شماره شاسی شناخته می‌شوند). همه‌جا -
 // جدول‌ها، نام پوشه، نام فایل و فهرست متنی - از همین استفاده می‌شود.
+// «1405/07» (یا ۱۴۰۵/۰۷) => ['2026-09-23', '2026-10-22'] بازه‌ی میلادیِ همان ماهِ شمسی؛ نامعتبر => null
+function company_month_range($m) {
+    $m = p2e_digits(trim((string)$m));
+    if (!preg_match('/^(1[34]\d{2})\D+(\d{1,2})$/', $m, $mm)) return null;
+    $jy = intval($mm[1]); $jm = intval($mm[2]);
+    if ($jm < 1 || $jm > 12) return null;
+    $start = jalali_to_gregorian_ts($jy, $jm, 1);
+    $next = $jm === 12 ? jalali_to_gregorian_ts($jy + 1, 1, 1) : jalali_to_gregorian_ts($jy, $jm + 1, 1);
+    return [date('Y-m-d', $start), date('Y-m-d', $next - 86400)];
+}
+
 function company_row_label($row) {
     $plate = company_plate_display($row['plate_p1'] ?? '', $row['plate_p2'] ?? '', $row['plate_letter'] ?? '', $row['plate_p4'] ?? '');
     if ($plate) return $plate;

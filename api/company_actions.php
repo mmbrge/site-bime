@@ -8,6 +8,7 @@ require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
+require_once __DIR__ . '/_company_issue.php';
 require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments (تابعی محض، بدون وابستگی)
 
 $actor = require_admin_or_liaison();
@@ -124,6 +125,51 @@ try {
     //  با اطلاعات کامل و وضعیتِ چک‌لیستِ هرکدام. ردیف پس از صدور خودبه‌خود از
     //  این فهرست بیرون می‌رود (چون فقط status <> 'ISSUED' می‌آید).
     // =================================================================
+    // ---- داشبورد: (۱) بیمه‌نامه‌های شرکتیِ صادرنشده که انقضایشان نزدیک است (۱۵ روز) یا گذشته
+    //                (۲) درخواست‌های بیمه‌ی کارکنان که هنوز صادر نشده‌اند (قدیمی‌ترها اول) ----
+    if ($action === 'dashboard_alerts') {
+        $days = max(1, min(60, intval($data['days'] ?? 15)));
+        $today = date('Y-m-d');
+        $limitDate = date('Y-m-d', strtotime("+$days days"));
+        $st = $pdo->prepare("SELECT crp.id, crp.request_id, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no, crp.insurance_type,
+                                    crp.expiry_date, crp.status, crp.car_name, cr.request_kind, cr.insurer, c.name AS company_name
+                               FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                              WHERE crp.status NOT IN ('ISSUED', 'CANCELLED') AND crp.expiry_date IS NOT NULL AND crp.expiry_date <= ?
+                                AND crp.expiry_date >= DATE_SUB(?, INTERVAL 60 DAY)
+                              ORDER BY crp.expiry_date ASC, crp.id ASC LIMIT 300");
+        $st->execute([$limitDate, $today]);
+        $company = [];
+        foreach ($st->fetchAll() as $r) {
+            $left = intval(floor((strtotime($r['expiry_date']) - strtotime($today)) / 86400));
+            $company[] = ['id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'company_name' => $r['company_name'],
+                          'plate_p1' => $r['plate_p1'], 'plate_p2' => $r['plate_p2'], 'plate_letter' => $r['plate_letter'], 'plate_p4' => $r['plate_p4'],
+                          'chassis_no' => $r['chassis_no'], 'car_name' => $r['car_name'], 'insurance_type' => $r['insurance_type'],
+                          'insurance_type_fa' => insurance_type_fa($r['insurance_type']), 'insurer' => $r['insurer'],
+                          'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $r['request_kind'] ?? 'NEW_POLICY'),
+                          'request_kind_fa' => company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY'),
+                          'expiry_jalali' => jd(strtotime($r['expiry_date'])), 'days_left' => $left];
+        }
+        $personnel = [];
+        if (($actor['role'] ?? '') === 'ADMIN') {
+            try {
+                $st = $pdo->query("SELECT pc.id, pc.unique_code, pc.insurance_type, pc.status, pc.plate, pc.created_at, pc.insured_name,
+                                          per.full_name, per.personnel_code, co.name AS employer
+                                     FROM policy_cases pc LEFT JOIN persons per ON per.id = pc.person_id LEFT JOIN companies co ON co.id = per.company_id
+                                    WHERE pc.status NOT IN ('ISSUED', 'CANCELLED', 'WITHDRAWN', 'REJECTED')
+                                    ORDER BY pc.created_at ASC LIMIT 300");
+                foreach ($st->fetchAll() as $r) {
+                    $personnel[] = ['id' => intval($r['id']), 'unique_code' => $r['unique_code'], 'name' => $r['full_name'] ?: $r['insured_name'],
+                                    'insured_name' => $r['insured_name'], 'personnel_code' => $r['personnel_code'], 'employer' => $r['employer'],
+                                    'plate' => $r['plate'], 'insurance_type' => $r['insurance_type'], 'insurance_type_fa' => insurance_type_fa($r['insurance_type']),
+                                    'status' => $r['status'], 'created_jalali' => jd(strtotime($r['created_at'])),
+                                    'waiting_days' => max(0, intval(floor((time() - strtotime($r['created_at'])) / 86400)))];
+                }
+            } catch (Throwable $e) {}
+        }
+        echo json_encode(['ok' => true, 'days' => $days, 'company' => $company, 'personnel' => $personnel, 'show_personnel' => ($actor['role'] ?? '') === 'ADMIN'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'issue_queue') {
         // «لیست صدور» کارِ مدیر است؛ همکار بیمه با ما فقط صادره‌ها را می‌بیند
         if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE); exit; }
@@ -143,6 +189,9 @@ try {
         if ($typeF)                          { $where[] = "crp.insurance_type = ?"; $params[] = $typeF; }
         if (!empty($data['request_kind']))   { $where[] = "cr.request_kind = ?";  $params[] = $data['request_kind']; }
         if (!empty($data['insurer']))        { $where[] = "cr.insurer = ?";       $params[] = $data['insurer']; }
+        // ماهِ ثبتِ درخواست (شمسی)
+        $reqMonth = company_month_range($data['req_month'] ?? '');
+        if ($reqMonth) { $where[] = "DATE(cr.created_at) BETWEEN ? AND ?"; $params[] = $reqMonth[0]; $params[] = $reqMonth[1]; }
         // مرحله: مقدارهای شرکتی و پرسنلی با هم قاطی نمی‌شوند؛ اگر مرحله‌ی پرسنلی
         // انتخاب شده باشد، هیچ ردیف شرکتی نباید بیاید (و برعکس).
         $stageF = trim($data['stage'] ?? '');
@@ -243,6 +292,7 @@ try {
             // «نوع درخواست» برای کارکنان همیشه صدور جدید است؛ اگر فیلترِ دیگری خورده، چیزی نیاید
             if (!empty($data['request_kind']) && $data['request_kind'] !== 'NEW_POLICY') $pw[] = "1=0";
             if (!empty($data['company_id'])) { $pw[] = "per.company_id = ?"; $pp[] = intval($data['company_id']); }
+            if ($reqMonth) { $pw[] = "DATE(pc.created_at) BETWEEN ? AND ?"; $pp[] = $reqMonth[0]; $pp[] = $reqMonth[1]; }
             if ($expFrom || $expTo) $pw[] = "1=0";  // پرونده‌ی کارکنان تاریخ انقضا ندارد
             if ($stageF !== '') {
                 if (in_array($stageF, $personnelStages, true)) { $pw[] = "pc.status = ?"; $pp[] = $stageF; }
@@ -371,6 +421,7 @@ try {
             if ($to)    { $w[] = "DATE(crp.issued_at) <= ?"; $p[] = $to; }
             if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
             if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
+            if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone
@@ -414,6 +465,7 @@ try {
             if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
             if ($typeF) { $w[] = "pc.insurance_type = ?";   $p[] = $typeF; }
+            if (!empty($data['company_id'])) { $w[] = "per.company_id = ?"; $p[] = intval($data['company_id']); }
             // نوع درخواست برای پرسنلی همیشه «صدور بیمه‌نامه‌ی جدید» است
             if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }
             try {
@@ -717,20 +769,54 @@ try {
                        (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type = 'BODY' AND crp.status = 'ISSUED') AS body_issued,
                        (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type <> 'BODY' AND crp.status = 'ISSUED') AS third_issued
                 FROM company_requests cr JOIN companies c ON c.id = cr.company_id";
-        $params = [];
-        if ($statusFilter !== '') { $sql .= " WHERE cr.status = ?"; $params[] = $statusFilter; }
-        $sql .= " ORDER BY cr.created_at DESC LIMIT 200";
+        // فیلترها: وضعیت، شرکت، ماهِ ثبت (شمسی)، نوعِ درخواست، بیمه‌گر و جستجو (شماره‌ی درخواست / شرکت / پلاک / شاسی / بیمه‌گذار)
+        $w = []; $params = [];
+        if ($statusFilter !== '') { $w[] = "cr.status = ?"; $params[] = $statusFilter; }
+        if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $params[] = intval($data['company_id']); }
+        if (!empty($data['request_kind'])) { $w[] = "cr.request_kind = ?"; $params[] = (string)$data['request_kind']; }
+        if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $params[] = (string)$data['insurer']; }
+        $mr = company_month_range($data['month'] ?? '');
+        if ($mr) { $w[] = "DATE(cr.created_at) BETWEEN ? AND ?"; $params[] = $mr[0]; $params[] = $mr[1]; }
+        $q = trim(p2e_digits((string)($data['q'] ?? '')));
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $w[] = "(cr.id = ? OR c.name LIKE ? OR EXISTS (SELECT 1 FROM company_request_plates x WHERE x.request_id = cr.id AND
+                     (CONCAT_WS(' ', x.plate_p4, x.plate_letter, x.plate_p2, x.plate_p1) LIKE ? OR CONCAT(x.plate_p4, x.plate_letter, x.plate_p2, x.plate_p1) LIKE ?
+                      OR x.chassis_no LIKE ? OR x.policy_number LIKE ? OR x.car_name LIKE ?)))";
+            array_push($params, intval($q), $like, $like, str_replace(' ', '', $like), $like, $like, $like);
+        }
+        if ($w) $sql .= " WHERE " . implode(' AND ', $w);
+        $sql .= " ORDER BY cr.created_at DESC LIMIT " . ($w ? 1000 : 300);
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
+        // مرحله‌ی ردیف‌های هر درخواست (چند ردیف در هر مرحله)
+        $stages = [];
+        if ($rows) {
+            $ids = implode(',', array_map(fn($r) => intval($r['id']), $rows));
+            foreach ($pdo->query("SELECT request_id, status, COUNT(*) n FROM company_request_plates WHERE request_id IN ($ids) GROUP BY request_id, status")->fetchAll() as $s)
+                $stages[intval($s['request_id'])][$s['status']] = intval($s['n']);
+        }
+        $sum = ['requests' => count($rows), 'rows' => 0, 'issued' => 0, 'stages' => []];
         foreach ($rows as &$r) {
             $r['created_at_jalali'] = jd(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jd(strtotime($r['updated_at']));
             foreach (['pending_docs_count', 'body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
             $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
             $r['requested_counts_fa'] = company_requested_counts_fa($r['requested_counts'] ?? null);
+            $r['row_stages'] = [];
+            foreach ($stages[intval($r['id'])] ?? [] as $st => $n) {
+                $r['row_stages'][] = ['status' => $st, 'status_fa' => company_plate_status_fa($st), 'n' => $n];
+                $sum['rows'] += $n; if ($st === 'ISSUED') $sum['issued'] += $n;
+                $sum['stages'][$st] = ($sum['stages'][$st] ?? 0) + $n;
+            }
         }
-        echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
+        unset($r);
+        $stageList = [];
+        foreach ($sum['stages'] as $st => $n) $stageList[] = ['status' => $st, 'status_fa' => company_plate_status_fa($st), 'n' => $n];
+        $sum['stages'] = $stageList;
+        $companies = $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll();
+        echo json_encode(['ok' => true, 'requests' => $rows, 'summary' => $sum, 'companies' => $companies], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -1543,6 +1629,138 @@ try {
     //  پوشه‌ی ردیف به نامِ نهاییِ بیمه‌نامه («پلاک - شرکت - شماره بیمه‌نامه - VIN») تغییر
     //  نام می‌دهد، فایل بیمه‌نامه با همان نام‌گذاریِ پرسنلی داخلش ذخیره می‌شود، و یک کپیِ
     //  کاملِ پوشه به «بایگانی صادره»ی همان ماه و همان نوع بیمه می‌رود.
+    // =================================================================
+    //  صدورِ گروهی: فایلِ خروجیِ سایتِ بیمه‌گر (چند بیمه‌نامه در یک PDF)
+    //   ۱) bundle_analyze : جدا کردنِ صفحه‌های بیمه‌نامه، شناسایی، پیدا کردنِ ردیف و آمادگی
+    //   ۲) bundle_issue   : صدور و بایگانیِ ردیف‌های انتخاب‌شده
+    // =================================================================
+    if ($action === 'bundle_analyze') {
+        require_admin_only();
+        @set_time_limit(600);
+        $requestId = intval($data['request_id'] ?? 0);
+        if (!$requestId) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.']); exit; }
+        if (empty($_FILES['bundle']['tmp_name']) || !is_uploaded_file($_FILES['bundle']['tmp_name'])) {
+            $code = $_FILES['bundle']['error'] ?? null;
+            echo json_encode(['ok' => false, 'error' => $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE ? 'حجمِ فایل بیش از حدِ مجازِ سرور است.' : 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $name = (string)$_FILES['bundle']['name'];
+        $head = (string)@file_get_contents($_FILES['bundle']['tmp_name'], false, null, 0, 5);
+        if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'pdf' || $head !== '%PDF-') {
+            echo json_encode(['ok' => false, 'error' => 'فایل باید PDF باشد (همان فایلِ خروجیِ سایتِ بیمه‌گر).'], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $token = bin2hex(random_bytes(8));
+        $dir = cbundle_root() . '/b_' . $token;
+        @mkdir($dir, 0777, true);
+        $src = $dir . '/source.pdf';
+        if (!move_uploaded_file($_FILES['bundle']['tmp_name'], $src)) { echo json_encode(['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']); exit; }
+        $res = cbundle_run($pdo, $src, $dir . '/pages');
+        if (empty($res['ok'])) {
+            error_log('[bundle_analyze] ' . ($res['error'] ?? '') . ' ' . ($res['debug'] ?? ''));
+            cbundle_rrmdir($dir);
+            echo json_encode(['ok' => false, 'error' => ($res['error'] ?? 'پردازشِ فایل ممکن نشد.')], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $policies = $res['policies'] ?? [];
+        // صفحه‌هایی که متن ندارند (اسکن) با موتورِ OCR خوانده می‌شوند
+        $ocrCount = 0;
+        foreach ($policies as &$p) {
+            if (!empty($p['has_text']) && is_array($p['data'])) continue;
+            if ($ocrCount >= 30) { $p['ocr_error'] = 'تعدادِ صفحه‌های اسکن‌شده زیاد است (حداکثر ۳۰)'; continue; }
+            $ocrCount++;
+            $o = run_document_ocr_verbose($dir . '/pages/' . $p['file']);
+            if ($o['data']) { $p['data'] = $o['data'] + ['premium' => '']; $p['via_ocr'] = true; }
+            else $p['ocr_error'] = $o['debug'] ?: 'متنی خوانده نشد';
+        }
+        unset($p);
+        $items = cbundle_match($pdo, $requestId, $policies);
+        if ($items === null) { cbundle_rrmdir($dir); echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
+        $valid = array_values(array_filter($items, fn($it) => $it['state'] !== 'unknown'));
+        if (!$valid) {
+            cbundle_rrmdir($dir);
+            echo json_encode(['ok' => false, 'error' => 'در این فایل هیچ بیمه‌نامه‌ی معتبری شناسایی نشد (' . intval($res['pages']) . ' صفحه بررسی شد). مطمئن شوید همان فایلِ خروجیِ بیمه‌نامه‌هاست.',
+                              'pages' => intval($res['pages'])], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $meta = ['request_id' => $requestId, 'user_id' => intval($actor['id'] ?? 0), 'created' => time(), 'name' => $name, 'pages' => intval($res['pages']),
+                 'policies' => $policies, 'items' => $items];
+        file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
+        $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
+        echo json_encode(['ok' => true, 'token' => $token, 'pages' => intval($res['pages']), 'policies' => count($items), 'counts' => $cnt, 'items' => $items], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'bundle_recheck') {   // بعد از انجامِ مراحلِ باقی‌مانده: بررسیِ دوباره بدونِ بارگذاریِ مجدد
+        require_admin_only();
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($data['token'] ?? ''));
+        $dir = cbundle_root() . '/b_' . $token;
+        $meta = $token && is_file($dir . '/analysis.json') ? json_decode((string)file_get_contents($dir . '/analysis.json'), true) : null;
+        if (!$meta || empty($meta['policies'])) { echo json_encode(['ok' => false, 'error' => 'نتیجه‌ی بررسیِ فایل پیدا نشد (منقضی شده)؛ فایل را دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $items = cbundle_match($pdo, intval($meta['request_id']), $meta['policies']);
+        if ($items === null) { echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
+        $meta['items'] = $items;
+        file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
+        $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
+        echo json_encode(['ok' => true, 'token' => $token, 'pages' => intval($meta['pages'] ?? 0), 'policies' => count($items), 'counts' => $cnt, 'items' => $items,
+                          'name' => $meta['name'] ?? ''], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'bundle_page') {   // پیش‌نمایشِ صفحه‌ی جداشده‌ی یک بیمه‌نامه
+        require_admin_only();
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['token'] ?? ''));
+        $file = basename((string)($_GET['file'] ?? ''));
+        $path = cbundle_root() . '/b_' . $token . '/pages/' . $file;
+        if (!$token || !preg_match('/^(pol|seg)_\d{3}\.pdf$/', $file) || !is_file($path)) { http_response_code(404); exit; }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . $file . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    }
+    if ($action === 'bundle_issue') {
+        require_admin_only();
+        @set_time_limit(600);
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($data['token'] ?? ''));
+        $dir = cbundle_root() . '/b_' . $token;
+        $meta = $token && is_file($dir . '/analysis.json') ? json_decode((string)file_get_contents($dir . '/analysis.json'), true) : null;
+        if (!$meta) { echo json_encode(['ok' => false, 'error' => 'نتیجه‌ی بررسیِ فایل پیدا نشد (منقضی شده)؛ فایل را دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $picks = is_array($data['items'] ?? null) ? $data['items'] : [];
+        $results = []; $done = 0;
+        foreach ($picks as $pk) {
+            $i = intval($pk['i'] ?? -1);
+            $it = $meta['items'][$i] ?? null;
+            if (!$it || empty($it['row']['id'])) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'ردیف نامعتبر.']; continue; }
+            $plateId = intval($it['row']['id']);
+            // دوباره از دیتابیس: شاید در این فاصله تغییر کرده باشد
+            $st = $pdo->prepare("SELECT status FROM company_request_plates WHERE id = ?");
+            $st->execute([$plateId]);
+            $status = $st->fetchColumn();
+            if ($status === 'ISSUED') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'قبلاً صادر شده.']; continue; }
+            if (!in_array($status, ['READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'هنوز به مرحله‌ی صدور نرسیده.']; continue; }
+            if (in_array($it['state'], ['mismatch', 'duplicate', 'unknown', 'no_match'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => $it['message'] ?: 'قابلِ صدور نیست.']; continue; }
+            $policyNumber = trim((string)($pk['policy_number'] ?? ($it['data']['policy_num'] ?? '')));
+            if ($policyNumber === '') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'شماره‌ی بیمه‌نامه خالی است.']; continue; }
+            $vin = trim((string)($pk['vin'] ?? ($it['data']['vin'] ?? '')));
+            $premium = money_to_int($pk['total_premium'] ?? ($it['data']['premium'] ?? ''));
+            $srcName = !empty($pk['with_payments']) ? $it['seg_file'] : $it['file'];
+            $src = $dir . '/pages/' . basename($srcName);
+            if (!is_file($src)) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'فایلِ این بیمه‌نامه پیدا نشد.']; continue; }
+            $work = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cbundle_') . '.pdf';
+            @copy($src, $work);
+            $pdo->prepare("UPDATE company_request_plates SET ocr_extracted_data = ? WHERE id = ?")->execute([json_encode($it['data'], JSON_UNESCAPED_UNICODE), $plateId]);
+            $r = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $premium, $work, 'policy.pdf');
+            if (is_file($work)) @unlink($work);
+            if (!empty($r['ok'])) $done++;
+            $results[] = ['i' => $i, 'plate_id' => $plateId] + $r;
+        }
+        // اگر هیچ بیمه‌نامه‌ی صادرنشده‌ای (آماده یا منتظرِ تکمیلِ مراحل) در فایل نماند، فایل‌های موقت پاک می‌شوند
+        $left = 0;
+        foreach ($meta['items'] as $it) if (!empty($it['row']['id']) && in_array($it['state'], ['ready', 'not_ready'], true)) {
+            $st = $pdo->prepare("SELECT status FROM company_request_plates WHERE id = ?");
+            $st->execute([intval($it['row']['id'])]);
+            if ($st->fetchColumn() !== 'ISSUED') $left++;
+        }
+        if (!$left) cbundle_rrmdir($dir);
+        echo json_encode(['ok' => true, 'issued' => $done, 'results' => $results, 'left' => $left], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'mark_issued') {
         require_admin_only();
         $plateId = intval($data['plate_id'] ?? 0);
@@ -1550,103 +1768,22 @@ try {
         $vin = trim($data['vin'] ?? '');
         $totalPremium = money_to_int($data['total_premium'] ?? '');
         if (!$plateId || $policyNumber === '') { echo json_encode(['ok' => false, 'error' => 'شماره‌ی بیمه‌نامه الزامی است.']); exit; }
-
-        $siteRoot = dirname(__DIR__);
-        $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
-        if (!$baseDir) { echo json_encode(['ok' => false, 'error' => 'ردیف یافت نشد.']); exit; }
-
-        $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, c.name AS company_name FROM company_request_plates crp
-                                JOIN company_requests cr ON cr.id = crp.request_id
-                                JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
-        $stmt->execute([$plateId]);
-        $plate = $stmt->fetch();
-        $kind = $plate['request_kind'] ?? 'NEW_POLICY';
-
-        $plateDisplay = company_row_label($plate);
-        // همان قاعده‌ی نام‌گذاری پرسنلی: پلاک بدون خط‌تیره‌ی داخلی، و «/» شماره‌ی
-        // بیمه‌نامه با «∕» جایگزین می‌شود (چون در نام فایل/پوشه‌ی ویندوز مجاز نیست)
-        $plateForName = plate_for_filename($plateDisplay);
-        $policyNumForName = policy_number_for_filename($policyNumber);
-        $issuedFolderName = company_issued_folder_name_for_kind($kind, $plate['insurance_type'], $plateDisplay,
-                                                                 $plate['company_name'], $policyNumber, $vin);
-        $issuedDir = dirname($baseDir) . '/' . $issuedFolderName;
-
-        // ابتدا پوشه‌ی قبل از صدور (با مدارک تگ‌گذاری‌شده‌ی احتمالی) به نام نهایی تغییر
-        // نام می‌دهد و فقط بعد از آن فایل بیمه‌نامه داخلش ذخیره می‌شود - وگرنه چون پوشه‌ی
-        // مقصد از قبل غیرخالی شده، rename روی آن شکست می‌خورد
-        if (is_dir($baseDir) && $baseDir !== $issuedDir) {
-            if (!is_dir(dirname($issuedDir))) @mkdir(dirname($issuedDir), 0755, true);
-            if (@rename($baseDir, $issuedDir)) {
-                company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $baseDir, $issuedDir);
-            }
+        // فایلِ بیمه‌نامه: فایلِ موقتِ مرحله‌ی اعتبارسنجی، یا آپلودِ مستقیم
+        $src = null; $srcName = null;
+        $st = $pdo->prepare("SELECT pending_policy_temp_path, pending_policy_orig_name FROM company_request_plates WHERE id = ?");
+        $st->execute([$plateId]);
+        $pend = $st->fetch();
+        if ($pend && $pend['pending_policy_temp_path'] && is_file($pend['pending_policy_temp_path'])) {
+            $src = $pend['pending_policy_temp_path']; $srcName = $pend['pending_policy_orig_name'] ?: 'policy.pdf';
+        } elseif (!empty($_FILES['issued_file']['tmp_name']) && is_uploaded_file($_FILES['issued_file']['tmp_name'])) {
+            $tmpDir = dirname(__DIR__) . '/tmp_ocr';
+            if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
+            $ext = strtolower(pathinfo($_FILES['issued_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+            $tmp = $tmpDir . '/' . uniqid('cissued_') . '.' . preg_replace('/[^a-z0-9]/', '', $ext);
+            if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) { $src = $tmp; $srcName = $_FILES['issued_file']['name']; }
         }
-        if (!is_dir($issuedDir)) @mkdir($issuedDir, 0755, true);
-
-        // ---- فایل بیمه‌نامه: اگر مرحله‌ی اعتبارسنجی انجام شده باشد از فایل موقتِ همان
-        //      استفاده می‌شود، وگرنه آپلود مستقیم هم پذیرفته می‌شود ----
-        $issuedFilePath = null;
-        $pendingTemp = $plate['pending_policy_temp_path'] ?? null;
-        if ($pendingTemp && is_file($pendingTemp)) {
-            $ext = strtolower(pathinfo($plate['pending_policy_orig_name'] ?: 'policy.pdf', PATHINFO_EXTENSION)) ?: 'pdf';
-            $finalName = build_final_policy_filename($plateForName, $plate['company_name'], $policyNumForName, $vin, $ext);
-            $dest = unique_dest_path($issuedDir . '/' . $finalName);
-            if (@rename($pendingTemp, $dest)) {
-                $issuedFilePath = ltrim(str_replace($siteRoot, '', $dest), '/');
-            }
-        } elseif (!empty($_FILES['issued_file'])) {
-            $saved = company_store_uploaded_file($_FILES['issued_file'], $issuedDir);
-            if ($saved['ok']) {
-                $ext = strtolower(pathinfo($saved['path'], PATHINFO_EXTENSION)) ?: 'pdf';
-                $finalName = build_final_policy_filename($plateForName, $plate['company_name'], $policyNumForName, $vin, $ext);
-                $dest = unique_dest_path($issuedDir . '/' . $finalName);
-                if (@rename($saved['path'], $dest)) $saved['path'] = $dest;
-                $issuedFilePath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
-            }
-        }
-
-        $issuedAt = time();
-        // الحاقیه و فسخ فقط در بایگانی شرکتی می‌مانند و به «بایگانی صادره» نمی‌روند؛
-        // بایگانی صادره مخصوصِ بیمه‌نامه‌های صادرشده است (خواسته‌ی صریح کارفرما).
-        $folderStatus = 'FAILED';
-        if (!company_kind_goes_to_sadere($kind)) {
-            $folderStatus = is_dir($issuedDir) ? 'TRANSFERRED' : 'FAILED';
-        } elseif (is_dir($issuedDir)) {
-            $copied = company_copy_to_shared_sadere($siteRoot, $issuedDir, $issuedAt, $plate['insurance_type'], $issuedFolderName);
-            $folderStatus = $copied ? 'TRANSFERRED' : 'FAILED';
-        }
-
-        $pdo->prepare("UPDATE company_request_plates SET status = 'ISSUED', policy_number = ?, vin = ?, total_premium = ?,
-                        folder_path = ?, issued_file_path = COALESCE(?, issued_file_path), issued_at = FROM_UNIXTIME(?), folder_status = ?,
-                        pending_policy_temp_path = NULL, pending_policy_orig_name = NULL WHERE id = ?")
-            ->execute([$policyNumber, $vin ?: null, $totalPremium, $issuedDir, $issuedFilePath, $issuedAt, $folderStatus, $plateId]);
-
-        // مالیِ خودِ این بیمه‌نامه بلافاصله شکل می‌گیرد: ردیف‌های اقساط طبق قسط‌بندیِ
-        // همان شرکت و «فرمول ماموت» ساخته می‌شوند
-        $installmentCount = 0;
-        if ($totalPremium) {
-            $genResult = company_generate_installments($pdo, $plateId);
-            $installmentCount = $genResult['count'] ?? 0;
-        }
-
-        // اگر همه‌ی ردیف‌های این درخواست صادر شده باشند، خودِ درخواست هم ISSUED می‌شود
-        $stmt = $pdo->prepare("SELECT COUNT(*) AS total, SUM(status = 'ISSUED') AS issued FROM company_request_plates WHERE request_id = ?");
-        $stmt->execute([$plate['request_id']]);
-        $counts = $stmt->fetch();
-        if ($counts && intval($counts['total']) > 0 && intval($counts['total']) === intval($counts['issued'])) {
-            $pdo->prepare("UPDATE company_requests SET status = 'ISSUED' WHERE id = ?")->execute([$plate['request_id']]);
-        }
-        // خبر به کاربرانِ همان شرکت در ربات بله، با دکمه‌ی دریافتِ فایل
-        try {
-            $stCo = $pdo->prepare("SELECT company_id FROM company_requests WHERE id = ?");
-            $stCo->execute([$plate['request_id']]);
-            cbot_notify_company($pdo, intval($stCo->fetchColumn()),
-                "✅ بیمه‌نامه‌ی " . insurance_type_fa($plate['insurance_type']) . " - " . company_row_label($plate) . " صادر شد"
-                . ($policyNumber ? " (شماره " . $policyNumber . ")" : '') . ".\nدرخواست #" . $plate['request_id'],
-                ['inline_keyboard' => [[['text' => '📥 دریافت بیمه‌نامه', 'callback_data' => 'pol:' . $plateId]]]]);
-        } catch (Throwable $e) {}
-
-        echo json_encode(['ok' => true, 'folder_status' => $folderStatus, 'installments' => $installmentCount,
-                          'issued_folder' => $issuedFolderName], JSON_UNESCAPED_UNICODE);
+        $res = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $src, $srcName);
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }
 

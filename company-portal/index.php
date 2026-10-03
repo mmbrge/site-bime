@@ -49,7 +49,7 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
-<link rel="stylesheet" href="../plate.css?v=1">
+<link rel="stylesheet" href="../plate.css?v=2">
 <script src="../chat-ui.js?v=4"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -685,7 +685,7 @@ async function openRequestDetail(id) {
                 <div class="flex items-center gap-2.5 flex-wrap">
                     <span class="text-[10px] text-slate-300 font-bold">${faNum(idx + 1)}</span>
                     ${(p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4)
-                        ? `<div class="border-2 border-slate-700 rounded-md px-2.5 py-1 font-black text-xs text-slate-700" dir="ltr">${plateHtml(p)}</div>`
+                        ? plateHtml(p)
                         : `<div class="border-2 border-dashed border-slate-400 rounded-md px-2.5 py-1 font-black text-xs text-slate-600" dir="ltr" title="شماره شاسی">${p.chassis_no || 'بدون شناسه'}</div>`}
                     <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
                     ${faNum(p.expiry_date_jalali) ? `<span class="text-[10px] text-slate-400">انقضا: ${faNum(p.expiry_date_jalali)}</span>`
@@ -806,10 +806,9 @@ function plateOptionLabel(p) {
 // ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
 function plateHtml(p) {
     if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return 'پلاک نامشخص';
-    const seg = v => `<span>${v || ''}</span>`;
-    return `<span style="display:inline-flex;direction:ltr;gap:4px;align-items:center;unicode-bidi:isolate">`
-        + seg(p.plate_p4 || '--') + `<span>${p.plate_letter || '-'}</span>` + seg(p.plate_p2 || '---')
-        + `<span class="text-slate-400">ایران</span>` + seg(p.plate_p1 || '--') + `</span>`;
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const fa = v => String(v ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    return `<span class="ir-plate"><span class="flag"></span><span>${fa(p.plate_p4 || '--')}</span><span>${esc(p.plate_letter || '-')}</span><span>${fa(p.plate_p2 || '---')}</span><span class="ir"><small>ایران</small>${fa(p.plate_p1 || '--')}</span></span>`;
 }
 
 function renderDocUploadRows() {

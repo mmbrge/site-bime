@@ -324,7 +324,7 @@
             rows.map(r => `<tr class="border-t hover:bg-slate-50">
                 <td class="p-2.5"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${r.source === 'C' ? 'bg-cyan-100 text-cyan-700' : 'bg-indigo-100 text-indigo-700'}">${r.source === 'C' ? 'شرکتی' : 'پرسنلی'}</span></td>
                 <td class="p-2.5 font-bold text-slate-700">${esc(r.company_name)}</td><td class="p-2.5">${esc(r.insured || '-')}</td>
-                <td class="p-2.5 text-center whitespace-nowrap"><span class="inline-block border border-slate-300 rounded-md px-2 py-0.5 bg-white font-bold text-slate-700">${esc(fa(r.plate || '-'))}</span></td>
+                <td class="p-2.5 text-center whitespace-nowrap">${r.plate && window.formatPlateHtml ? formatPlateHtml(r.plate) : `<span class="inline-block border border-slate-300 rounded-md px-2 py-0.5 bg-white font-bold text-slate-700">${esc(fa(r.plate || '-'))}</span>`}</td>
                 <td class="p-2.5 text-center font-bold">${fa(r.inst_number)}</td>
                 <td class="p-2.5 text-center font-bold ${clr}" dir="ltr">${fa(r.due_jalali)}</td>
                 <td class="p-2.5 text-center">${num(r.amount)}</td><td class="p-2.5 text-center font-black ${clr}">${num(r.remaining)}</td>
