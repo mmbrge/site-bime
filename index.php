@@ -32,19 +32,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([$username]);
         $user = $stmt->fetch();
 
-        // درگاهِ انتخاب‌شده باید با نقشِ واقعیِ حساب کاربری هم‌خوانی داشته باشد
-        // «کاربر همکار بیمه با ما» هم همکارانِ عادی را شامل می‌شود و هم همکارانِ «پنل پارسیان» (فقط گزارش بازدید)
-        $gate = $_POST['login_gate'] ?? 'STAFF';
-        $liaisonRoles = ['COMPANY_LIAISON', 'PARSIAN'];
-        $gateOk = $user && (
-            ($gate === 'LIAISON' && in_array($user['role'], $liaisonRoles, true)) ||
-            ($gate !== 'LIAISON' && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE'], true))
-        );
+        // درگاهِ «همکار بیمه»: همه‌ی نقش‌های داخلی (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما - عادی و پارسیان)
+        // کاربرِ شرکت از درگاهِ «کارشناس شرکت‌ها» وارد می‌شود (api/company_portal_auth.php)
+        $gateOk = $user && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN'], true);
 
         if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
-            $error = in_array($user['role'], $liaisonRoles, true)
-                ? 'این حساب «همکار بیمه با ما» است؛ بالای فرم «کاربر همکار بیمه با ما» را انتخاب کنید.'
-                : 'درگاه ورود را درست انتخاب کنید.';
+            $error = 'نقشِ این حساب برای ورود تعریف نشده است؛ با مدیر کل تماس بگیرید.';
+        } elseif (!$user) {
+            // شاید کاربرِ شرکت باشد که درگاهِ اشتباه را انتخاب کرده
+            $isCompany = false;
+            try {
+                $st = $pdo->prepare("SELECT password_hash FROM company_portal_users WHERE username = ? AND is_active = 1" . ($authReady ? " AND COALESCE(is_deleted, 0) = 0" : ''));
+                $st->execute([$username]);
+                $h = $st->fetchColumn();
+                $isCompany = $h && password_verify($password, $h);
+            } catch (Throwable $e) {}
+            $error = $isCompany ? 'این حساب «کاربر شرکت» است؛ بالای فرم «کارشناس شرکت‌ها» را انتخاب کنید.' : 'نام کاربری یا رمز عبور اشتباه است.';
         } elseif ($user && password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);   // جلوگیری از تثبیت نشست
             $_SESSION['user_id']   = $user['id'];
@@ -307,9 +310,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             #main-panel { width: calc(100% - 28px); padding: 22px 16px; box-sizing: border-box; }
         }
 
-        /* ================= دکمه‌های انتخاب درگاه ورود ================= */
-        .gate-btn { background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.15); color: #9ca3af; }
-        .gate-btn.active { background: rgba(0,210,255,0.15); border-color: #00d2ff; color: #fff; box-shadow: 0 0 12px rgba(0,210,255,0.25); }
+        /* ================= انتخابِ درگاهِ ورود: همکارِ بیمه | کارشناسِ شرکت‌ها ================= */
+        :root { --acc: #00d2ff; --acc2: #2563eb; }
+        body.gate-company { --acc: #34d399; --acc2: #0d9488; }
+        .login-logo { background: linear-gradient(140deg, color-mix(in srgb, var(--acc) 30%, transparent), rgba(255,255,255,.06)); border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); transition: .4s; }
+        .login-logo i { color: var(--acc); transition: .4s; }
+        .gate2 { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; border-radius: 20px; background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.1); }
+        .gate2-pill { position: absolute; top: 6px; bottom: 6px; width: calc(50% - 9px); right: 6px; border-radius: 15px; background: linear-gradient(135deg, var(--acc2), var(--acc)); box-shadow: 0 10px 26px -10px var(--acc); transition: transform .45s cubic-bezier(.65,0,.35,1), background .4s; }
+        body.gate-company .gate2-pill { transform: translateX(calc(-100% - 6px)); }
+        .gate2-btn { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 15px; text-align: right; color: #cbd5e1; transition: color .3s; }
+        .gate2-btn i { width: 34px; height: 34px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); font-size: 15px; flex-shrink: 0; transition: .3s; }
+        .gate2-btn b { display: block; font-size: 13px; font-weight: 900; } .gate2-btn small { display: block; font-size: 10px; font-weight: 700; opacity: .75; margin-top: 1px; }
+        .gate2-btn.active { color: #fff; } .gate2-btn.active i { background: rgba(255,255,255,.22); }
+        #login-btn { background: linear-gradient(120deg, var(--acc2), var(--acc)) !important; transition: .4s; }
+        #login-mode-tabs .mode-tab.on { background: color-mix(in srgb, var(--acc) 22%, transparent); color: #fff; }
+        #main-panel { transition: box-shadow .4s; box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--acc) 45%, transparent); }
+        .gate-swap { animation: gateSwap .45s ease-out; }
+        @keyframes gateSwap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @media (max-width: 380px) { .gate2-btn small { display: none; } }
 
     </style>
 <link rel="stylesheet" href="ui-scroll.css?v=1">
@@ -365,11 +383,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="relative z-10 glass-panel rounded-[2rem] w-[90%] max-w-md p-8 sm:p-10 transform transition-all duration-500 flex flex-col items-center" id="main-panel">
         
         <div class="text-center mb-8 w-full cursor-default">
-            <div class="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-lg backdrop-blur-md">
-                <i class="fas fa-shield-halved text-3xl text-brand-accent"></i>
+            <div class="login-logo w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg backdrop-blur-md">
+                <i id="gate-ico" class="fas fa-shield-halved text-3xl"></i>
             </div>
-            <h2 class="text-2xl font-black text-white drop-shadow-md">خدمات بیمه اشخاص</h2>
-            <p class="text-sm text-gray-300 font-bold mt-2">پورتال یکپارچه همکاران و مشتریان</p>
+            <h2 class="text-2xl font-black text-white drop-shadow-md" id="gate-title">ورودِ همکارانِ بیمه با ما</h2>
+            <p class="text-sm text-gray-300 font-bold mt-2" id="gate-sub">مدیریت، صدور، مالی و کارمندانِ بیمه با ما</p>
         </div>
 
         <!-- پیام مسدودی -->
@@ -384,13 +402,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div id="login-section" class="form-section w-full">
             <!-- درگاه ورود: هرکسی اول مشخص می‌کند چه‌جور کاربری است، تا با اطلاعاتِ
                  همان جدولِ کاربری وارد شود و اشتباهی به پنل دیگری هدایت نشود -->
-            <div class="mb-5" id="gate-selector">
-                <p class="text-[11px] font-bold text-gray-400 mb-2 text-center">من وارد می‌شوم به‌عنوان:</p>
-                <div class="grid grid-cols-3 gap-2">
-                    <button type="button" data-gate="STAFF" onclick="selectGate('STAFF')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">صدور / مدیریت</button>
-                    <button type="button" data-gate="COMPANY" onclick="selectGate('COMPANY')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">همکار شرکت‌ها</button>
-                    <button type="button" data-gate="LIAISON" onclick="selectGate('LIAISON')" class="gate-btn py-2.5 px-1 text-[11px] font-bold rounded-xl border-2 transition-all hover-target">کاربر همکار بیمه با ما</button>
-                </div>
+            <div class="gate2 mb-5" id="gate-selector">
+                <span class="gate2-pill" id="gate-pill"></span>
+                <button type="button" data-gate="STAFF" onclick="selectGate('STAFF')" class="gate2-btn hover-target">
+                    <i class="fas fa-user-shield"></i><span><b>همکارِ بیمه</b><small>مدیر، صدور، مالی، کارمند</small></span>
+                </button>
+                <button type="button" data-gate="COMPANY" onclick="selectGate('COMPANY')" class="gate2-btn hover-target">
+                    <i class="fas fa-building"></i><span><b>کارشناسِ شرکت‌ها</b><small>کاربرانِ شرکت‌ها</small></span>
+                </button>
             </div>
 
             <div class="flex bg-black/30 rounded-xl p-1 mb-6 relative z-20" id="login-mode-tabs">
@@ -741,9 +760,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         initCaptcha();
 
         // ۰. انتخاب درگاه ورود (صدور/مدیریت - همکار شرکت‌ها - کاربر شرکتی)
+        // دو درگاه: «همکارِ بیمه» (همه‌ی نقش‌های داخلی) و «کارشناسِ شرکت‌ها» (کاربرانِ شرکت)؛ پیش‌فرض همکارِ بیمه
+        const GATES = {
+            STAFF: {title: 'ورودِ همکارانِ بیمه با ما', sub: 'مدیریت، صدور، مالی و کارمندانِ بیمه با ما', ico: 'fa-shield-halved', user: 'نام کاربری / کد ملی'},
+            COMPANY: {title: 'ورودِ کارشناسانِ شرکت‌ها', sub: 'ثبتِ درخواست، مدارک و پیگیریِ صدورِ شرکت شما', ico: 'fa-building-shield', user: 'نام کاربریِ شرکت'},
+        };
         function selectGate(gate) {
+            const g = GATES[gate] || GATES.STAFF;
             document.getElementById('login-gate').value = gate;
-            document.querySelectorAll('.gate-btn').forEach(b => b.classList.toggle('active', b.dataset.gate === gate));
+            document.querySelectorAll('.gate2-btn').forEach(b => b.classList.toggle('active', b.dataset.gate === gate));
+            document.body.classList.toggle('gate-company', gate === 'COMPANY');
+            const t = document.getElementById('gate-title'), sb = document.getElementById('gate-sub');
+            t.textContent = g.title; sb.textContent = g.sub;
+            document.getElementById('gate-ico').className = 'fas ' + g.ico + ' text-3xl';
+            [t, sb].forEach(el => { el.classList.remove('gate-swap'); void el.offsetWidth; el.classList.add('gate-swap'); });
+            const lbl = document.querySelector('#login-nid + label'); if (lbl) lbl.textContent = g.user;
+            if (document.getElementById('otp-step-code').style.display === 'block') otpBack();
         }
         selectGate('STAFF');
 
@@ -757,7 +789,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         function setLoginMode(mode) {
             const otp = mode === 'otp';
             document.querySelectorAll('.mode-tab').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-            document.getElementById('gate-selector').style.display = otp ? 'none' : '';
             document.getElementById('login-form').style.display = otp ? 'none' : 'flex';
             document.getElementById('otp-login').style.display = otp ? 'block' : 'none';
             try { localStorage.setItem('login_mode', mode); } catch (e) {}
@@ -819,7 +850,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             otpMsg('otp-msg', ''); document.getElementById('otp-choose').style.display = 'none';
             try {
                 const res = await fetch('api/otp_login.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'send', phone, account: accountKey || (resend && otpAccount ? otpAccount.key : '')})});
+                    body: JSON.stringify({action: 'send', phone, gate: document.getElementById('login-gate').value, account: accountKey || (resend && otpAccount ? otpAccount.key : '')})});
                 const d = await res.json();
                 if (d.choose) {
                     // یک شماره با چند حساب (مثلاً هم کاربر پنل، هم کاربر شرکت)
@@ -836,6 +867,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             (d.bot_url ? `<br><a href="${d.bot_url}" target="_blank">ورود به ربات بله</a>` : ''), 'warn', true);
                     } else if (d.code === 'NOT_FOUND') {
                         otpMsg('otp-msg', 'کاربری با این شماره یافت نشد.');
+                    } else if (d.code === 'OTHER_GATE') {
+                        otpMsg('otp-msg', d.error, 'warn');
                     } else otpMsg('otp-msg', d.error || 'خطا');
                     return;
                 }

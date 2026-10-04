@@ -25,7 +25,16 @@ try {
         $user = $stmt->fetch();
         if (!$user || !password_verify($password, $user['password_hash'])) {
             if ($user) auth_log_login($pdo, 'COMPANY', $user, 'PASSWORD', false, 'رمز اشتباه');
-            echo json_encode(['ok' => false, 'error' => 'نام کاربری یا رمز عبور نادرست است.']);
+            $msg = 'نام کاربری یا رمز عبور نادرست است.';
+            if (!$user) {   // شاید همکارِ بیمه باشد که درگاهِ اشتباه را انتخاب کرده
+                try {
+                    $st = $pdo->prepare("SELECT password_hash FROM users WHERE username = ?" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
+                    $st->execute([$username]);
+                    $h = $st->fetchColumn();
+                    if ($h && password_verify($password, $h)) $msg = 'این حساب «همکارِ بیمه» است؛ بالای فرم «همکارِ بیمه» را انتخاب کنید.';
+                } catch (Throwable $e) {}
+            }
+            echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
             exit;
         }
         $stmt = $pdo->prepare("SELECT c.id, c.name, c.allowed_insurers FROM company_portal_user_companies cpuc

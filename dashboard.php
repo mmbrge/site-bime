@@ -111,7 +111,7 @@ function finance_nav($active, $canSeeCompanies = true) {
 }
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'اپراتور', 'FINANCE' => 'مالی', 'COMPANY_LIAISON' => 'همکار بیمه با ما', 'PARSIAN' => 'همکار بیمه با ما · پنل پارسیان'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -2113,7 +2113,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران</h1>
-                    <p class="text-xs text-slate-400 mt-1">کاربرانِ داخلیِ پنل (مدیر، کارشناس صدور، مالی، همکار بیمه با ما) و کاربرانِ شرکت‌ها. ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
+                    <p class="text-xs text-slate-400 mt-1">کاربرانِ داخلیِ پنل (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما) و کاربرانِ شرکت‌ها. ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
                 </div>
                 <div class="flex gap-2 flex-wrap">
                     <button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود و خروج</button>
@@ -2136,7 +2136,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
                     <option value="">همه‌ی نقش‌ها</option><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option>
-                    <option value="FINANCE">کارشناس مالی</option><option value="LIAISON_ALL">همکار بیمه با ما (همه)</option><option value="COMPANY_LIAISON">— پنل عادی</option><option value="PARSIAN">— پنل پارسیان</option><option value="COMPANY">کاربر شرکت</option>
+                    <option value="FINANCE">کارشناس مالی</option><option value="LIAISON_ALL">کارمند بیمه با ما (همه)</option><option value="COMPANY_LIAISON">— پنل عادی</option><option value="PARSIAN">— پنل پارسیان</option><option value="COMPANY">کاربر شرکت</option>
                 </select>
             </div>
 
@@ -3126,65 +3126,140 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <!-- افزودن کاربر: اول نقش انتخاب می‌شود، بعد فیلدهای همان نقش -->
-    <div id="add-staff-user-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
-            <button type="button" onclick="closeModal('add-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">افزودن کاربر</h3>
-            <p class="text-[11px] text-slate-400 mb-4">ابتدا نقش را انتخاب کنید؛ فیلدهای مخصوصِ همان نقش نمایش داده می‌شود.</p>
-            <div class="su-role-grid" id="su-role-grid">
-                <button type="button" data-role="ADMIN" onclick="pickNewUserRole('ADMIN')"><i class="fas fa-crown"></i>مدیر کل</button>
-                <button type="button" data-role="OPERATOR" onclick="pickNewUserRole('OPERATOR')"><i class="fas fa-file-signature"></i>کارشناس صدور</button>
-                <button type="button" data-role="FINANCE" onclick="pickNewUserRole('FINANCE')"><i class="fas fa-calculator"></i>کارشناس مالی</button>
-                <button type="button" data-role="COMPANY_LIAISON" onclick="pickNewUserRole('COMPANY_LIAISON')"><i class="fas fa-handshake"></i>همکار بیمه با ما</button>
-                <button type="button" data-role="COMPANY" onclick="pickNewUserRole('COMPANY')"><i class="fas fa-building"></i>کاربر شرکت</button>
+    <!-- ===== فرمِ یکپارچه‌ی کاربر: ساخت و ویرایش، همه‌ی نقش‌ها (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما، کاربر شرکت) ===== -->
+    <div id="user-form-modal" class="modal-overlay">
+        <div class="modal-content uf-wrap relative" style="margin:0 12px;">
+            <div class="uf-head">
+                <button type="button" onclick="closeModal('user-form-modal')" class="uf-x" title="بستن"><i class="fas fa-times"></i></button>
+                <button type="button" id="uf-avatar-pv" class="uf-av" onclick="pickUserAvatar('uf')" title="عکسِ پروفایل"></button>
+                <div class="min-w-0">
+                    <p class="text-[11px] text-white/75 font-bold" id="uf-kicker">کاربرِ تازه</p>
+                    <h3 class="text-lg font-black text-white" id="uf-title">افزودن کاربر</h3>
+                    <p class="text-[11px] text-white/70 mt-0.5" id="uf-sub">نقش را انتخاب کنید؛ فقط فیلدهای همان نقش نمایش داده می‌شود.</p>
+                </div>
             </div>
-            <input type="hidden" id="su-role">
-            <div id="su-fields" class="hidden mt-4">
-                <!-- «همکار بیمه با ما» دو نوع پنل دارد: عادی، یا پارسیان (فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش) -->
-                <div id="su-liaison-box" class="hidden mb-4">
-                    <label class="text-xs font-bold text-slate-500 block mb-1">نوعِ پنلِ کاربری *</label>
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <label class="border-2 rounded-xl p-2 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50"><input type="radio" name="su-panel" value="COMPANY_LIAISON" checked onchange="document.getElementById('su-role').value = this.value"> <b>پنل عادی</b><span class="block text-[10px] text-slate-400 mt-1">دسترسی‌های همکار بیمه با ما</span></label>
-                        <label class="border-2 rounded-xl p-2 cursor-pointer has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50"><input type="radio" name="su-panel" value="PARSIAN" onchange="document.getElementById('su-role').value = this.value"> <b>پنل پارسیان</b><span class="block text-[10px] text-slate-400 mt-1">فقط «ساخت گزارش بازدید» و «گزارشات صادره»ِ خودش</span></label>
+            <div class="uf-body">
+                <input type="hidden" id="uf-mode"><input type="hidden" id="uf-id"><input type="hidden" id="uf-type"><input type="hidden" id="uf-role">
+                <input type="hidden" id="uf-avatar"><input type="hidden" id="uf-avatar-changed">
+                <section class="uf-sec">
+                    <h4><span class="uf-step">۱</span>نقشِ کاربری</h4>
+                    <div class="uf-roles" id="uf-roles">
+                        <button type="button" data-r="ADMIN" style="--c:#d97706" onclick="ufPickRole('ADMIN')"><i class="fas fa-crown"></i><b>مدیر کل</b><small>دسترسیِ کامل به همه‌ی بخش‌ها</small></button>
+                        <button type="button" data-r="OPERATOR" style="--c:#2563eb" onclick="ufPickRole('OPERATOR')"><i class="fas fa-file-signature"></i><b>کارشناس صدور</b><small>پرونده‌ها، بازدید و صدور</small></button>
+                        <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><b>کارشناس مالی</b><small>اقساط، دریافت و پرداخت</small></button>
+                        <button type="button" data-r="LIAISON" style="--c:#7c3aed" onclick="ufPickRole('LIAISON')"><i class="fas fa-user-tie"></i><b>کارمند بیمه با ما</b><small>پنلِ عادی یا پارسیان</small></button>
+                        <button type="button" data-r="COMPANY" style="--c:#0d9488" onclick="ufPickRole('COMPANY')"><i class="fas fa-building"></i><b>کاربر شرکت</b><small>ورود از «کارشناس شرکت‌ها»</small></button>
                     </div>
-                </div>
-                <div id="su-company-box" class="hidden mb-4">
-                    <label class="text-xs font-bold text-slate-500 block mb-1">شرکت(ها)ی این کاربر *</label>
-                    <input type="search" id="su-company-q" oninput="filterCompanyPicker('su')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1">
-                    <div id="su-company-list" class="border rounded-xl p-2 max-h-40 overflow-y-auto text-xs"></div>
-                    <p class="text-[10px] text-slate-400 mt-1">اگر چند شرکت انتخاب شود، کاربر در پنلش بین آن‌ها جابه‌جا می‌شود.</p>
-                </div>
-                <div class="flex items-center gap-3 mb-4 p-2 rounded-2xl bg-slate-50 border border-slate-100">
-                    <button type="button" id="su-avatar-pv" onclick="pickUserAvatar('su')" title="انتخابِ عکس"></button>
-                    <div class="flex-1"><p class="text-xs font-bold text-slate-600">عکسِ پروفایل</p><p class="text-[10px] text-slate-400">یکی از عکس‌های آماده یا از گالری/سیستم؛ بعداً خودِ کاربر هم می‌تواند عوضش کند.</p></div>
-                    <button type="button" onclick="pickUserAvatar('su')" class="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap"><i class="fas fa-camera ml-1"></i>انتخاب</button>
-                    <input type="hidden" id="su-avatar">
-                </div>
-                <div class="float-input"><input type="text" id="su-fullname" placeholder=" "><label>نام و نام‌خانوادگی *</label></div>
-                <div class="float-input"><input type="text" id="su-username" dir="ltr" placeholder=" "><label>نام کاربری *</label></div>
-                <div class="float-input"><input type="text" id="su-password" dir="ltr" placeholder=" "><label>رمز عبور * (حداقل ۶)</label></div>
-                <div class="float-input"><input type="text" id="su-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل (برای ورود با ربات بله)</label></div>
-                <p id="su-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
-                <div class="float-input" id="su-personnel-box"><input type="text" id="su-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی (اختیاری)</label></div>
-                <div id="su-chatco-box" class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 mb-4">
-                    <p class="text-[11px] font-black text-indigo-700 mb-2"><i class="fas fa-comments ml-1"></i>گفتگو با شرکت‌ها <span class="font-bold text-slate-400">(پیام‌رسانِ پنلِ شرکت‌ها)</span></p>
-                    <select id="su-chatco-mode" onchange="chatCoModeChange('su')" class="w-full border rounded-lg px-3 py-2 text-xs font-bold">
-                        <option value="ROLE">طبقِ نقش (از «بایگانی گفتگوها» تعیین می‌شود)</option><option value="ALL">با همه‌ی شرکت‌ها</option>
-                        <option value="LIST">فقط با شرکت‌های انتخابی</option><option value="NONE">با هیچ شرکتی</option>
-                    </select>
-                    <div id="suc-list-box" class="hidden mt-2">
-                        <input type="search" id="suc-company-q" oninput="filterCompanyPicker('suc')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1 bg-white">
-                        <div id="suc-company-list" class="border rounded-xl p-2 max-h-36 overflow-y-auto text-xs bg-white"></div>
+                    <div id="uf-liaison-sub" class="uf-subroles hidden">
+                        <button type="button" data-p="COMPANY_LIAISON" onclick="ufPickPanel('COMPANY_LIAISON')"><i class="fas fa-briefcase"></i><span><b>پنلِ عادی</b><small>شرکت‌ها، صادره‌ها، مالیِ شرکت‌ها و گفتگو</small></span></button>
+                        <button type="button" data-p="PARSIAN" onclick="ufPickPanel('PARSIAN')"><i class="fas fa-file-circle-check"></i><span><b>پنلِ پارسیان</b><small>فقط ساختِ گزارشِ بازدید و گزارش‌های صادره‌ی خودش</small></span></button>
                     </div>
+                    <p id="uf-role-note" class="hidden text-[10.5px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-2"></p>
+                </section>
+                <div id="uf-rest" class="hidden">
+                    <section class="uf-sec">
+                        <h4><span class="uf-step">۲</span>مشخصات و ورود</h4>
+                        <div class="uf-grid">
+                            <label class="uf-f"><span>نام و نام‌خانوادگی *</span><input id="uf-fullname" oninput="paintUserAvatar('uf')" placeholder="مثلاً علی رضایی"></label>
+                            <label class="uf-f"><span>نام کاربری * <em id="uf-user-lock" class="hidden">(ثابت)</em></span><input id="uf-username" dir="ltr" placeholder="ali.rezaei" autocomplete="off"></label>
+                            <label class="uf-f"><span id="uf-pass-lbl">رمز عبور * (حداقل ۶)</span>
+                                <div class="uf-inline"><input id="uf-password" dir="ltr" autocomplete="new-password" placeholder="••••••"><button type="button" onclick="ufGenPass()" title="ساختِ رمزِ تصادفی"><i class="fas fa-dice"></i></button></div></label>
+                            <label class="uf-f"><span>شماره موبایل <em>(برای ورود با کدِ بله)</em></span><input id="uf-mobile" dir="ltr" inputmode="numeric" placeholder="09xxxxxxxxx"></label>
+                            <label class="uf-f" id="uf-personnel-box"><span>کد پرسنلی <em>(اختیاری)</em></span><input id="uf-personnel" dir="ltr"></label>
+                        </div>
+                        <p id="uf-mobile-err" class="hidden text-[11px] text-red-600 font-bold mt-2"></p>
+                    </section>
+                    <section class="uf-sec" id="uf-company-sec">
+                        <h4><span class="uf-step">۳</span>شرکت(ها)ی این کاربر *</h4>
+                        <div class="msd" id="uf-companies"></div>
+                        <p class="text-[10.5px] text-slate-400 mt-1.5">می‌توانید چند شرکت انتخاب کنید؛ کاربر در پنلش بین آن‌ها جابه‌جا می‌شود.</p>
+                    </section>
+                    <section class="uf-sec" id="uf-chat-sec">
+                        <h4><i class="fas fa-comments text-indigo-500"></i>گفتگو با شرکت‌ها</h4>
+                        <div class="uf-seg" id="uf-chat-mode">
+                            <button type="button" data-v="ROLE" onclick="ufChatMode('ROLE')">طبقِ نقش</button><button type="button" data-v="ALL" onclick="ufChatMode('ALL')">همه‌ی شرکت‌ها</button>
+                            <button type="button" data-v="LIST" onclick="ufChatMode('LIST')">شرکت‌های انتخابی</button><button type="button" data-v="NONE" onclick="ufChatMode('NONE')">هیچ شرکتی</button>
+                        </div>
+                        <div class="msd mt-2 hidden" id="uf-chatcos"></div>
+                    </section>
+                    <section class="uf-sec" id="uf-rpw-sec">
+                        <h4><i class="fas fa-file-pen text-violet-500"></i>رمزِ ویرایشِ گزارش بازدید <span id="uf-rpw-state" class="hidden"></span></h4>
+                        <div class="uf-grid">
+                            <label class="uf-f"><span>رمزِ جداگانه <em>(خالی = رمزِ پنلِ خودِ کاربر)</em></span><input id="uf-rpw" dir="ltr" autocomplete="off"></label>
+                            <label class="flex items-center gap-2 text-[11px] font-bold text-slate-500 cursor-pointer mt-5" id="uf-rpw-clear-box"><input type="checkbox" id="uf-rpw-clear" class="accent-violet-600"> برداشتنِ رمزِ جداگانه</label>
+                        </div>
+                    </section>
+                    <section class="uf-sec uf-confirm" id="uf-admin-sec">
+                        <h4><i class="fas fa-shield-halved text-rose-500"></i>تأیید</h4>
+                        <label class="uf-f"><span>رمزِ خودتان (مدیر) *</span><input type="password" id="uf-admin-pass" dir="ltr" autocomplete="current-password"></label>
+                        <p class="text-[10.5px] text-slate-400 mt-1.5">اگر شماره‌ی موبایل عوض شود، کاربر از ربات بیرون می‌آید و پیام می‌گیرد که با شماره‌ی جدید دوباره وارد شود.</p>
+                    </section>
+                    <button type="button" id="uf-submit" onclick="ufSubmit()" class="uf-submit"><i class="fas fa-user-check ml-1"></i><span>ثبتِ کاربر</span></button>
                 </div>
-                <div id="su-rpw-box">
-                    <div class="float-input mb-1"><input type="text" id="su-rpw" dir="ltr" placeholder=" " autocomplete="off"><label><i class="fas fa-file-pen ml-1 text-violet-500"></i>رمزِ ویرایشِ گزارش بازدید (اختیاری)</label></div>
-                    <p class="text-[10px] text-slate-400 font-bold -mt-0 mb-4">برای ویرایشِ گزارشِ صادرشده همین رمز پرسیده می‌شود؛ خالی بماند = رمزِ پنلِ خودِ کاربر.</p>
-                </div>
-                <button onclick="createStaffUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت کاربر</button>
             </div>
         </div>
     </div>
+    <style>
+        .uf-wrap { width: 100%; max-width: 760px; padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 94vh; }
+        .uf-head { position: relative; display: flex; align-items: center; gap: 16px; padding: 22px 24px; background: linear-gradient(125deg, #0f172a, #3730a3 55%, #0e7490); overflow: hidden; }
+        .uf-head::after { content: ''; position: absolute; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(56,189,248,.35), transparent 70%); left: -60px; top: -120px; pointer-events: none; }
+        .uf-x { position: absolute; left: 16px; top: 16px; width: 34px; height: 34px; border-radius: 11px; background: rgba(255,255,255,.14); color: #fff; z-index: 31; }
+        .uf-x:hover { background: rgba(255,255,255,.28); }
+        .uf-av { width: 62px; height: 62px; border-radius: 20px; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.35); flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; z-index: 2; }
+        .uf-head > div { position: relative; z-index: 2; }
+        .uf-body { padding: 18px 22px 22px; overflow-y: auto; background: #f8fafc; }
+        .uf-sec { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px 16px; margin-bottom: 12px; }
+        .uf-sec h4 { font-size: 12.5px; font-weight: 900; color: #1e293b; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .uf-step { width: 22px; height: 22px; border-radius: 8px; background: #4f46e5; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+        .uf-roles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        @media (min-width: 640px) { .uf-roles { grid-template-columns: repeat(5, 1fr); } }
+        .uf-roles button { --c: #4f46e5; position: relative; border: 2px solid #e2e8f0; border-radius: 16px; padding: 12px 8px 10px; background: #fff; text-align: center; transition: .18s; }
+        .uf-roles button i { display: flex; width: 38px; height: 38px; margin: 0 auto 6px; border-radius: 12px; align-items: center; justify-content: center; font-size: 16px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, white); }
+        .uf-roles button b { display: block; font-size: 12px; color: #1e293b; }
+        .uf-roles button small { display: block; font-size: 9.5px; color: #94a3b8; font-weight: 700; margin-top: 2px; line-height: 1.5; }
+        .uf-roles button:hover:not(:disabled) { border-color: var(--c); transform: translateY(-2px); box-shadow: 0 10px 22px -14px var(--c); }
+        .uf-roles button.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 7%, white); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 15%, transparent); }
+        .uf-roles button.on::after { content: '✓'; position: absolute; top: 6px; left: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 11px; line-height: 18px; }
+        .uf-roles button:disabled { opacity: .35; cursor: not-allowed; filter: grayscale(.6); }
+        .uf-subroles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; animation: ufIn .25s ease-out; }
+        .uf-subroles button { display: flex; align-items: center; gap: 10px; text-align: right; border: 2px solid #ede9fe; border-radius: 14px; padding: 10px 12px; background: #faf5ff; }
+        .uf-subroles button i { color: #7c3aed; font-size: 18px; }
+        .uf-subroles button b { display: block; font-size: 12px; color: #4c1d95; } .uf-subroles button small { display: block; font-size: 10px; color: #8b5cf6; font-weight: 700; }
+        .uf-subroles button.on { border-color: #7c3aed; background: #f3e8ff; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+        .uf-grid { display: grid; grid-template-columns: 1fr; gap: 10px; } @media (min-width: 640px) { .uf-grid { grid-template-columns: 1fr 1fr; } }
+        .uf-f > span { display: block; font-size: 10.5px; font-weight: 800; color: #64748b; margin-bottom: 4px; } .uf-f em { font-style: normal; color: #94a3b8; font-weight: 700; }
+        .uf-f input, .uf-inline { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; font-size: 13px; background: #fff; transition: .15s; }
+        .uf-f input:focus { outline: none; border-color: #818cf8; box-shadow: 0 0 0 4px rgba(129,140,248,.18); }
+        .uf-f input:disabled { background: #f1f5f9; color: #64748b; }
+        .uf-inline { display: flex; padding: 0; overflow: hidden; } .uf-inline input { border: 0; box-shadow: none !important; flex: 1; border-radius: 0; }
+        .uf-inline button { padding: 0 12px; color: #6366f1; border-right: 1px solid #e2e8f0; background: #f8fafc; }
+        .uf-seg { display: flex; flex-wrap: wrap; gap: 4px; background: #f1f5f9; border-radius: 12px; padding: 3px; }
+        .uf-seg button { flex: 1; min-width: 90px; padding: 7px 8px; border-radius: 9px; font-size: 11px; font-weight: 800; color: #475569; }
+        .uf-seg button.on { background: #fff; color: #4338ca; box-shadow: 0 2px 8px -3px rgba(15,23,42,.3); }
+        .uf-confirm { border-color: #fecdd3; background: #fff7f8; }
+        .uf-submit { width: 100%; padding: 13px; border-radius: 16px; color: #fff; font-weight: 900; font-size: 14px; background: linear-gradient(120deg, #4f46e5, #0ea5e9); box-shadow: 0 14px 30px -16px rgba(79,70,229,.8); transition: .2s; }
+        .uf-submit:hover { transform: translateY(-1px); } .uf-submit:disabled { opacity: .6; }
+        #uf-rest { animation: ufIn .3s ease-out; }
+        @keyframes ufIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        /* لیستِ کشوییِ چندانتخابی (شرکت‌ها) */
+        .msd { position: relative; }
+        .msd-trigger { width: 100%; min-height: 44px; border: 1.5px solid #e2e8f0; border-radius: 13px; padding: 6px 10px 6px 36px; background: #fff; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; text-align: right; position: relative; }
+        .msd-trigger::after { content: '▾'; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 13px; }
+        .msd.open .msd-trigger { border-color: #818cf8; box-shadow: 0 0 0 4px rgba(129,140,248,.18); }
+        .msd-ph { font-size: 12px; color: #94a3b8; font-weight: 700; padding: 4px 2px; }
+        .msd-chip { display: inline-flex; align-items: center; gap: 5px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 11px; font-weight: 800; }
+        .msd-chip i { width: 17px; height: 17px; border-radius: 50%; background: #c7d2fe; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-style: normal; cursor: pointer; }
+        .msd-chip i:hover { background: #a5b4fc; }
+        .msd-panel { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; left: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 24px 50px -20px rgba(15,23,42,.35); padding: 8px; animation: ufIn .15s ease-out; }
+        .msd-panel input[type=search] { width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; font-size: 12px; margin-bottom: 6px; }
+        .msd-tools { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 800; padding: 0 4px 6px; color: #64748b; }
+        .msd-tools button { color: #4f46e5; } .msd-tools span { margin-right: auto; }
+        .msd-list { max-height: 210px; overflow-y: auto; }
+        .msd-opt { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; font-size: 12px; cursor: pointer; }
+        .msd-opt:hover { background: #f8fafc; } .msd-opt.on { background: #eef2ff; color: #3730a3; font-weight: 800; }
+        .msd-opt .bx { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid #cbd5e1; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; flex-shrink: 0; }
+        .msd-opt.on .bx { background: #4f46e5; border-color: #4f46e5; }
+    </style>
 
     <!-- ویرایش کاربر (همه‌چیز جز نام کاربری) - با رمزِ مدیر -->
     <!-- دسترسیِ صفحه‌به‌صفحه‌ی یک کاربرِ پنل (فقط مدیر کل) -->
@@ -3238,58 +3313,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         #pm-body.pm-locked { opacity: .55; pointer-events: none; filter: grayscale(.4); }
         .su-chip.pc { background: #ede9fe; color: #6d28d9; }
     </style>
-    <div id="edit-staff-user-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-md p-6 relative" style="max-height:92vh; overflow-y:auto; margin:0 12px;">
-            <button type="button" onclick="closeModal('edit-staff-user-modal')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">ویرایش کاربر <span id="esu-type-badge" class="text-[11px] font-bold bg-slate-100 text-slate-600 rounded-full px-2 py-0.5 align-middle"></span></h3>
-            <p class="text-[11px] text-slate-400 mb-4">نام کاربری تغییر نمی‌کند. اگر شماره عوض شود، کاربر از ربات بیرون می‌آید و پیام می‌گیرد که با شماره‌ی جدید دوباره وارد شود.</p>
-            <input type="hidden" id="esu-id"><input type="hidden" id="esu-type">
-            <div class="float-input"><input type="text" id="esu-username" dir="ltr" placeholder=" " disabled class="bg-slate-100"><label>نام کاربری (ثابت)</label></div>
-            <div class="flex items-center gap-3 mb-4 p-2 rounded-2xl bg-slate-50 border border-slate-100">
-                <button type="button" id="esu-avatar-pv" onclick="pickUserAvatar('esu')" title="تغییرِ عکس"></button>
-                <div class="flex-1"><p class="text-xs font-bold text-slate-600">عکسِ پروفایل</p><p class="text-[10px] text-slate-400">در پیام‌رسان و همه‌جای پنل همین دیده می‌شود.</p></div>
-                <button type="button" onclick="pickUserAvatar('esu')" class="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap"><i class="fas fa-camera ml-1"></i>تغییر</button>
-                <input type="hidden" id="esu-avatar"><input type="hidden" id="esu-avatar-changed">
-            </div>
-            <div class="float-input"><input type="text" id="esu-fullname" placeholder=" "><label>نام و نام‌خانوادگی</label></div>
-            <div id="esu-staff-box">
-                <div class="float-input">
-                    <select id="esu-role"><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option><optgroup label="همکار بیمه با ما"><option value="COMPANY_LIAISON">همکار بیمه با ما · پنل عادی</option><option value="PARSIAN">همکار بیمه با ما · پنل پارسیان</option></optgroup><option value="ADMIN">مدیر کل</option></select>
-                    <label>نقش</label>
-                </div>
-                <div class="float-input"><input type="text" id="esu-personnel" dir="ltr" placeholder=" "><label>کد پرسنلی</label></div>
-            </div>
-            <div id="esu-company-box" class="hidden mb-4">
-                <label class="text-xs font-bold text-slate-500 block mb-1">شرکت(ها)ی این کاربر</label>
-                <input type="search" id="esu-company-q" oninput="filterCompanyPicker('esu')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1">
-                <div id="esu-company-list" class="border rounded-xl p-2 max-h-40 overflow-y-auto text-xs"></div>
-            </div>
-            <div class="float-input"><input type="text" id="esu-mobile" dir="ltr" placeholder=" " inputmode="numeric"><label>شماره موبایل</label></div>
-            <p id="esu-mobile-err" class="hidden text-[11px] text-red-600 font-bold -mt-2 mb-3"></p>
-            <div class="float-input"><input type="text" id="esu-password" dir="ltr" placeholder=" " autocomplete="new-password"><label>رمز عبورِ جدید (خالی = بدون تغییر)</label></div>
-            <div id="esu-chatco-box" class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 mb-4">
-                    <p class="text-[11px] font-black text-indigo-700 mb-2"><i class="fas fa-comments ml-1"></i>گفتگو با شرکت‌ها <span class="font-bold text-slate-400">(پیام‌رسانِ پنلِ شرکت‌ها)</span></p>
-                    <select id="esu-chatco-mode" onchange="chatCoModeChange('esu')" class="w-full border rounded-lg px-3 py-2 text-xs font-bold">
-                        <option value="ROLE">طبقِ نقش (از «بایگانی گفتگوها» تعیین می‌شود)</option><option value="ALL">با همه‌ی شرکت‌ها</option>
-                        <option value="LIST">فقط با شرکت‌های انتخابی</option><option value="NONE">با هیچ شرکتی</option>
-                    </select>
-                    <div id="esuc-list-box" class="hidden mt-2">
-                        <input type="search" id="esuc-company-q" oninput="filterCompanyPicker('esuc')" placeholder="جستجوی شرکت..." class="w-full border rounded-lg px-3 py-1.5 text-xs mb-1 bg-white">
-                        <div id="esuc-company-list" class="border rounded-xl p-2 max-h-36 overflow-y-auto text-xs bg-white"></div>
-                    </div>
-                </div>
-            <div id="esu-rpw-box" class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 mb-4">
-                <p class="text-[11px] font-black text-violet-700 mb-2"><i class="fas fa-file-pen ml-1"></i>رمزِ ویرایشِ گزارش بازدید <span id="esu-rpw-state" class="font-bold text-[10px] rounded-full px-2 py-0.5 mr-1"></span></p>
-                <div class="float-input !mb-2"><input type="text" id="esu-rpw" dir="ltr" placeholder=" " autocomplete="off"><label>رمزِ جدید (خالی = بدون تغییر)</label></div>
-                <label class="flex items-center gap-2 text-[11px] font-bold text-slate-500 cursor-pointer"><input type="checkbox" id="esu-rpw-clear"> برداشتنِ رمزِ جداگانه (برگشت به رمزِ پنلِ خودِ کاربر)</label>
-            </div>
-            <div class="border-t pt-3 mt-2">
-                <div class="float-input"><input type="password" id="esu-admin-pass" dir="ltr" placeholder=" " autocomplete="current-password"><label>رمزِ خودتان (مدیر) برای تایید *</label></div>
-            </div>
-            <button onclick="saveStaffUserEdit()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ذخیره‌ی تغییرات</button>
-        </div>
-    </div>
-
     <!-- حذف کاربر - با رمزِ مدیر -->
     <div id="delete-staff-user-modal" class="modal-overlay">
         <div class="modal-content w-full max-w-sm p-6 relative" style="margin:0 12px;">
@@ -7825,7 +7848,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'همکار بیمه با ما', PARSIAN: 'همکار بیمه با ما (پنل پارسیان)'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
@@ -7893,7 +7916,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('su-body').innerHTML = list.map(u => {
                 const del = Number(u.is_deleted) === 1, co = u.type === 'COMPANY';
                 const roleChip = co ? '<span class="su-chip co"><i class="fas fa-building ml-1"></i>کاربر شرکت</span>'
-                                    : u.role === 'PARSIAN' ? '<span class="su-chip">همکار بیمه با ما</span> <span class="su-chip" style="background:#fff1f2;color:#be123c" title="فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش">پنل پارسیان</span>'
+                                    : u.role === 'PARSIAN' ? '<span class="su-chip">کارمند بیمه با ما</span> <span class="su-chip" style="background:#fff1f2;color:#be123c" title="فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش">پنل پارسیان</span>'
                                     : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
                 const permChip = !co && u.perm_custom ? ' <span class="su-chip pc" title="دسترسیِ صفحه‌به‌صفحه تعیین شده"><i class="fas fa-user-lock ml-1"></i>سفارشی</span>' : '';
                 const isMe = !co && Number(u.id) === staffMeId;
@@ -7913,32 +7936,55 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
         }
 
-        // انتخابگرِ شرکت (چندتایی، با جستجو)
-        function renderCompanyPicker(prefix, selectedIds = []) {
-            const sel = new Set(selectedIds.map(Number));
-            document.getElementById(prefix + '-company-q').value = '';
-            document.getElementById(prefix + '-company-list').innerHTML = staffCompanies.map(c => `
-                <label class="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50 cursor-pointer" data-name="${(c.name || '').toLowerCase()}">
-                    <input type="checkbox" class="${prefix}-company-cb" value="${c.id}" ${sel.has(Number(c.id)) ? 'checked' : ''}> ${c.name}</label>`).join('')
-                || '<p class="text-slate-400 p-2">هنوز شرکتی ثبت نشده؛ اول از «مدیریت شرکت‌ها» یک شرکت بسازید.</p>';
+        // ---------- لیستِ کشوییِ چندانتخابی (با جستجو) ----------
+        function msdMount(id, items, selected = [], placeholder = 'انتخاب کنید…') {
+            const el = document.getElementById(id);
+            el._items = items; el._sel = new Set(selected.map(Number)); el._ph = placeholder;
+            el.innerHTML = `<button type="button" class="msd-trigger"></button>
+                <div class="msd-panel hidden"><input type="search" placeholder="جستجو…"><div class="msd-tools"><button type="button" data-all>انتخابِ همه</button><button type="button" data-none>هیچ</button><span></span></div><div class="msd-list"></div></div>`;
+            const trig = el.querySelector('.msd-trigger'), panel = el.querySelector('.msd-panel'), q = panel.querySelector('input');
+            const draw = () => {
+                const chosen = el._items.filter(it => el._sel.has(Number(it.id)));
+                trig.innerHTML = chosen.length ? chosen.map(it => `<span class="msd-chip">${it.name}<i data-rm="${it.id}" title="برداشتن">✕</i></span>`).join('') : `<span class="msd-ph">${el._ph}</span>`;
+                const t = q.value.trim().toLowerCase();
+                panel.querySelector('.msd-list').innerHTML = el._items.filter(it => !t || String(it.name).toLowerCase().includes(t)).map(it =>
+                    `<div class="msd-opt ${el._sel.has(Number(it.id)) ? 'on' : ''}" data-id="${it.id}"><span class="bx">✓</span>${it.name}</div>`).join('')
+                    || '<p class="text-center text-[11px] text-slate-400 py-3">موردی پیدا نشد.</p>';
+                panel.querySelector('.msd-tools span').textContent = e2p(el._sel.size) + ' انتخاب‌شده از ' + e2p(el._items.length);
+            };
+            trig.addEventListener('click', e => {
+                const rm = e.target.closest('[data-rm]');
+                if (rm) { el._sel.delete(Number(rm.dataset.rm)); draw(); e.stopPropagation(); return; }
+                const open = panel.classList.contains('hidden');
+                document.querySelectorAll('.msd.open').forEach(m => { m.classList.remove('open'); m.querySelector('.msd-panel').classList.add('hidden'); });
+                if (open) { el.classList.add('open'); panel.classList.remove('hidden'); q.value = ''; draw(); setTimeout(() => { q.focus(); panel.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }, 30); }
+            });
+            q.addEventListener('input', draw);
+            panel.addEventListener('click', e => {
+                const o = e.target.closest('.msd-opt');
+                if (o) { const v = Number(o.dataset.id); el._sel.has(v) ? el._sel.delete(v) : el._sel.add(v); draw(); return; }
+                if (e.target.closest('[data-all]')) { const t = q.value.trim().toLowerCase(); el._items.forEach(it => { if (!t || String(it.name).toLowerCase().includes(t)) el._sel.add(Number(it.id)); }); draw(); }
+                if (e.target.closest('[data-none]')) { el._sel.clear(); draw(); }
+            });
+            draw();
         }
-        function filterCompanyPicker(prefix) {
-            const q = document.getElementById(prefix + '-company-q').value.trim().toLowerCase();
-            document.querySelectorAll(`#${prefix}-company-list label`).forEach(l => l.style.display = !q || l.dataset.name.includes(q) ? '' : 'none');
-        }
-        const pickedCompanies = prefix => [...document.querySelectorAll(`.${prefix}-company-cb:checked`)].map(cb => Number(cb.value));
+        const msdValue = id => [...(document.getElementById(id)._sel || [])];
+        document.addEventListener('mousedown', e => {
+            document.querySelectorAll('.msd.open').forEach(m => { if (!m.contains(e.target)) { m.classList.remove('open'); m.querySelector('.msd-panel').classList.add('hidden'); } });
+        });
+
         function showMobileErr(prefix, msg) {
             const el = document.getElementById(prefix + '-mobile-err');
             el.textContent = msg || ''; el.classList.toggle('hidden', !msg);
             if (msg) document.getElementById(prefix + '-mobile').focus();
         }
-
-        // انتخابِ عکسِ پروفایل در فرمِ ساخت/ویرایشِ کاربر (عکسِ گالری همان لحظه بارگذاری و مسیرش در فرم نگه داشته می‌شود)
+        // عکسِ پروفایل (عکسِ گالری همان لحظه بارگذاری و مسیرش در فرم نگه داشته می‌شود)
         function paintUserAvatar(prefix) {
             const pv = document.getElementById(prefix + '-avatar-pv');
-            if (pv && window.ChatUI) pv.innerHTML = ChatUI.avatarHtml(document.getElementById(prefix + '-avatar').value || null, document.getElementById(prefix + '-fullname').value || '؟', {size: 52});
+            if (pv && window.ChatUI) pv.innerHTML = ChatUI.avatarHtml(document.getElementById(prefix + '-avatar').value || null, document.getElementById(prefix + '-fullname').value || '؟', {size: 58});
         }
         async function pickUserAvatar(prefix) {
+            if (!window.ChatUI) return;
             const r = await ChatUI.pickAvatar({current: document.getElementById(prefix + '-avatar').value, name: document.getElementById(prefix + '-fullname').value});
             if (!r) return;
             let val = r.avatar || '';
@@ -7949,126 +7995,115 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 val = d.path;
             }
             document.getElementById(prefix + '-avatar').value = val;
-            if (prefix === 'esu') document.getElementById('esu-avatar-changed').value = '1';
+            const ch = document.getElementById(prefix + '-avatar-changed'); if (ch) ch.value = '1';
             paintUserAvatar(prefix);
         }
-        // دسترسیِ گفتگو با شرکت‌ها در تعریفِ پرسنل
-        function chatCoModeChange(px) {
-            const m = document.getElementById(px + '-chatco-mode').value;
-            document.getElementById(px + 'c-list-box').classList.toggle('hidden', m !== 'LIST');
-        }
-        function chatCoSet(px, cc, role) {
-            const box = document.getElementById(px + '-chatco-box');
-            box.classList.toggle('hidden', role === 'COMPANY' || role === 'ADMIN');
-            document.getElementById(px + '-chatco-mode').value = (cc && cc.mode) || 'ROLE';
-            renderCompanyPicker(px + 'c', (cc && cc.ids) || []);
-            chatCoModeChange(px);
-        }
-        function chatCoValue(px) {
-            const m = document.getElementById(px + '-chatco-mode').value;
-            return m === 'LIST' ? pickedCompanies(px + 'c') : m;
-        }
-        function openAddUserModal() {
-            ['su-fullname','su-username','su-password','su-mobile','su-personnel','su-avatar','su-rpw'].forEach(id => document.getElementById(id).value = '');
-            paintUserAvatar('su');
-            document.getElementById('su-role').value = '';
-            document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.remove('active'));
-            document.getElementById('su-fields').classList.add('hidden');
-            showMobileErr('su', '');
-            openModal('add-staff-user-modal');
-        }
-        function pickNewUserRole(role) {
-            document.getElementById('su-role').value = role;
-            document.querySelectorAll('#su-role-grid button').forEach(b => b.classList.toggle('active', b.dataset.role === role));
-            const co = role === 'COMPANY';
-            const liaison = role === 'COMPANY_LIAISON';
-            document.getElementById('su-liaison-box').classList.toggle('hidden', !liaison);
-            if (liaison) document.querySelectorAll('input[name="su-panel"]').forEach(r => { r.checked = r.value === 'COMPANY_LIAISON'; });
-            document.getElementById('su-company-box').classList.toggle('hidden', !co);
-            document.getElementById('su-personnel-box').classList.toggle('hidden', co);
-            document.getElementById('su-rpw-box').classList.toggle('hidden', co);
-            if (co) renderCompanyPicker('su');
-            chatCoSet('su', null, role);
-            const f = document.getElementById('su-fields');
-            f.classList.remove('hidden'); f.classList.remove('su-fade'); void f.offsetWidth; f.classList.add('su-fade');
-            document.getElementById('su-fullname').focus();
-        }
-        async function createStaffUser() {
-            const role = document.getElementById('su-role').value;
-            if (!role) { showToast('اول نقش را انتخاب کنید.', 'warning'); return; }
-            const payload = {
-                action: 'create', role,
-                full_name: document.getElementById('su-fullname').value.trim(),
-                username: document.getElementById('su-username').value.trim(),
-                password: document.getElementById('su-password').value,
-                mobile_number: p2e(document.getElementById('su-mobile').value.trim()),
-                personnel_code: document.getElementById('su-personnel').value.trim(),
-                avatar: document.getElementById('su-avatar').value,
-                report_edit_password: role === 'COMPANY' ? '' : document.getElementById('su-rpw').value,
-            };
-            if (role === 'COMPANY') payload.company_ids = pickedCompanies('su');
-            else if (role !== 'ADMIN') payload.chat_companies = chatCoValue('su');
-            if (!payload.full_name || !payload.username || !payload.password) { showToast('نام، نام کاربری و رمز عبور الزامی است.', 'error'); return; }
-            if (role === 'COMPANY' && !payload.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
-            showMobileErr('su', '');
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
-            const data = await res.json();
-            if (data.ok) {
-                showToast('کاربر ثبت شد.', 'success');
-                if (data.warning) showToast(data.warning, 'warning');
-                closeModal('add-staff-user-modal');
-                loadStaffUsers();
-            } else { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('su', data.error); }
-        }
 
-        function openEditStaffUser(type, id) {
-            const u = findUser(type, id);
-            if (!u) return;
-            const co = type === 'COMPANY';
-            document.getElementById('esu-id').value = u.id;
-            document.getElementById('esu-type').value = type;
-            document.getElementById('esu-type-badge').textContent = co ? 'کاربر شرکت' : 'کاربر داخلی';
-            document.getElementById('esu-username').value = u.username;
-            document.getElementById('esu-fullname').value = u.full_name || '';
-            document.getElementById('esu-avatar').value = u.avatar || '';
-            document.getElementById('esu-avatar-changed').value = '';
-            paintUserAvatar('esu');
-            document.getElementById('esu-staff-box').classList.toggle('hidden', co);
-            document.getElementById('esu-company-box').classList.toggle('hidden', !co);
-            if (co) renderCompanyPicker('esu', u.company_ids || []);
-            else { document.getElementById('esu-role').value = u.role; document.getElementById('esu-personnel').value = u.personnel_code || ''; }
-            chatCoSet('esu', u.chat_companies, co ? 'COMPANY' : u.role);
-            document.getElementById('esu-mobile').value = u.mobile_number || '';
-            document.getElementById('esu-password').value = '';
-            document.getElementById('esu-admin-pass').value = '';
-            document.getElementById('esu-rpw').value = ''; document.getElementById('esu-rpw-clear').checked = false;
-            document.getElementById('esu-rpw-box').classList.toggle('hidden', co);
-            const rst = document.getElementById('esu-rpw-state');
-            rst.textContent = u.has_report_pw ? 'تعیین شده' : 'همان رمزِ پنل';
-            rst.className = 'font-bold text-[10px] rounded-full px-2 py-0.5 mr-1 ' + (u.has_report_pw ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500');
-            showMobileErr('esu', '');
-            openModal('edit-staff-user-modal');
+        // ---------- فرمِ یکپارچه‌ی کاربر (ساخت و ویرایشِ همه‌ی نقش‌ها) ----------
+        const ufG = id => document.getElementById(id);
+        function ufOpen(mode, type, id) {
+            const u = mode === 'edit' ? findUser(type, id) : null;
+            if (mode === 'edit' && !u) return;
+            const co = u && u.type === 'COMPANY';
+            ufG('uf-mode').value = mode; ufG('uf-id').value = u ? u.id : ''; ufG('uf-type').value = u ? u.type : '';
+            ufG('uf-role').value = ''; ufG('uf-avatar').value = u ? (u.avatar || '') : ''; ufG('uf-avatar-changed').value = '';
+            ufG('uf-fullname').value = u ? (u.full_name || '') : ''; ufG('uf-username').value = u ? u.username : '';
+            ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
+            ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
+            ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
+            ufG('uf-pass-lbl').textContent = u ? 'رمز عبورِ جدید (خالی = بدون تغییر)' : 'رمز عبور * (حداقل ۶)';
+            ufG('uf-kicker').textContent = u ? (co ? 'کاربرِ شرکت' : 'کاربرِ داخلی') : 'کاربرِ تازه';
+            ufG('uf-title').textContent = u ? 'ویرایشِ ' + (u.full_name || u.username) : 'افزودن کاربر';
+            ufG('uf-sub').textContent = u ? 'نام کاربری ثابت است؛ بقیه‌ی مشخصات، نقش و شرکت‌ها قابلِ تغییرند.' : 'نقش را انتخاب کنید؛ فقط فیلدهای همان نقش نمایش داده می‌شود.';
+            ufG('uf-submit').querySelector('span').textContent = u ? 'ذخیره‌ی تغییرات' : 'ثبتِ کاربر';
+            ufG('uf-admin-sec').classList.toggle('hidden', !u);
+            ufG('uf-rpw-clear-box').classList.toggle('hidden', !u);
+            const st = ufG('uf-rpw-state');
+            st.classList.toggle('hidden', !u || co);
+            if (u && !co) { st.textContent = u.has_report_pw ? 'تعیین شده' : 'همان رمزِ پنل'; st.className = 'text-[10px] font-bold rounded-full px-2 py-0.5 ' + (u.has_report_pw ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'); }
+            // نقش‌های داخلی و «کاربر شرکت» در دو جدولِ جدا هستند؛ در ویرایش، نوعِ حساب عوض نمی‌شود
+            const isMe = u && !co && Number(u.id) === staffMeId;
+            ufG('uf-roles').querySelectorAll('button').forEach(b => { b.classList.remove('on'); b.disabled = !!u && ((b.dataset.r === 'COMPANY') !== co || (isMe && b.dataset.r !== 'ADMIN')); });
+            const note = ufG('uf-role-note');
+            note.classList.toggle('hidden', !u);
+            note.textContent = !u ? '' : isMe ? 'نقشِ حسابِ خودتان (مدیر کل) قابلِ تغییر نیست.' : co ? 'این حساب «کاربر شرکت» است و به نقشِ داخلی تبدیل نمی‌شود (برای آن، کاربرِ تازه بسازید).' : 'حسابِ داخلی به «کاربر شرکت» تبدیل نمی‌شود؛ بقیه‌ی نقش‌ها قابلِ انتخاب‌اند.';
+            msdMount('uf-companies', staffCompanies, co ? (u.company_ids || []) : [], 'شرکت(ها) را انتخاب کنید…');
+            const cc = u && u.chat_companies;
+            msdMount('uf-chatcos', staffCompanies, (cc && cc.ids) || [], 'شرکت‌هایی که می‌تواند با آن‌ها گفتگو کند…');
+            ufChatMode((cc && cc.mode) || 'ROLE');
+            showMobileErr('uf', '');
+            paintUserAvatar('uf');
+            ufG('uf-rest').classList.add('hidden');
+            ufG('uf-liaison-sub').classList.add('hidden');
+            if (u) ufPickRole(co ? 'COMPANY' : (['COMPANY_LIAISON', 'PARSIAN'].includes(u.role) ? 'LIAISON' : u.role), u.role);
+            openModal('user-form-modal');
         }
-        async function saveStaffUserEdit() {
-            const g = id => document.getElementById(id).value;
-            if (!g('esu-admin-pass')) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('esu-admin-pass').focus(); return; }
-            const type = g('esu-type');
-            const body = {action: 'update', type, id: Number(g('esu-id')), full_name: g('esu-fullname').trim(),
-                mobile_number: p2e(g('esu-mobile').trim()), password: g('esu-password'), admin_password: g('esu-admin-pass')};
-            if (g('esu-avatar-changed')) body.avatar = g('esu-avatar');
-            if (type === 'COMPANY') {
-                body.company_ids = pickedCompanies('esu');
+        function ufPickRole(r, exact) {
+            ufG('uf-roles').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
+            const liaison = r === 'LIAISON', co = r === 'COMPANY';
+            ufG('uf-liaison-sub').classList.toggle('hidden', !liaison);
+            if (liaison) ufPickPanel(exact === 'PARSIAN' ? 'PARSIAN' : 'COMPANY_LIAISON');
+            else ufG('uf-role').value = r;
+            ufG('uf-company-sec').classList.toggle('hidden', !co);
+            ufG('uf-chat-sec').classList.toggle('hidden', co || r === 'ADMIN');
+            ufG('uf-rpw-sec').classList.toggle('hidden', co);
+            ufG('uf-personnel-box').classList.toggle('hidden', co);
+            const rest = ufG('uf-rest');
+            if (rest.classList.contains('hidden')) { rest.classList.remove('hidden'); if (ufG('uf-mode').value === 'create') setTimeout(() => ufG('uf-fullname').focus(), 60); }
+        }
+        function ufPickPanel(p) {
+            ufG('uf-role').value = p;
+            ufG('uf-liaison-sub').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+        }
+        function ufChatMode(m) {
+            ufG('uf-chat-mode').dataset.v = m;
+            ufG('uf-chat-mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === m));
+            ufG('uf-chatcos').classList.toggle('hidden', m !== 'LIST');
+        }
+        function ufGenPass() {
+            const c = 'abcdefghjkmnpqrstuvwxyz23456789';
+            let p = ''; const a = new Uint32Array(8); crypto.getRandomValues(a); a.forEach(x => { p += c[x % c.length]; });
+            ufG('uf-password').value = p; ufG('uf-password').focus(); ufG('uf-password').select();
+            showToast('رمزِ تصادفی ساخته شد؛ آن را به کاربر بدهید.', 'info');
+        }
+        async function ufSubmit() {
+            const mode = ufG('uf-mode').value, role = ufG('uf-role').value, edit = mode === 'edit';
+            if (!role) { showToast('اول نقشِ کاربر را انتخاب کنید.', 'warning'); return; }
+            const co = role === 'COMPANY';
+            const body = {full_name: ufG('uf-fullname').value.trim(), mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value};
+            if (!body.full_name) { showToast('نامِ کاربر را وارد کنید.', 'error'); ufG('uf-fullname').focus(); return; }
+            if (co) {
+                body.company_ids = msdValue('uf-companies');
                 if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
-            } else { body.role = g('esu-role'); body.personnel_code = g('esu-personnel').trim(); body.report_edit_password = g('esu-rpw'); body.report_edit_password_clear = document.getElementById('esu-rpw-clear').checked;
-                     if (body.role !== 'ADMIN') body.chat_companies = chatCoValue('esu'); }
-            showMobileErr('esu', '');
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-            const data = await res.json();
-            if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('esu', data.error); return; }
-            showToast(data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.', 'success');
-            closeModal('edit-staff-user-modal');
-            loadStaffUsers();
+            } else {
+                body.personnel_code = ufG('uf-personnel').value.trim();
+                body.report_edit_password = ufG('uf-rpw').value;
+                if (role !== 'ADMIN') { const m = ufG('uf-chat-mode').dataset.v || 'ROLE'; body.chat_companies = m === 'LIST' ? msdValue('uf-chatcos') : m; }
+            }
+            if (ufG('uf-avatar-changed').value || !edit) body.avatar = ufG('uf-avatar').value;
+            if (edit) {
+                Object.assign(body, {action: 'update', type: ufG('uf-type').value, id: Number(ufG('uf-id').value), admin_password: ufG('uf-admin-pass').value});
+                if (!co) { body.role = role; body.report_edit_password_clear = ufG('uf-rpw-clear').checked; }
+                if (!body.admin_password) { showToast('برای تأیید، رمزِ خودتان را وارد کنید.', 'warning'); ufG('uf-admin-pass').focus(); return; }
+            } else {
+                Object.assign(body, {action: 'create', role, username: ufG('uf-username').value.trim()});
+                if (!body.username || !body.password) { showToast('نام کاربری و رمز عبور الزامی است.', 'error'); return; }
+            }
+            showMobileErr('uf', '');
+            const btn = ufG('uf-submit'); btn.disabled = true;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('uf', data.error); return; }
+                showToast(edit ? (data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.') : 'کاربر ثبت شد.', 'success');
+                if (data.warning) showToast(data.warning, 'warning');
+                closeModal('user-form-modal');
+                loadStaffUsers();
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+            finally { btn.disabled = false; }
         }
+        function openAddUserModal() { ufOpen('create'); }
+        function openEditStaffUser(type, id) { ufOpen('edit', type, id); }
         // ---------- ویرایشگرِ دسترسیِ صفحه‌به‌صفحه ----------
         const REAL_ADMIN = <?php echo $realRole === 'ADMIN' ? 'true' : 'false'; ?>;
         let PM = null;   // {user, catalog, ops, role_default, perms, mode}

@@ -41,6 +41,15 @@ try {
 
         $accounts = auth_accounts_by_phone($pdo, $phone);
         if (!$accounts) out(['ok' => false, 'code' => 'NOT_FOUND', 'error' => 'کاربری با این شماره یافت نشد.']);
+        // درگاهِ انتخاب‌شده در صفحه‌ی ورود: «همکارِ بیمه» = حساب‌های داخلی، «کارشناسِ شرکت‌ها» = کاربرانِ شرکت
+        $gate = ($data['gate'] ?? '') === 'COMPANY' ? 'COMPANY' : (($data['gate'] ?? '') === 'STAFF' ? 'STAFF' : '');
+        if ($gate !== '') {
+            $inGate = array_values(array_filter($accounts, function ($a) use ($gate) { return $a['type'] === $gate; }));
+            if (!$inGate) out(['ok' => false, 'code' => 'OTHER_GATE', 'error' => $gate === 'COMPANY'
+                ? 'این شماره مالِ «همکارِ بیمه» است؛ بالای فرم «همکارِ بیمه» را انتخاب کنید.'
+                : 'این شماره مالِ «کاربرِ شرکت» است؛ بالای فرم «کارشناسِ شرکت‌ها» را انتخاب کنید.']);
+            $accounts = $inGate;
+        }
         $acc = pick_account($accounts, (string)($data['account'] ?? ''));
         if (!$acc) out(['ok' => true, 'choose' => array_map('acc_public', $accounts)]);   // یک شماره، چند حساب
         $pub = acc_public($acc);
