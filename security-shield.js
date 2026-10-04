@@ -127,8 +127,9 @@
         root.querySelector('[data-act=live]').onclick = e => runBtn(e.currentTarget, 'live_test', r => toast(r.bad ? `آزمایش تمام شد: ${fa(r.bad)} مشکل پیدا شد.` : 'آزمایش تمام شد؛ همه‌چیز بسته و امن بود.', r.bad ? 'error' : 'success'));
         root.querySelector('[data-act=weak]').onclick = e => runBtn(e.currentTarget, 'weak_scan', r => toast(r.count ? `${fa(r.count)} حساب رمزِ ضعیف دارد.` : 'هیچ رمزِ ضعیفی پیدا نشد.', r.count ? 'error' : 'success'));
         root.querySelector('[data-act=hooks]').onclick = async e => {
+            const btn = e.currentTarget;   // بعد از await دیگر در دسترس نیست
             if (!await confirmBox('اتصالِ امنِ وب‌هوک', 'آدرسِ وب‌هوکِ هر دو ربات با یک کلیدِ مخفیِ تازه دوباره در بله ثبت می‌شود تا پیامِ جعلی پذیرفته نشود. ادامه می‌دهید؟')) return;
-            runBtn(e.currentTarget, 'fix_webhooks', r => {
+            runBtn(btn, 'fix_webhooks', r => {
                 const msg = r.results.map(x => `${x.ok ? '✅' : (x.ok === null ? '➖' : '❌')} ${x.label}: ${x.msg}`).join('\n');
                 if (window.showAlert) showAlert('اتصالِ امنِ وب‌هوک', msg, r.results.some(x => x.ok === false) ? 'warning' : 'success'); else toast(msg);
             });
@@ -244,11 +245,11 @@
                 <h3 style="margin:0"><i class="fas fa-users-viewfinder text-emerald-600"></i> نشست‌ها و کاربران <span class="sec-pill" style="background:#dcfce7;color:#16a34a">${fa(on)} آنلاین</span></h3>
                 <button class="sec-btn red" id="sec-kill-all"><i class="fas fa-power-off"></i> خروجِ اجباریِ همه (جز من)</button>
             </div>
-            <p class="text-[11px] text-slate-500 mb-3 leading-6">کاربری که «${fa(ov.settings.sec_idle_hours)} ساعت» با پنل کار نکند خودکار خارج می‌شود؛ با «خروجِ اجباری» نشستِ کاربر در کمتر از ۳۰ ثانیه بسته می‌شود (مثلاً اگر گوشی‌اش گم شده یا از شرکت رفته).</p>
+            <p class="text-[11px] text-slate-500 mb-3 leading-6">کاربری که «${fa(ov.settings.sec_idle_hours)} ساعت» با پنل کار نکند خودکار خارج می‌شود؛ با «خروجِ اجباری» نشستِ کاربر در کمتر از ۱۰ ثانیه بسته می‌شود (مثلاً اگر گوشی‌اش گم شده یا از شرکت رفته).</p>
             <div style="overflow:auto;max-height:65vh;border:1px solid #f1f5f9;border-radius:14px"><table class="sec-tbl"><thead><tr><th>کاربر</th><th>نقش</th><th>وضعیت</th><th>آخرین ورود</th><th>IP / دستگاه</th><th></th></tr></thead><tbody>
             ${r.rows.map(x => `<tr><td class="whitespace-nowrap"><b>${esc(x.name)}</b>${x.me ? ' <span class="text-[10px] text-blue-500">(شما)</span>' : ''}<div class="text-[10px] text-slate-400 font-mono" dir="ltr" style="text-align:right">${esc(x.username)}</div></td>
                 <td class="whitespace-nowrap text-slate-600">${esc(x.role_fa)}</td>
-                <td class="whitespace-nowrap">${x.online ? '<span class="sec-pill" style="background:#dcfce7;color:#16a34a"><i class="sec-dot" style="background:#22c55e"></i> آنلاین</span>' : `<span class="text-slate-500">${ago(x.ago)}</span>`}</td>
+                <td class="whitespace-nowrap">${x.online ? '<span class="sec-pill" style="background:#dcfce7;color:#16a34a"><i class="sec-dot" style="background:#22c55e"></i> آنلاین</span>' : `<span class="text-slate-500"><i class="sec-dot" style="background:#cbd5e1"></i> آفلاین · ${ago(x.ago)}</span>`}</td>
                 <td class="whitespace-nowrap text-slate-500">${esc(x.last_login_fa || '—')}${x.method ? `<div class="text-[10px] text-slate-400">${esc(x.method)}</div>` : ''}</td>
                 <td><span dir="ltr" class="font-mono">${esc(x.last_ip || '—')}</span><div class="text-[10px] text-slate-400">${esc(x.device)}</div></td>
                 <td class="text-left">${x.me ? '' : `<button class="sec-btn light" style="padding:5px 10px" data-kill="${x.type}:${x.id}" data-name="${esc(x.name)}"><i class="fas fa-right-from-bracket"></i> خروجِ اجباری</button>`}</td></tr>`).join('')}
@@ -257,14 +258,27 @@
             if (!await confirmBox('خروجِ اجباریِ همه', 'همه‌ی کاربرانِ پنل و شرکت‌ها (جز خودتان) از پنل خارج می‌شوند و باید دوباره وارد شوند. مطمئنید؟')) return;
             const r2 = await api('force_logout', {all: 1});
             toast(r2.ok ? r2.msg : r2.error, r2.ok ? 'success' : 'error');
+            if (r2.ok) { el.querySelectorAll('[data-kill]').forEach(x => markLeaving(x)); refreshLater(el); }
         };
         el.querySelectorAll('[data-kill]').forEach(b => b.onclick = async () => {
             const [type, id] = b.dataset.kill.split(':');
             if (!await confirmBox('خروجِ اجباری', `«${b.dataset.name}» از پنل خارج شود؟`)) return;
             const r2 = await api('force_logout', {type, id: +id});
             toast(r2.ok ? r2.msg : r2.error, r2.ok ? 'success' : 'error');
-            if (r2.ok) bodySessions(el);
+            if (r2.ok) { markLeaving(b); refreshLater(el); }
         });
+    }
+    // تا نشستِ کاربر واقعاً بسته شود (حداکثر ۱۰ ثانیه) «در حالِ خروج» نشان داده می‌شود و بعد فهرست تازه می‌شود
+    function markLeaving(btn) {
+        const tr = btn.closest('tr');
+        const st = tr && tr.children[2];
+        if (st) st.innerHTML = '<span class="sec-pill" style="background:#fef3c7;color:#b45309"><i class="fas fa-spinner fa-spin"></i> در حالِ خروج…</span>';
+        btn.disabled = true;
+    }
+    let refreshTimer = null;
+    function refreshLater(el) {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => { if (tab === 'sessions' && root.contains(el)) bodySessions(el); }, 12000);
     }
 
     async function blockIp(ip) {

@@ -274,7 +274,7 @@ switch ($action) {
             $pdo->exec("UPDATE company_portal_users SET sess_epoch = sess_epoch + 1");
             try { $pdo->exec("UPDATE users SET last_offline_at = NOW() WHERE id <> $me"); $pdo->exec("UPDATE company_portal_users SET last_offline_at = NOW()"); } catch (Throwable $e) {}
             sec_event($pdo, 'ADMIN_ACTION', 'خروجِ اجباریِ همه‌ی کاربران (جز خودِ مدیر)');
-            sout(['ok' => true, 'msg' => 'همه‌ی کاربران (جز شما) حداکثر تا ۳۰ ثانیه‌ی دیگر از پنل خارج می‌شوند.']);
+            sout(['ok' => true, 'msg' => 'همه‌ی کاربران (جز شما) حداکثر تا ۱۰ ثانیه‌ی دیگر از پنل خارج می‌شوند.']);
         }
         $id = intval($data['id'] ?? 0);
         if (!$id) sout(['ok' => false, 'error' => 'کاربر مشخص نیست.']);
@@ -285,7 +285,7 @@ switch ($action) {
         $pdo->prepare("UPDATE $t SET sess_epoch = sess_epoch + 1 WHERE id = ?")->execute([$id]);
         try { $pdo->prepare("UPDATE $t SET last_offline_at = NOW() WHERE id = ?")->execute([$id]); } catch (Throwable $e) {}
         sec_event($pdo, 'ADMIN_ACTION', 'خروجِ اجباریِ «' . $name . '»');
-        sout(['ok' => true, 'msg' => '«' . $name . '» حداکثر تا ۳۰ ثانیه‌ی دیگر از پنل خارج می‌شود.']);
+        sout(['ok' => true, 'msg' => '«' . $name . '» حداکثر تا ۱۰ ثانیه‌ی دیگر از پنل خارج می‌شود.']);
 
     case 'blocked':
         $rows = $pdo->query("SELECT b.*, u.full_name by_name FROM sec_blocked_ips b LEFT JOIN users u ON u.id = b.created_by ORDER BY b.created_at DESC")->fetchAll();

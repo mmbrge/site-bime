@@ -104,7 +104,7 @@ function sec_deny($code, $msg, array $extraHeaders = []) {
     }
     if (sec_is_api() || stripos((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'json') !== false || stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'json') !== false) {
         if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
-        echo json_encode(['ok' => false, 'error' => $msg, 'security' => true, 'session_expired' => in_array('X-Session-Expired: 1', $extraHeaders, true)], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => false, 'error' => $msg, 'security' => true, 'session_expired' => (bool)preg_grep('/^X-Session-Expired:/', $extraHeaders), 'forced' => in_array('X-Session-Expired: forced', $extraHeaders, true)], JSON_UNESCAPED_UNICODE);
     } else {
         if (!headers_sent()) header('Content-Type: text/html; charset=utf-8');
         echo '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><title>دسترسی مسدود</title><body style="font-family:tahoma;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">'
@@ -114,8 +114,12 @@ function sec_deny($code, $msg, array $extraHeaders = []) {
     exit;
 }
 
-// نشستِ کاربر را می‌بندد (برای خروجِ خودکار یا اجباری)
-function sec_kill_session() {
+// نشستِ کاربر را می‌بندد (برای خروجِ خودکار یا اجباری) و همان لحظه «آفلاین» نشانش می‌دهد
+function sec_kill_session($pdo = null) {
+    [$ut, $uid] = sec_actor();
+    if ($pdo && $uid) {
+        try { $pdo->prepare("UPDATE " . ($ut === 'COMPANY' ? 'company_portal_users' : 'users') . " SET last_offline_at = NOW() WHERE id = ?")->execute([$uid]); } catch (Throwable $e) {}
+    }
     if (session_status() === PHP_SESSION_ACTIVE) {
         $_SESSION = [];
         @session_regenerate_id(true);
@@ -153,13 +157,13 @@ function sec_session_guard($pdo) {
     if ($now - intval($_SESSION['_sec_act']) > $idle) {
         $name = $ctx === 'COMPANY' ? ($_SESSION['company_user_full_name'] ?? '') : ($_SESSION['full_name'] ?? '');
         sec_event($pdo, 'IDLE_LOGOUT', 'بعد از ' . round(($now - intval($_SESSION['_sec_act'])) / 60) . ' دقیقه بدونِ فعالیت', $name);
-        sec_kill_session();
-        if (!sec_is_api() && !headers_sent()) { header('Location: ' . (sec_script() === 'index.php' && $ctx === 'COMPANY' ? '../index.php?idle=1' : 'index.php?idle=1')); exit; }
+        sec_kill_session($pdo);
+        if (!sec_is_api() && !headers_sent()) { header('Location: ' . $loginPage); exit; }
         sec_deny(401, 'به دلیلِ عدمِ فعالیت از پنل خارج شدید؛ دوباره وارد شوید.', ['X-Session-Expired: 1']);
     }
     if ($active) $_SESSION['_sec_act'] = $now;
-    // خروجِ اجباری: مدیر عددِ sess_epoch کاربر را بالا می‌برد (هر ۳۰ ثانیه یک بار بررسی می‌شود)
-    if ($now - intval($_SESSION['_sec_ep_chk'] ?? 0) >= 30) {
+    // خروجِ اجباری: مدیر عددِ sess_epoch کاربر را بالا می‌برد (هر ۱۰ ثانیه یک بار بررسی می‌شود)
+    if ($now - intval($_SESSION['_sec_ep_chk'] ?? 0) >= 10) {
         $_SESSION['_sec_ep_chk'] = $now;
         try {
             $st = $pdo->prepare("SELECT sess_epoch FROM " . ($ctx === 'COMPANY' ? 'company_portal_users' : 'users') . " WHERE id = ?");
@@ -169,9 +173,10 @@ function sec_session_guard($pdo) {
                 if (!isset($_SESSION['_sec_epoch'])) $_SESSION['_sec_epoch'] = intval($ep);
                 elseif (intval($ep) !== intval($_SESSION['_sec_epoch'])) {
                     sec_event($pdo, 'FORCED_LOGOUT', 'نشست توسطِ مدیر بسته شد');
-                    sec_kill_session();
-                    if (!sec_is_api() && !headers_sent()) { header('Location: ' . $loginPage); exit; }
-                    sec_deny(401, 'مدیر نشستِ شما را بست؛ دوباره وارد شوید.', ['X-Session-Expired: 1']);
+                    sec_kill_session($pdo);
+                    $forcedPage = str_replace('idle=1', 'forced=1', $loginPage);
+                    if (!sec_is_api() && !headers_sent()) { header('Location: ' . $forcedPage); exit; }
+                    sec_deny(401, 'مدیر نشستِ شما را بست؛ دوباره وارد شوید.', ['X-Session-Expired: forced']);
                 }
             }
         } catch (Throwable $e) {}

@@ -12,14 +12,15 @@
     const origFetch = window.fetch.bind(window);
     const fa = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
 
-    function leave() {
+    // forced: مدیر نشست را بسته (پیامِ صفحه‌ی ورود فرق می‌کند)
+    function leave(forced) {
         if (leaving) return;
         leaving = true;
-        location.href = CFG.login;
+        location.href = forced ? CFG.login.replace('idle=1', 'forced=1') : CFG.login;
     }
     function apply(r) {
         if (!r) return;
-        if (r.session_expired) return leave();
+        if (r.session_expired) return leave(r.forced);
         if (r.ok) { idleMs = r.idle_seconds * 1000; deadline = Date.now() + r.remaining * 1000; tick(); }
     }
     // active=true یعنی «کاربر الان کار کرد»؛ false فقط زمانِ باقی‌مانده را می‌پرسد (برای هماهنگی با تب‌های دیگر)
@@ -28,7 +29,7 @@
         pending = true;
         if (active) lastPing = Date.now();
         return origFetch(CFG.alive, {credentials: 'same-origin', cache: 'no-store', headers: active ? {'X-User-Activity': '1'} : {}})
-            .then(r => r.json().catch(() => null).then(j => (r.status === 401 ? {session_expired: true} : j)))
+            .then(r => r.json().catch(() => null).then(j => (r.status === 401 ? {session_expired: true, forced: !!(j && j.forced) || r.headers.get('X-Session-Expired') === 'forced'} : j)))
             .then(apply).catch(() => {}).finally(() => { pending = false; });
     }
     function interact() {
@@ -82,7 +83,8 @@
             }
         } catch (e) {}
         return origFetch(input, init).then(res => {
-            if (res.headers.get('X-Session-Expired') === '1') leave();
+            const ex = res.headers.get('X-Session-Expired');
+            if (ex) leave(ex === 'forced');
             return res;
         });
     };

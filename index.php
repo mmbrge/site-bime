@@ -18,6 +18,7 @@ require_once __DIR__ . '/api/_auth_helpers.php';
 $error = '';
 $notice = '';
 if (isset($_GET['idle'])) $notice = 'به دلیلِ عدمِ فعالیت از پنل خارج شدید؛ دوباره وارد شوید.';
+if (isset($_GET['forced'])) $notice = 'مدیر سامانه نشستِ شما را بست؛ برای ادامه دوباره وارد شوید.';
 $authReady = auth_schema_ready($pdo);
 
 // ورود با نام کاربری و رمز. (ورود با کد، جدا و با api/otp_login.php انجام می‌شود.)
