@@ -84,6 +84,34 @@
         } catch (e) { return file; }
     }
 
+    // عکس‌های HEIC/HEIF (آیفون) را مرورگرها (جز سافاری) نشان نمی‌دهند: در خودِ مرورگر به JPEG تبدیل می‌شوند؛
+    // اگر کتابخانه‌ی تبدیل بارگذاری نشد، همان فایلِ اصلی فرستاده و نگه داشته می‌شود
+    const RX_HEIC = /\.(heic|heif)$/i, RX_DOC = /\.(pdf|docx?|xlsx?|txt|rtf|odt)$/i, RX_IMG = /\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif)$/i;
+    let heicLib = null;
+    function loadHeic() {
+        if (window.heic2any) return Promise.resolve(window.heic2any);
+        if (!heicLib) heicLib = new Promise((res, rej) => {
+            const sc = document.createElement('script');
+            sc.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+            sc.onload = () => window.heic2any ? res(window.heic2any) : rej(new Error('heic2any'));
+            sc.onerror = () => { heicLib = null; rej(new Error('load')); };
+            document.head.appendChild(sc);
+        });
+        return heicLib;
+    }
+    async function heicToJpeg(file) {
+        try {
+            const conv = await loadHeic();
+            let blob = await conv({ blob: file, toType: 'image/jpeg', quality: 0.88 });
+            if (Array.isArray(blob)) blob = blob[0];
+            return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+        } catch (e) { return null; }
+    }
+    // فایلی که مرورگر می‌تواند نشانش دهد (برای پیش‌نمایشِ کوچک)
+    const canThumb = f => /^image\/(jpeg|png|webp|gif|bmp)$/.test(f.type) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name);
+    const docIcon = name => { const e = (name.split('.').pop() || '').toLowerCase();
+        return e === 'pdf' ? 'fa-file-pdf text-rose-500' : /docx?|odt|rtf/.test(e) ? 'fa-file-word text-blue-600' : /xlsx?/.test(e) ? 'fa-file-excel text-emerald-600' : /heic|heif|tiff?/.test(e) ? 'fa-file-image text-violet-500' : 'fa-file-lines text-slate-500'; };
+
     // ------------------------------------------------------------------
     //  استایل
     // ------------------------------------------------------------------
@@ -306,6 +334,7 @@
             root.classList.add('vr-fa-scope');
             this.u = 'vr' + (++uidSeq);
             this.cat = null; this.parts = {}; this.partNotes = {}; this.damages = []; this.uploads = []; this.removePhotos = new Set();
+            this.attachments = []; this.removeAtts = new Set(); this.link = null; this.linkCands = null; this.linkDismissed = '';
             this.healthSel = new Set(); this.insuredId = null; this.existing = null; this.health = null; this.busy = false;
             this.init();
         }
@@ -450,13 +479,14 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div class="vr-card p-4 sm:p-5 vr-fade-up"><div class="vr-sec-title mb-4"><span class="vr-ic bg-gradient-to-br from-slate-600 to-slate-800"><i class="fas fa-rectangle-list"></i></span>پلاک خودرو</div>
                         ${typeof window.plateSplitHtml === 'function' ? window.plateSplitHtml(`${u}-plate`, '') : `<input id="${u}-plate" class="vr-in" placeholder="۱۲ب۳۴۵ ایران ۶۷">`}
-                        <p class="text-[10px] text-slate-400 font-bold mt-2">اگر خودرو پلاک ندارد خالی بگذارید و «شماره شاسی» را وارد کنید.</p></div>
+                        <p class="text-[10px] text-slate-400 font-bold mt-2">اگر خودرو پلاک ندارد خالی بگذارید و «شماره شاسی» را وارد کنید.</p>
+                        ${this.mode === 'target' && this.opts.target ? `<p class="vr-chip bg-emerald-50 text-emerald-600 mt-3"><i class="fas fa-link"></i> این گزارش به همان درخواستی که از رویش ساخته شده وصل می‌شود</p>` : '<div class="vr-plink"></div>'}</div>
                     <div class="vr-card p-4 sm:p-5 vr-fade-up">
                         <div class="flex items-center justify-between gap-2 mb-4"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-emerald-500 to-green-600"><i class="fas fa-user-tie"></i></span>بیمه‌گذار</div>
                         ${c.insureds.length ? `<div class="relative"><input class="vr-in !py-1.5 !text-xs w-48 vr-ins-q" placeholder="🔍 انتخاب از بیمه‌گذارانِ ثبت‌شده"><div class="vr-ins-dd absolute left-0 mt-1 w-72 max-h-64 overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-100 z-30 hidden"></div></div>` : ''}</div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div class="sm:col-span-2"><label class="vr-lbl"><span class="req">*</span>نام بیمه‌گذار</label><input id="${u}-ins-name" class="vr-in"></div>
-                            <div><label class="vr-lbl">کد ملی / شناسه ملی</label><input id="${u}-ins-nid" class="vr-in" dir="ltr" inputmode="numeric"></div>
+                            <div><label class="vr-lbl">کد ملی / شناسه ملی</label><input id="${u}-ins-nid" class="vr-in" dir="ltr" inputmode="numeric" title="با واردکردنِ کد، نام از فهرستِ اشخاص و شرکت‌ها خوانده می‌شود"><p class="vr-ins-src hidden"></p></div>
                             <div><label class="vr-lbl">تلفن</label><input id="${u}-ins-phone" class="vr-in" dir="ltr" inputmode="tel"></div>
                             <div class="sm:col-span-2"><label class="vr-lbl">آدرس</label><input id="${u}-ins-addr" class="vr-in"></div>
                         </div>
@@ -576,20 +606,21 @@
         photosCardHtml() {
             const hp = this.health ? this.health.photos : [];
             return `<div class="vr-card p-4 sm:p-5 vr-fade-up">
-                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span>${this.cat.photos_required !== false ? '<span class="req">*</span>' : ''}عکس‌های بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
+                <div class="flex items-center justify-between gap-2 mb-4 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-cyan-500 to-blue-600"><i class="fas fa-images"></i></span>${this.cat.photos_required !== false ? '<span class="req">*</span>' : ''}عکس‌ها و مدارکِ بازدید <span class="vr-ph-count vr-chip bg-slate-100 text-slate-500"></span></div>
                 ${this.cat.photos_required !== false && this.cat.allow_no_photos ? `<label class="flex items-center gap-2 cursor-pointer select-none vr-nophoto-wrap"><input type="checkbox" class="hidden vr-nophoto" ${this.noPhotos ? 'checked' : ''}><span class="vr-switch"></span><span class="text-xs font-bold text-slate-600">عکس بازدید ندارم</span></label>` : ''}
                 <div class="flex flex-wrap gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*" capture="environment" class="hidden vr-cam-in"></label>
-                <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="همه‌ی عکس‌های داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه<input type="file" webkitdirectory directory multiple class="hidden vr-dir-in"></label>
+                <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vr-dir-btn" title="همه‌ی عکس‌ها و مدارکِ داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه</button>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="عکس‌های داخلِ فایلِ ZIP خودکار استخراج می‌شوند"><i class="fas fa-file-zipper text-violet-500"></i> ZIP<input type="file" accept=".zip,application/zip" multiple class="hidden vr-zip-in"></label></div></div>
                 ${hp.length ? `<p class="text-[11px] font-bold text-slate-500 mb-2"><i class="fas fa-heart-pulse text-rose-400"></i> عکس‌های بازدید سلامت (تیک‌خورده‌ها کنارِ گزارش ذخیره می‌شوند)</p>
                     <div class="flex gap-2 mb-2"><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-all">انتخابِ همه</button><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-none">هیچ‌کدام</button></div>
                     <div class="vr-hp grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-4"></div>` : ''}
                 <div class="vr-ex grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-3"></div>
                 <label class="vr-drop p-5 flex flex-col items-center justify-center gap-2 cursor-pointer text-center" data-drop="img">
-                    <i class="fas fa-cloud-arrow-up text-3xl text-indigo-400"></i><p class="font-black text-slate-600 text-xs">عکس‌ها، پوشه یا فایلِ ZIP را اینجا رها کنید یا کلیک کنید</p>
-                    <p class="text-[10px] text-slate-400 font-bold">چند عکس با هم؛ عکس‌های حجیم خودکار کوچک می‌شوند</p>
-                    <input type="file" accept="image/*" multiple class="hidden vr-img-in"></label>
-                <div class="vr-up grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mt-3"></div></div>`;
+                    <i class="fas fa-cloud-arrow-up text-3xl text-indigo-400"></i><p class="font-black text-slate-600 text-xs">عکس‌ها، مدارک، پوشه یا فایلِ ZIP را اینجا رها کنید یا کلیک کنید</p>
+                    <p class="text-[10px] text-slate-400 font-bold">همه‌ی فرمت‌های عکس (JPG، PNG، WEBP، HEIC آیفون، TIFF، ...) و مدارک PDF / Word / Excel · عکس‌های حجیم خودکار کوچک می‌شوند</p>
+                    <input type="file" accept="image/*,.heic,.heif,.tif,.tiff,.pdf,.doc,.docx,.xls,.xlsx,.txt,.rtf,.odt,application/pdf" multiple class="hidden vr-img-in"></label>
+                <div class="vr-up grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mt-3"></div>
+                <div class="vr-att mt-3"></div></div>`;
         }
         renderPhotos() {
             const hp = this.root.querySelector('.vr-hp');
@@ -619,12 +650,29 @@
             if (up) {
                 (this._urls || []).forEach(x => URL.revokeObjectURL(x));
                 this._urls = this.uploads.map(f => URL.createObjectURL(f));
-                up.innerHTML = this.uploads.map((f, i) => `<div class="vr-thumb vr-pop" data-i="${i}"><img src="${this._urls[i]}" class="cursor-zoom-in"><button type="button" class="vr-x"><i class="fas fa-xmark"></i></button>
+                up.innerHTML = this.uploads.map((f, i) => `<div class="vr-thumb vr-pop" data-i="${i}">${canThumb(f) ? `<img src="${this._urls[i]}" class="cursor-zoom-in">`
+                        : `<div class="w-full h-full flex flex-col items-center justify-center bg-violet-50 text-violet-600"><i class="fas fa-file-image text-2xl"></i><b class="text-[10px] mt-1" dir="ltr">${esc((f.name.split('.').pop() || '').toUpperCase())}</b></div>`}
+                    <button type="button" class="vr-x"><i class="fas fa-xmark"></i></button>
                     <span class="vr-cap">${fa((f.size / 1024 / 1024).toFixed(1))} مگابایت</span></div>`).join('');
                 up.querySelectorAll('.vr-thumb').forEach(t => {
                     t.querySelector('.vr-x').onclick = () => { this.uploads.splice(Number(t.dataset.i), 1); this.renderPhotos(); };
-                    t.querySelector('img').onclick = () => lightbox(this._urls, Number(t.dataset.i));
+                    const im = t.querySelector('img');
+                    if (im) im.onclick = () => lightbox(this._urls, Number(t.dataset.i));
                 });
+            }
+            // مدارکِ پیوست (PDF، Word، ...): تازه‌ها + ذخیره‌شده‌ها (در ویرایش)
+            const att = this.root.querySelector('.vr-att');
+            if (att) {
+                const old = this.existing && this.existing.attachments ? this.existing.attachments : [];
+                const chip = (icon, name, sub, act, off) => `<div class="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 ${off ? 'opacity-50' : ''}">
+                    <i class="fas ${icon} text-lg"></i><div class="min-w-0 flex-1"><p class="text-[11px] font-bold text-slate-700 truncate" dir="auto">${esc(name)}</p><p class="text-[10px] text-slate-400 font-bold">${sub}</p></div>${act}</div>`;
+                att.innerHTML = (old.length || this.attachments.length) ? `<p class="text-[11px] font-black text-slate-500 mb-2"><i class="fas fa-paperclip text-indigo-400"></i> مدارکِ پیوست (در پوشه‌ی «مدارک»ِ گزارش ذخیره می‌شوند)</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    ${old.map(a => chip(docIcon(a.name), a.name, this.removeAtts.has(a.name) ? 'حذف می‌شود (با old نگه داشته می‌شود)' : 'ذخیره‌شده · <a class="text-indigo-500" target="_blank" href="' + fileUrl(this.existing.id, 'att', '&inline=1&name=' + encodeURIComponent(a.name)) + '">مشاهده</a>',
+                        `<button type="button" class="vr-btn vr-btn-s !py-1 !px-2 !text-[10px]" data-oatt="${esc(a.name)}"><i class="fas ${this.removeAtts.has(a.name) ? 'fa-rotate-left' : 'fa-xmark'}"></i></button>`, this.removeAtts.has(a.name))).join('')}
+                    ${this.attachments.map((f, i) => chip(docIcon(f.name), f.name, fa((f.size / 1024 / 1024).toFixed(1)) + ' مگابایت · تازه', `<button type="button" class="vr-btn vr-btn-s !py-1 !px-2 !text-[10px]" data-natt="${i}"><i class="fas fa-xmark"></i></button>`)).join('')}</div>` : '';
+                att.querySelectorAll('[data-natt]').forEach(b => b.onclick = () => { this.attachments.splice(Number(b.dataset.natt), 1); this.renderPhotos(); });
+                att.querySelectorAll('[data-oatt]').forEach(b => b.onclick = () => { const n = b.dataset.oatt; this.removeAtts.has(n) ? this.removeAtts.delete(n) : this.removeAtts.add(n); this.renderPhotos(); });
             }
             const total = this.photoTotal();
             const cnt = this.root.querySelector('.vr-ph-count');
@@ -640,11 +688,19 @@
                     if (st) st.textContent = `در حال باز کردنِ «${f.name}»...`;
                     try { const imgs = await zipImages(f); list.push(...imgs); if (!imgs.length) toast(`در «${f.name}» عکسی پیدا نشد.`, 'warning'); }
                     catch (e) { toast(`ZIPِ «${f.name}» باز نشد: ${e.message}`, 'error'); }
-                } else if (/^image\//.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name)) list.push(f);
+                } else if (RX_DOC.test(f.name) || /pdf|msword|officedocument|excel/.test(f.type)) {
+                    this.attachments.push(f);
+                } else if (/^image\//.test(f.type) || RX_IMG.test(f.name)) list.push(f);
             }
-            if (!list.length) { if (st) st.textContent = ''; return; }
+            if (this.attachments.length > 30) { this.attachments = this.attachments.slice(0, 30); toast('حداکثر ۳۰ مدرک در هر بار ذخیره.', 'warning'); }
+            if (!list.length) { if (st) st.textContent = this.attachments.length ? `${fa(this.attachments.length)} مدرکِ پیوست آماده‌ی ارسال است.` : ''; this.renderPhotos(); return; }
             if (st) st.textContent = 'در حال آماده‌سازیِ عکس‌ها...';
-            for (const f of list) this.uploads.push(await shrinkImage(f));
+            for (const f of list) {
+                if (RX_HEIC.test(f.name) || /hei[cf]/.test(f.type)) {
+                    if (st) st.textContent = `در حال تبدیلِ عکسِ HEIC «${f.name}»...`;
+                    this.uploads.push((await heicToJpeg(f)) || f);   // تبدیل نشد: همان HEIC نگه داشته می‌شود
+                } else this.uploads.push(await shrinkImage(f));
+            }
             if (this.uploads.length > 40) { this.uploads = this.uploads.slice(0, 40); toast('حداکثر ۴۰ عکس در هر بار ذخیره.', 'warning'); }
             if (st) st.textContent = `${fa(this.uploads.length)} عکسِ تازه آماده‌ی ارسال است.`;
             this.renderPhotos();
@@ -675,8 +731,15 @@
             const imgIn = wrap.querySelector('.vr-img-in'), camIn = wrap.querySelector('.vr-cam-in');
             imgIn.onchange = () => { this.addImages(imgIn.files); imgIn.value = ''; };
             camIn.onchange = () => { this.addImages(camIn.files); camIn.value = ''; };
-            const dirIn = wrap.querySelector('.vr-dir-in'), zipIn = wrap.querySelector('.vr-zip-in');
-            dirIn.onchange = () => { this.addImages([...dirIn.files].sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, 'fa', { numeric: true }))); dirIn.value = ''; };
+            const zipIn = wrap.querySelector('.vr-zip-in');
+            wrap.querySelector('.vr-dir-btn').onclick = () => this.folderDialog();
+            // نامِ بیمه‌گذار از روی کد ملی / شناسه: اول از اشخاصِ حقیقی و شرکت‌های خودمان
+            const nidEl = this.$(`#${this.id('ins-nid')}`);
+            if (nidEl) nidEl.addEventListener('change', () => this.lookupInsured());
+            // بررسیِ پلاک بین درخواست‌های صادرنشده (شرکتی و کارکنان)
+            const plateBox = this.root.querySelector(`.psplit[data-target="${this.id('plate')}"]`) || this.$(`#${this.id('plate')}`);
+            if (plateBox) ['input', 'change'].forEach(ev => plateBox.addEventListener(ev, () => this.schedulePlateCheck()));
+            wrap.addEventListener('input', e => { const sh = this.cat && this.cat.fields.find(f => f.excel_column === 'شماره شاسی'); if (sh && e.target === this.fieldEl(sh.field_key)) this.schedulePlateCheck(); });
             zipIn.onchange = () => { this.addImages(zipIn.files); zipIn.value = ''; };
             const hpAll = wrap.querySelector('.vr-hp-all'), hpNone = wrap.querySelector('.vr-hp-none');
             if (hpAll) hpAll.onclick = () => { this.health.photos.forEach(p => this.healthSel.add(p.key)); this.renderPhotos(); };
@@ -732,6 +795,93 @@
             this.insuredId = i.id;
             this.$('.vr-ins-badge').classList.remove('hidden');
             this.saveDraft();
+        }
+
+        async lookupInsured(silentIfNone = true) {
+            const nid = en((this.$(`#${this.id('ins-nid')}`) || {}).value || '').replace(/\D/g, '');
+            const badge = this.$('.vr-ins-src');
+            if (nid.length < 8) { if (badge) badge.classList.add('hidden'); return; }
+            const d = await api('lookup_insured', { national_id: nid });
+            if (!d.ok || !d.found) { if (badge) { badge.classList.toggle('hidden', silentIfNone); badge.innerHTML = '<i class="fas fa-circle-info"></i> این کد در فهرستِ اشخاص و شرکت‌ها نبود؛ همان نامِ واردشده/استخراج‌شده می‌ماند.'; badge.className = 'vr-ins-src text-[10px] font-bold text-slate-400 mt-1'; } return; }
+            const i = d.insured;
+            const set = (k, v, onlyEmpty) => { const el = this.$(`#${this.id(k)}`); if (!el || !v || (onlyEmpty && el.value.trim())) return; el.value = faAuto(v); el.classList.remove('vr-flash'); void el.offsetWidth; el.classList.add('vr-flash'); };
+            set('ins-name', i.name); set('ins-phone', fa(i.phone), true); set('ins-addr', i.address, true);
+            if (badge) { badge.innerHTML = `<i class="fas fa-user-check"></i> نام از «${esc(i.source_fa)}» خوانده شد.`; badge.className = 'vr-ins-src text-[10px] font-bold text-emerald-600 mt-1'; }
+            this.saveDraft();
+        }
+        // پنجره‌ی «پوشه»: کشیدن و رها کردنِ پوشه (بی‌پیغام) یا انتخاب از رایانه
+        folderDialog() {
+            const m = modal({ title: 'افزودنِ پوشه‌ی عکس‌ها و مدارک', icon: 'fa-folder-open', width: '34rem', html: `
+                <label class="vr-drop p-8 flex flex-col items-center justify-center gap-2 cursor-pointer text-center vr-fd-drop">
+                    <span class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-3xl"><i class="fas fa-folder-tree"></i></span>
+                    <p class="font-black text-slate-700 text-sm mt-1">پوشه را بکشید و اینجا رها کنید</p>
+                    <p class="text-[11px] text-slate-400 font-bold leading-6">همه‌ی عکس‌ها و مدارکِ داخلِ پوشه و زیرپوشه‌هایش اضافه می‌شوند.</p></label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                    <label class="vr-btn vr-btn-p justify-center cursor-pointer"><i class="fas fa-folder-open"></i> انتخابِ پوشه از رایانه<input type="file" webkitdirectory directory multiple class="hidden vr-fd-dir"></label>
+                    <label class="vr-btn vr-btn-s justify-center cursor-pointer"><i class="fas fa-images"></i> انتخابِ چند فایل<input type="file" multiple accept="image/*,.heic,.heif,.tif,.tiff,.pdf,.doc,.docx,.xls,.xlsx" class="hidden vr-fd-files"></label>
+                </div>
+                <p class="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-3 leading-6"><i class="fas fa-shield-halved ml-1"></i>
+                    با «انتخابِ پوشه از رایانه»، خودِ مرورگر برای امنیت یک پیغامِ تأیید (Upload … files) نشان می‌دهد؛ آن پیغام مالِ مرورگر است و قابلِ تغییر نیست — «Upload» را بزنید.
+                    برای اینکه آن پیغام نیاید، پوشه را بکشید و رها کنید یا «انتخابِ چند فایل» را بزنید و همه را با Ctrl+A انتخاب کنید.</p>` });
+            m.setTitle('افزودنِ پوشه‌ی عکس‌ها و مدارک', esc(this.cat ? this.cat.name : ''));
+            const take = list => { m.el.remove(); document.body.style.overflow = document.querySelector('.vr-overlay') ? 'hidden' : ''; this.addImages(list); };
+            const z = m.body.querySelector('.vr-fd-drop');
+            ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.add('over'); }));
+            ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
+            z.addEventListener('drop', e => droppedFiles(e.dataTransfer).then(take));
+            z.onclick = e => { e.preventDefault(); m.body.querySelector('.vr-fd-files').click(); };
+            const dir = m.body.querySelector('.vr-fd-dir'), files = m.body.querySelector('.vr-fd-files');
+            dir.onchange = () => take([...dir.files].sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, 'fa', { numeric: true })));
+            files.onchange = () => take([...files.files]);
+        }
+        // ---------------- اتصال به درخواستِ صادرنشده از روی پلاک ----------------
+        schedulePlateCheck() {
+            if (!['new'].includes(this.mode) || !(this.boot && this.boot.can_health)) return;
+            clearTimeout(this._pc);
+            this._pc = setTimeout(() => this.plateCheck(), 650);
+        }
+        plateKey(form) { const p = form.plate; return [p.p1, p.letter, p.p2, p.iran].join('|'); }
+        async plateCheck() {
+            const box = this.$('.vr-plink');
+            if (!box || !this.cat) return;
+            const form = this.collect(), p = form.plate;
+            const sh = this.cat.fields.find(f => f.excel_column === 'شماره شاسی');
+            const chassis = sh ? (form.fields[sh.field_key] || '') : '';
+            const full = p.p1 && p.letter && p.p2 && p.iran;
+            if (!full && chassis.length < 10) { box.innerHTML = ''; this.linkCands = null; return; }
+            const key = this.plateKey(form) + '|' + chassis;
+            if (this._pcKey === key && this.linkCands) return;
+            this._pcKey = key;
+            box.innerHTML = '<p class="text-[11px] font-bold text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i> بررسیِ این پلاک بین درخواست‌های صادرنشده...</p>';
+            const d = await api('plate_candidates', { p1: p.p1, letter: p.letter, p2: p.p2, iran: p.iran, chassis });
+            if (this._pcKey !== key) return;
+            this.linkCands = d.ok ? d.candidates : [];
+            if (this.link && !this.linkCands.some(c => c.type === this.link.type && c.id === this.link.id)) this.link = null;
+            if (!this.link && this.linkCands.length === 1 && this.linkDismissed !== key) this.link = this.linkCands[0];
+            this._linkKey = key;
+            this.renderPlateLink();
+        }
+        renderPlateLink() {
+            const box = this.$('.vr-plink');
+            if (!box) return;
+            const c = this.linkCands || [];
+            const icon = t => t === 'company' ? 'fa-building text-teal-600' : 'fa-user-tie text-indigo-500';
+            const row = (x, on) => `<div class="flex items-center gap-2 rounded-xl border ${on ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 bg-white'} px-3 py-2">
+                <i class="fas ${icon(x.type)}"></i><div class="min-w-0 flex-1"><p class="text-[11px] font-black text-slate-700 truncate">${esc(x.title)}</p>
+                <p class="text-[10px] font-bold text-slate-400 truncate">${esc(x.subtitle || '')} · ${esc(x.status_fa || '')}${x.report_no ? ` · <span class="text-amber-600">گزارشِ ${esc(x.report_no)} را دارد</span>` : ''}</p></div>
+                ${on ? `<button type="button" class="vr-btn vr-btn-s !py-1 !px-2 !text-[10px] vr-pl-off"><i class="fas fa-link-slash"></i> لغو اتصال</button>`
+                     : `<button type="button" class="vr-btn vr-btn-p !py-1 !px-2 !text-[10px]" data-pl="${x.type}:${x.id}"><i class="fas fa-link"></i> اتصال</button>`}</div>`;
+            if (!c.length) { box.innerHTML = '<p class="text-[10.5px] font-bold text-slate-400 mt-2"><i class="fas fa-circle-check text-slate-300 ml-1"></i>درخواستِ صادرنشده‌ای (شرکتی یا کارکنان) با این پلاک پیدا نشد؛ گزارش فقط در بایگانیِ گزارش‌ها ذخیره می‌شود.</p>'; return; }
+            const linked = this.link;
+            box.innerHTML = `<div class="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-3">
+                <p class="text-[11px] font-black text-indigo-700 mb-2"><i class="fas fa-magnifying-glass-location ml-1"></i>${linked ? 'گزارش به این درخواست وصل می‌شود' : `${fa(c.length)} درخواستِ صادرنشده با این پلاک پیدا شد؛ یکی را انتخاب کنید`}</p>
+                <div class="space-y-1.5">${linked ? row(linked, true) : c.map(x => row(x, false)).join('')}</div>
+                ${linked ? `<p class="text-[10px] font-bold text-slate-500 mt-2 leading-5">بعد از صدور، گزارش علاوه بر بایگانیِ گزارش‌ها در پوشه‌ی همین درخواست هم قرار می‌گیرد و درخواست «گزارش بازدید دار» می‌شود.${c.length > 1 ? ' <button type="button" class="text-indigo-600 vr-pl-other">درخواستِ دیگر…</button>' : ''}</p>` : ''}</div>`;
+            box.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => { const [t, id] = b.dataset.pl.split(':'); this.link = c.find(x => x.type === t && x.id === Number(id)) || null; this.renderPlateLink(); });
+            const off = box.querySelector('.vr-pl-off');
+            if (off) off.onclick = () => { this.link = null; this.linkDismissed = this._linkKey || ''; this.renderPlateLink(); };
+            const other = box.querySelector('.vr-pl-other');
+            if (other) other.onclick = () => { this.link = null; this.linkDismissed = this._linkKey || ''; this.renderPlateLink(); };
         }
 
         // ---------------- مقدارها ----------------
@@ -852,6 +1002,9 @@
             if (!d.ok) { st.className = 'vr-parse-st text-[11px] font-bold mt-1.5 text-red-500'; st.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${esc(d.error)}`; return; }
             this.applyForm(d.form, true, true);
             this.dirty = true; this.saveDraft();
+            const badge = this.$('.vr-ins-src');
+            if (badge && d.insured_source) { badge.innerHTML = `<i class="fas fa-user-check"></i> نام از «${esc(d.insured_source)}» خوانده شد (نه از فایل).`; badge.className = 'vr-ins-src text-[10px] font-bold text-emerald-600 mt-1'; }
+            this.schedulePlateCheck();
             const used = { custom: 'الگوریتمِ اختصاصی', generic: 'الگوریتمِ عمومی', 'custom+generic': 'الگوریتمِ اختصاصی + عمومی' }[d.parser_used] || '';
             st.className = 'vr-parse-st text-[11px] font-bold mt-1.5 text-emerald-600';
             st.innerHTML = `<i class="fas fa-circle-check"></i> ${fa(d.found)} مورد پیدا شد (${used}). خانه‌های زرد را بررسی کنید.${d.parser_error ? ` <span class="text-amber-600">· خطای پارسر: ${esc(d.parser_error)}</span>` : ''}`;
@@ -955,11 +1108,14 @@
                 if (pw === null) return;
                 fd.append('password', pw);
                 fd.append('remove_photos', JSON.stringify([...this.removePhotos]));
+                fd.append('remove_attachments', JSON.stringify([...this.removeAtts]));
             }
             if (this.mode === 'health') { fd.append('health_inspection_id', this.health.inspection.id); fd.append('health_photos', JSON.stringify([...this.healthSel])); }
             if (this.noPhotos && this.cat.allow_no_photos) fd.append('no_photos', '1');
             if (this.mode === 'target' && this.opts.target && ['company', 'case'].includes(this.opts.target.type)) { fd.append('link_type', this.opts.target.type); fd.append('link_id', this.opts.target.id); }
+            if (this.mode === 'new' && this.link) { fd.append('link_type', this.link.type); fd.append('link_id', this.link.id); }
             this.uploads.forEach(f => fd.append('photos[]', f, f.name));
+            this.attachments.forEach(f => fd.append('attachments[]', f, f.name));
             this.busy = true;
             const btn = this.$('.vr-submit'), bar = this.$('.vr-progress'), st = this.$('.vr-status');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ساخت...';
@@ -992,16 +1148,18 @@
                 ${link ? (link.ok ? `<p class="vr-chip bg-emerald-50 text-emerald-600 mt-3"><i class="fas fa-link"></i> فایلِ گزارش در ${link.target === 'health' ? 'بازدید سلامت' : link.target === 'company' ? 'ردیفِ شرکتی' : 'پرونده‌ی درخواست'} هم قرار گرفت${link.final ? ' و بازدید تاییدِ نهایی شد' : ''}.</p>`
                     : `<p class="vr-chip bg-amber-50 text-amber-700 mt-3"><i class="fas fa-triangle-exclamation"></i> ${esc(link.error || 'اتصال انجام نشد')}</p>`) : ''}
                 <div class="flex flex-wrap justify-center gap-2 mt-6">
-                    <a class="vr-btn vr-btn-p" target="_blank" href="${fileUrl(r.id, 'pdf', '&inline=1')}"><i class="fas fa-file-pdf"></i> مشاهده PDF</a>
-                    ${r.has_docx ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'docx')}"><i class="fas fa-file-word text-blue-600"></i> Word</a>` : ''}
+                    <a class="vr-btn vr-btn-p" target="_blank" href="${fileUrl(r.id, 'pdf', '&inline=1')}"><i class="fas fa-eye"></i> مشاهده PDF</a>
+                    <a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'pdf')}"><i class="fas fa-file-arrow-down text-rose-500"></i> دانلود PDF</a>
+                    ${r.has_docx ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'docx')}"><i class="fas fa-file-word text-blue-600"></i> دانلود Word</a>` : ''}
                     ${r.has_zip ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'zip')}"><i class="fas fa-file-zipper text-amber-500"></i> ZIP عکس‌ها</a>` : ''}
+                    <a class="vr-btn vr-btn-s" href="${API}?action=bundle_zip&id=${r.id}" title="PDF + همه‌ی عکس‌ها + مدارک (بدونِ فایلِ Wordِ گزارش)"><i class="fas fa-box-archive text-violet-500"></i> ZIP کامل (بدون Word)</a>
                     <button type="button" class="vr-btn vr-btn-s vr-s-detail"><i class="fas fa-circle-info"></i> جزئیات</button>
                     ${this.opts.inModal ? '<button type="button" class="vr-btn vr-btn-s vr-s-close"><i class="fas fa-xmark"></i> بستن</button>' : '<button type="button" class="vr-btn vr-btn-g vr-s-new"><i class="fas fa-plus"></i> گزارشِ جدید</button>'}
                 </div></div>`;
             const det = this.root.querySelector('.vr-s-detail');
             if (det) det.onclick = () => VR.openDetail(r.id);
             const nw = this.root.querySelector('.vr-s-new');
-            if (nw) nw.onclick = () => { this.mode = 'new'; this.cat = null; this.parts = {}; this.partNotes = {}; this.damages = []; this.uploads = []; this.insuredId = null; this.init(); };
+            if (nw) nw.onclick = () => { this.mode = 'new'; this.cat = null; this.parts = {}; this.partNotes = {}; this.damages = []; this.uploads = []; this.attachments = []; this.removeAtts = new Set(); this.link = null; this.linkCands = null; this.linkDismissed = ''; this.insuredId = null; this.init(); };
             const cl = this.root.querySelector('.vr-s-close');
             if (cl && this.opts.close) cl.onclick = () => this.opts.close();
             if (this.opts.onDone) this.opts.onDone(r, d);
@@ -1012,7 +1170,7 @@
     // ------------------------------------------------------------------
     //  خواندنِ عکس‌ها از ZIP در خودِ مرورگر (بدونِ کتابخانه؛ فشرده‌سازیِ deflate با DecompressionStream)
     // ------------------------------------------------------------------
-    const IMG_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    const IMG_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', heif: 'image/heif' };
     async function zipImages(file) {
         const buf = new Uint8Array(await file.arrayBuffer());
         const dv = new DataView(buf.buffer);

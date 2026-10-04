@@ -273,7 +273,7 @@ function perm_api_map() {
             'parse_pdf' => 'vr-build:create|vr-list:edit', 'health_prefill' => 'vr-build:create|vr-list:edit', 'target_prefill' => 'vr-build:create|vr-list:edit',
             'preview' => 'vr-build:create|vr-list:edit|vr-settings:edit', 'test_build' => 'vr-build:create|vr-settings:edit',
             'issue' => 'vr-build:create', 'edit' => 'vr-list:edit', 'list' => 'vr-list:view', 'detail' => 'vr-list:view', 'history' => 'vr-list:view', 'file' => 'vr-list:view|vr-build:view',
-            'folder_zip' => 'vr-list:export', 'export_excel' => 'vr-list:export', 'delete' => 'vr-list:delete', 'restore' => 'vr-list:delete', 'purge' => 'vr-list:delete',
+            'folder_zip' => 'vr-list:export|vr-build:create', 'bundle_zip' => 'vr-list:export|vr-build:create', 'lookup_insured' => 'vr-build:create|vr-list:edit', 'plate_candidates' => 'vr-build:create|vr-list:edit', 'export_excel' => 'vr-list:export', 'delete' => 'vr-list:delete', 'restore' => 'vr-list:delete', 'purge' => 'vr-list:delete',
             'link' => 'vr-list:edit', 'unlink' => 'vr-list:edit', 'match_candidates' => 'vr-list:edit', 'rebuild_register' => 'vr-list:edit',
         ]],
     ];

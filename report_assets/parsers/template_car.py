@@ -55,7 +55,11 @@ def parse_pdf_fields(raw_text):
         out["motor"] = out["engine_no"] = motor_cand
 
     # ۴. سال ساخت (Year)
-    year = re.search(r'\b(13[4-9]\d|14[0-1]\d)\b', t)
+    year = None
+    if out.get("motor"):
+        year = re.search(r'\b(13[4-9]\d|14[0-1]\d)\s*\n\s*' + re.escape(out["motor"]), t, re.I)
+    if not year:
+        year = re.search(r'\b(13[4-9]\d|14[0-1]\d)\b(?!\s*/)', t)   # نه تاریخ‌هایی مثلِ 1405/07/20
     if year:
         out["sal_sakht"] = out["year"] = year.group(1)
 
@@ -70,12 +74,27 @@ def parse_pdf_fields(raw_text):
         out["mordes"] = out["usage"] = usage.group(0).strip()
 
     # ۷. نوع، سیستم و تیپ خودرو (Vehicle Type)
-    brands = r'(پژو|پراید|سمند|تیبا|دنا|تارا|شاهین|کوییک|ساینا|رانا|ام\s*وی\s*ام|MVM|چری|جک|لیفان|تویوتا|هیوندای|کیا|رنو|بنز|بی\s*ام\s*و|نیسان|پارس|TU5|LX)'
-    m_type = re.search(r'(سواری|وانت)?\s*' + brands + r'[A-Za-z0-9\sآ-ی]{0,15}', t, re.I)
-    if m_type:
-        val = m_type.group(0).strip()
-        val = re.sub(r'(رنگ|مدل|سال|ظرفیت|سیستم|تیپ|نوع|وسیله|شماره).*', '', val).strip()
-        out["noecar"] = out["vehicle_type"] = val
+    # در پیشنهادِ پاسارگاد «نوع» (سواری/وانت/...) در یک خط و «سیستم + تیپ» در خطِ بعدی می‌آید و بخشِ لاتین/عددیِ
+    # تیپ به‌خاطرِ راست‌به‌چپ جابه‌جا خوانده می‌شود («پژوTU5 پارس» = «پژو پارس TU5»، «کیا2000 سراتو» = «کیا سراتو 2000»)
+    kinds = r'(سواری|وانت|استیشن|ون|پیکاپ|شاسی\s*بلند)'
+    m_kind = re.search(kinds + r'[ \t]*\n[ \t]*([^\n]{2,40})', t)
+    val = ''
+    if m_kind and not re.search(r'(نوع|سیستم|تیپ|ظرفیت|شماره)', m_kind.group(2)):
+        model = m_kind.group(2).strip()
+        tokens = re.findall(r'[A-Za-z0-9\-]+|[^\sA-Za-z0-9\-]+', model)
+        fa_part = [x for x in tokens if not re.match(r'^[A-Za-z0-9\-]+$', x)]
+        en_part = [x for x in tokens if re.match(r'^[A-Za-z0-9\-]+$', x)]
+        # شماره شاسی/موتور نباید جزوِ نامِ خودرو شود
+        en_part = [x for x in en_part if len(x) < 8 and x.upper() not in (out.get("shasi", ""), out.get("motor", ""))]
+        val = ' '.join([m_kind.group(1)] + fa_part + en_part).strip()
+    if not val:
+        brands = r'(پژو|پراید|سمند|تیبا|دنا|تارا|شاهین|کوییک|ساینا|رانا|ام\s*وی\s*ام|MVM|چری|جک|لیفان|تویوتا|هیوندای|کیا|رنو|بنز|بی\s*ام\s*و|نیسان|پارس|TU5|LX)'
+        m_type = re.search(r'(سواری|وانت)?[ \t]*' + brands + r'[A-Za-z0-9 \tآ-ی]{0,15}', t, re.I)
+        if m_type:
+            val = m_type.group(0).strip()
+            val = re.sub(r'(رنگ|مدل|سال|ظرفیت|سیستم|تیپ|نوع|وسیله|شماره).*', '', val).strip()
+    if val:
+        out["noecar"] = out["vehicle_type"] = re.sub(r'\s+', ' ', val)
 
     # ۸. تعداد سیلندر (Cylinders)
     cyl = re.search(r'(?:سیلندر|تعداد\s*سیلندر)\s*[:：\n]?\s*(\d)', t)
@@ -115,7 +134,16 @@ def parse_pdf_fields(raw_text):
     if not addr_match:
         addr_match = re.search(r'(استان\s+.*?)(?=\s*کد\s*پستی|\s*تلفن|021|\n\s*\n)', t)
     if addr_match:
-        out["addres_bimeg"] = addr_match.group(1).replace("کد پستی", "").strip(" ،,-:")
+        addr = addr_match.group(1).replace("کد پستی", "").strip(" ،,-:")
+        # دنباله‌ی نشانی (مثلاً «پلاک ۵، طبقه ۳») به‌خاطرِ راست‌به‌چپ قبل از «استان» و برعکس خوانده می‌شود: «،3 , طبقه5 استان ... پلاک»
+        line_start = t.rfind("\n", 0, addr_match.start(1)) + 1
+        prefix = t[line_start:addr_match.start(1)]
+        tail = re.findall(r'\d+|[آ-ی]+', prefix)
+        if tail and len(tail) <= 8:
+            rev = tail[::-1]
+            tail_txt = rev[0] + (", " + " ".join(rev[1:]) if len(rev) > 1 else "")
+            addr = (addr + " " + tail_txt).strip()
+        out["addres_bimeg"] = re.sub(r'\s*,\s*', '، ', addr)
 
     # ۱۳. نام و نام خانوادگی بیمه‌گذار (Name)
     name_match = re.search(r'نام\s*و\s*نام\s*خانوادگی\s*[:\n]*([آ-ی\s]+?)(?=\s*کد\s*ملی)', t)

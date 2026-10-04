@@ -193,23 +193,81 @@ function vr_visitor_from_form(array $form, array $fields, $pdo, $catId) {
 // ---------------------------------------------------------------------
 //  عکس‌ها
 // ---------------------------------------------------------------------
-function vr_uploaded_images() {
+// عکس‌های بازدید: همه‌ی فرمت‌های رایجِ عکس (حتی HEIC/HEIF گوشی‌های آیفون، TIFF و BMP)
+const VR_PHOTO_EXT = ['jpg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'heic', 'heif'];
+// مدارکِ پیوست (کنارِ گزارش در پوشه‌ی «مدارک»؛ در ZIPِ کامل هم می‌آیند)
+const VR_ATT_EXT = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'xls', 'xlsx', 'txt', 'rtf', 'odt'];
+const VR_ATT_DIR = 'مدارک';
+
+// HEIC/HEIF را getimagesize نمی‌شناسد؛ از روی امضای فایل (ftyp + heic/mif1/...) تشخیص داده می‌شود
+function vr_is_heif($tmp) {
+    $h = @file_get_contents($tmp, false, null, 0, 16);
+    return $h !== false && strlen($h) >= 12 && substr($h, 4, 4) === 'ftyp' && in_array(substr($h, 8, 4), ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'heim', 'heis', 'avif'], true);
+}
+function vr_files_list($key) {
     $out = [];
-    if (empty($_FILES['photos'])) return $out;
-    $f = $_FILES['photos'];
-    $names = (array)$f['name'];
-    foreach ($names as $i => $n) {
+    if (empty($_FILES[$key])) return $out;
+    $f = $_FILES[$key];
+    foreach ((array)$f['name'] as $i => $n) {
         $err = is_array($f['error']) ? $f['error'][$i] : $f['error'];
         $tmp = is_array($f['tmp_name']) ? $f['tmp_name'][$i] : $f['tmp_name'];
-        if ($err !== UPLOAD_ERR_OK || !is_uploaded_file($tmp)) continue;
+        if ($err === UPLOAD_ERR_OK && is_uploaded_file($tmp)) $out[] = [$tmp, (string)$n];
+    }
+    return $out;
+}
+function vr_uploaded_images() {
+    $out = [];
+    foreach (vr_files_list('photos') as [$tmp, $n]) {
         $ext = strtolower(pathinfo($n, PATHINFO_EXTENSION));
         if ($ext === 'jpeg') $ext = 'jpg';
-        $info = @getimagesize($tmp);
-        if (!$info || !in_array($ext, ['jpg', 'png', 'webp'], true)) {
-            $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'][$info[2] ?? 0] ?? null;
-            if (!$ext) continue;
+        if ($ext === 'tif') $ext = 'tiff';
+        if (in_array($ext, ['heic', 'heif'], true) || vr_is_heif($tmp)) {
+            if (!vr_is_heif($tmp)) continue;
+            $out[] = ['tmp' => $tmp, 'name' => $n, 'ext' => in_array($ext, ['heic', 'heif'], true) ? $ext : 'heic'];
+            continue;
         }
+        $info = @getimagesize($tmp);
+        if (!$info) continue;
+        $real = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', IMAGETYPE_GIF => 'gif', IMAGETYPE_BMP => 'bmp',
+                 IMAGETYPE_TIFF_II => 'tiff', IMAGETYPE_TIFF_MM => 'tiff'][$info[2]] ?? null;
+        if (!$real) continue;
+        $out[] = ['tmp' => $tmp, 'name' => $n, 'ext' => $real];
+    }
+    return $out;
+}
+function vr_uploaded_attachments() {
+    $out = [];
+    foreach (vr_files_list('attachments') as [$tmp, $n]) {
+        $ext = strtolower(pathinfo($n, PATHINFO_EXTENSION));
+        if (!in_array($ext, VR_ATT_EXT, true)) continue;
         $out[] = ['tmp' => $tmp, 'name' => $n, 'ext' => $ext];
+    }
+    return $out;
+}
+// مدارکِ پیوست: «{شماره} - {نامِ اصلی}» داخلِ پوشه‌ی «مدارک»ِ گزارش
+function vr_store_attachments($folder, array $atts, array $remove = []) {
+    $dir = $folder . '/' . VR_ATT_DIR;
+    foreach ($remove as $name) {
+        $abs = $dir . '/' . basename((string)$name);
+        if (is_file($abs) && strpos(basename($abs), '(old') === false) @rename($abs, vr_old_name($abs));
+    }
+    if (!$atts) return;
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $n = count(array_filter(is_dir($dir) ? scandir($dir) : [], fn($f) => $f[0] !== '.' && strpos($f, '(old') === false));
+    foreach ($atts as $a) {
+        $n++;
+        $base = sanitize_folder_name(pathinfo($a['name'], PATHINFO_FILENAME)) ?: 'مدرک';
+        $dest = unique_dest_path($dir . '/' . $n . ' - ' . mb_substr($base, 0, 80) . '.' . $a['ext']);
+        @move_uploaded_file($a['tmp'], $dest);
+    }
+}
+function vr_list_attachments($siteRoot, $r) {
+    $dir = vr_abs($siteRoot, $r['folder_path']) . '/' . VR_ATT_DIR;
+    if (!is_dir($dir)) return [];
+    $out = [];
+    foreach (scandir($dir) as $f) {
+        if ($f[0] === '.' || !is_file($dir . '/' . $f) || strpos($f, '(old') !== false) continue;
+        $out[] = ['name' => $f, 'size' => filesize($dir . '/' . $f), 'ext' => strtolower(pathinfo($f, PATHINFO_EXTENSION))];
     }
     return $out;
 }
@@ -350,6 +408,7 @@ function vr_produce($pdo, $siteRoot, $user, $cat, array $fields, array $form, $d
         }
     }
     foreach ($opts['uploads'] ?? [] as $u) vr_add_photo($pdo, $siteRoot, $id, $photosDir, $u['tmp'], true, $u['name'], $u['ext'], $plateDisplay, null, 'UPLOAD');
+    vr_store_attachments($folder, $opts['attachments'] ?? [], (array)($opts['remove_attachments'] ?? []));
     foreach ($opts['health_photos'] ?? [] as $hp) vr_add_photo($pdo, $siteRoot, $id, $photosDir, $hp['abs'], false, basename($hp['abs']), $hp['ext'], $plateDisplay, $hp['label'], 'HEALTH');
     $cnt = $pdo->prepare("SELECT COUNT(*) FROM visit_report_photos WHERE report_id = ?");
     $cnt->execute([$id]);
@@ -494,8 +553,9 @@ try {
         if (empty($res['ok'])) vr_fail($res['error'] ?? 'استخراج ناموفق بود.', ['debug' => $res['debug'] ?? null]);
         $fields = vr_fields($pdo, $cat['id']);
         $mapped = vr_map_parsed($res['data'] ?? [], $fields, vr_visitors($pdo, $cat['id']));
+        [$mapped, $insHit] = vr_apply_insured_lookup($pdo, $mapped);   // نامِ بیمه‌گذار اول از اشخاص/شرکت‌های خودمان
         vr_audit($pdo, $user['id'], 'VR_PARSE', 0, $cat['name'] . ' · ' . $f['name'] . ' · ' . ($res['parser_used'] ?? ''));
-        vr_out(['ok' => true, 'form' => $mapped, 'parser_used' => $res['parser_used'] ?? null, 'method' => $res['method'] ?? null,
+        vr_out(['ok' => true, 'form' => $mapped, 'insured_source' => $insHit ? $insHit['source_fa'] : null, 'parser_used' => $res['parser_used'] ?? null, 'method' => $res['method'] ?? null,
                 'parser_error' => $res['parser_error'] ?? null, 'found' => count(array_filter($res['data'] ?? []))]);
     }
 
@@ -536,6 +596,19 @@ try {
                                                 'code' => $h['unique_code'] ?: ('آزاد-' . $id), 'holder' => $h['insured_name'] ?: $h['full_name'],
                                                 'insurance_type' => $h['insurance_type'], 'ready' => in_array($h['status'], ['PHOTOS_APPROVED', 'APPROVED'], true)],
                 'forms' => $forms, 'photos' => $list, 'damages' => $damages, 'existing' => $ex->fetch() ?: null]);
+    }
+
+    // نامِ بیمه‌گذار از روی کد ملی / شناسه (اشخاصِ حقیقی، شرکت‌ها، بیمه‌گذارانِ ثبت‌شده)
+    if ($action === 'lookup_insured') {
+        $hit = vr_lookup_insured($pdo, $data['national_id'] ?? ($_GET['national_id'] ?? ''));
+        vr_out(['ok' => true, 'found' => (bool)$hit, 'insured' => $hit]);
+    }
+
+    // درخواست‌های صادرنشده (شرکتی و کارکنان) با همین پلاک / شماره شاسی - برای اتصالِ گزارش هنگامِ صدور
+    if ($action === 'plate_candidates') {
+        if ($user['role'] === 'PARSIAN') vr_out(['ok' => true, 'candidates' => []]);
+        $pd = vr_plate_display($data['p1'] ?? '', $data['letter'] ?? '', $data['p2'] ?? '', $data['iran'] ?? '');
+        vr_out(['ok' => true, 'plate' => $pd, 'candidates' => vr_plate_candidates($pdo, p2e_digits($pd), p2e_digits((string)($data['chassis'] ?? '')))]);
     }
 
     // پیش‌نمایشِ PDF از روی فرمِ ذخیره‌نشده (بدونِ ثبت و بدونِ بایگانی)
@@ -673,6 +746,7 @@ try {
         if ($linkType !== '' && (!in_array($linkType, ['company', 'case'], true) || !$linkId || $user['role'] === 'PARSIAN')) vr_fail('اتصالِ گزارش به این درخواست مجاز نیست.');
         $report = vr_produce($pdo, $siteRoot, $user, $cat, $fields, $form, $date[0], $date[1], $existing,
                              ['uploads' => $uploads, 'remove_photos' => $existing ? $removePhotos : [],
+                              'attachments' => vr_uploaded_attachments(), 'remove_attachments' => $existing ? (array)(is_string($data['remove_attachments'] ?? null) ? (json_decode($data['remove_attachments'], true) ?: []) : ($data['remove_attachments'] ?? [])) : [],
                               'health_photos' => $healthId ? vr_health_photos_pick($pdo, $siteRoot, $healthId, (array)$healthKeys) : []]);
         $link = null;
         try {
@@ -757,6 +831,7 @@ try {
         $st = $pdo->prepare("SELECT id, file_path, orig_name, source FROM visit_report_photos WHERE report_id = ? ORDER BY sort_order, id");
         $st->execute([$r['id']]);
         $out['photos'] = array_map(fn($p) => ['id' => intval($p['id']), 'name' => basename($p['file_path']), 'source' => $p['source']], $st->fetchAll());
+        $out['attachments'] = vr_list_attachments($siteRoot, $r);
         $st = $pdo->prepare("SELECT id, version, pdf_path, docx_path, edited_by_name, edited_at FROM visit_report_versions WHERE report_id = ? ORDER BY version DESC");
         $st->execute([$r['id']]);
         $out['versions'] = array_map(fn($v) => ['id' => intval($v['id']), 'version' => intval($v['version']), 'has_pdf' => (bool)$v['pdf_path'], 'has_docx' => (bool)$v['docx_path'],
@@ -795,14 +870,19 @@ try {
             $abs = vr_abs($siteRoot, $st->fetchColumn() ?: null);
             vr_send_file($abs, basename((string)$abs), true);
         }
+        if ($kind === 'att') {
+            $abs = vr_abs($siteRoot, $r['folder_path']) . '/' . VR_ATT_DIR . '/' . basename((string)($_GET['name'] ?? ''));
+            vr_send_file(is_file($abs) ? $abs : null, basename($abs), $inline);
+        }
         $col = ['pdf' => 'pdf_path', 'docx' => 'docx_path', 'zip' => 'zip_path'][$kind] ?? 'pdf_path';
         $abs = vr_abs($siteRoot, $r[$col]);
         if (!$inline) vr_audit($pdo, $user['id'], 'VR_DOWNLOAD', $r['id'], $kind . ' · ' . $r['report_no']);
         vr_send_file($abs, basename((string)$abs), $inline);
     }
 
-    // ZIP کاملِ پوشه‌ی گزارش (PDF + Word + عکس‌ها)
-    if ($action === 'folder_zip') {
+    // ZIP کاملِ پوشه‌ی گزارش (PDF + Word + عکس‌ها + مدارک) · bundle_zip: همه‌چیز جز فایلِ Wordِ گزارش
+    if ($action === 'folder_zip' || $action === 'bundle_zip') {
+        $noWord = $action === 'bundle_zip';
         $r = vr_load_visible($pdo, $_GET['id'] ?? 0, $user);
         $dir = vr_abs($siteRoot, $r['folder_path']);
         if (!is_dir($dir) || !class_exists('ZipArchive')) vr_send_file(null, '');
@@ -813,12 +893,15 @@ try {
         foreach ($rii as $file) {
             if (!$file->isFile() || (!$isAdmin && strpos($file->getFilename(), '(old') !== false)) continue;
             if (strtolower($file->getExtension()) === 'zip') continue;
-            $z->addFile($file->getPathname(), basename($dir) . '/' . substr($file->getPathname(), strlen($dir) + 1));
+            $relIn = substr($file->getPathname(), strlen($dir) + 1);
+            // بدونِ Word: فقط Wordِ خودِ گزارش (در ریشه‌ی پوشه) کنار می‌رود؛ Wordهایی که به‌عنوانِ مدرک پیوست شده‌اند می‌مانند
+            if ($noWord && strpos($relIn, '/') === false && strtolower($file->getExtension()) === 'docx') continue;
+            $z->addFile($file->getPathname(), basename($dir) . '/' . $relIn);
         }
         $z->close();
-        vr_audit($pdo, $user['id'], 'VR_DOWNLOAD', $r['id'], 'folder · ' . $r['report_no']);
+        vr_audit($pdo, $user['id'], 'VR_DOWNLOAD', $r['id'], ($noWord ? 'zip (بدون Word)' : 'folder') . ' · ' . $r['report_no']);
         header('Content-Type: application/zip');
-        header("Content-Disposition: attachment; filename=\"report.zip\"; filename*=UTF-8''" . rawurlencode(basename($dir) . '.zip'));
+        header("Content-Disposition: attachment; filename=\"report.zip\"; filename*=UTF-8''" . rawurlencode(basename($dir) . ($noWord ? ' (بدون Word)' : '') . '.zip'));
         header('Content-Length: ' . filesize($tmp));
         readfile($tmp);
         @unlink($tmp);

@@ -206,7 +206,8 @@
     // پنجره‌ی دانلود: زیپِ کاملِ گزارش یا فقط فایل‌ها؛ با شروعِ دانلود خودش بسته می‌شود
     function downloadPopup(r) {
         const opts = [
-            [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها (کلِ پوشه‌ی گزارش)'],
+            [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها و مدارک (کلِ پوشه‌ی گزارش)'],
+            [`${API}?action=bundle_zip&id=${r.id}`, 'fa-file-zipper text-indigo-500', 'زیپ کامل بدونِ Word', 'PDF + همه‌ی عکس‌ها و مدارک، بدونِ فایلِ Wordِ گزارش'],
             [fileUrl(r.id, 'pdf'), 'fa-file-pdf text-rose-500', 'فقط فایل گزارش (PDF)', ''],
             r.has_docx ? [fileUrl(r.id, 'docx'), 'fa-file-word text-blue-600', 'فایل Word گزارش', ''] : null,
             r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', `${fa(r.photos_count || 0)} عکس`] : null,
@@ -266,7 +267,12 @@
                         ${r.has_docx ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'docx')}"><i class="fas fa-file-word text-blue-600"></i> Word</a>` : '<span></span>'}
                         ${r.has_zip ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'zip')}"><i class="fas fa-file-zipper text-amber-500"></i> ZIP عکس‌ها</a>` : '<span></span>'}
                         <a class="vr-btn vr-btn-s" href="${API}?action=folder_zip&id=${r.id}"><i class="fas fa-box-archive text-violet-500"></i> زیپ کاملِ گزارش</a>
+                        <a class="vr-btn vr-btn-s col-span-2" href="${API}?action=bundle_zip&id=${r.id}"><i class="fas fa-file-zipper text-indigo-500"></i> زیپ کامل بدونِ Word (PDF + عکس‌ها + مدارک)</a>
                     </div>
+                    ${(r.attachments || []).length ? `<p class="text-[11px] font-black text-slate-500 pt-2"><i class="fas fa-paperclip text-indigo-400"></i> مدارکِ پیوست (${fa(r.attachments.length)})</p>
+                        ${r.attachments.map(a => `<a class="flex items-center gap-2 text-[11px] font-bold text-slate-600 hover:text-indigo-600 rounded-lg hover:bg-slate-50 px-2 py-1" target="_blank" href="${fileUrl(r.id, 'att', '&inline=1&name=' + encodeURIComponent(a.name))}">
+                            <i class="fas ${/pdf$/.test(a.ext) ? 'fa-file-pdf text-rose-500' : /docx?|odt|rtf/.test(a.ext) ? 'fa-file-word text-blue-600' : /xlsx?/.test(a.ext) ? 'fa-file-excel text-emerald-600' : 'fa-file-image text-violet-500'}"></i>
+                            <span class="truncate" dir="auto">${esc(a.name)}</span></a>`).join('')}` : ''}
                     ${r.can_admin && r.archive_path ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-folder"><i class="fas fa-folder-open text-amber-500"></i> نمایشِ پوشه در بایگانی</button>` : ''}
                     ${active && r.can_edit ? `<button type="button" class="vr-btn vr-btn-s w-full vr-d-edit !text-amber-700 !border-amber-200"><i class="fas fa-pen-to-square"></i> ویرایش گزارش</button>` : ''}
                     ${r.can_admin ? (active ? `<div class="grid grid-cols-2 gap-2"><button type="button" class="vr-btn vr-btn-s vr-d-del !text-rose-600 !border-rose-200"><i class="fas fa-box-archive"></i> انتقال به «حذف شده»</button>

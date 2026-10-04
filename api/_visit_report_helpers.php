@@ -615,6 +615,39 @@ function vr_map_parsed(array $data, array $fields, array $visitors) {
 }
 
 // ---------------------------------------------------------------------
+//  نامِ بیمه‌گذار از روی کد ملی / شناسه‌ی ملی یا اقتصادی: اول از اشخاصِ حقیقیِ خودمان (پرسنل و بیمه‌گذارانِ
+//  درخواست‌های کارکنان)، بعد شرکت‌ها، بعد بیمه‌گذارانِ ثبت‌شده‌ی گزارش بازدید. پیدا نشد => null (همان نامِ استخراج‌شده می‌ماند)
+// ---------------------------------------------------------------------
+function vr_lookup_insured($pdo, $nid) {
+    $nid = preg_replace('/\D/', '', p2e_digits((string)$nid));
+    if (strlen($nid) < 8) return null;
+    $tries = [
+        ['person', 'اشخاص حقیقی (پرسنل)', "SELECT full_name AS name, mobile_number AS phone, NULL AS address FROM persons WHERE national_code = ? AND full_name <> '' ORDER BY id DESC LIMIT 1"],
+        ['case', 'اشخاص حقیقی (بیمه‌گذارانِ درخواست‌ها)', "SELECT insured_name AS name, insured_phone AS phone, insured_address AS address FROM policy_cases WHERE insured_national_id = ? AND insured_name <> '' ORDER BY id DESC LIMIT 1"],
+        ['company', 'شرکت‌ها', "SELECT name, phone, address FROM companies WHERE REPLACE(REPLACE(economic_code, '-', ''), ' ', '') = ? AND name <> '' ORDER BY id LIMIT 1"],
+        ['insured', 'بیمه‌گذارانِ گزارش بازدید', "SELECT name, phone, address FROM report_insureds WHERE national_id = ? AND name <> '' AND is_active = 1 ORDER BY id DESC LIMIT 1"],
+    ];
+    foreach ($tries as [$src, $label, $sql]) {
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute([$nid]);
+            if ($r = $st->fetch()) return ['source' => $src, 'source_fa' => $label, 'name' => trim((string)$r['name']),
+                                           'phone' => trim((string)($r['phone'] ?? '')), 'address' => trim((string)($r['address'] ?? ''))];
+        } catch (Throwable $e) {}
+    }
+    return null;
+}
+// نامِ بیمه‌گذارِ فرمِ نگاشته‌شده را از فهرست‌های خودمان جایگزین می‌کند (اگر پیدا شد)
+function vr_apply_insured_lookup($pdo, array $form) {
+    $hit = vr_lookup_insured($pdo, $form['insured']['national_id'] ?? '');
+    if (!$hit) return [$form, null];
+    $form['insured']['name'] = $hit['name'];
+    if (($form['insured']['phone'] ?? '') === '' && $hit['phone'] !== '') $form['insured']['phone'] = $hit['phone'];
+    if (($form['insured']['address'] ?? '') === '' && $hit['address'] !== '') $form['insured']['address'] = $hit['address'];
+    return [$form, $hit];
+}
+
+// ---------------------------------------------------------------------
 //  اتصال به بازدید سلامت / درخواستِ کارکنان / ردیفِ شرکتی
 // ---------------------------------------------------------------------
 function vr_link_health($pdo, $siteRoot, $report, $inspId, $userId) {
@@ -729,6 +762,44 @@ function vr_match_candidates($pdo, $report) {
         $m = ($core && $disp && plate_core($disp) === $core) || ($chassis && strtoupper((string)$p['chassis_no']) === $chassis);
         if ($m) $out[] = ['type' => 'company', 'id' => intval($p['id']), 'title' => 'ردیف شرکتی · ' . $p['company_name'] . ' · درخواست #' . $p['request_id'],
                           'subtitle' => $disp ?: $p['chassis_no'], 'status' => $p['status'], 'ready' => true];
+    }
+    return $out;
+}
+
+// صفحه‌ی صدورِ گزارش: درخواست‌هایی (شرکتی و کارکنان) که همین پلاک یا شماره شاسی را دارند و هنوز صادر نشده‌اند
+function vr_plate_candidates($pdo, $plateDisplay, $chassis = '') {
+    $core = plate_core((string)$plateDisplay);
+    $chassis = strtoupper(preg_replace('/\s+/', '', (string)$chassis));
+    if (mb_strlen($core) < 6 && strlen($chassis) < 6) return [];
+    $hasReport = function ($col, $id) use ($pdo) {
+        $st = $pdo->prepare("SELECT report_no FROM visit_reports WHERE $col = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1");
+        $st->execute([$id]);
+        return $st->fetchColumn() ?: null;
+    };
+    $insFa = ['THIRD_PARTY' => 'ثالث', 'THIRD' => 'ثالث', 'BODY' => 'بدنه'];
+    $out = [];
+    $st = $pdo->query("SELECT id, unique_code, plate, insured_name, status, insurance_type, COALESCE(chassis_num, vin) AS chassis, created_at
+                         FROM policy_cases WHERE status NOT IN ('ISSUED', 'WITHDRAWN', 'CANCELLED', 'REJECTED') ORDER BY id DESC LIMIT 2000");
+    foreach ($st->fetchAll() as $c) {
+        $m = ($core !== '' && plate_core($c['plate']) === $core) || ($chassis !== '' && strtoupper((string)$c['chassis']) === $chassis);
+        if (!$m) continue;
+        $out[] = ['type' => 'case', 'id' => intval($c['id']), 'title' => 'درخواست کارکنان ' . $c['unique_code'],
+                  'subtitle' => trim(($c['insured_name'] ?: '') . ' · ' . ($insFa[$c['insurance_type']] ?? $c['insurance_type']), ' ·'),
+                  'plate' => $c['plate'], 'status_fa' => case_status_fa($c['status']), 'report_no' => $hasReport('case_id', $c['id'])];
+    }
+    $st = $pdo->query("SELECT crp.id, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no, crp.vin, crp.status, crp.insurance_type, crp.car_name,
+                              crp.request_id, cr.request_kind AS req_kind, c.name AS company_name
+                         FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                        WHERE crp.status NOT IN ('ISSUED', 'CANCELLED') ORDER BY crp.id DESC LIMIT 5000");
+    foreach ($st->fetchAll() as $p) {
+        $disp = company_plate_display($p['plate_p1'], $p['plate_p2'], $p['plate_letter'], $p['plate_p4']);
+        $ch = strtoupper((string)($p['chassis_no'] ?: $p['vin']));
+        $m = ($core !== '' && $disp && plate_core($disp) === $core) || ($chassis !== '' && $ch === $chassis);
+        if (!$m) continue;
+        $out[] = ['type' => 'company', 'id' => intval($p['id']), 'title' => $p['company_name'] . ' · درخواست #' . $p['request_id'],
+                  'subtitle' => trim(($p['car_name'] ?: '') . ' · ' . ($insFa[$p['insurance_type']] ?? $p['insurance_type']), ' ·'),
+                  'plate' => $disp ?: $ch, 'status_fa' => company_plate_status_fa($p['status'], $p['req_kind'] ?: 'NEW_POLICY'),
+                  'report_no' => $hasReport('company_plate_id', $p['id'])];
     }
     return $out;
 }
