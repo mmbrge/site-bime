@@ -615,7 +615,7 @@
     // =====================================================================
     function StaffPage(root) {
         const t = todayJ();
-        const S = {jy: t[0], jm: t[1], person: null, view: null};
+        const S = {jy: t[0], jm: t[1], person: null, view: null, svcOpen: false, svc: null};
         async function load() {
             const r = await api('staff_overview', {jy: S.jy, jm: S.jm});
             if (!r.ok) { root.innerHTML = `<p class="text-center text-sm text-rose-600 py-10">${esc(r.error || 'خطا')}</p>`; return; }
@@ -633,9 +633,15 @@
                       <button type="button" class="wk-hbtn" data-a="next">›</button>
                       <button type="button" class="wk-hbtn solid" data-a="report"><i class="fas fa-chart-column ml-1"></i>گزارش و اکسلِ همه</button>
                       <button type="button" class="wk-hbtn" data-a="settings"><i class="fas fa-sliders ml-1"></i>تنظیماتِ مرخصی</button>
+                      <button type="button" class="wk-hbtn" data-a="service"><i class="fas fa-van-shuttle ml-1"></i>سرویسِ رفت‌وآمد</button>
                     </div>
                   </div>
                 </div>
+                <div class="wk-card ${S.svcOpen ? '' : 'hidden'}" data-box="service" style="background:linear-gradient(180deg,#f5f7ff,#fff 140px)">
+                  <div class="flex flex-wrap items-center gap-2 mb-3"><h3><i class="fas fa-van-shuttle text-indigo-600"></i>سرویسِ رفت‌وآمد · ${MONTHS[S.jm - 1]} ${fa(S.jy)}</h3>
+                    <p class="text-[10.5px] text-slate-500">هر روز مشخص کنید با سرویس رفتیم، برگشتیم یا هر دو؛ مبلغ از نرخِ هر مسیرِ سرویس حساب می‌شود و آخرِ ماه رسیدِ PDF می‌گیرید.</p>
+                    <button type="button" class="mr-auto text-slate-400 hover:text-slate-600 text-sm" data-a="service-close"><i class="fas fa-xmark"></i></button></div>
+                  <div data-f="service"></div></div>
                 <div class="wk-card hidden" data-box="settings"><h3 class="mb-3"><i class="fas fa-sliders text-indigo-600"></i>تنظیماتِ کارکرد و مرخصی</h3><div data-f="settings"></div></div>
                 ${pend.ok && pend.rows.length ? `<div class="wk-card border-amber-200" style="background:linear-gradient(120deg,#fffbeb,#fff)">
                   <h3><i class="fas fa-hourglass-half text-amber-600"></i>مرخصی‌های در انتظارِ تأیید (${fa(pend.rows.length)})</h3>
@@ -659,10 +665,23 @@
                 <div data-box="person"></div>
               </div>`;
             const on = (a, fn) => root.querySelectorAll(`[data-a="${a}"]`).forEach(el => el.addEventListener('click', fn));
-            on('prev', () => { S.jm--; if (S.jm < 1) { S.jm = 12; S.jy--; } load(); });
-            on('next', () => { S.jm++; if (S.jm > 12) { S.jm = 1; S.jy++; } load(); });
-            root.querySelector('[data-f="m"]').onchange = e => { S.jm = +e.target.value; load(); };
-            root.querySelector('[data-f="y"]').onchange = e => { S.jy = +e.target.value; load(); };
+            // تغییرِ ماه: اگر در سرویسِ رفت‌وآمد تغییرِ ذخیره‌نشده هست، اول بپرسد
+            const go = async fn => {
+                if (S.svc && S.svc.dirty() && window.uiConfirm && !(await uiConfirm('تغییراتِ ذخیره‌نشده', 'رفت/برگشت‌های این ماه هنوز ذخیره نشده؛ بدونِ ذخیره ماه عوض شود؟'))) {
+                    root.querySelector('[data-f="m"]').value = S.jm; root.querySelector('[data-f="y"]').value = S.jy; return;
+                }
+                fn(); load();
+            };
+            on('prev', () => go(() => { S.jm--; if (S.jm < 1) { S.jm = 12; S.jy--; } }));
+            on('next', () => go(() => { S.jm++; if (S.jm > 12) { S.jm = 1; S.jy++; } }));
+            root.querySelector('[data-f="m"]').onchange = e => go(() => { S.jm = +e.target.value; });
+            root.querySelector('[data-f="y"]').onchange = e => go(() => { S.jy = +e.target.value; });
+            S.svc = null;
+            const svcBox = root.querySelector('[data-box="service"]');
+            const openSvc = () => { svcBox.classList.remove('hidden'); S.svcOpen = true; S.svc = ServicePanel(svcBox.querySelector('[data-f="service"]'), S.jy, S.jm); };
+            on('service', () => { if (S.svcOpen) { svcBox.scrollIntoView({behavior: 'smooth', block: 'start'}); return; } openSvc(); setTimeout(() => svcBox.scrollIntoView({behavior: 'smooth', block: 'start'}), 150); });
+            on('service-close', () => { svcBox.classList.add('hidden'); S.svcOpen = false; S.svc = null; });
+            if (S.svcOpen) openSvc();
             on('report', () => openReport({all: true}));
             on('settings', () => { const b = root.querySelector('[data-box="settings"]'); b.classList.toggle('hidden'); if (!b.classList.contains('hidden')) renderSettings(b.querySelector('[data-f="settings"]')); });
             root.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => openPerson(+b.dataset.p)));
@@ -687,6 +706,264 @@
         }
         load();
         return {reload: load};
+    }
+
+    // =====================================================================
+    //  «سرویسِ رفت‌وآمد» (داخلِ کارکرد پرسنل): سرویس‌ها، رفت/برگشتِ هر روز، جمعِ ماه، پرداخت و رسیدِ PDF
+    // =====================================================================
+    const money = n => fa(Number(n || 0).toLocaleString('en-US'));
+    const svcCss = `
+    .sv-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+    .sv-day{border:1px solid #eef2f7;border-radius:14px;background:#fff;padding:6px;min-height:92px;display:flex;flex-direction:column;gap:4px;transition:.15s}
+    .sv-day.off{background:#fff7f8} .sv-day.off .n{color:#e11d48} .sv-day.today{border:2px solid #6366f1} .sv-day.dirty{box-shadow:0 0 0 2px rgba(245,158,11,.45)}
+    .sv-day .n{font-size:12.5px;font-weight:900;color:#334155;display:flex;align-items:center;justify-content:space-between}
+    .sv-day .n button{font-size:10px;color:#94a3b8;padding:0 4px;border-radius:6px} .sv-day .n button:hover{background:#f1f5f9;color:#4338ca}
+    .sv-tg{display:flex;align-items:center;justify-content:center;gap:4px;border-radius:9px;font-size:10.5px;font-weight:900;padding:4px 2px;border:1px dashed #cbd5e1;color:#94a3b8;background:#f8fafc;cursor:pointer;user-select:none;transition:.12s;width:100%}
+    .sv-tg:hover{border-color:#818cf8;color:#4338ca}
+    .sv-tg.go.on{background:#0284c7;border:1px solid #0284c7;color:#fff} .sv-tg.back.on{background:#7c3aed;border:1px solid #7c3aed;color:#fff}
+    .sv-tg.alt{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.18) 0 6px,transparent 6px 12px)}
+    .sv-day .a{font-size:10px;font-weight:900;color:#0f766e;text-align:center} .sv-day .s{font-size:9px;color:#7c3aed;font-weight:800;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sv-svc{display:flex;align-items:center;gap:10px;border:1px solid #e2e8f0;border-radius:16px;padding:9px 12px;background:#fff;min-width:230px}
+    .sv-svc.def{border-color:#a5b4fc;background:linear-gradient(120deg,#eef2ff,#fff)} .sv-svc.inactive{opacity:.55}
+    .sv-svc .av{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#4f46e5,#0891b2);color:#fff;font-size:15px;flex:none}
+    .sv-brush{display:inline-flex;flex-wrap:wrap;gap:4px;background:#f1f5f9;border-radius:12px;padding:3px}
+    .sv-brush button{padding:5px 10px;border-radius:9px;font-size:11px;font-weight:800;color:#475569} .sv-brush button.on{background:#fff;color:#4338ca;box-shadow:0 2px 8px -3px rgba(15,23,42,.3)}
+    @media(max-width:640px){.sv-cal{gap:3px}.sv-day{padding:4px;min-height:84px}.sv-tg{font-size:9.5px}}
+    `;
+    if (!document.getElementById('sv-css')) { const st = document.createElement('style'); st.id = 'sv-css'; st.textContent = svcCss; document.head.appendChild(st); }
+
+    function ServicePanel(root, jy, jm) {
+        const S = {jy, jm, data: null, days: {}, dirty: {}, brush: 0};
+        const svcMap = () => Object.fromEntries((S.data ? S.data.services : []).map(s => [s.id, s]));
+        const defSvc = () => (S.data.services.find(s => s.is_default && s.is_active) || S.data.services.find(s => s.is_active) || null);
+        function amountOf(D, dir) {
+            const sid = D[dir]; if (!sid) return 0;
+            const orig = S.orig[D.date];
+            if (orig && orig[dir] === sid) return orig['amount_' + dir];
+            const s = svcMap()[sid]; return s ? (dir === 'go' ? s.price_go : s.price_back) : 0;
+        }
+        async function load() {
+            root.innerHTML = '<p class="text-center text-xs text-slate-400 py-8"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ سرویس‌ها...</p>';
+            const r = await api('svc_month', {jy: S.jy, jm: S.jm});
+            if (!r.ok) { root.innerHTML = `<p class="text-center text-sm text-rose-600 py-8">${esc(r.error || 'خطا')}</p>`; return; }
+            setData(r);
+        }
+        function setData(r) {
+            S.data = r; S.dirty = {}; S.days = {}; S.orig = {};
+            r.days.forEach(D => { S.days[D.date] = Object.assign({}, D); S.orig[D.date] = Object.assign({}, D); });
+            if (!S.brush || !svcMap()[S.brush] || !svcMap()[S.brush].is_active) S.brush = (defSvc() || {}).id || 0;
+            render();
+        }
+        const canEdit = () => S.data && S.data.can_manage;
+        function totals() {
+            const t = {};
+            Object.values(S.days).forEach(D => ['go', 'back'].forEach(dir => {
+                const sid = D[dir]; if (!sid) return;
+                t[sid] = t[sid] || {go: 0, back: 0, days: new Set(), both: 0, amount: 0};
+                t[sid][dir]++; t[sid].days.add(D.date); t[sid].amount += amountOf(D, dir);
+                if (dir === 'go' && D.back === sid) t[sid].both++;
+            }));
+            return t;
+        }
+        function render() {
+            const d = S.data, sm = svcMap(), t = todayJ(), T = totals();
+            const first = (dowOf(S.jy, S.jm, 1) + 1) % 7;
+            const nDirty = Object.keys(S.dirty).length;
+            const active = d.services.filter(s => s.is_active);
+            root.innerHTML = `
+            <div class="space-y-3">
+              <div class="flex flex-wrap gap-2">
+                ${d.services.length ? d.services.map(s => `<div class="sv-svc ${s.is_default ? 'def' : ''} ${s.is_active ? '' : 'inactive'}">
+                    <div class="av"><i class="fas fa-van-shuttle"></i></div>
+                    <div class="flex-1 min-w-0"><p class="text-[12px] font-black text-slate-800 truncate">${esc(s.name)} ${s.is_default ? '<span class="wk-chip bg-indigo-100 text-indigo-700">پیش‌فرض</span>' : ''}${s.is_active ? '' : '<span class="wk-chip bg-slate-100 text-slate-500">غیرفعال</span>'}</p>
+                      <p class="text-[10.5px] text-slate-500 mt-0.5">رفت <b class="text-sky-700">${money(s.price_go)}</b> · برگشت <b class="text-violet-700">${money(s.price_back)}</b> <span class="text-slate-400">ریال</span></p>
+                      ${s.driver || s.phone ? `<p class="text-[10px] text-slate-400 truncate">${esc(s.driver)}${s.phone ? ' · ' + fa(esc(s.phone)) : ''}</p>` : ''}</div>
+                    ${canEdit() ? `<button type="button" class="text-[11px] text-slate-400 hover:text-indigo-600 px-1" data-edit="${s.id}" title="ویرایش"><i class="fas fa-pen"></i></button>` : ''}</div>`).join('')
+                  : '<p class="text-[11.5px] text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-2xl px-4 py-3">هنوز سرویسی تعریف نشده. اول یک سرویس با نرخِ رفت و برگشت بسازید.</p>'}
+                ${canEdit() ? '<button type="button" class="border-2 border-dashed border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-2xl px-4 py-2 text-[12px] font-black" data-a="new"><i class="fas fa-plus ml-1"></i>سرویسِ جدید</button>' : ''}
+              </div>
+              ${active.length ? `<div class="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+                <span class="text-[11px] font-black text-slate-600"><i class="fas fa-paintbrush ml-1 text-indigo-500"></i>با کلیک روی «رفت/برگشت» این سرویس ثبت می‌شود:</span>
+                <div class="sv-brush">${active.map(s => `<button type="button" data-brush="${s.id}" class="${S.brush === s.id ? 'on' : ''}">${esc(s.name)}</button>`).join('')}</div>
+                ${canEdit() ? `<span class="mr-auto flex flex-wrap gap-1.5">
+                  <button type="button" class="text-[11px] font-black bg-white border border-slate-200 hover:border-indigo-300 rounded-xl px-3 py-1.5" data-a="fill"><i class="fas fa-wand-magic-sparkles ml-1 text-indigo-500"></i>همه‌ی روزهای کاری: رفت و برگشت</button>
+                  <button type="button" class="text-[11px] font-black bg-white border border-slate-200 hover:border-rose-300 rounded-xl px-3 py-1.5" data-a="clear"><i class="fas fa-eraser ml-1 text-rose-500"></i>پاک کردنِ ماه</button>
+                  <button type="button" class="text-[11px] font-black rounded-xl px-4 py-1.5 ${nDirty ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}" data-a="save" ${nDirty ? '' : 'disabled'}><i class="fas fa-floppy-disk ml-1"></i>ذخیره${nDirty ? ' (' + fa(nDirty) + ' روز)' : ''}</button></span>` : ''}
+              </div>` : ''}
+              <div class="sv-cal">
+                ${WD_HEAD.map(w => `<div class="wh text-center text-[10.5px] font-black text-slate-400">${w}</div>`).join('')}
+                ${'<div></div>'.repeat(first)}
+                ${Object.values(S.days).map(D => {
+                    const jd = +D.jdate.slice(8), isT = t[0] === S.jy && t[1] === S.jm && t[2] === jd;
+                    const dflt = defSvc(), amt = amountOf(D, 'go') + amountOf(D, 'back');
+                    const names = [...new Set([D.go, D.back].filter(x => x && (!dflt || x !== dflt.id)))].map(x => sm[x] ? sm[x].name : '؟');
+                    return `<div class="sv-day ${D.off ? 'off' : ''} ${isT ? 'today' : ''} ${S.dirty[D.date] ? 'dirty' : ''}" data-day="${D.date}">
+                      <div class="n"><span>${fa(jd)}</span>${canEdit() ? `<button type="button" data-more="${D.date}" title="انتخابِ سرویس و توضیح"><i class="fas fa-ellipsis"></i></button>` : ''}</div>
+                      <span class="sv-tg go ${D.go ? 'on' : ''} ${D.go && dflt && D.go !== dflt.id ? 'alt' : ''}" data-tg="go" data-d="${D.date}"><i class="fas fa-arrow-left"></i>رفت</span>
+                      <span class="sv-tg back ${D.back ? 'on' : ''} ${D.back && dflt && D.back !== dflt.id ? 'alt' : ''}" data-tg="back" data-d="${D.date}"><i class="fas fa-arrow-right"></i>برگشت</span>
+                      ${names.length ? `<div class="s" title="${esc(names.join('، '))}">${esc(names.join('، '))}</div>` : ''}
+                      <div class="a">${amt ? money(amt) : (D.off ? '<span class="text-rose-300 font-bold">تعطیل</span>' : '<span class="text-slate-300">—</span>')}</div>
+                    </div>`; }).join('')}
+              </div>
+              <div class="overflow-x-auto">
+                <table class="wk-tbl min-w-[760px]"><thead><tr><th>سرویس</th><th>روزهای استفاده</th><th>رفت</th><th>برگشت</th><th>رفت و برگشت</th><th>مبلغِ ماه (ریال)</th><th>پرداخت</th><th></th></tr></thead><tbody>
+                ${Object.keys(T).length ? Object.entries(T).map(([sid, x]) => { const s = sm[sid] || {name: '؟'}; const p = (d.pays || {})[sid]; return `<tr>
+                    <td class="font-black">${esc(s.name)}</td><td>${fa(x.days.size)} روز</td><td>${fa(x.go)}</td><td>${fa(x.back)}</td><td>${fa(x.both)}</td>
+                    <td class="font-black text-emerald-700">${money(x.amount)}</td>
+                    <td>${p && p.paid_date ? `<span class="wk-chip bg-emerald-100 text-emerald-700"><i class="fas fa-check"></i>${fa(p.paid_date)} · ${money(p.amount)}</span>${Number(p.amount) !== x.amount ? `<p class="text-[10px] text-amber-600 mt-0.5">با جمعِ ماه ${Number(p.amount) > x.amount ? 'بیشتر' : 'کمتر'} است (${money(Math.abs(Number(p.amount) - x.amount))})</p>` : ''}` : '<span class="wk-chip bg-amber-100 text-amber-700">پرداخت نشده</span>'}</td>
+                    <td class="whitespace-nowrap"><button type="button" class="text-[11px] font-black text-white bg-gradient-to-l from-indigo-600 to-cyan-600 rounded-lg px-3 py-1" data-pdf="${sid}"><i class="fas fa-file-pdf ml-1"></i>رسیدِ PDF</button>
+                      ${canEdit() ? `<button type="button" class="text-[11px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg px-3 py-1 mr-1" data-pay="${sid}"><i class="fas fa-money-bill-wave ml-1"></i>${p ? 'ویرایشِ پرداخت' : 'ثبتِ پرداخت'}</button>` : ''}</td></tr>`; }).join('')
+                  : '<tr><td colspan="8" class="text-center text-slate-400 py-5">در این ماه روزی با سرویس ثبت نشده است.</td></tr>'}
+                </tbody></table>
+              </div>
+              ${nDirty ? '<p class="text-[11px] text-amber-600 font-bold"><i class="fas fa-circle-exclamation ml-1"></i>تغییرات هنوز ذخیره نشده؛ جمع و رسید بعد از «ذخیره» به‌روز می‌شود.</p>' : ''}
+            </div>`;
+            bind();
+        }
+        function mark(date) {
+            const D = S.days[date], O = S.orig[date];
+            if (D.go === O.go && D.back === O.back && (D.note || '') === (O.note || '')) delete S.dirty[date]; else S.dirty[date] = true;
+        }
+        function bind() {
+            const on = (a, fn) => root.querySelectorAll(`[data-a="${a}"]`).forEach(el => el.addEventListener('click', fn));
+            root.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => { S.brush = +b.dataset.brush; render(); });
+            root.querySelectorAll('[data-tg]').forEach(b => b.onclick = () => {
+                if (!canEdit()) return;
+                if (!S.brush) { toast('اول یک سرویس تعریف کنید.', 'warning'); return; }
+                const D = S.days[b.dataset.d], dir = b.dataset.tg;
+                D[dir] = D[dir] === S.brush ? 0 : S.brush;   // روشن با سرویسِ انتخاب‌شده؛ کلیکِ دوباره خاموش
+                mark(D.date); render();
+            });
+            root.querySelectorAll('[data-more]').forEach(b => b.onclick = () => dayDialog(b.dataset.more));
+            root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => svcDialog(svcMap()[+b.dataset.edit]));
+            root.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => payDialog(+b.dataset.pay));
+            root.querySelectorAll('[data-pdf]').forEach(b => b.onclick = () => {
+                if (Object.keys(S.dirty).length) toast('تغییراتِ ذخیره‌نشده در رسید نمی‌آید.', 'warning');
+                window.open(`${API}?action=svc_receipt&service_id=${b.dataset.pdf}&jy=${S.jy}&jm=${S.jm}`, '_blank');
+            });
+            on('new', () => svcDialog(null));
+            on('fill', () => {
+                Object.values(S.days).forEach(D => { if (!D.off && !D.go && !D.back) { D.go = S.brush; D.back = S.brush; mark(D.date); } });
+                render(); toast('روزهای کاریِ خالی پر شد؛ برای ثبت «ذخیره» را بزنید.', 'info');
+            });
+            on('clear', async () => {
+                if (window.uiConfirm && !(await uiConfirm('پاک کردنِ ماه', 'همه‌ی رفت/برگشت‌های این ماه برداشته شود؟ (بعد از «ذخیره» اعمال می‌شود)'))) return;
+                Object.values(S.days).forEach(D => { D.go = 0; D.back = 0; mark(D.date); });
+                render();
+            });
+            on('save', save);
+        }
+        async function save() {
+            const days = Object.keys(S.dirty).map(g => { const D = S.days[g]; return {date: D.jdate, go: D.go || 0, back: D.back || 0, note: D.note || ''}; });
+            const r = await api('svc_days_save', {jy: S.jy, jm: S.jm, days});
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+            toast(`کارکردِ سرویسِ ${fa(days.length)} روز ذخیره شد.`, 'success');
+            setData(r);
+        }
+        function modal(title, body, onOk, okText) {
+            const box = document.createElement('div');
+            box.className = 'fixed inset-0 z-[99999] flex items-center justify-center p-4';
+            box.style.background = 'rgba(15,23,42,.45)';
+            box.innerHTML = `<div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto" dir="rtl">
+                <h3 class="text-sm font-black text-slate-800 mb-3">${title}</h3>${body}
+                <div class="flex gap-2 mt-4"><button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-5 py-2.5 rounded-xl" data-ok>${okText || 'ذخیره'}</button>
+                <button type="button" class="bg-slate-100 text-slate-600 text-xs font-black px-5 py-2.5 rounded-xl" data-x>انصراف</button><span class="flex-1"></span><span data-extra></span></div></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('mousedown', e => { if (e.target === box) close(); });
+            box.querySelector('[data-ok]').onclick = async () => { if (await onOk(box) !== false) close(); };
+            return box;
+        }
+        function svcDialog(s) {
+            s = s || {name: '', driver: '', phone: '', car: '', price_go: '', price_back: '', is_default: !S.data.services.length, is_active: true, note: ''};
+            const f = (k, label, extra = '') => `<label class="block"><span class="wk-lbl">${label}</span><input class="wk-in" data-k="${k}" value="${esc(k.startsWith('price') ? (s[k] !== '' ? money(s[k]) : '') : s[k])}" ${extra}></label>`;
+            const box = modal(s.id ? `ویرایشِ سرویسِ «${esc(s.name)}»` : 'سرویسِ جدید', `
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="col-span-2">${f('name', 'نامِ سرویس *', 'placeholder="مثلاً سرویسِ آقای رضایی"')}</div>
+                  ${f('driver', 'نامِ راننده')}${f('phone', 'تلفن', 'dir="ltr" inputmode="tel"')}
+                  <div class="col-span-2">${f('car', 'خودرو / پلاک', 'placeholder="مثلاً پژو ۴۰۵ نقره‌ای"')}</div>
+                  ${f('price_go', 'مبلغِ هر روز برای مسیرِ رفت (ریال)', 'inputmode="numeric" data-money')}${f('price_back', 'مبلغِ هر روز برای مسیرِ برگشت (ریال)', 'inputmode="numeric" data-money')}
+                  <div class="col-span-2">${f('note', 'توضیح')}</div>
+                  <label class="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" class="accent-indigo-600 w-4 h-4" data-c="is_default" ${s.is_default ? 'checked' : ''}>سرویسِ پیش‌فرض</label>
+                  <label class="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" class="accent-indigo-600 w-4 h-4" data-c="is_active" ${s.is_active ? 'checked' : ''}>فعال</label>
+                </div>
+                <p class="text-[10.5px] text-slate-500 mt-3 leading-6"><i class="fas fa-circle-info text-indigo-500 ml-1"></i>مبلغِ هر روز موقعِ ثبت از همین نرخ برداشته می‌شود؛ تغییرِ نرخ روی روزهای ثبت‌شده‌ی قبلی اثری ندارد.</p>`,
+                async b => {
+                    const o = {id: s.id || 0};
+                    b.querySelectorAll('[data-k]').forEach(i => { o[i.dataset.k] = i.dataset.money !== undefined ? en(i.value).replace(/[^\d]/g, '') : i.value; });
+                    b.querySelectorAll('[data-c]').forEach(i => { o[i.dataset.c] = i.checked ? 1 : 0; });
+                    const r = await api('svc_save', {service: o});
+                    if (!r.ok) { toast(r.error || 'خطا', 'error'); return false; }
+                    toast('سرویس ذخیره شد.', 'success');
+                    if (!S.brush) S.brush = r.id;
+                    await reloadKeep();
+                });
+            box.querySelectorAll('[data-money]').forEach(i => i.addEventListener('input', () => { const v = en(i.value).replace(/[^\d]/g, ''); i.value = v ? money(v) : ''; }));
+            if (s.id) {
+                const ex = box.querySelector('[data-extra]');
+                ex.innerHTML = '<button type="button" class="text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl px-3 py-2"><i class="fas fa-trash ml-1"></i>حذف</button>';
+                ex.firstChild.onclick = async () => {
+                    if (window.uiConfirm && !(await uiConfirm('حذفِ سرویس', `«${s.name}» حذف شود؟ اگر سابقه داشته باشد فقط غیرفعال می‌شود.`))) return;
+                    const r = await api('svc_delete', {id: s.id});
+                    if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+                    toast(r.deactivated ? 'این سرویس سابقه دارد؛ غیرفعال شد.' : 'حذف شد.', 'success');
+                    box.remove(); reloadKeep();
+                };
+            }
+        }
+        // بازخوانی بدونِ ازدست‌دادنِ تغییراتِ ذخیره‌نشده
+        async function reloadKeep() {
+            const keep = {}; Object.keys(S.dirty).forEach(g => { keep[g] = {go: S.days[g].go, back: S.days[g].back, note: S.days[g].note}; });
+            const r = await api('svc_month', {jy: S.jy, jm: S.jm});
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+            S.data = r; S.days = {}; S.orig = {}; S.dirty = {};
+            r.days.forEach(D => { S.days[D.date] = Object.assign({}, D, keep[D.date] || {}); S.orig[D.date] = Object.assign({}, D); if (keep[D.date]) mark(D.date); });
+            if (!S.brush || !svcMap()[S.brush] || !svcMap()[S.brush].is_active) S.brush = (defSvc() || {}).id || 0;
+            render();
+        }
+        function dayDialog(date) {
+            const D = S.days[date];
+            const opts = sel => `<option value="0">— بدونِ سرویس —</option>` + S.data.services.filter(s => s.is_active || s.id === sel).map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+            modal(`${longDate(D.jdate)}${D.off ? ' <span class="wk-chip bg-rose-100 text-rose-600">تعطیل</span>' : ''}`, `
+                <div class="grid grid-cols-2 gap-3">
+                  <label><span class="wk-lbl"><i class="fas fa-arrow-left text-sky-600 ml-1"></i>رفت (صبح) با</span><select class="wk-in" data-go>${opts(D.go)}</select></label>
+                  <label><span class="wk-lbl"><i class="fas fa-arrow-right text-violet-600 ml-1"></i>برگشت (عصر) با</span><select class="wk-in" data-back>${opts(D.back)}</select></label>
+                  <label class="col-span-2"><span class="wk-lbl">توضیح</span><input class="wk-in" data-note value="${esc(D.note || '')}" placeholder="مثلاً مسیرِ طولانی‌تر، تأخیر، ..."></label>
+                </div>`, b => {
+                    D.go = +b.querySelector('[data-go]').value; D.back = +b.querySelector('[data-back]').value; D.note = b.querySelector('[data-note]').value.trim();
+                    mark(date); render();
+                }, 'اعمال');
+        }
+        function payDialog(sid) {
+            const s = svcMap()[sid] || {name: '؟'}, p = (S.data.pays || {})[sid] || {}, x = totals()[sid];
+            const amount = p.amount || (x ? x.amount : 0);
+            const box = modal(`پرداخت به «${esc(s.name)}» · ${MONTHS[S.jm - 1]} ${fa(S.jy)}`, `
+                <div class="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 mb-3 text-[12px]">جمعِ کارکردِ این ماه: <b class="text-emerald-700">${money(x ? x.amount : 0)} ریال</b> <span class="text-slate-500">(${fa(x ? x.days.size : 0)} روز)</span></div>
+                <div class="grid grid-cols-2 gap-3">
+                  <label><span class="wk-lbl">تاریخِ پرداخت *</span><input class="wk-in" data-jdate data-k="paid_date" value="${fa(p.paid_date || jstr(...todayJ()))}"></label>
+                  <label><span class="wk-lbl">مبلغِ پرداختی (ریال)</span><input class="wk-in" data-k="amount" inputmode="numeric" value="${money(amount)}"></label>
+                  <label><span class="wk-lbl">روشِ پرداخت</span><select class="wk-in" data-k="method">${['کارت به کارت', 'نقدی', 'حواله‌ی بانکی', 'چک'].map(m => `<option ${p.method === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                  <label><span class="wk-lbl">شماره‌ی پیگیری</span><input class="wk-in" data-k="ref" dir="ltr" value="${fa(esc(p.ref || ''))}"></label>
+                  <label class="col-span-2"><span class="wk-lbl">توضیح</span><input class="wk-in" data-k="note" value="${esc(p.note || '')}"></label>
+                </div>`, async b => {
+                    const o = {jy: S.jy, jm: S.jm, service_id: sid};
+                    b.querySelectorAll('[data-k]').forEach(i => { o[i.dataset.k] = i.dataset.k === 'amount' ? en(i.value).replace(/[^\d]/g, '') : en(i.value); });
+                    const r = await api('svc_pay_save', o);
+                    if (!r.ok) { toast(r.error || 'خطا', 'error'); return false; }
+                    toast('پرداخت ثبت شد.', 'success');
+                    await reloadKeep();
+                }, 'ثبتِ پرداخت');
+            const am = box.querySelector('[data-k="amount"]');
+            am.addEventListener('input', () => { const v = en(am.value).replace(/[^\d]/g, ''); am.value = v ? money(v) : ''; });
+            if (p.id) {
+                const ex = box.querySelector('[data-extra]');
+                ex.innerHTML = '<button type="button" class="text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl px-3 py-2"><i class="fas fa-trash ml-1"></i>حذفِ پرداخت</button>';
+                ex.firstChild.onclick = async () => { const r = await api('svc_pay_delete', {jy: S.jy, jm: S.jm, service_id: sid}); if (!r.ok) return toast(r.error || 'خطا', 'error'); box.remove(); toast('پرداخت حذف شد.', 'success'); reloadKeep(); };
+            }
+        }
+        load();
+        return {setMonth(y, m) { S.jy = y; S.jm = m; load(); }, dirty: () => Object.keys(S.dirty).length};
     }
 
     let myView = null, staffView = null;

@@ -272,16 +272,18 @@ function cbundle_match($pdo, $requestId, array $policies) {
 function policy_store_receipts($siteRoot, $destDir, $srcDir, array $receipts, $statement = null) {
     $out = ['receipts' => [], 'statement' => null];
     if (!$receipts && !$statement) return $out;
-    $rdir = rtrim($destDir, '/') . '/فیش‌های اقساط';
+    // پوشه‌ی «فیش‌های پرداختی» داخلِ پوشه‌ی همان بیمه‌نامه؛ هر فیش با سررسیدش نام‌گذاری می‌شود: «فیش پرداختی (1405.11.02).pdf»
+    $rdir = rtrim($destDir, '/') . '/فیش‌های پرداختی';
     if (!is_dir($rdir)) @mkdir($rdir, 0755, true);
     foreach (array_values($receipts) as $k => $r) {
         $src = rtrim($srcDir, '/') . '/' . basename((string)($r['file'] ?? ''));
         if (!is_file($src)) continue;
-        $name = sanitize_folder_name('فیش قسط ' . ($k + 1) . (!empty($r['date']) ? ' - ' . str_replace('/', '-', $r['date']) : '') . (!empty($r['amount']) ? ' - ' . number_format((int)$r['amount']) : '')) . '.pdf';
-        $dest = unique_dest_path($rdir . '/' . $name);
+        $due = !empty($r['date']) ? str_replace('/', '.', p2e_digits($r['date'])) : ('قسط ' . ($k + 1));
+        $dest = unique_dest_path($rdir . '/' . sanitize_folder_name('فیش پرداختی (' . $due . ')') . '.pdf');
         if (@copy($src, $dest)) {
-            $out['receipts'][] = ['n' => $k + 1, 'file' => ltrim(str_replace($siteRoot, '', $dest), '/'), 'date' => $r['date'] ?? null,
-                                  'amount' => isset($r['amount']) ? (int)$r['amount'] : null, 'fish' => $r['fish'] ?? null];
+            $meta = ['n' => $k + 1, 'file' => ltrim(str_replace($siteRoot, '', $dest), '/')];
+            foreach (['date', 'amount', 'fish', 'shenase', 'account', 'bank', 'kind', 'payer', 'payer_nid'] as $f) if (isset($r[$f]) && $r[$f] !== '') $meta[$f] = $f === 'amount' ? (int)$r[$f] : $r[$f];
+            $out['receipts'][] = $meta;
         }
     }
     if ($statement) {
@@ -307,8 +309,8 @@ function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, 
     $issueDate = fin_parse_jalali($issueDate) ? vsprintf('%04d/%02d/%02d', fin_parse_jalali($issueDate)) : null;
     $pdo->prepare("UPDATE company_request_plates SET receipts_json = ?, statement_file = ?, policy_issue_date = COALESCE(?, policy_issue_date) WHERE id = ?")
         ->execute([$stored['receipts'] ? json_encode($stored['receipts'], JSON_UNESCAPED_UNICODE) : null, $stored['statement'], $issueDate, $plateId]);
-    // اقساط از تاریخِ صدورِ بیمه‌نامه (نه روزِ ثبت در سایت)؛ فقط اگر هنوز دریافتی روی‌شان ثبت نشده
-    if ($issueDate && $pl['total_premium']) {
+    // اقساط از تاریخِ صدورِ بیمه‌نامه و با فیش‌ها مغایرت‌گیری می‌شوند؛ فقط اگر هنوز دریافتی روی‌شان ثبت نشده
+    if (($issueDate || $stored['receipts']) && $pl['total_premium']) {
         $paid = $pdo->prepare("SELECT COUNT(*) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id WHERE ci.plate_id = ?");
         $paid->execute([$plateId]);
         if (!(int)$paid->fetchColumn()) company_generate_installments($pdo, $plateId);

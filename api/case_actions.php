@@ -897,6 +897,11 @@ try {
             try {
                 $pdo->prepare("UPDATE policy_cases SET receipts_json = ?, statement_file = ? WHERE id = ?")
                     ->execute([$storedRc['receipts'] ? json_encode($storedRc['receipts'], JSON_UNESCAPED_UNICODE) : null, $fix($storedRc['statement']), $caseId]);
+                // اقساط دوباره با فیش‌های همین بیمه‌نامه مغایرت‌گیری و ساخته می‌شوند (اولویت با فیش)
+                if (empty($case['is_direct_payment']) && $storedRc['receipts']) {
+                    require_once __DIR__ . '/finance_core.php';
+                    fin_generate_installments($pdo, $caseId);
+                }
             } catch (Throwable $e) { error_log('[case receipts] ' . $e->getMessage()); }
         }
 

@@ -46,6 +46,7 @@ function perm_catalog() {
             'fin-invoices' => ['صورتحساب‌ها', $all],
             'fin-reconcile' => ['مغایرت‌گیری با اکسل', ['view', 'edit', 'export']],
             'companies-finance' => ['گزارش مالی شرکت‌ها', ['view', 'export']],
+            'fin-contracts' => ['قراردادهای پرداخت', ['view', 'edit']],
             'fin-settings' => ['تنظیمات مالی', ['view', 'edit']],
         ]],
         ['بایگانی و مدیریت', [
@@ -193,6 +194,12 @@ function perm_api_map() {
             'create_company_payment' => 'fin-installments:create|fin-payments:create', 'settle_company_pasargad' => 'fin-installments:create|fin-payments:create',
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
         ]],
+        'fin_plan_actions' => ['pages' => ['fin-settings'], 'elevate' => true, 'actions' => [
+            'contracts' => 'any', 'contract_save' => 'fin-contracts:edit|fin-settings:edit', 'contract_delete' => 'fin-contracts:edit|fin-settings:edit', 'personnel_contract_save' => 'fin-contracts:edit|fin-settings:edit',
+            'plan_get' => 'any', 'plan_save' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
+            'plan_reset' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
+            'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
+        ]],
         'finance_actions' => ['pages' => ['fin-installments'], 'elevate' => true, 'actions' => [
             'ledger_meta' => $fin . '|' . $req . ':view', 'ledger_installments' => $fin . '|' . $req . ':view', 'ledger_register' => 'fin-installments:create|fin-payments:create',
             'track' => 'fin-tracking:view|fin-installments:view|fin-payments:view', 'ledger_history' => $fin . '|' . $req . ':view', 'ledger_list' => 'fin-payments:view|fin-installments:view|fin-tracking:view',
@@ -266,6 +273,8 @@ function perm_api_map() {
             'save_day' => 'my-work:edit|staff-work:edit', 'leave_add' => 'my-work:create|staff-work:edit', 'leave_delete' => 'my-work:edit|staff-work:edit',
             'profile_save' => 'my-work:edit|staff-work:edit', 'export' => 'my-work:export|staff-work:export',
             'settings_save' => 'staff-work:edit', 'leave_decide' => 'staff-work:edit', 'pending_leaves' => 'staff-work:view', 'staff_overview' => 'staff-work:view',
+            'svc_month' => 'staff-work:view', 'svc_receipt' => 'staff-work:view|staff-work:export', 'svc_save' => 'staff-work:edit', 'svc_delete' => 'staff-work:edit',
+            'svc_days_save' => 'staff-work:edit', 'svc_pay_save' => 'staff-work:edit', 'svc_pay_delete' => 'staff-work:edit',
         ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [

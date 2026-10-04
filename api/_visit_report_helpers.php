@@ -775,7 +775,7 @@ function vr_plate_candidates($pdo, $plateDisplay, $chassis = '') {
         $st->execute([$id]);
         return $st->fetchColumn() ?: null;
     };
-    $insFa = ['THIRD_PARTY' => 'ثالث', 'THIRD' => 'ثالث', 'BODY' => 'بدنه'];
+    $insFa = ['THIRDPARTY' => 'ثالث', 'THIRD_PARTY' => 'ثالث', 'THIRD' => 'ثالث', 'BODY' => 'بدنه'];
     $out = [];
     $st = $pdo->query("SELECT id, unique_code, plate, insured_name, status, insurance_type, COALESCE(chassis_num, vin) AS chassis, created_at
                          FROM policy_cases WHERE status NOT IN ('ISSUED', 'WITHDRAWN', 'CANCELLED', 'REJECTED') ORDER BY id DESC LIMIT 2000");

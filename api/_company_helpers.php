@@ -1277,6 +1277,8 @@ function company_jalali_month_len($jy, $jm) {
 // اقساط بعدی هرکدام دقیقاً یک ماه بعد از قبلی (با تنظیم روز برای ماه‌های کوتاه‌تر).
 // نیازمند fin_split_installments از api/finance_core.php (باید include شده باشد).
 function company_generate_installments($pdo, $plateId) {
+    if (!function_exists('fin_plan_build')) require_once __DIR__ . '/finance_core.php';
+    fin_contracts_ensure($pdo);
     $stmt = $pdo->prepare("SELECT crp.*, cr.company_id FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $stmt->execute([$plateId]);
@@ -1284,43 +1286,24 @@ function company_generate_installments($pdo, $plateId) {
     if (!$plate || $plate['status'] !== 'ISSUED' || empty($plate['total_premium'])) {
         return ['ok' => false, 'error' => 'پلاک صادر نشده یا حق بیمه ثبت نشده است.'];
     }
-
-    $stmt = $pdo->prepare("SELECT installment_count, first_due_offset_months, first_due_offset_days FROM companies WHERE id = ?");
-    $stmt->execute([$plate['company_id']]);
-    $comp = $stmt->fetch();
-    $count = intval($comp['installment_count'] ?? 0) ?: 1;
+    // روشِ پرداخت: قراردادِ شرکت، یا روشی که برای همین بیمه‌نامه انتخاب شده
+    $plan = fin_plan_resolve($pdo, 'C', $plate);
 
     // سررسیدها از «تاریخ صدورِ داخلِ بیمه‌نامه»؛ اگر خوانده نشده بود، روزِ ثبتِ صدور در سایت
-    $pj = (function_exists('fin_parse_jalali') && !empty($plate['policy_issue_date'])) ? fin_parse_jalali($plate['policy_issue_date']) : null;
-    if ($pj) {
-        [$jy, $jm, $jd] = $pj;
-    } else {
-        $issuedTs = $plate['issued_at'] ? strtotime($plate['issued_at']) : time();
-        [$jy, $jm, $jd] = jalali_from_gregorian_ts($issuedTs);
-    }
-    [$fy, $fm] = company_add_months_jalali($jy, $jm, intval($comp['first_due_offset_months'] ?? 0));
-    $fd = min($jd, company_jalali_month_len($fy, $fm));
-    $firstTs = jalali_to_gregorian_ts($fy, $fm, $fd) + (intval($comp['first_due_offset_days'] ?? 0) * 86400);
-    [$fy, $fm, $fd] = jalali_from_gregorian_ts($firstTs);
+    $pj = !empty($plate['policy_issue_date']) ? fin_parse_jalali($plate['policy_issue_date']) : null;
+    $issueJ = $pj ?: jalali_from_gregorian_ts($plate['issued_at'] ? strtotime($plate['issued_at']) : time());
 
-    // «فرمول ماموت»: همان روش رُندکردنِ اقساط که برای پرسنل استفاده می‌شود
-    $parts = fin_split_installments(money_to_int($plate['total_premium']), $count, 'mamut');
-
-    if (function_exists('fin_ensure_schema')) fin_ensure_schema($pdo);
-    $hasTrack = function_exists('fin_tracking_code') && $pdo->query("SHOW COLUMNS FROM company_installments LIKE 'tracking_code'")->fetch();
+    $built = fin_plan_build(money_to_int($plate['total_premium']), $issueJ, $plan, $plate['receipts_json'] ?? null,
+                            fin_detected_contract_key($plate['ocr_extracted_data'] ?? null, $plate['policy_number'] ?? ''));
+    fin_ensure_schema($pdo);
     $pdo->prepare("DELETE FROM company_installments WHERE plate_id = ?")->execute([$plateId]);
-    $ins = $hasTrack
-        ? $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date, tracking_code) VALUES (?, ?, ?, ?, ?, ?)")
-        : $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date) VALUES (?, ?, ?, ?, ?)");
-    $cy = $fy; $cm = $fm;
-    foreach ($parts as $i => $amount) {
-        if ($i > 0) [$cy, $cm] = company_add_months_jalali($cy, $cm, 1);
-        $cd = min($fd, company_jalali_month_len($cy, $cm));
-        $dueJ = sprintf('%04d/%02d/%02d', $cy, $cm, $cd);
-        $dueG = date('Y-m-d', jalali_to_gregorian_ts($cy, $cm, $cd));
-        $ins->execute($hasTrack ? [$plateId, $i + 1, $amount, $dueJ, $dueG, fin_tracking_code($pdo, 'company_installments')] : [$plateId, $i + 1, $amount, $dueJ, $dueG]);
+    $ins = $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date, tracking_code, slip_json, slip_file) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    foreach ($built['rows'] as $r) {
+        $ins->execute([$plateId, $r['n'], $r['amount'], $r['due'], $r['due_g'], fin_tracking_code($pdo, 'company_installments'),
+                       !empty($r['slip']) ? json_encode($r['slip'], JSON_UNESCAPED_UNICODE) : null, $r['slip_file'] ?? null]);
     }
-    return ['ok' => true, 'count' => count($parts)];
+    try { $pdo->prepare("UPDATE company_request_plates SET pay_check_json = ? WHERE id = ?")->execute([json_encode($built['check'], JSON_UNESCAPED_UNICODE), $plateId]); } catch (Throwable $e) {}
+    return ['ok' => true, 'count' => count($built['rows']), 'check' => $built['check']];
 }
 
 // =====================================================================

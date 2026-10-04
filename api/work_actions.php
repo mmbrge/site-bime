@@ -256,6 +256,88 @@ try {
         wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'rows' => $rows, 'pending' => $pending]);
     }
 
+    // ---- سرویسِ رفت‌وآمد (برای کلِ دفتر؛ دیدن با «کارکرد پرسنل»، تغییر با دسترسیِ ویرایشِ آن) ----
+    if (strpos($action, 'svc_') === 0) {
+        require_once __DIR__ . '/_work_service.php';
+        ws_ensure($pdo);
+        if (!$isManager) wout(['ok' => false, 'error' => 'سرویسِ رفت‌وآمد در «کارکرد پرسنل» است و دسترسی ندارید.']);
+        if (in_array($action, ['svc_save', 'svc_delete', 'svc_days_save', 'svc_pay_save', 'svc_pay_delete'], true) && !$canManage)
+            wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ سرویسِ رفت‌وآمد را ندارید.']);
+        $money = function ($v) { return max(0, money_to_int(p2e_digits((string)$v))); };
+
+        if ($action === 'svc_month') {
+            [$jy, $jm] = wk_month_args($data);
+            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+        }
+        if ($action === 'svc_save') {
+            $s = (array)($data['service'] ?? []);
+            $name = trim(mb_substr((string)($s['name'] ?? ''), 0, 120));
+            if ($name === '') wout(['ok' => false, 'error' => 'نامِ سرویس را وارد کنید.']);
+            $vals = [$name, trim(mb_substr((string)($s['driver'] ?? ''), 0, 120)) ?: null, trim(p2e_digits(mb_substr((string)($s['phone'] ?? ''), 0, 30))) ?: null,
+                     trim(mb_substr((string)($s['car'] ?? ''), 0, 160)) ?: null, $money($s['price_go'] ?? 0), $money($s['price_back'] ?? ($s['price_go'] ?? 0)),
+                     !empty($s['is_default']) ? 1 : 0, !isset($s['is_active']) || !empty($s['is_active']) ? 1 : 0, trim(mb_substr((string)($s['note'] ?? ''), 0, 500)) ?: null];
+            $id = intval($s['id'] ?? 0);
+            if ($id) {
+                $pdo->prepare("UPDATE work_services SET name=?, driver=?, phone=?, car=?, price_go=?, price_back=?, is_default=?, is_active=?, note=? WHERE id=?")->execute([...$vals, $id]);
+            } else {
+                // اولین سرویس خودبه‌خود پیش‌فرض می‌شود
+                if (!intval($pdo->query("SELECT COUNT(*) FROM work_services WHERE is_active = 1")->fetchColumn())) $vals[6] = 1;
+                $pdo->prepare("INSERT INTO work_services (name, driver, phone, car, price_go, price_back, is_default, is_active, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")->execute($vals);
+                $id = intval($pdo->lastInsertId());
+            }
+            if ($vals[6]) $pdo->prepare("UPDATE work_services SET is_default = 0 WHERE id <> ?")->execute([$id]);
+            wout(['ok' => true, 'id' => $id, 'services' => ws_services($pdo)]);
+        }
+        if ($action === 'svc_delete') {
+            $id = intval($data['id'] ?? 0);
+            $st = $pdo->prepare("SELECT COUNT(*) FROM work_service_days WHERE go_service_id = ? OR back_service_id = ?");
+            $st->execute([$id, $id]);
+            if (intval($st->fetchColumn())) {
+                // سابقه دارد: فقط غیرفعال می‌شود تا رسیدهای ماه‌های قبل درست بمانند
+                $pdo->prepare("UPDATE work_services SET is_active = 0, is_default = 0 WHERE id = ?")->execute([$id]);
+                wout(['ok' => true, 'deactivated' => true, 'services' => ws_services($pdo)]);
+            }
+            $pdo->prepare("DELETE FROM work_services WHERE id = ?")->execute([$id]);
+            wout(['ok' => true, 'services' => ws_services($pdo)]);
+        }
+        if ($action === 'svc_days_save') {
+            $n = ws_days_save($pdo, (array)($data['days'] ?? []), $me, !empty($data['reprice']));
+            [$jy, $jm] = wk_month_args($data);
+            wout(['ok' => true, 'saved' => $n, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+        }
+        if ($action === 'svc_pay_save') {
+            [$jy, $jm] = wk_month_args($data);
+            $sid = intval($data['service_id'] ?? 0);
+            if (!ws_service($pdo, $sid)) wout(['ok' => false, 'error' => 'سرویس پیدا نشد.']);
+            $pd = wk_j2g($data['paid_date'] ?? '');
+            if (!$pd) wout(['ok' => false, 'error' => 'تاریخِ پرداخت را درست وارد کنید (مثل ۱۴۰۵/۰۸/۰۱).']);
+            $pdo->prepare("INSERT INTO work_service_pays (service_id, jy, jm, amount, paid_date, method, ref, note, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+                           ON DUPLICATE KEY UPDATE amount = VALUES(amount), paid_date = VALUES(paid_date), method = VALUES(method), ref = VALUES(ref), note = VALUES(note)")
+                ->execute([$sid, $jy, $jm, $money($data['amount'] ?? 0), $pd, trim(mb_substr((string)($data['method'] ?? ''), 0, 60)) ?: null,
+                           trim(p2e_digits(mb_substr((string)($data['ref'] ?? ''), 0, 120))) ?: null, trim(mb_substr((string)($data['note'] ?? ''), 0, 500)) ?: null, $me]);
+            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+        }
+        if ($action === 'svc_pay_delete') {
+            [$jy, $jm] = wk_month_args($data);
+            $pdo->prepare("DELETE FROM work_service_pays WHERE service_id = ? AND jy = ? AND jm = ?")->execute([intval($data['service_id'] ?? 0), $jy, $jm]);
+            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+        }
+        if ($action === 'svc_receipt') {
+            [$jy, $jm] = wk_month_args($data);
+            $sid = intval($data['service_id'] ?? 0);
+            $svc = ws_service($pdo, $sid);
+            if (!$svc) wout(['ok' => false, 'error' => 'سرویس پیدا نشد.']);
+            $bin = ws_receipt_pdf($pdo, $sid, $jy, $jm);
+            $fname = 'رسید سرویس ' . $svc['name'] . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
+            while (ob_get_level()) ob_end_clean();
+            header('Content-Type: application/pdf');
+            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-receipt-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+            header('Content-Length: ' . strlen($bin));
+            echo $bin;
+            exit;
+        }
+    }
+
     wout(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
 } catch (Throwable $e) {
     error_log('[work_actions] ' . $e->getMessage());

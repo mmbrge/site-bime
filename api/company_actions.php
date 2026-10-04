@@ -719,8 +719,10 @@ try {
 
     // ---- لیست شرکت‌های درخواست‌کننده (با پروفایل کامل + نام شرکت مادر) ----
     if ($action === 'list_companies') {
-        $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name FROM companies c
-                              LEFT JOIN companies parent ON parent.id = c.parent_id
+        if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
+        fin_contracts_ensure($pdo);
+        $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name, fc.name AS contract_name, fc.contract_key FROM companies c
+                              LEFT JOIN companies parent ON parent.id = c.parent_id LEFT JOIN fin_contracts fc ON fc.id = c.contract_id
                               WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') ORDER BY c.name");
         $companiesList = $stmt->fetchAll();
         // آمار برای کارت‌های صفحه‌ی شرکت‌ها: کاربرانِ پنل، درخواست‌ها، درخواست‌های باز، صادره‌ها
@@ -790,6 +792,18 @@ try {
         $offsetMonths = intval($data['first_due_offset_months'] ?? 0);
         $offsetDays = intval($data['first_due_offset_days'] ?? 0);
         $allowedInsurers = in_array($data['allowed_insurers'] ?? '', ['PASARGAD', 'IRAN', 'BOTH'], true) ? $data['allowed_insurers'] : 'BOTH';
+        // قراردادِ پرداخت: نقد/اقساط و تعدادِ قسط از قرارداد می‌آید (ستون‌های قدیمی هم برای سازگاری هم‌شکل می‌شوند)
+        if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
+        fin_contracts_ensure($pdo);
+        $contractGiven = array_key_exists('contract_id', $data);
+        $contractId = intval($data['contract_id'] ?? 0) ?: null;
+        if ($contractId) {
+            $ct = fin_contract($pdo, $contractId);
+            if (!$ct) { echo json_encode(['ok' => false, 'error' => 'قرارداد پیدا نشد.']); exit; }
+            $paymentTerms = $ct['pay_type'] === 'CASH' ? 'CASH_IMMEDIATE' : 'INSTALLMENT';
+            $instCount = $ct['pay_type'] === 'CASH' ? 1 : intval($ct['installment_count']);
+            $offsetMonths = intval($ct['first_due_months']); $offsetDays = intval($ct['first_due_days']);
+        }
 
         if ($action === 'update_company') {
             $companyId = intval($data['id'] ?? 0);
@@ -798,6 +812,7 @@ try {
             $pdo->prepare("UPDATE companies SET name=?, payment_terms=?, economic_code=?, address=?, phone=?, parent_id=?,
                             bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
                 ->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $companyId]);
+            if ($contractGiven) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $companyId]);
             echo json_encode(['ok' => true, 'company_id' => $companyId]);
             exit;
         }
@@ -810,6 +825,7 @@ try {
             $pdo->prepare("UPDATE companies SET kind=?, payment_terms=?, economic_code=?, address=?, phone=?, parent_id=?,
                             bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
                 ->execute([$newKind, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $existing['id']]);
+            if ($contractGiven) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $existing['id']]);
             echo json_encode(['ok' => true, 'company_id' => $existing['id']]);
             exit;
         }
@@ -817,7 +833,9 @@ try {
                                 bale_group_chat_id, allowed_insurers, installment_count, first_due_offset_months, first_due_offset_days)
                                 VALUES (?, 'INSURANCE_CLIENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays]);
-        echo json_encode(['ok' => true, 'company_id' => $pdo->lastInsertId()]);
+        $newId = $pdo->lastInsertId();
+        if ($contractId) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $newId]);
+        echo json_encode(['ok' => true, 'company_id' => $newId]);
         exit;
     }
 

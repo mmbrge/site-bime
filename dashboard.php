@@ -104,6 +104,7 @@ function finance_nav($active, $canSeeCompanies = true) {
     $items = [['fin-dashboard', 'fa-chart-pie', 'داشبورد'], ['fin-installments', 'fa-list-ol', 'مرکز اقساط'], ['fin-payments', 'fa-arrow-right-arrow-left', 'دریافت و پرداخت'],
               ['fin-tracking', 'fa-magnifying-glass-location', 'پیگیری'], ['fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها'], ['fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری']];
     if ($canSeeCompanies) $items[] = ['companies-finance', 'fa-sack-dollar', 'گزارش شرکت‌ها'];
+    $items[] = ['fin-contracts', 'fa-file-contract', 'قراردادها'];
     if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['fin-settings', 'fa-sliders', 'تنظیمات'];
     $h = '<div class="iss-hub fin-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-calculator"></i></span><div><b>مرکز مالی</b><small>اقساطِ کارکنان و شرکتی، دریافت از بیمه‌گذار، پرداخت به بیمه‌گر، چک‌ها و صورتحساب</small></div></div><div class="iss-nav">';
     foreach ($items as [$tab, $ic, $label]) $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . '</button>';
@@ -835,6 +836,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab('fin-contracts')" id="nav-fin-contracts" class="nav-item menu-link"><i class="fas fa-file-contract ml-2"></i> قراردادهای پرداخت</a>
                         <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
                         <?php endif; ?>
                     </div>
@@ -2011,6 +2013,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
         </div>
 
+        <!-- ======================= قراردادهای پرداخت ======================= -->
+        <div id="tab-fin-contracts" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo finance_nav('fin-contracts', $canSeeCompanies); ?>
+            <div id="fin-contracts-root"></div>
+        </div>
+
         <!-- ======================= تنظیمات مالی ======================= -->
         <div id="tab-fin-settings" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <?php echo finance_nav('fin-settings', $canSeeCompanies); ?>
@@ -3064,16 +3072,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
                 <div class="cmx-sec">
-                    <h4><i class="fas fa-sack-dollar ml-1"></i>تسویه، بیمه‌گر و قسط‌بندی</h4>
+                    <h4><i class="fas fa-sack-dollar ml-1"></i>قراردادِ پرداخت و بیمه‌گر</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div class="float-input">
-                            <select id="cm-payment-terms">
-                                <option value="">مشخص نشده</option>
-                                <option value="INSTALLMENT">قسطی</option>
-                                <option value="CASH_NET30">نقدی - مهلت ۳۰ روزه</option>
-                                <option value="CASH_IMMEDIATE">نقدی - فوری</option>
-                            </select>
-                            <label>نحوه‌ی تسویه</label>
+                            <select id="cm-contract" onchange="cmContractHint()"><option value="">— بدونِ قرارداد —</option></select>
+                            <label>قراردادِ پرداخت</label>
                         </div>
                         <div class="float-input">
                             <select id="cm-allowed-insurers">
@@ -3084,12 +3087,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <label>بیمه‌گر(های) مجاز</label>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-3">
-                        <div class="float-input !mb-0"><input type="number" id="cm-inst-count" min="1" placeholder=" "><label>تعداد اقساط</label></div>
-                        <div class="float-input !mb-0"><input type="number" id="cm-offset-months" min="0" value="0" placeholder=" "><label>سررسید اول (ماه بعد)</label></div>
-                        <div class="float-input !mb-0"><input type="number" id="cm-offset-days" min="0" value="0" placeholder=" "><label>+ روز</label></div>
-                    </div>
-                    <p class="text-[10.5px] text-slate-400 mt-2">سررسیدِ قسطِ اول از «تاریخ صدورِ داخلِ بیمه‌نامه» به‌علاوه‌ی این فاصله حساب می‌شود.</p>
+                    <p id="cm-contract-hint" class="text-[10.5px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 leading-6">نقد/اقساط، تعداد قسط و سررسیدِ اول از قراردادِ انتخاب‌شده می‌آید.</p>
+                    <p class="text-[10.5px] text-slate-400 mt-1">قراردادها را از <a href="#" onclick="switchTab('fin-contracts');return false" class="text-indigo-600 font-bold">مالی ← قراردادهای پرداخت</a> تعریف کنید. برای هر بیمه‌نامه هم در پاپ‌آپِ صدور می‌شود روشِ دیگری گذاشت.</p>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="resetCompanyForm()" class="px-4 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold">فرم خالی</button>
@@ -3774,7 +3773,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=1"></script>
+    <script src="work-log.js?v=2"></script>
+    <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=1"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -3798,7 +3798,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
-            'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-settings',
+            'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
@@ -6627,6 +6627,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 mt-2"><b>خواسته‌ی الحاقیه:</b> ${iiEsc(r.endorsement_request)}</p>` : ''}
                     ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 mt-2"><b>دلیل فسخ:</b> ${iiEsc(r.cancellation_reason)}</p>` : ''}
                 </div>
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<div class="ii-sec" style="background:linear-gradient(180deg,#eef2ff,#fff)">
+                    <h5><i class="fas fa-sack-dollar text-indigo-500"></i>مالی و روشِ پرداخت <span class="text-[10px] font-bold text-slate-400">(نقد / اقساط، قرارداد، فیش‌های بیمه‌نامه)</span></h5>
+                    <div data-finplan="${isP ? 'P' : 'C'}:${Number(r.id) || 0}"></div>
+                </div>` : ''}
                 <div class="grid lg:grid-cols-2 gap-3">
                     <div class="ii-sec">
                         <h5><i class="fas fa-user-shield text-indigo-500"></i>بیمه‌گذار ${isP && r.relationship ? `<span class="text-[10px] font-bold text-slate-400">(${iiEsc(r.relationship)} پرسنل)</span>` : ''}</h5>
@@ -6990,6 +6994,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
                     ${infoCell('وضعیت بایگانی', r.folder_status === 'TRANSFERRED' ? 'منتقل شد' : (r.folder_status === 'FAILED' ? 'ناموفق' : ''))}
                 </div>
+
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-sack-dollar text-indigo-400 ml-1"></i>مالی، اقساط و فیش‌های پرداختی</h4>
+                <div class="border border-indigo-100 rounded-xl p-3 mb-4" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id || r.id) || 0}"></div></div>` : ''}
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">خودرو</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
@@ -7658,7 +7665,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${c.bale_group_chat_id ? '<span class="cmx-chip bg-emerald-50 text-emerald-700" title="گروه بله وصل است"><i class="fas fa-paper-plane"></i>بله</span>' : ''}
                     </div>
                     <div class="px-4 pt-3 flex flex-wrap gap-1.5">
-                        <span class="cmx-chip ${c.payment_terms ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'}"><i class="fas fa-sack-dollar"></i>${PAY_FA[c.payment_terms] || 'تسویه: مشخص نشده'}</span>
+                        <span class="cmx-chip ${c.contract_name || c.payment_terms ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'}"><i class="fas ${c.contract_name ? 'fa-file-contract' : 'fa-sack-dollar'}"></i>${c.contract_name ? iiEsc(c.contract_name) + (c.contract_key ? ' (' + c.contract_key + ')' : '') : (PAY_FA[c.payment_terms] || 'قرارداد: مشخص نشده')}</span>
                         ${c.installment_count ? `<span class="cmx-chip bg-indigo-50 text-indigo-700"><i class="fas fa-list-ol"></i>${e2pNum(c.installment_count)} قسط${Number(c.first_due_offset_months) ? ` | اولی ${e2pNum(c.first_due_offset_months)} ماه بعد` : ''}</span>` : ''}
                         <span class="cmx-chip ${iv[1]}"><i class="fas fa-shield-halved"></i>${iv[0]}</span>
                     </div>
@@ -7747,13 +7754,30 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ['cm-company-name','cm-economic-code','cm-phone','cm-address','cm-group-manual'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('cm-parent-company').value = '';
             document.getElementById('cm-group-select').value = '';
-            document.getElementById('cm-payment-terms').value = '';
+            cmLoadContracts('');
             document.getElementById('cm-allowed-insurers').value = 'BOTH';
-            document.getElementById('cm-inst-count').value = '';
-            document.getElementById('cm-offset-months').value = '0';
-            document.getElementById('cm-offset-days').value = '0';
+
         }
 
+        // قراردادهای پرداخت برای فرمِ شرکت
+        let cmContracts = null;
+        async function cmLoadContracts(sel) {
+            const box = document.getElementById('cm-contract');
+            if (!box) return;
+            if (!cmContracts) {
+                try { const d = await (await fetch('api/fin_plan_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'contracts'})})).json(); cmContracts = d.ok ? d.contracts : []; }
+                catch (e) { cmContracts = []; }
+            }
+            box.innerHTML = '<option value="">— بدونِ قرارداد —</option>' + cmContracts.filter(c => c.is_active || String(c.id) === String(sel)).map(c => `<option value="${c.id}">${iiEsc(c.name)}${c.contract_key ? ' (' + iiEsc(c.contract_key) + ')' : ''}</option>`).join('');
+            box.value = sel ? String(sel) : '';
+            cmContractHint();
+        }
+        function cmContractHint() {
+            const id = document.getElementById('cm-contract').value, h = document.getElementById('cm-contract-hint');
+            const c = (cmContracts || []).find(x => String(x.id) === id);
+            h.innerHTML = c ? `<i class="fas fa-file-contract text-indigo-500 ml-1"></i>${iiEsc(c.label)}` : 'بدونِ قرارداد: اقساط طبقِ تنظیماتِ قبلیِ همین شرکت ساخته می‌شود. بهتر است یک قرارداد انتخاب کنید.';
+        }
+        window.addEventListener('fin:contracts-changed', () => { cmContracts = null; });
         function editCompany(id) {
             const c = companiesCache.find(x => String(x.id) === String(id));
             if (!c) return;
@@ -7764,11 +7788,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-phone').value = c.phone || '';
             document.getElementById('cm-address').value = c.address || '';
             document.getElementById('cm-parent-company').value = c.parent_id || '';
-            document.getElementById('cm-payment-terms').value = c.payment_terms || '';
+            cmLoadContracts(c.contract_id || '');
             document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
-            document.getElementById('cm-inst-count').value = c.installment_count || '';
-            document.getElementById('cm-offset-months').value = c.first_due_offset_months || 0;
-            document.getElementById('cm-offset-days').value = c.first_due_offset_days || 0;
+
             const groupSel = document.getElementById('cm-group-select');
             if (c.bale_group_chat_id && [...groupSel.options].some(o => o.value == c.bale_group_chat_id)) {
                 groupSel.value = c.bale_group_chat_id;
@@ -7789,16 +7811,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 action: companyId ? 'update_company' : 'create_company',
                 id: companyId || undefined,
                 name,
-                payment_terms: document.getElementById('cm-payment-terms').value,
+                contract_id: document.getElementById('cm-contract').value,
                 allowed_insurers: document.getElementById('cm-allowed-insurers').value,
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),
                 parent_company_id: document.getElementById('cm-parent-company').value,
                 bale_group_chat_id: groupChatId,
-                installment_count: document.getElementById('cm-inst-count').value,
-                first_due_offset_months: document.getElementById('cm-offset-months').value,
-                first_due_offset_days: document.getElementById('cm-offset-days').value,
+
             };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
@@ -8496,6 +8516,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'fin-dashboard')    loadFinDashboard();
             if (tabId === 'fin-installments') { if (window.FinHub) FinHub.initInstallments(); }
             if (tabId === 'fin-settings')     loadFinanceSettings();
+            if (tabId === 'fin-contracts' && window.FinContracts) FinContracts.render(document.getElementById('fin-contracts-root'));
             if (tabId === 'fin-invoices')     loadInvoices();
             if (tabId === 'fin-payments')     { if (window.FinHub) FinHub.initLedger(); }
             if (tabId === 'fin-tracking')     { if (window.FinHub) FinHub.initTracking(); }

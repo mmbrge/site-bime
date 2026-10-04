@@ -296,34 +296,29 @@ function fin_generate_installments($pdo, $caseId, $count = null, $method = null,
         }
     }
 
-    $s = fin_settings($pdo);
-    $count  = $count  ?: intval($s['default_installments']);
-    $method = $method ?: $s['installment_method'];
-    $dueMode = ($s['due_mode'] ?? 'issue') === 'period15' ? 'period15' : 'issue';
+    // روشِ پرداخت: قراردادِ کارکنان / تنظیماتِ مالی / روشِ اختصاصیِ همین پرونده؛ فیش‌های فایلِ بیمه‌نامه اولویت دارند
+    fin_contracts_ensure($pdo);
+    $plan = fin_plan_resolve($pdo, 'P', $case);
+    if ($count) { $plan['type'] = 'INSTALLMENT'; $plan['count'] = max(1, intval($count)); $plan['prefer'] = 'formula'; }
+    if ($method) $plan['method'] = $method === 'mamut' ? 'mamut' : 'even';
 
     [$jy, $jm, $jd] = fin_issue_jalali($case['policy_issue_date'] ?? null, $case['issued_at']);
     $period = fin_resolve_period_for_date($pdo, $jy, $jm, $jd);
-
-    $parts = fin_split_installments($premium, $count, $method);
+    $built = fin_plan_build($premium, [$jy, $jm, $jd], $plan, $case['receipts_json'] ?? null,
+                            fin_detected_contract_key($case['ocr_extracted_data'] ?? null, $case['policy_number'] ?? ''), $period);
 
     $pdo->prepare("DELETE FROM policy_installments WHERE case_id = ?")->execute([$caseId]);
-    $ins = $pdo->prepare("INSERT INTO policy_installments (case_id, period_id, inst_number, amount, due_jalali, due_date, tracking_code)
-                          VALUES (?, ?, ?, ?, ?, ?, ?)");
-
-    foreach ($parts as $i => $amount) {
-        if ($dueMode === 'issue') {
-            [$dy, $dm, $dd] = fin_due_after($jy, $jm, $jd, $i + 1);
-        } else {
-            [$dy, $dm] = fin_next_month($period['jalali_year'], $period['jalali_month'], $i + 1);
-            $dd = min(15, fin_jalali_month_len($dy, $dm));
-        }
-        $dueJ = sprintf('%04d/%02d/%02d', $dy, $dm, $dd);
-        $dueG = date('Y-m-d', jalali_to_gregorian_ts($dy, $dm, $dd));
-        $ins->execute([$caseId, $period['id'], $i + 1, $amount, $dueJ, $dueG, fin_tracking_code($pdo)]);
+    $ins = $pdo->prepare("INSERT INTO policy_installments (case_id, period_id, inst_number, amount, due_jalali, due_date, tracking_code, slip_json, slip_file)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    foreach ($built['rows'] as $r) {
+        $ins->execute([$caseId, $period['id'], $r['n'], $r['amount'], $r['due'], $r['due_g'], fin_tracking_code($pdo),
+                       !empty($r['slip']) ? json_encode($r['slip'], JSON_UNESCAPED_UNICODE) : null, $r['slip_file'] ?? null]);
     }
+    $parts = array_column($built['rows'], 'amount');
+    try { $pdo->prepare("UPDATE policy_cases SET pay_check_json = ? WHERE id = ?")->execute([json_encode($built['check'], JSON_UNESCAPED_UNICODE), $caseId]); } catch (Throwable $e) {}
 
     $pdo->prepare("UPDATE policy_cases SET installments_generated = 1 WHERE id = ?")->execute([$caseId]);
-    return ['ok' => true, 'count' => count($parts), 'period' => $period['title'], 'parts' => $parts];
+    return ['ok' => true, 'count' => count($parts), 'period' => $period['title'], 'parts' => $parts, 'check' => $built['check']];
 }
 
 // =====================================================================
@@ -347,7 +342,7 @@ function fin_sync_installments($pdo) {
         foreach ($rows as $r) {
             $premium = money_to_int($r['total_premium']);
             if (!$premium) continue;
-            if ((int)$r['cnt'] === 0 || ((int)$r['total'] !== $premium && (int)$r['touched'] === 0)) {
+            if ((int)$r['cnt'] === 0 || ((int)$r['total'] !== $premium && (int)$r['touched'] === 0 && !fin_slips_applied($pdo, 'policy_cases', $r['id']))) {
                 $res = fin_generate_installments($pdo, $r['id']);
                 if (!empty($res['ok'])) $out['personnel']++;
             }
@@ -367,7 +362,7 @@ function fin_sync_installments($pdo) {
         foreach ($rows as $r) {
             $premium = money_to_int($r['total_premium']);
             if (!$premium) continue;
-            if ((int)$r['cnt'] === 0 || ((int)$r['total'] !== $premium && (int)$r['touched'] === 0)) {
+            if ((int)$r['cnt'] === 0 || ((int)$r['total'] !== $premium && (int)$r['touched'] === 0 && !fin_slips_applied($pdo, 'company_request_plates', $r['id']))) {
                 $res = company_generate_installments($pdo, $r['id']);
                 if (!empty($res['ok'])) $out['company']++;
             }
@@ -1636,4 +1631,257 @@ function fin_invoice_mode($pdo, $mode) {
         return ['ok' => false, 'error' => 'صدور صورتحساب برای بیمه‌نامه‌هایی که قبلاً صورتحساب خورده‌اند، در تنظیمات مالی غیرفعال است (گزینه‌ی «چند صورتحساب برای یک بیمه‌نامه»).'];
     }
     return $mode;
+}
+
+// =====================================================================
+//  قراردادهای مالی و «روشِ پرداختِ» هر بیمه‌نامه
+//   - قرارداد: شماره (مثلاً 5051/30000/1404، کلید = 5051)، نام، نقد/اقساط، تعداد قسط، سررسیدِ اول نسبت به تاریخ صدور
+//   - هر شرکت یک قرارداد دارد؛ کارکنان قراردادِ پیش‌فرضِ خودشان (5051) یا تنظیماتِ مالیِ خودشان
+//   - هر بیمه‌نامه (ردیفِ شرکتی / پرونده‌ی کارکنان) می‌تواند روشِ دیگری بگیرد (pay_plan_json)
+//   - فیش‌های داخلِ فایلِ بیمه‌نامه با اقساطِ محاسبه‌شده مغایرت‌گیری می‌شوند؛ اولویت با فیش است
+//     مگر شماره‌ی قراردادِ بیمه‌نامه با قراردادِ تعیین‌شده یکی نباشد (آن‌وقت هشدار و انتخابِ روش)
+// =====================================================================
+function fin_contracts_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fin_contracts (
+            id INT AUTO_INCREMENT PRIMARY KEY, contract_no VARCHAR(60) NULL, contract_key VARCHAR(20) NULL, name VARCHAR(150) NOT NULL,
+            pay_type VARCHAR(12) NOT NULL DEFAULT 'INSTALLMENT', installment_count INT NOT NULL DEFAULT 1,
+            first_due_months INT NOT NULL DEFAULT 1, first_due_days INT NOT NULL DEFAULT 0, interval_months INT NOT NULL DEFAULT 1,
+            split_method VARCHAR(12) NOT NULL DEFAULT 'mamut', note VARCHAR(500) NULL, is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NULL, KEY k_key (contract_key)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) { error_log('[fin_contracts_ensure] ' . $e->getMessage()); return; }
+    foreach ([['companies', 'contract_id', 'INT NULL'],
+              ['policy_cases', 'pay_plan_json', 'TEXT NULL'], ['policy_cases', 'pay_check_json', 'MEDIUMTEXT NULL'],
+              ['company_request_plates', 'pay_plan_json', 'TEXT NULL'], ['company_request_plates', 'pay_check_json', 'MEDIUMTEXT NULL'],
+              ['policy_installments', 'slip_json', 'TEXT NULL'], ['policy_installments', 'slip_file', 'VARCHAR(500) NULL'],
+              ['company_installments', 'slip_json', 'TEXT NULL'], ['company_installments', 'slip_file', 'VARCHAR(500) NULL']] as [$t, $c, $def]) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE " . $pdo->quote($c))->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def"); }
+        catch (Throwable $e) { error_log('[fin_contracts_ensure col] ' . $e->getMessage()); }
+    }
+    if (function_exists('fin_ensure_receipt_cols')) fin_ensure_receipt_cols($pdo);
+    $s = fin_settings($pdo);
+    try {
+        // قراردادِ کارکنان (۵۰۵۱) از روی تنظیماتِ فعلیِ اقساطِ کارکنان
+        if (!intval($pdo->query("SELECT COUNT(*) FROM fin_contracts")->fetchColumn())) {
+            $pdo->prepare("INSERT INTO fin_contracts (contract_no, contract_key, name, pay_type, installment_count, first_due_months, first_due_days, split_method, created_at)
+                           VALUES ('5051', '5051', 'قرارداد کارکنان (کسر از حقوق)', 'INSTALLMENT', ?, 1, 0, ?, NOW())")
+                ->execute([max(1, intval($s['default_installments'] ?? 9)), ($s['installment_method'] ?? 'mamut') === 'mamut' ? 'mamut' : 'even']);
+            fin_set($pdo, 'personnel_contract_id', (string)$pdo->lastInsertId());
+            if (!isset($s['personnel_use_contract'])) fin_set($pdo, 'personnel_use_contract', '1');
+        }
+        // شرکت‌هایی که قبلاً تعداد قسط/فاصله داشتند: برای هر ترکیب یک قرارداد ساخته و به شرکت وصل می‌شود (یک بار)
+        if (($s['contracts_migrated'] ?? '') !== '1') {
+            $rows = $pdo->query("SELECT id, payment_terms, installment_count, first_due_offset_months, first_due_offset_days FROM companies
+                                  WHERE contract_id IS NULL AND (installment_count IS NOT NULL OR payment_terms IS NOT NULL)")->fetchAll();
+            $made = [];
+            foreach ($rows as $r) {
+                $cash = in_array($r['payment_terms'], ['CASH_IMMEDIATE', 'CASH_NET30'], true);
+                $cnt = $cash ? 1 : max(1, intval($r['installment_count'] ?: 1));
+                $m = $cash ? 0 : intval($r['first_due_offset_months']); $d = $r['payment_terms'] === 'CASH_NET30' ? 30 : intval($r['first_due_offset_days']);
+                $k = ($cash ? 'C' : 'I') . "-$cnt-$m-$d";
+                if (!isset($made[$k])) {
+                    $name = $cash ? ('نقدی' . ($d ? " ({$d} روزه)" : ' فوری')) : ("اقساط {$cnt} قسطی" . ($m || $d ? " (سررسید اول {$m} ماه" . ($d ? " و {$d} روز" : '') . ' بعد)' : ''));
+                    $pdo->prepare("INSERT INTO fin_contracts (name, pay_type, installment_count, first_due_months, first_due_days, split_method, note, created_at)
+                                   VALUES (?, ?, ?, ?, ?, 'mamut', 'ساخته‌شده از تنظیماتِ قبلیِ شرکت‌ها؛ شماره‌ی قرارداد را وارد کنید.', NOW())")
+                        ->execute([$name, $cash ? 'CASH' : 'INSTALLMENT', $cnt, $m, $d]);
+                    $made[$k] = intval($pdo->lastInsertId());
+                }
+                $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$made[$k], $r['id']]);
+            }
+            fin_set($pdo, 'contracts_migrated', '1');
+        }
+    } catch (Throwable $e) { error_log('[fin_contracts seed] ' . $e->getMessage()); }
+}
+
+function fin_contract_key($no) {
+    $no = p2e_digits(trim((string)$no));
+    return preg_match('/^\s*(\d{3,6})/', $no, $m) ? $m[1] : null;
+}
+function fin_contracts($pdo, $activeOnly = false) {
+    fin_contracts_ensure($pdo);
+    return $pdo->query("SELECT * FROM fin_contracts" . ($activeOnly ? " WHERE is_active = 1" : '') . " ORDER BY is_active DESC, contract_key, name")->fetchAll();
+}
+function fin_contract($pdo, $id) {
+    if (!$id) return null;
+    fin_contracts_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM fin_contracts WHERE id = ?");
+    $st->execute([intval($id)]);
+    return $st->fetch() ?: null;
+}
+function fin_contract_by_key($pdo, $key) {
+    if (!$key) return null;
+    $st = $pdo->prepare("SELECT * FROM fin_contracts WHERE contract_key = ? AND is_active = 1 ORDER BY id LIMIT 1");
+    $st->execute([(string)$key]);
+    return $st->fetch() ?: null;
+}
+
+// برنامه‌ی پرداخت: type (CASH/INSTALLMENT)، count، first_m، first_d، interval، method، contract_*، source، prefer (auto/slips/formula)
+function fin_plan_from_contract($c, $source) {
+    $cash = ($c['pay_type'] ?? '') === 'CASH';
+    return ['source' => $source, 'contract_id' => intval($c['id']), 'contract_key' => (string)($c['contract_key'] ?? ''), 'contract_no' => (string)($c['contract_no'] ?? ''),
+            'contract_name' => (string)$c['name'], 'type' => $cash ? 'CASH' : 'INSTALLMENT', 'count' => $cash ? 1 : max(1, intval($c['installment_count'])),
+            'first_m' => intval($c['first_due_months']), 'first_d' => intval($c['first_due_days']), 'interval' => max(1, intval($c['interval_months'] ?? 1)),
+            'method' => ($c['split_method'] ?? 'mamut') === 'even' ? 'even' : 'mamut', 'prefer' => 'auto'];
+}
+function fin_plan_label($p) {
+    if (!$p) return '';
+    $t = $p['type'] === 'CASH' ? 'نقد' : ($p['count'] . ' قسط');
+    $first = $p['first_m'] || $p['first_d'] ? ('سررسید اول ' . ($p['first_m'] ? $p['first_m'] . ' ماه' : '') . ($p['first_m'] && $p['first_d'] ? ' و ' : '') . ($p['first_d'] ? $p['first_d'] . ' روز' : '') . ' بعد از صدور') : 'سررسید اول همان روزِ صدور';
+    return ($p['contract_name'] ? $p['contract_name'] . ($p['contract_key'] ? ' (' . $p['contract_key'] . ')' : '') . ' · ' : '') . $t . ' · ' . $first;
+}
+// برنامه‌ی پیش‌فرض (بدونِ تغییرِ دستیِ همین بیمه‌نامه)
+//   $kind: C (ردیفِ شرکتی؛ $row باید company_id داشته باشد) | P (پرونده‌ی کارکنان)
+function fin_plan_default($pdo, $kind, $row) {
+    fin_contracts_ensure($pdo);
+    $s = fin_settings($pdo);
+    if ($kind === 'C') {
+        $st = $pdo->prepare("SELECT name, contract_id, payment_terms, installment_count, first_due_offset_months, first_due_offset_days FROM companies WHERE id = ?");
+        $st->execute([intval($row['company_id'] ?? 0)]);
+        $co = $st->fetch() ?: [];
+        if (!empty($co['contract_id']) && ($c = fin_contract($pdo, $co['contract_id']))) return fin_plan_from_contract($c, 'company');
+        // شرکتِ بدونِ قرارداد: همان تنظیماتِ قبلیِ شرکت
+        return ['source' => 'company_legacy', 'contract_id' => 0, 'contract_key' => '', 'contract_no' => '', 'contract_name' => '',
+                'type' => 'INSTALLMENT', 'count' => max(1, intval($co['installment_count'] ?? 0) ?: 1), 'first_m' => intval($co['first_due_offset_months'] ?? 0),
+                'first_d' => intval($co['first_due_offset_days'] ?? 0), 'interval' => 1, 'method' => 'mamut', 'prefer' => 'auto'];
+    }
+    if (($s['personnel_use_contract'] ?? '1') === '1' && ($c = fin_contract($pdo, intval($s['personnel_contract_id'] ?? 0)))) return fin_plan_from_contract($c, 'personnel');
+    // تنظیماتِ مالیِ کارکنان (بدونِ قرارداد): همان روشِ قبلی
+    return ['source' => 'personnel_settings', 'contract_id' => 0, 'contract_key' => '', 'contract_no' => '', 'contract_name' => 'تنظیماتِ مالیِ کارکنان',
+            'type' => 'INSTALLMENT', 'count' => max(1, intval($s['default_installments'] ?? 9)), 'first_m' => 1, 'first_d' => 0, 'interval' => 1,
+            'method' => ($s['installment_method'] ?? 'mamut') === 'mamut' ? 'mamut' : 'even', 'prefer' => 'auto',
+            'due_mode' => ($s['due_mode'] ?? 'issue') === 'period15' ? 'period15' : 'issue'];
+}
+// برنامه‌ی نهایی: تغییرِ دستیِ همین بیمه‌نامه (اگر بود) روی پیش‌فرض
+function fin_plan_resolve($pdo, $kind, $row) {
+    $def = fin_plan_default($pdo, $kind, $row);
+    $cu = json_decode((string)($row['pay_plan_json'] ?? ''), true);
+    if (!is_array($cu) || !$cu) return $def + ['custom' => false];
+    $prefer = in_array($cu['prefer'] ?? '', ['slips', 'formula'], true) ? $cu['prefer'] : 'auto';
+    if (($cu['mode'] ?? '') === 'contract' && ($c = fin_contract($pdo, intval($cu['contract_id'] ?? 0)))) {
+        return ['prefer' => $prefer] + fin_plan_from_contract($c, 'chosen') + ['custom' => true];
+    }
+    if (($cu['mode'] ?? '') === 'custom') {
+        $cash = ($cu['type'] ?? '') === 'CASH';
+        return ['source' => 'custom', 'contract_id' => 0, 'contract_key' => $def['contract_key'], 'contract_no' => $def['contract_no'], 'contract_name' => 'روشِ اختصاصیِ همین بیمه‌نامه',
+                'type' => $cash ? 'CASH' : 'INSTALLMENT', 'count' => $cash ? 1 : max(1, min(60, intval($cu['count'] ?? 1))), 'first_m' => max(0, intval($cu['first_m'] ?? 0)),
+                'first_d' => max(0, intval($cu['first_d'] ?? 0)), 'interval' => 1, 'method' => ($cu['method'] ?? 'mamut') === 'even' ? 'even' : 'mamut',
+                'prefer' => $prefer, 'custom' => true];
+    }
+    return ['prefer' => $prefer] + $def + ['custom' => $prefer !== 'auto'];
+}
+
+// جدولِ اقساط طبقِ برنامه: [['n', 'amount', 'due' (jalali), 'due_g'], ...]
+function fin_plan_schedule($premium, $jy, $jm, $jd, array $plan, $period = null) {
+    $count = $plan['type'] === 'CASH' ? 1 : max(1, intval($plan['count']));
+    $parts = fin_split_installments((int)$premium, $count, $plan['method'] === 'even' ? 'even' : 'mamut');
+    $out = [];
+    if (($plan['due_mode'] ?? 'issue') === 'period15' && $period) {
+        foreach ($parts as $i => $amount) {
+            [$dy, $dm] = fin_next_month($period['jalali_year'], $period['jalali_month'], $i + 1);
+            $dd = min(15, fin_jalali_month_len($dy, $dm));
+            $out[] = ['n' => $i + 1, 'amount' => $amount, 'due' => sprintf('%04d/%02d/%02d', $dy, $dm, $dd), 'due_g' => date('Y-m-d', jalali_to_gregorian_ts($dy, $dm, $dd))];
+        }
+        return $out;
+    }
+    // سررسیدِ اول = تاریخ صدور + first_m ماه + first_d روز؛ بعدی‌ها هر interval ماه
+    [$fy, $fm, $fd] = fin_due_after($jy, $jm, $jd, intval($plan['first_m']));
+    if (intval($plan['first_d'])) [$fy, $fm, $fd] = jalali_from_gregorian_ts(jalali_to_gregorian_ts($fy, $fm, $fd) + intval($plan['first_d']) * 86400);
+    foreach ($parts as $i => $amount) {
+        [$dy, $dm, $dd] = fin_due_after($fy, $fm, $fd, $i * max(1, intval($plan['interval'] ?? 1)));
+        $out[] = ['n' => $i + 1, 'amount' => $amount, 'due' => sprintf('%04d/%02d/%02d', $dy, $dm, $dd), 'due_g' => date('Y-m-d', jalali_to_gregorian_ts($dy, $dm, $dd))];
+    }
+    return $out;
+}
+
+// فیش‌های ذخیره‌شده (receipts_json) => ردیف‌های مرتب‌شده با سررسید
+function fin_slip_list($receiptsJson) {
+    $rc = is_array($receiptsJson) ? $receiptsJson : (json_decode((string)$receiptsJson, true) ?: []);
+    $rc = array_values(array_filter($rc, fn($r) => !empty($r['date']) && fin_parse_jalali($r['date']) && !empty($r['amount'])));
+    usort($rc, fn($a, $b) => strcmp(vsprintf('%04d/%02d/%02d', fin_parse_jalali($a['date'])), vsprintf('%04d/%02d/%02d', fin_parse_jalali($b['date']))));
+    return $rc;
+}
+function fin_slip_meta($r) {
+    $keep = [];
+    foreach (['date', 'amount', 'fish', 'shenase', 'account', 'bank', 'kind', 'payer', 'payer_nid'] as $k) if (isset($r[$k]) && $r[$k] !== '' && $r[$k] !== null) $keep[$k] = $r[$k];
+    return $keep;
+}
+
+// ساختِ اقساطِ نهایی یک بیمه‌نامه + گزارشِ مغایرت
+//   $detectedKey: کلیدِ قراردادی که از خودِ بیمه‌نامه خوانده شده (از شماره‌ی قرارداد یا شماره‌ی بیمه‌نامه)
+//   خروجی: ['rows' => [...با slip/slip_file], 'check' => [...]]
+function fin_plan_build($premium, $issueJ, array $plan, $receiptsJson, $detectedKey, $period = null) {
+    [$jy, $jm, $jd] = $issueJ;
+    $computed = fin_plan_schedule($premium, $jy, $jm, $jd, $plan, $period);
+    $slips = fin_slip_list($receiptsJson);
+    $check = ['at' => date('Y-m-d H:i:s'), 'plan' => $plan, 'plan_label' => fin_plan_label($plan), 'issue_date' => vsprintf('%04d/%02d/%02d', $issueJ),
+              'premium' => (int)$premium, 'detected_key' => $detectedKey ?: null, 'expected_key' => $plan['contract_key'] ?: null,
+              'computed' => array_map(fn($r) => ['n' => $r['n'], 'amount' => $r['amount'], 'due' => $r['due']], $computed),
+              'slips' => array_map(fn($r) => fin_slip_meta($r) + ['file' => $r['file'] ?? null], $slips), 'diffs' => [], 'messages' => []];
+    $contractOk = !$detectedKey || !$plan['contract_key'] || (string)$detectedKey === (string)$plan['contract_key'];
+    $check['contract_ok'] = $contractOk;
+    if ($slips) {
+        // مغایرت‌گیری: تعداد، مبلغ و سررسیدِ هر قسط
+        if (count($slips) !== count($computed)) $check['diffs'][] = ['type' => 'count', 'computed' => count($computed), 'slip' => count($slips)];
+        foreach ($slips as $k => $s) {
+            $c = $computed[$k] ?? null;
+            if (!$c) continue;
+            $sd = vsprintf('%04d/%02d/%02d', fin_parse_jalali($s['date']));
+            if ((int)$s['amount'] !== (int)$c['amount']) $check['diffs'][] = ['type' => 'amount', 'n' => $k + 1, 'computed' => (int)$c['amount'], 'slip' => (int)$s['amount']];
+            if ($sd !== $c['due']) $check['diffs'][] = ['type' => 'due', 'n' => $k + 1, 'computed' => $c['due'], 'slip' => $sd];
+        }
+        $sum = array_sum(array_map(fn($s) => (int)$s['amount'], $slips));
+        if ($premium && $sum !== (int)$premium) $check['diffs'][] = ['type' => 'total', 'computed' => (int)$premium, 'slip' => $sum];
+    }
+    $useSlips = $slips && ($plan['prefer'] === 'slips' || ($plan['prefer'] === 'auto' && $contractOk));
+    $rows = [];
+    if ($useSlips) {
+        foreach ($slips as $k => $s) {
+            [$y, $m, $d] = fin_parse_jalali($s['date']);
+            $rows[] = ['n' => $k + 1, 'amount' => (int)$s['amount'], 'due' => sprintf('%04d/%02d/%02d', $y, $m, $d), 'due_g' => date('Y-m-d', jalali_to_gregorian_ts($y, $m, $d)),
+                       'slip' => fin_slip_meta($s), 'slip_file' => $s['file'] ?? null];
+        }
+        $check['applied'] = 'slips';
+    } else {
+        $rows = $computed;
+        // فیش‌ها (اگر بود) کنارِ قسطِ هم‌تاریخ‌شان نشان داده می‌شوند، ولی مبلغ/سررسید طبقِ فرمول می‌ماند
+        if ($slips) {
+            $pair = fin_pair_receipts(array_map(fn($r) => ['id' => $r['n'], 'inst_number' => $r['n'], 'due_jalali' => $r['due']], $computed), $slips);
+            foreach ($rows as &$r) if (isset($pair[$r['n']])) { $r['slip'] = fin_slip_meta($pair[$r['n']]); $r['slip_file'] = $pair[$r['n']]['file'] ?? null; }
+            unset($r);
+        }
+        $check['applied'] = 'formula';
+    }
+    if (!$contractOk && $plan['prefer'] === 'auto') $check['status'] = 'contract_mismatch';
+    elseif (!$slips) $check['status'] = 'no_slips';
+    elseif ($check['diffs']) $check['status'] = $useSlips ? 'diff_slips_applied' : 'diff_formula_applied';
+    else $check['status'] = 'ok';
+    $msg = ['no_slips' => 'فیشی در فایلِ بیمه‌نامه پیدا نشد؛ اقساط طبقِ ' . fin_plan_label($plan) . ' ساخته شد.',
+            'contract_mismatch' => 'شماره‌ی قراردادِ بیمه‌نامه (' . $detectedKey . ') با قراردادِ تعیین‌شده (' . $plan['contract_key'] . ') یکی نیست؛ اقساط طبقِ فرمولِ قراردادِ تعیین‌شده ساخته شد' . ($slips ? '' : ' (فیشی هم در فایلِ بیمه‌نامه پیدا نشد)') . '. با فرمولِ همین قرارداد محاسبه شود؟',
+            'diff_slips_applied' => 'اقساطِ محاسبه‌شده با فیش‌ها مغایرت داشت؛ مبلغ و سررسید طبقِ فیش‌ها ثبت شد.',
+            'diff_formula_applied' => 'فیش‌ها با فرمول مغایرت دارند؛ طبقِ انتخابِ شما اقساط طبقِ فرمول ثبت شد.',
+            'ok' => 'فیش‌ها با اقساطِ محاسبه‌شده کاملاً یکی است.'][$check['status']];
+    $check['messages'][] = $msg;
+    return ['rows' => $rows, 'check' => $check];
+}
+
+// کلیدِ قراردادِ خوانده‌شده از بیمه‌نامه (ocr_extracted_data): شماره‌ی قرارداد، وگرنه بخشِ سومِ شماره‌ی بیمه‌نامه
+// اقساط طبقِ فیش‌ها نشسته‌اند (جمعشان ممکن است با حق بیمه‌ی واردشده فرق کند؛ همگام‌سازی دوباره نمی‌سازدشان)
+function fin_slips_applied($pdo, $table, $id) {
+    try {
+        $st = $pdo->prepare("SELECT pay_check_json FROM `$table` WHERE id = ?");
+        $st->execute([intval($id)]);
+        $c = json_decode((string)$st->fetchColumn(), true);
+        return is_array($c) && ($c['applied'] ?? '') === 'slips';
+    } catch (Throwable $e) { return false; }
+}
+
+function fin_detected_contract_key($ocrJson, $policyNumber = '') {
+    $o = is_array($ocrJson) ? $ocrJson : (json_decode((string)$ocrJson, true) ?: []);
+    if (!empty($o['contract_key'])) return (string)$o['contract_key'];
+    if (!empty($o['contract_no']) && ($k = fin_contract_key($o['contract_no']))) return $k;
+    $pn = p2e_digits((string)($policyNumber ?: ($o['policy_num'] ?? '')));
+    return preg_match('/\d+\/\d+\/(\d{3,6})\s*-/', $pn, $m) ? $m[1] : null;
 }

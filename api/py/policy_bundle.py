@@ -347,7 +347,8 @@ RECEIPT_RX = re.compile(r'سند\s*دریافت|رسید\s*پرداخت|فیش\s
 
 
 def receipt_info(text):
-    """صفحه‌ی فیشِ یک قسط («سند دریافت نقدی»): تاریخ، مبلغ و شماره‌ی فیش"""
+    """صفحه‌ی فیشِ یک قسط («سند دریافت نقدی»): تاریخ (سررسید)، مبلغ، شماره‌ی فیش / کد شناسه، شماره حساب، بانک و شعبه،
+    نام و شماره‌ی ملیِ پرداخت‌کننده"""
     t = normalize_text(text)
     info = {}
     ds = dates_in(t)
@@ -360,7 +361,80 @@ def receipt_info(text):
     m = re.search(r'شماره\s*فیش\s*:?\s*(\d{10,24})', t) or re.search(r'(\d{10,24})\s*:?\s*کد\s*شناسه', t) or re.search(r'(?<!\d)(0{2,}\d{12,20})(?!\d)', t)
     if m:
         info['fish'] = m.group(1)
+    # کد شناسه: معمولاً همان عددِ فیش است که دو بار (کنارِ «کد شناسه» و «شماره فیش») آمده
+    longs = re.findall(r'(?<!\d)(\d{14,24})(?!\d)', t)
+    rep = [x for x in longs if longs.count(x) >= 2]
+    info['shenase'] = rep[0] if rep else info.get('fish')
+    # شماره حساب: عددِ ۸ تا ۱۳ رقمیِ تنها (نه کدپستی/شماره ملی/تلفن)
+    for line in t.split('\n'):
+        ln = line.strip()
+        if re.fullmatch(r'\d{8,13}', ln) and not re.search(r'کد\s*پستی|ملی|تلفن', line):
+            info['account'] = ln
+            break
+    # «(5/6702)  شعبه دکتر فاطمی- بانک ملت» (نه جمله‌ی «... این بانک ثبت نشده باشد» در متنِ فیش)
+    mb = re.search(r'شعبه\s*([^\n\-–]{2,40}?)\s*[-–]\s*(بانک\s*[آ-ی]+)', t) or re.search(r'(بانک\s*[آ-ی]+)\s*[-–]\s*شعبه\s*([^\n]{2,40})', t)
+    if mb:
+        g1, g2 = mb.group(1).strip(), mb.group(2).strip()
+        bank, branch = (g2, g1) if g2.startswith('بانک') else (g1, g2)
+        code = re.search(r'\((\d+/\d+)\)', t)
+        info['bank'] = re.sub(r'\s+', ' ', bank) + ' - شعبه ' + re.sub(r'\s+', ' ', branch).strip(' -–') + (' (' + code.group(1) + ')' if code and code.group(1) not in branch else '')
+    mn = re.search(r'شماره\s*ملی\s*:?\s*(\d{10,11})', t) or re.search(r'(\d{10,11})\s*:?\s*شماره\s*ملی', t)
+    if mn:
+        info['payer_nid'] = mn.group(1)
+    # نام پرداخت‌کننده: خطِ بعد از مبلغِ به حروف (خطِ «... ریال» بدونِ رقم)
+    lines = [x.strip() for x in t.split('\n') if x.strip()]
+    for k, ln in enumerate(lines):
+        if re.search(r'ریال$', ln) and not re.search(r'\d', ln) and k + 1 < len(lines):
+            nxt = lines[k + 1]
+            if not re.search(r'\d', nxt) and len(nxt) > 3:
+                info['payer'] = nxt
+            break
     return info
+
+
+def statement_rows(text):
+    """«اعلامیه آخرین وضعیت حق بیمه»: برای هر شماره‌ی مستند (= شماره‌ی فیش) سررسید، مبلغ و نوعِ پرداخت (اقساط/نقد/چک)"""
+    t = normalize_text(text)
+    lines = [x.strip() for x in t.split('\n')]
+    rows = []
+    for k, ln in enumerate(lines):
+        if not re.fullmatch(r'\d{14,24}', ln):
+            continue
+        row = {'fish': ln}
+        for nxt in lines[k + 1:k + 16]:
+            if re.fullmatch(r'\d{14,24}', nxt):
+                break
+            if 'due' not in row:
+                d = dates_in(nxt)
+                if d:
+                    row['due'] = d[0]
+            if 'amount' not in row:
+                a = re.fullmatch(r'(\d{1,3}(?:[,٬]\d{3})+)', nxt)
+                if a:
+                    row['amount'] = int(a.group(1).replace(',', '').replace('٬', ''))
+            if 'kind' not in row:
+                kd = re.fullmatch(r'(اقساط|قسط|نقد|نقدی|چک|سفته|حواله|واریز\s*نقدی(?:\s*به\s*حساب)?)', nxt)
+                if kd:
+                    w = kd.group(1)
+                    row['kind'] = 'نقد' if ('نقد' in w) else ('اقساط' if w in ('اقساط', 'قسط') else w)
+        rows.append(row)
+    return rows
+
+
+def contract_info(texts):
+    """شماره‌ی قرارداد («شماره قرارداد: 5051/30000/1404») از صفحه‌های بیمه‌نامه؛ کلیدِ قرارداد = بخشِ اولِ آن (5051)"""
+    for tx in texts:
+        t = normalize_text(tx)
+        m = re.search(r'(\d{3,6}/\d{2,7}/1[34]\d\d)\s*:?\s*\.?\s*شماره\s*قرارداد', t) or re.search(r'شماره\s*قرارداد\s*:?\s*(\d{3,6}/\d{2,7}/1[34]\d\d)', t)
+        if m:
+            return m.group(1), m.group(1).split('/')[0]
+    return None, None
+
+
+def contract_key_from_policy(policy_num):
+    """شماره‌ی بیمه‌نامه «1/49357/5051-13/1405/251»: بخشِ سوم (5051) انتهای شماره‌ی قرارداد است"""
+    m = re.search(r'\d+/\d+/(\d{3,6})\s*-', normalize_text(policy_num or ''))
+    return m.group(1) if m else None
 
 
 def extract_layout(page):
@@ -657,9 +731,10 @@ def extract_layout(page):
     def commit_amount(rx):
         for lb in [s for s in sp if re.search(rx, s['t'])]:
             vals = [amount_in(v['t']) for v in sp if v is not lb and v['x1'] < lb['x0'] + 2 and same_row(v, lb, 0.2) and not re.search(r'^\s*ریال\s*$', v['t'])]
-            vals = [v for v in vals if v >= 10 ** 6]
+            # بیش از هزار میلیارد ریال تعهد نیست (عددهای بلندِ دیگر مثلِ شماره‌ی فیش/قسط کنار گذاشته می‌شوند)
+            vals = [v for v in vals if 10 ** 6 <= v <= 10 ** 12]
             own = amount_in(re.sub(rx, ' ', lb['t']))
-            if own >= 10 ** 6: vals.append(own)
+            if 10 ** 6 <= own <= 10 ** 12: vals.append(own)
             if vals:
                 return str(max(vals))
         return ''
@@ -864,6 +939,29 @@ def main():
                 except Exception:
                     statement = None
         receipts.sort(key=lambda r: (r.get('date') or '9999', r['page']))
+        # نوعِ پرداختِ هر فیش (اقساط/نقد) از اعلامیه‌ی وضعیت؛ بر اساسِ شماره‌ی فیش، وگرنه تاریخ و مبلغ
+        st_rows = []
+        for j in range(pend + 1, end + 1):
+            if re.search(r'اعلامیه\s*آخرین\s*وضعیت', normalize_text(texts[j])[:600]):
+                st_rows += statement_rows(texts[j])
+        for r in receipts:
+            hit = next((x for x in st_rows if x.get('fish') and x['fish'] == r.get('fish')), None) or \
+                  next((x for x in st_rows if x.get('due') == r.get('date') and x.get('amount') == r.get('amount')), None)
+            if hit and hit.get('kind'):
+                r['kind'] = hit['kind']
+        kinds = sorted(set(r['kind'] for r in receipts if r.get('kind')))
+        if data is not None:
+            cno, ckey = contract_info([texts[x] for x in range(i, pend + 1)])
+            pkey = contract_key_from_policy(data.get('policy_num'))
+            if cno:
+                data['contract_no'] = cno
+            if ckey or pkey:
+                data['contract_key'] = ckey or pkey
+            if pkey:
+                data['contract_key_policy'] = pkey
+            if receipts:
+                data['pay_kind'] = '، '.join(kinds) if kinds else ('نقد' if len(receipts) == 1 else 'اقساط')
+                data['installments_count'] = str(len(receipts))
         # تاریخ صدور اگر در صفحه‌ی اول نبود، از بقیه‌ی صفحه‌های همین بیمه‌نامه
         if data is not None and not data.get('issue_date'):
             for j in range(i + 1, pend + 1):
