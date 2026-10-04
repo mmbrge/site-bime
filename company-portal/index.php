@@ -7,6 +7,7 @@ require __DIR__ . '/../api/_case_helpers.php';
 require __DIR__ . '/../api/_company_helpers.php';
 
 company_portal_session_start();
+sec_session_guard($pdo);   // خروجِ خودکار بعد از عدمِ فعالیت / خروجِ اجباری توسطِ مدیر
 // ورودِ مستقیم از این صفحه دیگر مجاز نیست - همه باید از درگاهِ یکپارچه‌ی خودمان
 // (index.php، گزینه‌ی «همکار شرکت‌ها») وارد شوند تا اشتباهیِ درگاه پیش نیاید
 if (empty($_SESSION['company_user_id'])) {
@@ -49,6 +50,8 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
+<script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
+<script src="../idle-guard.js?v=1"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
 <script src="../chat-ui.js?v=4"></script>
 <script src="../money-input.js?v=1"></script>

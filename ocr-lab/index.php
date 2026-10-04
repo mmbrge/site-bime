@@ -3,7 +3,14 @@ declare(strict_types=1);
 
 session_start();
 
-ini_set('display_errors', '1');
+// ابزارِ آزمایشیِ OCR فرمان روی سرور اجرا می‌کند؛ فقط مدیرِ کلِ واردشده به پنل اجازه دارد (سپرِ امنیتی)
+if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
+    http_response_code(403);
+    header('Content-Type: text/html; charset=utf-8');
+    exit('<!doctype html><meta charset="utf-8"><p style="font-family:tahoma;direction:rtl;text-align:center;margin-top:20vh">این ابزار فقط برای مدیرِ کلِ واردشده به پنل است.</p>');
+}
+
+ini_set('display_errors', '0');
 error_reporting(E_ALL);
 set_time_limit(180);
 

@@ -17,6 +17,7 @@ require_once __DIR__ . '/api/_auth_helpers.php';
 
 $error = '';
 $notice = '';
+if (isset($_GET['idle'])) $notice = 'به دلیلِ عدمِ فعالیت از پنل خارج شدید؛ دوباره وارد شوید.';
 $authReady = auth_schema_ready($pdo);
 
 // ورود با نام کاربری و رمز. (ورود با کد، جدا و با api/otp_login.php انجام می‌شود.)
@@ -26,6 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     if (empty($username) || empty($password)) {
         $error = 'لطفاً کد ملی/نام کاربری و رمز عبور را وارد کنید.';
+    } elseif ($lockMin = sec_login_locked($pdo, $username)) {
+        // محدودیتِ سمتِ سرور (کپچا فقط در مرورگر است): بعد از چند تلاشِ ناموفق، ورود برای مدتی قفل می‌شود
+        $error = 'به دلیلِ تلاش‌های ناموفقِ زیاد، ورود برای ' . strtr((string)$lockMin, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']) . ' دقیقه قفل شد؛ کمی بعد دوباره امتحان کنید.';
     } else {
         // کاربرِ حذف‌شده دیگر نمی‌تواند وارد شود (ولی نامش روی کارهای قبلی‌اش می‌ماند)
         $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?" . ($authReady ? " AND COALESCE(is_deleted, 0) = 0" : ''));
@@ -47,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $h = $st->fetchColumn();
                 $isCompany = $h && password_verify($password, $h);
             } catch (Throwable $e) {}
+            if (!$isCompany) sec_login_failed($pdo, $username, 'ورودِ همکارِ بیمه');
             $error = $isCompany ? 'این حساب «کاربر شرکت» است؛ بالای فرم «کارشناس شرکت‌ها» را انتخاب کنید.' : 'نام کاربری یا رمز عبور اشتباه است.';
         } elseif ($user && password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);   // جلوگیری از تثبیت نشست
@@ -54,10 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['full_name'] = $user['full_name'];
             $_SESSION['role']      = $user['role'];
             auth_log_login($pdo, 'STAFF', $user, 'PASSWORD', true);
+            sec_on_login($pdo, 'STAFF', $user['id'], $user['full_name']);
             header("Location: dashboard.php");
             exit;
         } else {
             if ($user) auth_log_login($pdo, 'STAFF', $user, 'PASSWORD', false, 'رمز اشتباه');
+            sec_login_failed($pdo, $username, 'ورودِ همکارِ بیمه');
             $error = 'نام کاربری یا رمز عبور اشتباه است.';
         }
     }

@@ -380,6 +380,7 @@ function perm_track($pdo, $key, $action) {
 }
 
 function perm_deny($msg) {
+    if (function_exists('sec_event') && isset($GLOBALS['pdo'])) sec_event($GLOBALS['pdo'], 'PERM_DENIED', $msg);
     if (!headers_sent()) { header('Content-Type: application/json; charset=utf-8'); }
     echo json_encode(['ok' => false, 'error' => $msg, 'perm_denied' => true], JSON_UNESCAPED_UNICODE);
     exit;

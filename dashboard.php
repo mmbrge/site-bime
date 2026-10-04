@@ -701,6 +701,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
+<script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
+<script src="idle-guard.js?v=1"></script>
 <link rel="stylesheet" href="plate.css?v=2">
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
@@ -858,7 +860,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
                         <div class="menu-sep"></div>
+                        <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?>
+                        <div class="menu-sub">
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-cogs ml-2"></i><span class="ms-t">تنظیمات<small>سامانه، سپر امنیتی</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <div class="menu-subpanel">
+                                <div class="ms-head">تنظیمات</div>
+                                <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات سیستم <small class="text-[10px] text-slate-400 font-bold mr-1">ربات، مرخصی، پشتیبان‌گیری</small></a>
+                                <a href="#" onclick="switchTab('security')" id="nav-security" class="nav-item menu-link"><i class="fas fa-shield-halved ml-2"></i> سپر امنیتی <small class="text-[10px] text-slate-400 font-bold mr-1">گزارش، نشست‌ها، رخدادها</small></a>
+                            </div>
+                        </div>
+                        <?php else: ?>
                         <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم <small class="text-[10px] text-slate-400 font-bold mr-1">ربات، مرخصی، پشتیبان‌گیری</small></a>
+                        <?php endif; ?>
                         <?php endif; ?>
                         <?php endif; ?>
                     </div>
@@ -886,6 +899,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- ===== اطلاعات پرسنلی ===== -->
         <div id="tab-my-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-my-root"></div></div>
         <div id="tab-staff-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-staff-root"></div></div>
+        <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><div id="tab-security" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="sec-root"></div></div><?php endif; ?>
         
         <!-- ======================= تب داشبورد و آمار ======================= -->
         <?php if ($vrAccess): ?>
@@ -3757,6 +3771,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
     <script src="work-log.js?v=1"></script>
+    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=1"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=10"></script>
@@ -8416,6 +8431,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
+            if (tabId === 'security' && window.SecShield) SecShield.init(document.getElementById('sec-root'));
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
             if (tabId === 'approved-reviews') loadApprovedReviews();

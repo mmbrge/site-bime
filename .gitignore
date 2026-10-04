@@ -63,3 +63,8 @@ uploads/avatars/*
 
 # ردِ حافظه‌ی ساختِ گزارش بازدید (روی هاست ساخته می‌شود)
 report_assets/logs/
+
+# محافظِ پوشه‌ها (سپرِ امنیتی) باید داخلِ گیت بماند
+!tmp_ocr/.htaccess
+!tmp_recon/.htaccess
+!tmpl_invoice/.htaccess

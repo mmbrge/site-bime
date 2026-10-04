@@ -71,3 +71,7 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
         }
     }
 }
+
+// سپرِ امنیتی: سرتیترها، CSRF، آپلودِ خطرناک، IPِ مسدود، کلیدِ وب‌هوک، خروجِ خودکار بعد از عدمِ فعالیت (api/_security.php)
+require_once dirname(__DIR__) . "/api/_security.php";
+sec_boot($pdo);

@@ -39,8 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // آپدیت یا ایجاد رکورد توکن در دیتابیس
             $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('bot_token', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
             $stmt->execute([$token, $token]);
-            
-            echo json_encode(['ok' => true]);
+            // وب‌هوکِ امن (با کلیدِ مخفی) خودکار ثبت می‌شود؛ اگر بله در دسترس نبود، کلید پاک می‌شود تا وب‌هوکی که
+            // دستی تنظیم می‌کنید (بدونِ کلید) کار کند - بعداً از «تنظیمات ← سپر امنیتی» دوباره امنش کنید
+            $hookRes = sec_set_webhook($pdo, 'staff', $token);
+            if (empty($hookRes['ok'])) $pdo->exec("DELETE FROM system_settings WHERE setting_key = 'bot_hook_key'");
+            echo json_encode(['ok' => true, 'webhook' => !empty($hookRes['ok'])]);
         } catch (Exception $e) {
             error_log('[settings] ' . $e->getMessage());
             echo json_encode(['ok' => false, 'error' => 'خطا در دیتابیس.']);
@@ -70,7 +73,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 curl_close($ch);
                 return is_array($r) ? $r : null;
             };
-            $hook = $call('setWebhook', ['url' => $hookUrl]);
+            // وب‌هوک با کلیدِ امن (api/_security.php): پیامِ جعلی بدونِ کلید به ربات پذیرفته نمی‌شود
+            $hookRes = sec_set_webhook($pdo, 'company', $token);
+            $hook = ['ok' => $hookRes['ok']];
             $me = $call('getMe', []);
             if (!empty($me['result']['username'])) {
                 $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('company_bot_username', ?) ON DUPLICATE KEY UPDATE setting_value = ?")

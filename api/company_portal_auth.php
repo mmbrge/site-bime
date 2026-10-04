@@ -20,12 +20,17 @@ try {
             echo json_encode(['ok' => false, 'error' => 'نام کاربری و رمز عبور را وارد کنید.']);
             exit;
         }
+        if ($lockMin = sec_login_locked($pdo, $username)) {
+            echo json_encode(['ok' => false, 'error' => "به دلیلِ تلاش‌های ناموفقِ زیاد، ورود برای {$lockMin} دقیقه قفل شد."], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         $stmt = $pdo->prepare("SELECT * FROM company_portal_users WHERE username = ? AND is_active = 1" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         if (!$user || !password_verify($password, $user['password_hash'])) {
             if ($user) auth_log_login($pdo, 'COMPANY', $user, 'PASSWORD', false, 'رمز اشتباه');
             $msg = 'نام کاربری یا رمز عبور نادرست است.';
+            sec_login_failed($pdo, $username, 'ورودِ کارشناسِ شرکت');
             if (!$user) {   // شاید همکارِ بیمه باشد که درگاهِ اشتباه را انتخاب کرده
                 try {
                     $st = $pdo->prepare("SELECT password_hash FROM users WHERE username = ?" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
@@ -51,6 +56,7 @@ try {
         $_SESSION['company_user_id'] = $user['id'];
         $_SESSION['company_user_full_name'] = $user['full_name'];
         auth_log_login($pdo, 'COMPANY', $user, 'PASSWORD', true);
+        sec_on_login($pdo, 'COMPANY', $user['id'], $user['full_name']);
         echo json_encode(['ok' => true, 'full_name' => $user['full_name'], 'companies' => $companies]);
         exit;
     }

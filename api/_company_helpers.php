@@ -1122,6 +1122,7 @@ function require_company_portal_session($pdo) {
     $st = $pdo->prepare("SELECT * FROM company_portal_users WHERE id = ?");
     $st->execute([$_SESSION['company_user_id']]);
     $cu = $st->fetch();
+    if (function_exists('sec_session_guard')) sec_session_guard($pdo);   // خروجِ خودکار/اجباریِ کاربرِ شرکت
     if (!$cu || empty($cu['is_active']) || !empty($cu['is_deleted'])) {
         $_SESSION = [];
         header('Content-Type: application/json; charset=utf-8');
@@ -1225,6 +1226,8 @@ function company_extract_zip_to_dir($zipPath, $destDir) {
         if (strpos($entryName, '..') !== false || substr($entryName, 0, 1) === '/' || preg_match('/^[a-zA-Z]:/', $entryName)) continue;
         $targetPath = $destReal . '/' . ltrim($entryName, '/');
         if (substr($entryName, -1) === '/') { @mkdir($targetPath, 0755, true); continue; }
+        // فقط عکس و سند؛ هیچ فایلِ اجرایی (php، html، ...) از داخلِ زیپ بیرون نمی‌آید
+        if (!preg_match('/\.(jpe?g|png|webp|gif|heic|bmp|tiff?|pdf|docx?|xlsx?|txt|csv)$/i', $entryName) || preg_match('/\.(php\d?|phtml|phar|pht|html?|svg|js|htaccess|ini|sh|py|pl|cgi)(\.|$)/i', basename($entryName))) continue;
         if (!is_dir(dirname($targetPath))) @mkdir(dirname($targetPath), 0755, true);
         $stream = $zip->getStream($entryName);
         if ($stream === false) continue;

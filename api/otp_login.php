@@ -85,6 +85,7 @@ try {
             $_SESSION['full_name'] = $u['full_name'];
             $_SESSION['role'] = $u['role'];
             auth_log_login($pdo, 'STAFF', $u, 'OTP', true);
+            sec_on_login($pdo, 'STAFF', $u['id'], $u['full_name']);
             out(['ok' => true, 'redirect' => 'dashboard.php', 'name' => $u['full_name']]);
         }
         $st = $pdo->prepare("SELECT COUNT(*) FROM company_portal_user_companies WHERE portal_user_id = ?");
@@ -95,6 +96,7 @@ try {
         $_SESSION['company_user_id'] = $u['id'];
         $_SESSION['company_user_full_name'] = $u['full_name'];
         auth_log_login($pdo, 'COMPANY', $u, 'OTP', true);
+        sec_on_login($pdo, 'COMPANY', $u['id'], $u['full_name']);
         out(['ok' => true, 'redirect' => 'company-portal/index.php', 'name' => $u['full_name']]);
     }
 
