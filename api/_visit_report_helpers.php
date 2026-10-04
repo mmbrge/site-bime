@@ -483,7 +483,7 @@ function vr_register_table($pdo, array $reports) {
              'مورد استفاده', 'شماره موتور', 'شماره شاسی', 'ارزش وسیله (ریال)', 'بازدید کننده', 'نوع گزارش', 'بیمه‌گر', 'صادرکننده',
              'تاریخ و ساعتِ صدور', 'آخرین ویرایش', 'ویرایش توسط', 'نسخه', 'محلِ صدور / اتصال', 'تاریخِ اتصال', 'تعداد عکس',
              'قطعاتِ آسیب‌دیده', 'تجهیزاتِ اضافی', 'مواضعِ آسیب‌دیده', 'وضعیت'];
-    $headers = array_merge($base, $fieldCols, ['مسیر پوشه']);
+    $headers = array_merge($base, $fieldCols);
     $out = []; $i = 0;
     foreach ($reports as $r) {
         $form = json_decode($r['form_json'] ?: '{}', true) ?: [];
@@ -530,7 +530,6 @@ function vr_register_table($pdo, array $reports) {
             $vals[$f['label']] = $v;
         }
         foreach ($fieldCols as $lbl) $row[] = $vals[$lbl] ?? '';
-        $row[] = $r['folder_path'];
         $out[] = $row;
     }
     $num = [0, array_search('نسخه', $headers, true), array_search('تعداد عکس', $headers, true)];

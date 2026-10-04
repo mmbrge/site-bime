@@ -24,6 +24,16 @@ function xlsx_is_number($v) {
 function xlsx_build($headers, $rows, $sheetName = 'گزارش', $numericCols = [], $protectPassword = null) {
     if (!class_exists('ZipArchive')) return null;
 
+    // مسیرِ فایل/پوشه روی سرور در هیچ خروجیِ اکسلی نمی‌آید (ستون‌هایی مثلِ «مسیر پوشه» / «آدرس فایل» حذف می‌شوند)
+    $drop = [];
+    foreach (array_values($headers) as $ci => $h) if (preg_match('/مسیر\s*(پوشه|فایل)|آدرس\s*(فایل|پوشه)|file\s*path|folder/iu', (string)$h)) $drop[] = $ci;
+    if ($drop) {
+        $keep = array_values(array_diff(array_keys(array_values($headers)), $drop));
+        $headers = array_values(array_intersect_key(array_values($headers), array_flip($keep)));
+        $rows = array_map(fn($r) => array_values(array_intersect_key(array_values($r), array_flip($keep))), $rows);
+        $numericCols = array_values(array_filter(array_map(fn($c) => array_search($c, $keep, true), (array)$numericCols), fn($c) => $c !== false));
+    }
+
     $fontName = 'B Nazanin';
     $colCount = count($headers);
 

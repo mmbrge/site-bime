@@ -4754,11 +4754,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             bc.innerHTML = html;
         }
 
-        async function fmOpen(path) {
+        var fmSearchSeq = 0, fmSearchTimer = null;
+        // silent: همگام‌سازیِ خودکار (جستجو و حالتِ صفحه دست نمی‌خورد)
+        async function fmOpen(path, silent) {
             fmCurrentPath = path;
-            document.getElementById('fm-search-results').classList.add('hidden');
-            document.getElementById('fm-search-input').value = '';
-            document.getElementById('fm-content').classList.remove('hidden');
+            if (!silent) {
+                fmSearchSeq++;   // جوابِ جستجوی در جریان دیگر نمایش داده نشود
+                document.getElementById('fm-search-results').classList.add('hidden');
+                document.getElementById('fm-search-input').value = '';
+                document.getElementById('fm-content').classList.remove('hidden');
+            }
             fmRenderBreadcrumb(path);
             const content = document.getElementById('fm-content');
             // بدون اسپینر: محتوای قبلی تا رسیدن داده‌ی جدید همان‌جا می‌ماند، بدون پرش/چشمک لود
@@ -4828,13 +4833,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function fmSearch(q) {
             const resultsBox = document.getElementById('fm-search-results');
             const content = document.getElementById('fm-content');
+            const seq = ++fmSearchSeq;
             if (!q || q.length < 2) { resultsBox.classList.add('hidden'); content.classList.remove('hidden'); return; }
             content.classList.add('hidden');
             resultsBox.classList.remove('hidden');
-            resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></div>';
+            if (!resultsBox.children.length) resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></div>';
             try {
                 const res = await fetch('api/file_manager.php?action=search&q=' + encodeURIComponent(q));
                 const data = await res.json();
+                if (seq !== fmSearchSeq) return;   // در این فاصله چیزِ دیگری تایپ شده
                 if (!data.ok || data.data.length === 0) { resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400">نتیجه‌ای یافت نشد.</div>'; return; }
                 resultsBox.innerHTML = data.data.map(r => `
                     <div onclick="fmOpen('${r.path.replace(/'/g,"")}')" class="card p-3 flex items-center gap-3 cursor-pointer hover:bg-emerald-50/50">
@@ -4843,7 +4850,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>`).join('');
             } catch(e) { resultsBox.innerHTML = '<div class="card p-6 text-center text-red-500">خطا در جستجو.</div>'; }
         }
-        document.getElementById('fm-search-input').addEventListener('input', e => fmSearch(e.target.value.trim()));
+        document.getElementById('fm-search-input').addEventListener('input', e => { clearTimeout(fmSearchTimer); const q = e.target.value.trim(); fmSearchTimer = setTimeout(() => fmSearch(q), 300); });
 
         function fmDownloadRangeZip() {
             const from = document.getElementById('fm-from').value.trim();
@@ -4858,7 +4865,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function fmStartAutoSync() {
             if (fmSyncInterval) clearInterval(fmSyncInterval);
             fmSyncInterval = setInterval(() => {
-                if (!document.getElementById('tab-filemanager').classList.contains('hidden')) fmOpen(fmCurrentPath);
+                if (document.getElementById('tab-filemanager').classList.contains('hidden') || document.hidden) return;
+                // وقتی کاربر جستجو کرده یا در کادرِ جستجو است، صفحه از نو بارگذاری نمی‌شود
+                const si = document.getElementById('fm-search-input');
+                if (si.value.trim() !== '' || document.activeElement === si || !document.getElementById('fm-search-results').classList.contains('hidden')) return;
+                fmOpen(fmCurrentPath, true);
             }, 10000);
         }
         fmStartAutoSync();
