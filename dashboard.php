@@ -1216,18 +1216,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div><h1 class="text-lg font-black text-slate-800">گفتگوها</h1>
                     <p class="text-[11px] font-bold text-slate-400">پیام‌ها، فایل‌ها و موضوعِ هر پیام (درخواستِ مربوط) - کلیک‌راست روی هر پیام برای پاسخ، ویرایش و حذف</p></div>
                 </div>
-                <?php if (!$isParsian && !$isLiaison): ?>
+                <?php /* آرشیوِ چت‌های ربات و بایگانیِ همه‌ی گفتگوها فقط برای مدیر کلِ واقعی (نه هیچ نقش یا دسترسیِ سفارشیِ دیگری) */
+                      $chatArchiveOk = $realRole === 'ADMIN' && empty($permBoot['custom']); ?>
+                <?php if ($chatArchiveOk): ?>
                 <div class="flex gap-2">
                     <button onclick="switchGoftegoSub('messenger')" id="goftego-sub-messenger" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">💬 پیام‌رسان</button>
                     <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 آرشیو کاملِ چت‌های ربات</button>
-                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><button onclick="switchGoftegoSub('archive')" id="goftego-sub-archive" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🗄 بایگانیِ همه‌ی گفتگوها</button><?php endif; ?>
+                    <button onclick="switchGoftegoSub('archive')" id="goftego-sub-archive" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🗄 بایگانیِ همه‌ی گفتگوها</button>
                 </div>
                 <?php endif; ?>
             </div>
 
             <div id="goftego-panel-messenger"><div id="chat-root" style="height: calc(100vh - 200px); min-height: 520px;"></div></div>
-            <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><div id="goftego-panel-archive" class="hidden"><div id="chat-archive-root"></div></div><?php endif; ?>
+            <?php if ($chatArchiveOk): ?><div id="goftego-panel-archive" class="hidden"><div id="chat-archive-root"></div></div><?php endif; ?>
 
+            <?php if ($chatArchiveOk): ?>
             <div id="goftego-panel-botchats" class="hidden">
                 <div class="card overflow-hidden border-slate-200">
                     <div class="p-3 border-b">
@@ -1245,6 +1248,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
 
             <!-- بخش‌های قدیمیِ گفتگو: دیگر نمایش داده نمی‌شوند (پیام‌رسانِ بالا جایشان را گرفته)،
                  ولی عناصرشان می‌مانند چون اسکریپت‌های قدیمیِ همین صفحه به آن‌ها گوش می‌دهند -->
@@ -2149,8 +2153,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button type="button" data-v="COMPANY" onclick="setUserTypeFilter('COMPANY')"><i class="fas fa-building ml-1"></i>شرکتی <span id="su-n-company"></span></button>
                 </div>
                 <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
-                    <option value="">همه‌ی نقش‌ها</option><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option>
-                    <option value="FINANCE">کارشناس مالی</option><option value="LIAISON_ALL">کارمند بیمه با ما (همه)</option><option value="COMPANY_LIAISON">— پنل عادی</option><option value="PARSIAN">— پنل پارسیان</option><option value="COMPANY">کاربر شرکت</option>
+                    <option value="">همه‌ی نقش‌ها</option>
+                    <optgroup label="کارکنانِ بیمه با ما"><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option>
+                    <option value="LIAISON_ALL">کارمند بیمه با ما (عادی و پارسیان)</option><option value="COMPANY_LIAISON">کارمند بیمه با ما (عادی)</option><option value="PARSIAN">کارمند بیمه با ما (پارسیان)</option></optgroup>
+                    <optgroup label="بیرون از مجموعه"><option value="COMPANY">کاربر شرکت</option></optgroup>
                 </select>
             </div>
 
@@ -3158,15 +3164,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <section class="uf-sec">
                     <h4><span class="uf-step">۱</span>نقشِ کاربری</h4>
                     <div class="uf-roles" id="uf-roles">
-                        <button type="button" data-r="ADMIN" style="--c:#d97706" onclick="ufPickRole('ADMIN')"><i class="fas fa-crown"></i><b>مدیر کل</b><small>دسترسیِ کامل به همه‌ی بخش‌ها</small></button>
-                        <button type="button" data-r="OPERATOR" style="--c:#2563eb" onclick="ufPickRole('OPERATOR')"><i class="fas fa-file-signature"></i><b>کارشناس صدور</b><small>پرونده‌ها، بازدید و صدور</small></button>
-                        <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><b>کارشناس مالی</b><small>اقساط، دریافت و پرداخت</small></button>
-                        <button type="button" data-r="LIAISON" style="--c:#7c3aed" onclick="ufPickRole('LIAISON')"><i class="fas fa-user-tie"></i><b>کارمند بیمه با ما</b><small>پنلِ عادی یا پارسیان</small></button>
-                        <button type="button" data-r="COMPANY" style="--c:#0d9488" onclick="ufPickRole('COMPANY')"><i class="fas fa-building"></i><b>کاربر شرکت</b><small>ورود از «کارشناس شرکت‌ها»</small></button>
-                    </div>
-                    <div id="uf-liaison-sub" class="uf-subroles hidden">
-                        <button type="button" data-p="COMPANY_LIAISON" onclick="ufPickPanel('COMPANY_LIAISON')"><i class="fas fa-briefcase"></i><span><b>پنلِ عادی</b><small>شرکت‌ها، صادره‌ها، مالیِ شرکت‌ها و گفتگو</small></span></button>
-                        <button type="button" data-p="PARSIAN" onclick="ufPickPanel('PARSIAN')"><i class="fas fa-file-circle-check"></i><span><b>پنلِ پارسیان</b><small>فقط ساختِ گزارشِ بازدید و گزارش‌های صادره‌ی خودش</small></span></button>
+                        <div class="uf-rgrp"><span class="uf-gate"><i class="fas fa-user-shield"></i>کارکنانِ «بیمه با ما» · ورود از درگاهِ «همکارِ بیمه»</span></div>
+                        <button type="button" data-r="ADMIN" style="--c:#d97706" onclick="ufPickRole('ADMIN')"><i class="fas fa-crown"></i><span><b>مدیر کل</b><small>دسترسیِ کامل به همه‌ی بخش‌ها، کاربران، تنظیمات و سپر امنیتی</small></span></button>
+                        <button type="button" data-r="OPERATOR" style="--c:#2563eb" onclick="ufPickRole('OPERATOR')"><i class="fas fa-file-signature"></i><span><b>کارشناس صدور</b><small>پرونده‌های پرسنل، بازدیدِ سلامت، بایگانی، کاربرانِ ربات و گفتگو</small></span></button>
+                        <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><span><b>کارشناس مالی</b><small>همه‌ی بخش‌های کارشناسِ صدور + اقساط، دریافت، پرداخت و صورتحساب</small></span></button>
+                        <button type="button" data-r="COMPANY_LIAISON" style="--c:#7c3aed" onclick="ufPickRole('COMPANY_LIAISON')"><i class="fas fa-user-tie"></i><span><b>کارمند بیمه با ما <em>(عادی)</em></b><small>درخواست‌های شرکت‌ها، صادره‌ها، مالی (بدونِ حذف)، بایگانی و گفتگو</small></span></button>
+                        <button type="button" data-r="PARSIAN" style="--c:#c026d3" onclick="ufPickRole('PARSIAN')"><i class="fas fa-file-circle-check"></i><span><b>کارمند بیمه با ما <em>(پارسیان)</em></b><small>فقط ساختِ گزارشِ بازدید و گزارش‌های صادره‌ی خودش</small></span></button>
+                        <div class="uf-rgrp"><span class="uf-gate" style="--g:#0d9488"><i class="fas fa-building"></i>بیرون از مجموعه · ورود از درگاهِ «کارشناسِ شرکت‌ها»</span></div>
+                        <button type="button" data-r="COMPANY" style="--c:#0d9488" onclick="ufPickRole('COMPANY')"><i class="fas fa-building"></i><span><b>کاربر شرکت</b><small>پنلِ شرکت: ثبتِ درخواستِ بیمه و مدارک، فقط برای شرکت(های) انتخاب‌شده</small></span></button>
                     </div>
                     <p id="uf-role-note" class="hidden text-[10.5px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-2"></p>
                 </section>
@@ -3225,21 +3230,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .uf-sec { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px 16px; margin-bottom: 12px; }
         .uf-sec h4 { font-size: 12.5px; font-weight: 900; color: #1e293b; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
         .uf-step { width: 22px; height: 22px; border-radius: 8px; background: #4f46e5; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
-        .uf-roles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-        @media (min-width: 640px) { .uf-roles { grid-template-columns: repeat(5, 1fr); } }
-        .uf-roles button { --c: #4f46e5; position: relative; border: 2px solid #e2e8f0; border-radius: 16px; padding: 12px 8px 10px; background: #fff; text-align: center; transition: .18s; }
-        .uf-roles button i { display: flex; width: 38px; height: 38px; margin: 0 auto 6px; border-radius: 12px; align-items: center; justify-content: center; font-size: 16px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, white); }
-        .uf-roles button b { display: block; font-size: 12px; color: #1e293b; }
-        .uf-roles button small { display: block; font-size: 9.5px; color: #94a3b8; font-weight: 700; margin-top: 2px; line-height: 1.5; }
+        .uf-roles { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        @media (min-width: 640px) { .uf-roles { grid-template-columns: 1fr 1fr; } }
+        .uf-rgrp { grid-column: 1 / -1; margin-top: 4px; }
+        .uf-roles button[data-r="ADMIN"], .uf-roles button[data-r="COMPANY"] { grid-column: 1 / -1; }
+        .uf-gate { --g: #4f46e5; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 900; color: var(--g); background: color-mix(in srgb, var(--g) 9%, white); border-radius: 999px; padding: 4px 11px; }
+        .uf-roles button { --c: #4f46e5; position: relative; display: flex; align-items: center; gap: 11px; border: 2px solid #e2e8f0; border-radius: 16px; padding: 11px 12px; background: #fff; text-align: right; transition: .18s; }
+        .uf-roles button > i { flex: none; display: flex; width: 40px; height: 40px; border-radius: 12px; align-items: center; justify-content: center; font-size: 16px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, white); }
+        .uf-roles button span { min-width: 0; padding-left: 18px; }
+        .uf-roles button b { display: block; font-size: 12.5px; color: #1e293b; } .uf-roles button b em { font-style: normal; color: var(--c); }
+        .uf-roles button small { display: block; font-size: 10px; color: #94a3b8; font-weight: 700; margin-top: 2px; line-height: 1.6; }
         .uf-roles button:hover:not(:disabled) { border-color: var(--c); transform: translateY(-2px); box-shadow: 0 10px 22px -14px var(--c); }
         .uf-roles button.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 7%, white); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 15%, transparent); }
-        .uf-roles button.on::after { content: '✓'; position: absolute; top: 6px; left: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 11px; line-height: 18px; }
+        .uf-roles button.on::after { content: '✓'; position: absolute; top: 50%; margin-top: -10px; left: 10px; width: 20px; height: 20px; border-radius: 50%; background: var(--c); color: #fff; font-size: 11px; line-height: 20px; text-align: center; }
         .uf-roles button:disabled { opacity: .35; cursor: not-allowed; filter: grayscale(.6); }
-        .uf-subroles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; animation: ufIn .25s ease-out; }
-        .uf-subroles button { display: flex; align-items: center; gap: 10px; text-align: right; border: 2px solid #ede9fe; border-radius: 14px; padding: 10px 12px; background: #faf5ff; }
-        .uf-subroles button i { color: #7c3aed; font-size: 18px; }
-        .uf-subroles button b { display: block; font-size: 12px; color: #4c1d95; } .uf-subroles button small { display: block; font-size: 10px; color: #8b5cf6; font-weight: 700; }
-        .uf-subroles button.on { border-color: #7c3aed; background: #f3e8ff; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
         .uf-grid { display: grid; grid-template-columns: 1fr; gap: 10px; } @media (min-width: 640px) { .uf-grid { grid-template-columns: 1fr 1fr; } }
         .uf-f > span { display: block; font-size: 10.5px; font-weight: 800; color: #64748b; margin-bottom: 4px; } .uf-f em { font-style: normal; color: #94a3b8; font-weight: 700; }
         .uf-f input, .uf-inline { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; font-size: 13px; background: #fff; transition: .15s; }
@@ -8049,26 +8053,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             showMobileErr('uf', '');
             paintUserAvatar('uf');
             ufG('uf-rest').classList.add('hidden');
-            ufG('uf-liaison-sub').classList.add('hidden');
-            if (u) ufPickRole(co ? 'COMPANY' : (['COMPANY_LIAISON', 'PARSIAN'].includes(u.role) ? 'LIAISON' : u.role), u.role);
+            if (u) ufPickRole(co ? 'COMPANY' : u.role);
             openModal('user-form-modal');
         }
-        function ufPickRole(r, exact) {
+        function ufPickRole(r) {
             ufG('uf-roles').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
-            const liaison = r === 'LIAISON', co = r === 'COMPANY';
-            ufG('uf-liaison-sub').classList.toggle('hidden', !liaison);
-            if (liaison) ufPickPanel(exact === 'PARSIAN' ? 'PARSIAN' : 'COMPANY_LIAISON');
-            else ufG('uf-role').value = r;
+            const co = r === 'COMPANY';
+            ufG('uf-role').value = r;
             ufG('uf-company-sec').classList.toggle('hidden', !co);
             ufG('uf-chat-sec').classList.toggle('hidden', co || r === 'ADMIN');
             ufG('uf-rpw-sec').classList.toggle('hidden', co);
             ufG('uf-personnel-box').classList.toggle('hidden', co);
             const rest = ufG('uf-rest');
             if (rest.classList.contains('hidden')) { rest.classList.remove('hidden'); if (ufG('uf-mode').value === 'create') setTimeout(() => ufG('uf-fullname').focus(), 60); }
-        }
-        function ufPickPanel(p) {
-            ufG('uf-role').value = p;
-            ufG('uf-liaison-sub').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
         }
         function ufChatMode(m) {
             ufG('uf-chat-mode').dataset.v = m;
@@ -8132,12 +8129,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('pm-role').textContent = ROLE_FA[d.user.role] || d.user.role;
             document.getElementById('pm-admin-pass').value = '';
             document.getElementById('pm-copy').innerHTML = '<option value="">کپی از کاربرِ دیگر…</option>' + (d.others || []).map(o => `<option value="${o.id}">${o.name} (${ROLE_FA[o.role] || o.role}${o.custom ? ' · سفارشی' : ''})</option>`).join('');
-            pmSetMode(PM.mode);
+            pmSetMode(PM.mode, true);   // true: دسترسی‌های ذخیره‌شده را از جدولِ قبلیِ صفحه بازنویسی نکن
             openModal('perm-modal');
         }
-        function pmSetMode(m) {
+        function pmSetMode(m, fresh) {
             if (!PM) return;
-            pmCollect();
+            if (!fresh) pmCollect();
             PM.mode = m;
             if (m === 'role') PM.perms = JSON.parse(JSON.stringify(PM.roleDef));
             document.querySelectorAll('.pm-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
@@ -10622,7 +10619,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 }
             } catch(e) { tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-red-500">خطا در اتصال.</td></tr>'; }
         }
-        document.getElementById('botchat-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') loadBotChats(e.target.value.trim()); });
+        document.getElementById('botchat-search-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadBotChats(e.target.value.trim()); });
 
         let currentTicketsData = [];
 

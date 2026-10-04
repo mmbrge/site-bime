@@ -236,7 +236,11 @@ function perm_api_map() {
             'reply' => 'tickets:create', 'send_file' => 'tickets:create', 'edit_ticket_message' => 'tickets:edit', 'delete_ticket_message' => 'tickets:delete', 'close' => 'tickets:edit',
         ]],
         // گفتگوها: خواندن (اعلان‌ها، وضعیتِ آنلاین) همیشه آزاد است؛ فقط فرستادن/ویرایش/حذف بررسی می‌شود
-        'chat_actions' => ['pages' => ['tickets'], 'elevate' => false, 'loose' => true, 'actions' => []],
+        'chat_actions' => ['pages' => ['tickets'], 'elevate' => false, 'loose' => true, 'actions' => [
+            'chat_threads' => 'any', 'chat_contacts' => 'any', 'chat_open' => 'any', 'chat_poll' => 'any', 'chat_typing' => 'any', 'chat_ping' => 'any',
+            'chat_unread' => 'any', 'chat_me' => 'any', 'chat_offline' => 'any', 'chat_set_avatar' => 'any', 'chat_hide' => 'any', 'chat_clear' => 'any',
+            'chat_send' => 'tickets:create', 'chat_set_ref' => 'tickets:create', 'chat_edit' => 'tickets:edit', 'chat_close' => 'tickets:edit', 'chat_delete' => 'tickets:delete',
+        ]],
         'staff_chat_actions' => ['pages' => ['tickets'], 'elevate' => false, 'loose' => true, 'actions' => ['send_message' => 'tickets:create']],
         'staff_users_actions' => ['pages' => ['staff-users'], 'elevate' => true, 'actions' => [
             'list' => 'staff-users:view|login-logs:view', 'presence' => 'staff-users:view|login-logs:view', 'login_logs' => 'login-logs:view',
