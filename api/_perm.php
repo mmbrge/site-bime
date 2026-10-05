@@ -60,6 +60,7 @@ function perm_catalog() {
         ['اطلاعات پرسنلی', [
             'my-work' => ['کارکرد من و مرخصی', ['view', 'create', 'edit', 'export']],
             'staff-work' => ['کارکرد پرسنل، تأیید مرخصی و تنظیمات', ['view', 'edit', 'export']],
+            'service-report' => ['گزارش سرویس‌های رفت‌وآمد (همه‌ی پرسنل)', ['view', 'edit']],
         ]],
     ];
 }
@@ -273,8 +274,9 @@ function perm_api_map() {
             'save_day' => 'my-work:edit|staff-work:edit', 'leave_add' => 'my-work:create|staff-work:edit', 'leave_delete' => 'my-work:edit|staff-work:edit',
             'profile_save' => 'my-work:edit|staff-work:edit', 'export' => 'my-work:export|staff-work:export',
             'settings_save' => 'staff-work:edit', 'leave_decide' => 'staff-work:edit', 'pending_leaves' => 'staff-work:view', 'staff_overview' => 'staff-work:view',
-            'svc_month' => 'staff-work:view', 'svc_receipt' => 'staff-work:view|staff-work:export', 'svc_save' => 'staff-work:edit', 'svc_delete' => 'staff-work:edit',
-            'svc_days_save' => 'staff-work:edit', 'svc_pay_save' => 'staff-work:edit', 'svc_pay_delete' => 'staff-work:edit',
+            'svc_month' => 'my-work:view|service-report:view', 'svc_receipt' => 'my-work:view|service-report:view', 'svc_days_save' => 'my-work:edit|service-report:edit',
+            'svc_pay_save' => 'my-work:edit|service-report:edit', 'svc_pay_delete' => 'my-work:edit|service-report:edit',
+            'svc_list' => 'service-report:view', 'svc_overview' => 'service-report:view', 'svc_save' => 'service-report:edit', 'svc_delete' => 'service-report:edit',
         ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [

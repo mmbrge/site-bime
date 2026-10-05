@@ -23,7 +23,7 @@ $canManage = perm_real_role() === 'ADMIN' || ($customPerms && in_array('edit', $
 
 // کاربری که داده‌اش خوانده/نوشته می‌شود: خودش، یا (برای مدیر) هر کاربری
 $uid = intval($data['user_id'] ?? 0) ?: $me;
-if ($uid !== $me && !$isManager) wout(['ok' => false, 'error' => 'فقط کارکردِ خودتان را می‌بینید.']);
+if ($uid !== $me && !$isManager && strpos($action, 'svc_') !== 0) wout(['ok' => false, 'error' => 'فقط کارکردِ خودتان را می‌بینید.']);
 $writeOther = $uid !== $me;
 if ($writeOther && in_array($action, ['save_day', 'leave_add', 'leave_delete', 'profile_save'], true) && !$canManage) wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ کارکردِ دیگران را ندارید.']);
 
@@ -70,6 +70,11 @@ try {
         [$jy, $jm] = wk_month_args($data);
         [$from, $to] = wk_month_range($jy, $jm);
         $days = wk_days($pdo, $uid, $from, $to);
+        // سرویسِ رفت‌وآمدِ هر روز (برای نشانِ تقویم)
+        require_once __DIR__ . '/_work_service.php';
+        $svcRows = ws_user_days($pdo, $uid, $from, $to);
+        foreach ($days as $g => &$D) { $D['svc_go'] = isset($svcRows[$g]) ? intval($svcRows[$g]['go_service_id']) : 0; $D['svc_back'] = isset($svcRows[$g]) ? intval($svcRows[$g]['back_service_id']) : 0; }
+        unset($D);
         $st = $pdo->prepare("SELECT * FROM work_leaves WHERE user_id = ? AND date_to >= ? AND date_from <= ? ORDER BY date_from DESC, id DESC");
         $st->execute([$uid, $from, $to]);
         $leaves = array_map(function ($L) use ($pdo) { return wk_leave_row($pdo, $L); }, $st->fetchAll());
@@ -84,7 +89,17 @@ try {
     if ($action === 'day') {
         $g = wk_j2g($data['date'] ?? '') ?: wk_today();
         $d = wk_days($pdo, $uid, $g, $g)[$g];
-        wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g)]);
+        // سرویسِ رفت‌وآمدِ همین روز + سرویس‌هایی که این نفر می‌تواند انتخاب کند
+        require_once __DIR__ . '/_work_service.php';
+        $sr = ws_user_days($pdo, $uid, $g, $g)[$g] ?? null;
+        $allowed = ws_allowed($pdo, $uid);
+        $svcList = [];
+        foreach ($allowed as $s) $svcList[$s['id']] = ['id' => $s['id'], 'name' => $s['name'], 'price_go' => $s['price_go'], 'price_back' => $s['price_back']];
+        foreach (['go_service_id', 'back_service_id'] as $c) if ($sr && $sr[$c] && !isset($svcList[intval($sr[$c])]) && ($x = ws_service($pdo, $sr[$c]))) $svcList[$x['id']] = ['id' => $x['id'], 'name' => $x['name'], 'price_go' => $x['price_go'], 'price_back' => $x['price_back']];
+        wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g),
+              'svc' => ['go' => $sr ? intval($sr['go_service_id']) : 0, 'back' => $sr ? intval($sr['back_service_id']) : 0,
+                        'amount_go' => $sr ? intval($sr['amount_go']) : 0, 'amount_back' => $sr ? intval($sr['amount_back']) : 0],
+              'svc_services' => array_values($svcList), 'svc_default' => ws_default_for($pdo, $uid, $allowed)]);
     }
 
     if ($action === 'save_day') {
@@ -103,6 +118,12 @@ try {
             if ($title === '') continue;
             $tasks[] = ['from' => wk_time($t['from'] ?? ''), 'to' => wk_time($t['to'] ?? ''), 'title' => $title];
             if (count($tasks) >= 60) break;
+        }
+        // سرویسِ رفت‌وآمدِ همین روز (اگر فرستاده شده)؛ اول این ذخیره می‌شود تا اگر سرویس مجاز نبود چیزی نیمه‌کاره نماند
+        if (isset($data['svc']) && is_array($data['svc'])) {
+            require_once __DIR__ . '/_work_service.php';
+            try { ws_days_save($pdo, $uid, [['date' => $g, 'go' => intval($data['svc']['go'] ?? 0), 'back' => intval($data['svc']['back'] ?? 0)]], $me); }
+            catch (RuntimeException $e) { wout(['ok' => false, 'error' => $e->getMessage()]); }
         }
         $pdo->prepare("INSERT INTO work_days (user_id, wdate, check_in, check_out, day_type, mood, note, tasks, updated_at, updated_by)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
@@ -256,33 +277,59 @@ try {
         wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'rows' => $rows, 'pending' => $pending]);
     }
 
-    // ---- سرویسِ رفت‌وآمد (برای کلِ دفتر؛ دیدن با «کارکرد پرسنل»، تغییر با دسترسیِ ویرایشِ آن) ----
+    // ---- سرویسِ رفت‌وآمد: هر نفر برای خودش (کارکرد من)؛ «گزارش سرویس‌ها» برای دیدن/ویرایشِ همه؛ تعریفِ سرویس فقط مدیر کل ----
     if (strpos($action, 'svc_') === 0) {
         require_once __DIR__ . '/_work_service.php';
         ws_ensure($pdo);
-        if (!$isManager) wout(['ok' => false, 'error' => 'سرویسِ رفت‌وآمد در «کارکرد پرسنل» است و دسترسی ندارید.']);
-        if (in_array($action, ['svc_save', 'svc_delete', 'svc_days_save', 'svc_pay_save', 'svc_pay_delete'], true) && !$canManage)
-            wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ سرویسِ رفت‌وآمد را ندارید.']);
-        $money = function ($v) { return max(0, money_to_int(p2e_digits((string)$v))); };
+        $isAdmin = perm_real_role() === 'ADMIN';
+        $svcView = $isAdmin || ($customPerms && in_array('view', $customPerms['service-report'] ?? [], true));
+        $svcEdit = $isAdmin || ($customPerms && in_array('edit', $customPerms['service-report'] ?? [], true));
+        $writes = ['svc_days_save', 'svc_pay_save', 'svc_pay_delete'];
+        if ($uid !== $me) {
+            if (!$svcView) wout(['ok' => false, 'error' => 'فقط سرویسِ خودتان را می‌بینید.']);
+            if (in_array($action, $writes, true) && !$svcEdit) wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ سرویسِ دیگران را ندارید.']);
+        }
+        if (in_array($action, ['svc_save', 'svc_delete'], true) && !$isAdmin) wout(['ok' => false, 'error' => 'تعریف و اختصاصِ سرویس فقط کارِ مدیر کل است.']);
+        if (in_array($action, ['svc_list', 'svc_overview'], true) && !$svcView) wout(['ok' => false, 'error' => 'به «گزارش سرویس‌ها» دسترسی ندارید.']);
+        $money = function ($v) { return max(0, intval(money_to_int(p2e_digits((string)$v)))); };
+        $staff = function () use ($pdo) {
+            return $pdo->query("SELECT id, full_name, role FROM users" . (auth_schema_ready($pdo) ? " WHERE COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll();
+        };
+        $monthOut = function ($uid, $jy, $jm) use ($pdo, $me, $svcEdit, $isAdmin) {
+            $u = wk_user($pdo, $uid);
+            return ['ok' => true, 'can_edit' => $uid === $me || $svcEdit, 'is_admin' => $isAdmin, 'is_me' => $uid === $me,
+                    'user' => ['id' => $uid, 'name' => $u['full_name'] ?? '']] + ws_month($pdo, $uid, $jy, $jm);
+        };
 
         if ($action === 'svc_month') {
             [$jy, $jm] = wk_month_args($data);
-            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+            wout($monthOut($uid, $jy, $jm));
+        }
+        if ($action === 'svc_list') {
+            wout(['ok' => true, 'services' => ws_services($pdo), 'is_admin' => $isAdmin, 'can_edit' => $svcEdit,
+                  'users' => array_map(function ($u) { return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']]; }, $staff())]);
+        }
+        if ($action === 'svc_overview') {
+            [$jy, $jm] = wk_month_args($data);
+            $rows = ws_overview($pdo, $jy, $jm, $staff());
+            wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'rows' => $rows, 'can_edit' => $svcEdit, 'is_admin' => $isAdmin]);
         }
         if ($action === 'svc_save') {
             $s = (array)($data['service'] ?? []);
             $name = trim(mb_substr((string)($s['name'] ?? ''), 0, 120));
             if ($name === '') wout(['ok' => false, 'error' => 'نامِ سرویس را وارد کنید.']);
+            $users = implode(',', array_values(array_unique(array_filter(array_map('intval', (array)($s['users'] ?? []))))));
             $vals = [$name, trim(mb_substr((string)($s['driver'] ?? ''), 0, 120)) ?: null, trim(p2e_digits(mb_substr((string)($s['phone'] ?? ''), 0, 30))) ?: null,
                      trim(mb_substr((string)($s['car'] ?? ''), 0, 160)) ?: null, $money($s['price_go'] ?? 0), $money($s['price_back'] ?? ($s['price_go'] ?? 0)),
-                     !empty($s['is_default']) ? 1 : 0, !isset($s['is_active']) || !empty($s['is_active']) ? 1 : 0, trim(mb_substr((string)($s['note'] ?? ''), 0, 500)) ?: null];
+                     !empty($s['is_default']) ? 1 : 0, !isset($s['is_active']) || !empty($s['is_active']) ? 1 : 0, $users !== '' ? $users : null,
+                     trim(mb_substr((string)($s['note'] ?? ''), 0, 500)) ?: null];
             $id = intval($s['id'] ?? 0);
             if ($id) {
-                $pdo->prepare("UPDATE work_services SET name=?, driver=?, phone=?, car=?, price_go=?, price_back=?, is_default=?, is_active=?, note=? WHERE id=?")->execute([...$vals, $id]);
+                $pdo->prepare("UPDATE work_services SET name=?, driver=?, phone=?, car=?, price_go=?, price_back=?, is_default=?, is_active=?, assigned_users=?, note=? WHERE id=?")->execute([...$vals, $id]);
             } else {
                 // اولین سرویس خودبه‌خود پیش‌فرض می‌شود
                 if (!intval($pdo->query("SELECT COUNT(*) FROM work_services WHERE is_active = 1")->fetchColumn())) $vals[6] = 1;
-                $pdo->prepare("INSERT INTO work_services (name, driver, phone, car, price_go, price_back, is_default, is_active, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")->execute($vals);
+                $pdo->prepare("INSERT INTO work_services (name, driver, phone, car, price_go, price_back, is_default, is_active, assigned_users, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")->execute($vals);
                 $id = intval($pdo->lastInsertId());
             }
             if ($vals[6]) $pdo->prepare("UPDATE work_services SET is_default = 0 WHERE id <> ?")->execute([$id]);
@@ -301,9 +348,10 @@ try {
             wout(['ok' => true, 'services' => ws_services($pdo)]);
         }
         if ($action === 'svc_days_save') {
-            $n = ws_days_save($pdo, (array)($data['days'] ?? []), $me, !empty($data['reprice']));
+            try { $n = ws_days_save($pdo, $uid, (array)($data['days'] ?? []), $me, !empty($data['reprice']) && $svcEdit); }
+            catch (RuntimeException $e) { wout(['ok' => false, 'error' => $e->getMessage()]); }
             [$jy, $jm] = wk_month_args($data);
-            wout(['ok' => true, 'saved' => $n, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+            wout(['saved' => $n] + $monthOut($uid, $jy, $jm));
         }
         if ($action === 'svc_pay_save') {
             [$jy, $jm] = wk_month_args($data);
@@ -311,24 +359,25 @@ try {
             if (!ws_service($pdo, $sid)) wout(['ok' => false, 'error' => 'سرویس پیدا نشد.']);
             $pd = wk_j2g($data['paid_date'] ?? '');
             if (!$pd) wout(['ok' => false, 'error' => 'تاریخِ پرداخت را درست وارد کنید (مثل ۱۴۰۵/۰۸/۰۱).']);
-            $pdo->prepare("INSERT INTO work_service_pays (service_id, jy, jm, amount, paid_date, method, ref, note, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+            $pdo->prepare("INSERT INTO work_service_pays (user_id, service_id, jy, jm, amount, paid_date, method, ref, note, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
                            ON DUPLICATE KEY UPDATE amount = VALUES(amount), paid_date = VALUES(paid_date), method = VALUES(method), ref = VALUES(ref), note = VALUES(note)")
-                ->execute([$sid, $jy, $jm, $money($data['amount'] ?? 0), $pd, trim(mb_substr((string)($data['method'] ?? ''), 0, 60)) ?: null,
+                ->execute([$uid, $sid, $jy, $jm, $money($data['amount'] ?? 0), $pd, trim(mb_substr((string)($data['method'] ?? ''), 0, 60)) ?: null,
                            trim(p2e_digits(mb_substr((string)($data['ref'] ?? ''), 0, 120))) ?: null, trim(mb_substr((string)($data['note'] ?? ''), 0, 500)) ?: null, $me]);
-            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+            wout($monthOut($uid, $jy, $jm));
         }
         if ($action === 'svc_pay_delete') {
             [$jy, $jm] = wk_month_args($data);
-            $pdo->prepare("DELETE FROM work_service_pays WHERE service_id = ? AND jy = ? AND jm = ?")->execute([intval($data['service_id'] ?? 0), $jy, $jm]);
-            wout(['ok' => true, 'can_manage' => $canManage] + ws_month($pdo, $jy, $jm));
+            $pdo->prepare("DELETE FROM work_service_pays WHERE user_id = ? AND service_id = ? AND jy = ? AND jm = ?")->execute([$uid, intval($data['service_id'] ?? 0), $jy, $jm]);
+            wout($monthOut($uid, $jy, $jm));
         }
         if ($action === 'svc_receipt') {
             [$jy, $jm] = wk_month_args($data);
             $sid = intval($data['service_id'] ?? 0);
             $svc = ws_service($pdo, $sid);
             if (!$svc) wout(['ok' => false, 'error' => 'سرویس پیدا نشد.']);
-            $bin = ws_receipt_pdf($pdo, $sid, $jy, $jm);
-            $fname = 'رسید سرویس ' . $svc['name'] . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
+            $u = wk_user($pdo, $uid);
+            $bin = ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm);
+            $fname = 'رسید سرویس ' . $svc['name'] . ' - ' . ($u['full_name'] ?? '') . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
             while (ob_get_level()) ob_end_clean();
             header('Content-Type: application/pdf');
             header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-receipt-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode($fname));

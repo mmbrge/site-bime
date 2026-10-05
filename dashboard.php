@@ -83,7 +83,8 @@ $personnelMenuHtml = '
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab(\'my-work\')" id="nav-my-work" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-calendar-check ml-2"></i> کارکرد من <small class="text-[10px] text-slate-400 font-bold mr-1">حضور، شرح کار، مرخصی</small></a>'
     . ((($_SESSION['role'] ?? '') === 'ADMIN') ? '
-                        <a href="#" onclick="switchTab(\'staff-work\')" id="nav-staff-work" class="nav-item menu-link"><i class="fas fa-users-viewfinder ml-2"></i> کارکرد پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">همه، تأییدِ مرخصی، تنظیمات</small></a>' : '') . '
+                        <a href="#" onclick="switchTab(\'staff-work\')" id="nav-staff-work" class="nav-item menu-link"><i class="fas fa-users-viewfinder ml-2"></i> کارکرد پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">همه، تأییدِ مرخصی، تنظیمات</small></a>
+                        <a href="#" onclick="switchTab(\'service-report\')" id="nav-service-report" class="nav-item menu-link"><i class="fas fa-van-shuttle ml-2"></i> گزارش سرویس‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">رفت‌وآمدِ هر نفر، تعریفِ سرویس، رسید</small></a>' : '') . '
                     </div>
                 </div>
 ';
@@ -901,6 +902,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- ===== اطلاعات پرسنلی ===== -->
         <div id="tab-my-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-my-root"></div></div>
         <div id="tab-staff-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-staff-root"></div></div>
+        <div id="tab-service-report" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-svc-root"></div></div>
         <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><div id="tab-security" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="sec-root"></div></div><?php endif; ?>
         
         <!-- ======================= تب داشبورد و آمار ======================= -->
@@ -3773,13 +3775,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=2"></script>
+    <script src="work-log.js?v=3"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=1"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=11"></script>
-    <script src="visit-reports-list.js?v=8"></script>
+    <script src="visit-reports.js?v=12"></script>
+    <script src="visit-reports-list.js?v=9"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=3"></script><?php endif; ?>
     <?php endif; ?>
     <script>
@@ -3799,7 +3801,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
-            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work'];
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -8459,6 +8461,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
+            if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
             if (tabId === 'security' && window.SecShield) SecShield.init(document.getElementById('sec-root'));
             if (tabId === 'cases') loadCases();
             if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }

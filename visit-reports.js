@@ -1149,13 +1149,16 @@
                     : `<p class="vr-chip bg-amber-50 text-amber-700 mt-3"><i class="fas fa-triangle-exclamation"></i> ${esc(link.error || 'اتصال انجام نشد')}</p>`) : ''}
                 <div class="flex flex-wrap justify-center gap-2 mt-6">
                     <a class="vr-btn vr-btn-p" target="_blank" href="${fileUrl(r.id, 'pdf', '&inline=1')}"><i class="fas fa-eye"></i> مشاهده PDF</a>
-                    <a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'pdf')}"><i class="fas fa-file-arrow-down text-rose-500"></i> دانلود PDF</a>
-                    ${r.has_docx ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'docx')}"><i class="fas fa-file-word text-blue-600"></i> دانلود Word</a>` : ''}
-                    ${r.has_zip ? `<a class="vr-btn vr-btn-s" href="${fileUrl(r.id, 'zip')}"><i class="fas fa-file-zipper text-amber-500"></i> ZIP عکس‌ها</a>` : ''}
-                    <a class="vr-btn vr-btn-s" href="${API}?action=bundle_zip&id=${r.id}" title="PDF + همه‌ی عکس‌ها + مدارک (بدونِ فایلِ Wordِ گزارش)"><i class="fas fa-box-archive text-violet-500"></i> ZIP کامل (بدون Word)</a>
+                    <button type="button" class="vr-btn vr-btn-s vr-s-dl" style="color:#0369a1;background:#f0f9ff;border-color:#bae6fd"><i class="fas fa-download"></i> دانلود</button>
                     <button type="button" class="vr-btn vr-btn-s vr-s-detail"><i class="fas fa-circle-info"></i> جزئیات</button>
                     ${this.opts.inModal ? '<button type="button" class="vr-btn vr-btn-s vr-s-close"><i class="fas fa-xmark"></i> بستن</button>' : '<button type="button" class="vr-btn vr-btn-g vr-s-new"><i class="fas fa-plus"></i> گزارشِ جدید</button>'}
                 </div></div>`;
+            // همان پنجره‌ی دانلودِ فهرستِ گزارش‌ها (زیپ کامل، بدونِ Word، PDF، Word، عکس‌ها)
+            const dl = this.root.querySelector('.vr-s-dl');
+            if (dl) dl.onclick = () => {
+                if (VR.downloadPopup) VR.downloadPopup(Object.assign({photos_count: (r.photos || []).length || r.photos_count || 0}, r));
+                else window.location.href = fileUrl(r.id, 'pdf');
+            };
             const det = this.root.querySelector('.vr-s-detail');
             if (det) det.onclick = () => VR.openDetail(r.id);
             const nw = this.root.querySelector('.vr-s-new');

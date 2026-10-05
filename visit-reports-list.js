@@ -204,13 +204,14 @@
     };
 
     // پنجره‌ی دانلود: زیپِ کاملِ گزارش یا فقط فایل‌ها؛ با شروعِ دانلود خودش بسته می‌شود
+    VR.downloadPopup = r => downloadPopup(r);
     function downloadPopup(r) {
         const opts = [
             [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها و مدارک (کلِ پوشه‌ی گزارش)'],
             [`${API}?action=bundle_zip&id=${r.id}`, 'fa-file-zipper text-indigo-500', 'زیپ کامل بدونِ Word', 'PDF + همه‌ی عکس‌ها و مدارک، بدونِ فایلِ Wordِ گزارش'],
             [fileUrl(r.id, 'pdf'), 'fa-file-pdf text-rose-500', 'فقط فایل گزارش (PDF)', ''],
             r.has_docx ? [fileUrl(r.id, 'docx'), 'fa-file-word text-blue-600', 'فایل Word گزارش', ''] : null,
-            r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', `${fa(r.photos_count || 0)} عکس`] : null,
+            r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', r.photos_count ? `${fa(r.photos_count)} عکس` : ''] : null,
         ].filter(Boolean);
         const m = modal({ title: 'دانلود گزارش', icon: 'fa-download', width: '26rem', html: `<div class="space-y-2">${opts.map(([href, ic, t, sub], i) => `
             <button type="button" data-i="${i}" class="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 p-3 text-right transition-colors">

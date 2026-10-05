@@ -1,10 +1,14 @@
 <?php
 // فایل: api/_work_service.php
-// «سرویسِ رفت‌وآمد» در کارکرد پرسنل: تعریفِ سرویس‌ها (نام، راننده، نرخِ هر مسیر)، ثبتِ روزبه‌روزِ رفت/برگشت با سرویس،
-// جمعِ ماهانه برای هر سرویس، ثبتِ پرداخت و رسیدِ PDF. جدول‌ها خودکار ساخته می‌شوند.
+// «سرویسِ رفت‌وآمد» برای هر نفر: هر کاربر در «کارکرد من» برای هر روز مشخص می‌کند با سرویس رفت، برگشت یا هر دو.
+// تعریفِ سرویس‌ها (نام، راننده، نرخِ هر مسیر و کاربرانی که اجازه‌ی انتخابش را دارند) فقط با مدیر کل و در «گزارش سرویس‌ها» است.
+// جمعِ ماهانه‌ی هر نفر برای هر سرویس، ثبتِ پرداخت و رسیدِ PDF. جدول‌ها خودکار ساخته/به‌روز می‌شوند.
 
 require_once __DIR__ . '/_work.php';
 
+function ws_has_col($pdo, $table, $col) {
+    try { $pdo->query("SELECT `$col` FROM `$table` LIMIT 0"); return true; } catch (Throwable $e) { return false; }
+}
 function ws_ensure($pdo) {
     static $done = false;
     if ($done) return;
@@ -19,12 +23,14 @@ function ws_ensure($pdo) {
         price_back BIGINT NOT NULL DEFAULT 0,
         is_default TINYINT(1) NOT NULL DEFAULT 0,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
+        assigned_users VARCHAR(2000) NULL,
         note VARCHAR(500) NULL,
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    // هر روز: سرویسِ رفت و سرویسِ برگشت (۰ یعنی با سرویس نیامدیم/نرفتیم) و مبلغِ همان روز (نرخِ زمانِ ثبت)
+    // هر نفر، هر روز: سرویسِ رفت و سرویسِ برگشت (خالی یعنی با سرویس نبود) و مبلغِ همان روز (نرخِ زمانِ ثبت)
     $pdo->exec("CREATE TABLE IF NOT EXISTS work_service_days (
-        wdate DATE NOT NULL PRIMARY KEY,
+        user_id INT NOT NULL,
+        wdate DATE NOT NULL,
         go_service_id INT NULL,
         back_service_id INT NULL,
         amount_go BIGINT NOT NULL DEFAULT 0,
@@ -32,10 +38,12 @@ function ws_ensure($pdo) {
         note VARCHAR(300) NULL,
         updated_at DATETIME NULL,
         updated_by INT NULL,
-        KEY idx_go (go_service_id), KEY idx_back (back_service_id)
+        PRIMARY KEY (user_id, wdate),
+        KEY idx_go (go_service_id), KEY idx_back (back_service_id), KEY idx_date (wdate)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS work_service_pays (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL DEFAULT 0,
         service_id INT NOT NULL,
         jy SMALLINT NOT NULL,
         jm TINYINT NOT NULL,
@@ -46,8 +54,22 @@ function ws_ensure($pdo) {
         note VARCHAR(500) NULL,
         created_at DATETIME NULL,
         created_by INT NULL,
-        UNIQUE KEY uq_month (service_id, jy, jm)
+        UNIQUE KEY uq_user_month (user_id, service_id, jy, jm)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    // نسخه‌ی قبلی (سرویسِ کلِ دفتر، بدونِ کاربر): ردیف‌ها به کسی که ثبتشان کرده بود داده می‌شوند
+    try {
+        if (!ws_has_col($pdo, 'work_services', 'assigned_users')) $pdo->exec("ALTER TABLE work_services ADD COLUMN assigned_users VARCHAR(2000) NULL AFTER is_active");
+        if (!ws_has_col($pdo, 'work_service_days', 'user_id')) {
+            $pdo->exec("ALTER TABLE work_service_days ADD COLUMN user_id INT NOT NULL DEFAULT 0 FIRST");
+            $pdo->exec("UPDATE work_service_days SET user_id = COALESCE(updated_by, 0)");
+            $pdo->exec("ALTER TABLE work_service_days DROP PRIMARY KEY, ADD PRIMARY KEY (user_id, wdate), ADD KEY idx_date (wdate)");
+        }
+        if (!ws_has_col($pdo, 'work_service_pays', 'user_id')) {
+            $pdo->exec("ALTER TABLE work_service_pays ADD COLUMN user_id INT NOT NULL DEFAULT 0 AFTER id");
+            $pdo->exec("UPDATE work_service_pays SET user_id = COALESCE(created_by, 0)");
+            $pdo->exec("ALTER TABLE work_service_pays DROP INDEX uq_month, ADD UNIQUE KEY uq_user_month (user_id, service_id, jy, jm)");
+        }
+    } catch (Throwable $e) { error_log('[ws_ensure] ' . $e->getMessage()); }
 }
 
 function ws_services($pdo, $activeOnly = false) {
@@ -63,23 +85,45 @@ function ws_service($pdo, $id) {
     return $r ? ws_service_out($r) : null;
 }
 function ws_service_out($r) {
+    $users = array_values(array_unique(array_filter(array_map('intval', explode(',', (string)($r['assigned_users'] ?? ''))))));
     return ['id' => intval($r['id']), 'name' => (string)$r['name'], 'driver' => (string)$r['driver'], 'phone' => (string)$r['phone'], 'car' => (string)$r['car'],
             'price_go' => intval($r['price_go']), 'price_back' => intval($r['price_back']), 'is_default' => (bool)$r['is_default'], 'is_active' => (bool)$r['is_active'],
-            'note' => (string)$r['note']];
+            'users' => $users, 'note' => (string)$r['note']];
+}
+// سرویس‌هایی که این کاربر می‌تواند انتخاب کند: فعال و (بدونِ محدودیت یا اختصاص‌یافته به او)
+function ws_allowed($pdo, $uid) {
+    return array_values(array_filter(ws_services($pdo, true), function ($s) use ($uid) { return !$s['users'] || in_array(intval($uid), $s['users'], true); }));
+}
+// پیش‌فرضِ هر نفر: سرویسی که به خودش اختصاص داده شده، وگرنه پیش‌فرضِ کلی، وگرنه اولین سرویسِ مجاز
+function ws_default_for($pdo, $uid, $allowed = null) {
+    $allowed = $allowed ?? ws_allowed($pdo, $uid);
+    $mine = array_values(array_filter($allowed, function ($s) use ($uid) { return in_array(intval($uid), $s['users'], true); }));
+    usort($mine, function ($a, $b) { return intval($b['is_default']) - intval($a['is_default']); });
+    if ($mine) return $mine[0]['id'];
+    foreach ($allowed as $s) if ($s['is_default']) return $s['id'];
+    return $allowed ? $allowed[0]['id'] : 0;
+}
+// ردیف‌های ثبت‌شده‌ی یک نفر در یک بازه: [تاریخ => ردیف]
+function ws_user_days($pdo, $uid, $from, $to) {
+    ws_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM work_service_days WHERE user_id = ? AND wdate BETWEEN ? AND ?");
+    $st->execute([intval($uid), $from, $to]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[$r['wdate']] = $r;
+    return $out;
 }
 
-// یک ماه: همه‌ی روزها (حتی خالی) + جمعِ هر سرویس + پرداخت‌ها
-function ws_month($pdo, $jy, $jm) {
+// یک نفر، یک ماه: همه‌ی روزها (حتی خالی) + جمعِ هر سرویس + پرداخت‌ها
+function ws_month($pdo, $uid, $jy, $jm) {
     ws_ensure($pdo);
     [$from, $to] = wk_month_range($jy, $jm);
-    $st = $pdo->prepare("SELECT * FROM work_service_days WHERE wdate BETWEEN ? AND ?");
-    $st->execute([$from, $to]);
-    $saved = [];
-    foreach ($st->fetchAll() as $r) $saved[$r['wdate']] = $r;
-    $services = [];
-    foreach (ws_services($pdo) as $s) $services[$s['id']] = $s;
+    $saved = ws_user_days($pdo, $uid, $from, $to);
+    $all = [];
+    foreach (ws_services($pdo) as $s) $all[$s['id']] = $s;
+    $allowed = ws_allowed($pdo, $uid);
     $days = [];
     $tot = [];
+    $used = [];
     for ($d = strtotime($from . ' 12:00:00'), $e = strtotime($to . ' 12:00:00'); $d <= $e; $d += 86400) {
         $g = date('Y-m-d', $d);
         $r = $saved[$g] ?? null;
@@ -92,6 +136,7 @@ function ws_month($pdo, $jy, $jm) {
         foreach (['go', 'back'] as $k) {
             if (!$D[$k]) continue;
             $sid = $D[$k];
+            $used[$sid] = true;
             if (!isset($tot[$sid])) $tot[$sid] = ['service_id' => $sid, 'go' => 0, 'back' => 0, 'days' => 0, 'both' => 0, 'amount' => 0, '_d' => []];
             $tot[$sid][$k]++;
             $tot[$sid]['amount'] += $D['amount_' . $k];
@@ -99,49 +144,98 @@ function ws_month($pdo, $jy, $jm) {
         }
         if ($D['go'] && $D['go'] === $D['back']) $tot[$D['go']]['both']++;
     }
-    foreach ($tot as &$t) { $t['days'] = count($t['_d']); unset($t['_d']); $t['name'] = $services[$t['service_id']]['name'] ?? ('سرویس #' . $t['service_id']); }
+    foreach ($tot as &$t) { $t['days'] = count($t['_d']); unset($t['_d']); $t['name'] = $all[$t['service_id']]['name'] ?? ('سرویس #' . $t['service_id']); }
     unset($t);
-    $st = $pdo->prepare("SELECT * FROM work_service_pays WHERE jy = ? AND jm = ?");
-    $st->execute([$jy, $jm]);
+    $st = $pdo->prepare("SELECT * FROM work_service_pays WHERE user_id = ? AND jy = ? AND jm = ?");
+    $st->execute([intval($uid), $jy, $jm]);
     $pays = [];
     foreach ($st->fetchAll() as $p) $pays[intval($p['service_id'])] = ws_pay_out($p);
-    return ['jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'days' => $days, 'totals' => array_values($tot), 'pays' => (object)$pays,
-            'services' => array_values($services)];
+    // سرویس‌های قابلِ انتخاب + سرویس‌هایی که در همین ماه استفاده شده‌اند (حتی اگر بعداً غیرفعال/محدود شده باشند)
+    $services = [];
+    foreach ($allowed as $s) $services[$s['id']] = $s + ['selectable' => true];
+    foreach (array_keys($used) as $sid) if (!isset($services[$sid]) && isset($all[$sid])) $services[$sid] = $all[$sid] + ['selectable' => false];
+    return ['jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'user_id' => intval($uid), 'days' => $days, 'totals' => array_values($tot),
+            'pays' => (object)$pays, 'services' => array_values($services), 'default_id' => ws_default_for($pdo, $uid, $allowed)];
 }
 function ws_pay_out($p) {
     return ['id' => intval($p['id']), 'service_id' => intval($p['service_id']), 'amount' => intval($p['amount']), 'paid_date' => $p['paid_date'] ? wk_g2j($p['paid_date']) : '',
             'method' => (string)$p['method'], 'ref' => (string)$p['ref'], 'note' => (string)$p['note']];
 }
 
-// ذخیره‌ی چند روز با هم. نرخ: اگر سرویسِ همان مسیر عوض نشده باشد مبلغِ قبلی می‌ماند (مگر reprice)، وگرنه نرخِ فعلیِ سرویس
-function ws_days_save($pdo, array $items, $me, $reprice = false) {
+// ذخیره‌ی چند روزِ یک نفر. فقط سرویس‌های مجازِ همان نفر (یا سرویسی که همان روز از قبل ثبت شده) پذیرفته می‌شود.
+// نرخ: اگر سرویسِ همان مسیر عوض نشده باشد مبلغِ قبلی می‌ماند (مگر reprice)، وگرنه نرخِ فعلیِ سرویس.
+// اگر «note» فرستاده نشود، توضیحِ قبلیِ آن روز می‌ماند.
+function ws_days_save($pdo, $uid, array $items, $me, $reprice = false) {
     ws_ensure($pdo);
-    $services = [];
-    foreach (ws_services($pdo) as $s) $services[$s['id']] = $s;
-    $get = $pdo->prepare("SELECT * FROM work_service_days WHERE wdate = ?");
-    $up = $pdo->prepare("INSERT INTO work_service_days (wdate, go_service_id, back_service_id, amount_go, amount_back, note, updated_at, updated_by)
-                         VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+    $uid = intval($uid);
+    $all = [];
+    foreach (ws_services($pdo) as $s) $all[$s['id']] = $s;
+    $ok = [];
+    foreach (ws_allowed($pdo, $uid) as $s) $ok[$s['id']] = true;
+    $get = $pdo->prepare("SELECT * FROM work_service_days WHERE user_id = ? AND wdate = ?");
+    $up = $pdo->prepare("INSERT INTO work_service_days (user_id, wdate, go_service_id, back_service_id, amount_go, amount_back, note, updated_at, updated_by)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
                          ON DUPLICATE KEY UPDATE go_service_id = VALUES(go_service_id), back_service_id = VALUES(back_service_id), amount_go = VALUES(amount_go),
                                                  amount_back = VALUES(amount_back), note = VALUES(note), updated_at = NOW(), updated_by = VALUES(updated_by)");
-    $del = $pdo->prepare("DELETE FROM work_service_days WHERE wdate = ?");
+    $del = $pdo->prepare("DELETE FROM work_service_days WHERE user_id = ? AND wdate = ?");
     $n = 0;
     foreach ($items as $it) {
         $g = wk_j2g($it['date'] ?? '') ?: (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($it['date'] ?? '')) ? $it['date'] : null);
         if (!$g) continue;
-        $go = intval($it['go'] ?? 0); $back = intval($it['back'] ?? 0);
-        if ($go && !isset($services[$go])) $go = 0;
-        if ($back && !isset($services[$back])) $back = 0;
-        $note = trim(mb_substr((string)($it['note'] ?? ''), 0, 300));
-        if (!$go && !$back && $note === '') { $del->execute([$g]); $n++; continue; }
-        $get->execute([$g]);
+        $get->execute([$uid, $g]);
         $old = $get->fetch() ?: null;
-        $aGo = $go ? (($old && intval($old['go_service_id']) === $go && !$reprice) ? intval($old['amount_go']) : $services[$go]['price_go']) : 0;
-        $aBack = $back ? (($old && intval($old['back_service_id']) === $back && !$reprice) ? intval($old['amount_back']) : $services[$back]['price_back']) : 0;
-        $up->execute([$g, $go ?: null, $back ?: null, $aGo, $aBack, $note !== '' ? $note : null, $me]);
+        $go = intval($it['go'] ?? 0); $back = intval($it['back'] ?? 0);
+        if ($go && !(isset($ok[$go]) || ($old && intval($old['go_service_id']) === $go))) throw new RuntimeException('سرویسِ «' . ($all[$go]['name'] ?? $go) . '» برای این کاربر مجاز نیست.');
+        if ($back && !(isset($ok[$back]) || ($old && intval($old['back_service_id']) === $back))) throw new RuntimeException('سرویسِ «' . ($all[$back]['name'] ?? $back) . '» برای این کاربر مجاز نیست.');
+        $note = array_key_exists('note', $it) ? trim(mb_substr((string)$it['note'], 0, 300)) : ($old ? (string)$old['note'] : '');
+        if (!$go && !$back && $note === '') { $del->execute([$uid, $g]); $n++; continue; }
+        $aGo = $go ? (($old && intval($old['go_service_id']) === $go && !$reprice) ? intval($old['amount_go']) : intval($all[$go]['price_go'] ?? 0)) : 0;
+        $aBack = $back ? (($old && intval($old['back_service_id']) === $back && !$reprice) ? intval($old['amount_back']) : intval($all[$back]['price_back'] ?? 0)) : 0;
+        $up->execute([$uid, $g, $go ?: null, $back ?: null, $aGo, $aBack, $note !== '' ? $note : null, $me]);
         $n++;
         if ($n >= 400) break;
     }
     return $n;
+}
+
+// نمای کلیِ یک ماه برای «گزارش سرویس‌ها»: هر نفر ← روزها، رفت، برگشت، مبلغ، سرویس‌ها و پرداخت
+function ws_overview($pdo, $jy, $jm, array $users) {
+    ws_ensure($pdo);
+    [$from, $to] = wk_month_range($jy, $jm);
+    $names = [];
+    foreach (ws_services($pdo) as $s) $names[$s['id']] = $s['name'];
+    $agg = [];
+    $st = $pdo->prepare("SELECT * FROM work_service_days WHERE wdate BETWEEN ? AND ?");
+    $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) {
+        $u = intval($r['user_id']);
+        $a = &$agg[$u];
+        if (!$a) $a = ['days' => 0, 'go' => 0, 'back' => 0, 'amount' => 0, 'svc' => []];
+        if ($r['go_service_id'] || $r['back_service_id']) $a['days']++;
+        foreach (['go' => 'go_service_id', 'back' => 'back_service_id'] as $k => $c) {
+            if (!$r[$c]) continue;
+            $a[$k]++; $a['amount'] += intval($r['amount_' . $k]);
+            $sid = intval($r[$c]);
+            $a['svc'][$sid] = ($a['svc'][$sid] ?? 0) + intval($r['amount_' . $k]);
+        }
+        unset($a);
+    }
+    $paid = [];
+    $st = $pdo->prepare("SELECT user_id, service_id, amount, paid_date FROM work_service_pays WHERE jy = ? AND jm = ?");
+    $st->execute([$jy, $jm]);
+    foreach ($st->fetchAll() as $p) $paid[intval($p['user_id'])][intval($p['service_id'])] = intval($p['amount']);
+    $rows = [];
+    foreach ($users as $u) {
+        $id = intval($u['id']);
+        $a = $agg[$id] ?? ['days' => 0, 'go' => 0, 'back' => 0, 'amount' => 0, 'svc' => []];
+        $svc = [];
+        foreach ($a['svc'] as $sid => $amt) $svc[] = ['id' => $sid, 'name' => $names[$sid] ?? ('#' . $sid), 'amount' => $amt, 'paid' => $paid[$id][$sid] ?? null];
+        $paidSum = array_sum($paid[$id] ?? []);
+        $rows[] = ['user_id' => $id, 'name' => $u['full_name'], 'role' => $u['role'], 'days' => $a['days'], 'go' => $a['go'], 'back' => $a['back'],
+                   'amount' => $a['amount'], 'services' => $svc, 'paid' => $paidSum,
+                   'pay_status' => !$a['amount'] ? ($paidSum ? 'paid' : 'none') : ($paidSum >= $a['amount'] ? 'paid' : ($paidSum ? 'partial' : 'unpaid'))];
+    }
+    return $rows;
 }
 
 // ---------------------------------------------------------------------
@@ -150,10 +244,13 @@ function ws_days_save($pdo, array $items, $me, $reprice = false) {
 function ws_fa($s) { return strtr((string)$s, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']); }
 function ws_money($n) { return ws_fa(number_format(intval($n))); }
 
-function ws_receipt_pdf($pdo, $sid, $jy, $jm) {
+function ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm) {
     $svc = ws_service($pdo, $sid);
     if (!$svc) throw new RuntimeException('سرویس پیدا نشد.');
-    $M = ws_month($pdo, $jy, $jm);
+    $st = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+    $st->execute([intval($uid)]);
+    $person = (string)($st->fetchColumn() ?: '');
+    $M = ws_month($pdo, $uid, $jy, $jm);
     $pays = (array)$M['pays'];
     $pay = $pays[$sid] ?? null;
     $tot = ['go' => 0, 'back' => 0, 'days' => 0, 'both' => 0, 'amount' => 0];
@@ -165,7 +262,7 @@ function ws_receipt_pdf($pdo, $sid, $jy, $jm) {
     $pdf->SetMargins(0, 0, 0); $pdf->SetAutoPageBreak(false, 0);
     $pdf->setCellPaddings(0, 0, 0, 0);
     $pdf->SetCreator('بیمه با ما'); $pdf->SetAuthor('بیمه با ما');
-    $pdf->SetTitle('رسید سرویس ' . $svc['name'] . ' ' . jalali_month_name($jm) . ' ' . $jy);
+    $pdf->SetTitle('رسید سرویس ' . $svc['name'] . ' ' . $person . ' ' . jalali_month_name($jm) . ' ' . $jy);
     $pdf->AddFont('vazir', '', 'vazir.php'); $pdf->AddFont('vazir', 'B', 'vazirb.php');
     $pdf->AddPage();
     $W = 210;
@@ -175,9 +272,9 @@ function ws_receipt_pdf($pdo, $sid, $jy, $jm) {
         $pdf->setRTL(true);
         $pdf->SetFont('vazir', $style, $size);
         $pdf->SetTextColor(...$hex($color));
-        // در حالتِ راست‌به‌چپ «R» یعنی ابتدای سطر (راست) و «L» انتهای آن (چپ)
+        // در حالتِ راست‌به‌چپ «R» یعنی ابتدای سطر (راست) و «L» انتهای آن (چپ)؛ نشانه‌ی RLM جلوی جابه‌جاشدنِ عددِ اولِ سطر را می‌گیرد
         $pdf->SetXY($W - ($x + $w), $y);
-        $pdf->Cell($w, $h, $text, 0, 0, $align === 'C' ? 'C' : ($align === 'L' ? 'R' : 'L'), false, '', 0, false, 'T', 'M');
+        $pdf->Cell($w, $h, (preg_match("/[\x{0600}-\x{06EF}\x{06FA}-\x{06FF}]/u", $text) ? "\u{200F}" : "") . $text, 0, 0, $align === 'C' ? 'C' : ($align === 'L' ? 'R' : 'L'), false, '', 0, false, 'T', 'M');
         $pdf->setRTL(false);
     };
     $box = function ($x, $y, $w, $h, $fill, $r = 3, $border = null) use ($pdf, $hex) {
@@ -193,17 +290,17 @@ function ws_receipt_pdf($pdo, $sid, $jy, $jm) {
     $pdf->SetAlpha(1);
     $T(70, 8, 128, 10, 'رسیدِ پرداختِ سرویسِ رفت‌وآمد', 19, 'B', '#ffffff');
     $T(70, 19, 128, 7, 'کارکردِ ' . jalali_month_name($jm) . ' ' . ws_fa($jy) . ' · سرویسِ «' . $svc['name'] . '»', 11, '', '#e0e7ff');
-    $T(70, 27, 128, 6, 'بیمه با ما', 9, 'B', '#a5f3fc');
+    $T(70, 27, 128, 6, ($person !== '' ? 'همکار: ' . $person . ' · ' : '') . 'بیمه با ما', 9, 'B', '#a5f3fc');
     // برچسبِ شماره و تاریخ
     $box(12, 9, 52, 22, '#ffffff', 4);
     $T(14, 11, 48, 6, 'شماره‌ی رسید', 7.5, '', '#64748b', 'C');
-    $T(14, 16.5, 48, 6, ws_fa(sprintf('SV-%d-%04d%02d', $sid, $jy, $jm)), 10, 'B', '#312e81', 'C');
+    $T(14, 16.5, 48, 6, ws_fa(sprintf('SV-%d-%d-%04d%02d', $sid, $uid, $jy, $jm)), 10, 'B', '#312e81', 'C');
     $T(14, 23, 48, 6, 'صدور: ' . ws_fa(wk_g2j(date('Y-m-d'))), 8, '', '#475569', 'C');
 
     // ---- کارت‌های اطلاعات ----
     $y = 46;
     $cards = [
-        ['سرویس', $svc['name'], '#eef2ff', '#4338ca'],
+        ['همکار / سرویس', ($person !== '' ? $person . ' · ' : '') . $svc['name'], '#eef2ff', '#4338ca'],
         ['راننده', $svc['driver'] ?: '—', '#ecfeff', '#0e7490'],
         ['تلفن / خودرو', trim(ws_fa($svc['phone']) . ($svc['car'] ? ' · ' . $svc['car'] : '')) ?: '—', '#f0fdf4', '#15803d'],
         ['نرخِ هر مسیر (ریال)', 'رفت ' . ws_money($svc['price_go']) . ' · برگشت ' . ws_money($svc['price_back']), '#fff7ed', '#c2410c'],
@@ -303,6 +400,6 @@ function ws_receipt_pdf($pdo, $sid, $jy, $jm) {
             $T($x + 4, $y + 2, 85, 6, $lbl . ' — نام و امضا', 8, 'B', '#475569');
         }
     }
-    $T(12, 291, 186, 4, 'این رسید از «کارکرد پرسنل / سرویسِ رفت‌وآمد» در پنلِ بیمه با ما ساخته شده است.', 6.5, '', '#94a3b8', 'C');
+    $T(12, 291, 186, 4, 'این رسید از «گزارش سرویس‌ها / کارکرد من» در پنلِ بیمه با ما ساخته شده است.', 6.5, '', '#94a3b8', 'C');
     return $pdf->Output('', 'S');
 }
