@@ -56,6 +56,7 @@ function perm_catalog() {
             'login-logs' => ['لاگ ورود و خروج', ['view', 'export']],
             'queue' => ['صف پردازش OCR', ['view', 'edit']],
             'settings' => ['تنظیمات سیستم و پشتیبان‌گیری', ['view', 'edit', 'export']],
+            'announcements' => ['اعلان‌های پاپ‌آپ (ارسال برای کاربران)', ['view', 'create', 'edit', 'delete']],
         ]],
         ['اطلاعات پرسنلی', [
             'my-work' => ['کارکرد من و مرخصی', ['view', 'create', 'edit', 'export']],
@@ -261,6 +262,10 @@ function perm_api_map() {
             'save_quota' => 'settings:edit', 'save_site_url' => 'settings:edit', 'save_premium_settings' => 'settings:edit',
         ]],
         'settings' => ['pages' => ['settings'], 'elevate' => true, 'actions' => ['save_token' => 'settings:edit', 'save_company_bot_token' => 'settings:edit']],
+        'announce_actions' => ['pages' => ['announcements'], 'elevate' => false, 'actions' => [
+            'pending' => 'any', 'seen' => 'any', 'ack' => 'any', 'mine' => 'any', 'list' => 'announcements:view', 'reads' => 'announcements:view', 'bday_get' => 'announcements:view',
+            'save' => 'announcements:create|announcements:edit', 'toggle' => 'announcements:edit', 'resend' => 'announcements:edit', 'bday_save' => 'announcements:edit', 'delete' => 'announcements:delete',
+        ]],
         'brand_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => ['get' => 'any', 'upload' => 'settings:edit', 'remove' => 'settings:edit']],
         'backup_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => [
             'list' => 'settings:view', 'download' => 'settings:export', 'create' => 'settings:edit', 'delete' => 'settings:edit',

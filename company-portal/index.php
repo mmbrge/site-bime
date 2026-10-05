@@ -49,8 +49,10 @@ if (!$companies) {
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
-<script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true};</script>
-<script src="../comfort.js?v=1"></script>
+<script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-3xl, body > .modal-overlay > *'};</script>
+<script src="../comfort.js?v=2"></script>
+<script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
+<script src="../announce.js?v=1"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>

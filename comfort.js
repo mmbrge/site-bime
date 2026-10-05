@@ -245,7 +245,14 @@
         const t = (has('theme') && S.prefs.theme) || {};
         const dark = t.mode === 'dark' || (t.mode === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('cf-dark', !!dark);
-        document.body.style.zoom = t.font && t.font !== 100 ? (t.font / 100) : '';
+        // بزرگ/کوچک کردنِ متن فقط روی محتوا (سربرگ، صفحه و پنجره‌ها)؛ نه روی کلِ body، چون نشانگرِ موس و
+        // منوهایی که با مختصاتِ موس جا می‌گیرند (روی body) جابه‌جا می‌شدند
+        document.body.style.zoom = '';
+        let zs = document.getElementById('cf-zoom');
+        if (t.font && t.font !== 100) {
+            if (!zs) { zs = document.createElement('style'); zs.id = 'cf-zoom'; document.head.appendChild(zs); }
+            zs.textContent = `${CFG.zoomTargets || 'body > header, body > main, body > .modal-overlay .modal-content'}{zoom:${t.font / 100}}`;
+        } else if (zs) zs.remove();
         let st = document.getElementById('cf-accent');
         if (t.accent) {
             if (!st) { st = document.createElement('style'); st.id = 'cf-accent'; document.head.appendChild(st); }
@@ -648,11 +655,14 @@
         S.hubTab = tab && tabs.some(t => t[0] === tab) ? tab : (S.hubTab && tabs.some(t => t[0] === S.hubTab) ? S.hubTab : tabs[0][0]);
         const el = S.hubEl = document.createElement('div');
         el.className = 'cf-panel light';
-        el.innerHTML = `<div class="cf-ph"><b><i class="fas fa-wand-magic-sparkles ml-1" style="color:var(--cf-acc,#6366f1)"></i>جعبه‌ابزارِ من</b><button class="cf-x" data-a="close"><i class="fas fa-chevron-down"></i></button></div>
+        el.innerHTML = `<div class="cf-ph"><b><i class="fas fa-wand-magic-sparkles ml-1" style="color:var(--cf-acc,#6366f1)"></i>جعبه‌ابزارِ من</b>
+            ${window.Announce ? '<button class="cf-btn s" style="margin-right:auto;background:#f1f5f9;color:#475569;padding:5px 10px" data-a="ann" title="اعلان‌های اخیر"><i class="fas fa-bullhorn ml-1"></i>اعلان‌ها</button>' : ''}
+            <button class="cf-x" data-a="close" ${window.Announce ? 'style="margin-right:4px"' : ''}><i class="fas fa-chevron-down"></i></button></div>
             <div class="cf-tabs">${tabs.map(([k, ic, t]) => `<button data-t="${k}" class="${S.hubTab === k ? 'on' : ''}"><i class="fas ${ic}"></i>${t}</button>`).join('')}</div>
             <div class="cf-body" data-body></div>`;
         root.appendChild(el);
         el.querySelector('[data-a="close"]').onclick = closePanels;
+        const an = el.querySelector('[data-a="ann"]'); if (an) an.onclick = () => { closePanels(); window.Announce.history(); };
         el.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { S.hubTab = b.dataset.t; el.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); renderHub(); }));
         renderHub();
     }
@@ -1207,11 +1217,13 @@
         root = document.createElement('div');
         root.id = 'cf-root';
         root.className = 'cf-root';
+        if (CFG.bottom) root.style.bottom = CFG.bottom + 'px';
         root.innerHTML = '<div class="cf-dock"></div>';
         document.body.appendChild(root);
         dock = root.querySelector('.cf-dock');
         pops = document.createElement('div');
         pops.className = 'cf-pops';
+        if (CFG.bottom) pops.style.bottom = (CFG.bottom + 70) + 'px';
         document.body.appendChild(pops);
         if (has('music')) {
             disc = document.createElement('button');
