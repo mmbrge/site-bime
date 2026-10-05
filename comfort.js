@@ -99,15 +99,18 @@
     .cf-hubbtn .cf-badge{position:absolute;top:-5px;left:-5px;min-width:18px;height:18px;border-radius:9px;background:#f43f5e;color:#fff;font-size:10px;font-weight:900;display:none;align-items:center;justify-content:center;padding:0 4px}
     .cf-hubbtn .cf-pomo{position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;font-size:9.5px;font-weight:900;border-radius:8px;padding:1px 5px;white-space:nowrap;display:none}
     .cf-hubbtn .cf-sdot{position:absolute;bottom:-3px;right:-3px;font-size:12px;line-height:1}
-    .cf-panel{position:absolute;left:0;bottom:66px;width:min(350px,calc(100vw - 28px));max-height:min(78vh,640px);display:flex;flex-direction:column;border-radius:24px;overflow:hidden;
+    .cf-panel{position:absolute;left:68px;bottom:0;width:min(350px,calc(100vw - 96px));max-height:min(78vh,640px);display:flex;flex-direction:column;border-radius:24px;overflow:hidden;
         background:rgba(15,23,42,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);color:#e2e8f0;border:1px solid rgba(255,255,255,.08);
         box-shadow:0 30px 60px -20px rgba(2,6,23,.65);transform-origin:bottom left;animation:cfIn .22s cubic-bezier(.2,.9,.3,1.2)}
     .cf-panel.light{background:rgba(255,255,255,.97);color:#0f172a;border-color:#e2e8f0}
     @keyframes cfIn{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:none}}
+    .cf-panel.cf-out{animation:cfOut .2s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
+    @keyframes cfOut{from{opacity:1;transform:none}to{opacity:0;transform:scale(.9) translateY(14px)}}
     .cf-hidden{display:none!important}
     .cf-ph{display:flex;align-items:center;gap:6px;padding:12px 14px 6px}
     .cf-ph b{font-size:12.5px;font-weight:900}
-    .cf-x{margin-right:auto;width:28px;height:28px;border-radius:10px;border:0;background:rgba(255,255,255,.08);color:inherit;cursor:pointer}
+    .cf-x{margin-right:auto;width:28px;height:28px;border-radius:10px;border:0;background:rgba(255,255,255,.08);color:inherit;cursor:pointer;transition:background .15s,color .15s,transform .15s}
+    .cf-x:hover{background:#f43f5e;color:#fff;transform:rotate(90deg)}
     .cf-panel.light .cf-x{background:#f1f5f9}
     .cf-seg{display:inline-flex;gap:2px;background:rgba(255,255,255,.07);border-radius:11px;padding:3px}
     .cf-panel.light .cf-seg{background:#f1f5f9}
@@ -227,7 +230,7 @@
     .cf-cpick .it small{display:block;font-size:10.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     html.cf-dark{filter:invert(.9) hue-rotate(180deg);background:#fff}
     html.cf-dark img,html.cf-dark video,html.cf-dark canvas,html.cf-dark iframe,html.cf-dark .plate,html.cf-dark .ir-plate,html.cf-dark #cf-root,html.cf-dark .cf-pops,html.cf-dark .cf-bday,html.cf-dark [data-cf-noinv]{filter:invert(1) hue-rotate(180deg)}
-    @media (max-width:640px){.cf-root{left:10px;bottom:10px}.cf-disc{width:46px;height:46px}.cf-hubbtn{width:40px;height:40px;border-radius:13px}.cf-panel{bottom:58px;max-height:72vh}.cf-pops{left:10px;bottom:72px}}
+    @media (max-width:640px){.cf-root{left:10px;bottom:10px}.cf-disc{width:46px;height:46px}.cf-hubbtn{width:40px;height:40px;border-radius:13px}.cf-panel{left:0;bottom:106px;width:calc(100vw - 20px);max-height:68vh}.cf-pops{left:10px;bottom:72px}}
     `;
     function injectCss() { if (document.getElementById('cf-css')) return; const st = document.createElement('style'); st.id = 'cf-css'; st.textContent = CSS; document.head.appendChild(st); }
 
@@ -396,7 +399,7 @@
     }
     function openPlayer() {
         if (S.open === 'player') return closePanels();
-        closePanels();
+        closePanels(true);
         S.open = 'player';
         const m = mp();
         const el = P.panel = document.createElement('div');
@@ -405,7 +408,7 @@
             <div class="cf-ph"><b><i class="fas fa-compact-disc ml-1"></i>موسیقیِ من</b>
                 <div class="cf-seg" data-src>${[['both', 'همه'], ['panel', 'پنل'], ['mine', 'خودم']].map(([k, t]) => `<button data-v="${k}" class="${m.source === k ? 'on' : ''}">${t}</button>`).join('')}</div>
                 <button class="cf-ib ${m.focus ? 'on' : ''}" data-a="focus" title="حالتِ تمرکز: فقط بی‌کلام و آرام"><i class="fas fa-headphones"></i></button>
-                <button class="cf-x" data-a="close" title="جمع کن"><i class="fas fa-chevron-down"></i></button></div>
+                <button class="cf-x" data-a="close" title="بستن (Esc)"><i class="fas fa-xmark"></i></button></div>
             <div class="cf-chips" data-genres></div>
             <div class="cf-now" data-now></div>
             <div class="cf-seek"><input type="range" class="cf-range" min="0" max="1000" value="0" data-seek><div class="cf-times" data-times></div></div>
@@ -853,7 +856,7 @@
     const hubTabs = () => HUB_TABS.filter(([k]) => k === 'status' ? (has('status') || has('dnd')) : k === 'keys' ? (has('search') || has('music')) : k === 'theme' ? (has('theme') || has('birthdays') || has('todo') || has('health')) : has(k));
     function openHub(tab) {
         if (S.open === 'hub' && (!tab || tab === S.hubTab)) return closePanels();
-        closePanels();
+        closePanels(true);
         const tabs = hubTabs();
         if (!tabs.length) return;
         S.open = 'hub';
@@ -862,7 +865,7 @@
         el.className = 'cf-panel light';
         el.innerHTML = `<div class="cf-ph"><b><i class="fas fa-wand-magic-sparkles ml-1" style="color:var(--cf-acc,#6366f1)"></i>جعبه‌ابزارِ من</b>
             ${window.Announce ? '<button class="cf-btn s" style="margin-right:auto;background:#f1f5f9;color:#475569;padding:5px 10px" data-a="ann" title="اعلان‌های اخیر"><i class="fas fa-bullhorn ml-1"></i>اعلان‌ها</button>' : ''}
-            <button class="cf-x" data-a="close" ${window.Announce ? 'style="margin-right:4px"' : ''}><i class="fas fa-chevron-down"></i></button></div>
+            <button class="cf-x" data-a="close" title="بستن (Esc)" ${window.Announce ? 'style="margin-right:4px"' : ''}><i class="fas fa-xmark"></i></button></div>
             <div class="cf-tabs">${tabs.map(([k, ic, t]) => `<button data-t="${k}" class="${S.hubTab === k ? 'on' : ''}"><i class="fas ${ic}"></i>${t}</button>`).join('')}</div>
             <div class="cf-body" data-body></div>`;
         root.appendChild(el);
@@ -876,9 +879,15 @@
         if (!b) return;
         ({todo: hubTodo, health: hubHealth, status: hubStatus, canned: hubCanned, tools: hubTools, theme: hubTheme, keys: hubKeys})[S.hubTab](b);
     }
-    function closePanels() {
-        if (P.panel) { P.panel.remove(); P.panel = null; }
-        if (S.hubEl) { S.hubEl.remove(); S.hubEl = null; }
+    // بستن با انیمیشن (instant: وقتی پنلِ دیگری جایش باز می‌شود)
+    function closePanels(instant) {
+        [P.panel, S.hubEl].forEach(el => {
+            if (!el) return;
+            if (instant === true) { el.remove(); return; }
+            el.classList.add('cf-out');
+            setTimeout(() => el.remove(), 210);
+        });
+        P.panel = null; S.hubEl = null;
         S.open = null;
     }
     // ---- کارها ----
@@ -1451,9 +1460,9 @@
             dock.appendChild(hubBtn);
         }
         document.addEventListener('mousedown', e => {
-            if (!S.open || root.contains(e.target) || e.target.closest('.cf-cpick,.cf-modal,.cf-pal')) return;
-            // کلیکِ بیرون فقط جعبه‌ابزار را می‌بندد؛ پخش‌کننده باز می‌ماند تا مزاحمِ کار نباشد و با دکمه بسته شود
-            if (S.open === 'hub') closePanels();
+            // کلیکِ بیرونِ پنل (پخش‌کننده یا جعبه‌ابزار) می‌بنددش؛ دکمه‌های گوشه (root) خودشان باز/بسته می‌کنند
+            if (!S.open || root.contains(e.target) || e.target.closest('.cf-cpick,.cf-modal,.cf-pal,.cf-pops,#cf-up-pill')) return;
+            closePanels();
         });
     }
     async function boot() {

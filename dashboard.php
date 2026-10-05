@@ -3786,7 +3786,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="comfort.js?v=3"></script>
+    <script src="comfort.js?v=4"></script>
     <script src="announce.js?v=1"></script>
     <script src="announce-admin.js?v=1"></script>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=2"></script><?php endif; ?>
