@@ -2615,7 +2615,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="footer-credit mt-auto">
             <div class="footer-box group/author hover-target relative">
                 <span>طراحی و توسعه سیستم :</span>
-                <span class="text-blue-600 font-black mr-1 relative inline-block cursor-none">گروه توسعه بـــرگه</span>
+                <span class="text-blue-600 font-black mr-1 relative inline-block cursor-none">گروه توسعه بهیکس</span>
                 <span class="text-slate-400 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
             </div>
             <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.3.0</span></p>
@@ -3831,7 +3831,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="net-watch.js?v=3"></script>
+    <script src="net-watch.js?v=4"></script>
     <script src="cursor-fx.js?v=1" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=10"></script>

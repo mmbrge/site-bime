@@ -8,6 +8,9 @@ $username = 'besiteir_dbmu';
 // آن را در فایل config/db.local.php (که در .gitignore قرار دارد) تعریف کنید،
 // یا با متغیر محیطی DB_PASSWORD روی سرور ست کنید.
 // نمونه: config/db.example.php را کپی کرده و به db.local.php تغییر نام دهید.
+// صفحه‌های خطای اختصاصی (errors/*.html) برای خطای دیتابیس و خطاهای مرگبارِ PHP
+require_once dirname(__DIR__) . '/api/_errors.php';
+
 $localConfigFile = __DIR__ . '/db.local.php';
 if (file_exists($localConfigFile)) {
     require $localConfigFile; // باید $password را مقداردهی کند
@@ -16,7 +19,9 @@ if (file_exists($localConfigFile)) {
 }
 
 if ($password === '') {
-    die('❌ رمز دیتابیس تنظیم نشده. فایل config/db.local.php را بر اساس config/db.example.php بسازید.');
+    error_log('DB password not configured (config/db.local.php)');
+    site_error_page(500, 'تنظیماتِ دیتابیس کامل نیست (config/db.local.php).');
+    exit;
 }
 
 // همه‌ی ساعت‌های سایت (ثبت و نمایش) به وقتِ ایران و بر اساسِ ساعتِ سرور: PHP و MySQL هر دو روی ایران
@@ -36,7 +41,8 @@ try {
 } catch (PDOException $e) {
     // جزئیات خطا فقط در لاگ سرور ثبت می‌شود، نه در خروجی عمومی
     error_log('DB connection failed: ' . $e->getMessage());
-    die('❌ خطا در اتصال به دیتابیس.');
+    site_error_page(503, 'ارتباط با دیتابیس برقرار نیست؛ چند لحظه بعد دوباره امتحان کنید.');
+    exit;
 }
 
 // نقشِ «کاربر پارسیان» فقط به ماژولِ گزارش بازدید دسترسی دارد: هر API یا صفحه‌ی پنل که نشستش را

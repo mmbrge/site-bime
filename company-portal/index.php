@@ -51,7 +51,7 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-3xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
-<script src="../net-watch.js?v=3"></script>
+<script src="../net-watch.js?v=4"></script>
 <script src="../cursor-fx.js?v=1" defer></script>
 <script src="../tools.js?v=2"></script>
 <script src="../comfort.js?v=10"></script>

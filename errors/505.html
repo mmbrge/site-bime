@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><meta name="theme-color" content="#0b1023">
+<title>۵۰۵ · نسخه‌ی پروتکل پشتیبانی نمی‌شود | بیمه با ما</title>
+<style>
+@font-face{font-family:Vazir;src:url('/Font/Vazir-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:Vazir;src:url('/Font/Vazir-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:Vazir;src:url('/Font/Vazir-Black.woff2') format('woff2');font-weight:900;font-display:swap}
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--a:#6366f1;--b:#06b6d4;--bg1:#0b1023;--bg2:#111a3a}
+html,body{height:100%}
+body{font-family:Vazir,Tahoma,sans-serif;direction:rtl;color:#e2e8f0;background:radial-gradient(1200px 700px at 80% -10%,color-mix(in srgb,var(--a) 35%,transparent),transparent 60%),radial-gradient(900px 600px at -10% 110%,color-mix(in srgb,var(--b) 30%,transparent),transparent 60%),linear-gradient(160deg,var(--bg1),var(--bg2));
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px 16px;overflow-x:hidden;position:relative}
+.blob{position:fixed;border-radius:50%;filter:blur(60px);opacity:.35;pointer-events:none;animation:drift 18s ease-in-out infinite alternate}
+.blob.b1{width:340px;height:340px;background:var(--a);top:-80px;left:-60px}
+.blob.b2{width:280px;height:280px;background:var(--b);bottom:-90px;right:-40px;animation-delay:-6s}
+.blob.b3{width:180px;height:180px;background:#f472b6;top:40%;right:12%;opacity:.18;animation-delay:-11s}
+@keyframes drift{to{transform:translate(60px,40px) scale(1.15)}}
+.stars{position:fixed;inset:0;pointer-events:none;background-image:radial-gradient(1.5px 1.5px at 20% 30%,#fff8,transparent),radial-gradient(1px 1px at 70% 20%,#fff6,transparent),radial-gradient(1.5px 1.5px at 40% 80%,#fff5,transparent),radial-gradient(1px 1px at 85% 65%,#fff7,transparent),radial-gradient(1px 1px at 10% 70%,#fff5,transparent),radial-gradient(1.2px 1.2px at 55% 50%,#fff4,transparent);animation:tw 5s ease-in-out infinite alternate}
+@keyframes tw{to{opacity:.4}}
+.card{position:relative;width:min(560px,100%);background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.18);border-radius:28px;padding:34px 28px 24px;text-align:center;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 30px 80px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);animation:rise .8s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes rise{from{opacity:0;transform:translateY(30px) scale(.96)}}
+.art{width:170px;height:150px;margin:-6px auto 4px;display:block;overflow:visible}
+.code{font-weight:900;font-size:clamp(64px,17vw,104px);line-height:1;letter-spacing:2px;background:linear-gradient(120deg,var(--a),var(--b),var(--a));background-size:200% auto;
+  -webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 4s linear infinite, float 3.5s ease-in-out infinite;display:inline-block;filter:drop-shadow(0 10px 25px color-mix(in srgb,var(--a) 45%,transparent))}
+@keyframes shine{to{background-position:200% center}}
+@keyframes float{50%{transform:translateY(-6px)}}
+h1{font-size:21px;font-weight:900;margin:10px 0 8px;color:#f8fafc}
+p.d{font-size:13.5px;line-height:2;color:#cbd5e1;max-width:440px;margin:0 auto}
+.hint{margin:14px auto 0;max-width:440px;font-size:12px;color:#94a3b8;background:rgba(148,163,184,.08);border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:9px 12px;line-height:1.9}
+.btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px}
+.btn{font-family:inherit;font-weight:800;font-size:13px;border:0;border-radius:14px;padding:11px 18px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:transform .15s,box-shadow .2s}
+.btn:hover{transform:translateY(-2px)}.btn:active{transform:scale(.97)}
+.btn.p{color:#fff;background:linear-gradient(135deg,var(--a),var(--b));box-shadow:0 12px 26px -12px var(--a)}
+.btn.s{color:#e2e8f0;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22)}
+.retry{display:none;align-items:center;justify-content:center;gap:10px;margin-top:16px;font-size:12px;color:#94a3b8}
+.retry.on{display:flex}
+.ring{width:34px;height:34px;transform:rotate(-90deg)}.ring circle{fill:none;stroke-width:3.5}.ring .bg{stroke:rgba(148,163,184,.2)}.ring .fg{stroke:var(--b);stroke-linecap:round;transition:stroke-dashoffset 1s linear}
+.meta{margin-top:18px;font-size:10.5px;color:#64748b;direction:rtl}
+.meta span{direction:ltr;unicode-bidi:isolate}
+.foot{margin-top:14px;padding-top:12px;border-top:1px solid rgba(148,163,184,.12);font-size:11px;color:#94a3b8}
+.foot b{color:#a5b4fc}
+svg .spin{transform-box:fill-box;transform-origin:center;animation:spin 6s linear infinite}
+svg .spinr{transform-box:fill-box;transform-origin:center;animation:spin 6s linear infinite reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
+svg .bob{animation:bob 2.6s ease-in-out infinite}@keyframes bob{50%{transform:translateY(-7px)}}
+svg .shake{transform-box:fill-box;transform-origin:50% 0%;animation:shake 2.4s ease-in-out infinite}@keyframes shake{0%,60%,100%{transform:rotate(0)}65%{transform:rotate(-9deg)}72%{transform:rotate(8deg)}79%{transform:rotate(-6deg)}86%{transform:rotate(4deg)}}
+svg .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.12);opacity:.6}}
+svg .blink{animation:blink 1.2s steps(1) infinite}@keyframes blink{50%{opacity:.15}}
+svg .scan{animation:scan 4s ease-in-out infinite}@keyframes scan{0%,100%{transform:translate(-22px,6px)}25%{transform:translate(18px,-10px)}50%{transform:translate(26px,12px)}75%{transform:translate(-10px,16px)}}
+svg .swing{transform-box:fill-box;transform-origin:50% 0%;animation:swing 3s ease-in-out infinite}@keyframes swing{50%{transform:rotate(14deg)}0%,100%{transform:rotate(-14deg)}}
+svg .flip{transform-box:fill-box;transform-origin:center;animation:flip 4s cubic-bezier(.7,0,.3,1) infinite}@keyframes flip{0%,40%{transform:rotate(0)}50%,90%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
+svg .sand{animation:sand 4s linear infinite}@keyframes sand{0%{opacity:1}40%{opacity:1}45%,95%{opacity:0}100%{opacity:1}}
+svg .drop{animation:drop 1s linear infinite}@keyframes drop{from{transform:translateY(-6px);opacity:1}to{transform:translateY(10px);opacity:0}}
+svg .needle{transform-box:view-box;transform-origin:85px 105px;animation:needle 2.2s cubic-bezier(.5,0,.3,1.4) infinite alternate}@keyframes needle{from{transform:rotate(-70deg)}to{transform:rotate(68deg)}}
+svg .spark{animation:spark .9s steps(2) infinite}@keyframes spark{50%{opacity:0}}
+svg .wave{animation:wave 2.4s ease-in-out infinite}svg .wave.w2{animation-delay:.3s}svg .wave.w3{animation-delay:.6s}@keyframes wave{0%,100%{opacity:.15}40%{opacity:1}}
+svg .bounce{animation:bnc 1.4s cubic-bezier(.3,1.6,.5,1) infinite}@keyframes bnc{50%{transform:translateY(-12px)}}
+svg .xch{animation:xch 2.4s ease-in-out infinite}svg .xch2{animation:xch2 2.4s ease-in-out infinite}@keyframes xch{50%{transform:translateX(-14px)}}@keyframes xch2{50%{transform:translateX(14px)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+@media (max-width:420px){.card{padding:26px 18px 18px;border-radius:22px}h1{font-size:18px}}
+:root{--a:#14b8a6;--b:#6366f1}</style></head>
+<body>
+<div class="stars"></div><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+<main class="card" role="main">
+  <svg class="art" viewBox="0 0 170 150" aria-hidden="true"><g class="xch"><rect x="24" y="40" width="62" height="36" rx="10" fill="var(--a)"/><text x="55" y="65" text-anchor="middle" font-size="17" font-weight="900" fill="#fff" font-family="Tahoma">HTTP/2</text></g>
+  <g class="xch2"><rect x="84" y="88" width="62" height="36" rx="10" fill="var(--b)"/><text x="115" y="112" text-anchor="middle" font-size="17" font-weight="900" fill="#0f172a" font-family="Tahoma">HTTP/?</text></g>
+  <path d="M100 52c22 0 30 12 30 28" fill="none" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5 5" class="blink"/><path d="M70 112c-22 0-30-12-30-28" fill="none" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5 5" class="blink"/></svg>
+  <div class="code">۵۰۵</div>
+  <h1>نسخه‌ی پروتکل پشتیبانی نمی‌شود</h1>
+  <p class="d">مرورگر با نسخه‌ای از HTTP درخواست داد که سرور آن را نمی‌شناسد.</p>
+  <div class="hint">مرورگر را به‌روز کنید یا با مرورگرِ دیگری امتحان کنید؛ اگر از پروکسی/فیلترشکن استفاده می‌کنید، یک‌بار خاموشش کنید.</div>
+  <div class="btns">
+    <button class="btn p" type="button" onclick="location.reload()">↻ تلاشِ دوباره</button>
+    <a class="btn s" href="/dashboard.php">⌂ صفحه‌ی اصلی</a>
+    <button class="btn s" type="button" onclick="history.length>1?history.back():location.href='/'">→ بازگشت</button>
+  </div>
+  <div class="retry" id="retry"><svg class="ring" viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15"/><circle class="fg" id="rg" cx="18" cy="18" r="15" stroke-dasharray="94.25" stroke-dashoffset="0"/></svg>
+    <span>تلاشِ خودکار تا <b id="rs"></b> ثانیه‌ی دیگر</span></div>
+  <div class="meta">کدِ خطا ۵۰۵ · <span id="path"></span> · <span id="when"></span></div>
+  <div class="foot">طراحی و توسعه سیستم: <b>گروه توسعه بهیکس</b> <span style="font-family:Arial,sans-serif">(MMBehzadi)</span></div>
+</main>
+<script>
+(function(){
+  var fa=function(s){return String(s).replace(/\d/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'[d]})};
+  try{document.getElementById('path').textContent=decodeURI(location.pathname).slice(0,60)}catch(e){}
+  try{document.getElementById('when').textContent=fa(new Intl.DateTimeFormat('fa-IR-u-ca-persian',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Tehran'}).format(new Date()))}catch(e){}
+  var T=0;
+  if(T>0){var el=document.getElementById('retry'),rs=document.getElementById('rs'),rg=document.getElementById('rg'),n=T;el.classList.add('on');
+    var tick=function(){rs.textContent=fa(n);rg.style.strokeDashoffset=String(94.25*(1-n/T));if(n<=0){location.reload();return}n--;setTimeout(tick,1000)};tick();}
+})();
+</script>
+</body></html>

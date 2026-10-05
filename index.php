@@ -510,7 +510,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="footer-box group/author hover-target">
             <span>طراحی و اجرا :</span>
             <span class="text-brand-accent font-black mr-1 relative inline-block cursor-none">
-                گروه توسعه بـــرگه
+                گروه توسعه بهیکس
             </span>
             <span class="text-gray-300 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
         </div>
