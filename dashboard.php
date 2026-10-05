@@ -3330,6 +3330,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div class="flex-1 overflow-y-auto px-6 py-4 no-count" id="pm-body"></div>
             <div id="pm-comfort"></div>
+            <div id="pm-svc"></div>
             <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
                 <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
                 <input type="password" id="pm-admin-pass" placeholder="رمزِ خودتان برای تایید" class="border border-slate-200 rounded-xl px-3 py-2 text-xs w-48" autocomplete="new-password">
@@ -3803,7 +3804,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=5"></script>
+    <script src="work-log.js?v=6"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -5305,10 +5306,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const J_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
         function jMonthOptions(sel, firstLabel = 'همه‌ی ماه‌ها') {
             if (!sel || sel.dataset.filled) return;
+            // نامِ ماه‌ها همین‌جا (این تابع ممکن است پیش از تعریفِ J_MONTHS در اسکریپت صدا زده شود)
+            const MN = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
             const now = window.IrTime ? IrTime.parts() : {jy: 1405, jm: 1};
             let y = now.jy, m = now.jm, html = `<option value="">${firstLabel}</option>`;
             for (let i = 0; i < 24; i++) {
-                html += `<option value="${y}/${String(m).padStart(2, '0')}">${J_MONTHS[m - 1]} ${e2p(String(y))}</option>`;
+                html += `<option value="${y}/${String(m).padStart(2, '0')}">${MN[m - 1]} ${e2p(String(y))}</option>`;
                 if (--m < 1) { m = 12; y--; }
             }
             sel.innerHTML = html; sel.dataset.filled = '1';
@@ -8195,6 +8198,30 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             pmSetMode(PM.mode, true);   // true: دسترسی‌های ذخیره‌شده را از جدولِ قبلیِ صفحه بازنویسی نکن
             openModal('perm-modal');
             if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
+            pmSvcLoad(d.user.id);   // دسترسی به سرویسِ رفت‌وآمد
+        }
+        // دسترسی به سرویسِ رفت‌وآمد: بدونِ آن، بخشِ سرویس در «کارکرد من» و پنجره‌ی ثبتِ روز دیده نمی‌شود
+        let PM_SVC = null;
+        async function pmSvcLoad(uid) {
+            const box = document.getElementById('pm-svc');
+            box.innerHTML = ''; PM_SVC = null;
+            try {
+                const r = await (await fetch('api/work_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'svc_access_get', target_id: uid})})).json();
+                if (!r.ok || !r.can_set) return;
+                PM_SVC = {uid, initial: !!r.allowed};
+                box.innerHTML = `<label class="flex items-center gap-3 px-6 py-3 border-t border-slate-100 bg-gradient-to-l from-sky-50/60 to-white cursor-pointer select-none">
+                    <input type="checkbox" id="pm-svc-on" class="w-4 h-4 accent-sky-600" ${r.allowed ? 'checked' : ''}>
+                    <span class="text-[12px] font-black text-slate-700"><i class="fas fa-van-shuttle text-sky-600 ml-1"></i>دسترسی به سرویسِ رفت‌وآمد</span>
+                    <span class="text-[10.5px] text-slate-400">بدونِ آن، بخشِ سرویس در «کارکرد من» و ثبتِ روز برایش نمایش داده نمی‌شود.</span></label>`;
+            } catch (e) {}
+        }
+        async function pmSvcSave() {
+            const c = document.getElementById('pm-svc-on');
+            if (!PM_SVC || !c || c.checked === PM_SVC.initial) return;
+            try {
+                const r = await (await fetch('api/work_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'svc_access_set', target_id: PM_SVC.uid, allowed: c.checked ? 1 : 0})})).json();
+                if (!r.ok) showToast(r.error || 'خطا در ذخیره‌ی دسترسیِ سرویس', 'error');
+            } catch (e) {}
         }
         function pmSetMode(m, fresh) {
             if (!PM) return;
@@ -8286,6 +8313,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const d = await res.json();
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
             if (window.CFAdmin) await CFAdmin.permSave();
+            await pmSvcSave();
             showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
             closeModal('perm-modal');
             loadStaffUsers();

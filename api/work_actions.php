@@ -72,7 +72,8 @@ try {
         $days = wk_days($pdo, $uid, $from, $to);
         // سرویسِ رفت‌وآمدِ هر روز (برای نشانِ تقویم)
         require_once __DIR__ . '/_work_service.php';
-        $svcRows = ws_user_days($pdo, $uid, $from, $to);
+        $svcOn = ws_can($pdo, $uid);
+        $svcRows = $svcOn ? ws_user_days($pdo, $uid, $from, $to) : [];
         foreach ($days as $g => &$D) { $D['svc_go'] = isset($svcRows[$g]) ? intval($svcRows[$g]['go_service_id']) : 0; $D['svc_back'] = isset($svcRows[$g]) ? intval($svcRows[$g]['back_service_id']) : 0; }
         unset($D);
         $st = $pdo->prepare("SELECT * FROM work_leaves WHERE user_id = ? AND date_to >= ? AND date_from <= ? ORDER BY date_from DESC, id DESC");
@@ -82,7 +83,7 @@ try {
         wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'days' => array_values($days), 'summary' => wk_summary($pdo, $days),
               'balance' => wk_balance($pdo, $uid, $jy, $jm), 'balance_now' => wk_balance($pdo, $uid), 'leaves' => $leaves, 'settings' => wk_settings($pdo),
               'user' => $u ? ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']] : null, 'is_me' => $uid === $me,
-              'is_manager' => $isManager, 'can_manage' => $canManage, 'today' => wk_g2j(wk_today())]);
+              'is_manager' => $isManager, 'can_manage' => $canManage, 'today' => wk_g2j(wk_today()), 'svc_enabled' => $svcOn]);
     }
 
     // ---- یک روز: داده‌ی ثبت‌شده + خطِ زمانیِ کارها ----
@@ -91,6 +92,7 @@ try {
         $d = wk_days($pdo, $uid, $g, $g)[$g];
         // سرویسِ رفت‌وآمدِ همین روز + سرویس‌هایی که این نفر می‌تواند انتخاب کند
         require_once __DIR__ . '/_work_service.php';
+        if (!ws_can($pdo, $uid)) wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g), 'svc_enabled' => false, 'svc_services' => []]);
         $sr = ws_user_days($pdo, $uid, $g, $g)[$g] ?? null;
         $allowed = ws_allowed($pdo, $uid);
         $svcList = [];
@@ -99,7 +101,7 @@ try {
         wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g),
               'svc' => ['go' => $sr ? intval($sr['go_service_id']) : 0, 'back' => $sr ? intval($sr['back_service_id']) : 0,
                         'amount_go' => $sr ? intval($sr['amount_go']) : 0, 'amount_back' => $sr ? intval($sr['amount_back']) : 0],
-              'svc_services' => array_values($svcList), 'svc_default' => ws_default_for($pdo, $uid, $allowed)]);
+              'svc_services' => array_values($svcList), 'svc_default' => ws_default_for($pdo, $uid, $allowed), 'svc_enabled' => true]);
     }
 
     if ($action === 'save_day') {
@@ -120,8 +122,8 @@ try {
             if (count($tasks) >= 60) break;
         }
         // سرویسِ رفت‌وآمدِ همین روز (اگر فرستاده شده)؛ اول این ذخیره می‌شود تا اگر سرویس مجاز نبود چیزی نیمه‌کاره نماند
-        if (isset($data['svc']) && is_array($data['svc'])) {
-            require_once __DIR__ . '/_work_service.php';
+        require_once __DIR__ . '/_work_service.php';
+        if (isset($data['svc']) && is_array($data['svc']) && ws_can($pdo, $uid)) {
             try { ws_days_save($pdo, $uid, [['date' => $g, 'go' => intval($data['svc']['go'] ?? 0), 'back' => intval($data['svc']['back'] ?? 0)]], $me); }
             catch (RuntimeException $e) { wout(['ok' => false, 'error' => $e->getMessage()]); }
         }
@@ -290,7 +292,23 @@ try {
             if (in_array($action, $writes, true) && !$svcEdit) wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ سرویسِ دیگران را ندارید.']);
         }
         if (in_array($action, ['svc_save', 'svc_delete'], true) && !$isAdmin) wout(['ok' => false, 'error' => 'تعریف و اختصاصِ سرویس فقط کارِ مدیر کل است.']);
-        if (in_array($action, ['svc_list', 'svc_overview', 'svc_service_receipt'], true) && !$svcView) wout(['ok' => false, 'error' => 'به «گزارش سرویس‌ها» دسترسی ندارید.']);
+        if (in_array($action, ['svc_list', 'svc_overview', 'svc_service_receipt', 'svc_access_set', 'svc_access_get'], true) && !$svcView) wout(['ok' => false, 'error' => 'به «گزارش سرویس‌ها» دسترسی ندارید.']);
+        // سرویسِ خودم فقط اگر مدیر دسترسی داده باشد
+        if ($uid === $me && !$svcView && in_array($action, ['svc_month', 'svc_days_save', 'svc_pay_save', 'svc_pay_delete', 'svc_receipt'], true) && !ws_can($pdo, $me))
+            wout(['ok' => false, 'no_access' => true, 'error' => 'به سرویسِ رفت‌وآمد دسترسی ندارید.']);
+        // روشن/خاموش کردنِ دسترسیِ یک نفر به سرویس (مدیر کل)
+        if ($action === 'svc_access_get') {
+            $tid = intval($data['target_id'] ?? 0);
+            $u = wk_user($pdo, $tid);
+            wout(['ok' => true, 'allowed' => $u ? ws_can($pdo, $tid) : false, 'is_admin_user' => $u && $u['role'] === 'ADMIN', 'can_set' => $isAdmin]);
+        }
+        if ($action === 'svc_access_set') {
+            if (!$isAdmin) wout(['ok' => false, 'error' => 'دسترسی به سرویس را فقط مدیر کل تعیین می‌کند.']);
+            $tid = intval($data['target_id'] ?? 0);
+            if (!$tid || !wk_user($pdo, $tid)) wout(['ok' => false, 'error' => 'کاربر پیدا نشد.']);
+            ws_access_set($pdo, $tid, !empty($data['allowed']), $me);
+            wout(['ok' => true, 'access' => ws_access_map($pdo)]);
+        }
         $money = function ($v) { return max(0, intval(money_to_int(p2e_digits((string)$v)))); };
         $staff = function () use ($pdo) {
             return $pdo->query("SELECT id, full_name, role FROM users" . (auth_schema_ready($pdo) ? " WHERE COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll();
@@ -306,8 +324,10 @@ try {
             wout($monthOut($uid, $jy, $jm));
         }
         if ($action === 'svc_list') {
+            $acc = ws_access_map($pdo);
             wout(['ok' => true, 'services' => ws_services($pdo), 'is_admin' => $isAdmin, 'can_edit' => $svcEdit,
-                  'users' => array_map(function ($u) { return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']]; }, $staff())]);
+                  'users' => array_map(function ($u) use ($acc) { return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role'],
+                                                                         'allowed' => $u['role'] === 'ADMIN' || !empty($acc[intval($u['id'])])]; }, $staff())]);
         }
         if ($action === 'svc_overview') {
             [$jy, $jm] = wk_month_args($data);
@@ -333,6 +353,8 @@ try {
                 $id = intval($pdo->lastInsertId());
             }
             if ($vals[6]) $pdo->prepare("UPDATE work_services SET is_default = 0 WHERE id <> ?")->execute([$id]);
+            // اختصاصِ سرویس به کسی یعنی او به سرویس دسترسی دارد
+            foreach (array_filter(array_map('intval', explode(',', (string)$users))) as $au) if (!ws_can($pdo, $au)) ws_access_set($pdo, $au, true, $me);
             wout(['ok' => true, 'id' => $id, 'services' => ws_services($pdo)]);
         }
         if ($action === 'svc_delete') {

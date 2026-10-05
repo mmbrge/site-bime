@@ -228,7 +228,7 @@
                 </div>
                 <div class="wk-card" data-box="day"></div>
               </div>
-              ${S.staff ? '' : `<div class="wk-card" style="background:linear-gradient(180deg,#f5f7ff,#fff 140px)">
+              ${S.staff || !d.svc_enabled ? '' : `<div class="wk-card" style="background:linear-gradient(180deg,#f5f7ff,#fff 140px)">
                 <div class="flex flex-wrap items-center gap-2 mb-3"><h3><i class="fas fa-van-shuttle text-indigo-600"></i>سرویسِ رفت‌وآمد · ${MONTHS[S.jm - 1]} ${fa(S.jy)}</h3>
                   <p class="text-[10.5px] text-slate-500">برای هر روز بزنید با سرویس رفتید، برگشتید یا هر دو (از پنلِ روز هم می‌شود ثبت کرد)؛ آخرِ ماه جمع و رسیدِ PDF دارید.</p></div>
                 <div data-box="svc"></div></div>`}
@@ -754,6 +754,12 @@
     .sv-tg.go.on{background:#0284c7;border:1px solid #0284c7;color:#fff} .sv-tg.back.on{background:#7c3aed;border:1px solid #7c3aed;color:#fff}
     .sv-tg.alt{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.18) 0 6px,transparent 6px 12px)}
     .sv-day .a{font-size:10px;font-weight:900;color:#0f766e;text-align:center} .sv-day .s{font-size:9px;color:#7c3aed;font-weight:800;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sv-acc{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:10.5px;font-weight:900;color:#94a3b8;user-select:none}
+    .sv-acc input{display:none}
+    .sv-acc i{position:relative;width:32px;height:18px;border-radius:99px;background:#e2e8f0;transition:background .2s;flex:none}
+    .sv-acc i::after{content:'';position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:right .2s}
+    .sv-acc.on{color:#059669} .sv-acc.on i{background:linear-gradient(90deg,#10b981,#0d9488)} .sv-acc.on i::after{right:16px}
+    .sv-acc.lock{opacity:.6;cursor:default}
     .sv-svc{display:flex;align-items:center;gap:10px;border:1px solid #e2e8f0;border-radius:16px;padding:9px 12px;background:#fff;min-width:230px}
     .sv-svc.def{border-color:#a5b4fc;background:linear-gradient(120deg,#eef2ff,#fff)} .sv-svc.inactive{opacity:.55}
     .sv-svc .av{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#4f46e5,#0891b2);color:#fff;font-size:15px;flex:none}
@@ -881,7 +887,7 @@
                   <div class="flex flex-wrap items-center gap-2 mb-2"><h3><i class="fas fa-users text-indigo-600"></i>همکاران</h3>
                     <input class="wk-in mr-auto" style="width:200px" data-f="q" placeholder="جستجوی نام…" value="${esc(S.q)}">
                     <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600"><input type="checkbox" class="accent-indigo-600" data-f="used" ${S.onlyUsed ? 'checked' : ''}>فقط کسانی که سرویس داشته‌اند</label></div>
-                  <table class="wk-tbl min-w-[860px]"><thead><tr><th>نام</th><th>روزها</th><th>رفت</th><th>برگشت</th><th>سرویس‌ها</th><th>مبلغِ ماه (ریال)</th><th>پرداخت</th><th></th></tr></thead><tbody data-f="rows"></tbody></table>
+                  <table class="wk-tbl min-w-[860px]"><thead><tr><th>نام</th>${l.is_admin ? '<th title="فقط کسانی که روشن است بخشِ سرویس را در «کارکرد من» و ثبتِ روز می‌بینند">دسترسی</th>' : ''}<th>روزها</th><th>رفت</th><th>برگشت</th><th>سرویس‌ها</th><th>مبلغِ ماه (ریال)</th><th>پرداخت</th><th></th></tr></thead><tbody data-f="rows"></tbody></table>
                 </div>
                 <div data-box="person"></div>
               </div>`;
@@ -913,13 +919,25 @@
             const PS = {paid: ['پرداخت شده', 'bg-emerald-100 text-emerald-700'], partial: ['بخشی پرداخت شده', 'bg-sky-100 text-sky-700'], unpaid: ['پرداخت نشده', 'bg-amber-100 text-amber-700'], none: ['—', 'text-slate-300']};
             tb.innerHTML = rows.length ? rows.map(x => `<tr class="${S.person === x.user_id ? 'bg-indigo-50' : ''}">
                 <td class="font-bold">${esc(x.name)} <span class="text-[10px] text-slate-400 font-normal">${esc((typeof ROLE_FA !== 'undefined' ? ROLE_FA : {})[x.role] || '')}</span></td>
+                ${S.list.is_admin ? (() => { const u = S.list.users.find(y => y.id === x.user_id) || {}; const adm = x.role === 'ADMIN';
+                    return `<td><label class="sv-acc ${u.allowed ? 'on' : ''} ${adm ? 'lock' : ''}" title="${adm ? 'مدیر کل همیشه دسترسی دارد' : (u.allowed ? 'دسترسی دارد؛ برای لغو بزنید' : 'دسترسی ندارد؛ برای دادنِ دسترسی بزنید')}">
+                        <input type="checkbox" data-acc="${x.user_id}" ${u.allowed ? 'checked' : ''} ${adm ? 'disabled' : ''}><i></i><span>${u.allowed ? 'دارد' : 'ندارد'}</span></label></td>`; })() : ''}
                 <td>${x.days ? fa(x.days) + ' روز' : '<span class="text-slate-300">—</span>'}</td><td>${fa(x.go)}</td><td>${fa(x.back)}</td>
                 <td>${x.services.map(s => `<span class="wk-chip bg-indigo-50 text-indigo-700 ml-1">${esc(s.name)}</span>`).join('') || '<span class="text-slate-300">—</span>'}</td>
                 <td class="font-black ${x.amount ? 'text-emerald-700' : 'text-slate-300'}">${x.amount ? money(x.amount) : '—'}</td>
                 <td>${x.pay_status === 'none' ? '<span class="text-slate-300">—</span>' : `<span class="wk-chip ${PS[x.pay_status][1]}">${PS[x.pay_status][0]}</span>${x.paid ? `<span class="block text-[10px] text-slate-500 mt-0.5">${money(x.paid)}</span>` : ''}`}</td>
                 <td class="whitespace-nowrap"><button type="button" class="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-3 py-1" data-p="${x.user_id}">${S.list.can_edit ? 'مشاهده و ویرایش' : 'مشاهده'}</button></td></tr>`).join('')
-                : '<tr><td colspan="8" class="text-center text-slate-400 py-6">کسی پیدا نشد.</td></tr>';
+                : `<tr><td colspan="${S.list.is_admin ? 9 : 8}" class="text-center text-slate-400 py-6">کسی پیدا نشد.</td></tr>`;
             tb.querySelectorAll('[data-p]').forEach(b => b.onclick = () => openPerson(+b.dataset.p));
+            // روشن/خاموش کردنِ دسترسیِ هر نفر به سرویس
+            tb.querySelectorAll('[data-acc]').forEach(c => c.onchange = async () => {
+                const id = +c.dataset.acc, on = c.checked;
+                const r = await api('svc_access_set', {target_id: id, allowed: on ? 1 : 0});
+                if (!r.ok) { c.checked = !on; return toast(r.error || 'خطا', 'error'); }
+                const u = S.list.users.find(y => y.id === id); if (u) u.allowed = on;
+                toast(on ? 'دسترسی به سرویس داده شد.' : 'دسترسی به سرویس لغو شد؛ بخشِ سرویس دیگر برایش نمایش داده نمی‌شود.', 'success');
+                drawRows();
+            });
         }
         async function openPerson(id, silent) {
             if (S.panel && S.person !== id && S.panel.dirty() && window.uiConfirm && !(await uiConfirm('تغییراتِ ذخیره‌نشده', 'تغییراتِ تقویمِ نفرِ قبلی ذخیره نشده؛ ادامه می‌دهید؟'))) return;

@@ -70,6 +70,46 @@ function ws_ensure($pdo) {
             $pdo->exec("ALTER TABLE work_service_pays DROP INDEX uq_month, ADD UNIQUE KEY uq_user_month (user_id, service_id, jy, jm)");
         }
     } catch (Throwable $e) { error_log('[ws_ensure] ' . $e->getMessage()); }
+    // دسترسی به سرویس (هر نفر): فقط کسانی که مدیر اجازه داده سرویس دارند. بارِ اول، هر کس تا حالا سرویس ثبت کرده یا سرویسی
+    // به او اختصاص داده شده، خودکار مجاز می‌شود تا با این تغییر کسی سرویسش را از دست ندهد (ردیفِ user_id = 0 یعنی این کار انجام شده)
+    $pdo->exec("CREATE TABLE IF NOT EXISTS work_service_access (
+        user_id INT NOT NULL PRIMARY KEY,
+        allowed TINYINT(1) NOT NULL DEFAULT 0,
+        updated_at DATETIME NULL,
+        updated_by INT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    try {
+        if (!$pdo->query("SELECT 1 FROM work_service_access WHERE user_id = 0")->fetchColumn()) {
+            $ids = $pdo->query("SELECT DISTINCT user_id FROM work_service_days WHERE user_id > 0 UNION SELECT DISTINCT user_id FROM work_service_pays WHERE user_id > 0")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($pdo->query("SELECT assigned_users FROM work_services WHERE assigned_users IS NOT NULL AND assigned_users <> ''")->fetchAll(PDO::FETCH_COLUMN) as $a)
+                foreach (explode(',', (string)$a) as $x) if (intval($x) > 0) $ids[] = intval($x);
+            $ins = $pdo->prepare("INSERT IGNORE INTO work_service_access (user_id, allowed, updated_at) VALUES (?, 1, NOW())");
+            foreach (array_unique(array_map('intval', $ids)) as $id) $ins->execute([$id]);
+            $pdo->exec("INSERT IGNORE INTO work_service_access (user_id, allowed, updated_at) VALUES (0, 0, NOW())");
+        }
+    } catch (Throwable $e) { error_log('[ws_access seed] ' . $e->getMessage()); }
+}
+// این نفر به سرویسِ رفت‌وآمد دسترسی دارد؟ (مدیر کل همیشه)
+function ws_can($pdo, $uid) {
+    static $c = [];
+    $uid = intval($uid);
+    if (isset($c[$uid])) return $c[$uid];
+    ws_ensure($pdo);
+    $st = $pdo->prepare("SELECT u.role, a.allowed FROM users u LEFT JOIN work_service_access a ON a.user_id = u.id WHERE u.id = ?");
+    $st->execute([$uid]);
+    $r = $st->fetch();
+    return $c[$uid] = $r ? ($r['role'] === 'ADMIN' || !empty($r['allowed'])) : false;
+}
+function ws_access_map($pdo) {
+    ws_ensure($pdo);
+    $m = [];
+    foreach ($pdo->query("SELECT user_id, allowed FROM work_service_access WHERE user_id > 0")->fetchAll() as $r) $m[intval($r['user_id'])] = (bool)$r['allowed'];
+    return $m;
+}
+function ws_access_set($pdo, $uid, $on, $by) {
+    ws_ensure($pdo);
+    $pdo->prepare("INSERT INTO work_service_access (user_id, allowed, updated_at, updated_by) VALUES (?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE allowed = VALUES(allowed), updated_at = NOW(), updated_by = VALUES(updated_by)")
+        ->execute([intval($uid), $on ? 1 : 0, $by]);
 }
 
 function ws_services($pdo, $activeOnly = false) {
