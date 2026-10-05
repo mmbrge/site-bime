@@ -541,7 +541,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff !important; box-shadow: 0 6px 16px -6px rgba(37,99,235,.65); }
             .menu-panel { min-width: 240px; padding: 8px; border-radius: 18px; border-color: #eef2f7;
                           box-shadow: 0 22px 48px -14px rgba(15,23,42,.28), 0 0 0 1px rgba(15,23,42,.03); }
-            .menu-panel::after { content: ''; position: absolute; top: -6px; right: 24px; width: 11px; height: 11px; background: #fff;
+            .menu-panel::after { content: ''; pointer-events: none; position: absolute; top: -6px; right: 24px; width: 11px; height: 11px; background: #fff;
                                  border-left: 1px solid #eef2f7; border-top: 1px solid #eef2f7; transform: rotate(45deg); }
             .menu-group.open .menu-panel, .menu-group:focus-within .menu-panel { animation: menuIn .18s ease-out; }
             /* پنجره‌های کم‌عرض‌تر: فاصله‌ها کمتر، نامِ برند و روزِ هفته‌ی ساعت پنهان تا سربرگ در یک خط بماند */
@@ -565,7 +565,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .mi-box { padding: 0 !important; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; border-radius: 26px; }
         .mi-head { position: relative; display: flex; align-items: center; gap: 14px; padding: 20px 22px; color: #fff; background: linear-gradient(135deg, #4f46e5, #2563eb 60%, #0ea5e9); overflow: hidden; }
         .mi-head.teal { background: linear-gradient(135deg, #0d9488, #059669 60%, #10b981); }
-        .mi-head::after { content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(255,255,255,.1); left: -60px; top: -90px; }
+        .mi-head::after { content: ''; pointer-events: none; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(255,255,255,.1); left: -60px; top: -90px; }
         .mi-head h2 { font-size: 17px; font-weight: 900; }
         .mi-head p { font-size: 11.5px; opacity: .85; margin-top: 2px; }
         .mi-ic { width: 48px; height: 48px; border-radius: 16px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 21px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
@@ -619,8 +619,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     box-shadow: 0 18px 34px -20px var(--c2); transition: transform .25s, box-shadow .25s; animation: recIn .5s both; }
         .rec-card:nth-child(2) { animation-delay: .06s } .rec-card:nth-child(3) { animation-delay: .12s } .rec-card:nth-child(4) { animation-delay: .18s }
         .rec-card:hover { transform: translateY(-4px); box-shadow: 0 24px 40px -20px var(--c2); }
-        .rec-card::after { content: ''; position: absolute; width: 170px; height: 170px; border-radius: 50%; background: rgba(255,255,255,.12); left: -50px; top: -70px; }
-        .rec-card::before { content: ''; position: absolute; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.08); left: 40px; bottom: -60px; }
+        .rec-card::after { content: ''; pointer-events: none; position: absolute; width: 170px; height: 170px; border-radius: 50%; background: rgba(255,255,255,.12); left: -50px; top: -70px; }
+        .rec-card::before { content: ''; pointer-events: none; position: absolute; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.08); left: 40px; bottom: -60px; }
         .rec-ic { position: absolute; left: 16px; top: 16px; font-size: 26px; opacity: .85; z-index: 1; }
         .rec-t { font-size: 12px; font-weight: 800; opacity: .9; position: relative; z-index: 1; }
         .rec-v { font-size: 26px; font-weight: 900; margin-top: 6px; position: relative; z-index: 1; letter-spacing: -.5px; }
@@ -636,7 +636,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .da-list { max-height: 400px; overflow-y: auto; }
         .da-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background .15s; position: relative; }
         .da-row:hover { background: #f8fafc; }
-        .da-row::before { content: ''; position: absolute; right: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 4px 0 0 4px; background: var(--u, #cbd5e1); }
+        .da-row::before { content: ''; pointer-events: none; position: absolute; right: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 4px 0 0 4px; background: var(--u, #cbd5e1); }
         .da-row .da-main { flex: 1; min-width: 0; }
         .da-row .da-t { font-size: 12px; font-weight: 900; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .da-row .da-s { font-size: 10.5px; color: #64748b; font-weight: 700; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -3811,14 +3811,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="net-watch.js?v=1"></script>
-    <script src="tools.js?v=1"></script>
-    <script src="comfort.js?v=9"></script>
-    <script src="settings-nav.js?v=1"></script>
-    <script src="announce.js?v=1"></script>
+    <script src="net-watch.js?v=2"></script>
+    <script src="tools.js?v=2"></script>
+    <script src="comfort.js?v=10"></script>
+    <script src="settings-nav.js?v=2"></script>
+    <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=4"></script><?php endif; ?>
-    <script src="chat-ui.js?v=5"></script>
+    <script src="chat-ui.js?v=6"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
@@ -3831,9 +3831,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=7"></script>
-    <script src="import-archive.js?v=1"></script>
-    <script src="renewals.js?v=1"></script>
+    <script src="work-log.js?v=8"></script>
+    <script src="import-archive.js?v=2"></script>
+    <script src="renewals.js?v=2"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>

@@ -88,7 +88,7 @@
         box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 0 4px rgba(99,102,241,.06);overflow:hidden;isolation:isolate;
         transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .25s,box-shadow .4s}
     .cf-root.cf-has-mini .cf-mini{opacity:1;transform:none;pointer-events:auto}
-    .cf-mini::before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(129,140,248,.2) 50%,transparent 70%);transform:translateX(-120%);opacity:0}
+    .cf-mini::before{content:'';pointer-events:none;position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(129,140,248,.2) 50%,transparent 70%);transform:translateX(-120%);opacity:0}
     .cf-mini.on::before{opacity:1;animation:cfSheen 3.6s ease-in-out infinite}
     .cf-mini.on{box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 18px -4px rgba(99,102,241,.55)}
     @keyframes cfSheen{0%{transform:translateX(120%)}60%,100%{transform:translateX(-120%)}}
@@ -97,8 +97,8 @@
     .cf-mini .cf-mc svg circle{fill:none;stroke-width:2.5}
     .cf-mini .cf-mc .cf-mring{stroke:url(#cfmg);stroke-linecap:round;stroke-dasharray:0 101;transition:stroke-dasharray .3s linear}
     .cf-mini .cf-disk{width:28px;height:28px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
-    .cf-mini .cf-disk::before{content:'';position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),radial-gradient(circle at 30% 25%,rgba(255,255,255,.45),transparent 50%)}
-    .cf-mini .cf-disk::after{content:'';position:absolute;inset:38%;border-radius:50%;background:#0f172a;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+    .cf-mini .cf-disk::before{content:'';pointer-events:none;position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),radial-gradient(circle at 30% 25%,rgba(255,255,255,.45),transparent 50%)}
+    .cf-mini .cf-disk::after{content:'';pointer-events:none;position:absolute;inset:38%;border-radius:50%;background:#0f172a;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
     .cf-mini.on .cf-disk{animation:cfSpin 3.2s linear infinite}
     .cf-mini .cf-mt{flex:1;min-width:0;cursor:pointer;padding:0 5px;overflow:hidden}
     .cf-mini .cf-mt b{display:block;font-size:11px;font-weight:900;white-space:nowrap;overflow:hidden;line-height:1.5}
@@ -120,9 +120,9 @@
     .cf-mini button.op:hover{opacity:1}
     .cf-disc:hover{transform:scale(1.06)}
     .cf-vinyl{position:absolute;inset:4px;border-radius:50%;background:repeating-radial-gradient(circle at 50% 50%,#111827 0 2px,#1f2937 2px 3px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.06)}
-    .cf-vinyl::before{content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 40deg,rgba(255,255,255,.18) 50deg,transparent 70deg 220deg,rgba(255,255,255,.1) 235deg,transparent 250deg)}
+    .cf-vinyl::before{content:'';pointer-events:none;position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 40deg,rgba(255,255,255,.18) 50deg,transparent 70deg 220deg,rgba(255,255,255,.1) 235deg,transparent 250deg)}
     .cf-vinyl i{position:absolute;inset:32%;border-radius:50%;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 0 0 2px #0b1220}
-    .cf-vinyl i::after{content:'';position:absolute;inset:40%;border-radius:50%;background:#0b1220}
+    .cf-vinyl i::after{content:'';pointer-events:none;position:absolute;inset:40%;border-radius:50%;background:#0b1220}
     .cf-disc.playing .cf-vinyl{animation:cfSpin 3.2s linear infinite}
     @keyframes cfSpin{to{transform:rotate(360deg)}}
     .cf-disc svg{position:absolute;inset:0;transform:rotate(-90deg)}
@@ -164,7 +164,7 @@
     .cf-now{display:flex;gap:12px;align-items:center;padding:6px 14px}
     .cf-cover{flex:none;width:62px;height:62px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;position:relative;overflow:hidden;
         background:linear-gradient(135deg,#6366f1,#06b6d4)}
-    .cf-cover::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 55%)}
+    .cf-cover::after{content:'';pointer-events:none;position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 55%)}
     .cf-eq{display:flex;gap:2px;align-items:flex-end;height:14px;margin-top:4px}
     .cf-eq span{width:3px;background:var(--cf-acc,#818cf8);border-radius:2px;height:3px}
     .cf-playing .cf-eq span{animation:cfEq .9s ease-in-out infinite}
@@ -204,8 +204,8 @@
     .cf-rec{position:absolute;right:6px;top:5px;width:66px;height:66px;z-index:1;transition:transform .7s cubic-bezier(.2,.9,.3,1.1)}
     .cf-rec i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 20deg,rgba(255,255,255,0) 0 40deg,rgba(255,255,255,.14) 55deg,rgba(255,255,255,0) 75deg 220deg,rgba(255,255,255,.08) 235deg,rgba(255,255,255,0) 255deg),repeating-radial-gradient(circle,#090c16 0 1.4px,#1b2133 1.4px 2.8px);
         box-shadow:0 8px 18px -8px rgba(0,0,0,.9)}
-    .cf-rec i::before{content:'';position:absolute;inset:31%;border-radius:50%;background:var(--lbl,#6366f1)}
-    .cf-rec i::after{content:'';position:absolute;inset:46%;border-radius:50%;background:#090c16}
+    .cf-rec i::before{content:'';pointer-events:none;position:absolute;inset:31%;border-radius:50%;background:var(--lbl,#6366f1)}
+    .cf-rec i::after{content:'';pointer-events:none;position:absolute;inset:46%;border-radius:50%;background:#090c16}
     .cf-playing .cf-rec{transform:translateX(-30px)}
     .cf-playing .cf-rec i{animation:cfSpin 2.6s linear infinite}
     .cf-player .cf-ttl{font-size:15px;letter-spacing:-.2px}
@@ -263,7 +263,7 @@
     .cf-sw{position:relative;width:36px;height:20px;flex:none;cursor:pointer}
     .cf-sw input{opacity:0;width:0;height:0}
     .cf-sw span{position:absolute;inset:0;border-radius:20px;background:#cbd5e1;transition:.2s}
-    .cf-sw span::after{content:'';position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+    .cf-sw span::after{content:'';pointer-events:none;position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
     .cf-sw input:checked+span{background:var(--cf-acc,#6366f1)}
     .cf-sw input:checked+span::after{right:18px}
     .cf-line{display:flex;align-items:center;gap:8px;padding:6px 0}
@@ -291,7 +291,7 @@
     .cf-modal{position:fixed;inset:0;z-index:99980;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:16px;direction:rtl}
     .cf-morning{width:min(520px,100%);border-radius:28px;overflow:hidden;background:#fff;box-shadow:0 40px 80px -25px rgba(2,6,23,.6);animation:cfIn .3s ease}
     .cf-morning .hd{padding:22px 24px 18px;color:#fff;position:relative;overflow:hidden}
-    .cf-morning .hd::after{content:'';position:absolute;width:240px;height:240px;border-radius:50%;left:-60px;top:-120px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 70%)}
+    .cf-morning .hd::after{content:'';pointer-events:none;position:absolute;width:240px;height:240px;border-radius:50%;left:-60px;top:-120px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 70%)}
     .cf-morning .bd{padding:16px 22px 20px;max-height:56vh;overflow-y:auto}
     .cf-mi{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px}
     .cf-mi:last-child{border-bottom:0}

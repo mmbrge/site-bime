@@ -136,7 +136,7 @@
     const CSS = `
     .tl{direction:rtl;--c1:#6366f1;--c2:#06b6d4}
     .tl-hero{position:relative;overflow:hidden;border-radius:26px;padding:22px 24px;color:#fff;background:linear-gradient(120deg,#312e81,#4f46e5 45%,#0891b2);box-shadow:0 20px 40px -24px rgba(49,46,129,.8);margin-bottom:16px}
-    .tl-hero::before,.tl-hero::after{content:'';position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
+    .tl-hero::before,.tl-hero::after{content:'';pointer-events:none;position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
     .tl-hero::before{width:260px;height:260px;left:-60px;top:-120px}.tl-hero::after{width:160px;height:160px;left:160px;bottom:-110px}
     .tl-hero h2{font-size:20px;font-weight:900;position:relative}.tl-hero p{font-size:11.5px;opacity:.85;margin-top:4px;position:relative}
     .tl-gh{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:900;color:#475569;margin:14px 2px 8px}
@@ -144,7 +144,7 @@
     .tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
     .tl-card{position:relative;overflow:hidden;border-radius:20px;padding:16px;background:#fff;border:1px solid #eef2f7;cursor:pointer;text-align:right;font-family:inherit;
         transition:transform .2s cubic-bezier(.2,.9,.3,1.2),box-shadow .2s,border-color .2s;display:flex;flex-direction:column;gap:10px;color:#0f172a}
-    .tl-card::after{content:'';position:absolute;width:120px;height:120px;border-radius:50%;left:-40px;bottom:-60px;background:var(--c1);opacity:.08;transition:opacity .2s,transform .3s}
+    .tl-card::after{content:'';pointer-events:none;position:absolute;width:120px;height:120px;border-radius:50%;left:-40px;bottom:-60px;background:var(--c1);opacity:.08;transition:opacity .2s,transform .3s}
     .tl-card:hover{transform:translateY(-4px);box-shadow:0 18px 32px -18px rgba(15,23,42,.45);border-color:transparent}
     .tl-card:hover::after{opacity:.16;transform:scale(1.3)}
     .tl-ic{width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;flex:none;
@@ -186,7 +186,7 @@
     .tl-seg button{border:0;background:transparent;border-radius:10px;padding:6px 12px;font-weight:800;font-size:11.5px;font-family:inherit;color:#475569;cursor:pointer}
     .tl-seg button.on{background:#fff;color:var(--c1);box-shadow:0 2px 8px -3px rgba(15,23,42,.3)}
     .tl-res{margin-top:12px;border-radius:20px;padding:16px;color:#fff;background:linear-gradient(135deg,var(--c1),var(--c2));position:relative;overflow:hidden;box-shadow:0 14px 28px -16px var(--c1)}
-    .tl-res::after{content:'';position:absolute;width:160px;height:160px;border-radius:50%;left:-50px;top:-80px;background:rgba(255,255,255,.12)}
+    .tl-res::after{content:'';pointer-events:none;position:absolute;width:160px;height:160px;border-radius:50%;left:-50px;top:-80px;background:rgba(255,255,255,.12)}
     .tl-res .big{font-size:28px;font-weight:900;letter-spacing:1px;position:relative}
     .tl-res small{display:block;font-size:11px;opacity:.85;position:relative}
     .tl-res .tl-btn{background:rgba(255,255,255,.2);box-shadow:none;position:relative}

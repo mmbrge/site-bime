@@ -228,7 +228,7 @@
 .cx-th:hover{background:var(--hover)}
 .cx-settled .cx-th{animation:none}
 .cx-th.on{background:linear-gradient(135deg,rgba(79,70,229,.12),rgba(124,58,237,.12))}
-.cx-th.on::before{content:'';position:absolute;right:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:linear-gradient(var(--me1),var(--me2))}
+.cx-th.on::before{content:'';pointer-events:none;position:absolute;right:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:linear-gradient(var(--me1),var(--me2))}
 .cx-av{width:44px;height:44px;border-radius:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;position:relative}
 .cx-av small{position:absolute;bottom:-3px;left:-3px;width:19px;height:19px;border-radius:7px;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:9px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
 .cx-th-b{flex:1;min-width:0}
@@ -351,7 +351,7 @@
 .cx-selb.danger{color:#e11d48}
 .cx-selb:disabled{opacity:.4;cursor:not-allowed}
 .cx-selmode .cx-row{padding-right:34px;cursor:pointer;border-radius:14px;transition:background .15s}
-.cx-selmode .cx-row::before{content:'';position:absolute;right:6px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--muted);background:var(--panel);transition:.15s}
+.cx-selmode .cx-row::before{content:'';pointer-events:none;position:absolute;right:6px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--muted);background:var(--panel);transition:.15s}
 .cx-selmode .cx-row.cx-sel{background:rgba(99,102,241,.1)}
 .cx-selmode .cx-row.cx-sel::before{border-color:var(--acc);background:var(--acc);box-shadow:inset 0 0 0 3px var(--panel)}
 .cx-selmode .cx-dots{display:none}

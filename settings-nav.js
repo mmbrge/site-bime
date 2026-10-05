@@ -28,7 +28,7 @@
     .stn-it small{display:block;font-size:10px;color:#94a3b8;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
     .stn-it .n{margin-right:auto;font-size:10px;font-weight:900;color:#94a3b8;background:#f1f5f9;border-radius:999px;padding:1px 7px}
     .stn-it.on{background:linear-gradient(90deg,color-mix(in srgb,var(--a) 12%,#fff),#fff)}
-    .stn-it.on::before{content:'';position:absolute;right:-12px;top:10px;bottom:10px;width:4px;border-radius:4px 0 0 4px;background:linear-gradient(var(--a),var(--b))}
+    .stn-it.on::before{content:'';pointer-events:none;position:absolute;right:-12px;top:10px;bottom:10px;width:4px;border-radius:4px 0 0 4px;background:linear-gradient(var(--a),var(--b))}
     .stn-it.on b{color:var(--a)}
     .stn-sep{font-size:10px;font-weight:900;color:#94a3b8;padding:12px 10px 4px}
     .stn-lk{width:100%;display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:12px;padding:7px 10px;cursor:pointer;font-weight:700;font-size:11.5px;font-family:inherit;color:#475569;text-align:right}
@@ -37,7 +37,7 @@
     .stn-lk .fa-arrow-up-left-from-circle{margin-right:auto;font-size:9px;opacity:.5}
     .stn-main{flex:1;min-width:0}
     .stn-head{display:flex;align-items:center;gap:14px;border-radius:24px;padding:18px 20px;color:#fff;background:linear-gradient(120deg,var(--a),var(--b));box-shadow:0 18px 36px -24px var(--a);position:relative;overflow:hidden}
-    .stn-head::after{content:'';position:absolute;width:220px;height:220px;border-radius:50%;left:-60px;top:-110px;background:rgba(255,255,255,.12)}
+    .stn-head::after{content:'';pointer-events:none;position:absolute;width:220px;height:220px;border-radius:50%;left:-60px;top:-110px;background:rgba(255,255,255,.12)}
     .stn-head .ic{width:50px;height:50px;border-radius:16px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:21px;flex:none}
     .stn-head h2{font-size:18px;font-weight:900}.stn-head p{font-size:11.5px;opacity:.85;margin-top:2px}
     .stn-off{display:none!important}

@@ -42,8 +42,8 @@
     .an-card{position:relative;width:min(470px,100%);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:30px;overflow:hidden;box-shadow:0 40px 90px -25px rgba(2,6,23,.7);animation:anPop .45s cubic-bezier(.2,1.2,.3,1)}
     @keyframes anPop{from{opacity:0;transform:translateY(30px) scale(.9)}to{opacity:1;transform:none}}
     .an-hd{position:relative;padding:30px 24px 22px;color:#fff;text-align:center;overflow:hidden}
-    .an-hd::before{content:'';position:absolute;width:260px;height:260px;border-radius:50%;left:-80px;top:-140px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 70%)}
-    .an-hd::after{content:'';position:absolute;width:200px;height:200px;border-radius:50%;right:-70px;bottom:-120px;background:radial-gradient(circle,rgba(255,255,255,.25),transparent 70%)}
+    .an-hd::before{content:'';pointer-events:none;position:absolute;width:260px;height:260px;border-radius:50%;left:-80px;top:-140px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 70%)}
+    .an-hd::after{content:'';pointer-events:none;position:absolute;width:200px;height:200px;border-radius:50%;right:-70px;bottom:-120px;background:radial-gradient(circle,rgba(255,255,255,.25),transparent 70%)}
     .an-ic{position:relative;z-index:1;width:84px;height:84px;margin:0 auto 10px;border-radius:28px;display:flex;align-items:center;justify-content:center;font-size:44px;background:rgba(255,255,255,.22);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 12px 26px -10px rgba(0,0,0,.35)}
     .an-hd h2{position:relative;z-index:1;font-size:20px;font-weight:900;line-height:1.6;text-shadow:0 2px 10px rgba(0,0,0,.15)}
     .an-tag{position:relative;z-index:1;display:inline-block;font-size:10.5px;font-weight:900;padding:3px 12px;border-radius:999px;background:rgba(255,255,255,.22);margin-bottom:8px}

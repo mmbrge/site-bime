@@ -53,7 +53,7 @@
 
     const CSS = `
     .rn-hero{border-radius:26px;padding:20px 22px;color:#fff;background:linear-gradient(120deg,#b45309,#db2777 55%,#7c3aed);box-shadow:0 20px 40px -26px #db2777;position:relative;overflow:hidden}
-    .rn-hero::after{content:'';position:absolute;width:240px;height:240px;border-radius:50%;left:-60px;top:-120px;background:rgba(255,255,255,.12)}
+    .rn-hero::after{content:'';pointer-events:none;position:absolute;width:240px;height:240px;border-radius:50%;left:-60px;top:-120px;background:rgba(255,255,255,.12)}
     .rn-hero h2{font-size:19px;font-weight:900}.rn-hero p{font-size:11.5px;opacity:.88;margin-top:4px;line-height:1.9;max-width:780px}
     .rn-btn{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:14px;padding:8px 13px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit}
     .rn-btn:disabled{opacity:.45;cursor:not-allowed} .rn-btn.w{background:#fff;color:#be185d} .rn-btn.g{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3)}

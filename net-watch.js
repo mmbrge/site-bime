@@ -17,7 +17,7 @@
     #net-watch.off{background:linear-gradient(135deg,#e11d48,#be123c)}
     #net-watch.weak{background:linear-gradient(135deg,#f59e0b,#ea580c)}
     #net-watch.back{background:linear-gradient(135deg,#10b981,#0d9488)}
-    #net-watch.off .nw-ic::after,#net-watch.weak .nw-ic::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid rgba(255,255,255,.55);animation:nwPulse 1.6s ease-out infinite}
+    #net-watch.off .nw-ic::after,#net-watch.weak .nw-ic::after{content:'';pointer-events:none;position:absolute;inset:-4px;border-radius:50%;border:2px solid rgba(255,255,255,.55);animation:nwPulse 1.6s ease-out infinite}
     @keyframes nwPulse{from{transform:scale(.85);opacity:1}to{transform:scale(1.5);opacity:0}}
     #net-watch small{display:block;font-weight:600;font-size:10.5px;opacity:.85}
     #net-watch button{border:0;background:rgba(255,255,255,.2);color:#fff;border-radius:999px;padding:4px 10px;font-weight:800;font-size:10.5px;font-family:inherit;cursor:pointer;margin-right:4px}

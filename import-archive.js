@@ -27,7 +27,7 @@
 
     const CSS = `
     .ia-hero{position:relative;overflow:hidden;border-radius:26px;padding:20px 22px;color:#fff;background:linear-gradient(120deg,#0f766e,#0e7490 55%,#4338ca);box-shadow:0 20px 40px -26px #0f766e}
-    .ia-hero::after{content:'';position:absolute;width:260px;height:260px;border-radius:50%;left:-70px;top:-130px;background:rgba(255,255,255,.1)}
+    .ia-hero::after{content:'';pointer-events:none;position:absolute;width:260px;height:260px;border-radius:50%;left:-70px;top:-130px;background:rgba(255,255,255,.1)}
     .ia-hero h2{font-size:19px;font-weight:900}.ia-hero p{font-size:11.5px;opacity:.85;margin-top:4px;line-height:1.9;max-width:760px}
     .ia-hero .ia-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;position:relative;z-index:1}
     .ia-btn{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:14px;padding:9px 14px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;transition:filter .15s,transform .15s}

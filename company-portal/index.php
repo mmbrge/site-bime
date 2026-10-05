@@ -51,17 +51,17 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-3xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../api/server_time.php';</script>
-<script src="../net-watch.js?v=1"></script>
-<script src="../tools.js?v=1"></script>
-<script src="../comfort.js?v=9"></script>
+<script src="../net-watch.js?v=2"></script>
+<script src="../tools.js?v=2"></script>
+<script src="../comfort.js?v=10"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
-<script src="../announce.js?v=1"></script>
+<script src="../announce.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=1"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
-<script src="../chat-ui.js?v=5"></script>
+<script src="../chat-ui.js?v=6"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
