@@ -32,6 +32,7 @@ function perm_catalog() {
             'issue-queue' => ['در حال صدور (ثبت صدور)', ['view', 'edit', 'export']],
             'issued-list' => ['صادره‌ها', ['view', 'edit', 'export']],
             'issue-group' => ['صدور گروهی (فایل بیمه‌گر)', ['view', 'create']],
+            'import-archive' => ['بایگانی وارداتی (اکسلِ بیمه‌گر)', $all],
         ]],
         ['گزارش بازدید', [
             'vr-build' => ['ساخت گزارش بازدید', ['view', 'create']],
@@ -172,7 +173,7 @@ function perm_api_map() {
         'company_actions' => ['pages' => [$req], 'elevate' => true, 'actions' => [
             'finance_summary' => 'companies-finance:view|dashboard:view', 'finance_chart' => 'companies-finance:view|dashboard:view',
             'dashboard_alerts' => 'dashboard:view', 'issue_queue' => 'issue-queue:view|issued-list:view|issue-group:view',
-            'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit', 'group_issue_requests' => 'issue-group:view',
+            'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
@@ -185,16 +186,20 @@ function perm_api_map() {
             'list_request_inbox' => $req . ':view|companies-inbox:view',
             'request_detail' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view|fin-tracking:view',
             'list_inbox' => 'companies-inbox:view', 'reject_document' => 'companies-inbox:edit|' . $req . ':edit', 'assign_document' => 'companies-inbox:edit|' . $req . ':edit',
-            'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit',
-            'delete_row_doc' => $req . ':delete|companies-inbox:delete', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => $req . ':edit|issue-queue:edit',
+            'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|import-archive:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit',
+            'delete_row_doc' => $req . ':delete|companies-inbox:delete|import-archive:delete', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => $req . ':edit|issue-queue:edit',
             'set_row_coverages' => $req . ':edit', 'delete_row' => $req . ':delete',
             'preview_letter_rows' => $req . ':create|' . $req . ':edit', 'import_letter_rows' => $req . ':create|' . $req . ':edit', 'request_rows_text' => $req . ':view',
-            'policy_file' => $req . ':view|issued-list:view|issue-queue:view', 'ocr_preview_company_policy' => 'issue-queue:edit|' . $req . ':edit',
-            'bundle_analyze' => 'issue-group:create', 'bundle_recheck' => 'issue-group:create', 'bundle_page' => 'issue-group:view', 'bundle_issue' => 'issue-group:create',
-            'mark_issued' => 'issue-queue:edit|' . $req . ':edit', 'list_company_installments' => $req . ':view|fin-installments:view',
+            'policy_file' => $req . ':view|issued-list:view|issue-queue:view|import-archive:view', 'ocr_preview_company_policy' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit',
+            'bundle_analyze' => 'issue-group:create|import-archive:edit', 'bundle_recheck' => 'issue-group:create|import-archive:edit', 'bundle_page' => 'issue-group:view|import-archive:view', 'bundle_issue' => 'issue-group:create|import-archive:edit',
+            'mark_issued' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit', 'list_company_installments' => $req . ':view|fin-installments:view',
             'company_receipts' => $req . ':view|fin-installments:view', 'company_pasargad_receipts' => $req . ':view|fin-installments:view',
             'create_company_payment' => 'fin-installments:create|fin-payments:create', 'settle_company_pasargad' => 'fin-installments:create|fin-payments:create',
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
+        ]],
+        'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
+            'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',
+            'update_row' => 'import-archive:edit', 'bulk_skip' => 'import-archive:edit', 'delete_rows' => 'import-archive:delete', 'export' => 'import-archive:export',
         ]],
         'fin_plan_actions' => ['pages' => ['fin-settings'], 'elevate' => true, 'actions' => [
             'contracts' => 'any', 'contract_save' => 'fin-contracts:edit|fin-settings:edit', 'contract_delete' => 'fin-contracts:edit|fin-settings:edit', 'personnel_contract_save' => 'fin-contracts:edit|fin-settings:edit',
@@ -324,6 +329,8 @@ const PERM_TRACK_SKIP = ['ocr_preview_company_policy', 'ocr_preview_policy', 'bu
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
     return [
+        'import_actions.commit' => 'ورودِ اکسلِ بیمه‌گر به بایگانی وارداتی', 'import_actions.update_row' => 'ویرایشِ ردیفِ وارداتی',
+        'import_actions.bulk_skip' => 'تغییرِ نیاز به بازدیدِ ردیف‌های وارداتی', 'import_actions.delete_rows' => 'حذفِ ردیف‌های وارداتی', 'import_actions.export' => 'خروجیِ اکسلِ بایگانی وارداتی',
         'company_actions.mark_issued' => 'ثبتِ صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_issue' => 'صدورِ گروهی از فایلِ بیمه‌گر', 'company_actions.bundle_analyze' => 'بررسیِ فایلِ صدورِ گروهی',
         'company_actions.admin_create_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.admin_create_full_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.edit_request' => 'ویرایشِ درخواستِ شرکتی',
         'company_actions.delete_request' => 'حذفِ درخواستِ شرکتی', 'company_actions.admin_add_plate' => 'افزودنِ ردیف به درخواستِ شرکتی', 'company_actions.assign_document' => 'تخصیصِ مدرک از صندوقِ ورودی',

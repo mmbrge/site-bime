@@ -32,6 +32,7 @@ $since = trim($data['since'] ?? '');
 // همه‌ی رویدادهای بازه‌ی (since, until] که این نقش باید ببیند
 function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $seesPersonnel) {
     $events = [];
+    imp_ensure($pdo);
     $add = function ($type, $title, $body, $at, $tab = null, $extra = []) use (&$events) {
         $events[] = array_merge(['type' => $type, 'title' => $title, 'body' => $body,
                                  'at' => $at, 'at_jalali' => jalali_from_gregorian_ts_dotted(strtotime($at)), 'tab' => $tab], $extra);
@@ -42,7 +43,7 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
             // درخواست‌های تازه‌ی شرکت‌ها
             $stmt = $pdo->prepare("SELECT cr.id, cr.created_at, c.name AS company_name FROM company_requests cr
                                     JOIN companies c ON c.id = cr.company_id
-                                    WHERE cr.created_at > ? AND cr.created_at <= ? ORDER BY cr.created_at DESC LIMIT 20");
+                                    WHERE cr.created_at > ? AND cr.created_at <= ? AND cr.is_import = 0 ORDER BY cr.created_at DESC LIMIT 20");
             $stmt->execute([$since, $until]);
             foreach ($stmt->fetchAll() as $r) {
                 $add('company_request', 'درخواست جدید شرکتی', $r['company_name'] . ' یک درخواست تازه ثبت کرد.',

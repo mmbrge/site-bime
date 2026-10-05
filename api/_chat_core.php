@@ -12,6 +12,7 @@
 // امکانات: فایل، پاسخ به پیام، ویرایش، حذف، موضوعِ پیام (درخواستِ مربوط)، خوانده‌شدن، «در حال نوشتن».
 
 require_once __DIR__ . '/_profile_core.php';
+require_once __DIR__ . '/_import_schema.php';
 require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_chat_access.php';
 
@@ -177,7 +178,8 @@ function chat_contacts($pdo, $actor, $q) {
     }
     $cScope = chat_company_scope($pdo, $actor);
     if ($cScope) {
-        $st = $pdo->prepare("SELECT id, name FROM companies WHERE name LIKE ? AND " . chat_scope_sql($cScope, 'id') . " ORDER BY name LIMIT 15");
+        imp_ensure($pdo);
+        $st = $pdo->prepare("SELECT id, name FROM companies WHERE name LIKE ? AND is_import = 0 AND " . chat_scope_sql($cScope, 'id') . " ORDER BY name LIMIT 15");
         $st->execute([$like]);
         $cp = chat_company_presence_map($pdo);
         foreach ($st->fetchAll() as $c) $out[] = ['key' => 'C:' . $c['id'], 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => 'شرکت', 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null];

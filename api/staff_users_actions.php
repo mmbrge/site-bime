@@ -13,6 +13,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
 require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_chat_access.php';
 require_once __DIR__ . '/_profile_core.php';
@@ -170,7 +171,7 @@ try {
             }
         }
         unset($u);
-        $companies = $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll();
+        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
 
         $pending = 0;
         if ($ready) { auth_purge_old_resets($pdo); $pending = intval($pdo->query("SELECT COUNT(*) FROM password_reset_requests WHERE status = 'PENDING'")->fetchColumn()); }

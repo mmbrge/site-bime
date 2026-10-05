@@ -471,7 +471,8 @@ try {
                 ['fn' => 'openCompanyRequestDetail', 'args' => [intval($r['id'])]]);
         }
         if ($canPage('companies-manage')) {
-            $st = $pdo->prepare("SELECT id, name, phone FROM companies WHERE name LIKE ? OR economic_code LIKE ? OR phone LIKE ? ORDER BY name LIMIT 6");
+            require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);
+            $st = $pdo->prepare("SELECT id, name, phone FROM companies WHERE is_import = 0 AND (name LIKE ? OR economic_code LIKE ? OR phone LIKE ?) ORDER BY name LIMIT 6");
             $st->execute([$like, $like, $like]);
             foreach ($st->fetchAll() as $r) $add('شرکت‌ها', 'fa-building', $r['name'], $r['phone'] ? 'تلفن ' . fa_digits($r['phone']) : '', ['fn' => 'switchTab', 'args' => ['companies-manage'], 'then' => ['fn' => 'editCompany', 'args' => [intval($r['id'])]]]);
         }

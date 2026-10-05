@@ -96,6 +96,7 @@ function issuance_nav($active, $isLiaison) {
     if (!$isLiaison) $items[] = ['issue-queue', 'fa-list-check', 'در حال صدور', 'iss-n-queue'];
     $items[] = ['issued-list', 'fa-file-circle-check', 'صادره‌ها', 'iss-n-issued'];
     if (!$isLiaison) $items[] = ['issue-group', 'fa-layer-group', 'صدور گروهی', 'iss-n-group'];
+    if (!$isLiaison) $items[] = ['import-archive', 'fa-box-archive', 'بایگانی وارداتی', 'iss-n-import'];
     $h = '<div class="iss-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-stamp"></i></span><div><b>مرکز صدور</b><small>همه‌ی ردیف‌های شرکتی و کارکنان، از درخواست تا صادره</small></div></div><div class="iss-nav">';
     foreach ($items as [$tab, $ic, $label, $badge]) {
         $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
@@ -818,6 +819,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> در حال صدور</a><?php endif; ?>
                                 <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
                                 <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-group')" id="nav-issue-group" class="nav-item menu-link"><i class="fas fa-layer-group ml-2"></i> صدور گروهی (فایل بیمه‌گر)</a><?php endif; ?>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('import-archive')" id="nav-import-archive" class="nav-item menu-link"><i class="fas fa-box-archive ml-2"></i> بایگانی وارداتی <small class="text-[10px] text-slate-400 font-bold mr-1">اکسلِ بیمه‌گر</small></a><?php endif; ?>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -2400,6 +2402,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <input type="text" id="il-to" oninput="debouncedIssuedList()" placeholder="صدور تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <select id="il-kind" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
                 <select id="il-insurer" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                <select id="il-import" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="برچسبِ بایگانی وارداتی"><option value="">با و بدونِ «بایگانی وارداتی»</option><option value="1">فقط بایگانی وارداتی</option><option value="0">بدونِ بایگانی وارداتی</option></select>
                 <input type="text" id="il-exp-from" oninput="debouncedIssuedList()" placeholder="انقضای قبلی از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-exp-to" oninput="debouncedIssuedList()" placeholder="انقضای قبلی تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
             </div>
@@ -2442,6 +2445,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button onclick="loadIssueGroup()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
             </div>
             <div id="ig-body" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!$isLiaison): ?>
+        <!-- ======================= بایگانی وارداتی (اکسلِ بیمه‌گر) - import-archive.js ======================= -->
+        <div id="tab-import-archive" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('import-archive', $isLiaison); ?>
+            <div id="imp-root"></div>
         </div>
         <?php endif; ?>
 
@@ -3814,6 +3825,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
     <script src="work-log.js?v=7"></script>
+    <script src="import-archive.js?v=1"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -5828,8 +5840,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         function openBundleModal(requestId, from) {
             // اگر همین درخواست یک بررسیِ باز دارد، همان را نشان بده (مثلاً بعد از تکمیلِ مراحلِ یک ردیف)
-            if (!BDL || BDL.requestId !== requestId) BDL = {requestId, token: null, items: [], filter: 'all', results: {}};
-            BDL.returnTo = from === 'group' ? 'group' : 'detail';
+            // from = 'import': «بایگانی وارداتی» - همه‌ی ردیف‌های وارداتی (شماره بیمه‌نامه/پلاک/شاسی) جست‌وجو می‌شوند
+            const imp = from === 'import';
+            if (!BDL || BDL.requestId !== requestId || !!BDL.importMode !== imp) BDL = {requestId, importMode: imp, token: null, items: [], filter: 'all', results: {}};
+            BDL.returnTo = from === 'group' ? 'group' : (imp ? 'import' : 'detail');
             document.getElementById('creq-detail-modal').classList.remove('active');
             document.getElementById('bundle-modal').classList.add('active');
             if (BDL.token) { bundleRender(); bundleShow('result'); }
@@ -5838,6 +5852,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function closeBundleModal() {
             document.getElementById('bundle-modal').classList.remove('active');
             if (BDL && BDL.returnTo === 'group') { loadIssueGroup(); return; }
+            if (BDL && BDL.returnTo === 'import') { if (window.ImportArchive) ImportArchive.reload(); return; }
             if (BDL && BDL.requestId) openCompanyRequestDetail(BDL.requestId);
         }
         function bundleShow(part) {
@@ -5848,7 +5863,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const f = document.getElementById('bdl-file'); f.value = '';
             document.getElementById('bdl-fname').textContent = '';
             document.getElementById('bdl-analyze-btn').disabled = true;
-            document.getElementById('bdl-sub').textContent = 'فایلِ خروجیِ سایتِ بیمه‌گر را بارگذاری کنید؛ بیمه‌نامه‌ها جدا، شناسایی و روی ردیف‌های همین درخواست نشانده می‌شوند.';
+            document.getElementById('bdl-sub').textContent = BDL && BDL.importMode
+                ? 'فایلِ PDFِ بیمه‌نامه‌ها (یک یا چند بیمه‌نامه پشتِ سرِ هم) را بارگذاری کنید؛ هر بیمه‌نامه با شماره، پلاک یا شاسی روی ردیفِ «بایگانی وارداتی»اش می‌نشیند.'
+                : 'فایلِ خروجیِ سایتِ بیمه‌گر را بارگذاری کنید؛ بیمه‌نامه‌ها جدا، شناسایی و روی ردیف‌های همین درخواست نشانده می‌شوند.';
             bundleShow('upload');
         }
         function bundlePicked(input) {
@@ -5881,6 +5898,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const fd = new FormData();
             fd.append('action', 'bundle_analyze');
             fd.append('request_id', BDL.requestId);
+            if (BDL.importMode) fd.append('import', '1');
             fd.append('bundle', f);
             document.getElementById('bdl-progress-text').textContent = 'در حالِ جدا کردنِ صفحه‌ها و شناسایی…';
             bundleShow('progress');
@@ -5993,8 +6011,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="text-[11px] font-bold">${bdlEsc(row.insurance_type_fa || '')}</span>
                     ${row.car_name ? `<span class="text-[10px] text-slate-500">${bdlEsc(row.car_name)}</span>` : ''}
                     <span class="status-badge ${rowStatusCls} text-[10px] font-bold px-2 py-0.5 rounded-full">${bdlEsc(row.status_fa || row.status)}</span>
-                    ${row.other_request ? `<span class="bdl-pill bg-violet-100 text-violet-700"><i class="fas fa-share"></i>از درخواستِ دیگرِ همین شرکت (#${faDigits(row.request_id)})</span>` : '<span class="bdl-pill bg-indigo-50 text-indigo-700"><i class="fas fa-check"></i>درخواستش را داریم</span>'}
-                    ${it.state === 'not_ready' || row.other_request ? `<button onclick="bundleOpenRow(${row.request_id})" class="text-[10px] font-bold text-blue-700 underline mr-auto">باز کردنِ درخواست برای تکمیلِ مراحل</button>` : ''}
+                    ${row.is_import ? `<span class="bdl-pill bg-teal-50 text-teal-700"><i class="fas fa-box-archive"></i>بایگانی وارداتی · ${bdlEsc(row.company_name || '')}</span>` : (row.other_request ? `<span class="bdl-pill bg-violet-100 text-violet-700"><i class="fas fa-share"></i>از درخواستِ دیگرِ همین شرکت (#${faDigits(row.request_id)})</span>` : '<span class="bdl-pill bg-indigo-50 text-indigo-700"><i class="fas fa-check"></i>درخواستش را داریم</span>')}
+                    ${it.state === 'not_ready' || row.other_request ? `<button onclick="bundleOpenRow(${row.request_id}, ${row.id})" class="text-[10px] font-bold text-blue-700 underline mr-auto">${row.is_import ? 'باز کردنِ ردیف برای تکمیلِ مدارک' : 'باز کردنِ درخواست برای تکمیلِ مراحل'}</button>` : ''}
                     <div class="w-full">${bundleDiffsHtml(it)}</div>
                 </div>`;
             }
@@ -6134,10 +6152,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             all.checked = selectable.length > 0 && sel.length === selectable.length;
             all.disabled = !selectable.length;
         }
-        function bundleOpenRow(requestId) {
+        function bundleOpenRow(requestId, rowId) {
             bundleCollectEdits();
             document.getElementById('bundle-modal').classList.remove('active');
-            openCompanyRequestDetail(requestId);
+            if (BDL && BDL.importMode && window.ImportArchive) ImportArchive.openRow(rowId);
+            else openCompanyRequestDetail(requestId);
             showToast('بعد از تکمیلِ مراحل، دوباره «صدور گروهی» را بزنید و «بررسیِ دوباره» را انتخاب کنید.', 'info');
         }
 
@@ -6955,6 +6974,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 insurer: (document.getElementById('il-insurer') || {}).value || '',
                 expiry_from: ((document.getElementById('il-exp-from') || {}).value || '').trim(),
                 expiry_to: ((document.getElementById('il-exp-to') || {}).value || '').trim(),
+                import: (document.getElementById('il-import') || {}).value || '',
             };
         }
 
@@ -6990,7 +7010,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             tbody.innerHTML = issuedListCache.map((r, i) => `
                 <tr class="border-t border-slate-100 hover:bg-emerald-50/40 cursor-pointer" onclick="openIssuedDetail(${i})">
                     <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
-                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${r.source_fa}</span></td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700')}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span></td>
                     <td class="p-3">${r.request_kind_fa}</td>
                     <td class="p-3 font-bold">${r.insured_name || '—'}</td>
                     <td class="p-3">${r.company_name || '—'}</td>
@@ -7012,7 +7032,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!r) return;
             document.getElementById('il-detail-body').innerHTML = `
                 <div class="flex items-center gap-2 mb-3 flex-wrap">
-                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${r.source_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700')}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span>
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">${r.request_kind_fa}</span>
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
                 </div>
@@ -7459,17 +7479,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.querySelectorAll('input[data-pf="policy_num"],input[data-pf="premium"]').forEach(i => i.closest('.ii-w').classList.toggle('pf-miss', !i.value.trim()));
             return miss;
         }
-        function openMarkIssued(plateId) {
+        // pre (اختیاری، از «بایگانی وارداتی»): {pf: داده‌ی اکسلِ بیمه‌گر برای پیش‌پر کردن، label, onDone}
+        function openMarkIssued(plateId, pre) {
+            window.CIS_PRE = pre || null;
             document.getElementById('cis-plate-id').value = plateId;
             document.getElementById('cis-file').value = '';
             document.getElementById('cis-file-name').textContent = 'انتخابِ فایلِ بیمه‌نامه‌ی صادرشده (PDF یا عکس)';
             const note = document.getElementById('cis-ocr-note');
             note.className = 'hidden'; note.innerHTML = '';
             const p = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(plateId));
-            document.getElementById('cis-plate-label').innerHTML = p
-                ? `ردیف: <span class="plate-display">${fmtPlateHtml(p)}</span> | ${p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}` : '';
-            // فرم از قبل با اطلاعاتِ ردیف پر می‌شود (برای صدورِ دستی بدونِ فایل هم کار می‌کند)
-            pfRender(document.getElementById('cis-form'), p ? {vin: p.chassis_no || '', engine_no: p.engine_no || '', car_name: p.car_name || '', car_value: p.car_value || '', liability: p.liability_limit || ''} : {});
+            document.getElementById('cis-plate-label').innerHTML = pre && pre.label ? pre.label : (p
+                ? `ردیف: <span class="plate-display">${fmtPlateHtml(p)}</span> | ${p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}` : '');
+            // فرم از قبل با اطلاعاتِ ردیف پر می‌شود (برای صدورِ دستی بدونِ فایل هم کار می‌کند)؛ ردیفِ وارداتی: همه‌ی اطلاعاتِ اکسلِ بیمه‌گر
+            pfRender(document.getElementById('cis-form'), pre && pre.pf ? Object.assign({}, pre.pf)
+                : (p ? {vin: p.chassis_no || '', engine_no: p.engine_no || '', car_name: p.car_name || '', car_value: p.car_value || '', liability: p.liability_limit || ''} : {}));
             document.getElementById('cissue-modal').classList.add('active');
         }
 
@@ -7494,8 +7517,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 note.innerHTML = data.error || 'اعتبارسنجی ناموفق بود.';
                 return;
             }
-            const o = data.ocr || {};
-            pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: data.missing || [], source: data.source, layout_debug: data.layout_debug});
+            let o = data.ocr || {};
+            // ردیفِ وارداتی: هر چه از فایل خوانده نشد از اکسلِ بیمه‌گر می‌آید
+            if (window.CIS_PRE && CIS_PRE.pf) { const base = Object.assign({}, CIS_PRE.pf); Object.keys(o).forEach(k => { if (o[k] !== '' && o[k] !== null && o[k] !== undefined) base[k] = o[k]; }); o = base; }
+            pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: (data.missing || []).filter(m => !(window.CIS_PRE && CIS_PRE.pf)), source: data.source, layout_debug: data.layout_debug});
             note.className = 'text-[11px] rounded-lg p-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
                 ? `✓ فایل با این ردیف مطابقت دارد (${(o.plate || data.expected_plate) && /ایران/.test(o.plate || data.expected_plate) ? formatPlateHtml(o.plate || data.expected_plate) : (o.plate || data.expected_plate || '')} | ${o.ins_type || ''}). فیلدها پر شدند؛ بررسی و در صورتِ نیاز اصلاح کنید.`
@@ -7525,6 +7550,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (data.ok) {
                     showToast(`صدور ثبت شد. پوشه: ${data.issued_folder || ''}${data.installments ? ` · ${e2pNum(data.installments)} قسط ساخته شد` : ''}`, 'success');
                     document.getElementById('cissue-modal').classList.remove('active');
+                    if (window.CIS_PRE && CIS_PRE.onDone) { const cb = CIS_PRE.onDone; window.CIS_PRE = null; cb(data); return; }
                     loadCompanyRequests();
                     if (currentRequestId) openCompanyRequestDetail(currentRequestId);
                 } else showToast(data.error || 'خطا در ثبت صدور', 'error');
@@ -8541,6 +8567,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
             if (tabId === 'issued-list') loadIssuedList();
             if (tabId === 'issue-group') loadIssueGroup();
+            if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

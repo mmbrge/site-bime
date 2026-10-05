@@ -329,7 +329,7 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
         }
         // پوشه‌های اصلی حتی اگر خالی بودند ساخته شوند
         foreach ([archive_root($site) . '/بایگانی صادره', archive_root($site) . '/بایگانی کسر از حقوق',
-                  archive_root($site) . '/بایگانی شرکتی', archive_root($site) . '/بایگانی گزارشات بازدید',
+                  archive_root($site) . '/بایگانی شرکتی', archive_root($site) . '/بایگانی وارداتی', archive_root($site) . '/بایگانی گزارشات بازدید',
                   temp_archive_root($site), temp_finance_root($site), finance_root($site)] as $d) @mkdir($d, 0775, true);
     }
     $zip->close();
@@ -355,9 +355,9 @@ function bk_reset_sections() {
             'desc' => 'اشخاص، معرفی‌نامه‌ها، پرونده‌ها و مدارک، بازدیدهای سلامت، تاریخچه‌ی بررسی‌ها و بایگانیِ صادره/کسر از حقوق/سایر مدارک',
             'tables' => ['persons', 'person_vehicles', 'introductions', 'policy_cases', 'case_documents', 'health_inspections', 'health_attempts', 'insurance_requests', 'review_log']],
         'companies' => ['label' => 'شرکت‌ها و درخواست‌های شرکتی',
-            'desc' => 'شرکت‌ها، درخواست‌ها و ردیف‌ها، مدارک، کاربرانِ شرکت‌ها، چت و ربات شرکت‌ها و بایگانیِ شرکتی',
+            'desc' => 'شرکت‌ها، درخواست‌ها و ردیف‌ها، مدارک، کاربرانِ شرکت‌ها، چت و ربات شرکت‌ها، بایگانیِ شرکتی و بایگانیِ وارداتی',
             'tables' => ['companies', 'company_requests', 'company_request_plates', 'company_documents', 'company_portal_users', 'company_portal_user_companies',
-                         'company_bot_state', 'company_chat_messages', 'bot_known_groups']],
+                         'company_bot_state', 'company_chat_messages', 'bot_known_groups', 'import_batches']],
         'finance' => ['label' => 'مالی',
             'desc' => 'اقساط، دریافت‌ها و تخصیص‌ها، چک‌ها، صورتحساب‌ها، دوره‌ها، تسویه‌ها و مغایرت‌ها (شماره‌ی صورتحساب از اول)',
             'tables' => ['billing_periods', 'cheques', 'company_installments', 'company_payments', 'company_payment_allocations', 'invoices', 'invoice_lines',
@@ -431,7 +431,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
             foreach (['/بایگانی صادره', '/بایگانی کسر از حقوق', '/سایر مدارک'] as $d) bk_rrmdir_contents($arch . $d);
             bk_rrmdir_contents($tmp, ['شرکت‌ها', 'چت شرکت‌ها', 'چت داخلی']);
         }
-        if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
+        if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($arch . '/بایگانی وارداتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
         if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot)); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
@@ -439,6 +439,6 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
     }
     if ($full || $has('messages')) @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
     // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا خالی ولی مرتب دیده شوند
-    foreach ([$arch . '/بایگانی صادره', $arch . '/بایگانی کسر از حقوق', $arch . '/سایر مدارک', $arch . '/بایگانی شرکتی', $arch . '/بایگانی گزارشات بازدید',
+    foreach ([$arch . '/بایگانی صادره', $arch . '/بایگانی کسر از حقوق', $arch . '/سایر مدارک', $arch . '/بایگانی شرکتی', $arch . '/بایگانی وارداتی', $arch . '/بایگانی گزارشات بازدید',
               $tmp, temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) @mkdir($dir, 0775, true);
 }

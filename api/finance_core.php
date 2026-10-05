@@ -351,13 +351,14 @@ function fin_sync_installments($pdo) {
 
     try {
         if (!function_exists('company_generate_installments')) require_once __DIR__ . '/_company_helpers.php';
+        imp_ensure($pdo);
         $rows = $pdo->query("
             SELECT crp.id, crp.total_premium, COALESCE(x.cnt,0) AS cnt, COALESCE(x.total,0) AS total, COALESCE(x.touched,0) AS touched
             FROM company_request_plates crp
             LEFT JOIN (SELECT ci.plate_id, COUNT(*) AS cnt, SUM(ci.amount) AS total,
                               SUM(CASE WHEN ci.settled_to_pasargad = 1 OR EXISTS (SELECT 1 FROM company_payment_allocations a WHERE a.installment_id = ci.id) THEN 1 ELSE 0 END) AS touched
                        FROM company_installments ci GROUP BY ci.plate_id) x ON x.plate_id = crp.id
-            WHERE crp.status = 'ISSUED'
+            WHERE crp.status = 'ISSUED' AND NOT EXISTS (SELECT 1 FROM company_requests cri WHERE cri.id = crp.request_id AND cri.is_import = 1)
         ")->fetchAll();
         foreach ($rows as $r) {
             $premium = money_to_int($r['total_premium']);

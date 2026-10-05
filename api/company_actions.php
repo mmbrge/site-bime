@@ -21,6 +21,7 @@ if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem
 
 // ستونِ «پوشش‌های درخواستی» هر ردیف (بدنه) خودکار ساخته می‌شود؛ نیازی به اجرای SQL دستی نیست
 company_ensure_coverage_column($pdo);
+imp_ensure($pdo);   // «بایگانی وارداتی»: ستون‌های is_import و ... (خودکار)
 
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
@@ -55,7 +56,7 @@ try {
                    COALESCE((SELECT SUM(i.total_amount) FROM invoices i WHERE i.company_id = c.id), 0) AS total_invoiced,
                    COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.company_id = c.id), 0) AS total_paid
             FROM companies c
-            WHERE c.kind IN ('INSURANCE_CLIENT','BOTH')
+            WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') AND c.is_import = 0
             ORDER BY c.name
         ");
         $rows = $stmt->fetchAll();
@@ -143,7 +144,7 @@ try {
         $st = $pdo->prepare("SELECT crp.id, crp.request_id, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no, crp.insurance_type,
                                     crp.expiry_date, crp.status, crp.car_name, cr.request_kind, cr.insurer, c.name AS company_name
                                FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
-                              WHERE crp.status NOT IN ('ISSUED', 'CANCELLED') AND crp.expiry_date IS NOT NULL AND crp.expiry_date <= ?
+                              WHERE crp.status NOT IN ('ISSUED', 'CANCELLED') AND cr.is_import = 0 AND crp.expiry_date IS NOT NULL AND crp.expiry_date <= ?
                                 AND crp.expiry_date >= DATE_SUB(?, INTERVAL 60 DAY)
                               ORDER BY crp.expiry_date ASC, crp.id ASC LIMIT 300");
         $st->execute([$limitDate, $today]);
@@ -194,7 +195,8 @@ try {
         $expFrom = fin_jalali_to_date($data['expiry_from'] ?? '');
         $expTo   = fin_jalali_to_date($data['expiry_to'] ?? '');
 
-        $where = ["crp.status <> 'ISSUED'", "crp.status <> 'CANCELLED'"];
+        // ردیف‌های «بایگانی وارداتی» صفحه‌ی خودشان را دارند
+        $where = ["crp.status <> 'ISSUED'", "crp.status <> 'CANCELLED'", "cr.is_import = 0"];
         $params = [];
 
         if (!empty($data['company_id']))     { $where[] = "cr.company_id = ?";   $params[] = intval($data['company_id']); }
@@ -495,7 +497,7 @@ try {
     // ---- درخواست‌هایی که ردیفِ صادرنشده دارند (برای بخش «صدور گروهی» در صفحه‌ی جامعِ صدور) ----
     if ($action === 'group_issue_requests') {
         require_admin_only();
-        $w = ["crp.status NOT IN ('ISSUED','CANCELLED')"]; $p = [];
+        $w = ["crp.status NOT IN ('ISSUED','CANCELLED')", "cr.is_import = 0"]; $p = [];
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
         if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $p[] = $data['insurer']; }
         $q = trim((string)($data['q'] ?? ''));
@@ -556,8 +558,11 @@ try {
             if ($expFromI) { $w[] = "crp.expiry_date >= ?"; $p[] = $expFromI; }
             if ($expToI)   { $w[] = "crp.expiry_date <= ?"; $p[] = $expToI; }
             if ($insurerF) { $w[] = "cr.insurer = ?"; $p[] = $insurerF; }
+            // برچسبِ «بایگانی وارداتی»: '' = همه، 1 = فقط وارداتی، 0 = بدونِ وارداتی
+            $impF = (string)($data['import'] ?? '');
+            if ($impF === '1') $w[] = "cr.is_import = 1"; elseif ($impF === '0') $w[] = "cr.is_import = 0";
             $stmt = $pdo->prepare("
-                SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text,
+                SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -567,7 +572,8 @@ try {
             foreach ($stmt->fetchAll() as $r) {
                 $kind = $r['request_kind'] ?? 'NEW_POLICY';
                 $rows[] = [
-                    'source' => 'COMPANY', 'source_fa' => 'شرکتی',
+                    'source' => 'COMPANY', 'source_fa' => !empty($r['is_import']) ? 'وارداتی' : 'شرکتی',
+                    'is_import' => !empty($r['is_import']) ? 1 : 0, 'tag' => !empty($r['is_import']) ? 'بایگانی وارداتی' : null,
                     'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']),
                     'holder' => $r['company_name'], 'insured_name' => $r['company_name'],
                     'national_id' => $r['economic_code'], 'phone' => $r['company_phone'],
@@ -596,7 +602,7 @@ try {
 
         // ---------- صادره‌های پرسنلی ----------
         // مثل فهرست صدور: بیمه‌ی کارکنان را فقط مدیر کل می‌بیند.
-        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN') {
+        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN' && (string)($data['import'] ?? '') !== '1') {
             $w = ["pc.status = 'ISSUED'"]; $p = [];
             if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
@@ -667,9 +673,10 @@ try {
         usort($rows, fn($a, $b) => strcmp((string)$b['issued_at'], (string)$a['issued_at']));
 
         // ---------- شمارش‌ها روی همین فیلترها ----------
-        $counts = ['total' => count($rows), 'company' => 0, 'personnel' => 0, 'body' => 0, 'third' => 0, 'premium' => 0];
+        $counts = ['total' => count($rows), 'company' => 0, 'personnel' => 0, 'body' => 0, 'third' => 0, 'premium' => 0, 'import' => 0];
         foreach ($rows as $r) {
             $r['source'] === 'COMPANY' ? $counts['company']++ : $counts['personnel']++;
+            if (!empty($r['is_import'])) $counts['import']++;
             $r['insurance_type'] === 'BODY' ? $counts['body']++ : $counts['third']++;
             $counts['premium'] += intval($r['total_premium']);
         }
@@ -723,7 +730,7 @@ try {
         fin_contracts_ensure($pdo);
         $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name, fc.name AS contract_name, fc.contract_key FROM companies c
                               LEFT JOIN companies parent ON parent.id = c.parent_id LEFT JOIN fin_contracts fc ON fc.id = c.contract_id
-                              WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') ORDER BY c.name");
+                              WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') AND c.is_import = 0 ORDER BY c.name");
         $companiesList = $stmt->fetchAll();
         // آمار برای کارت‌های صفحه‌ی شرکت‌ها: کاربرانِ پنل، درخواست‌ها، درخواست‌های باز، صادره‌ها
         $stat = ['users' => [], 'req' => [], 'open' => [], 'issued' => []];
@@ -976,7 +983,7 @@ try {
                        (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type <> 'BODY' AND crp.status = 'ISSUED') AS third_issued
                 FROM company_requests cr JOIN companies c ON c.id = cr.company_id";
         // فیلترها: وضعیت، شرکت، ماهِ ثبت (شمسی)، نوعِ درخواست، بیمه‌گر و جستجو (شماره‌ی درخواست / شرکت / پلاک / شاسی / بیمه‌گذار)
-        $w = []; $params = [];
+        $w = ["cr.is_import = 0"]; $params = [];   // «بایگانی وارداتی» صفحه‌ی خودش را دارد
         if ($statusFilter !== '') { $w[] = "cr.status = ?"; $params[] = $statusFilter; }
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $params[] = intval($data['company_id']); }
         if (!empty($data['request_kind'])) { $w[] = "cr.request_kind = ?"; $params[] = (string)$data['request_kind']; }
@@ -992,7 +999,7 @@ try {
             array_push($params, intval($q), $q, $like, $like, str_replace(' ', '', $like), $like, $like, $like);
         }
         if ($w) $sql .= " WHERE " . implode(' AND ', $w);
-        $sql .= " ORDER BY cr.created_at DESC LIMIT " . ($w ? 1000 : 300);
+        $sql .= " ORDER BY cr.created_at DESC LIMIT " . (count($w) > 1 ? 1000 : 300);
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
@@ -1021,7 +1028,7 @@ try {
         $stageList = [];
         foreach ($sum['stages'] as $st => $n) $stageList[] = ['status' => $st, 'status_fa' => company_plate_status_fa($st), 'n' => $n];
         $sum['stages'] = $stageList;
-        $companies = $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll();
+        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
         echo json_encode(['ok' => true, 'requests' => $rows, 'summary' => $sum, 'companies' => $companies], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1060,7 +1067,7 @@ try {
             echo json_encode(['ok' => true, 'defaults' => company_last_request_defaults($pdo, $companyId)], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $companies = $pdo->query("SELECT id, name, allowed_insurers FROM companies ORDER BY name")->fetchAll();
+        $companies = $pdo->query("SELECT id, name, allowed_insurers FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
         $checklists = [];
         foreach (['NEW_POLICY', 'ENDORSEMENT', 'CANCELLATION'] as $k) {
             foreach (['THIRDPARTY', 'BODY'] as $t) {
@@ -1860,7 +1867,8 @@ try {
         require_admin_only();
         @set_time_limit(600);
         $requestId = intval($data['request_id'] ?? 0);
-        if (!$requestId) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.']); exit; }
+        $importScope = !empty($data['import']);   // «بایگانی وارداتی»: همه‌ی ردیف‌های وارداتی
+        if (!$requestId && !$importScope) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.']); exit; }
         if (empty($_FILES['bundle']['tmp_name']) || !is_uploaded_file($_FILES['bundle']['tmp_name'])) {
             $code = $_FILES['bundle']['error'] ?? null;
             echo json_encode(['ok' => false, 'error' => $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE ? 'حجمِ فایل بیش از سقفِ مجازِ سرور است (upload_max_filesize = ' . ini_get('upload_max_filesize') . '). در cPanel ← Select PHP Version ← Options آن را بیشتر کنید (مثلاً 64M).' : 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit;
@@ -1902,7 +1910,7 @@ try {
             else $p['ocr_error'] = $o['debug'] ?: 'متنی خوانده نشد';
         }
         unset($p);
-        $items = cbundle_match($pdo, $requestId, $policies);
+        $items = cbundle_match($pdo, $requestId, $policies, $importScope);
         if ($items === null) { cbundle_rrmdir($dir); echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
         $valid = array_values(array_filter($items, fn($it) => $it['state'] !== 'unknown'));
         if (!$valid) {
@@ -1910,7 +1918,7 @@ try {
             echo json_encode(['ok' => false, 'error' => 'در این فایل هیچ بیمه‌نامه‌ی معتبری شناسایی نشد (' . intval($res['pages']) . ' صفحه بررسی شد). مطمئن شوید همان فایلِ خروجیِ بیمه‌نامه‌هاست.',
                               'pages' => intval($res['pages'])], JSON_UNESCAPED_UNICODE); exit;
         }
-        $meta = ['request_id' => $requestId, 'user_id' => intval($actor['id'] ?? 0), 'created' => time(), 'name' => $name, 'pages' => intval($res['pages']),
+        $meta = ['request_id' => $requestId, 'import' => $importScope ? 1 : 0, 'user_id' => intval($actor['id'] ?? 0), 'created' => time(), 'name' => $name, 'pages' => intval($res['pages']),
                  'policies' => $policies, 'items' => $items];
         file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
         $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
@@ -1924,7 +1932,7 @@ try {
         $dir = cbundle_root() . '/b_' . $token;
         $meta = $token && is_file($dir . '/analysis.json') ? json_decode((string)file_get_contents($dir . '/analysis.json'), true) : null;
         if (!$meta || empty($meta['policies'])) { echo json_encode(['ok' => false, 'error' => 'نتیجه‌ی بررسیِ فایل پیدا نشد (منقضی شده)؛ فایل را دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
-        $items = cbundle_match($pdo, intval($meta['request_id']), $meta['policies']);
+        $items = cbundle_match($pdo, intval($meta['request_id']), $meta['policies'], !empty($meta['import']));
         if ($items === null) { echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
         $meta['items'] = $items;
         file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));

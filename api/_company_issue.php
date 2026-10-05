@@ -11,13 +11,16 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
     if (!$baseDir) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
 
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, c.name AS company_name FROM company_request_plates crp
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, cr.is_import, c.name AS company_name FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id
                             JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
     $stmt->execute([$plateId]);
     $plate = $stmt->fetch();
     if (!$plate) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
     $kind = $plate['request_kind'] ?? 'NEW_POLICY';
+    $isImport = !empty($plate['is_import']);
+    // ردیفِ وارداتی: تاریخ صدور همان تاریخِ اکسلِ بیمه‌گر است (اگر از فایل خوانده نشد)
+    if ($isImport && !trim((string)$policyIssueDate) && !empty($plate['import_issue_date'])) $policyIssueDate = $plate['import_issue_date'];
 
     $plateDisplay = company_row_label($plate);
     // همان قاعده‌ی نام‌گذاری پرسنلی: پلاک بدون خط‌تیره‌ی داخلی، و «/» شماره‌ی بیمه‌نامه با «∕»
@@ -43,7 +46,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         if ($moved) $issuedFilePath = ltrim(str_replace($siteRoot, '', $dest), '/');
     }
 
-    $issuedAt = time();
+    $issuedAt = $isImport ? policy_issue_ts($policyIssueDate, time()) : time();
     // الحاقیه و فسخ فقط در بایگانی شرکتی می‌مانند (به «بایگانی صادره» نمی‌روند)
     $folderStatus = 'FAILED';
     if (!company_kind_goes_to_sadere($kind)) {
@@ -58,9 +61,13 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
                     pending_policy_temp_path = NULL, pending_policy_orig_name = NULL WHERE id = ?")
         ->execute([$policyNumber, $vin ?: null, $totalPremium, $issuedDir, $issuedFilePath, $issuedAt, $folderStatus, $plateId]);
 
-    // اقساطِ همین بیمه‌نامه طبقِ قسط‌بندیِ شرکت
+    if ($isImport && preg_match('/^1[34]\d{2}\D\d{1,2}\D\d{1,2}$/', p2e_digits(trim((string)$policyIssueDate)))) {
+        $pdo->prepare("UPDATE company_request_plates SET policy_issue_date = COALESCE(policy_issue_date, ?) WHERE id = ?")
+            ->execute([vsprintf('%04d/%02d/%02d', array_map('intval', preg_split('/\D/', p2e_digits(trim((string)$policyIssueDate))))), $plateId]);
+    }
+    // اقساطِ همین بیمه‌نامه طبقِ قسط‌بندیِ شرکت (ردیفِ وارداتی قسط ندارد)
     $installmentCount = 0;
-    if ($totalPremium) {
+    if ($totalPremium && !$isImport) {
         $genResult = company_generate_installments($pdo, $plateId);
         $installmentCount = $genResult['count'] ?? 0;
     }
@@ -73,7 +80,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     }
     // خبر به کاربرانِ همان شرکت در ربات بله
     try {
-        if (function_exists('cbot_notify_company')) {
+        if (!$isImport && function_exists('cbot_notify_company')) {
             cbot_notify_company($pdo, intval($plate['company_id']),
                 "✅ بیمه‌نامه‌ی " . insurance_type_fa($plate['insurance_type']) . " - " . company_row_label($plate) . " صادر شد"
                 . ($policyNumber ? " (شماره " . $policyNumber . ")" : '') . ".\nدرخواست #" . $plate['request_id'],
@@ -136,6 +143,7 @@ function cbundle_run($pdo, $pdf, $outDir) {
     if (!is_array($j)) return ['ok' => false, 'error' => 'خروجیِ پردازشگرِ فایل خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -800)];
     return $j;
 }
+function cbundle_pol_norm($v) { return preg_replace('/[^0-9A-Za-z]/', '', p2e_digits((string)$v)); }
 function cbundle_norm_vin($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); }
 function cbundle_vin_match($a, $b) {
     $a = cbundle_norm_vin($a); $b = cbundle_norm_vin($b);
@@ -193,16 +201,25 @@ function cbundle_diffs($row, $d) {
     return $out;
 }
 
-function cbundle_match($pdo, $requestId, array $policies) {
-    $st = $pdo->prepare("SELECT cr.id, cr.company_id FROM company_requests cr WHERE cr.id = ?");
-    $st->execute([$requestId]);
-    $req = $st->fetch();
-    if (!$req) return null;
-    $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, c.name AS company_name
-                           FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
-                          WHERE crp.status <> 'CANCELLED' AND (cr.id = ? OR cr.company_id = ?)");
-    $st->execute([$requestId, $req['company_id']]);
-    $rows = $st->fetchAll();
+// $requestId = 0 با $importScope: همه‌ی ردیف‌های «بایگانی وارداتی» (هر بیمه‌گذار و هر ماه) جست‌وجو می‌شوند
+function cbundle_match($pdo, $requestId, array $policies, $importScope = false) {
+    imp_ensure($pdo);
+    if ($importScope) {
+        $st = $pdo->query("SELECT crp.*, cr.request_kind, cr.company_id, cr.is_import, c.name AS company_name
+                             FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                            WHERE crp.status <> 'CANCELLED' AND cr.is_import = 1");
+        $rows = $st->fetchAll();
+    } else {
+        $st = $pdo->prepare("SELECT cr.id, cr.company_id FROM company_requests cr WHERE cr.id = ?");
+        $st->execute([$requestId]);
+        $req = $st->fetch();
+        if (!$req) return null;
+        $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, cr.is_import, c.name AS company_name
+                               FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                              WHERE crp.status <> 'CANCELLED' AND (cr.id = ? OR cr.company_id = ?)");
+        $st->execute([$requestId, $req['company_id']]);
+        $rows = $st->fetchAll();
+    }
     $used = [];
     $items = [];
     foreach ($policies as $i => $p) {
@@ -222,14 +239,17 @@ function cbundle_match($pdo, $requestId, array $policies) {
             $rp = company_plate_display($r['plate_p1'] ?? '', $r['plate_p2'] ?? '', $r['plate_letter'] ?? '', $r['plate_p4'] ?? '');
             $plateHit = $pc !== '' && $rp && plate_core($rp) === $pc;
             $vinHit = !empty($d['vin']) && (cbundle_vin_match($d['vin'], $r['chassis_no']) || cbundle_vin_match($d['vin'], $r['vin']));
-            if (!$plateHit && !$vinHit) continue;
-            $score = ($plateHit ? 4 : 0) + ($vinHit ? 4 : 0) + (intval($r['request_id']) === intval($requestId) ? 3 : 0)
+            // ردیفِ وارداتی شماره‌ی بیمه‌نامه‌اش را از اکسل دارد: قوی‌ترین نشانه
+            $polHit = !empty($r['import_policy_number']) && !empty($d['policy_num']) && cbundle_pol_norm($r['import_policy_number']) === cbundle_pol_norm($d['policy_num']);
+            if (!$plateHit && !$vinHit && !$polHit) continue;
+            $score = ($polHit ? 10 : 0) + ($plateHit ? 4 : 0) + ($vinHit ? 4 : 0) + (intval($r['request_id']) === intval($requestId) ? 3 : 0)
                    + (($d['ins_type'] ?? '') === insurance_type_fa($r['insurance_type']) ? 2 : 0) + ($r['status'] !== 'ISSUED' ? 1 : 0) - (isset($used[$r['id']]) ? 6 : 0);
             if ($score > $bestScore) { $bestScore = $score; $best = $r; }
         }
-        if (!$best) { $it['state'] = 'no_match'; $it['message'] = 'برای این بیمه‌نامه هیچ ردیفِ درخواستی (با همین پلاک/شاسی) در درخواست‌های این شرکت پیدا نشد.'; $items[] = $it; continue; }
+        if (!$best) { $it['state'] = 'no_match'; $it['message'] = $importScope ? 'برای این بیمه‌نامه هیچ ردیفی (با همین شماره بیمه‌نامه، پلاک یا شاسی) در «بایگانی وارداتی» پیدا نشد.' : 'برای این بیمه‌نامه هیچ ردیفِ درخواستی (با همین پلاک/شاسی) در درخواست‌های این شرکت پیدا نشد.'; $items[] = $it; continue; }
         $kind = $best['request_kind'] ?? 'NEW_POLICY';
-        $it['row'] = ['id' => intval($best['id']), 'request_id' => intval($best['request_id']), 'other_request' => intval($best['request_id']) !== intval($requestId),
+        $it['row'] = ['id' => intval($best['id']), 'request_id' => intval($best['request_id']), 'other_request' => !$importScope && intval($best['request_id']) !== intval($requestId),
+                      'is_import' => !empty($best['is_import']), 'import_policy_number' => $best['import_policy_number'] ?? null,
                       'label' => company_row_label($best), 'plate_p1' => $best['plate_p1'], 'plate_p2' => $best['plate_p2'], 'plate_letter' => $best['plate_letter'],
                       'plate_p4' => $best['plate_p4'], 'chassis_no' => $best['chassis_no'], 'insurance_type' => $best['insurance_type'],
                       'insurance_type_fa' => insurance_type_fa($best['insurance_type']), 'status' => $best['status'],
@@ -252,6 +272,7 @@ function cbundle_match($pdo, $requestId, array $policies) {
             $ds->execute([$best['id']]);
             $missing = company_plate_missing_docs($best['insurance_type'], (bool)$best['skip_health_inspection'], array_filter(array_column($ds->fetchAll(), 'doc_type')),
                                                   $best['has_prev_body'], $kind);
+            if (!empty($best['is_import'])) $missing += imp_missing_info($best);
             $it['state'] = 'not_ready';
             $it['missing'] = array_values($missing);
             $it['message'] = 'هنوز به مرحله‌ی صدور نرسیده (مرحله‌ی فعلی: ' . company_plate_status_fa($best['status'], $kind) . ')'

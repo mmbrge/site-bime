@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -213,7 +214,7 @@ try {
 
             // ثبت/اتصال شرکت (قبل از ساخت پوشه، تا نامِ شرکت در پوشه درست باشد)
             if ($company_name !== '') {
-                $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+                $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
                 $stmt->execute([$company_name]);
                 $company_id = $stmt->fetchColumn();
                 if (!$company_id) {

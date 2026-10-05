@@ -4,6 +4,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -104,7 +105,7 @@ try {
         $pdo->beginTransaction();
         $companyId = null;
         if ($companyName !== '') {
-            $st = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+            $st = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
             $st->execute([$companyName]);
             $companyId = $st->fetchColumn() ?: null;
             if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
@@ -282,7 +283,7 @@ try {
         // ثبت شرکت
         $company_id = null;
         if (!empty($company_name)) {
-            $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+            $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
             $stmt->execute([$company_name]);
             $company_id = $stmt->fetchColumn();
             if (!$company_id) {
@@ -359,7 +360,7 @@ try {
 
                 $companyId = null;
                 if ($companyName !== '') {
-                    $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ?");
+                    $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
                     $stmt->execute([$companyName]);
                     $companyId = $stmt->fetchColumn() ?: null;
                     if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }

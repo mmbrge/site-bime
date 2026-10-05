@@ -21,7 +21,8 @@ try {
         // تا بشود با اسمِ خودِ شخص هم گفتگو را پیدا کرد (گفتگو به ازای هر شرکت است)
         $q = trim($data['q'] ?? '');
         $params = [];
-        $where = "c.kind IN ('INSURANCE_CLIENT','BOTH')";
+        imp_ensure($pdo);
+        $where = "c.kind IN ('INSURANCE_CLIENT','BOTH') AND c.is_import = 0";
         if ($q !== '') {
             $where .= " AND (c.name LIKE ? OR EXISTS (
                             SELECT 1 FROM company_portal_user_companies cpuc

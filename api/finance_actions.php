@@ -10,6 +10,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
 require __DIR__ . '/finance_core.php';
 require_once __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_fin_ledger.php';
@@ -51,7 +52,7 @@ try {
         fin_ledger_ensure($pdo);
         echo json_encode(['ok' => true, 'methods' => FIN_METHODS, 'insurers' => FIN_INSURERS, 'is_admin' => $isAdmin,
                           'rule_collect_before_pay' => (fin_settings($pdo)['rule_collect_before_pay'] ?? '0') === '1',
-                          'companies' => $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll()], JSON_UNESCAPED_UNICODE);
+                          'companies' => $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'ledger_installments') {
@@ -249,7 +250,7 @@ try {
         fin_auto_close_periods($pdo);
         $current = fin_current_period($pdo);
         $periods = $pdo->query("SELECT id, title, status, starts_at, ends_at FROM billing_periods ORDER BY jalali_year DESC, jalali_month DESC")->fetchAll();
-        $companies = $pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll();
+        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
         echo json_encode([
             'ok' => true, 'periods' => $periods, 'companies' => $companies,
             'current_period_id' => $current['id'] ?? null,

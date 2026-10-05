@@ -352,8 +352,8 @@ function company_plate_status_fa($status, $kind = 'NEW_POLICY') {
 // «آماده‌ی صدور» جابه‌جا می‌شود؛ مرحله‌های دستی (ارسال به رئیس / در حال صدور /
 // صادر شد / لغو) دست‌نخورده می‌مانند.
 function company_sync_plate_status($pdo, $plateId) {
-    $stmt = $pdo->prepare("SELECT crp.insurance_type, crp.skip_health_inspection, crp.has_prev_body, crp.status,
-                                  cr.request_kind
+    imp_ensure($pdo);
+    $stmt = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.is_import
                              FROM company_request_plates crp
                              JOIN company_requests cr ON cr.id = crp.request_id
                             WHERE crp.id = ?");
@@ -367,6 +367,8 @@ function company_sync_plate_status($pdo, $plateId) {
     $types = array_filter(array_column($stmt->fetchAll(), 'doc_type'));
     $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types,
                                           $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY');
+    // ردیفِ وارداتی: اطلاعاتِ لازم (شماره بیمه‌نامه، تاریخ صدور، پلاک یا شاسی) هم باید کامل باشد
+    if (!empty($plate['is_import']) && imp_missing_info($plate)) $missing['_info'] = 'اطلاعات';
     $newStatus = $missing ? 'PENDING' : 'READY_FOR_ISSUE';
     if ($newStatus !== $plate['status']) {
         $pdo->prepare("UPDATE company_request_plates SET status = ? WHERE id = ?")->execute([$newStatus, $plateId]);
@@ -486,7 +488,8 @@ function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyNa
 // جای دیگری بود (مثلاً چون insurance_type بعداً عوض شده) آن را به مسیر جدید
 // منتقل می‌کند - خودترمیم‌گر، هم برای اولین بار و هم برای اصلاحات بعدی مناسب است.
 function ensure_plate_folder($pdo, $siteRoot, $plateId) {
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, cr.request_kind, c.name AS company_name
+    imp_ensure($pdo);
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, cr.request_kind, cr.is_import, cr.import_month, c.name AS company_name
                             FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id
                             JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
@@ -504,9 +507,14 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
     }
 
     $plateDisplay = company_row_label($plate);
-    $desired = build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'],
-                                          $plate['insurance_type'], $plate['expiry_date'], $plateDisplay,
-                                          $plate['request_kind'] ?? 'NEW_POLICY');
+    // ردیفِ «بایگانی وارداتی»: پوشه بر اساسِ ماهِ صدورِ خودِ بیمه‌نامه (نه روزِ ورود)
+    $desired = !empty($plate['is_import'])
+        ? imp_request_folder($siteRoot, $plate['import_month'], $plate['company_name'], strtotime($plate['request_created_at']))
+          . '/' . sanitize_folder_name(company_kind_folder_label('NEW_POLICY', $plate['insurance_type']))
+          . '/' . company_plate_folder_name($plate['expiry_date'], $plate['insurance_type'], $plateDisplay)
+        : build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'],
+                                     $plate['insurance_type'], $plate['expiry_date'], $plateDisplay,
+                                     $plate['request_kind'] ?? 'NEW_POLICY');
 
     if ($plate['folder_path'] && $plate['folder_path'] !== $desired && is_dir($plate['folder_path'])) {
         if (!is_dir(dirname($desired))) @mkdir(dirname($desired), 0755, true);
@@ -1279,10 +1287,13 @@ function company_jalali_month_len($jy, $jm) {
 function company_generate_installments($pdo, $plateId) {
     if (!function_exists('fin_plan_build')) require_once __DIR__ . '/finance_core.php';
     fin_contracts_ensure($pdo);
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id FROM company_request_plates crp
+    imp_ensure($pdo);
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.is_import FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $stmt->execute([$plateId]);
     $plate = $stmt->fetch();
+    // «بایگانی وارداتی» قسط و ردیفِ مالی ندارد
+    if ($plate && !empty($plate['is_import'])) return ['ok' => false, 'count' => 0, 'error' => 'ردیفِ وارداتی قسط ندارد.'];
     if (!$plate || $plate['status'] !== 'ISSUED' || empty($plate['total_premium'])) {
         return ['ok' => false, 'error' => 'پلاک صادر نشده یا حق بیمه ثبت نشده است.'];
     }
@@ -1477,7 +1488,8 @@ function company_import_parse($pdo, $path) {
     }
     if (!isset($idx['name'])) return ['error' => 'ستونِ «نام شرکت» پیدا نشد. سرستون‌ها را مطابقِ راهنما بنویسید.', 'unknown' => $unknown];
     $existing = [];
-    foreach ($pdo->query("SELECT id, name FROM companies") as $r) $existing[company_normalize_header($r['name'])] = (int)$r['id'];
+    imp_ensure($pdo);
+    foreach ($pdo->query("SELECT id, name FROM companies WHERE is_import = 0") as $r) $existing[company_normalize_header($r['name'])] = (int)$r['id'];
     $rows = []; $seen = []; $fileNames = [];
     foreach ($table as $li => $cells) {
         if (!array_filter(array_map(fn($x) => trim((string)$x), $cells), 'strlen')) continue;
@@ -1535,7 +1547,7 @@ function company_import_commit($pdo, array $rows, $update) {
         }
         // شرکتِ مادر
         $all = [];
-        foreach ($pdo->query("SELECT id, name FROM companies") as $c) $all[company_normalize_header($c['name'])] = (int)$c['id'];
+        foreach ($pdo->query("SELECT id, name FROM companies WHERE is_import = 0") as $c) $all[company_normalize_header($c['name'])] = (int)$c['id'];
         $setParent = $pdo->prepare("UPDATE companies SET parent_id = ? WHERE id = ?");
         foreach ($rows as $r) {
             if (empty($r['data']['parent']) || !in_array($r['status'], ['new', 'update'], true)) continue;
@@ -1551,4 +1563,37 @@ function company_import_commit($pdo, array $rows, $update) {
         return ['ok' => false, 'error' => 'ثبت در دیتابیس ممکن نشد.'];
     }
     return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped];
+}
+
+// =====================================================================
+//  «بایگانی وارداتی»: بیمه‌نامه‌هایی که از خروجیِ اکسلِ بیمه‌گر (پاسارگاد) وارد می‌شوند.
+//  همان جدول‌های درخواست/ردیفِ شرکتی، با پرچمِ is_import؛ بیمه‌گذار یک «شرکتِ وارداتی» است که در
+//  فهرست‌های شرکت‌ها، پنل/ربات، مالی و اقساط دیده نمی‌شود. بعد از صدور مثلِ بقیه به «بایگانی صادره» کپی می‌شود.
+//  ستون‌ها و جدولِ لازم خودکار ساخته می‌شوند.
+// =====================================================================
+require_once __DIR__ . '/_import_schema.php';   // imp_ensure()
+// ستون‌ها همان ابتدای درخواست ساخته شوند (پیش از هر تراکنشی)
+if (isset($pdo) && $pdo instanceof PDO) imp_ensure($pdo);
+
+function imp_archive_root($siteRoot) {
+    return archive_root($siteRoot) . '/بایگانی وارداتی';
+}
+
+// بایگانی وارداتی / {سالِ صدور} / {ماهِ صدور} / {بیمه‌گذار (شرکت یا شخص)} / «درخواست ۱۴۰۵.۰۷.۱۴» (روزِ ورود)
+function imp_request_folder($siteRoot, $importMonth, $insuredName, $createdTs) {
+    if (preg_match('/^(1[34]\d{2})-(\d{2})$/', (string)$importMonth, $m)) { $jy = intval($m[1]); $jm = intval($m[2]); }
+    else { [$jy, $jm, ] = jalali_from_gregorian_ts($createdTs ?: time()); }
+    return imp_archive_root($siteRoot) . '/' . $jy . '/' . jalali_month_name($jm) . '/' . sanitize_folder_name($insuredName ?: 'نامشخص')
+        . '/' . sanitize_folder_name('درخواست ' . jalali_from_gregorian_ts_dotted($createdTs ?: time()));
+}
+
+// اطلاعاتِ لازمِ یک ردیفِ وارداتی پیش از صدور (کلید => برچسب)
+function imp_missing_info($row) {
+    $miss = [];
+    $hasPlate = company_plate_display($row['plate_p1'] ?? '', $row['plate_p2'] ?? '', $row['plate_letter'] ?? '', $row['plate_p4'] ?? '');
+    if (!$hasPlate && trim((string)($row['chassis_no'] ?? '')) === '') $miss['identity'] = 'پلاک یا شماره شاسی';
+    if (empty($row['insurance_type'])) $miss['insurance_type'] = 'نوع بیمه';
+    if (trim((string)($row['import_policy_number'] ?? '')) === '') $miss['policy_number'] = 'شماره بیمه‌نامه';
+    if (!preg_match('/^1[34]\d{2}\/\d{2}\/\d{2}$/', (string)($row['import_issue_date'] ?? ''))) $miss['issue_date'] = 'تاریخ صدور';
+    return $miss;
 }
