@@ -83,22 +83,41 @@
     .cf-disc{position:relative;width:54px;height:54px;border-radius:50%;border:0;padding:0;cursor:pointer;background:transparent;filter:drop-shadow(0 10px 18px rgba(15,23,42,.35));transition:transform .3s cubic-bezier(.2,.9,.3,1.2),opacity .25s}
     /* پخش‌کننده‌ی کوچک: وقتی آهنگی پخش شده و پنل بسته است، دیسک کوچک می‌شود و این نوار جایش باز می‌شود */
     .cf-root.cf-has-mini .cf-disc{transform:scale(.2) rotate(-90deg);opacity:0;pointer-events:none}
-    .cf-mini{position:absolute;left:0;bottom:0;height:56px;width:min(320px,calc(100vw - 28px));display:flex;align-items:center;gap:4px;padding:0 8px 0 6px;border-radius:19px;
-        background:rgba(15,23,42,.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:#e2e8f0;border:1px solid rgba(255,255,255,.1);box-shadow:0 18px 40px -14px rgba(2,6,23,.65);
-        overflow:hidden;transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .25s}
+    .cf-mini{position:absolute;left:0;bottom:0;height:44px;width:min(244px,calc(100vw - 28px));display:flex;align-items:center;gap:2px;padding:0 5px 0 4px;border-radius:22px;
+        background:linear-gradient(120deg,#1e1b4b 0%,#0f172a 58%,#0c2a43 100%);color:#e2e8f0;border:1px solid rgba(165,180,252,.22);
+        box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 0 4px rgba(99,102,241,.06);overflow:hidden;isolation:isolate;
+        transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .25s,box-shadow .4s}
     .cf-root.cf-has-mini .cf-mini{opacity:1;transform:none;pointer-events:auto}
-    .cf-mini .cf-mc{flex:none;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;cursor:pointer;position:relative;overflow:hidden}
-    .cf-mini .cf-mc::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 55%)}
-    .cf-mini.on .cf-mc i{animation:cfBob 1.2s ease-in-out infinite}
-    .cf-mini .cf-mt{flex:1;min-width:0;cursor:pointer;padding:0 4px}
-    .cf-mini .cf-mt b{display:block;font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .cf-mini .cf-mt small{display:block;font-size:10px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .cf-mini button{flex:none;width:30px;height:30px;border-radius:10px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:12px;transition:background .15s}
-    .cf-mini button:hover{background:rgba(255,255,255,.1)}
-    .cf-mini button.pp{width:36px;height:36px;border-radius:50%;color:#fff;font-size:13px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 6px 14px -6px rgba(99,102,241,.8)}
-    .cf-mini button.op{background:rgba(255,255,255,.08);margin-right:2px}
-    .cf-mini .cf-mbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.08)}
-    .cf-mini .cf-mbar i{position:absolute;right:0;top:0;bottom:0;width:0;background:var(--cf-acc2,linear-gradient(90deg,#06b6d4,#6366f1));transition:width .3s linear}
+    .cf-mini::before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(129,140,248,.2) 50%,transparent 70%);transform:translateX(-120%);opacity:0}
+    .cf-mini.on::before{opacity:1;animation:cfSheen 3.6s ease-in-out infinite}
+    .cf-mini.on{box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 18px -4px rgba(99,102,241,.55)}
+    @keyframes cfSheen{0%{transform:translateX(120%)}60%,100%{transform:translateX(-120%)}}
+    .cf-mini .cf-mc{flex:none;position:relative;width:36px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .cf-mini .cf-mc svg{position:absolute;inset:0;transform:rotate(-90deg)}
+    .cf-mini .cf-mc svg circle{fill:none;stroke-width:2.5}
+    .cf-mini .cf-mc .cf-mring{stroke:url(#cfmg);stroke-linecap:round;stroke-dasharray:0 101;transition:stroke-dasharray .3s linear}
+    .cf-mini .cf-disk{width:28px;height:28px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+    .cf-mini .cf-disk::before{content:'';position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),radial-gradient(circle at 30% 25%,rgba(255,255,255,.45),transparent 50%)}
+    .cf-mini .cf-disk::after{content:'';position:absolute;inset:38%;border-radius:50%;background:#0f172a;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+    .cf-mini.on .cf-disk{animation:cfSpin 3.2s linear infinite}
+    .cf-mini .cf-mt{flex:1;min-width:0;cursor:pointer;padding:0 5px;overflow:hidden}
+    .cf-mini .cf-mt b{display:block;font-size:11px;font-weight:900;white-space:nowrap;overflow:hidden;line-height:1.5}
+    .cf-mini .cf-mt b span{display:inline-block}
+    .cf-mini .cf-mt b.mq span{animation:cfMq var(--mqd,8s) ease-in-out infinite}
+    @keyframes cfMq{0%,18%{transform:translateX(0)}82%,100%{transform:translateX(var(--mq,0))}}
+    .cf-mini .cf-mt small{display:flex;align-items:center;gap:4px;font-size:9.5px;opacity:.6;white-space:nowrap;overflow:hidden;line-height:1.4}
+    .cf-mini .cf-meq{display:none;align-items:flex-end;gap:1.5px;height:8px}
+    .cf-mini .cf-meq i{width:2px;border-radius:1px;background:#a5b4fc;height:3px;animation:cfMeq .9s ease-in-out infinite}
+    @keyframes cfMeq{0%,100%{height:2px}50%{height:8px}}
+    .cf-mini .cf-meq i:nth-child(2){animation-delay:.2s}.cf-mini .cf-meq i:nth-child(3){animation-delay:.4s}
+    .cf-mini.on .cf-meq{display:inline-flex}
+    .cf-mini button{flex:none;width:24px;height:24px;border-radius:50%;border:0;background:transparent;color:#cbd5e1;cursor:pointer;font-size:10px;transition:background .15s,color .15s,transform .15s;display:flex;align-items:center;justify-content:center}
+    .cf-mini button:hover{background:rgba(255,255,255,.1);color:#fff}
+    .cf-mini button:active{transform:scale(.88)}
+    .cf-mini button.pp{width:30px;height:30px;color:#fff;font-size:11px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 4px 12px -4px rgba(99,102,241,.9)}
+    .cf-mini button.pp:hover{transform:scale(1.07)}
+    .cf-mini button.op{width:20px;height:20px;font-size:8.5px;opacity:.55;margin-right:1px}
+    .cf-mini button.op:hover{opacity:1}
     .cf-disc:hover{transform:scale(1.06)}
     .cf-vinyl{position:absolute;inset:4px;border-radius:50%;background:repeating-radial-gradient(circle at 50% 50%,#111827 0 2px,#1f2937 2px 3px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.06)}
     .cf-vinyl::before{content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 40deg,rgba(255,255,255,.18) 50deg,transparent 70deg 220deg,rgba(255,255,255,.1) 235deg,transparent 250deg)}
@@ -403,19 +422,20 @@
         if (!c) return;
         const a = P.audio, p = a && a.duration ? a.currentTime / a.duration : 0;
         c.style.strokeDasharray = `${(p * 157).toFixed(1)} 157`;
-        const mb = mini && mini.querySelector('.cf-mbar i');
-        if (mb) mb.style.width = (p * 100).toFixed(2) + '%';
+        const mr = mini && mini.querySelector('.cf-mring');
+        if (mr) mr.style.strokeDasharray = `${(p * 100.5).toFixed(1)} 101`;
     }
     function buildMini() {
         mini = document.createElement('div');
         mini.className = 'cf-mini';
-        mini.innerHTML = `<div class="cf-mc" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-music"></i></div>
-            <div class="cf-mt" data-m="open"><b></b><small></small></div>
+        // صفحه‌ی گردانِ کوچک با حلقه‌ی پیشرفت، نامِ آهنگ (اگر بلند بود آرام می‌لغزد) و کنترل‌ها
+        mini.innerHTML = `<div class="cf-mc" data-m="open" title="بازکردنِ پخش‌کننده"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" stroke="rgba(255,255,255,.1)"></circle>
+                <circle class="cf-mring" cx="18" cy="18" r="16"></circle><defs><linearGradient id="cfmg"><stop offset="0" stop-color="#a5b4fc"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg><span class="cf-disk"></span></div>
+            <div class="cf-mt" data-m="open"><b><span></span></b><small><span class="cf-meq"><i></i><i></i><i></i></span><span data-sub></span></small></div>
             <button type="button" data-m="prev" title="قبلی"><i class="fas fa-backward-step"></i></button>
             <button type="button" class="pp" data-m="play" title="پخش / مکث"></button>
             <button type="button" data-m="next" title="بعدی"><i class="fas fa-forward-step"></i></button>
-            <button type="button" class="op" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
-            <span class="cf-mbar"><i></i></span>`;
+            <button type="button" class="op" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-chevron-up"></i></button>`;
         mini.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', e => {
             e.stopPropagation();
             const m = b.dataset.m;
@@ -430,11 +450,15 @@
         if (!P.cur) return;
         const t = P.cur, cv = coverOf(t);
         mini.classList.toggle('on', P.playing);
-        const mc = mini.querySelector('.cf-mc');
-        mc.style.background = cv.bg; mc.innerHTML = `<i class="fas ${cv.ic}"></i>`;
-        mini.querySelector('.cf-mt b').textContent = t.title;
-        mini.querySelector('.cf-mt small').textContent = [t.artist, t.genre].filter(Boolean).join(' · ');
-        mini.querySelector('[data-m="play"]').innerHTML = `<i class="fas ${P.playing ? 'fa-pause' : 'fa-play'}" style="${P.playing ? '' : 'margin-left:2px'}"></i>`;
+        mini.querySelector('.cf-disk').style.background = cv.bg;
+        const tb = mini.querySelector('.cf-mt b'), ts = tb.firstElementChild;
+        if (ts.textContent !== t.title) {
+            ts.textContent = t.title; tb.classList.remove('mq');
+            // نامِ بلند: آرام جابه‌جا می‌شود تا کامل خوانده شود
+            requestAnimationFrame(() => { const over = ts.scrollWidth - tb.clientWidth; if (over > 4) { tb.style.setProperty('--mq', over + 'px'); tb.style.setProperty('--mqd', Math.max(6, over / 12) + 's'); tb.classList.add('mq'); } });
+        }
+        mini.querySelector('[data-sub]').textContent = t.artist || t.genre || '';
+        mini.querySelector('[data-m="play"]').innerHTML = `<i class="fas ${P.playing ? 'fa-pause' : 'fa-play'}" style="${P.playing ? '' : 'margin-left:1px'}"></i>`;
         ring();
     }
     function renderNow() {
