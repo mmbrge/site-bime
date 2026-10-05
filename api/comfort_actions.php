@@ -202,7 +202,8 @@ try {
         if ($target === 'mine') $need('music_upload');
     };
     // یک ورودیِ زیپ را به آهنگ تبدیل می‌کند؛ ژانر: انتخابِ مدیر، یا اگر «خودکار» بود نامِ پوشه‌ی داخلِ زیپ، وگرنه برچسبِ آهنگ
-    $zipEntry = function (ZipArchive $z, $i, array &$job, array &$res, array $genres) use ($pdo, $AT, $AID, $upDir) {
+    $trackMax = $isAdmin ? CF_MAX_TRACK_ADMIN : CF_MAX_TRACK;   // سقفِ هر آهنگ: مدیرِ کل ۱۵۰، بقیه ۶۰ مگابایت
+    $zipEntry = function (ZipArchive $z, $i, array &$job, array &$res, array $genres) use ($pdo, $AT, $AID, $upDir, $trackMax) {
         $stt = $z->statIndex($i, ZipArchive::FL_ENC_RAW);
         $en = (string)$stt['name'];
         if (!mb_check_encoding($en, 'UTF-8')) { $u = $z->getNameIndex($i); $en = mb_check_encoding((string)$u, 'UTF-8') ? $u : @mb_convert_encoding($en, 'UTF-8', 'CP1256'); }
@@ -212,11 +213,11 @@ try {
         $e2 = strtolower(pathinfo($base, PATHINFO_EXTENSION));
         if (!isset(CF_AUDIO[$e2])) { if (!in_array($e2, ['jpg', 'jpeg', 'png', 'txt', 'nfo', 'url', 'm3u', 'db', 'ini', 'lrc'], true)) $res['skipped'][] = '«' . $base . '» فایلِ صوتی نیست.'; return; }
         $job['audio_done'] = intval($job['audio_done'] ?? 0) + 1;
-        if ($stt['size'] > CF_MAX_TRACK) { $res['errors'][] = '«' . $base . '» بیشتر از ۶۰ مگابایت است.'; return; }
+        if ($stt['size'] > $trackMax) { $res['errors'][] = '«' . $base . '» بیشتر از ' . cf_max_mb_fa($trackMax) . ' مگابایت است.'; return; }
         $tmp = $upDir . '/z_' . $job['uid'] . '_' . $i . '.' . $e2;
         $src = $z->getStream($z->getNameIndex($i));
         if (!$src) { $res['errors'][] = '«' . $base . '» خوانده نشد.'; return; }
-        $dst = fopen($tmp, 'wb'); stream_copy_to_stream($src, $dst, CF_MAX_TRACK + 1); fclose($dst); fclose($src);
+        $dst = fopen($tmp, 'wb'); stream_copy_to_stream($src, $dst, $trackMax + 1); fclose($dst); fclose($src);
         $g = $job['genre'];
         if ($g === '' || $g === 'auto') {
             $dir = trim(dirname($en), './');
@@ -226,7 +227,7 @@ try {
                 if (!in_array($g, $genres, true) && !in_array($g, $job['new_genres'], true)) $job['new_genres'][] = $g;
             } else $g = 'auto';
         }
-        $r = cf_add_track($pdo, $tmp, $base, $job['owner'], [$AT, $AID], $g);
+        $r = cf_add_track($pdo, $tmp, $base, $job['owner'], [$AT, $AID], $g, $trackMax);
         @unlink($tmp);
         if ($r['ok']) $res['added'][] = $r['track']; elseif (!empty($r['skip'])) $res['skipped'][] = $r['error']; else $res['errors'][] = $r['error'];
     };
@@ -245,9 +246,9 @@ try {
         $f = $_FILES['chunk'] ?? null;
         if (!$f || $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) cfo(['ok' => false, 'error' => 'تکه‌ی فایل نرسید؛ دوباره امتحان کنید.']);
         if ($f['size'] > 3 * 1024 * 1024) cfo(['ok' => false, 'error' => 'تکه‌ی فایل بزرگ است.']);
-        $max = $isZip ? CF_MAX_ZIP : CF_MAX_TRACK;
+        $max = $isZip ? CF_MAX_ZIP : $trackMax;
         $size = intval($data['size'] ?? 0);
-        if ($size > $max) cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ۶۰ مگابایت.']);
+        if ($size > $max) cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ' . cf_max_mb_fa($trackMax) . ' مگابایت.']);
         $part = $upFile($uid, 'part');
         if ($idx === 0 && !$off) {
             $upClean($uid);
@@ -261,7 +262,7 @@ try {
         fwrite($out, file_get_contents($f['tmp_name']));
         fclose($out);
         clearstatcache();
-        if (filesize($part) > $max) { $upClean($uid); cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ۶۰ مگابایت.']); }
+        if (filesize($part) > $max) { $upClean($uid); cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ' . cf_max_mb_fa($trackMax) . ' مگابایت.']); }
         if ($idx + 1 < $total) cfo(['ok' => true, 'next' => $idx + 1, 'have' => filesize($part)]);
         // تکه‌ی آخر
         @set_time_limit(0);
@@ -269,7 +270,7 @@ try {
         $genre = trim((string)($data['genre'] ?? ''));
         if (!$isZip) {
             $res = ['added' => [], 'skipped' => [], 'errors' => []];
-            $r = cf_add_track($pdo, $part, $name, $owner, [$AT, $AID], $genre);
+            $r = cf_add_track($pdo, $part, $name, $owner, [$AT, $AID], $genre, $trackMax);
             if ($r['ok']) $res['added'][] = $r['track']; elseif (!empty($r['skip'])) $res['skipped'][] = $r['error']; else $res['errors'][] = $r['error'];
             $upFinish($uid, $name, count($res['added']), count($res['skipped']), count($res['errors']), $target);
             cfo(['ok' => true, 'done' => true] + $res + ['quota' => $owner[0] !== 'P' ? cf_quota_state($pdo, $AT, $AID) : null]);

@@ -29,7 +29,8 @@ const CF_FOCUS_GENRES = ['بی‌کلام', 'کلاسیک', 'طبیعت و آر�
 const CF_AUDIO = ['mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'aac' => 'audio/aac', 'ogg' => 'audio/ogg', 'oga' => 'audio/ogg', 'opus' => 'audio/ogg',
                   'wav' => 'audio/wav', 'flac' => 'audio/flac', 'webm' => 'audio/webm'];
 const CF_MUSIC_DIR = 'uploads/music';
-const CF_MAX_TRACK = 60 * 1024 * 1024;      // هر آهنگ حداکثر ۶۰ مگابایت
+const CF_MAX_TRACK = 60 * 1024 * 1024;      // هر آهنگ حداکثر ۶۰ مگابایت (کاربران)
+const CF_MAX_TRACK_ADMIN = 150 * 1024 * 1024; // هر آهنگِ مدیرِ کل حداکثر ۱۵۰ مگابایت (تکی، داخلِ زیپ، پنل یا شخصی)
 const CF_MAX_ZIP = 1024 * 1024 * 1024;      // هر زیپِ مدیر حداکثر ۱ گیگابایت
 
 function cf_root() { return dirname(__DIR__); }
@@ -303,13 +304,14 @@ function cf_quota_state($pdo, $type, $id) {
 
 // ---------------- افزودنِ آهنگ ----------------
 // $owner: ['P', 0] برای کتابخانه‌ی پنل یا [نوع، شناسه] برای آهنگِ شخصی. خروجی: ['ok'=>true,'track'=>..] یا ['ok'=>false,'error'=>..,'skip'=>true]
-function cf_add_track($pdo, $srcPath, $origName, array $owner, array $uploader, $genre = '') {
+function cf_max_mb_fa($bytes) { return str_replace(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'], (string)intval($bytes / 1048576)); }
+function cf_add_track($pdo, $srcPath, $origName, array $owner, array $uploader, $genre = '', $maxBytes = CF_MAX_TRACK) {
     cf_ensure($pdo);
     $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
     if (!isset(CF_AUDIO[$ext])) return ['ok' => false, 'skip' => true, 'error' => 'قالبِ فایل پشتیبانی نمی‌شود (' . $origName . ').'];
     $size = filesize($srcPath);
     if ($size <= 1024) return ['ok' => false, 'skip' => true, 'error' => 'فایل خالی است (' . $origName . ').'];
-    if ($size > CF_MAX_TRACK) return ['ok' => false, 'error' => 'حجمِ «' . $origName . '» بیشتر از ۶۰ مگابایت است.'];
+    if ($size > $maxBytes) return ['ok' => false, 'error' => 'حجمِ «' . $origName . '» بیشتر از ' . cf_max_mb_fa($maxBytes) . ' مگابایت است.'];
     if (!cf_sniff_audio($srcPath, $ext)) return ['ok' => false, 'error' => '«' . $origName . '» فایلِ صوتیِ معتبر نیست.'];
     $sha = sha1_file($srcPath);
     $st = $pdo->prepare("SELECT title FROM cf_blocked WHERE sha1 = ?");
