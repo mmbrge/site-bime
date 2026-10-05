@@ -92,13 +92,14 @@ try {
         $d = wk_days($pdo, $uid, $g, $g)[$g];
         // سرویسِ رفت‌وآمدِ همین روز + سرویس‌هایی که این نفر می‌تواند انتخاب کند
         require_once __DIR__ . '/_work_service.php';
-        if (!ws_can($pdo, $uid)) wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g), 'svc_enabled' => false, 'svc_services' => []]);
+        $autoTasks = wk_auto_tasks($pdo, $uid, $g, $g)[$g] ?? [];
+        if (!ws_can($pdo, $uid)) wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g), 'auto_tasks' => $autoTasks, 'svc_enabled' => false, 'svc_services' => []]);
         $sr = ws_user_days($pdo, $uid, $g, $g)[$g] ?? null;
         $allowed = ws_allowed($pdo, $uid);
         $svcList = [];
         foreach ($allowed as $s) $svcList[$s['id']] = ['id' => $s['id'], 'name' => $s['name'], 'price_go' => $s['price_go'], 'price_back' => $s['price_back']];
         foreach (['go_service_id', 'back_service_id'] as $c) if ($sr && $sr[$c] && !isset($svcList[intval($sr[$c])]) && ($x = ws_service($pdo, $sr[$c]))) $svcList[$x['id']] = ['id' => $x['id'], 'name' => $x['name'], 'price_go' => $x['price_go'], 'price_back' => $x['price_back']];
-        wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g),
+        wout(['ok' => true, 'day' => $d, 'timeline' => wk_timeline($pdo, $uid, $g), 'auto_tasks' => $autoTasks,
               'svc' => ['go' => $sr ? intval($sr['go_service_id']) : 0, 'back' => $sr ? intval($sr['back_service_id']) : 0,
                         'amount_go' => $sr ? intval($sr['amount_go']) : 0, 'amount_back' => $sr ? intval($sr['amount_back']) : 0],
               'svc_services' => array_values($svcList), 'svc_default' => ws_default_for($pdo, $uid, $allowed), 'svc_enabled' => true]);
@@ -118,7 +119,10 @@ try {
         foreach ((array)($data['tasks'] ?? []) as $t) {
             $title = trim(mb_substr((string)($t['title'] ?? ''), 0, 300));
             if ($title === '') continue;
-            $tasks[] = ['from' => wk_time($t['from'] ?? ''), 'to' => wk_time($t['to'] ?? ''), 'title' => $title];
+            $row = ['from' => wk_time($t['from'] ?? ''), 'to' => wk_time($t['to'] ?? ''), 'title' => $title];
+            $ak = preg_replace('/[^a-z0-9]/', '', (string)($t['auto'] ?? ''));
+            if ($ak !== '') $row['auto'] = substr($ak, 0, 16);   // ردیفِ ساخته‌شده از «کارهای پنل»؛ با زدنِ دوباره به‌روز می‌شود، تکرار نمی‌شود
+            $tasks[] = $row;
             if (count($tasks) >= 60) break;
         }
         // سرویسِ رفت‌وآمدِ همین روز (اگر فرستاده شده)؛ اول این ذخیره می‌شود تا اگر سرویس مجاز نبود چیزی نیمه‌کاره نماند
@@ -207,6 +211,23 @@ try {
     }
 
     // ---- گزارشِ هر بازه (روز به روز) ----
+    // ---- گزارشِ PDF: یک نفر، یا (برای مدیر) همه‌ی پرسنل، هر نفر از صفحه‌ی تازه ----
+    if ($action === 'pdf') {
+        [$from, $to] = wk_range_args($data);
+        require_once __DIR__ . '/_work_pdf.php';
+        $all = $isManager && !empty($data['all']);
+        $ids = $all ? array_map('intval', $pdo->query("SELECT id FROM users" . (auth_schema_ready($pdo) ? " WHERE COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll(PDO::FETCH_COLUMN)) : [$uid];
+        @set_time_limit(300);
+        $bin = wk_pdf($pdo, $ids, $from, $to);
+        $u = $all ? null : wk_user($pdo, $uid);
+        $fname = 'کارکرد ' . ($all ? 'همه پرسنل' : ($u['full_name'] ?? '')) . ' ' . str_replace('/', '-', wk_g2j($from)) . ' تا ' . str_replace('/', '-', wk_g2j($to)) . '.pdf';
+        while (ob_get_level()) ob_end_clean();
+        header('Content-Type: application/pdf');
+        header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"work-report.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+        header('Content-Length: ' . strlen($bin));
+        echo $bin;
+        exit;
+    }
     if ($action === 'report' || $action === 'export') {
         [$from, $to] = wk_range_args($data);
         $all = $isManager && !empty($data['all']);
@@ -227,10 +248,15 @@ try {
             }
             if ($action === 'report') wout(['ok' => true, 'all' => true, 'from' => wk_g2j($from), 'to' => wk_g2j($to), 'rows' => $rows]);
             require_once __DIR__ . '/_xlsx_writer.php';
-            $x = array_map(function ($r) { return [$r['name'], $r['present'], $r['work_days'], $r['worked_fa'], $r['over_fa'], $r['leave_fa'], $r['remote'], $r['mission'],
-                                                   $r['mood_avg'] !== null ? $r['mood_avg'] : '', $r['acts'], $r['balance_fa']]; }, $rows);
-            xlsx_send(xlsx_build(['نام', 'روزهای حضور', 'روزهای کاری', 'ساعت کارکرد', 'اضافه/کسر کار', 'مرخصی', 'دورکاری', 'مأموریت', 'میانگین حال', 'کارهای ثبت‌شده در پنل', 'مانده مرخصی'],
-                                 $x, 'کارکرد پرسنل', [1, 2, 6, 7, 9]), 'کارکرد پرسنل ' . str_replace('/', '-', wk_g2j($from)) . ' تا ' . str_replace('/', '-', wk_g2j($to)) . '.xlsx');
+            require_once __DIR__ . '/_work_pdf.php';
+            $x = array_map(function ($r) use ($pdo, $from, $to) {
+                $st = wk_pdf_stats($pdo, $r['user_id'], $from, $to)[2];
+                return [$r['name'], $r['present'], $r['work_days'], wk_dur_fa($st['required']), $r['worked_fa'], wk_dur_fa($st['over_plus']), wk_dur_fa($st['over_minus']), $r['over_fa'],
+                        $r['leave_fa'], $st['late_n'], wk_dur_fa($st['late_min']), $st['early_n'], wk_dur_fa($st['early_min']), $st['absent'], $r['remote'], $r['mission'],
+                        $r['mood_avg'] !== null ? $r['mood_avg'] : '', $r['acts'], $r['balance_fa']]; }, $rows);
+            xlsx_send(xlsx_build(['نام', 'روزهای حضور', 'روزهای کاری', 'ساعت موظفی', 'ساعت کارکرد', 'اضافه‌کار', 'کسر کار', 'خالص اضافه/کسر', 'مرخصی', 'تعداد تأخیر', 'مجموع تأخیر',
+                                  'تعداد تعجیل', 'مجموع تعجیل', 'غیبت (روز)', 'دورکاری', 'مأموریت', 'میانگین حال', 'کارهای ثبت‌شده در پنل', 'مانده مرخصی'],
+                                 $x, 'کارکرد پرسنل', [1, 2, 9, 11, 13, 14, 15, 17]), 'کارکرد پرسنل ' . str_replace('/', '-', wk_g2j($from)) . ' تا ' . str_replace('/', '-', wk_g2j($to)) . '.xlsx');
             exit;
         }
         $days = wk_days($pdo, $uid, $from, $to);
@@ -241,9 +267,13 @@ try {
                   'balance' => wk_balance($pdo, $uid), 'user' => ['id' => $uid, 'name' => $u['full_name'] ?? '']]);
         }
         require_once __DIR__ . '/_xlsx_writer.php';
+        require_once __DIR__ . '/_work_pdf.php';
+        $auto = wk_auto_tasks($pdo, $uid, $from, $to);
+        $X = wk_pdf_stats($pdo, $uid, $from, $to)[2];
         $x = [];
-        foreach ($days as $D) {
-            $tasks = implode(' | ', array_map(function ($t) { return trim(($t['from'] ? $t['from'] . ($t['to'] ? '-' . $t['to'] : '') . ' ' : '') . $t['title']); }, $D['tasks']));
+        foreach ($days as $g => $D) {
+            // شرحِ کار: آنچه در کارکرد نوشته شده؛ اگر نبود، کارهای جمع‌بندی‌شده‌ی پنل
+            $tasks = implode(' | ', array_map(function ($t) { return trim(($t['from'] ? $t['from'] . ($t['to'] ? '-' . $t['to'] : '') . ' ' : '') . $t['title']); }, $D['tasks'] ?: ($auto[$g] ?? [])));
             $lv = implode('، ', array_map(function ($L) use ($pdo) { return ($L['kind'] === 'HOUR' ? 'ساعتی ' . $L['from'] . '-' . $L['to'] : 'روزانه') . ($L['status'] === 'PENDING' ? ' (در انتظار)' : ''); }, $D['leaves']));
             $x[] = [$D['jdate'], $dowFa[$D['dow']], WK_TYPES[$D['day_type']] ?? ($D['off'] ? 'تعطیل' : ''), $D['check_in'] ?: '', $D['check_out'] ?: '', $D['worked'] ? wk_dur_fa($D['worked']) : '',
                     ($D['worked'] && !$D['off']) ? wk_dur_fa($D['worked'] + $D['leave_min'] - $std) : ($D['worked'] ? wk_dur_fa($D['worked']) : ''),
@@ -251,6 +281,14 @@ try {
         }
         $x[] = ['جمع', '', 'حضور: ' . $sm['present'] . ' روز', '', '', wk_dur_fa($sm['worked']), wk_dur_fa($sm['over']), wk_leave_fa($pdo, $sm['leave_min']),
                 $sm['mood_avg'] !== null ? $sm['mood_avg'] : '', $sm['acts'], '', 'مانده‌ی مرخصی: ' . wk_balance($pdo, $uid)['balance_fa']];
+        // جمع‌بندیِ کامل زیرِ جدول
+        $x[] = array_fill(0, 12, '');
+        foreach ([['روزهای کاری', $sm['work_days'] . ' روز'], ['روزهای حضور', $sm['present'] . ' روز'], ['ساعت موظفی', wk_dur_fa($X['required'])], ['ساعت کارکرد', wk_dur_fa($sm['worked'])],
+                  ['اضافه‌کار', wk_dur_fa($X['over_plus'])], ['کسر کار', wk_dur_fa($X['over_minus'])], ['خالص اضافه/کسر', wk_dur_fa($sm['over'])], ['کارکرد در روز تعطیل', wk_dur_fa($X['off_work'])],
+                  ['مرخصی روزانه', $X['leave_day_n'] . ' روز'], ['مرخصی ساعتی', $X['leave_hour_n'] . ' بار، ' . wk_dur_fa($X['leave_hour_min'])], ['مجموع مرخصی', wk_leave_fa($pdo, $sm['leave_min'])],
+                  ['مانده مرخصی', wk_balance($pdo, $uid)['balance_fa']], ['تأخیر در ورود', $X['late_n'] . ' بار، ' . wk_dur_fa($X['late_min'])], ['تعجیل در خروج', $X['early_n'] . ' بار، ' . wk_dur_fa($X['early_min'])],
+                  ['غیبت', $X['absent'] . ' روز'], ['دورکاری', $sm['remote'] . ' روز'], ['مأموریت', $sm['mission'] . ' روز'], ['کارهای ثبت‌شده در پنل', $sm['acts']]] as [$k, $v])
+            $x[] = [$k, (string)$v, '', '', '', '', '', '', '', '', '', ''];
         xlsx_send(xlsx_build(['تاریخ', 'روز', 'نوع', 'ورود', 'خروج', 'مدت کارکرد', 'اضافه/کسر کار', 'مرخصی', 'حال', 'کارها در پنل', 'شرح کارها', 'توضیحات'], $x, 'کارکرد', [9]),
                   'کارکرد ' . ($u['full_name'] ?? '') . ' ' . str_replace('/', '-', wk_g2j($from)) . ' تا ' . str_replace('/', '-', wk_g2j($to)) . '.xlsx');
         exit;

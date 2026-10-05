@@ -196,6 +196,7 @@
                     ${canEdit() ? `<button type="button" class="wk-hbtn solid" data-a="leave"><i class="fas fa-umbrella-beach ml-1"></i>ثبتِ مرخصی</button>` : ''}
                     <button type="button" class="wk-hbtn" data-a="report"><i class="fas fa-chart-column ml-1"></i>گزارش و خروجی</button>
                     <button type="button" class="wk-hbtn" data-a="export-month"><i class="fas fa-file-excel ml-1"></i>اکسلِ ${MONTHS[S.jm - 1]}</button>
+                    <button type="button" class="wk-hbtn" data-a="pdf-month"><i class="fas fa-file-pdf ml-1"></i>PDFِ ${MONTHS[S.jm - 1]}</button>
                   </div>
                 </div>
               </div>
@@ -337,6 +338,7 @@
             root.querySelector('[data-f="y"]').addEventListener('change', e => guard(() => { S.jy = +e.target.value; load(); }));
             on('report', () => openReport({userId: S.uid, name: S.data.user && S.data.user.name}));
             on('export-month', () => { const n = monthLen(S.jy, S.jm); exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, n), user_id: S.uid || ''}); });
+            on('pdf-month', () => { const n = monthLen(S.jy, S.jm); exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, n), user_id: S.uid || ''}, 'pdf'); });
             on('leave', () => { const f = root.querySelector('[data-box="leave-form"]'); if (f) { f.scrollIntoView({behavior: 'smooth', block: 'center'}); f.classList.add('ring-2', 'ring-emerald-300'); setTimeout(() => f.classList.remove('ring-2', 'ring-emerald-300'), 1600); } });
             on('op-skip', () => { try { localStorage.setItem('wk-open-dismiss-' + (S.data.user || {}).id, '1'); } catch (e) {} root.querySelector('[data-box="opening"]').remove(); });
             on('op-save', () => saveOpening(root.querySelector('[data-f="op-days"]').value, root.querySelector('[data-f="op-hours"]').value));
@@ -441,7 +443,7 @@
             box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10"><i class="fas fa-spinner fa-spin ml-1"></i></p>';
             const r = await api('day', {date: jd, user_id: S.uid || undefined});
             if (!r.ok) { box.innerHTML = `<p class="text-rose-600 text-xs">${esc(r.error || 'خطا')}</p>`; return; }
-            S.day = r.day; S.timeline = r.timeline || [];
+            S.day = r.day; S.timeline = r.timeline || []; S.autoTasks = r.auto_tasks || [];
             S.svcDay = r.svc || {go: 0, back: 0}; S.svcList = r.svc_services || []; S.svcDefault = r.svc_default || 0;
             S.editTasks = (r.day.tasks || []).map(t => Object.assign({}, t));
             drawDay();
@@ -498,14 +500,20 @@
             const on = (a, fn) => { const el = box.querySelector(`[data-a="${a}"]`); if (el) el.addEventListener('click', fn); };
             on('auto', () => { g('in').value = D.auto_in || ''; g('out').value = D.live ? '' : (D.auto_out || ''); D.edited_in = D.edited_out = false; S._auto = true; upd(); });
             on('add-task', () => { collectTasks(); S.editTasks.push({from: '', to: '', title: ''}); drawTasks(); const ins = box.querySelectorAll('[data-t="title"]'); if (ins.length) ins[ins.length - 1].focus(); });
+            // کارهای پنل به‌صورتِ جمع‌بندی‌شده: اولین ورود، کارهای هم‌نوع با تعداد (مثلاً «صدور ۵ فقره گزارشِ بازدید»)، آخرین خروج.
+            // زدنِ دوباره همان ردیف‌ها را به‌روز می‌کند (تکراری اضافه نمی‌شود) و کارهایی که دستی نوشته‌اید دست نمی‌خورند
             on('from-tl', () => {
                 collectTasks();
-                const have = new Set(S.editTasks.map(t => t.title));
-                S.timeline.filter(e => !['login', 'logout', 'seen'].includes(e.kind)).forEach(e => {
-                    const title = e.label + (e.ref ? ' (' + e.ref + ')' : '');
-                    if (!have.has(title)) { S.editTasks.push({from: e.t, to: '', title}); have.add(title); }
-                });
+                const auto = S.autoTasks || [];
+                if (!auto.length) { toast('هنوز کاری در پنل برای این روز ثبت نشده.', 'info'); return; }
+                const keys = new Set(auto.map(t => t.auto)), titles = new Set(auto.map(t => t.title));
+                const kept = S.editTasks.filter(t => !(t.auto && keys.has(t.auto)) && !titles.has(t.title));
+                const all = kept.concat(auto.map(t => Object.assign({}, t)));
+                const tm = t => t.auto === 'in' ? '' : t.auto === 'out' ? '99:99' : (t.from || '98:00');
+                all.sort((a, b) => tm(a) < tm(b) ? -1 : tm(a) > tm(b) ? 1 : 0);
+                S.editTasks = all;
                 drawTasks();
+                toast(`${fa(auto.length)} ردیف از کارهای پنل در فهرست قرار گرفت؛ برای ثبت «ذخیره» را بزنید.`, 'success');
             });
             on('save-day', async () => {
                 collectTasks();
@@ -568,15 +576,19 @@
         function collectTasks() {
             const box = root.querySelector('[data-box="day"] [data-f="tasks"]');
             if (!box) return;
-            S.editTasks = [...box.querySelectorAll('[data-ti]')].map(r => ({from: r.querySelector('[data-t="from"]').value, to: r.querySelector('[data-t="to"]').value, title: r.querySelector('[data-t="title"]').value.trim()}));
+            S.editTasks = [...box.querySelectorAll('[data-ti]')].map(r => {
+                const o = S.editTasks[+r.dataset.ti] || {}, t = {from: r.querySelector('[data-t="from"]').value, to: r.querySelector('[data-t="to"]').value, title: r.querySelector('[data-t="title"]').value.trim()};
+                if (o.auto && o.title === t.title) t.auto = o.auto;   // ردیفِ خودکاری که دستی عوض شده، دیگر خودکار حساب نمی‌شود
+                return t;
+            });
         }
         load();
         return {reload: () => load(true), setUser: (id) => { S.uid = id; load(); }};
     }
 
     // ---------------- گزارشِ هر بازه + خروجیِ اکسل ----------------
-    function exportUrl(q) {
-        const p = new URLSearchParams(Object.assign({action: 'export'}, q));
+    function exportUrl(q, kind) {
+        const p = new URLSearchParams(Object.assign({action: kind === 'pdf' ? 'pdf' : 'export'}, q));
         window.open(API + '?' + p.toString(), '_blank');
     }
     function openReport(o) {
@@ -595,6 +607,7 @@
               <label><span class="wk-lbl">تا</span><input class="wk-in w-32" data-f="to" data-jdate dir="ltr"></label>
               <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2.5 rounded-xl" data-a="run"><i class="fas fa-magnifying-glass ml-1"></i>نمایش</button>
               <button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2.5 rounded-xl" data-a="xls"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</button>
+              <button type="button" class="text-white text-xs font-black px-4 py-2.5 rounded-xl" style="background:linear-gradient(90deg,#be123c,#7c3aed)" data-a="pdf" title="${o.all ? 'گزارشِ PDFِ همه‌ی پرسنل؛ هر نفر از صفحه‌ی تازه' : 'گزارشِ PDF با جزئیاتِ هر روز و جمع‌ها'}"><i class="fas fa-file-pdf ml-1"></i>${o.all ? 'PDFِ همه' : 'خروجیِ PDF'}</button>
             </div>
             <div class="flex-1 overflow-y-auto px-6 py-4 no-count" data-f="out"></div></div>`;
         document.body.appendChild(box);
@@ -619,8 +632,13 @@
             const r = await api('report', q());
             if (!r.ok) { g('out').innerHTML = `<p class="text-rose-600 text-sm">${esc(r.error || 'خطا')}</p>`; return; }
             if (r.all) {
-                g('out').innerHTML = `<table class="wk-tbl"><thead><tr><th>نام</th><th>حضور</th><th>ساعتِ کارکرد</th><th>اضافه/کسر</th><th>مرخصی</th><th>دورکاری</th><th>مأموریت</th><th>حال</th><th>کارها در پنل</th><th>مانده‌ی مرخصی</th></tr></thead><tbody>
-                    ${r.rows.map(x => `<tr><td class="font-bold">${esc(x.name)}</td><td>${fa(x.present)} از ${fa(x.work_days)}</td><td>${fa(x.worked_fa)}</td><td class="${x.over < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fa(x.over_fa)}</td><td>${esc(fa(x.leave_fa))}</td><td>${fa(x.remote)}</td><td>${fa(x.mission)}</td><td>${x.mood_avg ? MOODS[Math.round(x.mood_avg)][0] : '—'}</td><td>${fa(x.acts)}</td><td>${esc(fa(x.balance_fa))}</td></tr>`).join('')}</tbody></table>`;
+                g('out').innerHTML = `<table class="wk-tbl"><thead><tr><th>نام</th><th>حضور</th><th>ساعتِ کارکرد</th><th>اضافه/کسر</th><th>مرخصی</th><th>دورکاری</th><th>مأموریت</th><th>حال</th><th>کارها در پنل</th><th>مانده‌ی مرخصی</th><th>خروجی</th></tr></thead><tbody>
+                    ${r.rows.map(x => `<tr><td class="font-bold">${esc(x.name)}</td><td>${fa(x.present)} از ${fa(x.work_days)}</td><td>${fa(x.worked_fa)}</td><td class="${x.over < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fa(x.over_fa)}</td><td>${esc(fa(x.leave_fa))}</td><td>${fa(x.remote)}</td><td>${fa(x.mission)}</td><td>${x.mood_avg ? MOODS[Math.round(x.mood_avg)][0] : '—'}</td><td>${fa(x.acts)}</td><td>${esc(fa(x.balance_fa))}</td>
+                      <td class="whitespace-nowrap"><button type="button" class="text-[10.5px] font-black text-white rounded-lg px-2 py-1" style="background:linear-gradient(90deg,#be123c,#7c3aed)" data-upd="${x.user_id}" title="PDFِ کارکردِ ${esc(x.name)}"><i class="fas fa-file-pdf"></i> PDF</button>
+                        <button type="button" class="text-[10.5px] font-black text-white bg-emerald-600 rounded-lg px-2 py-1" data-uxl="${x.user_id}" title="اکسلِ کارکردِ ${esc(x.name)}"><i class="fas fa-file-excel"></i></button></td></tr>`).join('')}</tbody></table>`;
+                const one = id => ({from: en(g('from').value), to: en(g('to').value), user_id: id});
+                g('out').querySelectorAll('[data-upd]').forEach(b => b.onclick = () => exportUrl(one(b.dataset.upd), 'pdf'));
+                g('out').querySelectorAll('[data-uxl]').forEach(b => b.onclick = () => exportUrl(one(b.dataset.uxl)));
                 return;
             }
             const s = r.summary;
@@ -634,6 +652,7 @@
         }
         box.querySelector('[data-a="run"]').onclick = run;
         box.querySelector('[data-a="xls"]').onclick = () => exportUrl(q());
+        box.querySelector('[data-a="pdf"]').onclick = () => exportUrl(q(), 'pdf');
         setRange('m'); run();
     }
 
@@ -692,6 +711,7 @@
                       <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="y">${yearOptions(S.jy)}</select>
                       <button type="button" class="wk-hbtn" data-a="next">›</button>
                       <button type="button" class="wk-hbtn solid" data-a="report"><i class="fas fa-chart-column ml-1"></i>گزارش و اکسلِ همه</button>
+                      <button type="button" class="wk-hbtn" data-a="pdf-all"><i class="fas fa-file-pdf ml-1"></i>PDFِ همه (${MONTHS[S.jm - 1]})</button>
                       <button type="button" class="wk-hbtn" data-a="settings"><i class="fas fa-sliders ml-1"></i>تنظیماتِ مرخصی</button>
                     </div>
                   </div>
@@ -713,7 +733,8 @@
                     <td>${fa(x.present)} از ${fa(x.work_days)}</td><td>${fa(x.worked_fa)}</td><td class="${x.over < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fa(x.over_fa)}</td>
                     <td>${esc(fa(x.leave_fa))}</td><td class="${x.balance < 0 ? 'text-rose-600 font-bold' : ''}">${esc(fa(x.balance_fa))}${x.pending ? ' <span class="wk-chip bg-amber-100 text-amber-700">در انتظار</span>' : ''}</td>
                     <td class="text-base">${x.mood_avg ? MOODS[Math.round(x.mood_avg)][0] : '—'}</td><td>${fa(x.acts)}</td>
-                    <td><button type="button" class="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-3 py-1" data-p="${x.id}">مشاهده</button></td></tr>`).join('')}
+                    <td class="whitespace-nowrap"><button type="button" class="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-3 py-1" data-p="${x.id}">مشاهده</button>
+                      <button type="button" class="text-[11px] font-black text-white rounded-lg px-2.5 py-1" style="background:linear-gradient(90deg,#be123c,#7c3aed)" data-ppdf="${x.id}" title="گزارشِ PDFِ ${MONTHS[S.jm - 1]}"><i class="fas fa-file-pdf ml-1"></i>PDF</button></td></tr>`).join('')}
                   </tbody></table>
                 </div>
                 <div data-box="person"></div>
@@ -724,8 +745,10 @@
             root.querySelector('[data-f="m"]').onchange = e => { S.jm = +e.target.value; load(); };
             root.querySelector('[data-f="y"]').onchange = e => { S.jy = +e.target.value; load(); };
             on('report', () => openReport({all: true}));
+            on('pdf-all', () => exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, monthLen(S.jy, S.jm)), all: 1}, 'pdf'));
             on('settings', () => { const b = root.querySelector('[data-box="settings"]'); b.classList.toggle('hidden'); if (!b.classList.contains('hidden')) renderSettings(b.querySelector('[data-f="settings"]')); });
             root.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => openPerson(+b.dataset.p)));
+            root.querySelectorAll('[data-ppdf]').forEach(b => b.addEventListener('click', () => exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, monthLen(S.jy, S.jm)), user_id: b.dataset.ppdf}, 'pdf')));
             root.querySelectorAll('[data-ok],[data-no]').forEach(b => b.addEventListener('click', async () => {
                 const ok = !!b.dataset.ok; let note = '';
                 if (!ok && window.uiPrompt) { note = await uiPrompt('ردِ مرخصی', 'علتِ رد (اختیاری):', ''); if (note === null) return; }

@@ -23,6 +23,11 @@ function wk_ensure($pdo) {
             set_at DATETIME NULL, set_by INT NULL) $opt",
     ];
     foreach ($sql as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[wk_ensure] ' . $e->getMessage()); } }
+    // تعدادِ هر کار (صدورِ گروهی = چند فقره در یک سطر)
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM work_activity LIKE 'qty'")->fetch())
+            $pdo->exec("ALTER TABLE work_activity ADD COLUMN qty INT NOT NULL DEFAULT 1");
+    } catch (Throwable $e) { error_log('[wk_ensure qty] ' . $e->getMessage()); }
 }
 
 // ---------------- ثبتِ خودکار: حضور در پنل و کارهای انجام‌شده (از perm_gate) ----------------
@@ -35,16 +40,13 @@ function wk_touch_presence($pdo, $uid) {
         try { $pdo->prepare("INSERT IGNORE INTO work_presence (user_id, wdate, first_seen, last_seen, hits) VALUES (?, CURDATE(), NOW(), NOW(), 1)")->execute([$uid]); } catch (Throwable $e2) {}
     }
 }
-function wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref) {
-    try {
-        $pdo->prepare("INSERT INTO work_activity (user_id, at, wdate, page, action, op, label, ref) VALUES (?, NOW(), CURDATE(), ?, ?, ?, ?, ?)")
-            ->execute([$uid, mb_substr((string)$page, 0, 40), mb_substr((string)$action, 0, 60), $op, mb_substr((string)$label, 0, 190), $ref !== '' ? mb_substr((string)$ref, 0, 190) : null]);
-    } catch (Throwable $e) {
-        wk_ensure($pdo);
-        try {
-            $pdo->prepare("INSERT INTO work_activity (user_id, at, wdate, page, action, op, label, ref) VALUES (?, NOW(), CURDATE(), ?, ?, ?, ?, ?)")
-                ->execute([$uid, $page, $action, $op, $label, $ref !== '' ? $ref : null]);
-        } catch (Throwable $e2) {}
+function wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref, $qty = 1) {
+    $args = [$uid, mb_substr((string)$page, 0, 40), mb_substr((string)$action, 0, 60), $op, mb_substr((string)$label, 0, 190), $ref !== '' ? mb_substr((string)$ref, 0, 190) : null, max(1, intval($qty))];
+    $sql = "INSERT INTO work_activity (user_id, at, wdate, page, action, op, label, ref, qty) VALUES (?, NOW(), CURDATE(), ?, ?, ?, ?, ?, ?)";
+    try { $pdo->prepare($sql)->execute($args); }
+    catch (Throwable $e) {
+        wk_ensure($pdo);   // جدول یا ستونِ تعداد هنوز ساخته نشده
+        try { $pdo->prepare($sql)->execute($args); } catch (Throwable $e2) {}
     }
 }
 

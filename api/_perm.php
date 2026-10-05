@@ -287,7 +287,7 @@ function perm_api_map() {
         'work_actions' => ['pages' => ['my-work'], 'elevate' => false, 'actions' => [
             'settings_get' => 'any', 'month' => 'my-work:view|staff-work:view', 'day' => 'my-work:view|staff-work:view', 'report' => 'my-work:view|staff-work:view',
             'save_day' => 'my-work:edit|staff-work:edit', 'leave_add' => 'my-work:create|staff-work:edit', 'leave_delete' => 'my-work:edit|staff-work:edit',
-            'profile_save' => 'my-work:edit|staff-work:edit', 'export' => 'my-work:export|staff-work:export',
+            'profile_save' => 'my-work:edit|staff-work:edit', 'export' => 'my-work:export|staff-work:export', 'pdf' => 'my-work:export|staff-work:export',
             'settings_save' => 'staff-work:edit', 'leave_decide' => 'staff-work:edit', 'pending_leaves' => 'staff-work:view', 'staff_overview' => 'staff-work:view',
             'svc_month' => 'my-work:view|service-report:view', 'svc_receipt' => 'my-work:view|service-report:view', 'svc_days_save' => 'my-work:edit|service-report:edit',
             'svc_pay_save' => 'my-work:edit|service-report:edit', 'svc_pay_delete' => 'my-work:edit|service-report:edit',
@@ -336,7 +336,7 @@ function perm_activity_labels() {
         'renewal_actions.send' => 'اعلامِ تمدید با ربات', 'renewal_actions.mark' => 'ثبتِ پیگیریِ تمدید', 'renewal_actions.export' => 'خروجیِ اکسلِ اعلام تمدید',
         'import_actions.commit' => 'ورودِ اکسلِ بیمه‌گر به بایگانی وارداتی', 'import_actions.update_row' => 'ویرایشِ ردیفِ وارداتی',
         'import_actions.bulk_skip' => 'تغییرِ نیاز به بازدیدِ ردیف‌های وارداتی', 'import_actions.delete_rows' => 'حذفِ ردیف‌های وارداتی', 'import_actions.export' => 'خروجیِ اکسلِ بایگانی وارداتی',
-        'company_actions.mark_issued' => 'ثبتِ صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_issue' => 'صدورِ گروهی از فایلِ بیمه‌گر', 'company_actions.bundle_analyze' => 'بررسیِ فایلِ صدورِ گروهی',
+        'company_actions.mark_issued' => 'صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_issue' => 'صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_analyze' => 'بررسیِ فایلِ صدورِ گروهی',
         'company_actions.admin_create_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.admin_create_full_request' => 'ثبتِ درخواستِ شرکتی', 'company_actions.edit_request' => 'ویرایشِ درخواستِ شرکتی',
         'company_actions.delete_request' => 'حذفِ درخواستِ شرکتی', 'company_actions.admin_add_plate' => 'افزودنِ ردیف به درخواستِ شرکتی', 'company_actions.assign_document' => 'تخصیصِ مدرک از صندوقِ ورودی',
         'company_actions.reject_document' => 'ردِ مدرکِ شرکتی', 'company_actions.upload_row_doc' => 'بارگذاریِ مدرکِ ردیف', 'company_actions.admin_upload_plate_doc' => 'بارگذاریِ مدرکِ ردیف',
@@ -378,6 +378,33 @@ function perm_activity_ref(array $d) {
     if (!$parts && ($v = $pick('id')) !== '') $parts[] = '#' . $v;
     return implode(' · ', array_slice($parts, 0, 3));
 }
+// نوعِ بیمه‌نامه (ثالث/بدنه) و تعداد برای کارهای صدور؛ بقیه‌ی کارها یک سطرِ ساده
+function perm_activity_split($pdo, $key, $action, array $d, $buf) {
+    $fa = function ($t) { return $t === 'BODY' ? ' (بدنه)' : ($t ? ' (ثالث)' : ''); };
+    $type = function ($sql, $id) use ($pdo) {
+        if (!$id) return '';
+        try { $st = $pdo->prepare($sql); $st->execute([$id]); return (string)$st->fetchColumn(); } catch (Throwable $e) { return ''; }
+    };
+    try {
+        if ($key === 'company_actions' && $action === 'mark_issued')
+            return [[$fa($type("SELECT insurance_type FROM company_request_plates WHERE id = ?", intval($d['plate_id'] ?? 0))), 1]];
+        if ($key === 'case_actions' && $action === 'confirm_issue_policy')
+            return [[$fa($type("SELECT insurance_type FROM policy_cases WHERE id = ?", intval($d['case_id'] ?? 0))), 1]];
+        if ($key === 'company_actions' && $action === 'bundle_issue') {
+            $j = json_decode($buf, true);
+            $n = [];
+            foreach ((array)($j['results'] ?? []) as $r) {
+                if (empty($r['ok']) || empty($r['plate_id'])) continue;
+                $t = $fa($type("SELECT insurance_type FROM company_request_plates WHERE id = ?", intval($r['plate_id'])));
+                $n[$t] = ($n[$t] ?? 0) + 1;
+            }
+            $out = [];
+            foreach ($n as $t => $q) $out[] = [$t, $q];
+            return $out ?: [['', max(1, intval($j['issued'] ?? 1))]];
+        }
+    } catch (Throwable $e) {}
+    return [['', 1]];
+}
 function perm_track($pdo, $key, $action) {
     static $done = false;
     if ($done) return;
@@ -405,9 +432,12 @@ function perm_track($pdo, $key, $action) {
         if ($op === 'export') { wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref); return; }
         // فقط اگر عملیات موفق بود (پاسخ «ok: true» داد)
         ob_start();
-        register_shutdown_function(function () use ($pdo, $uid, $page, $action, $op, $label, $ref) {
+        register_shutdown_function(function () use ($pdo, $uid, $page, $key, $action, $op, $label, $ref) {
             $buf = ob_get_level() ? (string)ob_get_contents() : '';
-            if (preg_match('/"ok"\s*:\s*true/', substr($buf, 0, 600))) wk_log_activity($pdo, $uid, $page, $action, $op, $label, $ref);
+            if (!preg_match('/"ok"\s*:\s*true/', substr($buf, 0, 600))) return;
+            // صدورِ بیمه‌نامه: ثالث و بدنه جدا، صدورِ گروهی با تعداد
+            foreach (perm_activity_split($pdo, $key, $action, perm_request_data(), $buf) as [$suffix, $qty])
+                wk_log_activity($pdo, $uid, $page, $action, $op, $label . $suffix, $ref, $qty);
         });
     } catch (Throwable $e) { error_log('[perm_track] ' . $e->getMessage()); }
 }

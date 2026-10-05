@@ -141,7 +141,7 @@ function wk_days($pdo, $uid, $from, $to) {
         if (!$D['auto_out'] || $l > $D['auto_out']) $D['auto_out'] = $l;
         unset($D);
     }
-    foreach ($q("SELECT wdate, COUNT(*) n, MAX(TIME(at)) l FROM work_activity WHERE user_id = ? AND wdate BETWEEN ? AND ? GROUP BY wdate", [$uid, $from, $to]) as $r) {
+    foreach ($q("SELECT wdate, SUM(qty) n, MAX(TIME(at)) l FROM work_activity WHERE user_id = ? AND wdate BETWEEN ? AND ? GROUP BY wdate", [$uid, $from, $to]) as $r) {
         if (!isset($days[$r['wdate']])) continue;
         $days[$r['wdate']]['acts'] = intval($r['n']);
         $l = substr($r['l'], 0, 5);
@@ -264,11 +264,76 @@ function wk_timeline($pdo, $uid, $g) {
         }
     } catch (Throwable $e) {}
     try {
-        $st = $pdo->prepare("SELECT TIME(at) t, page, op, label, ref FROM work_activity WHERE user_id = ? AND wdate = ? ORDER BY at");
+        $st = $pdo->prepare("SELECT TIME(at) t, page, op, label, ref, qty FROM work_activity WHERE user_id = ? AND wdate = ? ORDER BY at");
         $st->execute([$uid, $g]);
-        foreach ($st->fetchAll() as $r) $out[] = ['t' => substr($r['t'], 0, 5), 'kind' => $r['op'] ?: 'edit', 'label' => $r['label'], 'ref' => (string)$r['ref'], 'page' => $r['page']];
+        foreach ($st->fetchAll() as $r) $out[] = ['t' => substr($r['t'], 0, 5), 'kind' => $r['op'] ?: 'edit', 'label' => wk_count_title($r['label'], intval($r['qty']), $r['op']), 'ref' => (string)$r['ref'], 'page' => $r['page']];
     } catch (Throwable $e) {}
     usort($out, function ($a, $b) { return strcmp($a['t'], $b['t']); });
+    // ورود و خروجِ چندباره: فقط اولین ورود و آخرین خروجِ روز (تعدادِ بقیه کنارش)
+    $logins = array_values(array_filter($out, function ($e) { return $e['kind'] === 'login'; }));
+    $logouts = array_values(array_filter($out, function ($e) { return $e['kind'] === 'logout'; }));
+    $keepIn = $logins ? $logins[0] : null; $keepOut = $logouts ? $logouts[count($logouts) - 1] : null;
+    $res = [];
+    foreach ($out as $e) {
+        if ($e['kind'] === 'login') { if ($e !== $keepIn) continue; if (count($logins) > 1) $e['ref'] = trim($e['ref'] . ' · ' . wk_fa_num(count($logins)) . ' بار ورود در طولِ روز', ' ·'); }
+        if ($e['kind'] === 'logout') { if ($e !== $keepOut) continue; if (count($logouts) > 1) $e['ref'] = trim($e['ref'] . ' · ' . wk_fa_num(count($logouts)) . ' بار خروج در طولِ روز', ' ·'); }
+        $res[] = $e;
+    }
+    return $res;
+}
+
+function wk_fa_num($s) { return strtr((string)$s, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']); }
+// «صدورِ گزارشِ بازدید» × ۵ → «صدورِ ۵ فقره گزارشِ بازدید»؛ عنوانی که این شکل را ندارد → «… (۵ بار)»
+function wk_count_title($label, $n, $op = '') {
+    $label = trim((string)$label);
+    if ($n <= 1) return $label;
+    $parts = preg_split('/\s+/u', $label, 2);
+    if ($op !== 'export' && count($parts) === 2 && preg_match('/\x{0650}$/u', $parts[0]))
+        return preg_replace('/\x{0650}$/u', '', $parts[0]) . ' ' . wk_fa_num($n) . ' فقره ' . $parts[1];
+    return $label . ' (' . wk_fa_num($n) . ' بار)';
+}
+
+// کارهای خودکارِ هر روز، جمع‌بندی‌شده (برای «از کارهای پنل» و گزارش‌ها):
+// اولین ورودِ روز، کارهای هم‌نوع با تعداد (ثالث و بدنه جدا)، آخرین خروجِ روز. خروجی: [تاریخ => [[from, to, title, auto], ...]]
+function wk_auto_tasks($pdo, $uid, $from, $to) {
+    wk_ensure($pdo);
+    $out = [];
+    $q = function ($sql, $args) use ($pdo) { try { $st = $pdo->prepare($sql); $st->execute($args); return $st->fetchAll(); } catch (Throwable $e) { return []; } };
+    $in = []; $outT = [];
+    foreach ($q("SELECT DATE(created_at) d, MIN(TIME(created_at)) f, MAX(TIME(created_at)) l, SUM(method <> 'LOGOUT') ni, SUM(method = 'LOGOUT') no,
+                        MIN(CASE WHEN method <> 'LOGOUT' THEN TIME(created_at) END) fi, MAX(CASE WHEN method = 'LOGOUT' THEN TIME(created_at) END) lo
+                   FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND created_at BETWEEN ? AND ? GROUP BY DATE(created_at)",
+                [$uid, "$from 00:00:00", "$to 23:59:59"]) as $r) {
+        if ($r['fi']) $in[$r['d']] = substr($r['fi'], 0, 5);
+        if ($r['lo']) $outT[$r['d']] = substr($r['lo'], 0, 5);
+    }
+    foreach ($q("SELECT wdate, TIME(first_seen) f FROM work_presence WHERE user_id = ? AND wdate BETWEEN ? AND ?", [$uid, $from, $to]) as $r)
+        if (!isset($in[$r['wdate']]) || substr($r['f'], 0, 5) < $in[$r['wdate']]) $in[$r['wdate']] = substr($r['f'], 0, 5);
+    $acts = [];
+    foreach ($q("SELECT wdate, TIME(at) t, op, label, ref, qty FROM work_activity WHERE user_id = ? AND wdate BETWEEN ? AND ? ORDER BY at", [$uid, $from, $to]) as $r) {
+        // عنوان‌های قدیمیِ صدور با عنوانِ تازه یکی می‌شوند تا با هم شمرده شوند
+        $k = strtr((string)$r['label'], ['ثبتِ صدورِ بیمه‌نامه‌ی شرکتی' => 'صدورِ بیمه‌نامه‌ی شرکتی', 'صدورِ گروهی از فایلِ بیمه‌گر' => 'صدورِ بیمه‌نامه‌ی شرکتی']);
+        if (!isset($acts[$r['wdate']][$k])) $acts[$r['wdate']][$k] = ['from' => substr($r['t'], 0, 5), 'to' => '', 'n' => 0, 'op' => $r['op'], 'refs' => []];
+        $A = &$acts[$r['wdate']][$k];
+        $A['n'] += max(1, intval($r['qty']));
+        $A['to'] = substr($r['t'], 0, 5);
+        if ($r['ref'] !== null && $r['ref'] !== '') $A['refs'][$r['ref']] = true;
+        unset($A);
+    }
+    $dates = array_unique(array_merge(array_keys($in), array_keys($outT), array_keys($acts)));
+    sort($dates);
+    foreach ($dates as $d) {
+        $L = [];
+        if (isset($in[$d])) $L[] = ['from' => $in[$d], 'to' => '', 'title' => 'ورود به پنل', 'auto' => 'in'];
+        foreach ($acts[$d] ?? [] as $label => $A) {
+            $title = wk_count_title($label, $A['n'], $A['op']);
+            $refs = array_keys($A['refs']);
+            if ($A['n'] === 1 && $refs) $title .= ' (' . $refs[0] . ')';   // کارِ تکی: مشخصاتش؛ چندتایی: فقط تعداد
+            $L[] = ['from' => $A['from'], 'to' => $A['to'] !== $A['from'] ? $A['to'] : '', 'title' => $title, 'auto' => 'a' . substr(md5($label), 0, 10)];
+        }
+        if (isset($outT[$d])) $L[] = ['from' => $outT[$d], 'to' => '', 'title' => 'خروج از پنل', 'auto' => 'out'];
+        $out[$d] = $L;
+    }
     return $out;
 }
 

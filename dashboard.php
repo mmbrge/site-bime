@@ -3852,7 +3852,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=8"></script>
+    <script src="work-log.js?v=9"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
     <script src="fin-contracts.js?v=1"></script>
