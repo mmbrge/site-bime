@@ -80,7 +80,25 @@
     const CSS = `
     .cf-root{position:fixed;left:14px;bottom:14px;z-index:9400;direction:rtl;font-family:inherit}
     .cf-dock{display:flex;flex-direction:column-reverse;gap:10px;align-items:center}
-    .cf-disc{position:relative;width:54px;height:54px;border-radius:50%;border:0;padding:0;cursor:pointer;background:transparent;filter:drop-shadow(0 10px 18px rgba(15,23,42,.35));transition:transform .2s}
+    .cf-disc{position:relative;width:54px;height:54px;border-radius:50%;border:0;padding:0;cursor:pointer;background:transparent;filter:drop-shadow(0 10px 18px rgba(15,23,42,.35));transition:transform .3s cubic-bezier(.2,.9,.3,1.2),opacity .25s}
+    /* پخش‌کننده‌ی کوچک: وقتی آهنگی پخش شده و پنل بسته است، دیسک کوچک می‌شود و این نوار جایش باز می‌شود */
+    .cf-root.cf-has-mini .cf-disc{transform:scale(.2) rotate(-90deg);opacity:0;pointer-events:none}
+    .cf-mini{position:absolute;left:0;bottom:0;height:56px;width:min(320px,calc(100vw - 28px));display:flex;align-items:center;gap:4px;padding:0 8px 0 6px;border-radius:19px;
+        background:rgba(15,23,42,.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:#e2e8f0;border:1px solid rgba(255,255,255,.1);box-shadow:0 18px 40px -14px rgba(2,6,23,.65);
+        overflow:hidden;transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .25s}
+    .cf-root.cf-has-mini .cf-mini{opacity:1;transform:none;pointer-events:auto}
+    .cf-mini .cf-mc{flex:none;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;cursor:pointer;position:relative;overflow:hidden}
+    .cf-mini .cf-mc::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 55%)}
+    .cf-mini.on .cf-mc i{animation:cfBob 1.2s ease-in-out infinite}
+    .cf-mini .cf-mt{flex:1;min-width:0;cursor:pointer;padding:0 4px}
+    .cf-mini .cf-mt b{display:block;font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cf-mini .cf-mt small{display:block;font-size:10px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cf-mini button{flex:none;width:30px;height:30px;border-radius:10px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:12px;transition:background .15s}
+    .cf-mini button:hover{background:rgba(255,255,255,.1)}
+    .cf-mini button.pp{width:36px;height:36px;border-radius:50%;color:#fff;font-size:13px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 6px 14px -6px rgba(99,102,241,.8)}
+    .cf-mini button.op{background:rgba(255,255,255,.08);margin-right:2px}
+    .cf-mini .cf-mbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.08)}
+    .cf-mini .cf-mbar i{position:absolute;right:0;top:0;bottom:0;width:0;background:var(--cf-acc2,linear-gradient(90deg,#06b6d4,#6366f1));transition:width .3s linear}
     .cf-disc:hover{transform:scale(1.06)}
     .cf-vinyl{position:absolute;inset:4px;border-radius:50%;background:repeating-radial-gradient(circle at 50% 50%,#111827 0 2px,#1f2937 2px 3px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.06)}
     .cf-vinyl::before{content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 40deg,rgba(255,255,255,.18) 50deg,transparent 70deg 220deg,rgba(255,255,255,.1) 235deg,transparent 250deg)}
@@ -117,6 +135,8 @@
     .cf-seg button{border:0;background:transparent;color:inherit;opacity:.7;font-size:10.5px;font-weight:800;padding:4px 9px;border-radius:8px;cursor:pointer;font-family:inherit}
     .cf-seg button.on{background:rgba(255,255,255,.16);opacity:1}
     .cf-panel.light .cf-seg button.on{background:#fff;color:#4338ca;box-shadow:0 2px 6px -2px rgba(15,23,42,.3)}
+    .cf-panel>*{flex-shrink:0}
+    .cf-panel>.cf-lib,.cf-panel>.cf-body{flex-shrink:1;min-height:0}
     .cf-chips{display:flex;gap:5px;overflow-x:auto;padding:4px 14px 8px;scrollbar-width:none}
     .cf-chips::-webkit-scrollbar{display:none}
     .cf-chip{flex:none;border:1px solid rgba(255,255,255,.14);background:transparent;color:inherit;font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:999px;cursor:pointer;font-family:inherit;opacity:.8}
@@ -151,7 +171,7 @@
     .cf-panel.light .cf-in{border-color:#e2e8f0;background:#fff}
     .cf-in:focus{border-color:var(--cf-acc,#818cf8)}
     .cf-in option{color:#0f172a}
-    .cf-list{overflow-y:auto;padding:4px 8px 10px;flex:1;min-height:80px}
+    .cf-list{overflow-y:auto;padding:4px 8px 8px;flex:none;height:auto;max-height:102px;min-height:56px}
     .cf-tr{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:12px;cursor:pointer;font-size:12px}
     .cf-tr:hover{background:rgba(255,255,255,.06)}
     .cf-panel.light .cf-tr:hover{background:#f8fafc}
@@ -241,7 +261,7 @@
     const savePrefs = (part) => { Object.assign(S.prefs, part); return api('prefs_save', {prefs: part}); };
     const dnd = () => has('dnd') && (S.prefs.dnd_until || 0) * 1000 > Date.now();
     Object.defineProperty(window, 'CF_DND', {get: () => dnd(), configurable: true});
-    let root, dock, disc, hubBtn, pops;
+    let root, dock, disc, hubBtn, pops, mini;
 
     // ================= ظاهر =================
     function applyTheme() {
@@ -301,7 +321,7 @@
         const a = P.audio = new Audio();
         a.preload = 'metadata';
         a.volume = mp().vol;
-        a.addEventListener('play', () => { P.playing = true; renderDisc(); renderNow(); mediaSession(); });
+        a.addEventListener('play', () => { P.playing = true; P.started = true; renderDisc(); renderNow(); mediaSession(); });
         a.addEventListener('pause', () => { P.playing = false; renderDisc(); renderNow(); saveResume(); });
         a.addEventListener('timeupdate', () => {
             renderSeek();
@@ -327,7 +347,7 @@
         a.src = url('action=stream&id=' + t.id);
         if (at) { P.restoring = true; P.restoreAt = at; }
         if (autoplay) a.play().then(() => { P.errors = 0; }).catch(() => {});
-        renderNow(); renderList(); saveResume();
+        renderNow(); renderList(); renderMini(); saveResume();
     }
     function playPause() {
         if (!has('music')) return;
@@ -363,6 +383,7 @@
         } catch (e) {}
     }
     function renderDisc() {
+        renderMini();
         if (!disc) return;
         disc.classList.toggle('playing', P.playing);
         disc.title = P.cur ? (P.playing ? 'در حالِ پخش: ' : 'مکث: ') + P.cur.title + ' (Alt+M)' : 'موسیقی (Alt+M)';
@@ -382,6 +403,39 @@
         if (!c) return;
         const a = P.audio, p = a && a.duration ? a.currentTime / a.duration : 0;
         c.style.strokeDasharray = `${(p * 157).toFixed(1)} 157`;
+        const mb = mini && mini.querySelector('.cf-mbar i');
+        if (mb) mb.style.width = (p * 100).toFixed(2) + '%';
+    }
+    function buildMini() {
+        mini = document.createElement('div');
+        mini.className = 'cf-mini';
+        mini.innerHTML = `<div class="cf-mc" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-music"></i></div>
+            <div class="cf-mt" data-m="open"><b></b><small></small></div>
+            <button type="button" data-m="prev" title="قبلی"><i class="fas fa-backward-step"></i></button>
+            <button type="button" class="pp" data-m="play" title="پخش / مکث"></button>
+            <button type="button" data-m="next" title="بعدی"><i class="fas fa-forward-step"></i></button>
+            <button type="button" class="op" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
+            <span class="cf-mbar"><i></i></span>`;
+        mini.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', e => {
+            e.stopPropagation();
+            const m = b.dataset.m;
+            if (m === 'open') openPlayer(); else if (m === 'play') playPause(); else if (m === 'next') next(); else prev();
+        }));
+        root.appendChild(mini);
+    }
+    function renderMini() {
+        if (!mini) return;
+        const show = !!(P.cur && P.started && S.open !== 'player');
+        root.classList.toggle('cf-has-mini', show);
+        if (!P.cur) return;
+        const t = P.cur, cv = coverOf(t);
+        mini.classList.toggle('on', P.playing);
+        const mc = mini.querySelector('.cf-mc');
+        mc.style.background = cv.bg; mc.innerHTML = `<i class="fas ${cv.ic}"></i>`;
+        mini.querySelector('.cf-mt b').textContent = t.title;
+        mini.querySelector('.cf-mt small').textContent = [t.artist, t.genre].filter(Boolean).join(' · ');
+        mini.querySelector('[data-m="play"]').innerHTML = `<i class="fas ${P.playing ? 'fa-pause' : 'fa-play'}" style="${P.playing ? '' : 'margin-left:2px'}"></i>`;
+        ring();
     }
     function renderNow() {
         if (!P.panel) return;
@@ -401,6 +455,7 @@
         if (S.open === 'player') return closePanels();
         closePanels(true);
         S.open = 'player';
+        renderMini();
         const m = mp();
         const el = P.panel = document.createElement('div');
         el.className = 'cf-panel' + (P.playing ? ' cf-playing' : '');
@@ -815,7 +870,7 @@
         if (!pill) {
             pill = document.createElement('button');
             pill.id = 'cf-up-pill'; pill.type = 'button';
-            pill.style.cssText = 'position:fixed;left:96px;bottom:' + ((CFG.bottom || 24) + 8) + 'px;z-index:9990;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:0;cursor:pointer;'
+            pill.style.cssText = 'position:fixed;left:14px;bottom:' + ((CFG.bottom || 14) + 124) + 'px;z-index:9990;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:0;cursor:pointer;'
                 + 'background:linear-gradient(135deg,#4c1d95,#4338ca);color:#fff;font:800 11px inherit;box-shadow:0 10px 30px -8px rgba(76,29,149,.6);direction:rtl';
             pill.onclick = () => {
                 const panel = UP.items.some(i => i.target === 'panel');
@@ -889,6 +944,7 @@
         });
         P.panel = null; S.hubEl = null;
         S.open = null;
+        renderMini();
     }
     // ---- کارها ----
     function hubTodo(b) {
@@ -1448,6 +1504,7 @@
             disc.onclick = openPlayer;
             disc.oncontextmenu = e => { e.preventDefault(); playPause(); };
             dock.appendChild(disc);
+            buildMini();
             renderDisc();
         }
         if (hubTabs().length) {
