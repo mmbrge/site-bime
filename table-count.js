@@ -28,8 +28,17 @@
         return parseFloat(cs.borderTopLeftRadius) > 4 && (cs.boxShadow !== 'none' || !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor));
     };
     // شمارنده همیشه چسبیده به جدول: اگر خودِ جعبه‌ی اسکرول «کارت» است داخلش (پایین و ثابت)، وگرنه درست زیرِ جدول داخلِ همان کارت
+    // جعبه‌ی اسکرولِ خودِ جدول (کلاسی یا style)؛ نه اسکرولِ کلِ صفحه (main / تب) که شمارنده را بیرون از تب، تهِ صفحه می‌برد
+    function scrollerOf(t) {
+        for (let e = t.parentElement; e && e !== document.body; e = e.parentElement) {
+            if (e.tagName === 'MAIN' || e.classList.contains('tab-content')) return null;
+            const cs = getComputedStyle(e);
+            if (/auto|scroll/.test(cs.overflowX + ' ' + cs.overflowY)) return e;
+        }
+        return null;
+    }
     function place(t) {
-        const scroller = t.closest('.overflow-x-auto, .overflow-auto, .overflow-y-auto');
+        const scroller = scrollerOf(t);
         const anchor = scroller || t;
         let box = t._tc;
         if (!box) { box = document.createElement('div'); box.className = 'tbl-count'; box._t = t; t._tc = box; boxes.add(box); }

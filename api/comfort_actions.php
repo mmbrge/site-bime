@@ -24,6 +24,8 @@ $raw = json_decode(file_get_contents('php://input'), true) ?: [];
 $data = $raw + $_POST + $_GET;
 $action = (string)($data['action'] ?? '');
 [$AT, $AID] = [$A[0], $A[1]];
+// آپلود/باز کردنِ زیپ طول می‌کشد؛ قفلِ نشست آزاد می‌شود تا بقیه‌ی صفحه‌های پنل در این فاصله کُند نشوند
+if (in_array($action, ['up_chunk', 'zip_step', 'up_jobs', 'up_cancel', 'up_ack'], true) && session_status() === PHP_SESSION_ACTIVE) session_write_close();
 $F = cf_features($pdo, $AT, $AID);
 $isAdmin = cf_is_admin($A);
 $need = function ($k) use ($F) { if (empty($F[$k])) cfo(['ok' => false, 'error' => 'این امکان برای شما فعال نیست.', 'disabled' => true]); };
@@ -177,78 +179,166 @@ try {
         cfo(['ok' => true]);
     }
 
-    // ---- آپلودِ تکه‌تکه (هر تکه حداکثر ۲ مگابایت، تا محدودیتِ آپلودِ هاست مشکلی نسازد) ----
-    if ($action === 'up_chunk') {
-        $target = ($data['target'] ?? '') === 'panel' ? 'panel' : 'mine';
-        if ($target === 'panel' && !$isAdmin) cfo(['ok' => false, 'error' => 'آپلود در کتابخانه‌ی پنل فقط کارِ مدیر کل است.']);
-        if ($target === 'mine') $need('music_upload');
+    // ================= آپلودِ تکه‌تکه با قابلیتِ ادامه =================
+    // هر تکه با offset می‌آید؛ اگر با حجمِ فایلِ نیمه‌کاره نخواند، سرور حجمِ واقعی را برمی‌گرداند تا مرورگر از همان‌جا ادامه دهد
+    // (رفتن به صفحه‌ی دیگر / قطعِ شبکه / تازه‌سازیِ صفحه). زیپ بعد از رسیدن کامل، قدم‌به‌قدم باز می‌شود (zip_step) تا پیشرفت دیده شود
+    // و درخواستِ طولانی قطع نشود.
+    $upDir = cf_music_path() . '/_tmp';
+    $upFile = function ($uid, $ext) use ($upDir, $AT, $AID) { return $upDir . '/' . $AT . $AID . '_' . $uid . '.' . $ext; };
+    $upUid = function () use ($data) {
         $uid = (string)($data['upload_id'] ?? '');
         if (!preg_match('/^[a-z0-9]{8,40}$/', $uid)) cfo(['ok' => false, 'error' => 'شناسه‌ی آپلود نامعتبر است.']);
+        return $uid;
+    };
+    $upJson = function ($path) { $j = is_file($path) ? json_decode((string)@file_get_contents($path), true) : null; return is_array($j) ? $j : null; };
+    $upClean = function ($uid) use ($upFile) { foreach (['part', 'meta', 'job'] as $x) @unlink($upFile($uid, $x)); };
+    // گزارشِ پایانِ آپلود تا یک روز می‌ماند: اگر کاربر وسطِ کار صفحه را بست/تازه کرد، با برگشتن نتیجه را می‌بیند (up_ack پاکش می‌کند)
+    $upFinish = function ($uid, $name, $added, $skipped, $errors, $target = 'panel') use ($upFile, $upClean) {
+        $upClean($uid);
+        @file_put_contents($upFile($uid, 'done'), json_encode(['name' => $name, 'target' => $target, 'added' => $added, 'skipped' => $skipped, 'errors' => $errors, 'at' => time()], JSON_UNESCAPED_UNICODE));
+    };
+    $upCanTarget = function ($target) use ($isAdmin, $need) {
+        if ($target === 'panel' && !$isAdmin) cfo(['ok' => false, 'error' => 'آپلود در کتابخانه‌ی پنل فقط کارِ مدیر کل است.']);
+        if ($target === 'mine') $need('music_upload');
+    };
+    // یک ورودیِ زیپ را به آهنگ تبدیل می‌کند؛ ژانر: انتخابِ مدیر، یا اگر «خودکار» بود نامِ پوشه‌ی داخلِ زیپ، وگرنه برچسبِ آهنگ
+    $zipEntry = function (ZipArchive $z, $i, array &$job, array &$res, array $genres) use ($pdo, $AT, $AID, $upDir) {
+        $stt = $z->statIndex($i, ZipArchive::FL_ENC_RAW);
+        $en = (string)$stt['name'];
+        if (!mb_check_encoding($en, 'UTF-8')) { $u = $z->getNameIndex($i); $en = mb_check_encoding((string)$u, 'UTF-8') ? $u : @mb_convert_encoding($en, 'UTF-8', 'CP1256'); }
+        if (substr($en, -1) === '/' || strpos($en, '__MACOSX') !== false) return;
+        $base = basename($en);
+        if ($base === '' || $base[0] === '.') return;
+        $e2 = strtolower(pathinfo($base, PATHINFO_EXTENSION));
+        if (!isset(CF_AUDIO[$e2])) { if (!in_array($e2, ['jpg', 'jpeg', 'png', 'txt', 'nfo', 'url', 'm3u', 'db', 'ini', 'lrc'], true)) $res['skipped'][] = '«' . $base . '» فایلِ صوتی نیست.'; return; }
+        $job['audio_done'] = intval($job['audio_done'] ?? 0) + 1;
+        if ($stt['size'] > CF_MAX_TRACK) { $res['errors'][] = '«' . $base . '» بیشتر از ۶۰ مگابایت است.'; return; }
+        $tmp = $upDir . '/z_' . $job['uid'] . '_' . $i . '.' . $e2;
+        $src = $z->getStream($z->getNameIndex($i));
+        if (!$src) { $res['errors'][] = '«' . $base . '» خوانده نشد.'; return; }
+        $dst = fopen($tmp, 'wb'); stream_copy_to_stream($src, $dst, CF_MAX_TRACK + 1); fclose($dst); fclose($src);
+        $g = $job['genre'];
+        if ($g === '' || $g === 'auto') {
+            $dir = trim(dirname($en), './');
+            $folder = $dir !== '' ? cf_clean(basename($dir)) : '';
+            if ($folder !== '' && mb_strlen($folder) <= 40) {
+                $g = $folder;
+                if (!in_array($g, $genres, true) && !in_array($g, $job['new_genres'], true)) $job['new_genres'][] = $g;
+            } else $g = 'auto';
+        }
+        $r = cf_add_track($pdo, $tmp, $base, $job['owner'], [$AT, $AID], $g);
+        @unlink($tmp);
+        if ($r['ok']) $res['added'][] = $r['track']; elseif (!empty($r['skip'])) $res['skipped'][] = $r['error']; else $res['errors'][] = $r['error'];
+    };
+
+    if ($action === 'up_chunk') {
+        $target = ($data['target'] ?? '') === 'panel' ? 'panel' : 'mine';
+        $upCanTarget($target);
+        $uid = $upUid();
         $name = basename(str_replace('\\', '/', (string)($data['name'] ?? '')));
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
         $isZip = $ext === 'zip';
         if ($isZip && !$isAdmin) cfo(['ok' => false, 'error' => 'آپلودِ زیپ فقط برای مدیر کل است؛ آهنگ‌ها را تکی انتخاب کنید.']);
         if (!$isZip && !isset(CF_AUDIO[$ext])) cfo(['ok' => false, 'error' => 'فقط فایلِ صوتی (MP3، M4A، OGG، WAV، FLAC…) ' . ($isAdmin ? 'یا ZIP ' : '') . 'قبول می‌شود.']);
         $idx = intval($data['index'] ?? 0); $total = intval($data['total'] ?? 1);
+        $off = isset($data['offset']) && $data['offset'] !== '' ? intval($data['offset']) : null;
         $f = $_FILES['chunk'] ?? null;
         if (!$f || $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) cfo(['ok' => false, 'error' => 'تکه‌ی فایل نرسید؛ دوباره امتحان کنید.']);
         if ($f['size'] > 3 * 1024 * 1024) cfo(['ok' => false, 'error' => 'تکه‌ی فایل بزرگ است.']);
-        $part = cf_music_path() . '/_tmp/' . $AT . $AID . '_' . $uid . '.part';
-        if ($idx === 0) @unlink($part);
-        elseif (!is_file($part)) cfo(['ok' => false, 'error' => 'آپلود از اول شروع نشده؛ دوباره امتحان کنید.']);
+        $max = $isZip ? CF_MAX_ZIP : CF_MAX_TRACK;
+        $size = intval($data['size'] ?? 0);
+        if ($size > $max) cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ۶۰ مگابایت.']);
+        $part = $upFile($uid, 'part');
+        if ($idx === 0 && !$off) {
+            $upClean($uid);
+            @file_put_contents($upFile($uid, 'meta'), json_encode(['name' => $name, 'size' => $size, 'target' => $target, 'genre' => (string)($data['genre'] ?? ''),
+                                                                 'lm' => (string)($data['lm'] ?? ''), 'at' => time()], JSON_UNESCAPED_UNICODE));
+        } elseif (!is_file($part)) cfo(['ok' => false, 'resync' => true, 'have' => 0, 'error' => 'آپلود از اول شروع نشده.']);
+        clearstatcache();
+        $have = is_file($part) ? filesize($part) : 0;
+        if ($off !== null && $have !== $off) cfo(['ok' => false, 'resync' => true, 'have' => $have, 'error' => 'جای ادامه‌ی آپلود عوض شده.']);
         $out = fopen($part, 'ab');
         fwrite($out, file_get_contents($f['tmp_name']));
         fclose($out);
         clearstatcache();
-        $max = $isZip ? CF_MAX_ZIP : CF_MAX_TRACK;
-        if (filesize($part) > $max) { @unlink($part); cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ۶۰ مگابایت.']); }
-        if ($idx + 1 < $total) cfo(['ok' => true, 'next' => $idx + 1]);
-        // تکه‌ی آخر: پردازش
+        if (filesize($part) > $max) { $upClean($uid); cfo(['ok' => false, 'error' => $isZip ? 'زیپ بزرگ‌تر از ۱ گیگابایت است.' : 'هر آهنگ حداکثر ۶۰ مگابایت.']); }
+        if ($idx + 1 < $total) cfo(['ok' => true, 'next' => $idx + 1, 'have' => filesize($part)]);
+        // تکه‌ی آخر
         @set_time_limit(0);
         $owner = $target === 'panel' ? ['P', 0] : [$AT, $AID];
         $genre = trim((string)($data['genre'] ?? ''));
-        $res = ['added' => [], 'skipped' => [], 'errors' => []];
         if (!$isZip) {
+            $res = ['added' => [], 'skipped' => [], 'errors' => []];
             $r = cf_add_track($pdo, $part, $name, $owner, [$AT, $AID], $genre);
             if ($r['ok']) $res['added'][] = $r['track']; elseif (!empty($r['skip'])) $res['skipped'][] = $r['error']; else $res['errors'][] = $r['error'];
-        } else {
-            $z = new ZipArchive();
-            if ($z->open($part) !== true) { @unlink($part); cfo(['ok' => false, 'error' => 'فایلِ زیپ خوانده نشد.']); }
-            $genres = cf_genres($pdo); $newGenres = [];
-            for ($i = 0; $i < $z->numFiles && $i < 3000; $i++) {
-                $stt = $z->statIndex($i, ZipArchive::FL_ENC_RAW);
-                $en = (string)$stt['name'];
-                if (!mb_check_encoding($en, 'UTF-8')) { $u = $z->getNameIndex($i); $en = mb_check_encoding((string)$u, 'UTF-8') ? $u : @mb_convert_encoding($en, 'UTF-8', 'CP1256'); }
-                if (substr($en, -1) === '/' || strpos($en, '__MACOSX') !== false) continue;
-                $base = basename($en);
-                if ($base === '' || $base[0] === '.') continue;
-                $e2 = strtolower(pathinfo($base, PATHINFO_EXTENSION));
-                if (!isset(CF_AUDIO[$e2])) { if (!in_array($e2, ['jpg', 'jpeg', 'png', 'txt', 'nfo', 'url', 'm3u', 'db', 'ini', 'lrc'], true)) $res['skipped'][] = '«' . $base . '» فایلِ صوتی نیست.'; continue; }
-                if ($stt['size'] > CF_MAX_TRACK) { $res['errors'][] = '«' . $base . '» بیشتر از ۶۰ مگابایت است.'; continue; }
-                $tmp = cf_music_path() . '/_tmp/z_' . $uid . '_' . $i . '.' . $e2;
-                $src = $z->getStream($z->getNameIndex($i));
-                if (!$src) { $res['errors'][] = '«' . $base . '» خوانده نشد.'; continue; }
-                $dst = fopen($tmp, 'wb'); stream_copy_to_stream($src, $dst, CF_MAX_TRACK + 1); fclose($dst); fclose($src);
-                // ژانر: انتخابِ مدیر، یا اگر «خودکار» بود نامِ پوشه‌ی داخلِ زیپ (مثلاً «شاد/...»)، وگرنه برچسبِ آهنگ
-                $g = $genre;
-                if ($g === '' || $g === 'auto') {
-                    $dir = trim(dirname($en), './');
-                    $folder = $dir !== '' ? cf_clean(basename($dir)) : '';
-                    if ($folder !== '' && mb_strlen($folder) <= 40) {
-                        $g = $folder;
-                        if (!in_array($g, $genres, true) && !in_array($g, $newGenres, true)) $newGenres[] = $g;
-                    } else $g = 'auto';
-                }
-                $r = cf_add_track($pdo, $tmp, $base, $owner, [$AT, $AID], $g);
-                @unlink($tmp);
-                if ($r['ok']) $res['added'][] = $r['track']; elseif (!empty($r['skip'])) $res['skipped'][] = $r['error']; else $res['errors'][] = $r['error'];
-            }
-            $z->close();
-            if ($newGenres) cf_setting_set($pdo, 'cf_genres', json_encode(array_values(array_merge($genres, $newGenres)), JSON_UNESCAPED_UNICODE));
+            $upFinish($uid, $name, count($res['added']), count($res['skipped']), count($res['errors']), $target);
+            cfo(['ok' => true, 'done' => true] + $res + ['quota' => $owner[0] !== 'P' ? cf_quota_state($pdo, $AT, $AID) : null]);
         }
-        @unlink($part);
-        cfo(['ok' => true, 'done' => true] + $res + ['quota' => $owner[0] !== 'P' ? cf_quota_state($pdo, $AT, $AID) : null]);
+        $z = new ZipArchive();
+        if ($z->open($part) !== true) { $upClean($uid); cfo(['ok' => false, 'error' => 'فایلِ زیپ خوانده نشد.']); }
+        $audio = 0;
+        for ($i = 0; $i < $z->numFiles; $i++) {
+            $nm = (string)$z->getNameIndex($i);
+            if (substr($nm, -1) !== '/' && strpos($nm, '__MACOSX') === false && isset(CF_AUDIO[strtolower(pathinfo($nm, PATHINFO_EXTENSION))])) $audio++;
+        }
+        $n = min($z->numFiles, 3000);
+        $z->close();
+        $job = ['uid' => $uid, 'name' => $name, 'genre' => $genre, 'owner' => $owner, 'target' => $target, 'pos' => 0, 'n' => $n, 'audio' => $audio, 'audio_done' => 0,
+                'new_genres' => [], 'added' => 0, 'skipped' => 0, 'errors' => 0];
+        @file_put_contents($upFile($uid, 'job'), json_encode($job, JSON_UNESCAPED_UNICODE));
+        cfo(['ok' => true, 'zip' => true, 'zip_total' => $audio]);
     }
+    if ($action === 'zip_step') {
+        $uid = $upUid();
+        $job = $upJson($upFile($uid, 'job'));
+        if (!$job) cfo(['ok' => false, 'gone' => true, 'error' => 'کارِ باز کردنِ این زیپ پیدا نشد (تمام یا لغو شده).']);
+        $upCanTarget($job['target']);
+        @set_time_limit(120);
+        $z = new ZipArchive();
+        if ($z->open($upFile($uid, 'part')) !== true) { $upClean($uid); cfo(['ok' => false, 'gone' => true, 'error' => 'فایلِ زیپ خوانده نشد.']); }
+        $genres = cf_genres($pdo);
+        $res = ['added' => [], 'skipped' => [], 'errors' => []];
+        $t0 = microtime(true);
+        while ($job['pos'] < $job['n'] && microtime(true) - $t0 < 6) {
+            $zipEntry($z, $job['pos'], $job, $res, $genres);
+            $job['pos']++;
+        }
+        $z->close();
+        $job['added'] += count($res['added']); $job['skipped'] += count($res['skipped']); $job['errors'] += count($res['errors']);
+        $done = $job['pos'] >= $job['n'];
+        if ($job['new_genres']) {
+            $cur = cf_genres($pdo);
+            $add = array_values(array_diff($job['new_genres'], $cur));
+            if ($add) cf_setting_set($pdo, 'cf_genres', json_encode(array_values(array_merge($cur, $add)), JSON_UNESCAPED_UNICODE));
+        }
+        if ($done) $upFinish($uid, $job['name'], $job['added'], $job['skipped'], $job['errors'], $job['target']); else @file_put_contents($upFile($uid, 'job'), json_encode($job, JSON_UNESCAPED_UNICODE));
+        cfo(['ok' => true, 'done' => $done, 'zip_pos' => $job['audio_done'], 'zip_total' => $job['audio']] + $res
+            + ['quota' => $done && $job['owner'][0] !== 'P' ? cf_quota_state($pdo, $AT, $AID) : null]);
+    }
+    // آپلودهای نیمه‌کاره‌ی همین کاربر (برای نشان دادنِ پیشرفت بعد از برگشت به صفحه)
+    if ($action === 'up_jobs') {
+        $out = [];
+        foreach ((array)glob($upDir . '/' . $AT . $AID . '_*.meta') as $mf) {
+            if (!preg_match('/_([a-z0-9]{8,40})\.meta$/', $mf, $m)) continue;
+            $uid = $m[1]; $meta = $upJson($mf) ?: [];
+            if (filemtime($mf) < time() - 2 * 86400 && @filemtime($upFile($uid, 'part')) < time() - 2 * 86400) { $upClean($uid); continue; }   // رهاشده
+            $job = $upJson($upFile($uid, 'job'));
+            clearstatcache();
+            $out[] = ['uid' => $uid, 'name' => $meta['name'] ?? '', 'size' => intval($meta['size'] ?? 0), 'lm' => $meta['lm'] ?? '', 'target' => $meta['target'] ?? 'mine',
+                      'genre' => $meta['genre'] ?? '', 'have' => is_file($upFile($uid, 'part')) ? filesize($upFile($uid, 'part')) : 0,
+                      'phase' => $job ? 'zip' : 'upload', 'zip_pos' => $job ? intval($job['audio_done']) : 0, 'zip_total' => $job ? intval($job['audio']) : 0];
+        }
+        foreach ((array)glob($upDir . '/' . $AT . $AID . '_*.done') as $df) {
+            if (!preg_match('/_([a-z0-9]{8,40})\.done$/', $df, $m)) continue;
+            if (filemtime($df) < time() - 86400) { @unlink($df); continue; }
+            $dn = $upJson($df) ?: [];
+            $out[] = ['uid' => $m[1], 'name' => $dn['name'] ?? '', 'size' => 0, 'phase' => 'done', 'target' => $dn['target'] ?? 'panel', 'added' => intval($dn['added'] ?? 0),
+                      'skipped' => intval($dn['skipped'] ?? 0), 'errors' => intval($dn['errors'] ?? 0)];
+        }
+        cfo(['ok' => true, 'jobs' => $out]);
+    }
+    if ($action === 'up_cancel') { $u = $upUid(); $upClean($u); @unlink($upFile($u, 'done')); cfo(['ok' => true]); }
+    if ($action === 'up_ack') { @unlink($upFile($upUid(), 'done')); cfo(['ok' => true]); }
 
     // ================= کارهای امروز =================
     if ($action === 'todo_list') { $need('todo'); cfo(['ok' => true, 'todos' => $todos()]); }

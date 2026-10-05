@@ -52,7 +52,7 @@
                     <select class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white" data-ug><option value="auto">ژانر: خودکار (پوشه / برچسب)</option>${d.genres.map(g => `<option>${esc(g)}</option>`).join('')}</select>
                     <label class="cursor-pointer bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2.5 rounded-xl"><i class="fas fa-upload ml-1"></i>انتخابِ فایل یا زیپ<input type="file" multiple hidden accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus,.zip" data-uf></label>
                 </div>
-                <div data-prog class="text-[11px] text-slate-600 mt-2"></div>
+                <div data-prog class="text-[11px] text-slate-600"></div>
             </div>
             <div class="flex flex-wrap items-center gap-2 mb-2">
                 <select class="border border-slate-200 rounded-xl px-2 py-1.5 text-xs" data-f="owner"><option value="all">همه</option><option value="panel" ${L.owner === 'panel' ? 'selected' : ''}>کتابخانه‌ی پنل</option><option value="user" ${L.owner === 'user' ? 'selected' : ''}>آپلودِ کاربران</option></select>
@@ -81,13 +81,13 @@
         f('owner').onchange = () => { L.owner = f('owner').value; L.sel.clear(); renderLibrary(L.el); };
         f('genre').onchange = () => { L.genre = f('genre').value; L.sel.clear(); renderLibrary(L.el); };
         let tm; f('q').oninput = () => { clearTimeout(tm); tm = setTimeout(() => { L.q = f('q').value.trim(); renderLibrary(L.el); }, 400); };
+        // پیشرفت از مدیرِ آپلود (comfort.js): با رفتن به تبِ دیگر آپلود ادامه دارد و با برگشتن همین‌جا دیده می‌شود
+        if (window.CF && CF.upMount) CF.upMount(p.querySelector('[data-prog]'), 'panel', false);
+        if (!L.upHook) { L.upHook = 1; window.addEventListener('cf-upload-done', () => { if (L.el && L.el.isConnected && L.tab === 'tracks') renderLibrary(L.el); }); }
         const up = async files => {
-            if (!files.length || !window.CF || !CF.uploadFiles) { toast('ابزارِ آپلود آماده نیست؛ صفحه را تازه کنید.', 'error'); return; }
-            const pr = p.querySelector('[data-prog]');
-            const res = await CF.uploadFiles(files, 'panel', p.querySelector('[data-ug]').value, t => { pr.textContent = t; });
-            pr.innerHTML = CF.uploadSummary(res).replace('#22c55e', '#059669');
-            toast(`${fa(res.added.length)} آهنگ به کتابخانه اضافه شد.`, res.added.length ? 'success' : 'warning');
-            setTimeout(() => renderLibrary(L.el), 1200);
+            if (!files.length || !window.CF || !CF.upAdd) { toast('ابزارِ آپلود آماده نیست؛ صفحه را تازه کنید.', 'error'); return; }
+            const res = await CF.upAdd(files, 'panel', p.querySelector('[data-ug]').value);
+            if (!res.added.length) toast(res.errors.length ? 'آهنگی اضافه نشد؛ جزئیات زیرِ نوارِ آپلود.' : 'آهنگِ تازه‌ای اضافه نشد (تکراری/نامربوط).', 'warning');
         };
         p.querySelector('[data-uf]').onchange = e => { const fs = [...e.target.files]; e.target.value = ''; up(fs); };
         const dz = p.querySelector('[data-drop]');

@@ -602,34 +602,239 @@
             <div style="display:flex;gap:6px;margin-top:8px"><select class="cf-in" data-ug style="flex:1">${S.genres.map(g => `<option>${esc(g)}</option>`).join('')}</select>
                 <label class="cf-btn" style="cursor:pointer;white-space:nowrap"><i class="fas fa-upload ml-1"></i>آپلود<input type="file" multiple accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus" hidden data-uf></label></div>
             <div data-up style="font-size:10.5px;margin-top:6px"></div></div>`;
+        // پیشرفت از مدیرِ آپلود (با بستن/باز کردنِ پخش‌کننده یا رفتن به صفحه‌ی دیگرِ پنل ادامه دارد)
+        upMount(extra.querySelector('[data-up]'), 'mine', true);
         extra.querySelector('[data-uf]').addEventListener('change', async e => {
             const files = [...e.target.files]; e.target.value = '';
-            const genre = extra.querySelector('[data-ug]').value;
-            const st = extra.querySelector('[data-up]');
-            const res = await uploadFiles(files, 'mine', genre, (txt) => { st.textContent = txt; });
-            st.innerHTML = uploadSummary(res);
-            if (res.quota) S.quota = res.quota;
-            S.tracks = S.tracks.concat(res.added);
-            rebuildOrder(true); renderGenres(); renderList();
+            await upAdd(files, 'mine', extra.querySelector('[data-ug]').value);
+            if (S.open === 'player') { renderGenres(); renderList(); }
         });
     }
-    // آپلودِ تکه‌تکه (۱٫۵ مگابایتی)؛ برای پنلِ مدیر هم استفاده می‌شود
-    async function uploadFiles(files, target, genre, onProg) {
-        const CH = 1536 * 1024, res = {added: [], skipped: [], errors: [], quota: null};
-        for (let fi = 0; fi < files.length; fi++) {
-            const f = files[fi], total = Math.max(1, Math.ceil(f.size / CH)), id = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
-            for (let i = 0; i < total; i++) {
-                const fd = new FormData();
-                fd.append('action', 'up_chunk'); fd.append('upload_id', id); fd.append('index', i); fd.append('total', total); fd.append('name', f.name);
-                fd.append('target', target); fd.append('genre', genre || ''); fd.append('chunk', f.slice(i * CH, (i + 1) * CH), 'blob');
-                if (onProg) onProg(`(${fa(fi + 1)} از ${fa(files.length)}) «${f.name}» … ${fa(Math.round((i + 1) / total * 100))}٪` + (i + 1 === total && /\.zip$/i.test(f.name) ? ' · در حالِ باز کردنِ زیپ…' : ''));
-                let d;
-                try { d = await (await fetch(API, {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'ارتباط قطع شد'}; }
-                if (!d.ok) { res.errors.push(`«${f.name}»: ${d.error}`); break; }
-                if (d.done) { res.added.push(...(d.added || [])); res.skipped.push(...(d.skipped || [])); res.errors.push(...(d.errors || [])); if (d.quota) res.quota = d.quota; }
-            }
+    // ================= مدیرِ آپلودِ آهنگ =================
+    // مستقل از صفحه: با رفتن به تبِ دیگرِ پنل آپلود ادامه دارد و با برگشتن پیشرفتش دیده می‌شود. آپلودِ تکه‌تکه (۱٫۵ مگابایتی) با offset؛
+    // اگر صفحه بسته/تازه شد، سرور تکه‌های رسیده را نگه می‌دارد: زیپِ کامل‌رسیده خودکار باز می‌شود و فایلِ نیمه‌کاره با انتخابِ دوباره‌ی
+    // همان فایل از همان‌جا ادامه پیدا می‌کند. زیپ قدم‌به‌قدم باز می‌شود (zip_step) تا شمارشِ آهنگ‌ها هم دیده شود.
+    const UP = {items: [], subs: new Set(), running: false, res: {added: [], skipped: [], errors: [], quota: null}, last: null, resumed: false, t: 0};
+    const CH = 1536 * 1024;
+    const mbs = b => fa((b / 1048576).toFixed(b < 10485760 ? 1 : 0));
+    function upNotify(force) {
+        const n = Date.now();
+        if (!force && n - UP.t < 250) { if (!UP.tm) UP.tm = setTimeout(() => { UP.tm = null; upNotify(true); }, 260); return; }
+        UP.t = n;
+        UP.subs.forEach(fn => { try { fn(); } catch (e) {} });
+        upPill();
+    }
+    function upPersist() {
+        LS.set('up', UP.items.filter(i => i.status === 'up' || i.status === 'wait' || i.status === 'paused').map(i => ({uid: i.uid, name: i.name, size: i.size, lm: i.lm})));
+    }
+    const upActive = () => UP.items.some(i => ['wait', 'up', 'zip', 'zipwait'].includes(i.status));
+    // files: آرایه‌ی File؛ target: panel | mine
+    function upAdd(files, target, genre) {
+        const ids = [];
+        // دسته‌ی تازه بعد از تمام شدنِ قبلی: فهرست و نتیجه از نو (نیمه‌کاره‌ها می‌مانند)
+        if (!upActive()) { UP.items = UP.items.filter(i => i.status === 'paused' || i.status === 'zipwait'); UP.res = {added: [], skipped: [], errors: [], quota: null}; }
+        files.forEach(f => {
+            const lm = String(f.lastModified || '');
+            // همان فایلِ نیمه‌کاره (نام + حجم + تاریخ) => ادامه از جای قبلی
+            const old = UP.items.find(i => i.status === 'paused' && i.name === f.name && i.size === f.size && (!i.lm || !lm || i.lm === lm));
+            if (old) { Object.assign(old, {file: f, status: 'wait', msg: '', target, genre: old.genre || genre}); ids.push(old.uid); return; }
+            const it = {uid: Math.random().toString(36).slice(2, 12) + Date.now().toString(36), file: f, name: f.name, size: f.size, lm, have: 0, target, genre,
+                        status: 'wait', msg: '', zip: /\.zip$/i.test(f.name), zipPos: 0, zipTotal: 0, added: 0};
+            UP.items.push(it); ids.push(it.uid);
+        });
+        upPersist(); upNotify(true);
+        const p = new Promise(resolve => { UP.waiters = (UP.waiters || []).concat([{ids, resolve}]); });
+        upRun();
+        return p;
+    }
+    async function upPost(fd) {
+        for (let k = 0; k < 6; k++) {
+            try {
+                const r = await fetch(url('_=' + Date.now()), {method: 'POST', body: fd});
+                if (r.status >= 500 || r.status === 0) throw new Error('http ' + r.status);
+                return await r.json();
+            } catch (e) { await new Promise(r => setTimeout(r, Math.min(16000, 1000 * 2 ** k))); }
         }
-        return res;
+        return {ok: false, error: 'ارتباط با سرور قطع شد.'};
+    }
+    function upTake(d) {
+        UP.res.added.push(...(d.added || [])); UP.res.skipped.push(...(d.skipped || [])); UP.res.errors.push(...(d.errors || []));
+        if (d.quota) { UP.res.quota = d.quota; S.quota = d.quota; }
+        if ((d.added || []).length) {
+            try { S.tracks = S.tracks.concat(d.added); if (S.boot) { rebuildOrder(true); if (S.open === 'player') { renderGenres(); renderList(); } } } catch (e) {}
+        }
+    }
+    async function upZip(it) {
+        it.status = 'zip'; upNotify(true);
+        let fails = 0;
+        while (it.status === 'zip') {
+            const d = await api('zip_step', {upload_id: it.uid});
+            if (!d.ok) {
+                if (d.gone || ++fails > 4) { it.status = d.gone && it.zipTotal && it.zipPos >= it.zipTotal ? 'done' : 'err'; it.msg = d.error || ''; if (it.status === 'err') UP.res.errors.push(`«${it.name}»: ${d.error}`); break; }
+                await new Promise(r => setTimeout(r, 2000)); continue;
+            }
+            fails = 0;
+            it.zipPos = d.zip_pos; it.zipTotal = d.zip_total; it.added += (d.added || []).length;
+            upTake(d);
+            if (d.done) { it.status = 'done'; api('up_ack', {upload_id: it.uid}); break; }
+            upNotify();
+        }
+        upNotify(true);
+    }
+    async function upOne(it) {
+        it.status = 'up'; it.t0 = Date.now(); it.h0 = it.have; upNotify(true);
+        const total = Math.max(1, Math.ceil(it.size / CH));
+        let i = Math.floor(it.have / CH), resync = 0;
+        if (it.have && it.have % CH) i = 0;
+        while (i < total) {
+            if (it.status !== 'up') return;   // لغو
+            const fd = new FormData();
+            fd.append('action', 'up_chunk'); fd.append('upload_id', it.uid); fd.append('index', i); fd.append('total', total); fd.append('offset', i * CH);
+            fd.append('name', it.name); fd.append('size', it.size); fd.append('lm', it.lm); fd.append('target', it.target); fd.append('genre', it.genre || '');
+            fd.append('chunk', it.file.slice(i * CH, (i + 1) * CH), 'blob');
+            const d = await upPost(fd);
+            if (it.status !== 'up') return;
+            if (!d.ok && d.resync && resync++ < 4) { i = d.have % CH === 0 ? d.have / CH : 0; it.have = i * CH; continue; }
+            if (!d.ok) { it.status = 'err'; it.msg = d.error || 'خطا'; UP.res.errors.push(`«${it.name}»: ${it.msg}`); upNotify(true); return; }
+            resync = 0; i++;
+            it.have = Math.min(it.size, i * CH); upNotify();
+            if (d.zip) { it.zipTotal = d.zip_total || 0; await upZip(it); return; }
+            if (d.done) { upTake(d); api('up_ack', {upload_id: it.uid}); it.added = (d.added || []).length; if ((d.errors || []).length && !it.added) { it.status = 'err'; it.msg = d.errors[0]; } else if ((d.skipped || []).length && !it.added) { it.status = 'skip'; it.msg = d.skipped[0]; } else it.status = 'done'; }
+        }
+        upNotify(true);
+    }
+    async function upRun() {
+        if (UP.running) return;
+        UP.running = true;
+        let it;
+        while ((it = UP.items.find(x => x.status === 'wait' || (x.status === 'zipwait')))) {
+            if (it.status === 'zipwait') await upZip(it); else await upOne(it);
+            upPersist();
+        }
+        UP.running = false;
+        UP.last = Date.now();
+        upPersist(); upNotify(true);
+        (UP.waiters || []).forEach(w => {
+            const mine = UP.items.filter(x => w.ids.includes(x.uid));
+            if (mine.every(x => !['wait', 'up', 'zip', 'zipwait'].includes(x.status))) w.resolve(UP.res);
+        });
+        UP.waiters = (UP.waiters || []).filter(w => UP.items.filter(x => w.ids.includes(x.uid)).some(x => ['wait', 'up', 'zip', 'zipwait'].includes(x.status)));
+        if (UP.res.added.length) toast(`${fa(UP.res.added.length)} آهنگ اضافه شد.`, 'success');
+        try { window.dispatchEvent(new CustomEvent('cf-upload-done', {detail: UP.res})); } catch (e) {}
+    }
+    async function upCancel(uid) {
+        const it = UP.items.find(i => i.uid === uid);
+        if (it) { it.status = 'cancel'; it.msg = 'لغو شد'; }
+        await api('up_cancel', {upload_id: uid});
+        upPersist(); upNotify(true);
+    }
+    // بعد از برگشت به صفحه: کارهای نیمه‌کاره‌ی سرور (زیپِ در حالِ باز شدن ادامه می‌یابد؛ فایلِ نیمه‌کاره منتظرِ انتخابِ دوباره می‌ماند)
+    async function upResume() {
+        if (UP.resumed) return; UP.resumed = true;
+        const d = await api('up_jobs');
+        if (!d.ok) return;
+        const local = LS.get('up', []);
+        (d.jobs || []).forEach(j => {
+            if (UP.items.some(i => i.uid === j.uid)) return;
+            if (j.phase === 'done') {   // در غیابِ کاربر تمام شد (مثلاً صفحه وسطِ باز شدنِ زیپ تازه شد)
+                UP.items.push({uid: j.uid, file: null, name: j.name, size: 0, have: 0, target: j.target || 'panel', zip: /\.zip$/i.test(j.name), added: j.added, status: 'done',
+                               msg: 'وقتی این صفحه باز نبود تمام شد'});
+                UP.res.away = (UP.res.away || 0) + j.added; UP.res.awaySkip = (UP.res.awaySkip || 0) + j.skipped;
+                api('up_ack', {upload_id: j.uid});
+                return;
+            }
+            UP.items.push({uid: j.uid, file: null, name: j.name, size: j.size, lm: j.lm || (local.find(l => l.uid === j.uid) || {}).lm || '', have: j.have, target: j.target, genre: j.genre,
+                           zip: /\.zip$/i.test(j.name), zipPos: j.zip_pos, zipTotal: j.zip_total, added: 0,
+                           status: j.phase === 'zip' ? 'zipwait' : 'paused', msg: j.phase === 'zip' ? '' : 'برای ادامه همین فایل را دوباره انتخاب کنید'});
+        });
+        upPersist(); upNotify(true);
+        if (UP.items.some(i => i.status === 'zipwait')) upRun();
+    }
+    function upStats(target) {
+        const its = UP.items.filter(i => !target || i.target === target);
+        const tot = its.filter(i => i.status !== 'cancel').reduce((a, i) => a + i.size, 0) || 1;
+        const sent = its.filter(i => i.status !== 'cancel').reduce((a, i) => a + (['done', 'zip', 'zipwait', 'skip'].includes(i.status) ? i.size : i.have), 0);
+        const cur = its.find(i => i.status === 'up');
+        let speed = 0, eta = 0;
+        if (cur && Date.now() - cur.t0 > 1500) { speed = (cur.have - cur.h0) / ((Date.now() - cur.t0) / 1000); const left = tot - sent; eta = speed > 0 ? left / speed : 0; }
+        return {its, tot, sent, pct: Math.min(100, sent / tot * 100), cur, speed, eta, zip: its.find(i => i.status === 'zip' || i.status === 'zipwait'), active: its.some(i => ['wait', 'up', 'zip', 'zipwait'].includes(i.status))};
+    }
+    const etaTxt = s => s < 60 ? `${fa(Math.max(1, Math.round(s)))} ثانیه` : s < 3600 ? `${fa(Math.round(s / 60))} دقیقه` : `${fa((s / 3600).toFixed(1))} ساعت`;
+    const ST = {wait: ['در صف', '#94a3b8'], up: ['در حالِ آپلود', '#6366f1'], zip: ['در حالِ باز کردنِ زیپ', '#d97706'], zipwait: ['منتظرِ باز شدن', '#d97706'], done: ['تمام شد', '#059669'],
+                skip: ['رد شد', '#64748b'], err: ['خطا', '#e11d48'], paused: ['نیمه‌کاره', '#d97706'], cancel: ['لغو شد', '#94a3b8']};
+    function upHtml(target, dark) {
+        const s = upStats(target);
+        if (!s.its.length) return '';
+        const c = dark ? {bg: 'rgba(255,255,255,.08)', tr: 'rgba(255,255,255,.12)', mut: 'rgba(255,255,255,.6)', tx: '#fff', bd: 'rgba(255,255,255,.12)'} : {bg: '#fff', tr: '#ede9fe', mut: '#64748b', tx: '#334155', bd: '#e9d5ff'};
+        const bar = (p, col) => `<div style="height:8px;border-radius:99px;background:${c.tr};overflow:hidden"><div style="height:100%;width:${p.toFixed(1)}%;border-radius:99px;background:${col};transition:width .3s"></div></div>`;
+        const zp = s.zip && s.zip.zipTotal ? s.zip.zipPos / s.zip.zipTotal * 100 : 0;
+        let head;
+        if (s.active) {
+            head = s.zip ? `<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:800;color:${c.tx};margin-bottom:5px"><span><i class="fas fa-file-zipper" style="color:#d97706;margin-left:4px"></i>باز کردنِ «${esc(s.zip.name)}»</span><span>${fa(s.zip.zipPos)} از ${fa(s.zip.zipTotal)} آهنگ · ${fa(Math.round(zp))}٪</span></div>${bar(zp, 'linear-gradient(90deg,#f59e0b,#f97316)')}`
+                : `<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:800;color:${c.tx};margin-bottom:5px"><span><i class="fas fa-cloud-arrow-up" style="color:#7c3aed;margin-left:4px"></i>${s.cur ? `«${esc(s.cur.name)}»` : 'آماده‌سازی…'}</span><span>${fa(Math.floor(s.pct))}٪</span></div>${bar(s.pct, 'linear-gradient(90deg,#8b5cf6,#6366f1)')}
+                   <div style="display:flex;justify-content:space-between;font-size:10px;color:${c.mut};margin-top:4px"><span>${mbs(s.sent)} از ${mbs(s.tot)} مگابایت${s.speed ? ` · ${mbs(s.speed)} مگ/ثانیه` : ''}</span><span>${s.eta ? `حدود ${etaTxt(s.eta)} مانده` : ''}</span></div>`;
+        } else {
+            const r = UP.res;
+            const nAdd = r.added.length + (r.away || 0), nSkip = r.skipped.length + (r.awaySkip || 0);
+            head = `<div style="font-size:11px;font-weight:800;color:${c.tx}"><i class="fas fa-circle-check" style="color:#059669;margin-left:4px"></i>آپلود تمام شد: ${fa(nAdd)} آهنگ اضافه شد${nSkip ? ` · ${fa(nSkip)} مورد رد شد (تکراری/نامربوط)` : ''}</div>`
+                 + (r.errors.length ? `<div style="font-size:10.5px;color:#e11d48;margin-top:4px">${r.errors.slice(0, 4).map(esc).join('<br>')}${r.errors.length > 4 ? '<br>…' : ''}</div>` : '');
+            if (s.its.some(i => i.status === 'paused')) head = `<div style="font-size:11px;font-weight:800;color:#b45309"><i class="fas fa-circle-pause" style="margin-left:4px"></i>آپلودِ نیمه‌کاره: همان فایل را دوباره انتخاب کنید تا از همان‌جا ادامه پیدا کند.</div>`;
+        }
+        const rows = s.its.slice(-12).map(i => {
+            const [lab, col] = ST[i.status] || ['', '#64748b'];
+            const p = i.status === 'zip' || i.status === 'zipwait' ? (i.zipTotal ? i.zipPos / i.zipTotal * 100 : 0) : (['done', 'skip'].includes(i.status) ? 100 : i.have / (i.size || 1) * 100);
+            return `<div style="display:flex;align-items:center;gap:8px;font-size:10.5px;padding:5px 0;border-top:1px solid ${c.bd}">
+                <i class="fas ${i.zip ? 'fa-file-zipper' : 'fa-music'}" style="color:${col};width:14px;text-align:center"></i>
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${c.tx}" dir="auto" title="${esc(i.msg || i.name)}">${esc(i.name)}${i.msg ? ` <small style="color:${c.mut}">— ${esc(i.msg)}</small>` : ''}</span>
+                <span style="color:${c.mut};white-space:nowrap">${i.size ? mbs(i.size) + ' مگ' : ''}</span>
+                <span style="width:70px">${bar(p, col)}</span>
+                <b style="color:${col};white-space:nowrap;min-width:84px;text-align:left">${lab}${i.status === 'up' ? ' ' + fa(Math.floor(p)) + '٪' : ''}${i.status === 'done' && i.zip ? ` (${fa(i.added)})` : ''}</b>
+                ${['wait', 'up', 'paused', 'zipwait'].includes(i.status) ? `<button type="button" data-upcancel="${i.uid}" title="لغو" style="color:#e11d48;background:none;border:0;cursor:pointer;padding:0 2px">✕</button>` : ''}</div>`;
+        }).join('');
+        return `<div style="background:${c.bg};border:1px solid ${c.bd};border-radius:14px;padding:10px 12px;margin-top:8px">${head}<div style="margin-top:8px">${rows}</div></div>`;
+    }
+    // el را با وضعیتِ آپلود به‌روز نگه می‌دارد (تا وقتی در صفحه است)؛ برگشت به صفحه = نمایشِ همان پیشرفت
+    function upMount(el, target, dark) {
+        const fn = () => {
+            if (!el.isConnected) { UP.subs.delete(fn); return; }
+            el.innerHTML = upHtml(target, dark);
+            el.querySelectorAll('[data-upcancel]').forEach(b => b.onclick = () => upCancel(b.dataset.upcancel));
+        };
+        UP.subs.add(fn); fn();
+        upResume();
+    }
+    // نشانگرِ کوچکِ شناور: هر جای پنل پیشرفتِ آپلود دیده می‌شود
+    function upPill() {
+        let pill = document.getElementById('cf-up-pill');
+        const s = upStats('');
+        const recent = UP.last && Date.now() - UP.last < 8000;
+        if (!s.active && !recent) { if (pill) pill.remove(); return; }
+        if (!pill) {
+            pill = document.createElement('button');
+            pill.id = 'cf-up-pill'; pill.type = 'button';
+            pill.style.cssText = 'position:fixed;left:96px;bottom:' + ((CFG.bottom || 24) + 8) + 'px;z-index:9990;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:0;cursor:pointer;'
+                + 'background:linear-gradient(135deg,#4c1d95,#4338ca);color:#fff;font:800 11px inherit;box-shadow:0 10px 30px -8px rgba(76,29,149,.6);direction:rtl';
+            pill.onclick = () => {
+                const panel = UP.items.some(i => i.target === 'panel');
+                if (panel && typeof window.switchTab === 'function' && document.getElementById('cf-lib-root')) {
+                    window.switchTab('settings');
+                    setTimeout(() => { const r = document.getElementById('cf-lib-root'); if (r) r.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 300);
+                } else if (S.boot) openPlayer();
+            };
+            document.body.appendChild(pill);
+        }
+        if (!s.active) { pill.innerHTML = `<i class="fas fa-circle-check"></i>آپلود تمام شد · ${fa(UP.res.added.length)} آهنگ`; setTimeout(upPill, 8200); return; }
+        const p = s.zip ? (s.zip.zipTotal ? s.zip.zipPos / s.zip.zipTotal * 100 : 0) : s.pct;
+        pill.innerHTML = `<i class="fas ${s.zip ? 'fa-file-zipper' : 'fa-cloud-arrow-up'}"></i>${s.zip ? 'باز کردنِ زیپ' : 'آپلودِ آهنگ'} ${fa(Math.floor(p))}٪
+            <span style="width:60px;height:5px;border-radius:9px;background:rgba(255,255,255,.25);overflow:hidden;display:inline-block"><i style="display:block;height:100%;width:${p.toFixed(1)}%;background:#22d3ee"></i></span>`;
+    }
+    window.addEventListener('beforeunload', e => {
+        if (UP.items.some(i => i.status === 'up' || i.status === 'wait')) { e.preventDefault(); e.returnValue = 'آپلودِ آهنگ هنوز تمام نشده.'; return e.returnValue; }
+    });
+    // سازگاری با فراخوانی‌های قبلی
+    async function uploadFiles(files, target, genre, onProg) {
+        if (onProg) onProg('در حالِ آپلود…');
+        return upAdd(files, target, genre);
     }
     const uploadSummary = r => `<span style="color:#22c55e">${fa(r.added.length)} آهنگ اضافه شد.</span>` + (r.skipped.length ? ` <span style="opacity:.75">${fa(r.skipped.length)} مورد رد شد (تکراری/نامربوط).</span>` : '')
         + (r.errors.length ? `<div style="color:#fb7185;margin-top:3px">${r.errors.slice(0, 4).map(esc).join('<br>')}${r.errors.length > 4 ? '<br>…' : ''}</div>` : '');
@@ -1270,6 +1475,6 @@
         setTimeout(() => { birthdayBanner(); morning(false); }, 1500);
         window.addEventListener('beforeunload', saveResume);
     }
-    window.CF = {boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, has, morning: () => morning(true), state: S, api};
+    window.CF = {boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, upAdd, upMount, upActive, has, morning: () => morning(true), state: S, api};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
