@@ -445,12 +445,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
         /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راستِ سایت، روی هم انباشته، هرکدام بعد از ۵ ثانیه خودش می‌رود */
-        #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9999990; display: flex; flex-direction: column; gap: 8px;
-                       max-width: min(340px, calc(100vw - 40px)); pointer-events: none; }
-        .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 4px solid #3b82f6; border-radius: 14px;
-                      padding: 10px 13px; box-shadow: 0 10px 28px rgba(15,23,42,.16); cursor: pointer; pointer-events: auto;
-                      opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .3s; }
-        .notif-card.show { opacity: 1; transform: translateX(0); }
+        #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9999990; display: flex; flex-direction: column; gap: 10px;
+                       width: min(400px, calc(100vw - 32px)); pointer-events: none; }
+        .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 5px solid #3b82f6; border-radius: 18px; display: flex; align-items: flex-start; gap: 12px;
+                      padding: 14px 16px; box-shadow: 0 18px 40px -14px rgba(15,23,42,.35); cursor: pointer; pointer-events: auto;
+                      opacity: 0; transform: translateX(40px) scale(.96); transition: opacity .3s, transform .35s cubic-bezier(.2,.9,.3,1.2); }
+        .notif-card.show { opacity: 1; transform: none; }
+        .notif-card .nc-ic { width: 40px; height: 40px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px;
+                             background: linear-gradient(135deg, var(--c), color-mix(in srgb, var(--c) 60%, #7c3aed)); box-shadow: 0 8px 16px -8px var(--c); }
+        .notif-card .nc-t { font-weight: 900; font-size: 13.5px; color: #0f172a; margin-bottom: 2px; }
+        .notif-card .nc-b { font-size: 12.5px; color: #475569; line-height: 1.8; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+        .notif-card .nc-x { border: 0; background: transparent; color: #94a3b8; width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0; }
+        .notif-card .nc-x:hover { background: #f1f5f9; color: #475569; }
         .notif-card.t-company_request { border-right-color: #6366f1; }
         .notif-card.t-company_doc     { border-right-color: #14b8a6; }
         .notif-card.t-company_chat    { border-right-color: #f59e0b; }
@@ -2612,7 +2618,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <span class="text-blue-600 font-black mr-1 relative inline-block cursor-none">گروه توسعه بـــرگه</span>
                 <span class="text-slate-400 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
             </div>
-            <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ ©</p>
+            <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.3.0</span></p>
         </div>
     </main>
     <script>
@@ -3352,9 +3358,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="pm-copy" onchange="pmCopyFrom(this.value)" class="pm-chip bg-white"><option value="">کپی از کاربرِ دیگر…</option></select>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto px-6 py-4 no-count" id="pm-body"></div>
-            <div id="pm-comfort"></div>
-            <div id="pm-svc"></div>
+            <div class="flex-1 overflow-y-auto px-6 py-4 no-count pm-scroll">
+                <div id="pm-body"></div>
+                <div class="pm-sep"><span><i class="fas fa-star ml-1"></i>امکانات، ابزارها و سرویس — جدا از نقش، برای همین کاربر</span></div>
+                <div id="pm-comfort"></div>
+                <div id="pm-svc"></div>
+            </div>
             <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
                 <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
                 <input type="password" id="pm-admin-pass" placeholder="رمزِ خودتان برای تایید" class="border border-slate-200 rounded-xl px-3 py-2 text-xs w-48" autocomplete="new-password">
@@ -3367,8 +3376,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .pm-seg button.on { background: #4f46e5; color: #fff; box-shadow: 0 4px 12px -4px rgba(79,70,229,.6); }
         .pm-chip { border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 4px 10px; font-weight: 700; color: #334155; }
         .pm-chip:hover { border-color: #a5b4fc; background: #eef2ff; }
-        .pm-grp { border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; margin-bottom: 12px; }
-        .pm-grp h4 { background: #f8fafc; padding: 8px 12px; font-size: 12px; font-weight: 900; color: #334155; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e2e8f0; }
+        .pm-grp { border: 1px solid #e8ecf4; border-radius: 18px; overflow: hidden; margin-bottom: 12px; background: #fff; box-shadow: 0 10px 24px -22px rgba(15,23,42,.5); }
+        .pm-grp h4 { background: linear-gradient(90deg, #f8fafc, #fff); padding: 9px 12px; font-size: 12.5px; font-weight: 900; color: #1e293b; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #eef2f7; }
+        .pm-grp h4 .pm-ic { width: 28px; height: 28px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; background: linear-gradient(135deg, var(--a, #6366f1), var(--b, #8b5cf6)); box-shadow: 0 6px 14px -8px var(--a, #6366f1); flex-shrink: 0; }
+        .pm-grp h4 small { font-size: 10px; color: #94a3b8; font-weight: 700; }
+        .pm-sep { display: flex; align-items: center; gap: 10px; margin: 16px 0 10px; color: #7c3aed; font-size: 11px; font-weight: 900; }
+        .pm-sep::before, .pm-sep::after { content: ''; pointer-events: none; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #ddd6fe, transparent); }
+        .pm-sw { appearance: none; -webkit-appearance: none; width: 38px; height: 22px; border-radius: 999px; background: #e2e8f0; position: relative; cursor: pointer; transition: background .2s; vertical-align: middle; }
+        .pm-sw::after { content: ''; pointer-events: none; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: right .2s; }
+        .pm-sw:checked { background: linear-gradient(120deg, #7c3aed, #4f46e5); } .pm-sw:checked::after { right: 19px; }
+        .pm-sw:disabled { opacity: .4; cursor: not-allowed; }
+        .pm-tbl tr.pm-off td { opacity: .45; }
+        .pm-tbl td .pm-hint { display: block; font-size: 10px; color: #94a3b8; font-weight: 700; }
+        .pm-chg { font-size: 9.5px; color: #d97706; font-weight: 800; margin-right: 6px; }
         .pm-tbl { width: 100%; font-size: 12px; }
         .pm-tbl th { font-size: 10.5px; color: #64748b; font-weight: 800; padding: 6px 4px; text-align: center; }
         .pm-tbl th:first-child, .pm-tbl td:first-child { text-align: right; padding-right: 12px; }
@@ -3811,14 +3831,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="net-watch.js?v=2"></script>
+    <script src="net-watch.js?v=3"></script>
+    <script src="cursor-fx.js?v=1" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=10"></script>
     <script src="settings-nav.js?v=2"></script>
     <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
-    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=4"></script><?php endif; ?>
-    <script src="chat-ui.js?v=6"></script>
+    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
+    <script src="chat-ui.js?v=7"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
@@ -5175,18 +5196,31 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return data && data.persisted ? data.items : null;
             },
         });
+        // اعلانِ پیامِ گفتگویی که همین الان باز و دیده می‌شود: نمایش داده نمی‌شود و «خوانده‌شده» حساب می‌شود
+        function notifInView(ev) {
+            if (!ev || !ev.tab || ev.tab.indexOf('tickets:') !== 0 || !window.ChatUI || !ChatUI.isViewing) return false;
+            const t = document.getElementById('tab-tickets');
+            return !!(t && !t.classList.contains('hidden')) && ChatUI.isViewing(ev.tab.slice(8));
+        }
+        const NOTIF_IC = {company_request: ['fa-file-circle-plus', '#6366f1'], company_doc: ['fa-file-arrow-up', '#14b8a6'], company_chat: ['fa-comments', '#f59e0b'],
+                          case: ['fa-car', '#3b82f6'], staff_chat: ['fa-comment-dots', '#8b5cf6'], ticket: ['fa-headset', '#ec4899']};
         function pushNotification(ev) {
+            if (notifInView(ev)) {
+                if (ev.id) notifFetch({notif_action: 'read', id: ev.id}).then(applyNotifResponse).catch(() => {});
+                return;
+            }
             if (window.NotifBell) NotifBell.add(ev);
             const box = document.getElementById('notif-stack');
             if (!box) return;
             const el = document.createElement('div');
+            const ic = NOTIF_IC[ev.type] || ['fa-bell', '#3b82f6'];
             el.className = 'notif-card t-' + (ev.type || 'info');
-            el.innerHTML = `<p class="font-bold text-xs mb-0.5 text-slate-700">${ev.title || 'اعلان'}</p>
-                            <p class="text-[11px] text-slate-500 leading-relaxed">${ev.body || ''}</p>`;
-            el.onclick = () => { if (ev.tab) switchTab(ev.tab); el.remove(); };
+            el.innerHTML = `<span class="nc-ic" style="--c:${ic[1]}"><i class="fas ${ic[0]}"></i></span><div class="min-w-0 flex-1"><p class="nc-t">${ev.title || 'اعلان'}</p>
+                            <p class="nc-b">${ev.body || ''}</p></div><button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
+            el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
             box.appendChild(el);
             requestAnimationFrame(() => el.classList.add('show'));
-            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 5000);
+            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 6500);
         }
 
         async function pollNotifications() {
@@ -8252,10 +8286,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const r = await (await fetch('api/work_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'svc_access_get', target_id: uid})})).json();
                 if (!r.ok || !r.can_set) return;
                 PM_SVC = {uid, initial: !!r.allowed};
-                box.innerHTML = `<label class="flex items-center gap-3 px-6 py-3 border-t border-slate-100 bg-gradient-to-l from-sky-50/60 to-white cursor-pointer select-none">
-                    <input type="checkbox" id="pm-svc-on" class="w-4 h-4 accent-sky-600" ${r.allowed ? 'checked' : ''}>
-                    <span class="text-[12px] font-black text-slate-700"><i class="fas fa-van-shuttle text-sky-600 ml-1"></i>دسترسی به سرویسِ رفت‌وآمد</span>
-                    <span class="text-[10.5px] text-slate-400">بدونِ آن، بخشِ سرویس در «کارکرد من» و ثبتِ روز برایش نمایش داده نمی‌شود.</span></label>`;
+                box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#0284c7;--b:#0ea5e9"><i class="fas fa-van-shuttle"></i></span>سرویس‌ها</h4>
+                    <table class="pm-tbl"><thead><tr><th>سرویس</th><th style="width:90px">فعال</th></tr></thead><tbody>
+                    <tr><td class="font-bold text-slate-700">سرویسِ رفت‌وآمد<span class="pm-hint">بدونِ آن، بخشِ سرویس در «کارکرد من» و ثبتِ روز دیده نمی‌شود</span></td>
+                        <td><input type="checkbox" id="pm-svc-on" class="pm-sw" ${r.allowed ? 'checked' : ''}></td></tr></tbody></table></div>`;
             } catch (e) {}
         }
         async function pmSvcSave() {
@@ -8279,7 +8313,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const ops = Object.keys(PM.ops);
             const has = (k, op) => (PM.perms[k] || []).includes(op);
             document.getElementById('pm-body').innerHTML = (PM.mode === 'role' ? `<p class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-circle-info ml-1"></i>این کاربر همان دسترسی‌هایی را دارد که نقشِ «${ROLE_FA[PM.user.role] || PM.user.role}» دارد (جدولِ زیر فقط نمایش است). برای تغییر، «سفارشی» را بزنید.</p>` : '')
-                + PM.catalog.map((g, gi) => `<div class="pm-grp"><h4><i class="fas fa-layer-group text-indigo-500"></i>${g.group}
+                + PM.catalog.map((g, gi) => `<div class="pm-grp"><h4>${pmGroupIcon(g.group)}${g.group}
                     <button type="button" onclick="pmGroup(${gi}, true)" class="pm-row-all mr-auto">همه</button><button type="button" onclick="pmGroup(${gi}, false)" class="pm-row-all text-rose-500">هیچ</button></h4>
                     <table class="pm-tbl"><thead><tr><th>صفحه</th>${ops.map(op => `<th>${PM.ops[op]}<button type="button" onclick="pmCol(${gi}, '${op}')">همه/هیچ</button></th>`).join('')}<th></th></tr></thead><tbody>
                     ${g.pages.map(p => `<tr data-k="${p.key}"><td class="font-bold text-slate-700">${p.title}</td>
@@ -8288,6 +8322,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </tbody></table></div>`).join('');
             document.getElementById('pm-body').classList.toggle('pm-locked', PM.mode !== 'custom');
             pmSummary();
+        }
+        // آیکن و رنگِ هر گروهِ دسترسی
+        function pmGroupIcon(name) {
+            const M = [['عمومی', 'fa-house', '#0ea5e9', '#6366f1'], ['کارکنان', 'fa-id-card', '#2563eb', '#0ea5e9'], ['شرکت', 'fa-building', '#4f46e5', '#7c3aed'],
+                       ['صدور', 'fa-stamp', '#0d9488', '#059669'], ['بازدید', 'fa-clipboard-check', '#ea580c', '#f59e0b'], ['مالی', 'fa-coins', '#16a34a', '#0d9488'],
+                       ['بایگانی', 'fa-box-archive', '#475569', '#0f172a'], ['پرسنلی', 'fa-user-clock', '#db2777', '#7c3aed']];
+            const m = M.find(x => String(name).indexOf(x[0]) !== -1) || ['', 'fa-layer-group', '#6366f1', '#8b5cf6'];
+            return `<span class="pm-ic" style="--a:${m[2]};--b:${m[3]}"><i class="fas ${m[1]}"></i></span>`;
         }
         function pmCollect() {
             if (!PM || PM.mode !== 'custom') return;

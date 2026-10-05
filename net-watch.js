@@ -1,92 +1,140 @@
 // فایل: net-watch.js
-// هشدارِ اینترنت: قطع‌شدن (رویدادِ offline یا جواب‌ندادنِ سرور) و ضعیف‌بودنِ اتصال (تأخیرِ زیاد یا شبکه‌ی ۲G)
-// با یک نوارِ کوچک بالای صفحه؛ با برگشتنِ اتصال چند ثانیه «اتصال برقرار شد» نشان داده می‌شود.
-// پنلِ شرکت‌ها: window.NET_WATCH_PING = '../api/server_time.php'
+// هشدارِ اینترنت: قطع‌شدن و ضعیف‌بودنِ اتصال، به‌شکلِ یک کارتِ اعلان در گوشه‌ی پایینِ سمتِ راستِ صفحه
+// (کنارِ بقیه‌ی اعلان‌ها). با برگشتنِ اتصال چند ثانیه «اتصال برقرار شد» نشان داده می‌شود.
+// دقت: آزمون با یک فایلِ ایستا (بدونِ PHP و قفلِ نشست) انجام می‌شود، هر درخواستِ موفقِ خودِ صفحه
+// هم «اتصال سالم است» حساب می‌شود، و فقط بعد از چند خطای پشتِ‌سرِ‌هم پیام داده می‌شود.
+// پنلِ شرکت‌ها: window.NET_WATCH_PING = '../net-watch.js'
 (function () {
     'use strict';
     if (window.NetWatch) return;
-    const PING = window.NET_WATCH_PING || 'api/server_time.php';
-    const SLOW_MS = 2500, TIMEOUT_MS = 9000, EVERY_MS = 25000;
-    const st = {state: 'ok', slow: 0, fail: 0, el: null, timer: null, busy: false, hideT: null};
+    const PING = window.NET_WATCH_PING || 'net-watch.js';
+    const SLOW_MS = 3500,     // آزمونِ یک فایلِ کوچک بیش از این طول بکشد => کند
+          TIMEOUT_MS = 12000,
+          EVERY_MS = 30000,
+          FAILS_OFF = 3,      // چند خطای پشتِ‌سرِ‌هم تا «قطع»
+          SLOWS_WEAK = 3,     // چند آزمونِ کندِ پشتِ‌سرِ‌هم تا «ضعیف»
+          RETRY_MS = 2500,
+          RESUME_GRACE = 4000;
+    const st = {state: 'ok', slow: 0, fail: 0, el: null, timer: null, busy: false, hideT: null, again: false, lastOk: Date.now(), quietUntil: Date.now() + RESUME_GRACE, leaving: false};
     const css = `
-    #net-watch{position:fixed;top:12px;left:50%;transform:translate(-50%,-140%);z-index:2147483000;direction:rtl;display:flex;align-items:center;gap:10px;
-        padding:9px 16px 9px 12px;border-radius:999px;color:#fff;font-weight:800;font-size:12px;line-height:1.6;font-family:inherit;box-shadow:0 14px 30px -12px rgba(15,23,42,.55);
-        transition:transform .35s cubic-bezier(.2,.9,.3,1.2),background .3s;pointer-events:auto;max-width:calc(100vw - 24px)}
-    #net-watch.show{transform:translate(-50%,0)}
-    #net-watch .nw-ic{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2);flex:none;position:relative}
-    #net-watch.off{background:linear-gradient(135deg,#e11d48,#be123c)}
-    #net-watch.weak{background:linear-gradient(135deg,#f59e0b,#ea580c)}
-    #net-watch.back{background:linear-gradient(135deg,#10b981,#0d9488)}
-    #net-watch.off .nw-ic::after,#net-watch.weak .nw-ic::after{content:'';pointer-events:none;position:absolute;inset:-4px;border-radius:50%;border:2px solid rgba(255,255,255,.55);animation:nwPulse 1.6s ease-out infinite}
-    @keyframes nwPulse{from{transform:scale(.85);opacity:1}to{transform:scale(1.5);opacity:0}}
-    #net-watch small{display:block;font-weight:600;font-size:10.5px;opacity:.85}
-    #net-watch button{border:0;background:rgba(255,255,255,.2);color:#fff;border-radius:999px;padding:4px 10px;font-weight:800;font-size:10.5px;font-family:inherit;cursor:pointer;margin-right:4px}
+    #net-watch{direction:rtl;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-right:5px solid var(--nw);border-radius:18px;
+        padding:14px 16px;box-shadow:0 18px 40px -14px rgba(15,23,42,.35);font-family:inherit;color:#0f172a;pointer-events:auto;order:99;
+        opacity:0;transform:translateX(40px) scale(.96);transition:opacity .3s,transform .35s cubic-bezier(.2,.9,.3,1.2);max-height:0;overflow:hidden;margin-top:-10px;padding-block:0}
+    #net-watch.show{opacity:1;transform:none;max-height:200px;margin-top:0;padding-block:14px}
+    #net-watch.off{--nw:#e11d48}#net-watch.weak{--nw:#f59e0b}#net-watch.back{--nw:#10b981}
+    #net-watch .nw-ic{width:40px;height:40px;border-radius:14px;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;position:relative;
+        background:linear-gradient(135deg,var(--nw),color-mix(in srgb,var(--nw) 65%,#0f172a));box-shadow:0 8px 16px -8px var(--nw)}
+    #net-watch.off .nw-ic::after,#net-watch.weak .nw-ic::after{content:'';pointer-events:none;position:absolute;inset:-4px;border-radius:17px;border:2px solid var(--nw);animation:nwPulse 1.6s ease-out infinite}
+    @keyframes nwPulse{from{transform:scale(.9);opacity:.9}to{transform:scale(1.35);opacity:0}}
+    #net-watch .nw-t{font-weight:900;font-size:13.5px;margin:0 0 2px}
+    #net-watch .nw-b{font-size:12.5px;color:#475569;line-height:1.8;margin:0}
+    #net-watch button{border:0;background:#f1f5f9;color:#334155;border-radius:10px;padding:6px 10px;font-weight:800;font-size:11px;font-family:inherit;cursor:pointer;flex:none}
+    #net-watch button:hover{background:#e2e8f0}
+    #net-watch-box{position:fixed;bottom:20px;right:20px;z-index:2147483000;display:flex;flex-direction:column;gap:10px;width:min(400px,calc(100vw - 32px));pointer-events:none}
     `;
     function ensure() {
         if (st.el) return st.el;
         const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+        // اگر صفحه جعبه‌ی اعلان دارد، کارت همان‌جا (زیرِ اعلان‌ها) می‌نشیند؛ وگرنه جعبه‌ی خودش را می‌سازد
+        let box = document.getElementById('notif-stack');
+        if (!box) { box = document.createElement('div'); box.id = 'net-watch-box'; document.body.appendChild(box); }
         st.el = document.createElement('div'); st.el.id = 'net-watch'; st.el.setAttribute('role', 'status');
-        document.body.appendChild(st.el);
+        box.appendChild(st.el);
         return st.el;
     }
     const MSG = {
         off: ['fa-wifi', 'اینترنت قطع است', 'تا برگشتنِ اتصال، تغییرات ذخیره نمی‌شوند؛ صفحه را نبندید.'],
-        noserver: ['fa-server', 'ارتباط با سرور برقرار نیست', 'اینترنت یا سرور در دسترس نیست؛ دوباره امتحان می‌کنیم…'],
+        noserver: ['fa-server', 'ارتباط با سرور برقرار نیست', 'سایت جواب نمی‌دهد؛ چند ثانیه‌ی دیگر دوباره امتحان می‌کنیم…'],
         weak: ['fa-signal', 'اینترنت ضعیف است', 'بارگذاری و ذخیره ممکن است کند شود.'],
-        back: ['fa-circle-check', 'اتصال برقرار شد', ''],
+        back: ['fa-circle-check', 'اتصال برقرار شد', 'همه‌چیز دوباره عادی است.'],
     };
     function show(kind) {
         const el = ensure();
         clearTimeout(st.hideT);
         const [ic, t, sub] = MSG[kind];
-        el.className = (kind === 'noserver' ? 'off' : kind) + ' show';
-        el.innerHTML = `<span class="nw-ic"><i class="fas ${ic}"></i></span><span>${t}${sub ? `<small>${sub}</small>` : ''}</span>${kind !== 'back' ? '<button type="button">بررسیِ دوباره</button>' : ''}`;
-        const b = el.querySelector('button'); if (b) b.onclick = () => probe();
+        el.className = (kind === 'noserver' ? 'off' : kind);
+        el.innerHTML = `<span class="nw-ic"><i class="fas ${ic}"></i></span><div style="flex:1;min-width:0"><p class="nw-t">${t}</p><p class="nw-b">${sub}</p></div>${kind !== 'back' ? '<button type="button">بررسیِ دوباره</button>' : ''}`;
+        const b = el.querySelector('button'); if (b) b.onclick = () => probe(true);
+        requestAnimationFrame(() => el.classList.add('show'));
         if (kind === 'back') st.hideT = setTimeout(() => el.classList.remove('show'), 3500);
     }
     function set(state) {
         if (state === st.state) return;
         const was = st.state;
         st.state = state;
-        if (state === 'ok') { if (was !== 'ok') show('back'); }
+        if (state === 'ok') { if (was === 'off' || was === 'noserver') show('back'); else if (st.el) st.el.classList.remove('show'); }
         else show(state);
     }
-    async function probe() {
-        if (st.busy) return;
-        if (navigator.onLine === false) { set('off'); return; }
+    function markOk() { st.lastOk = Date.now(); st.fail = 0; if (st.state === 'off' || st.state === 'noserver') set('ok'); }
+    const quiet = () => st.leaving || Date.now() < st.quietUntil;
+
+    async function probe(manual) {
+        if (st.busy) { if (manual) st.again = true; return; }   // آزمونِ دیگری در جریان است؛ بعد از آن دوباره
+        if (!manual && quiet()) return;
         st.busy = true;
         const ctl = window.AbortController ? new AbortController() : null;
         const to = setTimeout(() => ctl && ctl.abort(), TIMEOUT_MS);
         const t0 = performance.now();
         try {
-            const r = await fetch(PING + (PING.includes('?') ? '&' : '?') + 'nw=' + Date.now(), {cache: 'no-store', signal: ctl ? ctl.signal : undefined, credentials: 'same-origin'});
-            await r.text();
+            // HEAD روی فایلِ ایستا: سبک، بدونِ اجرای PHP و بدونِ گیرکردن پشتِ قفلِ نشستِ درخواست‌های سنگین
+            const r = await origFetch(PING + (PING.includes('?') ? '&' : '?') + 'nw=' + Date.now(), {method: 'HEAD', cache: 'no-store', signal: ctl ? ctl.signal : undefined, credentials: 'same-origin'});
             const ms = performance.now() - t0;
-            st.fail = 0;
+            if (!r || (r.status >= 500 && r.status !== 503)) throw new Error('bad');
+            markOk();
             const c = navigator.connection || {};
-            const slowNet = /(^|-)2g$/.test(c.effectiveType || '') || (c.downlink && c.downlink < 0.35);
+            const slowNet = /^(slow-)?2g$/.test(c.effectiveType || '');
             st.slow = (ms > SLOW_MS || slowNet) ? st.slow + 1 : 0;
-            set(st.slow >= 2 ? 'weak' : 'ok');
+            if (st.slow >= SLOWS_WEAK) set('weak');
+            else if (st.state === 'weak' && st.slow === 0) set('ok');
         } catch (e) {
+            if (st.leaving) return;
+            // اگر همین چند لحظه پیش درخواستی از صفحه موفق بوده، این خطا را جدی نگیر
+            if (Date.now() - st.lastOk < RETRY_MS * 2) return;
             st.fail++;
-            set(navigator.onLine === false ? 'off' : (st.fail >= 2 ? 'noserver' : (st.state === 'ok' ? 'ok' : st.state)));
-            if (st.fail === 1) setTimeout(probe, 3000);   // یک خطا ممکن است گذرا باشد؛ زود دوباره امتحان
-        } finally { clearTimeout(to); st.busy = false; }
+            if (st.fail >= FAILS_OFF) set(navigator.onLine === false ? 'off' : 'noserver');
+            else setTimeout(() => probe(true), RETRY_MS);   // تا تأیید نشده، پیامی نشان نده
+        } finally {
+            clearTimeout(to); st.busy = false;
+            if (st.again) { st.again = false; setTimeout(() => probe(true), 400); }
+        }
     }
-    // خطای شبکه در درخواست‌های خودِ صفحه => بررسیِ فوری
-    if (window.fetch && !window.fetch.__nw) {
-        const of = window.fetch;
+
+    // درخواست‌های خودِ صفحه: موفق => اتصال سالم؛ خطای شبکه => آزمونِ تأییدی (نه پیامِ فوری)
+    const origFetch = window.fetch ? window.fetch.bind(window) : null;
+    if (origFetch && !window.fetch.__nw) {
         const wrapped = function () {
-            return of.apply(this, arguments).catch(e => { if (!e || e.name !== 'AbortError') setTimeout(probe, 300); throw e; });
+            return origFetch.apply(null, arguments).then(r => { markOk(); return r; }, e => {
+                if (e && e.name !== 'AbortError' && !st.leaving) setTimeout(() => probe(true), 600);
+                throw e;
+            });
         };
         wrapped.__nw = true;
         window.fetch = wrapped;
     }
-    window.addEventListener('offline', () => set('off'));
-    window.addEventListener('online', () => { st.fail = 0; probe(); });
-    if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', () => probe());
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) probe(); });
-    const start = () => { if (navigator.onLine === false) set('off'); st.timer = setInterval(() => { if (!document.hidden || st.state !== 'ok') probe(); }, EVERY_MS); setTimeout(probe, 4000); };
+    if (window.XMLHttpRequest) {
+        const oSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function () {
+            this.addEventListener('load', markOk);
+            return oSend.apply(this, arguments);
+        };
+    }
+    // رویدادِ offline گاهی لحظه‌ای و اشتباه است؛ با کمی مکث و آزمون تأیید می‌شود
+    window.addEventListener('offline', () => setTimeout(() => { if (navigator.onLine === false) { st.fail = FAILS_OFF; set('off'); } }, 2000));
+    window.addEventListener('online', () => { st.fail = 0; st.quietUntil = 0; setTimeout(() => probe(true), 800); });
+    if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', () => setTimeout(() => probe(true), 1500));
+    // برگشت از پس‌زمینه/خواب: شبکه چند ثانیه طول می‌کشد بیدار شود؛ در این فاصله پیامی نده
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { st.quietUntil = Date.now() + RESUME_GRACE; setTimeout(() => probe(), RESUME_GRACE + 200); } });
+    window.addEventListener('pageshow', () => { st.leaving = false; st.quietUntil = Date.now() + RESUME_GRACE; });
+    window.addEventListener('pagehide', () => { st.leaving = true; });
+    window.addEventListener('beforeunload', () => { st.leaving = true; setTimeout(() => { st.leaving = false; }, 5000); });
+    const start = () => {
+        st.timer = setInterval(() => {
+            if (document.hidden && st.state === 'ok') return;
+            if (st.state === 'ok' && Date.now() - st.lastOk < EVERY_MS) return;   // تازه درخواستِ موفقی بوده
+            probe();
+        }, EVERY_MS / 2);
+        setTimeout(() => probe(), RESUME_GRACE + 1000);
+    };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-    window.NetWatch = {probe, state: () => st.state};
+    window.NetWatch = {probe: () => probe(true), state: () => st.state};
 })();

@@ -466,7 +466,7 @@ try {
     }
 
     // ---- پیام‌رسانِ جدید (همان هسته‌ی پنل): گفتگوی شرکت با «بیمه با ما» ----
-    if (in_array($action, ['chat_open', 'chat_poll', 'chat_send', 'chat_edit', 'chat_delete', 'chat_set_ref', 'chat_unread', 'chat_ping', 'chat_offline', 'chat_me', 'chat_set_avatar', 'chat_hide', 'chat_clear'], true)) {
+    if (in_array($action, ['chat_open', 'chat_poll', 'chat_send', 'chat_edit', 'chat_delete', 'chat_set_ref', 'chat_unread', 'chat_ping', 'chat_offline', 'chat_me', 'chat_set_avatar', 'chat_hide', 'chat_clear', 'chat_typing', 'chat_react'], true)) {
         require_once __DIR__ . '/_chat_core.php';
         $in = $data;
         if (isset($in['p']) && is_string($in['p'])) { $dec = json_decode((string)base64_decode($in['p'], true), true); if (is_array($dec)) $in = $dec + $in; }

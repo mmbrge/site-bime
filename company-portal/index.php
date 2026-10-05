@@ -50,8 +50,9 @@ if (!$companies) {
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-3xl, body > .modal-overlay > *'};</script>
-<script>window.NET_WATCH_PING = '../api/server_time.php';</script>
-<script src="../net-watch.js?v=2"></script>
+<script>window.NET_WATCH_PING = '../net-watch.js';</script>
+<script src="../net-watch.js?v=3"></script>
+<script src="../cursor-fx.js?v=1" defer></script>
 <script src="../tools.js?v=2"></script>
 <script src="../comfort.js?v=10"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
@@ -61,7 +62,7 @@ if (!$companies) {
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=1"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
-<script src="../chat-ui.js?v=6"></script>
+<script src="../chat-ui.js?v=7"></script>
 <script src="../money-input.js?v=1"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -119,10 +120,10 @@ if (!$companies) {
     .toast.show { transform: translateX(-50%) translateY(0); opacity:1; }
 
     /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راست، روی هم انباشته، و هرکدام بعد از ۵ ثانیه خودش می‌رود */
-    #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: flex; flex-direction: column; gap: 8px;
-                   max-width: min(330px, calc(100vw - 40px)); pointer-events: none; }
-    .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 4px solid #3b82f6; border-radius: 14px;
-                  padding: 10px 13px; box-shadow: 0 10px 28px rgba(15,23,42,.14); cursor: pointer; pointer-events: auto;
+    #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: flex; flex-direction: column; gap: 10px;
+                   width: min(390px, calc(100vw - 32px)); pointer-events: none; }
+    .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 5px solid #3b82f6; border-radius: 18px;
+                  padding: 14px 16px; box-shadow: 0 10px 28px rgba(15,23,42,.14); cursor: pointer; pointer-events: auto;
                   opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .3s; }
     .notif-card.show { opacity: 1; transform: translateX(0); }
 </style>
@@ -353,18 +354,23 @@ if (window.NotifBell) NotifBell.init({
     onOpenItem: it => { if (it.type === 'chat') openChatModal(); },
     onServerAction: async (act, id) => {
         const data = await notifFetch({notif_action: act, id});
-        applyNotifResponse(data).forEach(e => pushNotification(e.title, e.body, e.type));
+        applyNotifResponse(data).forEach(e => pushNotification(e.title, e.body, e.type, e.id));
         return data && data.persisted ? data.items : null;
     },
 });
-function pushNotification(title, body, type) {
+function pushNotification(title, body, type, id) {
+    // پیامِ گفتگویی که همین الان باز است: اعلان نمی‌خواهد و خوانده‌شده حساب می‌شود
+    if (type === 'chat' && window.ChatUI && ChatUI.isViewing && ChatUI.isViewing()) {
+        if (id) notifFetch({notif_action: 'read', id}).then(applyNotifResponse).catch(() => {});
+        return;
+    }
     if (window.NotifBell) NotifBell.add({title, body, type});
     const box = document.getElementById('notif-stack');
     if (!box) return;
     const el = document.createElement('div');
     el.className = 'notif-card';
-    el.innerHTML = `<p class="font-bold text-xs mb-0.5">${title}</p>
-                    <p class="text-[11px] text-slate-500 leading-relaxed">${body || ''}</p>`;
+    el.innerHTML = `<p class="font-bold text-[13.5px] mb-0.5">${title}</p>
+                    <p class="text-[12.5px] text-slate-500 leading-relaxed">${body || ''}</p>`;
     el.onclick = () => el.remove();
     box.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
@@ -376,7 +382,7 @@ async function pollNotifications() {
         const data = await notifFetch();
         if (!data.ok) return;
         const events = applyNotifResponse(data);
-        events.forEach(e => pushNotification(e.title, e.body, e.type));
+        events.forEach(e => pushNotification(e.title, e.body, e.type, e.id));
         // اگر پیام تازه‌ای آمد و مودال چت باز است، همان‌جا هم تازه شود
         if (events.some(e => e.type === 'chat')
             && document.getElementById('chat-modal').classList.contains('active') && portalChat) portalChat.poll();

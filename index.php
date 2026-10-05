@@ -514,10 +514,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </span>
             <span class="text-gray-300 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
         </div>
-        <p class="copyright-text">تمامی حقوق مادی و معنوی محفوظ می‌باشد - ۲۰۲۶ ©</p>
+        <p class="copyright-text">تمامی حقوق مادی و معنوی محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.3.0</span></p>
     </div>
 
     <!-- بارگذاری ذرات -->
+    <script>window.CURSOR_FX_COLOR = '#00d2ff';</script>
+    <script src="cursor-fx.js?v=1" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
 
     <script>

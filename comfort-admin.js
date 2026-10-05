@@ -196,7 +196,14 @@
     const togglesGrid = items => `<div class="grid sm:grid-cols-2 gap-1.5">${items.map(it => `<label class="flex items-center gap-2 rounded-xl border ${it.changed ? 'border-amber-200 bg-amber-50/40' : 'border-slate-100 bg-white'} px-3 py-2 text-[11.5px] font-bold text-slate-700 cursor-pointer">
         <input type="checkbox" class="accent-violet-600 w-4 h-4" data-cf="${it.key}" ${it.on ? 'checked' : ''}><span class="flex-1">${esc(it.title)}</span>${it.changed ? '<small class="text-[9.5px] text-amber-600">تغییر یافته</small>' : ''}</label>`).join('')}</div>`;
     const collect = root => { const o = {}; root.querySelectorAll('[data-cf]').forEach(c => { o[c.dataset.cf] = c.checked ? 1 : 0; }); return o; };
-    // داخلِ فرمِ «دسترسی‌ها»ی کاربرِ پنل
+    // داخلِ فرمِ «دسترسی‌ها»ی کاربرِ پنل: همان ردیف‌های جدولِ دسترسی‌ها (امکاناتِ رفاهی و ابزارها، هر کدام با کلید)
+    // «ابزارها» یک کلیدِ اصلی دارد که هم صفحه‌ی ابزارها و هم دکمه‌ی جعبه‌ابزار را باز/بسته می‌کند؛ هر ابزار جدا روشن/خاموش می‌شود.
+    const pmRows = items => items.map(it => `<tr data-row="${it.key}"><td class="font-bold text-slate-700">${esc(it.title.replace(/^ابزار:\s*/, ''))}${it.changed ? '<span class="pm-chg">تغییر یافته</span>' : ''}</td>
+        <td><input type="checkbox" class="pm-sw" data-cf="${it.key}" ${it.on ? 'checked' : ''}></td></tr>`).join('');
+    const pmGrp = (icon, a, b, title, sub, body, key) => `<div class="pm-grp" data-grp="${key}"><h4><span class="pm-ic" style="--a:${a};--b:${b}"><i class="fas ${icon}"></i></span>${title}
+        <small data-cnt></small><button type="button" class="pm-row-all mr-auto" data-gon>همه</button><button type="button" class="pm-row-all text-rose-500" data-goff>هیچ</button></h4>
+        ${sub ? `<p class="text-[10.5px] text-slate-500 px-3 pt-2">${sub}</p>` : ''}
+        <table class="pm-tbl"><thead><tr><th>${key === 'tools' ? 'ابزار' : 'امکان'}</th><th style="width:90px">فعال</th></tr></thead><tbody>${body}</tbody></table></div>`;
     async function permSection(userId) {
         const box = document.getElementById('pm-comfort');
         if (!box) return;
@@ -204,15 +211,23 @@
         const r = await api('access_get', {type: 'S', id: userId});
         if (!r.ok) return;
         A.perm = {id: userId, initial: JSON.stringify(collectFrom(r.items))};
-        const on = r.items.filter(i => i.on).length;
-        box.innerHTML = `<details class="px-6 py-3 border-t border-slate-100 bg-gradient-to-l from-violet-50/50 to-white" ${on < r.items.length ? 'open' : ''}>
-            <summary class="cursor-pointer text-[12px] font-black text-slate-700 select-none"><i class="fas fa-mug-hot text-violet-500 ml-1"></i>امکاناتِ رفاهی <span class="text-[10.5px] font-bold text-slate-400 mr-1" data-cnt>${fa(on)} از ${fa(r.items.length)} روشن · پیش‌فرض برای همه روشن است</span>
-                <button type="button" class="text-[10.5px] text-violet-600 mr-2" data-allon>همه روشن</button><button type="button" class="text-[10.5px] text-rose-500 mr-1" data-alloff>همه خاموش</button></summary>
-            <div class="mt-2" data-tg>${togglesHtml(r.items)}</div></details>`;
-        const cnt = () => { const n = box.querySelectorAll('[data-cf]:checked').length; box.querySelector('[data-cnt]').textContent = `${fa(n)} از ${fa(r.items.length)} روشن · پیش‌فرض برای همه روشن است`; };
-        box.querySelectorAll('[data-cf]').forEach(c => c.addEventListener('change', cnt));
-        box.querySelector('[data-allon]').onclick = e => { e.preventDefault(); box.querySelectorAll('[data-cf]').forEach(c => { c.checked = true; }); cnt(); };
-        box.querySelector('[data-alloff]').onclick = e => { e.preventDefault(); box.querySelectorAll('[data-cf]').forEach(c => { c.checked = false; }); cnt(); };
+        const master = r.items.find(i => i.key === 'tools');
+        const tools = r.items.filter(i => i.key.indexOf('tool_') === 0), other = r.items.filter(i => i.key.indexOf('tool_') !== 0 && i.key !== 'tools');
+        box.innerHTML = pmGrp('fa-mug-hot', '#d946ef', '#8b5cf6', 'امکاناتِ رفاهی', '', pmRows(other), 'cf')
+            + (master ? pmGrp('fa-toolbox', '#db2777', '#7c3aed', 'ابزارها', 'کلیدِ اول هم صفحه‌ی «ابزارها» و هم دکمه‌ی جعبه‌ابزار را باز می‌کند؛ ابزارها را تک‌تک روشن یا خاموش کنید.',
+                `<tr data-row="tools" style="background:#faf5ff"><td class="font-black text-violet-700"><i class="fas fa-key ml-1"></i>صفحه‌ی ابزارها و دکمه‌ی جعبه‌ابزار<span class="pm-hint">خاموش باشد، هیچ ابزاری دیده نمی‌شود</span></td>
+                    <td><input type="checkbox" class="pm-sw" data-cf="tools" ${master.on ? 'checked' : ''}></td></tr>` + pmRows(tools), 'tools') : '');
+        const sync = () => {
+            const m = box.querySelector('[data-cf="tools"]');
+            box.querySelectorAll('[data-grp="tools"] tr[data-row^="tool_"]').forEach(tr => { tr.classList.toggle('pm-off', !!m && !m.checked); tr.querySelector('input').disabled = !!m && !m.checked; });
+            box.querySelectorAll('[data-grp]').forEach(g => { const c = [...g.querySelectorAll('[data-cf]')]; g.querySelector('[data-cnt]').textContent = `${fa(c.filter(x => x.checked).length)} از ${fa(c.length)} روشن`; });
+        };
+        box.querySelectorAll('[data-cf]').forEach(c => c.addEventListener('change', sync));
+        box.querySelectorAll('[data-grp]').forEach(g => {
+            g.querySelector('[data-gon]').onclick = () => { g.querySelectorAll('[data-cf]').forEach(c => { c.checked = true; }); sync(); };
+            g.querySelector('[data-goff]').onclick = () => { g.querySelectorAll('[data-cf]').forEach(c => { c.checked = false; }); sync(); };
+        });
+        sync();
     }
     const collectFrom = items => Object.fromEntries(items.map(i => [i.key, i.on ? 1 : 0]));
     async function permSave() {

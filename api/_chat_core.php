@@ -78,6 +78,10 @@ function chat_store_file($f, $destDir) {
 // ---------------------------------------------------------------------
 //  فهرستِ گفتگوها (فقط برای کاربرانِ پنل)
 // ---------------------------------------------------------------------
+// پیش‌نمایشِ پیامِ بی‌متن در فهرستِ گفتگوها: پیامِ صوتی جدا از بقیه‌ی فایل‌ها
+function chat_file_preview($name) {
+    return preg_match('/^voice-/', (string)$name) ? '🎤 پیامِ صوتی' : '📎 فایل';
+}
 function chat_threads($pdo, $actor, $q = '') {
     $me = intval($actor['id']);
     $caps = chat_staff_caps($actor['role']);
@@ -105,11 +109,11 @@ function chat_threads($pdo, $actor, $q = '') {
         if ($groups) {
             $ids = implode(',', array_map(fn($g) => $g['last_id'], $groups));
             $last = [];
-            foreach ($pdo->query("SELECT id, sender_type, message, file_path, created_at FROM ticket_messages WHERE id IN ($ids)")->fetchAll() as $m) $last[intval($m['id'])] = $m;
+            foreach ($pdo->query("SELECT id, sender_type, message, file_path, file_name, created_at FROM ticket_messages WHERE id IN ($ids)")->fetchAll() as $m) $last[intval($m['id'])] = $m;
             foreach ($groups as $g) {
                 $m = $last[$g['last_id']] ?? null;
                 if (!$match([$g['title'], $g['sub'], $m['message'] ?? ''])) continue;
-                $out[] = $g + ['last' => $m ? ($m['message'] ?: '📎 فایل') : '', 'last_mine' => $m && $m['sender_type'] !== 'CUSTOMER', 'last_at' => chat_ts($m['created_at'] ?? null)];
+                $out[] = $g + ['last' => $m ? ($m['message'] ?: chat_file_preview($m['file_name'])) : '', 'last_mine' => $m && $m['sender_type'] !== 'CUSTOMER', 'last_at' => chat_ts($m['created_at'] ?? null)];
             }
         }
     }
@@ -117,7 +121,7 @@ function chat_threads($pdo, $actor, $q = '') {
     if ($cScope) {
         $st = $pdo->query("SELECT c.id, c.name,
                 (SELECT GROUP_CONCAT(cpu.full_name SEPARATOR '، ') FROM company_portal_user_companies cpuc JOIN company_portal_users cpu ON cpu.id = cpuc.portal_user_id WHERE cpuc.company_id = c.id) AS members,
-                m.id AS last_msg_id, m.message, m.file_path, m.sender_type, m.created_at,
+                m.id AS last_msg_id, m.message, m.file_path, m.file_name, m.sender_type, m.created_at,
                 (SELECT COUNT(*) FROM company_chat_messages x WHERE x.company_id = c.id AND x.sender_type = 'COMPANY' AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
               FROM companies c JOIN company_chat_messages m ON m.id = (SELECT MAX(id) FROM company_chat_messages WHERE company_id = c.id AND deleted_at IS NULL)
              WHERE " . chat_scope_sql($cScope, 'c.id'));
@@ -125,10 +129,10 @@ function chat_threads($pdo, $actor, $q = '') {
         foreach ($st->fetchAll() as $c) {
             if (!$match([$c['name'], $c['members'], $c['message']])) continue;
             $out[] = ['key' => 'C:' . intval($c['id']), 'type' => 'COMPANY', 'title' => $c['name'], 'sub' => (string)$c['members'], 'avatar' => null, 'presence' => $cp[intval($c['id'])] ?? null, 'last_msg_id' => intval($c['last_msg_id']),
-                      'last' => $c['message'] ?: '📎 فایل', 'last_mine' => $c['sender_type'] === 'ADMIN', 'last_at' => chat_ts($c['created_at']), 'unread' => intval($c['unread'])];
+                      'last' => $c['message'] ?: chat_file_preview($c['file_name']), 'last_mine' => $c['sender_type'] === 'ADMIN', 'last_at' => chat_ts($c['created_at']), 'unread' => intval($c['unread'])];
         }
     }
-    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.id AS last_msg_id, m.message, m.file_path, m.from_user_id, m.created_at, " . prof_cols($pdo, 'u') . ",
+    $st = $pdo->prepare("SELECT u.id, u.full_name, u.role, m.id AS last_msg_id, m.message, m.file_path, m.file_name, m.from_user_id, m.created_at, " . prof_cols($pdo, 'u') . ",
             (SELECT COUNT(*) FROM staff_chat_messages x WHERE x.from_user_id = u.id AND x.to_user_id = ? AND x.is_read = 0 AND x.deleted_at IS NULL) AS unread
           FROM users u JOIN staff_chat_messages m ON m.id = (SELECT MAX(id) FROM staff_chat_messages
                 WHERE deleted_at IS NULL AND ((from_user_id = u.id AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = u.id)))
@@ -137,7 +141,7 @@ function chat_threads($pdo, $actor, $q = '') {
     foreach ($st->fetchAll() as $u) {
         if (!$match([$u['full_name'], $u['message']])) continue;
         $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
-                  'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: '📎 فایل', 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
+                  'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: chat_file_preview($u['file_name']), 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
     }
     // تاریخچه‌ای که (برای من یا برای همه) پاک شده، پیش‌نمایشِ آخرین پیام را هم نشان نمی‌دهد؛ و گفتگوی قطع‌شده قفل دارد
     if (chat_state_ready($pdo)) {
@@ -365,10 +369,41 @@ function chat_can_modify($actor, $type, $row) {
     return strpos($row['author'], 'CLIENT') === 0;
 }
 
+// واکنش‌های پیام‌ها: [msg_id => [['e' => '❤️', 'n' => 2, 'mine' => true], ...]]
+function chat_reactions_for($pdo, $actor, $type, array $ids) {
+    $out = [];
+    if (!$ids || !chat_ext_ensure($pdo)) return $out;
+    $in = implode(',', array_map('intval', $ids));
+    $me = chat_viewer($actor);
+    $st = $pdo->prepare("SELECT msg_id, who, emoji FROM chat_reactions WHERE tbl = ? AND msg_id IN ($in) ORDER BY at");
+    $st->execute([chat_rtbl($type)]);
+    foreach ($st->fetchAll() as $r) {
+        $m = intval($r['msg_id']); $e = $r['emoji'];
+        if (!isset($out[$m][$e])) $out[$m][$e] = ['e' => $e, 'n' => 0, 'mine' => false];
+        $out[$m][$e]['n']++;
+        if ($r['who'] === $me) $out[$m][$e]['mine'] = true;
+    }
+    return array_map('array_values', $out);
+}
+function chat_react($pdo, $actor, $type, $id, $msgId, $emoji) {
+    if (!chat_ext_ensure($pdo)) return ['ok' => false, 'error' => 'واکنش در دسترس نیست.'];
+    $row = chat_find_row($pdo, $actor, $type, $id, $msgId);
+    if (!$row || $row['deleted']) return ['ok' => false, 'error' => 'پیام پیدا نشد.'];
+    $emoji = trim((string)$emoji);
+    if ($emoji === '') {
+        $pdo->prepare("DELETE FROM chat_reactions WHERE tbl = ? AND msg_id = ? AND who = ?")->execute([chat_rtbl($type), intval($msgId), chat_viewer($actor)]);
+        return ['ok' => true];
+    }
+    if (mb_strlen($emoji) > 8 || preg_match('/[A-Za-z0-9<>"\'&]/', $emoji)) return ['ok' => false, 'error' => 'واکنشِ نامعتبر.'];
+    $pdo->prepare("REPLACE INTO chat_reactions (tbl, msg_id, who, emoji, at) VALUES (?, ?, ?, ?, NOW())")->execute([chat_rtbl($type), intval($msgId), chat_viewer($actor), $emoji]);
+    return ['ok' => true];
+}
+
 function chat_messages($pdo, $actor, $type, $id) {
     $rows = chat_visible_rows($pdo, $actor, $type, $id);
     $byId = [];
     foreach ($rows as $r) $byId[$r['id']] = $r;
+    $reacts = chat_reactions_for($pdo, $actor, $type, array_keys($byId));
     $out = [];
     foreach ($rows as $r) {
         $mine = chat_is_mine($actor, $r);
@@ -376,13 +411,13 @@ function chat_messages($pdo, $actor, $type, $id) {
         if ($r['reply_to'] && isset($byId[intval($r['reply_to'])])) {
             $o = $byId[intval($r['reply_to'])];
             $rep = ['id' => $o['id'], 'sender' => chat_is_mine($actor, $o) ? 'شما' : $o['sender'],
-                    'text' => $o['deleted'] ? 'پیامِ حذف‌شده' : mb_substr((string)($o['text'] ?: ($o['file'] ? '📎 ' . ($o['file_name'] ?: 'فایل') : '')), 0, 120)];
+                    'text' => $o['deleted'] ? 'پیامِ حذف‌شده' : mb_substr((string)($o['text'] ?: ($o['file'] ? (preg_match('/^voice-/', (string)$o['file_name']) ? '🎤 پیامِ صوتی' : '📎 ' . ($o['file_name'] ?: 'فایل')) : '')), 0, 120)];
         } elseif ($r['reply_to']) {
             $rep = ['id' => intval($r['reply_to']), 'sender' => '', 'text' => 'پیامِ پاک‌شده'];
         }
         $out[] = ['id' => $r['id'], 'mine' => $mine, 'can_modify' => !$r['deleted'] && chat_can_modify($actor, $type, $r),
                   'sender' => $r['sender'], 'avatar' => $r['avatar'] ?? null, 'text' => $r['deleted'] ? null : $r['text'], 'file' => $r['deleted'] ? null : chat_file_out($r['file'], $r['file_name']),
-                  'reply' => $rep, 'ref' => $r['ref'], 'edited' => $r['edited'], 'deleted' => $r['deleted'],
+                  'reply' => $rep, 'ref' => $r['ref'], 'edited' => $r['edited'], 'deleted' => $r['deleted'], 'reactions' => $r['deleted'] ? [] : ($reacts[$r['id']] ?? []),
                   'ts' => $r['at'], 'date' => chat_jdate($r['at']), 'time' => $r['at'] ? date('H:i', $r['at']) : '',
                   // تیکِ دوتایی: پیامِ من را طرفِ مقابل دیده؟
                   'read' => $mine ? $r['read'] : true];
@@ -404,15 +439,60 @@ function chat_mark_read($pdo, $actor, $type, $id) {
     }
 }
 
-// «در حال نوشتن» (فقط گفتگوی کارکنان؛ همان ستون‌های قبلیِ تیکت)
+// جدول‌های تکمیلی: «در حال نوشتن» برای گفتگوی شرکت‌ها و همکاران، و واکنش (ایموجی) روی پیام‌ها (خودکار ساخته می‌شوند)
+function chat_ext_ensure($pdo) {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $T = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_typing (conv VARCHAR(40) NOT NULL, who VARCHAR(30) NOT NULL, at DATETIME NOT NULL, PRIMARY KEY (conv, who))$T");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_reactions (tbl CHAR(1) NOT NULL, msg_id BIGINT NOT NULL, who VARCHAR(30) NOT NULL, emoji VARCHAR(32) NOT NULL, at DATETIME NOT NULL,
+                    PRIMARY KEY (tbl, msg_id, who), KEY idx_msg (tbl, msg_id))$T");
+        return $done = true;
+    } catch (Throwable $e) { error_log('[chat_ext_ensure] ' . $e->getMessage()); return $done = false; }
+}
+function chat_rtbl($type) { return $type === 'C' ? 'C' : ($type === 'S' ? 'S' : 'T'); }
+
+// «در حال نوشتن»: کارکنان در ستون‌های تیکت؛ شرکت‌ها و همکاران در chat_typing
 function chat_set_typing($pdo, $actor, $type, $id) {
-    if ($type !== 'P' && $type !== 'T') return;
+    if ($type !== 'P' && $type !== 'T') {
+        if (chat_ext_ensure($pdo)) $pdo->prepare("REPLACE INTO chat_typing (conv, who, at) VALUES (?, ?, NOW())")->execute([chat_thread_id($type, $id, $actor['id']), chat_viewer($actor)]);
+        return;
+    }
     $col = $actor['kind'] === 'STAFF' ? 'admin_typing_at' : 'customer_typing_at';
     $where = $type === 'P' ? 'person_id = ?' : 'id = ?';
     $pdo->prepare("UPDATE tickets SET $col = NOW() WHERE $where ORDER BY id DESC LIMIT 1")->execute([$id]);
 }
+function chat_clear_typing($pdo, $actor, $type, $id) {
+    if ($type === 'P' || $type === 'T' || !chat_ext_ensure($pdo)) return;
+    $pdo->prepare("DELETE FROM chat_typing WHERE conv = ? AND who = ?")->execute([chat_thread_id($type, $id, $actor['id']), chat_viewer($actor)]);
+}
+// گفتگوهایی که طرفِ مقابل همین الان در حالِ نوشتن است (برای فهرستِ گفتگوهای پنل)
+function chat_typing_keys($pdo, $actor) {
+    $keys = [];
+    try {
+        foreach ($pdo->query("SELECT id, person_id FROM tickets WHERE customer_typing_at > DATE_SUB(NOW(), INTERVAL 6 SECOND)") as $r)
+            $keys[intval($r['person_id']) > 0 ? 'P:' . intval($r['person_id']) : 'T:' . intval($r['id'])] = true;
+        if (chat_ext_ensure($pdo)) {
+            $me = 'STAFF:' . intval($actor['id']);
+            foreach ($pdo->query("SELECT conv, who FROM chat_typing WHERE at > DATE_SUB(NOW(), INTERVAL 6 SECOND)") as $r) {
+                if (strpos($r['conv'], 'C:') === 0 && strpos($r['who'], 'COMPANY:') === 0) $keys[$r['conv']] = true;
+                elseif (preg_match('/^S:(\d+)-(\d+)$/', $r['conv'], $m) && $r['who'] !== $me && in_array(intval($actor['id']), [intval($m[1]), intval($m[2])], true))
+                    $keys['S:' . (intval($m[1]) === intval($actor['id']) ? intval($m[2]) : intval($m[1]))] = true;
+            }
+        }
+    } catch (Throwable $e) {}
+    return $keys;
+}
 function chat_other_typing($pdo, $actor, $type, $id) {
-    if ($type !== 'P' && $type !== 'T') return false;
+    if ($type !== 'P' && $type !== 'T') {
+        if (!chat_ext_ensure($pdo)) return false;
+        // شرکت‌ها: طرفِ دیگر (کارکنانِ «بیمه با ما» در برابرِ کاربرانِ شرکت)؛ همکاران: خودِ طرفِ مقابل
+        $st = $pdo->prepare("SELECT who FROM chat_typing WHERE conv = ? AND who <> ? AND at > DATE_SUB(NOW(), INTERVAL 6 SECOND)");
+        $st->execute([chat_thread_id($type, $id, $actor['id']), chat_viewer($actor)]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $w) if ($type === 'S' || strpos($w, $actor['kind'] . ':') !== 0) return true;
+        return false;
+    }
     $col = $actor['kind'] === 'STAFF' ? 'customer_typing_at' : 'admin_typing_at';
     $where = $type === 'P' ? 'person_id = ?' : 'id = ?';
     $st = $pdo->prepare("SELECT MAX($col) FROM tickets WHERE $where");
@@ -463,7 +543,7 @@ function chat_send($pdo, $actor, $type, $id, $text, $file, $replyTo, $ref) {
     }
     if ($text === '' && !$fileRel) return ['ok' => false, 'error' => 'پیام خالی است.'];
     $refT = $refRow['type'] ?? null; $refI = $refRow['id'] ?? null; $refL = $refRow['label'] ?? null;
-    $preview = $text !== '' ? mb_substr($text, 0, 120) : '📎 ' . $fileName;
+    $preview = $text !== '' ? mb_substr($text, 0, 120) : (preg_match('/^voice-/', (string)$fileName) ? '🎤 پیامِ صوتی' : '📎 ' . $fileName);
 
     if ($type === 'P' || $type === 'T') {
         $ticketId = $type === 'P' ? chat_person_ticket($pdo, $id) : $id;
@@ -727,7 +807,11 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
     if (!chat_ready($pdo)) return ['ok' => false, 'error' => CHAT_SCHEMA_MSG];
     if ($action === 'chat_threads') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
-        return ['ok' => true, 'threads' => chat_threads($pdo, $actor, $data['q'] ?? ''), 'caps' => ['company' => (bool)chat_company_scope($pdo, $actor)] + chat_staff_caps($actor['role']) + ['admin' => ($actor['role'] ?? '') === 'ADMIN']];
+        $threads = chat_threads($pdo, $actor, $data['q'] ?? '');
+        $tk = chat_typing_keys($pdo, $actor);
+        foreach ($threads as &$th) $th['typing'] = isset($tk[$th['key']]);
+        unset($th);
+        return ['ok' => true, 'threads' => $threads, 'caps' => ['company' => (bool)chat_company_scope($pdo, $actor)] + chat_staff_caps($actor['role']) + ['admin' => ($actor['role'] ?? '') === 'ADMIN']];
     }
     if ($action === 'chat_contacts') {
         if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
@@ -751,6 +835,7 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
         case 'chat_send':
             $ref = $data['ref'] ?? null;
             if (is_string($ref)) $ref = json_decode($ref, true);
+            chat_clear_typing($pdo, $actor, $type, $id);
             return chat_send($pdo, $actor, $type, $id, $data['text'] ?? '', $files['file'] ?? null, $data['reply_to'] ?? null, $ref);
         case 'chat_edit':    return chat_edit($pdo, $actor, $type, $id, $data['id'] ?? 0, $data['text'] ?? '');
         case 'chat_delete':  // یک یا چند پیام، برای هر دو طرف
@@ -765,6 +850,7 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
             if (is_string($ref)) $ref = json_decode($ref, true);
             return chat_set_ref($pdo, $actor, $type, $id, $data['id'] ?? 0, $ref ?: null);
         case 'chat_typing':  chat_set_typing($pdo, $actor, $type, $id); return ['ok' => true];
+        case 'chat_react':   return chat_react($pdo, $actor, $type, $id, $data['id'] ?? 0, $data['emoji'] ?? '');
     }
     return ['ok' => false, 'error' => 'عملیات نامعتبر.'];
 }

@@ -22,6 +22,68 @@
     const EMOJI = '😀 😁 😂 🙂 😊 😍 😎 🤔 😅 😢 😡 👍 👎 👏 🙏 🤝 💪 🎉 ❤️ 💯 ✅ ❌ ⚠️ ❓ ⏳ 📎 📄 📷 🚗 🚙 🛻 🚚 🔧 📞 💬 📌 ⭐ 🔥 👌 😉'.split(' ');
     const TYPE_META = { PERSON: ['کارکنان', 'fa-user', '#0ea5e9'], COMPANY: ['شرکت', 'fa-building', '#8b5cf6'], STAFF: ['همکار', 'fa-user-tie', '#10b981'] };
     const REF_ICON = { CASE: 'fa-file-shield', COMPANY_REQUEST: 'fa-building-circle-check', VISIT_REPORT: 'fa-file-circle-check' };
+    const REACTS = ['❤️', '👍', '😂', '😮', '😢', '🙏', '🔥', '👏'];
+    const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+
+    // ---- صدای ارسال و دریافت (ساخته‌شده با Web Audio؛ شبیهِ «ووش» و «دینگ»ِ پیام‌های آیفون) ----
+    const SND = {
+        ctx: null,
+        ac() {
+            if (!this.ctx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; this.ctx = new C(); }
+            if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+            return this.ctx;
+        },
+        // ووشِ ارسال: نویزِ فیلترشده که از زیر به بالا جارو می‌شود + یک «تیک»ِ ملایم
+        send() {
+            const c = this.ac(); if (!c) return;
+            const t = c.currentTime, len = 0.32, n = Math.floor(c.sampleRate * len), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+            for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+            const src = c.createBufferSource(); src.buffer = buf;
+            const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+            bp.frequency.setValueAtTime(500, t); bp.frequency.exponentialRampToValueAtTime(3800, t + 0.2);
+            const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+            src.connect(bp).connect(g).connect(c.destination); src.start(t); src.stop(t + len);
+            const o = c.createOscillator(), og = c.createGain(); o.type = 'sine';
+            o.frequency.setValueAtTime(1400, t + 0.16); o.frequency.exponentialRampToValueAtTime(2100, t + 0.24);
+            og.gain.setValueAtTime(0.0001, t + 0.16); og.gain.exponentialRampToValueAtTime(0.07, t + 0.18); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+            o.connect(og).connect(c.destination); o.start(t + 0.16); o.stop(t + 0.32);
+        },
+        // دینگِ دریافت: دو نتِ زنگ‌مانند پشتِ سرِ هم
+        recv() {
+            const c = this.ac(); if (!c) return;
+            const t = c.currentTime;
+            [[1318.5, 0], [1760, 0.11]].forEach(([f, dt]) => {
+                [1, 2.01].forEach((h, k) => {
+                    const o = c.createOscillator(), g = c.createGain(); o.type = k ? 'sine' : 'triangle'; o.frequency.value = f * h;
+                    const v = k ? 0.035 : 0.13;
+                    g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(v, t + dt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.55);
+                    o.connect(g).connect(c.destination); o.start(t + dt); o.stop(t + dt + 0.6);
+                });
+            });
+        },
+    };
+    // مرورگر بدونِ تعاملِ کاربر صدا پخش نمی‌کند؛ با اولین لمس/کلیک آماده می‌شود
+    ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { try { SND.ac(); } catch (e) {} }, { once: true, capture: true }));
+    // بی‌صدا: کلِ گفتگوها، یا هر گفتگو جدا
+    const MUTE = {
+        k: 'cx:mute',
+        get() { return LS.get(this.k, { all: false, keys: {} }) || { all: false, keys: {} }; },
+        all() { return !!this.get().all; },
+        is(key) { const m = this.get(); return !!m.all || !!(key && m.keys && m.keys[key]); },
+        own(key) { const m = this.get(); return !!(m.keys && m.keys[key]); },
+        toggle(key) { const m = this.get(); m.keys = m.keys || {}; if (key) { if (m.keys[key]) delete m.keys[key]; else m.keys[key] = 1; } else m.all = !m.all; LS.set(this.k, m); },
+    };
+    // ایموجیِ تکی: بزرگ و با انیمیشنِ مخصوصِ خودش
+    const JUMBO_RE = /^(?:\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|[\u2600-\u27BF])(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|[\u2600-\u27BF])(?:\uFE0F|\p{Emoji_Modifier})?)*)$/u;
+    const isJumbo = t => { t = String(t || '').trim(); return !!t && t.length <= 16 && JUMBO_RE.test(t); };
+    const JUMBO_ANIM = e => {
+        const M = [['❤️💖💗💓💕♥️😍🥰😘', 'beat'], ['😂🤣😆😁😀😃😄', 'laugh'], ['👍👌✅💯🤝', 'thumb'], ['🔥', 'flame'], ['🎉🥳🎊✨⭐🌟', 'party'],
+                   ['😢😭😞😔🥺', 'cry'], ['😡🤬😠👿', 'angry'], ['😮😯😲🤯😱', 'wow'], ['🙏', 'pray'], ['👏💪', 'clap'], ['😎🤩', 'cool'], ['🤔🧐', 'think'], ['👋', 'wave'], ['🚗🚙🛻🚚🚀', 'drive']];
+        const f = M.find(([set]) => [...set].some(c => e.indexOf(c) === 0 || e === c)); return f ? f[1] : 'bounce';
+    };
+    const JUMBO_SEEN = { k: 'cx:jumbo', has(id) { return (LS.get(this.k, []) || []).includes(id); }, add(id) { const a = LS.get(this.k, []) || []; if (!a.includes(id)) { a.push(id); LS.set(this.k, a.slice(-400)); } } };
+    // گفتگوهایی که همین الان روی صفحه دیده می‌شوند (برای «خوانده شد»ِ اعلان‌ها)
+    const LIVE = new Set();
     // همه‌ی «امروز/دیروز/ساعت»ها به وقتِ ایران و بر اساسِ ساعتِ سرور (iran-time.js)، نه ساعتِ سیستمِ کاربر
     const nowMs = () => window.IrTime ? IrTime.now() : Date.now();
     const dayLabel = d => d === jdate(nowMs()) ? 'امروز' : d === jdate(nowMs() - 864e5) ? 'دیروز' : fa(d);
@@ -452,12 +514,77 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 @keyframes cxFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-10px) rotate(3deg)}}
 @keyframes cxFlash{0%,100%{box-shadow:0 3px 12px -6px rgba(15,23,42,.25)}30%{box-shadow:0 0 0 4px rgba(250,204,21,.8)}}
 @keyframes cxShim{from{background-position:200% 0}to{background-position:-200% 0}}
+.cx-head-b .cx-typing{display:inline-flex;align-items:center;gap:3px}
+.cx-typing i{display:inline-block;width:4px;height:4px;border-radius:50%;background:currentColor;animation:cxDot 1.1s infinite}
+.cx-typing i:nth-of-type(2){animation-delay:.15s}.cx-typing i:nth-of-type(3){animation-delay:.3s}
+.cx-th-l p.cx-tp{color:var(--acc);font-weight:800;display:inline-flex;align-items:center;gap:3px}
+.cx-mute{border:0;background:transparent;color:var(--muted);font-size:11px;width:22px;height:22px;border-radius:7px;opacity:0;transition:.2s;flex-shrink:0}
+.cx-th:hover .cx-mute,.cx-mute.on{opacity:1}.cx-mute.on{color:#e11d48}.cx-mute:hover{background:var(--soft)}
+.cx-ib.cx-muted{color:#e11d48}
+.cx-reacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.cx-row.me .cx-reacts{justify-content:flex-start}.cx-row.them .cx-reacts{justify-content:flex-end}
+.cx-rc{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:999px;padding:1px 8px 1px 7px;font-size:13px;line-height:1.6;display:inline-flex;align-items:center;gap:3px;box-shadow:0 2px 8px -4px rgba(15,23,42,.3);transition:transform .15s}
+.cx-rc b{font-size:10px;font-weight:900;color:var(--muted)}
+.cx-rc.mine{border-color:var(--acc);background:rgba(99,102,241,.12)}
+.cx-rc:hover{transform:scale(1.08)}
+.cx-rc.pop{animation:cxRPop .7s cubic-bezier(.2,1.6,.4,1) both}
+.cx-msgwrap{display:flex;flex-direction:column;max-width:min(74%,560px)}
+.cx-row.me .cx-msgwrap{align-items:flex-start}.cx-row.them .cx-msgwrap{align-items:flex-end}
+.cx-msgwrap .cx-msg{max-width:100%}
+.cx-msg.cx-sent{animation:cxSend .5s cubic-bezier(.2,.9,.25,1.2) both}
+.cx-msg.cx-recv{animation:cxRecv .55s cubic-bezier(.2,.9,.3,1.3) both}
+.cx-swipe-ic{position:absolute;top:50%;width:30px;height:30px;margin-top:-15px;border-radius:50%;background:var(--panel);color:var(--acc);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -4px rgba(15,23,42,.35);opacity:0;transform:scale(.4);transition:opacity .15s,transform .15s;pointer-events:none;font-size:12px}
+.cx-msg.cx-jmb{background:transparent!important;box-shadow:none!important;padding:0 4px;color:var(--text)!important}
+.cx-jumbo{font-size:58px;line-height:1.15;display:inline-block;cursor:pointer;user-select:none;filter:drop-shadow(0 6px 10px rgba(15,23,42,.18));transform-origin:50% 80%}
+.cx-jumbo.a-beat{animation:jBeat 1.3s ease-in-out}.cx-jumbo.a-laugh{animation:jLaugh 1.2s ease-in-out}.cx-jumbo.a-thumb{animation:jThumb 1s cubic-bezier(.2,1.6,.4,1)}
+.cx-jumbo.a-flame{animation:jFlame 1.4s ease-in-out}.cx-jumbo.a-party{animation:jParty 1.2s cubic-bezier(.2,1.5,.4,1)}.cx-jumbo.a-cry{animation:jCry 1.6s ease-in-out}
+.cx-jumbo.a-angry{animation:jAngry .9s linear}.cx-jumbo.a-wow{animation:jWow 1s cubic-bezier(.2,1.6,.4,1)}.cx-jumbo.a-pray{animation:jPray 1.3s ease-in-out}
+.cx-jumbo.a-clap{animation:jClap 1s ease-in-out}.cx-jumbo.a-cool{animation:jCool 1.2s ease-in-out}.cx-jumbo.a-think{animation:jThink 1.5s ease-in-out}
+.cx-jumbo.a-wave{animation:jWave 1.3s ease-in-out}.cx-jumbo.a-drive{animation:jDrive 1.3s ease-in-out}.cx-jumbo.a-bounce{animation:jBounce 1s cubic-bezier(.2,1.6,.4,1)}
+.cx-rec{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(225,29,72,.1),rgba(124,58,237,.1));border-radius:16px;padding:8px 12px;margin-bottom:6px;animation:cxSlide .25s both}
+.cx-rec .dot{width:10px;height:10px;border-radius:50%;background:#e11d48;animation:cxPulseR 1s infinite}
+.cx-rec b{font-variant-numeric:tabular-nums;font-size:13px;min-width:44px}
+.cx-rec .wv{flex:1;display:flex;align-items:center;gap:2px;height:26px;overflow:hidden}
+.cx-rec .wv i{width:3px;border-radius:3px;background:var(--acc);opacity:.75}
+.cx-rec button{border:0;border-radius:12px;width:38px;height:38px}
+.cx-rec .x{background:var(--soft);color:#e11d48}.cx-rec .ok{background:linear-gradient(135deg,var(--me1),var(--me2));color:#fff}
+.cx-mic.on{background:#e11d48;color:#fff;animation:cxPulseR 1.2s infinite}
+.cx-voice{display:flex;align-items:center;gap:8px;min-width:200px;padding:3px 0}
+.cx-voice .pl{width:36px;height:36px;border-radius:50%;border:0;flex-shrink:0;background:rgba(255,255,255,.25);color:inherit;font-size:13px}
+.cx-row.them .cx-voice .pl{background:linear-gradient(135deg,var(--me1),var(--me2));color:#fff}
+.cx-voice .bars{flex:1;display:flex;align-items:center;gap:2px;height:28px;cursor:pointer}
+.cx-voice .bars i{flex:1;min-width:2px;border-radius:2px;background:currentColor;opacity:.35;transition:opacity .2s}
+.cx-voice .bars i.on{opacity:1}
+.cx-voice small{font-size:10px;opacity:.8;min-width:34px;text-align:left;font-variant-numeric:tabular-nums}
+.cx-send.cx-fly i{animation:cxFly .5s ease-in both}
+@keyframes cxRPop{0%{transform:scale(0) rotate(-20deg);opacity:0}55%{transform:scale(1.45) rotate(8deg);opacity:1}100%{transform:none}}
+@keyframes cxSend{0%{opacity:0;transform:translate(-30px,40px) scale(.6)}70%{opacity:1;transform:translate(2px,-3px) scale(1.03)}100%{transform:none}}
+@keyframes cxRecv{0%{opacity:0;transform:translateX(30px) scale(.7)}60%{opacity:1;transform:translateX(-4px) scale(1.04)}100%{transform:none}}
+@keyframes cxFly{0%{transform:none}45%{transform:translate(-14px,-14px) rotate(-20deg);opacity:0}46%{transform:translate(14px,14px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes cxPulseR{0%{box-shadow:0 0 0 0 rgba(225,29,72,.5)}70%{box-shadow:0 0 0 9px rgba(225,29,72,0)}100%{box-shadow:0 0 0 0 rgba(225,29,72,0)}}
+@keyframes jBeat{0%,100%{transform:scale(1)}15%{transform:scale(1.35)}30%{transform:scale(1)}45%{transform:scale(1.3)}60%{transform:scale(1)}}
+@keyframes jLaugh{0%,100%{transform:none}10%,30%,50%,70%{transform:rotate(-12deg) translateY(-4px)}20%,40%,60%,80%{transform:rotate(12deg) translateY(2px)}}
+@keyframes jThumb{0%{transform:scale(.2) rotate(-60deg)}60%{transform:scale(1.3) rotate(12deg)}80%{transform:scale(.95) rotate(-4deg)}100%{transform:none}}
+@keyframes jFlame{0%,100%{transform:scale(1);filter:drop-shadow(0 0 0 rgba(249,115,22,0))}25%{transform:scale(1.15,1.25) skewX(4deg);filter:drop-shadow(0 -6px 14px rgba(249,115,22,.8))}50%{transform:scale(.95,1.1) skewX(-5deg)}75%{transform:scale(1.12,1.2) skewX(3deg);filter:drop-shadow(0 -6px 16px rgba(239,68,68,.7))}}
+@keyframes jParty{0%{transform:scale(.3) rotate(-40deg)}50%{transform:scale(1.4) rotate(15deg)}70%{transform:scale(.9) rotate(-8deg)}85%{transform:scale(1.08) rotate(4deg)}100%{transform:none}}
+@keyframes jCry{0%,100%{transform:none}20%{transform:translateY(4px) rotate(-6deg)}40%{transform:translateY(0) rotate(6deg)}60%{transform:translateY(4px) rotate(-5deg)}80%{transform:translateY(1px) rotate(3deg)}}
+@keyframes jAngry{0%,100%{transform:none;filter:none}10%,30%,50%,70%,90%{transform:translateX(-6px) scale(1.1);filter:drop-shadow(0 0 10px rgba(225,29,72,.8))}20%,40%,60%,80%{transform:translateX(6px) scale(1.1)}}
+@keyframes jWow{0%{transform:scale(.4)}40%{transform:scale(1.5)}60%{transform:scale(.9)}80%{transform:scale(1.1)}100%{transform:none}}
+@keyframes jPray{0%,100%{transform:none}30%{transform:translateY(-6px) scale(1.12)}50%{transform:translateY(0) scale(1)}70%{transform:translateY(-4px) scale(1.08)}}
+@keyframes jClap{0%,100%{transform:none}15%,45%,75%{transform:scale(1.25) rotate(-8deg)}30%,60%,90%{transform:scale(.9) rotate(6deg)}}
+@keyframes jCool{0%{transform:translateY(-30px) rotate(-20deg);opacity:0}50%{transform:translateY(4px) rotate(8deg);opacity:1}75%{transform:translateY(-3px) rotate(-3deg)}100%{transform:none}}
+@keyframes jThink{0%,100%{transform:none}25%{transform:rotate(-14deg) translateX(-4px)}50%{transform:rotate(10deg)}75%{transform:rotate(-8deg) translateX(3px)}}
+@keyframes jWave{0%,100%{transform:rotate(0)}15%,45%,75%{transform:rotate(22deg)}30%,60%,90%{transform:rotate(-12deg)}}
+@keyframes jDrive{0%{transform:translateX(60px);opacity:0}50%{transform:translateX(-8px);opacity:1}70%{transform:translateX(4px)}100%{transform:none}}
+@keyframes jBounce{0%{transform:scale(.3)}40%{transform:scale(1.3) translateY(-10px)}65%{transform:scale(.92)}85%{transform:scale(1.05)}100%{transform:none}}
 @media (max-width:820px){
   .cx-side{width:100%;border-left:0}
   .cx.cx-full.cx-conv-open .cx-side{display:none}
   .cx.cx-full:not(.cx-conv-open) .cx-main{display:none}
   .cx-back{display:inline-flex}
   .cx-msg{max-width:86%}
+  .cx-msgwrap{max-width:86%}
+  .cx-jumbo{font-size:50px}
   .cx-head.cx-finding .cx-head-b{display:none}
   .cx-head.cx-finding .cx-fq{width:100%;flex:1}
   .cx-head.cx-finding .cx-head-tools{flex:1}
@@ -475,7 +602,8 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.threads = []; this.filter = 'all'; this.q = '';
             this.msgs = []; this.sig = ''; this.refs = []; this.head = null;
             this.topic = null; this.topicFilter = null; this.replyTo = null; this.editing = null; this.file = null;
-            this.seen = new Set(); this.newBelow = 0; this.caps = {};
+            this.seen = new Set(); this.newBelow = 0; this.caps = {}; this.rseen = new Set(); this.unreadMap = null;
+            LIVE.add(this);
             this.render();
             if (this.o.mode === 'full') { this.loadThreads(); this.listTimer = setInterval(() => !document.hidden && this.el.offsetParent && this.loadThreads(true), this.o.listMs); if (this.o.openKey) this.open(this.o.openKey); }
             else this.open(this.key);
@@ -483,7 +611,9 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.pollTimer = setInterval(() => { if (this.key && !document.hidden && this.el.offsetParent) this.poll(); }, this.o.pollMs);
             document.addEventListener('click', this._docClick = e => { if (!e.target.closest('.cx-emoji,.cx-emo-btn')) this.$('.cx-emoji') && this.$('.cx-emoji').remove(); });
         }
-        destroy() { clearInterval(this.pollTimer); clearInterval(this.listTimer); document.removeEventListener('click', this._docClick); this.el.innerHTML = ''; }
+        destroy() { clearInterval(this.pollTimer); clearInterval(this.listTimer); document.removeEventListener('click', this._docClick); this.stopRec(true); LIVE.delete(this); this.el.innerHTML = ''; }
+        // همین گفتگو همین الان روی صفحه دیده می‌شود؟
+        viewing(key) { return !!this.key && (!key || this.key === key) && !document.hidden && !!this.el.offsetParent; }
         $(s) { return this.el.querySelector(s); }
         toast(m, t) { if (window.showToast) showToast(m, t || 'info'); else if (this.o.toast) this.o.toast(m); else miniToast(m, t); }
         async call(action, data) {
@@ -496,6 +626,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.el.innerHTML = `<div class="cx ${this.o.theme === 'dark' ? 'cx-dark' : ''} ${full ? 'cx-full' : 'cx-single'}">
                 ${full ? `<aside class="cx-side">
                     <div class="cx-side-h"><h3><i class="fas fa-comments" style="color:var(--acc)"></i> گفتگوها</h3>
+                        <button class="cx-ib cx-mute-all ${MUTE.all() ? 'cx-muted' : ''}" title="${MUTE.all() ? 'وصلِ صدای همه‌ی گفتگوها' : 'قطعِ صدای همه‌ی گفتگوها'}"><i class="fas ${MUTE.all() ? 'fa-volume-xmark' : 'fa-volume-high'}"></i></button>
                         <button class="cx-ib cx-prim cx-new" title="گفتگوی تازه"><i class="fas fa-pen-to-square"></i></button></div>
                     <label class="cx-search"><i class="fas fa-magnifying-glass"></i><input class="cx-q" placeholder="جستجوی نام، کد ملی یا متن پیام..."></label>
                     <div class="cx-chips"></div>
@@ -507,6 +638,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.root = this.$('.cx');
             if (full) {
                 this.$('.cx-new').onclick = () => this.newChat();
+                this.$('.cx-mute-all').onclick = () => { MUTE.toggle(null); this.paintMute(); this.toast(MUTE.all() ? 'صدای همه‌ی گفتگوها قطع شد.' : 'صدای گفتگوها وصل شد.', 'info'); };
                 let t; this.$('.cx-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { this.q = e.target.value.trim(); this.loadThreads(); }, 300); };
             }
         }
@@ -515,6 +647,11 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         async loadThreads(silent) {
             const d = await this.call('chat_threads', { q: this.q });
             if (!d.ok) { if (!silent) this.$('.cx-threads').innerHTML = `<p style="padding:20px;text-align:center;color:var(--muted)">${esc(d.error)}</p>`; return; }
+            // پیامِ تازه در گفتگوهای دیگر => صدای دریافت (اگر آن گفتگو یا همه بی‌صدا نباشد)
+            const prev = this.unreadMap, map = {};
+            d.threads.forEach(t => { map[t.key] = t.unread || 0; });
+            if (prev && d.threads.some(t => t.key !== this.key && (t.unread || 0) > (prev[t.key] || 0) && !MUTE.is(t.key))) SND.recv();
+            this.unreadMap = map;
             this.threads = d.threads; this.caps = d.caps || {};
             this.renderChips(); this.renderThreads();
             const n = this.threads.reduce((a, t) => a + (t.unread || 0), 0);
@@ -544,9 +681,11 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             patchList(box, list.map((t, i) => ['t:' + t.key, `<div class="cx-th ${t.key === this.key ? 'on' : ''}" data-k="${t.key}" style="animation-delay:${Math.min(i, 12) * 25}ms">
                 ${this.avatar(t.title, t.type, t.avatar, t.presence)}
                 <div class="cx-th-b"><div class="cx-th-t"><b>${t.closed ? '<i class="fas fa-lock" style="font-size:10px;color:#e11d48" title="گفتگو قطع شده"></i> ' : ''}${esc(t.title)}</b><span>${t.last_date === jdate(nowMs()) ? fa(t.last_time) : dayLabel(t.last_date)}</span></div>
-                <div class="cx-th-l"><p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</div></div></div>`]),
+                <div class="cx-th-l">${t.typing ? '<p class="cx-tp cx-typing">در حال نوشتن<i></i><i></i><i></i></p>' : `<p>${t.last_mine ? '<i class="fas fa-reply" style="font-size:9px;opacity:.6"></i> ' : ''}${esc(t.last)}</p>`}
+                    <span style="display:flex;align-items:center;gap:4px"><button class="cx-mute ${MUTE.own(t.key) ? 'on' : ''}" data-mute="${t.key}" title="${MUTE.own(t.key) ? 'وصلِ صدای این گفتگو' : 'قطعِ صدای این گفتگو'}"><i class="fas ${MUTE.own(t.key) ? 'fa-bell-slash' : 'fa-bell'}"></i></button>${t.unread ? `<span class="cx-badge">${fa(t.unread)}</span>` : ''}</span></div></div></div>`]),
                 n => {
-                    n.onclick = () => this.open(n.dataset.k);
+                    n.onclick = e => { if (e.target.closest('[data-mute]')) return; this.open(n.dataset.k); };
+                    const mb = n.querySelector('[data-mute]'); if (mb) mb.onclick = e => { e.stopPropagation(); MUTE.toggle(mb.dataset.mute); this.paintMute(); };
                     n.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); this.threadMenu(e.clientX, e.clientY, n.dataset.k); };
                 });
         }
@@ -576,6 +715,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 
         // ---------------- یک گفتگو
         async open(key) {
+            this.stopRec(true);
             this.key = key; this.msgs = []; this.sig = ''; this.seen = new Set(); this.topic = null; this.topicFilter = null; this.replyTo = null; this.editing = null; this.file = null; this.newBelow = 0;
             this.search = null; this.presence = null; this.state = null; this.selecting = false; this.selected = new Set();
             if (this.root) this.root.classList.remove('cx-selmode');
@@ -605,6 +745,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                     <div class="cx-head-b"><b>${esc(h.title)}</b><span class="cx-hsub"></span></div>
                     <div class="cx-head-tools"><input class="cx-fq" placeholder="جستجو در پیام‌ها...">
                     <button class="cx-ib cx-find" title="جستجو در گفتگو (متن و تاریخ)"><i class="fas fa-magnifying-glass"></i></button>
+                    <button class="cx-ib cx-hmute" title="قطع/وصلِ صدای این گفتگو"><i class="fas fa-bell"></i></button>
                     ${this.refs.length ? `<button class="cx-ib cx-refs-btn" title="درخواست‌ها"><i class="fas fa-folder-tree"></i></button>` : ''}
                     <button class="cx-ib cx-more" title="گزینه‌های گفتگو"><i class="fas fa-ellipsis-vertical"></i></button></div></div>
                 <div class="cx-selslot"></div>
@@ -624,6 +765,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                         ${window.CFCanned ? '<button class="cx-ib cx-canned-btn" title="متن‌های آماده"><i class="fas fa-bolt"></i></button>' : ''}
                         <label class="cx-ib" title="پیوستِ فایل" style="cursor:pointer"><i class="fas fa-paperclip"></i><input type="file" class="cx-file-in" hidden></label>
                         <textarea rows="1" class="cx-ta" placeholder="${window.innerWidth < 640 ? 'پیام بنویسید...' : 'پیام بنویسید... (Enter ارسال، Shift+Enter خطِ تازه)'}"></textarea>
+                        ${navigator.mediaDevices && window.MediaRecorder ? '<button class="cx-ib cx-mic" title="پیامِ صوتی (برای شروع بزنید)"><i class="fas fa-microphone"></i></button>' : ''}
                         <button class="cx-send" title="ارسال"><i class="fas fa-paper-plane"></i></button></div></div>
                 <div class="cx-drop"><i class="fas fa-cloud-arrow-up" style="margin-left:8px"></i> فایل را اینجا رها کنید</div>
                 ${this.refs.length ? this.refsDrawerHtml() : ''}`;
@@ -636,6 +778,9 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.send(); } if (e.key === 'Escape') { this.replyTo = null; this.editing = null; this.renderBar(); } };
             ta.onpaste = e => { const f = [...(e.clipboardData || {}).files || []][0]; if (f) { e.preventDefault(); this.attach(f); } };
             this.$('.cx-send').onclick = () => this.send();
+            const mic = this.$('.cx-mic'); if (mic) mic.onclick = () => (this.rec ? this.stopRec(false) : this.startRec());
+            this.$('.cx-hmute').onclick = () => { MUTE.toggle(this.key); this.paintMute(); this.toast(MUTE.own(this.key) ? 'صدای این گفتگو قطع شد.' : 'صدای این گفتگو وصل شد.', 'info'); };
+            this.paintMute();
             this.$('.cx-file-in').onchange = e => { if (e.target.files[0]) this.attach(e.target.files[0]); e.target.value = ''; };
             this.$('.cx-emo-btn').onclick = e => { e.stopPropagation(); this.emoji(); };
             const cn = this.$('.cx-canned-btn');
@@ -661,10 +806,12 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 
         // ---------------- پیام‌ها
         setMessages(list, first) {
-            const sig = JSON.stringify(list.map(m => [m.id, m.text, m.edited, m.deleted, m.read, m.ref && m.ref.id, m.file && m.file.url]));
+            const sig = JSON.stringify(list.map(m => [m.id, m.text, m.edited, m.deleted, m.read, m.ref && m.ref.id, m.file && m.file.url, m.reactions]));
             if (sig === this.sig) return;
             const wasBottom = first || this.nearBottom();
             const fresh = list.filter(m => !this.seen.has(m.id));
+            if (first) list.forEach(m => (m.reactions || []).forEach(r => this.rseen.add(m.id + ':' + r.e)));
+            if (!first && fresh.some(m => !m.mine) && !MUTE.is(this.key)) SND.recv();
             this.sig = sig; this.msgs = list;
             this.renderMessages(first);
             list.forEach(m => this.seen.add(m.id));
@@ -698,7 +845,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             // فقط پیام‌هایی که واقعاً عوض شده‌اند دوباره ساخته می‌شوند؛ بقیه دست نمی‌خورند (بدونِ چشمک زدن)
             patchList(body, blocks, (node, k, isNew) => {
                 if (k[0] !== 'm') return;
-                if (isNew) { const mm = node.querySelector('.cx-msg'); if (mm) mm.classList.add('cx-in'); }
+                if (isNew) { const mm = node.querySelector('.cx-msg'); if (mm) mm.classList.add(node.querySelector('.cx-row.me') || node.classList.contains('me') ? 'cx-sent' : 'cx-recv'); }
                 this.bindRow(node);
             });
             if (!body.querySelector(':scope > .cx-typing-bubble')) body.insertAdjacentHTML('beforeend', '<div class="cx-typing-bubble"><i></i><i></i><i></i></div>');
@@ -711,8 +858,42 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             const el = row.querySelector('.cx-msg'); if (!el) return;
             const id = Number(el.dataset.id), m = () => this.msgs.find(x => x.id === id);
             el.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); if (m()) this.menu(e.clientX, e.clientY, m()); };
-            let lp; el.ontouchstart = e => { lp = setTimeout(() => { const t = e.touches[0]; if (m()) this.menu(t.clientX, t.clientY, m()); }, 480); };
-            el.ontouchend = el.ontouchmove = () => clearTimeout(lp);
+            // موبایل: یک لمس => منوی پیام؛ کشیدن به چپ یا راست => پاسخ
+            let sx = 0, sy = 0, st = 0, dx = 0, swiping = false, ic = null;
+            el.ontouchstart = e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now(); dx = 0; swiping = false; };
+            el.ontouchmove = e => {
+                const t = e.touches[0], mx = t.clientX - sx, my = t.clientY - sy;
+                if (!swiping && Math.abs(mx) > 12 && Math.abs(mx) > Math.abs(my) * 1.4 && !this.selecting && m() && !m().deleted && this.canSend()) {
+                    swiping = true; ic = document.createElement('span'); ic.className = 'cx-swipe-ic'; ic.innerHTML = '<i class="fas fa-reply"></i>';
+                    ic.style[mx > 0 ? 'left' : 'right'] = '-38px'; el.style.position = 'relative'; el.appendChild(ic);
+                }
+                if (!swiping) return;
+                e.preventDefault();
+                dx = Math.max(-90, Math.min(90, mx));
+                el.style.transition = 'none'; el.style.transform = `translateX(${dx}px)`;
+                const k = Math.min(1, Math.abs(dx) / 60); ic.style.opacity = k; ic.style.transform = `scale(${0.4 + k * 0.6})`;
+            };
+            el.ontouchend = e => {
+                if (swiping) {
+                    el.style.transition = 'transform .25s cubic-bezier(.2,.9,.3,1.3)'; el.style.transform = '';
+                    if (ic) { const x = ic; setTimeout(() => x.remove(), 250); ic = null; }
+                    if (Math.abs(dx) >= 55 && m()) { if (navigator.vibrate) navigator.vibrate(12); this.reply(m()); }
+                    swiping = false; return;
+                }
+                const tt = e.changedTouches[0];
+                if (Date.now() - st < 450 && Math.abs(tt.clientX - sx) < 10 && Math.abs(tt.clientY - sy) < 10 && !this.selecting
+                    && !e.target.closest('a,img,audio,button,.cx-reply,.cx-ref,.cx-jumbo,.cx-voice')) { e.preventDefault(); if (m()) this.menu(tt.clientX, tt.clientY, m()); }
+            };
+            const wrap = row.querySelector('.cx-msgwrap');
+            if (wrap) wrap.querySelectorAll('[data-re]').forEach(b => b.onclick = e => { e.stopPropagation(); const r = (m().reactions || []).find(x => x.e === b.dataset.re); this.react(m(), r && r.mine ? '' : b.dataset.re); });
+            const jb = el.querySelector('.cx-jumbo');
+            if (jb) {
+                const play = () => { jb.classList.remove('a-' + jb.dataset.anim); void jb.offsetWidth; jb.classList.add('a-' + jb.dataset.anim); };
+                jb.onclick = e => { e.stopPropagation(); play(); };
+                const jid = (this.key || '') + ':' + id;
+                if (!JUMBO_SEEN.has(jid)) { JUMBO_SEEN.add(jid); setTimeout(play, 60); }
+            }
+            const vc = el.querySelector('.cx-voice'); if (vc) this.bindVoice(vc);
             row.onclick = e => { if (this.selecting) { e.preventDefault(); e.stopPropagation(); this.toggleSel(id); } };
             const dots = el.querySelector('.cx-dots'); if (dots) dots.onclick = e => { e.stopPropagation(); const r = dots.getBoundingClientRect(); if (m()) this.menu(r.left, r.bottom, m()); };
             const rp = el.querySelector('.cx-reply'); if (rp) rp.onclick = e => { if (this.selecting) return; this.jump(Number(rp.dataset.to)); };
@@ -730,18 +911,23 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             const mav = m.mine ? '' : `<span class="cx-mav">${lastOfGroup ? avatarHtml(m.avatar, m.sender, {}) : ''}</span>`;
             if (m.deleted) return `<div class="cx-row ${side} ${grouped ? '' : 'gap'}"><div class="cx-msg cx-del ${isNew ? 'cx-in' : ''}" data-id="${m.id}"><i class="fas fa-ban"></i> این پیام حذف شد · ${fa(m.time)}</div>${mav}</div>`;
             const f = m.file;
+            const voice = f && f.audio && /^voice-/.test(f.name || '');
             const file = !f ? '' : f.image ? `<img class="cx-img" src="${esc(f.url)}" alt="">`
+                : voice ? `<div class="cx-voice" data-src="${esc(f.url)}"><button class="pl" title="پخش"><i class="fas fa-play"></i></button><span class="bars">${this.bars(m.id)}</span><small>🎤</small></div>`
                 : f.audio ? `<audio class="cx-audio" controls preload="none" src="${esc(f.url)}"></audio>`
                 : `<a class="cx-file" href="${esc(f.url)}" target="_blank" download><i class="fas ${/pdf/.test(f.ext) ? 'fa-file-pdf' : /docx?/.test(f.ext) ? 'fa-file-word' : /xlsx?/.test(f.ext) ? 'fa-file-excel' : /zip|rar/.test(f.ext) ? 'fa-file-zipper' : 'fa-file'}"></i><span><b>${esc(f.name)}</b><small>${esc(f.ext.toUpperCase())} · دانلود</small></span></a>`;
             const showSender = !m.mine || this.o.mode === 'full' && this.head && this.head.type !== 'STAFF';
-            return `<div class="cx-row ${side} ${grouped ? '' : 'gap'}"><div class="cx-msg ${isNew ? 'cx-in' : ''}" data-id="${m.id}" style="--h:${hue(m.sender)}">
+            const jumbo = !f && !m.reply && isJumbo(m.text);
+            const reacts = (m.reactions || []).length ? `<div class="cx-reacts">${m.reactions.map(r => `<button class="cx-rc ${r.mine ? 'mine' : ''} ${this.rseen.has(m.id + ':' + r.e) ? '' : 'pop'}" data-re="${esc(r.e)}" title="${r.mine ? 'برداشتنِ واکنشِ من' : 'همین واکنش'}">${r.e}${r.n > 1 ? `<b>${fa(r.n)}</b>` : ''}</button>`).join('')}</div>` : '';
+            (m.reactions || []).forEach(r => this.rseen.add(m.id + ':' + r.e));
+            return `<div class="cx-row ${side} ${grouped ? '' : 'gap'}"><div class="cx-msgwrap"><div class="cx-msg ${jumbo ? 'cx-jmb' : ''} ${isNew ? 'cx-in' : ''}" data-id="${m.id}" style="--h:${hue(m.sender)}">
                 <button class="cx-dots" title="گزینه‌ها"><i class="fas fa-ellipsis-vertical"></i></button>
                 ${!grouped && showSender ? `<div class="cx-sender">${esc(m.mine ? (this.o.mode === 'full' ? m.sender : 'شما') : m.sender)}</div>` : ''}
                 ${m.ref ? `<span class="cx-ref" title="نمایشِ همه‌ی پیام‌های این موضوع"><i class="fas ${REF_ICON[m.ref.type] || 'fa-tag'}"></i><span>${esc(fa(m.ref.label))}</span></span>` : ''}
                 ${m.reply ? `<span class="cx-reply" data-to="${m.reply.id}"><b>${esc(m.reply.sender)}</b><span>${esc(m.reply.text)}</span></span>` : ''}
-                ${file}${m.text ? `<div>${this.searchActive() && this.search.q ? highlight(m.text, this.search.q) : linkify(m.text)}</div>` : ''}
+                ${file}${jumbo ? `<div><span class="cx-jumbo" data-anim="${JUMBO_ANIM(m.text.trim())}">${esc(m.text.trim())}</span></div>` : m.text ? `<div>${this.searchActive() && this.search.q ? highlight(m.text, this.search.q) : linkify(m.text)}</div>` : ''}
                 <div class="cx-meta">${m.mine ? `<i class="fas ${m.read ? 'fa-check-double cx-seen' : 'fa-check'}" title="${m.read ? 'دیده شد' : 'ارسال شد'}"></i>` : ''}<span>${fa(m.time)}</span>${m.edited ? '<span>ویرایش‌شده</span>' : ''}${this.searchActive() ? `<span>${fa(m.date)}</span>` : ''}</div>
-            </div>${mav}</div>`;
+            </div>${reacts}</div>${mav}</div>`;
         }
         nearBottom() { const b = this.$('.cx-body'); return !b || b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
         scrollBottom(smooth) { const b = this.$('.cx-body'); if (!b) return; if (!smooth) { b.style.scrollBehavior = 'auto'; b.scrollTop = b.scrollHeight; b.style.scrollBehavior = ''; } else b.scrollTop = b.scrollHeight; this.stick = true; this.newBelow = 0; this.fab(); }
@@ -777,7 +963,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         // زیرِ نامِ طرفِ مقابل: «در حال نوشتن...» یا «آنلاین / آخرین بازدید» و مشخصات
         renderSub() {
             const s = this.$('.cx-hsub'); if (!s || !this.head) return;
-            if (this._typing) { if (!s.querySelector('.cx-typing')) s.innerHTML = '<span class="cx-typing">در حال نوشتن...</span>'; return; }
+            if (this._typing) { if (!s.querySelector('.cx-typing')) s.innerHTML = '<span class="cx-typing"><i class="fas fa-pen" style="font-size:9px;width:auto;height:auto;background:none;animation:jThink 1.2s infinite"></i> در حال نوشتن<i></i><i></i><i></i></span>'; return; }
             const group = this.head.type !== 'STAFF' && this.o.mode === 'single';
             const lbl = seenLabel(this.presence, this.presenceAt, group);
             const sub = lbl && group ? '' : fa(this.head.sub || '');
@@ -849,11 +1035,94 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
             if (!d.ok) { if (d.closed) this.poll(); return this.toast(d.error || 'ارسال نشد.', 'error'); }
             ta.value = ''; ta.style.height = ''; this.replyTo = null; this.file = null; if (this._fileUrl) URL.revokeObjectURL(this._fileUrl); this._fileUrl = null;
+            if (!MUTE.is(this.key)) SND.send();
+            btn.classList.remove('cx-fly'); void btn.offsetWidth; btn.classList.add('cx-fly');
             this.renderBar(); ta.focus();
             await this.poll(); this.scrollBottom(true);
             if (this.o.mode === 'full') this.loadThreads(true);
         }
         reply(m) { this.editing = null; this.replyTo = m; this.renderBar(); this.$('.cx-ta').focus(); }
+        paintMute() {
+            const all = MUTE.all();
+            const ma = this.$('.cx-mute-all');
+            if (ma) { ma.classList.toggle('cx-muted', all); ma.innerHTML = `<i class="fas ${all ? 'fa-volume-xmark' : 'fa-volume-high'}"></i>`; ma.title = all ? 'وصلِ صدای همه‌ی گفتگوها' : 'قطعِ صدای همه‌ی گفتگوها'; }
+            const hm = this.$('.cx-hmute');
+            if (hm) { const on = MUTE.own(this.key); hm.classList.toggle('cx-muted', on || all); hm.innerHTML = `<i class="fas ${on || all ? 'fa-bell-slash' : 'fa-bell'}"></i>`; hm.title = on ? 'وصلِ صدای این گفتگو' : (all ? 'صدای همه‌ی گفتگوها قطع است' : 'قطعِ صدای این گفتگو'); }
+            this.el.querySelectorAll('[data-mute]').forEach(b => { const on = MUTE.own(b.dataset.mute); b.classList.toggle('on', on); b.innerHTML = `<i class="fas ${on ? 'fa-bell-slash' : 'fa-bell'}"></i>`; });
+        }
+        // نوارهای موجِ پیامِ صوتی (ثابت برای هر پیام)
+        bars(id) { let x = Number(id) * 9301 + 49297, h = ''; for (let i = 0; i < 28; i++) { x = (x * 9301 + 49297) % 233280; h += `<i style="height:${30 + Math.round(x / 233280 * 70)}%"></i>`; } return h; }
+        bindVoice(box) {
+            const btn = box.querySelector('.pl'), bars = [...box.querySelectorAll('.bars i')], lbl = box.querySelector('small');
+            let a = null;
+            const fmt = s => fa(Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'));
+            const paint = () => { const k = a && a.duration ? a.currentTime / a.duration : 0; bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < k)); if (a && isFinite(a.duration)) lbl.textContent = fmt(a.paused && !a.currentTime ? a.duration : a.currentTime); };
+            const ensure = () => {
+                if (a) return a;
+                a = new Audio(box.dataset.src); a.preload = 'metadata';
+                a.ontimeupdate = paint; a.onloadedmetadata = paint;
+                a.onended = () => { btn.innerHTML = '<i class="fas fa-play"></i>'; a.currentTime = 0; paint(); };
+                return a;
+            };
+            btn.onclick = e => {
+                e.stopPropagation(); ensure();
+                document.querySelectorAll('.cx-voice').forEach(v => { if (v !== box && v._a && !v._a.paused) { v._a.pause(); v.querySelector('.pl').innerHTML = '<i class="fas fa-play"></i>'; } });
+                box._a = a;
+                if (a.paused) { a.play().catch(() => this.toast('پخش نشد.', 'error')); btn.innerHTML = '<i class="fas fa-pause"></i>'; } else { a.pause(); btn.innerHTML = '<i class="fas fa-play"></i>'; }
+            };
+            box.querySelector('.bars').onclick = e => { e.stopPropagation(); ensure(); const r = e.currentTarget.getBoundingClientRect(); const k = (r.right - e.clientX) / r.width; if (isFinite(a.duration)) a.currentTime = a.duration * Math.max(0, Math.min(1, k)); else a.addEventListener('loadedmetadata', () => { a.currentTime = a.duration * k; }, { once: true }); };
+        }
+        // ---------------- پیامِ صوتی: ضبط با MediaRecorder و ارسال مثلِ فایل
+        async startRec() {
+            if (!this.canSend()) return;
+            let stream;
+            try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+            catch (e) { return this.toast('دسترسی به میکروفون داده نشد (از تنظیماتِ مرورگر اجازه دهید).', 'error'); }
+            const types = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'];
+            const mime = types.find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+            const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+            const R = this.rec = { mr, stream, chunks: [], t0: Date.now(), mime: mr.mimeType || mime || 'audio/webm' };
+            mr.ondataavailable = e => { if (e.data && e.data.size) R.chunks.push(e.data); };
+            mr.start(250);
+            // نمایشِ زنده‌ی صدا
+            try {
+                const c = SND.ac(); const an = c.createAnalyser(); an.fftSize = 64; c.createMediaStreamSource(stream).connect(an); R.an = an;
+            } catch (e) {}
+            const slot = this.$('.cx-barslot');
+            const box = document.createElement('div'); box.className = 'cx-rec';
+            box.innerHTML = `<button class="x" title="لغو"><i class="fas fa-trash"></i></button><span class="dot"></span><b>۰:۰۰</b><span class="wv"></span><button class="ok" title="ارسال"><i class="fas fa-paper-plane"></i></button>`;
+            slot.prepend(box); R.box = box;
+            box.querySelector('.x').onclick = () => this.stopRec(true);
+            box.querySelector('.ok').onclick = () => this.stopRec(false);
+            const mic = this.$('.cx-mic'); if (mic) { mic.classList.add('on'); mic.innerHTML = '<i class="fas fa-stop"></i>'; mic.title = 'پایان و ارسال'; }
+            const wv = box.querySelector('.wv'), lbl = box.querySelector('b'), buf = new Uint8Array(32);
+            R.tick = setInterval(() => {
+                const s = (Date.now() - R.t0) / 1000;
+                lbl.textContent = fa(Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'));
+                let lv = 0.15; if (R.an) { R.an.getByteFrequencyData(buf); lv = Math.min(1, buf.reduce((a, b) => a + b, 0) / buf.length / 110); }
+                const i = document.createElement('i'); i.style.height = Math.max(12, lv * 100) + '%'; wv.appendChild(i);
+                while (wv.children.length > 60) wv.firstChild.remove();
+                if (s > 300) this.stopRec(false);   // حداکثر ۵ دقیقه
+            }, 120);
+        }
+        stopRec(cancel) {
+            const R = this.rec; if (!R) return;
+            this.rec = null;
+            clearInterval(R.tick);
+            if (R.box) R.box.remove();
+            const mic = this.$('.cx-mic'); if (mic) { mic.classList.remove('on'); mic.innerHTML = '<i class="fas fa-microphone"></i>'; mic.title = 'پیامِ صوتی (برای شروع بزنید)'; }
+            const finish = () => {
+                R.stream.getTracks().forEach(t => t.stop());
+                if (cancel) return;
+                const secs = (Date.now() - R.t0) / 1000;
+                if (secs < 0.8 || !R.chunks.length) return this.toast('پیامِ صوتی خیلی کوتاه بود.', 'warning');
+                const ext = /mp4/.test(R.mime) ? 'm4a' : /ogg/.test(R.mime) ? 'ogg' : 'webm';
+                const blob = new Blob(R.chunks, { type: R.mime.split(';')[0] });
+                this.file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
+                this.send();
+            };
+            if (R.mr.state !== 'inactive') { R.mr.onstop = finish; try { R.mr.stop(); } catch (e) { finish(); } } else finish();
+        }
         edit(m) { this.replyTo = null; this.editing = m; const ta = this.$('.cx-ta'); ta.value = m.text || ''; ta.dispatchEvent(new Event('input')); this.renderBar(); ta.focus(); }
         async del(m) {
             const ok = await dialog({ title: 'حذفِ پیام', message: 'این پیام برای هر دو طرف «این پیام حذف شد» نمایش داده می‌شود.', danger: true, theme: this.o.theme });
@@ -917,12 +1186,14 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 
         // ---------------- منوی کلیک‌راست
         // منوی شناور (کلیک‌راست / لمسِ طولانی / ⋮). items: [آیکن، عنوان، کار، 'danger'|'disabled'] یا null (خطِ جداکننده)
-        popMenu(x, y, title, items) {
+        popMenu(x, y, title, items, reactMsg) {
             document.querySelectorAll('.cx-menu').forEach(e => e.remove());
             if (!items.length) return;
             const el = document.createElement('div');
             el.className = 'cx-menu' + (this.o.theme === 'dark' ? ' dark' : '');
-            el.innerHTML = (title ? `<div class="cx-mh">${esc(title)}</div>` : '') + items.map((it, i) => it
+            const myR = reactMsg ? ((reactMsg.reactions || []).find(r => r.mine) || {}).e : null;
+            el.innerHTML = (reactMsg ? `<div class="cx-react">${REACTS.map(e => `<button data-r="${e}" style="${e === myR ? 'background:rgba(99,102,241,.18);border-radius:10px' : ''}" title="${e === myR ? 'برداشتنِ واکنش' : 'واکنش'}">${e}</button>`).join('')}</div>` : '')
+                + (title ? `<div class="cx-mh">${esc(title)}</div>` : '') + items.map((it, i) => it
                 ? `<button data-i="${i}" class="${it[3] || ''}" ${it[3] === 'disabled' ? 'disabled title="' + esc(it[4] || '') + '"' : ''}><i class="fas ${it[0]}"></i>${it[1]}</button>` : '<hr>').join('');
             document.body.appendChild(el);
             // offsetWidth/Height (نه getBoundingClientRect) چون انیمیشنِ بازشدن اندازه را کوچک نشان می‌دهد
@@ -932,6 +1203,8 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             const close = e => { if (!e || !el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', close, true); document.removeEventListener('scroll', close, true); document.removeEventListener('keydown', key, true); } };
             const key = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
             el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const it = items[Number(b.dataset.i)]; if (it[3] === 'disabled') return; close(); it[2](); });
+            el.querySelectorAll('[data-r]').forEach(b => { b.style.transition = 'transform .15s'; b.onmouseenter = () => { b.style.transform = 'scale(1.35) translateY(-3px)'; }; b.onmouseleave = () => { b.style.transform = ''; };
+                b.onclick = () => { close(); this.react(reactMsg, b.dataset.r === myR ? '' : b.dataset.r); }; });
             setTimeout(() => { document.addEventListener('mousedown', close, true); document.addEventListener('scroll', close, true); document.addEventListener('keydown', key, true); }, 0);
         }
         menu(x, y, m) {
@@ -950,7 +1223,15 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             items.push(null);
             if (m.can_modify && m.text !== null) items.push(['fa-pen', 'ویرایش', () => this.edit(m)]);
             items.push(['fa-trash', 'حذف', () => this.del([m]), 'danger']);
-            this.popMenu(x, y, (m.mine ? 'پیامِ شما' : m.sender) + ' · ' + fa(m.time), items);
+            this.popMenu(x, y, (m.mine ? 'پیامِ شما' : m.sender) + ' · ' + fa(m.time), items, m.deleted ? null : m);
+        }
+        // واکنش (ایموجی) روی پیام: انتخاب، عوض کردن یا برداشتن ('' = برداشتن)
+        async react(m, emoji) {
+            if (!m) return;
+            const d = await this.call('chat_react', { id: m.id, emoji });
+            if (!d.ok) return this.toast(d.error || 'ثبت نشد.', 'error');
+            if (emoji) this.rseen.delete(m.id + ':' + emoji);
+            this.sig = ''; this.poll();
         }
         copy(text) {
             try { navigator.clipboard.writeText(text); this.toast('کپی شد.', 'success'); }
@@ -1049,6 +1330,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                 items.push(['fa-magnifying-glass', 'جستجو در گفتگو', () => this.$('.cx-find') && this.$('.cx-find').click()]);
                 items.push(['fa-square-check', 'انتخابِ پیام‌ها', () => this.startSelect()]);
             }
+            items.push([MUTE.own(key) ? 'fa-bell' : 'fa-bell-slash', MUTE.own(key) ? 'وصلِ صدای این گفتگو' : 'قطعِ صدای این گفتگو', () => { MUTE.toggle(key); this.paintMute(); }]);
             items.push(null);
             items.push(['fa-broom', 'پاک کردنِ تاریخچه‌ی گفتگو', () => this.clearHistory(key), 'danger']);
             if (c.canClose) {
@@ -1151,5 +1433,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
         }
     }
 
-    window.ChatUI = { mount: (el, o) => new Chat(el, o), fa, esc, avatarHtml, avatarUrl, seenLabel, pickAvatar, dialog, heartbeat, toast: miniToast, PRESETS };
+    window.ChatUI = { mount: (el, o) => new Chat(el, o), fa, esc, avatarHtml, avatarUrl, seenLabel, pickAvatar, dialog, heartbeat, toast: miniToast, PRESETS,
+        // گفتگویی با این کلید (یا هر گفتگویی، بدونِ کلید) همین الان روی صفحه باز و دیده می‌شود؟
+        isViewing: key => [...LIVE].some(c => c.viewing(key)), sound: SND, mute: MUTE };
 })();
