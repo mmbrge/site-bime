@@ -33,6 +33,7 @@ function perm_catalog() {
             'issued-list' => ['صادره‌ها', ['view', 'edit', 'export']],
             'issue-group' => ['صدور گروهی (فایل بیمه‌گر)', ['view', 'create']],
             'import-archive' => ['بایگانی وارداتی (اکسلِ بیمه‌گر)', $all],
+            'renewals' => ['اعلام تمدید (شرکت‌ها و اشخاص)', ['view', 'create', 'edit', 'export']],
         ]],
         ['گزارش بازدید', [
             'vr-build' => ['ساخت گزارش بازدید', ['view', 'create']],
@@ -197,6 +198,9 @@ function perm_api_map() {
             'create_company_payment' => 'fin-installments:create|fin-payments:create', 'settle_company_pasargad' => 'fin-installments:create|fin-payments:create',
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
         ]],
+        'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
+            'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',
+        ]],
         'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
             'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',
             'update_row' => 'import-archive:edit', 'bulk_skip' => 'import-archive:edit', 'delete_rows' => 'import-archive:delete', 'export' => 'import-archive:export',
@@ -329,6 +333,7 @@ const PERM_TRACK_SKIP = ['ocr_preview_company_policy', 'ocr_preview_policy', 'bu
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
     return [
+        'renewal_actions.send' => 'اعلامِ تمدید با ربات', 'renewal_actions.mark' => 'ثبتِ پیگیریِ تمدید', 'renewal_actions.export' => 'خروجیِ اکسلِ اعلام تمدید',
         'import_actions.commit' => 'ورودِ اکسلِ بیمه‌گر به بایگانی وارداتی', 'import_actions.update_row' => 'ویرایشِ ردیفِ وارداتی',
         'import_actions.bulk_skip' => 'تغییرِ نیاز به بازدیدِ ردیف‌های وارداتی', 'import_actions.delete_rows' => 'حذفِ ردیف‌های وارداتی', 'import_actions.export' => 'خروجیِ اکسلِ بایگانی وارداتی',
         'company_actions.mark_issued' => 'ثبتِ صدورِ بیمه‌نامه‌ی شرکتی', 'company_actions.bundle_issue' => 'صدورِ گروهی از فایلِ بیمه‌گر', 'company_actions.bundle_analyze' => 'بررسیِ فایلِ صدورِ گروهی',

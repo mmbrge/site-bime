@@ -97,6 +97,7 @@ function issuance_nav($active, $isLiaison) {
     $items[] = ['issued-list', 'fa-file-circle-check', 'صادره‌ها', 'iss-n-issued'];
     if (!$isLiaison) $items[] = ['issue-group', 'fa-layer-group', 'صدور گروهی', 'iss-n-group'];
     if (!$isLiaison) $items[] = ['import-archive', 'fa-box-archive', 'بایگانی وارداتی', 'iss-n-import'];
+    if (!$isLiaison) $items[] = ['renewals', 'fa-bell', 'اعلام تمدید', 'iss-n-renew'];
     $h = '<div class="iss-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-stamp"></i></span><div><b>مرکز صدور</b><small>همه‌ی ردیف‌های شرکتی و کارکنان، از درخواست تا صادره</small></div></div><div class="iss-nav">';
     foreach ($items as [$tab, $ic, $label, $badge]) {
         $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
@@ -820,6 +821,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
                                 <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-group')" id="nav-issue-group" class="nav-item menu-link"><i class="fas fa-layer-group ml-2"></i> صدور گروهی (فایل بیمه‌گر)</a><?php endif; ?>
                                 <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('import-archive')" id="nav-import-archive" class="nav-item menu-link"><i class="fas fa-box-archive ml-2"></i> بایگانی وارداتی <small class="text-[10px] text-slate-400 font-bold mr-1">اکسلِ بیمه‌گر</small></a><?php endif; ?>
+                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('renewals')" id="nav-renewals" class="nav-item menu-link"><i class="fas fa-bell ml-2"></i> اعلام تمدید <small class="text-[10px] text-slate-400 font-bold mr-1">شرکت‌ها و اشخاص</small></a><?php endif; ?>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -2454,6 +2456,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <?php echo issuance_nav('import-archive', $isLiaison); ?>
             <div id="imp-root"></div>
         </div>
+        <!-- ======================= اعلام تمدید - renewals.js ======================= -->
+        <div id="tab-renewals" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('renewals', $isLiaison); ?>
+            <div id="rn-root"></div>
+        </div>
         <?php endif; ?>
 
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
@@ -3806,11 +3813,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="notif-bell.js?v=2"></script>
     <script src="net-watch.js?v=1"></script>
     <script src="tools.js?v=1"></script>
-    <script src="comfort.js?v=8"></script>
+    <script src="comfort.js?v=9"></script>
     <script src="settings-nav.js?v=1"></script>
     <script src="announce.js?v=1"></script>
     <script src="announce-admin.js?v=1"></script>
-    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=3"></script><?php endif; ?>
+    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=4"></script><?php endif; ?>
     <script src="chat-ui.js?v=5"></script>
     <script src="table-count.js?v=4"></script>
     <script>
@@ -3826,6 +3833,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-hub.js?v=3"></script>
     <script src="work-log.js?v=7"></script>
     <script src="import-archive.js?v=1"></script>
+    <script src="renewals.js?v=1"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -8568,6 +8576,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'issued-list') loadIssuedList();
             if (tabId === 'issue-group') loadIssueGroup();
             if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
+            if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

@@ -378,6 +378,25 @@ function cf_track_out($pdo, $r) {
             'uploader' => $r['uploader_type'] ? cf_actor_name($pdo, $r['uploader_type'], $r['uploader_id']) : '', 'created_at' => $r['created_at'] ?? null,
             'plays' => intval($r['plays'] ?? 0)];
 }
+// «انتشار برای همه»: آهنگِ شخصیِ یک کاربر (که تا اینجا فقط خودش و مدیر می‌دیدند) به کتابخانه‌ی پنل می‌رود.
+// اگر همان فایل از قبل در پنل باشد، فقط نسخه‌ی شخصی برداشته می‌شود (فایل می‌ماند).
+function cf_publish_track($pdo, $id) {
+    $st = $pdo->prepare("SELECT * FROM cf_tracks WHERE id = ?");
+    $st->execute([intval($id)]);
+    $t = $st->fetch();
+    if (!$t) return false;
+    if ($t['owner_type'] === 'P') return true;
+    $st = $pdo->prepare("SELECT id FROM cf_tracks WHERE sha1 = ? AND owner_type = 'P' LIMIT 1");
+    $st->execute([$t['sha1']]);
+    if ($pid = $st->fetchColumn()) {
+        $pdo->prepare("UPDATE IGNORE cf_likes SET track_id = ? WHERE track_id = ?")->execute([$pid, $t['id']]);
+        $pdo->prepare("DELETE FROM cf_likes WHERE track_id = ?")->execute([$t['id']]);
+        $pdo->prepare("DELETE FROM cf_tracks WHERE id = ?")->execute([$t['id']]);
+        return true;
+    }
+    $pdo->prepare("UPDATE cf_tracks SET owner_type = 'P', owner_id = 0 WHERE id = ?")->execute([$t['id']]);
+    return true;
+}
 // حذفِ کاملِ یک آهنگ؛ $block: دیگر قابلِ آپلود نباشد (حذف توسطِ مدیر)
 function cf_delete_track($pdo, $id, $block, $by = null) {
     $st = $pdo->prepare("SELECT * FROM cf_tracks WHERE id = ?");

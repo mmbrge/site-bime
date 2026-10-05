@@ -349,7 +349,8 @@
     const mp = () => Object.assign({source: 'both', genres: [], focus: false, shuffle: false, repeat: 'all', vol: 0.7, playlist: 0, liked: false}, S.prefs.music || {});
     function pool() {
         const m = mp(), focus = (S.boot && S.boot.focus_genres) || [];
-        let list = S.tracks.filter(t => m.source === 'both' || (m.source === 'mine' ? t.owner === 'user' : t.owner === 'panel'));
+        // آهنگ‌های شخصیِ کاربرانِ دیگر (فقط برای مدیر، منتظرِ انتشار) واردِ پخشِ عادی نمی‌شوند
+        let list = S.tracks.filter(t => t.owner !== 'other' && (m.source === 'both' || (m.source === 'mine' ? t.owner === 'user' : t.owner === 'panel')));
         if (m.focus) list = list.filter(t => focus.includes(t.genre));
         else if (m.genres.length) list = list.filter(t => m.genres.includes(t.genre));
         if (m.liked) list = list.filter(t => S.likes.has(t.id));
@@ -655,6 +656,7 @@
         if (!box) return;
         const tabs = [['queue', 'فهرستِ پخش'], ['liked', 'علاقه‌مندی‌ها'], ['pl', 'پلی‌لیست‌ها']];
         if (S.canUpload) tabs.push(['mine', 'آهنگ‌های من']);
+        if (S.isAdmin) { const n = S.tracks.filter(t => t.owner === 'other').length; tabs.push(['review', 'کاربران' + (n ? ' (' + fa(n) + ')' : '')]); }
         box.innerHTML = `<div style="padding:8px 12px 4px;display:flex;gap:6px;align-items:center"><div class="cf-seg" data-lt>${tabs.map(([k, t]) => `<button data-v="${k}" class="${S.libTab === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
             <div style="padding:2px 12px 4px"><input class="cf-in" data-q placeholder="جستجوی نام یا خواننده…" value="${esc(S.libQ)}"></div>
             <div data-extra></div><div class="cf-list" data-list></div>`;
@@ -677,9 +679,19 @@
                 <button class="cf-btn s" style="padding:2px 8px;margin-right:6px" data-a="clearmode">برگشت به همه</button></div>`;
         } else if (S.libTab === 'liked') list = S.tracks.filter(t => S.likes.has(t.id));
         else if (S.libTab === 'mine') list = S.tracks.filter(t => t.owner === 'user');
+        else if (S.libTab === 'review') list = S.tracks.filter(t => t.owner === 'other');
         else list = null;
         if (S.libTab === 'pl') { renderPlaylists(box, extra); return; }
-        if (S.libTab === 'mine') renderUpload(extra);
+        if (S.libTab === 'mine') {
+            renderUpload(extra);
+            extra.insertAdjacentHTML('beforeend', `<div style="padding:0 12px 6px;font-size:10.5px;opacity:.75;line-height:1.8"><i class="fas fa-lock ml-1"></i>آهنگ‌هایی که آپلود می‌کنید فقط برای خودتان و مدیر پخش می‌شوند${S.isAdmin ? '' : '؛ اگر مدیر «انتشار برای همه» بزند، برای همه پخش می‌شوند'}.</div>`);
+        }
+        if (S.libTab === 'review') {
+            extra.innerHTML = `<div style="padding:0 12px 6px;font-size:10.5px;opacity:.8;line-height:1.8"><i class="fas fa-user-lock ml-1"></i>آهنگ‌هایی که کاربران آپلود کرده‌اند و فعلاً فقط برای خودشان (و شما) پخش می‌شوند. بشنوید و با «انتشار» برای همه پخش شوند.
+                ${list.length ? `<button class="cf-btn s" style="padding:2px 10px;margin-right:6px" data-a="puball"><i class="fas fa-bullhorn ml-1"></i>انتشارِ همه برای همه</button>` : ''}</div>`;
+            const pa = extra.querySelector('[data-a="puball"]');
+            if (pa) pa.onclick = async () => { if (await confirmBox('انتشار برای همه', fa(list.length) + ' آهنگِ کاربران برای همه پخش شوند؟')) publishTracks(list.map(t => t.id)); };
+        }
         if (S.libTab === 'liked' && list.length) extra.insertAdjacentHTML('beforeend', `<div style="padding:0 12px 4px"><button class="cf-btn s" data-a="playliked"><i class="fas fa-play ml-1"></i>پخشِ علاقه‌مندی‌ها</button></div>`);
         const ex = (a, fn) => { const b = extra.querySelector(`[data-a="${a}"]`); if (b) b.onclick = fn; };
         ex('clearmode', () => { savePrefs({music: Object.assign(mp(), {playlist: 0, liked: false})}); rebuildOrder(true); renderList(); });
@@ -688,17 +700,20 @@
         box.innerHTML = list.length ? list.map((t, i) => `<div class="cf-tr ${P.cur && P.cur.id === t.id ? 'cur' : ''}" data-id="${t.id}">
                 <span class="n">${P.cur && P.cur.id === t.id && P.playing ? '<i class="fas fa-volume-high" style="color:var(--cf-acc,#818cf8)"></i>' : fa(i + 1)}</span>
                 <span class="t"><b>${esc(t.title)}</b><small>${esc([t.artist, t.genre].filter(Boolean).join(' · '))}</small></span>
-                ${t.owner === 'user' ? '<span class="cf-tag">خودم</span>' : ''}
+                ${t.owner === 'user' ? '<span class="cf-tag" title="فقط برای خودتان و مدیر پخش می‌شود"><i class="fas fa-lock" style="font-size:8px;margin-left:3px"></i>خودم</span>' : ''}
+                ${t.owner === 'other' ? `<span class="cf-tag" title="آپلودِ ${esc(t.owner_name || '')} — فقط او و شما می‌بینید">${esc(t.owner_name || 'کاربر')}</span><button class="cf-ib" style="width:26px;height:26px;font-size:11px" data-pub="${t.id}" title="انتشار برای همه"><i class="fas fa-bullhorn" style="color:#22c55e"></i></button>` : ''}
                 <button class="cf-ib" style="width:26px;height:26px;font-size:12px" data-like="${t.id}"><i class="${S.likes.has(t.id) ? 'fas' : 'far'} fa-heart" style="${S.likes.has(t.id) ? 'color:#f43f5e' : ''}"></i></button>
                 <button class="cf-ib" style="width:26px;height:26px;font-size:12px" data-more="${t.id}"><i class="fas fa-ellipsis-vertical"></i></button></div>`).join('')
             : `<div class="cf-empty">${S.libTab === 'mine' ? 'هنوز آهنگی آپلود نکرده‌اید.' : S.libTab === 'liked' ? 'روی ♥ کنارِ آهنگ‌ها بزنید تا اینجا جمع شوند.' : S.tracks.length ? 'با این ژانر/منبع آهنگی نیست.' : 'کتابخانه هنوز خالی است.' + (S.canUpload ? '<br>از «آهنگ‌های من» آهنگِ خودتان را اضافه کنید.' : '')}</div>`;
         box.querySelectorAll('.cf-tr').forEach(r => r.addEventListener('click', e => {
-            if (e.target.closest('[data-like],[data-more]')) return;
+            if (e.target.closest('[data-like],[data-more],[data-pub]')) return;
             const t = trackById(+r.dataset.id);
+            if (t.owner === 'other') { load(t, true); return; }
             if (S.libTab !== 'queue') { if (!pool().some(x => x.id === t.id)) savePrefs({music: Object.assign(mp(), {genres: [], playlist: 0, liked: false, focus: false, source: 'both'})}); rebuildOrder(true); }
             load(t, true);
         }));
         box.querySelectorAll('[data-like]').forEach(b => b.addEventListener('click', () => toggleLike(+b.dataset.like)));
+        box.querySelectorAll('[data-pub]').forEach(b => b.addEventListener('click', () => publishTracks([+b.dataset.pub])));
         box.querySelectorAll('[data-more]').forEach(b => b.addEventListener('click', e => trackMenu(+b.dataset.more, e.currentTarget)));
     }
     function trackMenu(id, anchor) {
@@ -709,6 +724,7 @@
         m.style.width = '220px';
         const items = [['plnew', 'fa-plus', 'افزودن به پلی‌لیستِ تازه']].concat(S.playlists.map(p => ['pl:' + p.id, 'fa-list', 'افزودن به «' + p.name + '»']));
         if (t.owner === 'user') items.push(['edit', 'fa-pen', 'ویرایشِ نام و ژانر'], ['del', 'fa-trash', 'حذفِ آهنگ']);
+        if (S.isAdmin && t.owner !== 'panel') items.push(['pub', 'fa-bullhorn', 'انتشار برای همه']);
         m.innerHTML = items.map(([k, ic, tx]) => `<div class="it" data-k="${k}"><b><i class="fas ${ic} ml-1" style="color:#6366f1"></i>${esc(tx)}</b></div>`).join('');
         document.body.appendChild(m);
         const r = anchor.getBoundingClientRect();
@@ -729,7 +745,8 @@
                 if (!pl.tracks.includes(id)) pl.tracks.push(id);
                 const r2 = await api('pl_save', {id: pl.id, name: pl.name, tracks: pl.tracks});
                 toast(r2.ok ? 'به «' + pl.name + '» اضافه شد.' : r2.error, r2.ok ? 'success' : 'error');
-            } else if (k === 'edit') editTrack(t);
+            } else if (k === 'pub') publishTracks([id]);
+            else if (k === 'edit') editTrack(t);
             else if (k === 'del') {
                 if (!(await confirmBox('حذفِ آهنگ', '«' + t.title + '» حذف شود؟'))) return;
                 const r2 = await api('my_track_delete', {id});
@@ -739,6 +756,13 @@
                 rebuildOrder(true); renderList(); toast('حذف شد.', 'success');
             }
         }));
+    }
+    // مدیر: آهنگ‌های شخصی برای همه پخش شوند
+    async function publishTracks(ids) {
+        const r = await api('music_publish', {ids});
+        if (!r.ok) return toast(r.error || 'خطا', 'error');
+        await loadMusic(true);
+        toast(fa(r.published) + ' آهنگ برای همه منتشر شد.', 'success');
     }
     function editTrack(t) {
         const box = modalBox('ویرایشِ آهنگ', `<label class="cf-lbl">خواننده</label><input class="cf-in" data-f="artist" value="${esc(t.artist)}">
@@ -1023,10 +1047,11 @@
     }
     const uploadSummary = r => `<span style="color:#22c55e">${fa(r.added.length)} آهنگ اضافه شد.</span>` + (r.skipped.length ? ` <span style="opacity:.75">${fa(r.skipped.length)} مورد رد شد (تکراری/نامربوط).</span>` : '')
         + (r.errors.length ? `<div style="color:#fb7185;margin-top:3px">${r.errors.slice(0, 4).map(esc).join('<br>')}${r.errors.length > 4 ? '<br>…' : ''}</div>` : '');
-    async function loadMusic() {
+    async function loadMusic(refresh) {
         const r = await api('music_list');
         if (!r.ok) return;
-        S.tracks = r.tracks; S.likes = new Set(r.likes); S.playlists = r.playlists; S.genres = r.genres; S.quota = r.quota; S.canUpload = r.can_upload;
+        S.tracks = r.tracks; S.likes = new Set(r.likes); S.playlists = r.playlists; S.genres = r.genres; S.quota = r.quota; S.canUpload = r.can_upload; S.isAdmin = !!r.is_admin;
+        if (refresh) { rebuildOrder(true); if (P.panel && S.open === 'player') { renderGenres(); renderLib(); } return; }
         rebuildOrder();
         const sv = LS.get('player:' + S.boot.kind, null);
         if (sv && trackById(sv.id)) load(trackById(sv.id), false, sv.t);

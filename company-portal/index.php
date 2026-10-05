@@ -53,7 +53,7 @@ if (!$companies) {
 <script>window.NET_WATCH_PING = '../api/server_time.php';</script>
 <script src="../net-watch.js?v=1"></script>
 <script src="../tools.js?v=1"></script>
-<script src="../comfort.js?v=8"></script>
+<script src="../comfort.js?v=9"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=1"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>

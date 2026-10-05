@@ -55,10 +55,11 @@
                 <div data-prog class="text-[11px] text-slate-600"></div>
             </div>
             <div class="flex flex-wrap items-center gap-2 mb-2">
-                <select class="border border-slate-200 rounded-xl px-2 py-1.5 text-xs" data-f="owner"><option value="all">همه</option><option value="panel" ${L.owner === 'panel' ? 'selected' : ''}>کتابخانه‌ی پنل</option><option value="user" ${L.owner === 'user' ? 'selected' : ''}>آپلودِ کاربران</option></select>
+                <select class="border border-slate-200 rounded-xl px-2 py-1.5 text-xs" data-f="owner"><option value="all">همه</option><option value="panel" ${L.owner === 'panel' ? 'selected' : ''}>کتابخانه‌ی پنل</option><option value="user" ${L.owner === 'user' ? 'selected' : ''}>آپلودِ کاربران (منتظرِ انتشار)</option></select>
                 <select class="border border-slate-200 rounded-xl px-2 py-1.5 text-xs" data-f="genre"><option value="">همه‌ی ژانرها</option>${d.genres.map(g => `<option ${L.genre === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
                 <input class="border border-slate-200 rounded-xl px-3 py-1.5 text-xs w-52" data-f="q" placeholder="جستجوی نام، خواننده، فایل…" value="${esc(L.q)}">
                 <span class="text-[11px] text-slate-500 mr-auto">${fa(d.tracks.length)} آهنگ</span>
+                ${[...L.sel].some(id => (d.tracks.find(t => t.id === id) || {}).owner === 'user') ? `<button type="button" class="text-[11px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl px-3 py-1.5" data-a="bulkpub"><i class="fas fa-bullhorn ml-1"></i>انتشارِ انتخاب‌شده‌ها برای همه</button>` : ''}
                 <button type="button" class="text-[11px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl px-3 py-1.5 ${L.sel.size ? '' : 'opacity-40 pointer-events-none'}" data-a="bulkdel"><i class="fas fa-trash ml-1"></i>حذف و مسدودِ انتخاب‌شده‌ها (${fa(L.sel.size)})</button>
             </div>
             <div class="overflow-x-auto border border-slate-100 rounded-2xl">
@@ -70,10 +71,10 @@
                     <div class="min-w-0"><b class="block text-slate-800 truncate max-w-[260px]">${esc(t.title)}</b><small class="text-slate-500">${esc(t.artist || '—')}</small>${t.orig_name ? `<small class="block text-[9.5px] text-slate-300 truncate max-w-[260px]" dir="auto">${esc(t.orig_name)}</small>` : ''}</div></div></td>
                 <td class="p-2"><span class="text-[10.5px] font-bold bg-slate-100 rounded-full px-2 py-0.5">${esc(t.genre)}</span></td>
                 <td class="p-2">${t.owner === 'panel' ? '<span class="text-[10.5px] font-black text-violet-700"><i class="fas fa-compact-disc ml-1"></i>کتابخانه‌ی پنل</span>' : `<span class="text-[10.5px] font-black text-sky-700"><i class="fas fa-user ml-1"></i>${esc(t.owner_name)}</span>`}
-                    <small class="block text-[10px] text-slate-400">آپلود: ${esc(t.uploader || '—')}</small></td>
+                    <small class="block text-[10px] text-slate-400">آپلود: ${esc(t.uploader || '—')}</small>${t.owner !== 'panel' ? '<small class="block text-[10px] text-amber-600 font-bold"><i class="fas fa-lock ml-1"></i>فقط خودش و مدیر</small>' : ''}</td>
                 <td class="p-2 text-slate-500">${mb(t.size)} مگ</td><td class="p-2 text-slate-500">${jdate(t.created_at)}</td><td class="p-2 text-slate-500">${fa(t.plays)}</td>
                 <td class="p-2 whitespace-nowrap"><button type="button" class="text-blue-600 text-[11px] font-bold ml-2" data-edit="${t.id}"><i class="fas fa-pen ml-1"></i>ویرایش</button>
-                    ${t.owner !== 'panel' ? `<button type="button" class="text-violet-600 text-[11px] font-bold ml-2" data-topanel="${t.id}" title="برای همه پخش شود"><i class="fas fa-arrow-up-from-bracket ml-1"></i>به پنل</button>` : ''}
+                    ${t.owner !== 'panel' ? `<button type="button" class="text-emerald-700 bg-emerald-50 rounded-lg px-2 py-0.5 text-[11px] font-black ml-2" data-topanel="${t.id}" title="الان فقط خودِ ${esc(t.owner_name)} و مدیر می‌شنوند"><i class="fas fa-bullhorn ml-1"></i>انتشار برای همه</button>` : ''}
                     <button type="button" class="text-rose-500 text-[11px] font-bold" data-del="${t.id}"><i class="fas fa-ban ml-1"></i>حذف و مسدود</button></td></tr>`).join('')
                 : '<tr><td colspan="8" class="p-8 text-center text-slate-400">آهنگی نیست.</td></tr>'}</tbody></table></div>
             <p class="text-[10.5px] text-slate-500 mt-2"><i class="fas fa-circle-info text-violet-500 ml-1"></i>«حذف و مسدود» آهنگ را از همه جا (کتابخانه‌ی پنل و آهنگ‌های همه‌ی کاربران) پاک می‌کند و همان فایل دیگر قابلِ آپلود نیست؛ از تبِ «مسدودشده‌ها» می‌شود آزادش کرد.</p>`;
@@ -107,10 +108,17 @@
         p.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editTrack(d.tracks.find(t => t.id === +b.dataset.edit)));
         p.querySelectorAll('[data-topanel]').forEach(b => b.onclick = async () => {
             const t = d.tracks.find(x => x.id === +b.dataset.topanel);
-            if (window.uiConfirm && !(await uiConfirm('انتقال به کتابخانه‌ی پنل', `«${t.title}» به کتابخانه‌ی پنل برود تا برای همه پخش شود؟ (از سهمِ حجمِ ${t.owner_name} کم می‌شود)`))) return;
+            if (window.uiConfirm && !(await uiConfirm('انتشار برای همه', `«${t.title}» (آپلودِ ${t.owner_name}) به کتابخانه‌ی پنل برود تا برای همه پخش شود؟`))) return;
             const r = await api('lib_update', {id: t.id, title: t.title, artist: t.artist, genre: t.genre, to_panel: 1});
-            toast(r.ok ? 'به کتابخانه‌ی پنل رفت.' : r.error, r.ok ? 'success' : 'error'); renderLibrary(L.el);
+            toast(r.ok ? 'منتشر شد؛ حالا برای همه پخش می‌شود.' : r.error, r.ok ? 'success' : 'error'); renderLibrary(L.el);
         });
+        const bp = p.querySelector('[data-a="bulkpub"]');
+        if (bp) bp.onclick = async () => {
+            const ids = [...L.sel].filter(id => (d.tracks.find(t => t.id === id) || {}).owner === 'user');
+            if (window.uiConfirm && !(await uiConfirm('انتشار برای همه', `${fa(ids.length)} آهنگِ کاربران برای همه پخش شوند؟`))) return;
+            const r = await api('music_publish', {ids});
+            toast(r.ok ? `${fa(r.published)} آهنگ منتشر شد.` : r.error, r.ok ? 'success' : 'error'); L.sel.clear(); renderLibrary(L.el);
+        };
         const del = async ids => {
             if (window.uiConfirm && !(await uiConfirm('حذف و مسدودسازی', `${fa(ids.length)} آهنگ از همه جا حذف و مسدود شود؟ دیگر قابلِ آپلود نخواهد بود.`, {ok: 'حذف و مسدود', danger: true}))) return;
             const r = await api('lib_delete', {ids});

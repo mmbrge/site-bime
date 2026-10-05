@@ -99,6 +99,13 @@ try {
         $st = $pdo->prepare("SELECT * FROM cf_tracks WHERE owner_type = 'P' OR (owner_type = ? AND owner_id = ?) ORDER BY owner_type = 'P' DESC, genre, artist, title");
         $st->execute([$AT, $AID]);
         $tracks = array_map(function ($r) use ($pdo) { return cf_track_out($pdo, $r); }, $st->fetchAll());
+        // قانون: آهنگی که هر کاربر آپلود می‌کند فقط برای خودش و مدیر قابلِ دیدن و پخش است تا مدیر «انتشار برای همه» بزند
+        $pending = 0;
+        if ($isAdmin) {
+            $st = $pdo->prepare("SELECT * FROM cf_tracks WHERE owner_type <> 'P' AND NOT (owner_type = ? AND owner_id = ?) ORDER BY id DESC LIMIT 1000");
+            $st->execute([$AT, $AID]);
+            foreach ($st->fetchAll() as $r) { $tracks[] = ['owner' => 'other', 'owner_name' => cf_actor_name($pdo, $r['owner_type'], $r['owner_id'])] + cf_track_out($pdo, $r); $pending++; }
+        }
         $st = $pdo->prepare("SELECT track_id FROM cf_likes WHERE actor_type = ? AND actor_id = ?");
         $st->execute([$AT, $AID]);
         $likes = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
@@ -106,7 +113,15 @@ try {
         $st->execute([$AT, $AID]);
         $pls = array_map(function ($r) { return ['id' => intval($r['id']), 'name' => $r['name'], 'tracks' => array_values(array_filter(array_map('intval', explode(',', (string)$r['track_ids']))))]; }, $st->fetchAll());
         cfo(['ok' => true, 'tracks' => $tracks, 'likes' => $likes, 'playlists' => $pls, 'genres' => cf_genres($pdo),
-             'quota' => !empty($F['music_upload']) ? cf_quota_state($pdo, $AT, $AID) : null, 'can_upload' => !empty($F['music_upload'])]);
+             'quota' => !empty($F['music_upload']) ? cf_quota_state($pdo, $AT, $AID) : null, 'can_upload' => !empty($F['music_upload']),
+             'is_admin' => $isAdmin, 'pending' => $pending]);
+    }
+    // مدیر: آهنگ‌های کاربران برای همه پخش شوند
+    if ($action === 'music_publish') {
+        if (!$isAdmin) cfo(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        $n = 0;
+        foreach (array_filter(array_map('intval', (array)($data['ids'] ?? [$data['id'] ?? 0]))) as $id) if (cf_publish_track($pdo, $id)) $n++;
+        cfo(['ok' => true, 'published' => $n]);
     }
     if ($action === 'stream') {
         if (empty($F['music']) && !$isAdmin) { http_response_code(403); exit; }
@@ -550,10 +565,10 @@ try {
             $id = intval($data['id'] ?? 0);
             $sets = ['title = ?', 'artist = ?', 'genre = ?'];
             $vals = [mb_substr(trim((string)($data['title'] ?? '')), 0, 200) ?: 'بی‌نام', mb_substr(trim((string)($data['artist'] ?? '')), 0, 160) ?: null, mb_substr(trim((string)($data['genre'] ?? '')), 0, 60) ?: 'سایر'];
-            // انتقالِ آهنگِ کاربر به کتابخانه‌ی پنل (برای همه پخش شود)
-            if (!empty($data['to_panel'])) { $sets[] = "owner_type = 'P'"; $sets[] = 'owner_id = 0'; }
             $vals[] = $id;
             $pdo->prepare("UPDATE cf_tracks SET " . implode(', ', $sets) . " WHERE id = ?")->execute($vals);
+            // «انتشار برای همه»: انتقالِ آهنگِ کاربر به کتابخانه‌ی پنل
+            if (!empty($data['to_panel'])) cf_publish_track($pdo, $id);
             cfo(['ok' => true]);
         }
         if ($action === 'lib_delete') {
