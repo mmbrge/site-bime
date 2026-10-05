@@ -3789,7 +3789,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=4"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=3"></script>
+    <script src="work-log.js?v=5"></script>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=1"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>

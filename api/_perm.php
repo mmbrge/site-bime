@@ -277,7 +277,7 @@ function perm_api_map() {
             'settings_save' => 'staff-work:edit', 'leave_decide' => 'staff-work:edit', 'pending_leaves' => 'staff-work:view', 'staff_overview' => 'staff-work:view',
             'svc_month' => 'my-work:view|service-report:view', 'svc_receipt' => 'my-work:view|service-report:view', 'svc_days_save' => 'my-work:edit|service-report:edit',
             'svc_pay_save' => 'my-work:edit|service-report:edit', 'svc_pay_delete' => 'my-work:edit|service-report:edit',
-            'svc_list' => 'service-report:view', 'svc_overview' => 'service-report:view', 'svc_save' => 'service-report:edit', 'svc_delete' => 'service-report:edit',
+            'svc_list' => 'service-report:view', 'svc_overview' => 'service-report:view', 'svc_service_receipt' => 'service-report:view', 'svc_save' => 'service-report:edit', 'svc_delete' => 'service-report:edit',
         ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [

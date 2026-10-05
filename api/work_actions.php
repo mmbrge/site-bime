@@ -290,7 +290,7 @@ try {
             if (in_array($action, $writes, true) && !$svcEdit) wout(['ok' => false, 'error' => 'اجازه‌ی تغییرِ سرویسِ دیگران را ندارید.']);
         }
         if (in_array($action, ['svc_save', 'svc_delete'], true) && !$isAdmin) wout(['ok' => false, 'error' => 'تعریف و اختصاصِ سرویس فقط کارِ مدیر کل است.']);
-        if (in_array($action, ['svc_list', 'svc_overview'], true) && !$svcView) wout(['ok' => false, 'error' => 'به «گزارش سرویس‌ها» دسترسی ندارید.']);
+        if (in_array($action, ['svc_list', 'svc_overview', 'svc_service_receipt'], true) && !$svcView) wout(['ok' => false, 'error' => 'به «گزارش سرویس‌ها» دسترسی ندارید.']);
         $money = function ($v) { return max(0, intval(money_to_int(p2e_digits((string)$v)))); };
         $staff = function () use ($pdo) {
             return $pdo->query("SELECT id, full_name, role FROM users" . (auth_schema_ready($pdo) ? " WHERE COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll();
@@ -369,6 +369,21 @@ try {
             [$jy, $jm] = wk_month_args($data);
             $pdo->prepare("DELETE FROM work_service_pays WHERE user_id = ? AND service_id = ? AND jy = ? AND jm = ?")->execute([$uid, intval($data['service_id'] ?? 0), $jy, $jm]);
             wout($monthOut($uid, $jy, $jm));
+        }
+        // گزارش و رسیدِ ماهانه‌ی یک سرویس برای همه‌ی همکاران (جمعِ هزینه‌ها)
+        if ($action === 'svc_service_receipt') {
+            [$jy, $jm] = wk_month_args($data);
+            $sid = intval($data['service_id'] ?? 0);
+            $svc = ws_service($pdo, $sid);
+            if (!$svc) wout(['ok' => false, 'error' => 'سرویس پیدا نشد.']);
+            $bin = ws_service_pdf($pdo, $sid, $jy, $jm);
+            $fname = 'گزارش سرویس ' . $svc['name'] . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
+            while (ob_get_level()) ob_end_clean();
+            header('Content-Type: application/pdf');
+            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-report-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+            header('Content-Length: ' . strlen($bin));
+            echo $bin;
+            exit;
         }
         if ($action === 'svc_receipt') {
             [$jy, $jm] = wk_month_args($data);

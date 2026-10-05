@@ -244,30 +244,19 @@ function ws_overview($pdo, $jy, $jm, array $users) {
 function ws_fa($s) { return strtr((string)$s, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']); }
 function ws_money($n) { return ws_fa(number_format(intval($n))); }
 
-function ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm) {
-    $svc = ws_service($pdo, $sid);
-    if (!$svc) throw new RuntimeException('سرویس پیدا نشد.');
-    $st = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-    $st->execute([intval($uid)]);
-    $person = (string)($st->fetchColumn() ?: '');
-    $M = ws_month($pdo, $uid, $jy, $jm);
-    $pays = (array)$M['pays'];
-    $pay = $pays[$sid] ?? null;
-    $tot = ['go' => 0, 'back' => 0, 'days' => 0, 'both' => 0, 'amount' => 0];
-    foreach ($M['totals'] as $t) if ($t['service_id'] === $sid) $tot = $t;
-
+// ابزارِ مشترکِ PDFها: صفحه‌ی A4، قلمِ وزیر، متنِ راست‌به‌چپ با مختصاتِ معمولی (x از چپ) و جعبه‌ی گرد
+function ws_pdf_kit($title) {
     require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
     $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->setPrintHeader(false); $pdf->setPrintFooter(false);
     $pdf->SetMargins(0, 0, 0); $pdf->SetAutoPageBreak(false, 0);
     $pdf->setCellPaddings(0, 0, 0, 0);
     $pdf->SetCreator('بیمه با ما'); $pdf->SetAuthor('بیمه با ما');
-    $pdf->SetTitle('رسید سرویس ' . $svc['name'] . ' ' . $person . ' ' . jalali_month_name($jm) . ' ' . $jy);
+    $pdf->SetTitle($title);
     $pdf->AddFont('vazir', '', 'vazir.php'); $pdf->AddFont('vazir', 'B', 'vazirb.php');
     $pdf->AddPage();
     $W = 210;
     $hex = function ($h) { $h = ltrim($h, '#'); return [hexdec(substr($h, 0, 2)), hexdec(substr($h, 2, 2)), hexdec(substr($h, 4, 2))]; };
-    // متنِ راست‌به‌چپ در جعبه‌ای با مختصاتِ معمولی (x از چپ)
     $T = function ($x, $y, $w, $h, $text, $size = 9, $style = '', $color = '#0f172a', $align = 'R') use ($pdf, $W, $hex) {
         $pdf->setRTL(true);
         $pdf->SetFont('vazir', $style, $size);
@@ -282,6 +271,22 @@ function ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm) {
         if ($border) { $pdf->SetDrawColor(...$hex($border)); $pdf->SetLineWidth(0.25); }
         $pdf->RoundedRect($x, $y, $w, $h, $r, '1111', $border ? 'DF' : 'F');
     };
+    return [$pdf, $T, $box, $hex, $W];
+}
+
+function ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm) {
+    $svc = ws_service($pdo, $sid);
+    if (!$svc) throw new RuntimeException('سرویس پیدا نشد.');
+    $st = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+    $st->execute([intval($uid)]);
+    $person = (string)($st->fetchColumn() ?: '');
+    $M = ws_month($pdo, $uid, $jy, $jm);
+    $pays = (array)$M['pays'];
+    $pay = $pays[$sid] ?? null;
+    $tot = ['go' => 0, 'back' => 0, 'days' => 0, 'both' => 0, 'amount' => 0];
+    foreach ($M['totals'] as $t) if ($t['service_id'] === $sid) $tot = $t;
+
+    [$pdf, $T, $box, $hex, $W] = ws_pdf_kit('رسید سرویس ' . $svc['name'] . ' ' . $person . ' ' . jalali_month_name($jm) . ' ' . $jy);
 
     // ---- سربرگ ----
     $pdf->LinearGradient(0, 0, $W, 40, $hex('#312e81'), $hex('#0e7490'), [0, 0, 1, 0]);
@@ -401,5 +406,190 @@ function ws_receipt_pdf($pdo, $uid, $sid, $jy, $jm) {
         }
     }
     $T(12, 291, 186, 4, 'این رسید از «گزارش سرویس‌ها / کارکرد من» در پنلِ بیمه با ما ساخته شده است.', 6.5, '', '#94a3b8', 'C');
+    return $pdf->Output('', 'S');
+}
+
+// ---------------------------------------------------------------------
+//  گزارش و رسیدِ ماهانه‌ی یک سرویس برای همه‌ی همکاران (جمعِ هزینه‌ها)
+// ---------------------------------------------------------------------
+// داده‌ی یک سرویس در یک ماه: هر روز ← چه کسانی رفت/برگشت، مبلغِ روز؛ هر نفر ← جمع و پرداخت
+function ws_service_month($pdo, $sid, $jy, $jm) {
+    ws_ensure($pdo);
+    [$from, $to] = wk_month_range($jy, $jm);
+    $st = $pdo->prepare("SELECT d.*, u.full_name FROM work_service_days d LEFT JOIN users u ON u.id = d.user_id
+                         WHERE d.wdate BETWEEN ? AND ? AND (d.go_service_id = ? OR d.back_service_id = ?) ORDER BY u.full_name");
+    $st->execute([$from, $to, $sid, $sid]);
+    $byDate = []; $people = [];
+    foreach ($st->fetchAll() as $r) {
+        $uid = intval($r['user_id']);
+        $go = intval($r['go_service_id']) === $sid; $back = intval($r['back_service_id']) === $sid;
+        $amt = ($go ? intval($r['amount_go']) : 0) + ($back ? intval($r['amount_back']) : 0);
+        $byDate[$r['wdate']][] = ['uid' => $uid, 'name' => (string)($r['full_name'] ?: ('#' . $uid)), 'go' => $go, 'back' => $back, 'amount' => $amt];
+        $p = &$people[$uid];
+        if (!$p) $p = ['uid' => $uid, 'name' => (string)($r['full_name'] ?: ('#' . $uid)), 'days' => 0, 'go' => 0, 'back' => 0, 'amount' => 0, 'paid' => 0];
+        $p['days']++; $p['go'] += $go ? 1 : 0; $p['back'] += $back ? 1 : 0; $p['amount'] += $amt;
+        unset($p);
+    }
+    $st = $pdo->prepare("SELECT user_id, SUM(amount) a FROM work_service_pays WHERE service_id = ? AND jy = ? AND jm = ? GROUP BY user_id");
+    $st->execute([$sid, $jy, $jm]);
+    foreach ($st->fetchAll() as $r) if (isset($people[intval($r['user_id'])])) $people[intval($r['user_id'])]['paid'] = intval($r['a']);
+    $days = [];
+    $tot = ['days' => 0, 'go' => 0, 'back' => 0, 'amount' => 0, 'paid' => 0, 'people' => count($people)];
+    for ($d = strtotime($from . ' 12:00:00'), $e = strtotime($to . ' 12:00:00'); $d <= $e; $d += 86400) {
+        $g = date('Y-m-d', $d);
+        $rows = $byDate[$g] ?? [];
+        $D = ['date' => $g, 'jdate' => wk_g2j($g), 'dow' => intval(date('w', $d)), 'off' => wk_is_off($pdo, $g), 'rows' => $rows,
+              'go' => count(array_filter($rows, fn($x) => $x['go'])), 'back' => count(array_filter($rows, fn($x) => $x['back'])),
+              'amount' => array_sum(array_column($rows, 'amount'))];
+        if ($rows) $tot['days']++;
+        $tot['go'] += $D['go']; $tot['back'] += $D['back']; $tot['amount'] += $D['amount'];
+        $days[] = $D;
+    }
+    $tot['paid'] = array_sum(array_column($people, 'paid'));
+    usort($people, fn($a, $b) => $b['amount'] <=> $a['amount']);
+    return ['days' => $days, 'people' => array_values($people), 'totals' => $tot];
+}
+
+function ws_service_pdf($pdo, $sid, $jy, $jm) {
+    $svc = ws_service($pdo, $sid);
+    if (!$svc) throw new RuntimeException('سرویس پیدا نشد.');
+    $M = ws_service_month($pdo, $sid, $jy, $jm);
+    $tot = $M['totals'];
+    [$pdf, $T, $box, $hex, $W] = ws_pdf_kit('گزارش سرویس ' . $svc['name'] . ' ' . jalali_month_name($jm) . ' ' . $jy);
+    $header = function ($cont = false) use ($pdf, $T, $box, $hex, $W, $svc, $jy, $jm, $sid, $tot) {
+        $h = $cont ? 22 : 36;
+        $pdf->LinearGradient(0, 0, $W, $h, $hex('#0f766e'), $hex('#312e81'), [0, 0, 1, 0]);
+        $pdf->SetAlpha(0.12); $pdf->SetFillColor(255, 255, 255);
+        $pdf->Circle(18, 6, 22, 0, 360, 'F'); $pdf->Circle(190, $h + 2, 26, 0, 360, 'F');
+        $pdf->SetAlpha(1);
+        if ($cont) { $T(12, 7, 186, 9, 'گزارشِ ماهانه‌ی سرویسِ «' . $svc['name'] . '» · ' . jalali_month_name($jm) . ' ' . ws_fa($jy) . ' (ادامه)', 12, 'B', '#ffffff'); return 30; }
+        $T(70, 8, 128, 10, 'گزارش و رسیدِ ماهانه‌ی سرویس', 19, 'B', '#ffffff');
+        $T(70, 19, 128, 7, 'سرویسِ «' . $svc['name'] . '» · کارکردِ ' . jalali_month_name($jm) . ' ' . ws_fa($jy), 11, '', '#ccfbf1');
+        $T(70, 27, 128, 6, 'جمعِ ' . ws_fa($tot['people']) . ' همکار · بیمه با ما', 9, 'B', '#a5f3fc');
+        $box(12, 9, 52, 22, '#ffffff', 4);
+        $T(14, 11, 48, 6, 'شماره‌ی گزارش', 7.5, '', '#64748b', 'C');
+        $T(14, 16.5, 48, 6, ws_fa(sprintf('SVA-%d-%04d%02d', $sid, $jy, $jm)), 10, 'B', '#0f766e', 'C');
+        $T(14, 23, 48, 6, 'صدور: ' . ws_fa(wk_g2j(date('Y-m-d'))), 8, '', '#475569', 'C');
+        return 41;
+    };
+    $y = $header();
+    // ---- کارت‌ها ----
+    $cards = [
+        ['سرویس', $svc['name'], '#ecfdf5', '#047857'],
+        ['راننده', $svc['driver'] ?: '—', '#ecfeff', '#0e7490'],
+        ['تلفن / خودرو', trim(ws_fa($svc['phone']) . ($svc['car'] ? ' · ' . $svc['car'] : '')) ?: '—', '#eef2ff', '#4338ca'],
+        ['نرخِ هر مسیر (ریال)', 'رفت ' . ws_money($svc['price_go']) . ' · برگشت ' . ws_money($svc['price_back']), '#fff7ed', '#c2410c'],
+    ];
+    $cw = (186 - 9) / 4;
+    foreach ($cards as $i => $c) {
+        $x = 12 + (3 - $i) * ($cw + 3);
+        $box($x, $y, $cw, 14, $c[2], 3);
+        $T($x + 3, $y + 1.5, $cw - 6, 5, $c[0], 7.2, '', '#64748b');
+        $T($x + 3, $y + 6.5, $cw - 6, 6, $c[1], mb_strlen($c[1]) > 26 ? 7.5 : 9.5, 'B', $c[3]);
+    }
+    $y += 18;
+
+    // ---- جدولِ روزها: چند نفر رفت/برگشت، چه کسانی، مبلغِ روز ----
+    $cols = [['روز', 11], ['تاریخ', 22], ['روزِ هفته', 22], ['رفت (نفر)', 19], ['برگشت (نفر)', 19], ['همکاران', 63], ['مبلغِ روز (ریال)', 30]];
+    $tx = function ($idx) use ($cols) { $x = 198; for ($i = 0; $i <= $idx; $i++) $x -= $cols[$i][1]; return $x; };
+    $box(12, $y, 186, 7, '#1e293b', 2);
+    foreach ($cols as $i => $c) $T($tx($i), $y, $c[1], 7, $c[0], 7.5, 'B', '#ffffff', 'C');
+    $y += 7.6; $top = $y;
+    $dowFa = [6 => 'شنبه', 0 => 'یکشنبه', 1 => 'دوشنبه', 2 => 'سه‌شنبه', 3 => 'چهارشنبه', 4 => 'پنجشنبه', 5 => 'جمعه'];
+    $rh = count($M['days']) > 30 ? 4.3 : 4.4;
+    foreach ($M['days'] as $k => $D) {
+        $used = (bool)$D['rows'];
+        $pdf->SetFillColor(...$hex($used ? ($k % 2 ? '#f0fdfa' : '#ffffff') : ($D['off'] ? '#fff1f2' : '#f8fafc')));
+        $pdf->Rect(12, $y, 186, $rh, 'F');
+        $T($tx(0), $y, $cols[0][1], $rh, ws_fa(intval(substr($D['jdate'], 8, 2))), 8, 'B', $D['off'] ? '#e11d48' : '#334155', 'C');
+        $T($tx(1), $y, $cols[1][1], $rh, ws_fa($D['jdate']), 7.3, '', '#475569', 'C');
+        $T($tx(2), $y, $cols[2][1], $rh, $dowFa[$D['dow']] . ($D['off'] ? ' (تعطیل)' : ''), 7.3, '', $D['off'] ? '#e11d48' : '#475569', 'C');
+        foreach ([[3, $D['go'], '#0284c7'], [4, $D['back'], '#7c3aed']] as [$ci, $n, $clr]) {
+            if ($n) {
+                $cx = $tx($ci) + $cols[$ci][1] / 2;
+                $pdf->SetFillColor(...$hex($clr));
+                $pdf->RoundedRect($cx - 5, $y + 0.7, 10, $rh - 1.4, 1.4, '1111', 'F');
+                $T($cx - 5, $y, 10, $rh, ws_fa($n), 8, 'B', '#ffffff', 'C');
+            } else $T($tx($ci), $y, $cols[$ci][1], $rh, '—', 8, '', '#cbd5e1', 'C');
+        }
+        // نامِ همکاران (رفت ← / برگشت → کنارِ هر نام)؛ اگر جا نشد کوتاه می‌شود
+        $names = implode('، ', array_map(fn($x) => $x['name'] . ($x['go'] && $x['back'] ? '' : ($x['go'] ? ' (رفت)' : ' (برگشت)')), $D['rows']));
+        if (mb_strlen($names) > 58) $names = mb_substr($names, 0, 56) . '…';
+        $T($tx(5) + 1, $y, $cols[5][1] - 2, $rh, $used ? $names : ($D['off'] ? 'تعطیل' : 'بدونِ سرویس'), 6.8, '', $used ? '#334155' : '#94a3b8', 'C');
+        $T($tx(6), $y, $cols[6][1], $rh, $D['amount'] ? ws_money($D['amount']) : '—', 8, $D['amount'] ? 'B' : '', $D['amount'] ? '#0f172a' : '#cbd5e1', 'C');
+        $y += $rh;
+    }
+    $pdf->SetDrawColor(...$hex('#e2e8f0')); $pdf->SetLineWidth(0.3);
+    $pdf->Rect(12, $top, 186, $y - $top, 'D');
+    // ردیفِ جمعِ جدول
+    $box(12, $y + 0.6, 186, 6.5, '#0f172a', 1.5);
+    $T($tx(2), $y + 0.6, $cols[0][1] + $cols[1][1] + $cols[2][1], 6.5, 'جمعِ ماه', 8.5, 'B', '#ffffff', 'C');
+    $T($tx(3), $y + 0.6, $cols[3][1], 6.5, ws_fa($tot['go']), 8.5, 'B', '#7dd3fc', 'C');
+    $T($tx(4), $y + 0.6, $cols[4][1], 6.5, ws_fa($tot['back']), 8.5, 'B', '#c4b5fd', 'C');
+    $T($tx(5), $y + 0.6, $cols[5][1], 6.5, ws_fa($tot['days']) . ' روز با سرویس · ' . ws_fa($tot['people']) . ' همکار', 7.5, '', '#e2e8f0', 'C');
+    $T($tx(6), $y + 0.6, $cols[6][1], 6.5, ws_money($tot['amount']), 8.5, 'B', '#6ee7b7', 'C');
+    $y += 11;
+
+    // ---- جمع‌ها ----
+    if ($y + 18 > 287) { $pdf->AddPage(); $y = $header(true); }
+    $sum = [['روزهای سرویس', ws_fa($tot['days']) . ' روز', '#0f766e'], ['همکاران', ws_fa($tot['people']) . ' نفر', '#4338ca'],
+            ['مسیرِ رفت', ws_fa($tot['go']) . ' بار', '#0284c7'], ['مسیرِ برگشت', ws_fa($tot['back']) . ' بار', '#7c3aed']];
+    $sw = 26;
+    foreach ($sum as $i => $s) {
+        $x = 198 - ($i + 1) * $sw - $i * 2;
+        $box($x, $y, $sw, 15, '#f8fafc', 3, '#e2e8f0');
+        $T($x + 1, $y + 1.5, $sw - 2, 5, $s[0], 7, '', '#64748b', 'C');
+        $T($x + 1, $y + 7, $sw - 2, 7, $s[1], 10, 'B', $s[2], 'C');
+    }
+    $gx = 12; $gw = 198 - 4 * $sw - 3 * 2 - 3 - $gx;
+    $pdf->LinearGradient($gx, $y, $gw, 15, $hex('#047857'), $hex('#0d9488'), [1, 0, 0, 0]);
+    $T($gx + 4, $y + 1, $gw - 8, 6, 'جمعِ قابلِ پرداخت به سرویس', 8, '', '#d1fae5');
+    $T($gx + 4, $y + 6, $gw - 8, 8, ws_money($tot['amount']) . ' ریال', 14, 'B', '#ffffff');
+    $T($gx + 4, $y + 6.5, $gw - 8, 8, 'معادلِ ' . ws_money(intdiv($tot['amount'], 10)) . ' تومان', 7.5, '', '#a7f3d0', 'L');
+    $y += 19;
+
+    // ---- سهمِ هر همکار ----
+    $pc = [['ردیف', 12], ['همکار', 54], ['روزها', 18], ['رفت', 16], ['برگشت', 16], ['مبلغ (ریال)', 26], ['پرداخت‌شده', 22], ['مانده', 22]];
+    $px = function ($idx) use ($pc) { $x = 198; for ($i = 0; $i <= $idx; $i++) $x -= $pc[$i][1]; return $x; };
+    $need = 8 + 7 + max(1, count($M['people'])) * 5.2 + 7;
+    if ($y + min($need, 40) > 287) { $pdf->AddPage(); $y = $header(true); }
+    $T(12, $y, 186, 6, 'سهمِ هر همکار', 10, 'B', '#0f172a');
+    $y += 7;
+    $drawHead = function ($y) use ($box, $T, $pc, $px) {
+        $box(12, $y, 186, 7, '#334155', 2);
+        foreach ($pc as $i => $c) $T($px($i), $y, $c[1], 7, $c[0], 7.5, 'B', '#ffffff', 'C');
+        return $y + 7.6;
+    };
+    $y = $drawHead($y);
+    if (!$M['people']) { $T(12, $y, 186, 7, 'در این ماه کسی با این سرویس ثبت نکرده است.', 8.5, '', '#94a3b8', 'C'); $y += 8; }
+    foreach ($M['people'] as $i => $p) {
+        if ($y + 5.2 > 287) { $pdf->AddPage(); $y = $drawHead($header(true)); }
+        $pdf->SetFillColor(...$hex($i % 2 ? '#f8fafc' : '#ffffff'));
+        $pdf->Rect(12, $y, 186, 5.2, 'F');
+        $left = $p['amount'] - $p['paid'];
+        $vals = [ws_fa($i + 1), $p['name'], ws_fa($p['days']), ws_fa($p['go']), ws_fa($p['back']), ws_money($p['amount']), $p['paid'] ? ws_money($p['paid']) : '—', $left > 0 ? ws_money($left) : ($left < 0 ? 'بیشتر: ' . ws_money(-$left) : 'تسویه')];
+        $clr = ['#64748b', '#0f172a', '#334155', '#0369a1', '#6d28d9', '#047857', '#0f766e', $left > 0 ? '#b45309' : '#047857'];
+        foreach ($vals as $j => $v) $T($px($j) + ($j === 1 ? 2 : 0), $y, $pc[$j][1] - ($j === 1 ? 2 : 0), 5.2, $v, $j === 1 ? 8 : 7.8, in_array($j, [1, 5], true) ? 'B' : '', $clr[$j], $j === 1 ? 'R' : 'C');
+        $y += 5.2;
+    }
+    // مانده = جمعِ بدهیِ هر نفر (پرداختِ اضافه‌ی یک نفر بدهیِ دیگری را صاف نمی‌کند)
+    $left = array_sum(array_map(fn($p) => max(0, $p['amount'] - $p['paid']), $M['people']));
+    $box(12, $y + 0.6, 186, 6.5, '#0f172a', 1.5);
+    $T($px(1), $y + 0.6, $pc[0][1] + $pc[1][1], 6.5, 'جمع', 8.5, 'B', '#ffffff', 'C');
+    foreach ([[2, ws_fa(array_sum(array_column($M['people'], 'days')))], [3, ws_fa($tot['go'])], [4, ws_fa($tot['back'])], [5, ws_money($tot['amount'])], [6, ws_money($tot['paid'])], [7, $left > 0 ? ws_money($left) : 'تسویه']] as [$j, $v])
+        $T($px($j), $y + 0.6, $pc[$j][1], 6.5, $v, 8.2, 'B', $j === 5 ? '#6ee7b7' : '#ffffff', 'C');
+    $y += 9.5;
+
+    // ---- امضاها ----
+    if ($y + 14 > 289) { $pdf->AddPage(); $y = $header(true); }
+    $sh = max(14, min(18, 289 - $y));
+    foreach ([['تحویل‌گیرنده (راننده‌ی سرویس)', 105], ['تأییدکننده / پرداخت‌کننده', 12]] as [$lbl, $x]) {
+        $pdf->SetDrawColor(...$hex('#cbd5e1')); $pdf->SetLineWidth(0.3);
+        $pdf->SetLineStyle(['dash' => '1,1']);
+        $pdf->RoundedRect($x, $y, 93, $sh, 3, '1111', 'D');
+        $pdf->SetLineStyle(['dash' => 0]);
+        $T($x + 4, $y + 2, 85, 6, $lbl . ' — نام و امضا', 8, 'B', '#475569');
+    }
+    $T(12, 291, 186, 4, 'این گزارش از «گزارش سرویس‌ها» در پنلِ بیمه با ما ساخته شده و جمعِ داده‌هایی است که هر همکار ثبت کرده است.', 6.5, '', '#94a3b8', 'C');
     return $pdf->Output('', 'S');
 }

@@ -841,6 +841,9 @@
             const uname = id => (l.users.find(u => u.id === id) || {}).name || ('#' + id);
             const tot = r.rows.reduce((a, x) => ({days: a.days + x.days, go: a.go + x.go, back: a.back + x.back, amount: a.amount + x.amount, paid: a.paid + x.paid}), {days: 0, go: 0, back: 0, amount: 0, paid: 0});
             const users = r.rows.filter(x => x.amount || x.days).length;
+            // جمعِ ماهِ هر سرویس از روی کارکردِ همه‌ی همکاران
+            const svcMonth = {};
+            r.rows.forEach(x => x.services.forEach(sv => { const m = svcMonth[sv.id] = svcMonth[sv.id] || {people: 0, amount: 0}; m.people++; m.amount += sv.amount; }));
             root.innerHTML = `
               <div class="space-y-4">
                 <div class="wk-hero">
@@ -864,12 +867,14 @@
                   <div class="flex flex-wrap items-center gap-2 mb-3"><h3><i class="fas fa-van-shuttle text-indigo-600"></i>سرویس‌ها</h3>
                     <p class="text-[10.5px] text-slate-500">${l.is_admin ? 'تعریف، نرخِ هر مسیر و اختصاص به کاربر فقط با شما (مدیر کل) است.' : 'تعریف و تغییرِ سرویس‌ها فقط با مدیر کل است.'}</p>
                     ${l.is_admin ? '<button type="button" class="mr-auto bg-indigo-600 hover:bg-indigo-700 text-white text-[11.5px] font-black rounded-xl px-4 py-2" data-a="new"><i class="fas fa-plus ml-1"></i>سرویسِ جدید</button>' : ''}</div>
-                  <div class="flex flex-wrap gap-2">${l.services.length ? l.services.map(s => `<div class="sv-svc ${s.is_default ? 'def' : ''} ${s.is_active ? '' : 'inactive'}">
+                  <div class="flex flex-wrap gap-2">${l.services.length ? l.services.map(s => `<div class="sv-svc ${s.is_default ? 'def' : ''} ${s.is_active ? '' : 'inactive'}" style="min-width:320px;align-items:flex-start">
                     <div class="av"><i class="fas fa-van-shuttle"></i></div>
                     <div class="flex-1 min-w-0"><p class="text-[12px] font-black text-slate-800 truncate">${esc(s.name)} ${s.is_default ? '<span class="wk-chip bg-indigo-100 text-indigo-700">پیش‌فرض</span>' : ''}${s.is_active ? '' : '<span class="wk-chip bg-slate-100 text-slate-500">غیرفعال</span>'}</p>
                       <p class="text-[10.5px] text-slate-500 mt-0.5">رفت <b class="text-sky-700">${money(s.price_go)}</b> · برگشت <b class="text-violet-700">${money(s.price_back)}</b> <span class="text-slate-400">ریال</span></p>
-                      <p class="text-[10px] mt-0.5 truncate ${s.users.length ? 'text-indigo-600 font-bold' : 'text-slate-400'}" title="${esc(s.users.map(uname).join('، '))}"><i class="fas ${s.users.length ? 'fa-user-lock' : 'fa-users'} ml-1"></i>${s.users.length ? 'فقط: ' + esc(s.users.map(uname).join('، ')) : 'همه می‌توانند انتخاب کنند'}</p></div>
-                    ${l.is_admin ? `<button type="button" class="text-[11px] text-slate-400 hover:text-indigo-600 px-1" data-edit="${s.id}" title="ویرایش و اختصاص"><i class="fas fa-pen"></i></button>` : ''}</div>`).join('')
+                      <p class="text-[10px] mt-0.5 truncate ${s.users.length ? 'text-indigo-600 font-bold' : 'text-slate-400'}" title="${esc(s.users.map(uname).join('، '))}"><i class="fas ${s.users.length ? 'fa-user-lock' : 'fa-users'} ml-1"></i>${s.users.length ? 'فقط: ' + esc(s.users.map(uname).join('، ')) : 'همه می‌توانند انتخاب کنند'}</p>
+                      ${(() => { const m = svcMonth[s.id]; return `<div class="flex flex-wrap items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100"><span class="text-[10.5px] ${m ? 'text-emerald-700 font-black' : 'text-slate-400'}">${m ? `${MONTHS[S.jm - 1]}: ${fa(m.people)} همکار · ${money(m.amount)} ریال` : `${MONTHS[S.jm - 1]}: بدونِ کارکرد`}</span>
+                        <button type="button" class="mr-auto text-[10.5px] font-black text-white rounded-lg px-2.5 py-1 whitespace-nowrap shrink-0" style="background:linear-gradient(90deg,#4f46e5,#0d9488)" data-spdf="${s.id}" title="گزارش و رسیدِ ماهانه‌ی این سرویس با جمعِ همه‌ی همکاران"><i class="fas fa-file-pdf ml-1"></i>PDF جمعِ ماه</button></div>`; })()}</div>
+                    ${l.is_admin ? `<button type="button" class="text-[11px] text-slate-400 hover:text-indigo-600 px-1 self-start" data-edit="${s.id}" title="ویرایش و اختصاص"><i class="fas fa-pen"></i></button>` : ''}</div>`).join('')
                     : '<p class="text-[11.5px] text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-2xl px-4 py-3">هنوز سرویسی تعریف نشده.</p>'}</div>
                 </div>
                 <div class="wk-card overflow-x-auto">
@@ -895,6 +900,10 @@
             root.querySelector('[data-f="q"]').oninput = e => { S.q = e.target.value.trim(); drawRows(); };
             root.querySelector('[data-f="used"]').onchange = e => { S.onlyUsed = e.target.checked; drawRows(); };
             on('new', () => svcDialog(null, l.users, load));
+            root.querySelectorAll('[data-spdf]').forEach(b => b.onclick = () => {
+                if (S.panel && S.panel.dirty()) toast('تغییراتِ ذخیره‌نشده‌ی تقویم در گزارش نمی‌آید.', 'warning');
+                window.open(`${API}?action=svc_service_receipt&service_id=${b.dataset.spdf}&jy=${S.jy}&jm=${S.jm}`, '_blank');
+            });
             root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => svcDialog(l.services.find(x => x.id === +b.dataset.edit), l.users, load));
             if (S.person) openPerson(S.person, true);
         }
