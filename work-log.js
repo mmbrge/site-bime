@@ -46,6 +46,13 @@
         return [gy, gm, gd];
     }
     const monthLen = (jy, jm) => jm <= 6 ? 31 : jm <= 11 ? 30 : (g2j(...j2g(jy, 12, 30))[2] === 30 ? 30 : 29);
+    // سال‌های قابلِ انتخاب: از ۱۴۰۰ (یا چهار سال پیش، هر کدام زودتر) تا ۱۴۳۰ — تقویم تا ۱۴۳۰ دقیق است (کبیسه‌ها: ۱۴۰۳، ۱۴۰۸، ۱۴۱۲، …، ۱۴۲۸)
+    const YEAR_MAX = 1430;
+    function yearOptions(sel) {
+        const t = todayJ(), from = Math.min(1400, t[0] - 4, sel || 9999), to = Math.max(YEAR_MAX, sel || 0);
+        let h = ''; for (let y = to; y >= from; y--) h += `<option value="${y}" ${y === sel ? 'selected' : ''}>${fa(y)}</option>`;
+        return h;
+    }
     const jstr = (y, m, d) => `${y}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
     const parseJ = s => { const m = en(s || '').match(/^(1[34]\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); return m ? [+m[1], +m[2], +m[3]] : null; };
     const dowOf = (y, m, d) => new Date(...(([gy, gm, gd]) => [gy, gm - 1, gd])(j2g(y, m, d))).getDay();
@@ -73,7 +80,9 @@
         jpEl.style.left = Math.max(8, window.scrollX + r.left + r.width - 252) + 'px';
         const draw = () => {
             const first = (dowOf(y, m, 1) + 1) % 7, n = monthLen(y, m), t = todayJ(), sel = parseJ(input.value);
-            let h = `<div class="wk-jp-h"><button type="button" data-n="1">‹</button><b>${MONTHS[m - 1]} ${fa(y)}</b><button type="button" data-n="-1">›</button></div><div class="wk-jp-g">`;
+            let h = `<div class="wk-jp-h"><button type="button" data-n="12" title="سالِ قبل">«</button><button type="button" data-n="1" title="ماهِ قبل">‹</button>
+                <b>${MONTHS[m - 1]} <select data-y style="border:0;background:transparent;font:inherit;font-weight:900;cursor:pointer">${yearOptions(y)}</select></b>
+                <button type="button" data-n="-1" title="ماهِ بعد">›</button><button type="button" data-n="-12" title="سالِ بعد">»</button></div><div class="wk-jp-g">`;
             h += WD_HEAD.map(w => `<i>${w}</i>`).join('') + '<span></span>'.repeat(first);
             for (let d = 1; d <= n; d++) {
                 const isT = t[0] === y && t[1] === m && t[2] === d, isS = sel && sel[0] === y && sel[1] === m && sel[2] === d;
@@ -81,10 +90,11 @@
             }
             jpEl.innerHTML = h + '</div>';
         };
-        jpEl.addEventListener('mousedown', e => e.preventDefault());
+        jpEl.addEventListener('mousedown', e => { if (!e.target.closest('select')) e.preventDefault(); });
+        jpEl.addEventListener('change', e => { if (e.target.matches('[data-y]')) { y = +e.target.value; draw(); } });
         jpEl.addEventListener('click', e => {
             const b = e.target.closest('button'); if (!b) return;
-            if (b.dataset.n) { m -= +b.dataset.n; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } draw(); return; }
+            if (b.dataset.n) { const k = +b.dataset.n; if (Math.abs(k) === 12) y -= k / 12; else { m -= k; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } } draw(); return; }
             input.value = fa(jstr(y, m, +b.dataset.d));
             input.dispatchEvent(new Event('input', {bubbles: true}));
             jpClose();
@@ -130,7 +140,7 @@
     .wk-tl > div{position:relative;padding:4px 0 6px} .wk-tl > div::before{content:'';position:absolute;right:-16px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--c,#94a3b8);box-shadow:0 0 0 3px #fff}
     .wk-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:900;border-radius:999px;padding:2px 8px}
     .wk-jp{position:absolute;z-index:99999999;width:252px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 20px 40px -15px rgba(15,23,42,.35);padding:10px;direction:rtl}
-    .wk-jp-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px} .wk-jp-h b{font-size:12px} .wk-jp-h button{width:28px;height:28px;border-radius:9px;background:#f1f5f9;font-weight:900}
+    .wk-jp-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px} .wk-jp-h b{font-size:12px} .wk-jp-h button{width:24px;height:26px;border-radius:9px;background:#f1f5f9;font-weight:900}
     .wk-jp-g{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center} .wk-jp-g i{font-style:normal;font-size:10px;color:#94a3b8;font-weight:800}
     .wk-jp-g button{height:30px;border-radius:9px;font-size:12px;font-weight:700} .wk-jp-g button:hover{background:#eef2ff} .wk-jp-g button.t{border:1.5px solid #6366f1} .wk-jp-g button.s{background:#4f46e5;color:#fff} .wk-jp-g button.f{color:#e11d48}
     .wk-tbl{width:100%;font-size:11.5px} .wk-tbl th{background:#f8fafc;color:#64748b;font-weight:800;font-size:10.5px;padding:8px 6px;text-align:right;position:sticky;top:0} .wk-tbl td{padding:7px 6px;border-top:1px solid #f1f5f9;vertical-align:top}
@@ -215,7 +225,7 @@
                     <div class="mr-auto flex items-center gap-1.5">
                       <button type="button" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 font-black" data-a="prev" title="ماهِ قبل">‹</button>
                       <select class="wk-in" style="width:auto;padding-top:6px;padding-bottom:6px" data-f="m">${MONTHS.map((n, i) => `<option value="${i + 1}" ${i + 1 === S.jm ? 'selected' : ''}>${n}</option>`).join('')}</select>
-                      <select class="wk-in" style="width:auto;padding-top:6px;padding-bottom:6px" data-f="y">${Array.from({length: 7}, (_, i) => t[0] - 4 + i).map(y => `<option value="${y}" ${y === S.jy ? 'selected' : ''}>${fa(y)}</option>`).join('')}</select>
+                      <select class="wk-in" style="width:auto;padding-top:6px;padding-bottom:6px" data-f="y">${yearOptions(S.jy)}</select>
                       <button type="button" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 font-black" data-a="next" title="ماهِ بعد">›</button>
                       <button type="button" class="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl px-3 py-2" data-a="today">امروز</button>
                     </div>
@@ -679,7 +689,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                       <button type="button" class="wk-hbtn" data-a="prev">‹</button>
                       <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="m">${MONTHS.map((n, i) => `<option value="${i + 1}" ${i + 1 === S.jm ? 'selected' : ''}>${n}</option>`).join('')}</select>
-                      <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="y">${Array.from({length: 7}, (_, i) => t[0] - 4 + i).map(y => `<option value="${y}" ${y === S.jy ? 'selected' : ''}>${fa(y)}</option>`).join('')}</select>
+                      <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="y">${yearOptions(S.jy)}</select>
                       <button type="button" class="wk-hbtn" data-a="next">›</button>
                       <button type="button" class="wk-hbtn solid" data-a="report"><i class="fas fa-chart-column ml-1"></i>گزارش و اکسلِ همه</button>
                       <button type="button" class="wk-hbtn" data-a="settings"><i class="fas fa-sliders ml-1"></i>تنظیماتِ مرخصی</button>
@@ -859,7 +869,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                       <button type="button" class="wk-hbtn" data-a="prev">‹</button>
                       <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="m">${MONTHS.map((n, i) => `<option value="${i + 1}" ${i + 1 === S.jm ? 'selected' : ''}>${n}</option>`).join('')}</select>
-                      <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="y">${Array.from({length: 7}, (_, i) => t[0] - 4 + i).map(y => `<option value="${y}" ${y === S.jy ? 'selected' : ''}>${fa(y)}</option>`).join('')}</select>
+                      <select class="wk-in" style="width:auto;padding-top:8px;padding-bottom:8px;color:#0f172a;background:#fff" data-f="y">${yearOptions(S.jy)}</select>
                       <button type="button" class="wk-hbtn" data-a="next">›</button>
                     </div>
                   </div>
