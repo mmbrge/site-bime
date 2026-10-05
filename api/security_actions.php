@@ -39,6 +39,13 @@ function sec_https() { return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !=
 function sec_base_url() {
     return (sec_https() ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(str_replace('\\', '/', dirname(dirname((string)$_SERVER['SCRIPT_NAME']))), '/');
 }
+// IPهای خودِ سرور (آزمایشِ زنده از همین‌ها می‌آید؛ مسدودکردنشان آزمایش را خراب می‌کند)
+function sec_server_ips() {
+    $ips = [(string)($_SERVER['SERVER_ADDR'] ?? '')];
+    $host = preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host !== '' && !filter_var($host, FILTER_VALIDATE_IP)) $ips[] = (string)@gethostbyname($host); else $ips[] = $host;
+    return array_values(array_unique(array_filter($ips, fn($ip) => filter_var($ip, FILTER_VALIDATE_IP) && !in_array($ip, ['127.0.0.1', '::1'], true))));
+}
 // درخواست به خودِ سایت، بدونِ کوکی (مثلِ یک غریبه)
 function sec_probe($url) {
     if (!function_exists('curl_init')) return ['code' => 0, 'body' => ''];
@@ -240,7 +247,7 @@ switch ($action) {
         $settings = [];
         foreach (SEC_DEFAULTS as $k => $v) $settings[$k] = $s[$k] ?? $v;
         sout(['ok' => true, 'score' => $chk['score'], 'checks' => $chk['checks'], 'stats' => sec_stats($pdo), 'settings' => $settings, 'types' => SEC_EVENT_FA,
-              'my_ip' => sec_ip(), 'blocked_count' => intval($pdo->query("SELECT COUNT(*) FROM sec_blocked_ips WHERE until_at IS NULL OR until_at > NOW()")->fetchColumn()),
+              'my_ip' => sec_ip(), 'server_ips' => sec_server_ips(), 'blocked_count' => intval($pdo->query("SELECT COUNT(*) FROM sec_blocked_ips WHERE until_at IS NULL OR until_at > NOW()")->fetchColumn()),
               'total_events' => intval($pdo->query("SELECT COUNT(*) FROM security_events")->fetchColumn()), 'now_fa' => sec_jdt(time())]);
 
     case 'events':
@@ -300,6 +307,7 @@ switch ($action) {
         $ip = trim((string)($data['ip'] ?? ''));
         if (!filter_var($ip, FILTER_VALIDATE_IP)) sout(['ok' => false, 'error' => 'IP معتبر نیست.']);
         if ($ip === sec_ip()) sout(['ok' => false, 'error' => 'این IPِ خودِ شماست؛ مسدودش نمی‌کنیم تا خودتان قفل نشوید.']);
+        if (in_array($ip, sec_server_ips(), true)) sout(['ok' => false, 'error' => 'این IPِ خودِ سرورِ سایت است (آزمایشِ زنده از همین‌جا انجام می‌شود)؛ مسدود نمی‌شود.']);
         $hours = max(0, intval($data['hours'] ?? 0));
         $pdo->prepare("REPLACE INTO sec_blocked_ips (ip, reason, until_at, created_at, created_by) VALUES (?, ?, ?, NOW(), ?)")
             ->execute([$ip, mb_substr(trim((string)($data['reason'] ?? '')), 0, 300), $hours ? date('Y-m-d H:i:s', time() + $hours * 3600) : null, $me]);
@@ -397,6 +405,8 @@ switch ($action) {
         $r = sec_probe(sec_path_url('uploads/'));
         $items[] = ['title' => 'بسته‌بودنِ فهرستِ فایل‌های پوشه‌ها', 'ok' => $r['code'] === 0 ? null : stripos($r['body'], 'Index of') === false, 'detail' => $r['code'] === 0 ? 'سایت در دسترس نبود' : 'HTTP ' . $r['code']];
         foreach ($mk as $f) @unlink($f);
+        // ردِ همین آزمایش در رخدادها نماند (نسخه‌های قبلی، «دسترسیِ بدونِ ورود به فایلِ بایگانی» برای فایل‌های آزمایشی ثبت می‌کردند)
+        try { $pdo->exec("DELETE FROM security_events WHERE type = 'FILE_DENIED' AND (detail LIKE '%\\_sectest\\_%' OR path LIKE '%\\_sectest\\_%')"); } catch (Throwable $e) {}
         $bad = count(array_filter($items, fn($x) => $x['ok'] === false));
         $unknown = count(array_filter($items, fn($x) => $x['ok'] === null));
         sec_save_setting($pdo, 'sec_live_test', json_encode(['at' => time(), 'items' => $items, 'bad' => $bad, 'unknown' => $unknown], JSON_UNESCAPED_UNICODE));

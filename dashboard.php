@@ -3805,7 +3805,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-hub.js?v=3"></script>
     <script src="work-log.js?v=5"></script>
     <script src="fin-contracts.js?v=1"></script>
-    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=1"></script><?php endif; ?>
+    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=12"></script>

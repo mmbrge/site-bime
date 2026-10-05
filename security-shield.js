@@ -187,7 +187,7 @@
                 <div class="sec-card"><h3><i class="fas fa-location-crosshairs text-rose-600"></i> IPهای پرتکرار در رخدادها (۷ روز)</h3>
                     ${ips.length ? `<table class="sec-tbl"><thead><tr><th>IP</th><th>رخداد</th><th>مهم</th><th>آخرین</th><th></th></tr></thead><tbody>${ips.map(r => `<tr>
                         <td dir="ltr" class="font-mono text-left">${esc(r.ip)}</td><td>${fa(r.n)}</td><td>${r.hi ? `<b class="text-rose-600">${fa(r.hi)}</b>` : '—'}</td><td class="text-slate-500">${esc(r.last_fa)}</td>
-                        <td class="text-left">${r.blocked ? '<span class="sec-pill" style="background:#ffe4e6;color:#e11d48">مسدود</span>' : (r.ip === ov.my_ip ? '<span class="sec-pill" style="background:#e0f2fe;color:#0284c7">شما</span>' : `<button class="sec-btn red" style="padding:5px 9px" data-block="${esc(r.ip)}"><i class="fas fa-ban"></i> مسدود</button>`)}</td></tr>`).join('')}</tbody></table>` : '<p class="text-xs text-slate-400 py-6 text-center">موردی نیست.</p>'}</div>
+                        <td class="text-left">${r.blocked ? '<span class="sec-pill" style="background:#ffe4e6;color:#e11d48">مسدود</span>' : (r.ip === ov.my_ip ? '<span class="sec-pill" style="background:#e0f2fe;color:#0284c7">شما</span>' : (ov.server_ips || []).includes(r.ip) ? '<span class="sec-pill" style="background:#ecfdf5;color:#047857">سرورِ سایت</span>' : `<button class="sec-btn red" style="padding:5px 9px" data-block="${esc(r.ip)}"><i class="fas fa-ban"></i> مسدود</button>`)}</td></tr>`).join('')}</tbody></table>` : '<p class="text-xs text-slate-400 py-6 text-center">موردی نیست.</p>'}</div>
             </div>
         </div>`;
         el.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { evFilter = {type: b.dataset.type, severity: '', q: '', from: '', to: '', page: 1}; tab = 'events'; render(); });
@@ -224,7 +224,7 @@
                 <td class="whitespace-nowrap font-bold text-slate-700"><i class="fas ${TYPE_IC[x.type] || 'fa-circle'} text-slate-400 ml-1"></i>${esc(x.type_fa)}</td>
                 <td>${sevPill(x.severity)}</td>
                 <td class="whitespace-nowrap">${esc(x.user_name || '—')}${x.user_type ? `<div class="text-[10px] text-slate-400">${x.user_type === 'COMPANY' ? 'کاربرِ شرکت' : 'پنل'}</div>` : ''}</td>
-                <td dir="ltr" class="font-mono text-left whitespace-nowrap">${esc(x.ip)}${x.ip && x.ip !== ov.my_ip ? ` <button class="text-rose-500 text-[10px]" title="مسدودکردنِ این IP" data-block="${esc(x.ip)}"><i class="fas fa-ban"></i></button>` : ''}</td>
+                <td dir="ltr" class="font-mono text-left whitespace-nowrap">${esc(x.ip)}${(ov.server_ips || []).includes(x.ip) ? ' <span class="sec-pill" style="background:#ecfdf5;color:#047857" title="درخواست از خودِ سرورِ سایت (مثلاً آزمایشِ زنده)">سرورِ سایت</span>' : ''}${x.ip && x.ip !== ov.my_ip && !(ov.server_ips || []).includes(x.ip) ? ` <button class="text-rose-500 text-[10px]" title="مسدودکردنِ این IP" data-block="${esc(x.ip)}"><i class="fas fa-ban"></i></button>` : ''}</td>
                 <td class="text-slate-500 whitespace-nowrap">${esc(x.device)}</td>
                 <td style="min-width:220px"><div class="text-slate-700">${esc(x.detail)}</div>${x.path ? `<div class="text-[10px] text-slate-400 font-mono" dir="ltr" style="word-break:break-all">${esc(dec(x.path))}</div>` : ''}</td></tr>`).join('')}
             </tbody></table></div>

@@ -47,7 +47,8 @@ if (!$allowed && !empty($_COOKIE['bime_company_portal'])) {
 }
 if (!$allowed) {
     if (!isset($pdo)) require $siteRoot . '/config/db.php';
-    if (function_exists('sec_event')) sec_event($pdo, 'FILE_DENIED', $rel);
+    // فایل‌های «آزمایشِ زنده»ی خودِ سپرِ امنیت (Archive/_sectest_xxxxxxxx) رخدادِ امنیتی نیستند
+    if (function_exists('sec_event') && !preg_match('/^_sectest_[0-9a-f]{8}\.(txt|php)$/', basename($rel))) sec_event($pdo, 'FILE_DENIED', $rel);
     http_response_code(403);
     header('Content-Type: text/html; charset=utf-8');
     echo '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><title>دسترسی ندارید</title><body style="font-family:tahoma;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:40px">🔒</div><h3>برای دیدنِ این فایل اول وارد پنل شوید.</h3><a href="' . str_repeat('../', max(0, substr_count($rel, '/'))) . 'index.php" style="color:#38bdf8">ورود به پنل</a></div></body></html>';
