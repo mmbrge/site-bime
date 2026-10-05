@@ -140,6 +140,7 @@
         background:rgba(15,23,42,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);color:#e2e8f0;border:1px solid rgba(255,255,255,.08);
         box-shadow:0 30px 60px -20px rgba(2,6,23,.65);transform-origin:bottom left;animation:cfIn .22s cubic-bezier(.2,.9,.3,1.2)}
     .cf-panel.light{background:rgba(255,255,255,.97);color:#0f172a;border-color:#e2e8f0}
+    .cf-root.cf-has-mini .cf-panel{bottom:56px}
     @keyframes cfIn{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:none}}
     .cf-panel.cf-out{animation:cfOut .2s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
     @keyframes cfOut{from{opacity:1;transform:none}to{opacity:0;transform:scale(.9) translateY(14px)}}
@@ -184,6 +185,42 @@
     .cf-ib.on{color:var(--cf-acc,#818cf8);opacity:1}
     .cf-play{width:50px;height:50px;border-radius:50%;border:0;cursor:pointer;color:#fff;font-size:18px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 10px 22px -8px rgba(99,102,241,.8)}
     .cf-row{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
+    /* ---- پخش‌کننده: نورِ رنگیِ زنده (رنگِ آهنگ)، صفحه‌ی گرامافون، طیفِ صدا ---- */
+    .cf-player{--h1:245;--h2:190;background:radial-gradient(120% 80% at 100% 0%,hsl(var(--h1) 60% 22% / .9),transparent 60%),rgba(10,14,30,.96)}
+    .cf-player>*:not(.cf-aura){position:relative;z-index:1}
+    .cf-aura{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;border-radius:inherit}
+    .cf-aura i{position:absolute;width:230px;height:230px;border-radius:50%;filter:blur(55px);opacity:.38;transition:opacity 1s,background 1.2s;animation:cfAura 16s ease-in-out infinite alternate}
+    .cf-aura i:nth-child(1){background:hsl(var(--h1) 85% 55%);top:-90px;right:-70px}
+    .cf-aura i:nth-child(2){background:hsl(var(--h2) 85% 50%);top:90px;left:-110px;animation-duration:20s;animation-direction:alternate-reverse}
+    .cf-aura i:nth-child(3){background:hsl(calc(var(--h1) + 150) 70% 45%);bottom:-130px;right:10px;animation-duration:24s;opacity:.2}
+    .cf-player.cf-playing .cf-aura i{opacity:.58}.cf-player.cf-playing .cf-aura i:nth-child(3){opacity:.3}
+    @keyframes cfAura{0%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,24px) scale(1.18)}100%{transform:translate(-24px,36px) scale(.92)}}
+    .cf-player .cf-ph b{background:linear-gradient(90deg,#fff,hsl(var(--h1) 90% 80%));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .cf-player .cf-ph b i{color:hsl(var(--h1) 90% 75%)}
+    .cf-player .cf-chip.on{background:linear-gradient(135deg,hsl(var(--h1) 80% 58%),hsl(var(--h2) 80% 50%));box-shadow:0 4px 12px -4px hsl(var(--h1) 80% 55% / .8)}
+    .cf-player .cf-now{padding:8px 14px 2px;gap:12px}
+    .cf-art{position:relative;flex:none;width:104px;height:76px}
+    .cf-art .cf-cover{position:absolute;right:0;top:0;width:76px;height:76px;border-radius:18px;z-index:2;font-size:26px;box-shadow:0 14px 26px -10px rgba(0,0,0,.75),inset 0 0 0 1px rgba(255,255,255,.12)}
+    .cf-rec{position:absolute;right:6px;top:5px;width:66px;height:66px;z-index:1;transition:transform .7s cubic-bezier(.2,.9,.3,1.1)}
+    .cf-rec i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 20deg,rgba(255,255,255,0) 0 40deg,rgba(255,255,255,.14) 55deg,rgba(255,255,255,0) 75deg 220deg,rgba(255,255,255,.08) 235deg,rgba(255,255,255,0) 255deg),repeating-radial-gradient(circle,#090c16 0 1.4px,#1b2133 1.4px 2.8px);
+        box-shadow:0 8px 18px -8px rgba(0,0,0,.9)}
+    .cf-rec i::before{content:'';position:absolute;inset:31%;border-radius:50%;background:var(--lbl,#6366f1)}
+    .cf-rec i::after{content:'';position:absolute;inset:46%;border-radius:50%;background:#090c16}
+    .cf-playing .cf-rec{transform:translateX(-30px)}
+    .cf-playing .cf-rec i{animation:cfSpin 2.6s linear infinite}
+    .cf-player .cf-ttl{font-size:15px;letter-spacing:-.2px}
+    .cf-player .cf-sub{font-size:11px}
+    .cf-viz{display:block;width:calc(100% - 28px);height:34px;margin:4px 14px 0}
+    .cf-player .cf-range{background:linear-gradient(90deg,hsl(var(--h2) 90% 60%),hsl(var(--h1) 90% 68%)) left/var(--p,0%) 100% no-repeat,rgba(255,255,255,.13)}
+    .cf-player .cf-range::-webkit-slider-thumb{box-shadow:0 0 0 3px hsl(var(--h1) 90% 66% / .55),0 0 14px hsl(var(--h1) 90% 66%)}
+    .cf-player .cf-range::-moz-range-thumb{box-shadow:0 0 0 3px hsl(var(--h1) 90% 66% / .55),0 0 14px hsl(var(--h1) 90% 66%)}
+    .cf-player .cf-play{position:relative;width:56px;height:56px;font-size:19px;background:linear-gradient(135deg,hsl(var(--h1) 85% 60%),hsl(var(--h2) 85% 48%));box-shadow:0 12px 26px -8px hsl(var(--h1) 85% 55% / .85);transition:transform .15s}
+    .cf-player .cf-play:hover{transform:scale(1.06)}.cf-player .cf-play:active{transform:scale(.94)}
+    .cf-player.cf-playing .cf-play::before,.cf-player.cf-playing .cf-play::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:2px solid hsl(var(--h1) 90% 70% / .55);animation:cfPulse 2s ease-out infinite;pointer-events:none}
+    .cf-player.cf-playing .cf-play::after{animation-delay:1s}
+    @keyframes cfPulse{from{transform:scale(.92);opacity:1}to{transform:scale(1.45);opacity:0}}
+    .cf-player .cf-ib.on{color:hsl(var(--h1) 90% 75%)}
+    .cf-player .cf-tr.cur{background:linear-gradient(90deg,hsl(var(--h2) 70% 45% / .18),hsl(var(--h1) 70% 55% / .32))}
     .cf-lib{border-top:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;min-height:0;flex:1}
     .cf-panel.light .cf-lib{border-color:#eef2f7}
     .cf-in{width:100%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;border-radius:12px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none}
@@ -269,7 +306,7 @@
     .cf-cpick .it small{display:block;font-size:10.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     html.cf-dark{filter:invert(.9) hue-rotate(180deg);background:#fff}
     html.cf-dark img,html.cf-dark video,html.cf-dark canvas,html.cf-dark iframe,html.cf-dark .plate,html.cf-dark .ir-plate,html.cf-dark #cf-root,html.cf-dark .cf-pops,html.cf-dark .cf-bday,html.cf-dark [data-cf-noinv]{filter:invert(1) hue-rotate(180deg)}
-    @media (max-width:640px){.cf-root{left:10px;bottom:10px}.cf-disc{width:46px;height:46px}.cf-hubbtn{width:40px;height:40px;border-radius:13px}.cf-panel{left:0;bottom:106px;width:calc(100vw - 20px);max-height:68vh}.cf-pops{left:10px;bottom:72px}}
+    @media (max-width:640px){.cf-root{left:10px;bottom:10px}.cf-disc{width:46px;height:46px}.cf-hubbtn{width:40px;height:40px;border-radius:13px}.cf-panel,.cf-root.cf-has-mini .cf-panel{left:0;bottom:106px;width:calc(100vw - 20px);max-height:68vh}.cf-pops{left:10px;bottom:72px}}
     `;
     function injectCss() { if (document.getElementById('cf-css')) return; const st = document.createElement('style'); st.id = 'cf-css'; st.textContent = CSS; document.head.appendChild(st); }
 
@@ -333,14 +370,68 @@
         const g = (t && t.genre) || '';
         const ic = /بی‌کلام|کلاسیک/.test(g) ? 'fa-feather' : /طبیعت|آرامش/.test(g) ? 'fa-leaf' : /شاد/.test(g) ? 'fa-face-laugh-beam' : /ملایم/.test(g) ? 'fa-moon' : /سنتی/.test(g) ? 'fa-guitar' : 'fa-music';
         let h = 0; for (const c of (t ? t.title + t.artist : 'x')) h = (h * 31 + c.charCodeAt(0)) % 360;
-        return {ic, bg: `linear-gradient(135deg,hsl(${h} 75% 55%),hsl(${(h + 60) % 360} 80% 45%))`};
+        return {ic, h, h2: (h + 60) % 360, bg: `linear-gradient(135deg,hsl(${h} 75% 55%),hsl(${(h + 60) % 360} 80% 45%))`};
     };
+    // ---- طیفِ صدا (Web Audio). گرافِ صوتی فقط در پاسخ به کلیکِ کاربر ساخته می‌شود تا مرورگر صدا را قطع نکند؛
+    //      اگر پشتیبانی نشد، نوارها با حرکتِ نرمِ ساختگی می‌رقصند ----
+    const VZ = {ctx: null, an: null, data: null, raf: 0, fail: false, lv: []};
+    function vzEnsure() {
+        if (VZ.an || VZ.fail || !P.audio || !navigator.userActivation || !navigator.userActivation.hasBeenActive) return;
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) { VZ.fail = true; return; }
+            const ctx = new AC();
+            if (ctx.state !== 'running') { ctx.resume().catch(() => {}); }
+            const src = ctx.createMediaElementSource(P.audio), an = ctx.createAnalyser();
+            an.fftSize = 128; an.smoothingTimeConstant = .78;
+            src.connect(an); an.connect(ctx.destination);
+            VZ.ctx = ctx; VZ.an = an; VZ.data = new Uint8Array(an.frequencyBinCount);
+            // اگر بافتِ صوتی راه نیفتاد، با اولین کلیک دوباره امتحان می‌شود
+            document.addEventListener('pointerdown', () => { if (ctx.state !== 'running') ctx.resume().catch(() => {}); }, true);
+        } catch (e) { VZ.fail = true; }
+    }
+    function vzStart() {
+        cancelAnimationFrame(VZ.raf);
+        const cv = P.panel && P.panel.querySelector('[data-viz]');
+        if (!cv) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const W = cv.clientWidth || 300, H = cv.clientHeight || 34;
+        cv.width = W * dpr; cv.height = H * dpr;
+        const g = cv.getContext('2d'); g.scale(dpr, dpr);
+        const N = 36, bw = W / N;
+        const draw = t => {
+            if (!P.panel || !cv.isConnected) return;
+            const h1 = +getComputedStyle(P.panel).getPropertyValue('--h1') || 245, h2 = +getComputedStyle(P.panel).getPropertyValue('--h2') || 190;
+            let live = false;
+            if (VZ.an && P.playing) { VZ.an.getByteFrequencyData(VZ.data); live = VZ.data.some(v => v > 0); }
+            g.clearRect(0, 0, W, H);
+            const grad = g.createLinearGradient(0, 0, W, 0);
+            grad.addColorStop(0, `hsl(${h2} 90% 62%)`); grad.addColorStop(.5, `hsl(${h1} 90% 70%)`); grad.addColorStop(1, `hsl(${h2} 90% 62%)`);
+            g.fillStyle = grad;
+            for (let i = 0; i < N; i++) {
+                const k = Math.abs(i - (N - 1) / 2) / ((N - 1) / 2);          // متقارن از وسط
+                let v;
+                if (live) v = VZ.data[Math.min(VZ.data.length - 1, Math.floor(k * 34) + 1)] / 255;
+                else if (P.playing) v = (.35 + .3 * Math.sin(t / 260 + i * .7) * Math.sin(t / 410 + i * .23)) * (1 - k * .55);
+                else v = .05;
+                const cur = VZ.lv[i] || 0, nv = cur + (v - cur) * (v > cur ? .55 : .18);
+                VZ.lv[i] = nv;
+                const bh = Math.max(2, nv * (H - 2));
+                const x = i * bw + bw * .2, w = bw * .6, y = (H - bh) / 2;
+                g.globalAlpha = .45 + nv * .55;
+                g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, bh, w / 2); else g.rect(x, y, w, bh); g.fill();
+            }
+            g.globalAlpha = 1;
+            VZ.raf = requestAnimationFrame(draw);
+        };
+        VZ.raf = requestAnimationFrame(draw);
+    }
     function ensureAudio() {
         if (P.audio) return P.audio;
         const a = P.audio = new Audio();
         a.preload = 'metadata';
         a.volume = mp().vol;
-        a.addEventListener('play', () => { P.playing = true; P.started = true; renderDisc(); renderNow(); mediaSession(); });
+        a.addEventListener('play', () => { P.playing = true; P.started = true; if (VZ.ctx && VZ.ctx.state !== 'running') VZ.ctx.resume().catch(() => {}); renderDisc(); renderNow(); mediaSession(); });
         a.addEventListener('pause', () => { P.playing = false; renderDisc(); renderNow(); saveResume(); });
         a.addEventListener('timeupdate', () => {
             renderSeek();
@@ -371,6 +462,7 @@
     function playPause() {
         if (!has('music')) return;
         const a = ensureAudio();
+        vzEnsure();
         if (!P.cur) { rebuildOrder(); const t = trackById(P.order[0]); if (!t) { openPlayer(); toast('آهنگی برای پخش نیست؛ ژانر یا منبع را عوض کنید.', 'info'); return; } load(t, true); return; }
         if (a.paused) a.play().catch(() => {}); else a.pause();
     }
@@ -413,6 +505,7 @@
         if (!a || !P.panel) { ring(); return; }
         const r = P.panel.querySelector('[data-seek]');
         if (r && !r._drag) r.value = a.duration ? (a.currentTime / a.duration * 1000) : 0;
+        if (r) r.style.setProperty('--p', (r.value / 10) + '%');
         const tm = P.panel.querySelector('[data-times]');
         if (tm) tm.innerHTML = `<span>${mmss(a.currentTime)}</span><span>${a.duration && isFinite(a.duration) ? mmss(a.duration) : '--:--'}</span>`;
         ring();
@@ -465,7 +558,8 @@
         if (!P.panel) return;
         const t = P.cur, cv = coverOf(t);
         const box = P.panel.querySelector('[data-now]');
-        box.innerHTML = `<div class="cf-cover" style="background:${cv.bg}"><i class="fas ${cv.ic}"></i></div>
+        P.panel.style.setProperty('--h1', cv.h); P.panel.style.setProperty('--h2', cv.h2);
+        box.innerHTML = `<div class="cf-art"><span class="cf-rec" style="--lbl:${cv.bg}"><i></i></span><div class="cf-cover" style="background:${cv.bg}"><i class="fas ${cv.ic}"></i></div></div>
             <div style="min-width:0;flex:1"><div class="cf-ttl">${t ? esc(t.title) : 'آهنگی انتخاب نشده'}</div>
             <div class="cf-sub">${t ? esc([t.artist, t.genre].filter(Boolean).join(' · ')) + (t.owner === 'user' ? ' · آهنگِ خودم' : '') : 'یک ژانر انتخاب کنید و پخش را بزنید'}</div>
             <div class="cf-eq"><span></span><span></span><span></span><span></span></div></div>`;
@@ -482,14 +576,15 @@
         renderMini();
         const m = mp();
         const el = P.panel = document.createElement('div');
-        el.className = 'cf-panel' + (P.playing ? ' cf-playing' : '');
-        el.innerHTML = `
+        el.className = 'cf-panel cf-player' + (P.playing ? ' cf-playing' : '');
+        el.innerHTML = `<div class="cf-aura"><i></i><i></i><i></i></div>
             <div class="cf-ph"><b><i class="fas fa-compact-disc ml-1"></i>موسیقیِ من</b>
                 <div class="cf-seg" data-src>${[['both', 'همه'], ['panel', 'پنل'], ['mine', 'خودم']].map(([k, t]) => `<button data-v="${k}" class="${m.source === k ? 'on' : ''}">${t}</button>`).join('')}</div>
                 <button class="cf-ib ${m.focus ? 'on' : ''}" data-a="focus" title="حالتِ تمرکز: فقط بی‌کلام و آرام"><i class="fas fa-headphones"></i></button>
                 <button class="cf-x" data-a="close" title="بستن (Esc)"><i class="fas fa-xmark"></i></button></div>
             <div class="cf-chips" data-genres></div>
             <div class="cf-now" data-now></div>
+            <canvas class="cf-viz" data-viz></canvas>
             <div class="cf-seek"><input type="range" class="cf-range" min="0" max="1000" value="0" data-seek><div class="cf-times" data-times></div></div>
             <div class="cf-ctrl">
                 <button class="cf-ib ${m.shuffle ? 'on' : ''}" data-a="shuffle" title="پخشِ تصادفی"><i class="fas fa-shuffle"></i></button>
@@ -504,6 +599,7 @@
             <div class="cf-lib ${LS.get('libOpen', false) ? '' : 'cf-hidden'}" data-lib></div>`;
         root.appendChild(el);
         renderGenres(); renderNow(); renderSeek(); renderLib();
+        vzEnsure(); vzStart();
         const on = (a, fn) => el.querySelectorAll(`[data-a="${a}"]`).forEach(b => b.addEventListener('click', fn));
         on('close', closePanels);
         on('play', playPause); on('next', () => next()); on('prev', prev);
@@ -522,7 +618,9 @@
         seek.addEventListener('input', () => { seek._drag = true; });
         seek.addEventListener('change', () => { seek._drag = false; const a = ensureAudio(); if (a.duration) a.currentTime = seek.value / 1000 * a.duration; });
         const vol = el.querySelector('[data-vol]');
-        vol.addEventListener('input', () => { ensureAudio().volume = vol.value / 100; });
+        const volFill = () => vol.style.setProperty('--p', vol.value + '%');
+        volFill();
+        vol.addEventListener('input', () => { ensureAudio().volume = vol.value / 100; volFill(); });
         vol.addEventListener('change', () => savePrefs({music: Object.assign(mp(), {vol: vol.value / 100})}));
     }
     function renderGenres() {
