@@ -82,7 +82,8 @@ $personnelMenuHtml = '
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
                     <div class="menu-panel">
-                        <a href="#" onclick="switchTab(\'my-work\')" id="nav-my-work" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-calendar-check ml-2"></i> کارکرد من <small class="text-[10px] text-slate-400 font-bold mr-1">حضور، شرح کار، مرخصی</small></a>'
+                        <a href="#" onclick="switchTab(\'my-work\')" id="nav-my-work" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-calendar-check ml-2"></i> کارکرد من <small class="text-[10px] text-slate-400 font-bold mr-1">حضور، شرح کار، مرخصی</small></a>
+                        <a href="#" onclick="switchTab(\'tools\')" id="nav-tools" class="nav-item menu-link" style="display:none"><i class="fas fa-toolbox ml-2"></i> ابزارها <small class="text-[10px] text-slate-400 font-bold mr-1">عکس، PDF، تاریخِ قسط، اقساط</small></a>'
     . ((($_SESSION['role'] ?? '') === 'ADMIN') ? '
                         <a href="#" onclick="switchTab(\'staff-work\')" id="nav-staff-work" class="nav-item menu-link"><i class="fas fa-users-viewfinder ml-2"></i> کارکرد پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">همه، تأییدِ مرخصی، تنظیمات</small></a>
                         <a href="#" onclick="switchTab(\'service-report\')" id="nav-service-report" class="nav-item menu-link"><i class="fas fa-van-shuttle ml-2"></i> گزارش سرویس‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">رفت‌وآمدِ هر نفر، تعریفِ سرویس، رسید</small></a>' : '') . '
@@ -912,6 +913,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <main class="flex-1 overflow-y-auto p-6 lg:p-8 flex flex-col z-10">
         <!-- ===== اطلاعات پرسنلی ===== -->
         <div id="tab-my-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-my-root"></div></div>
+        <div id="tab-tools" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="tools-root"></div></div>
         <div id="tab-staff-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-staff-root"></div></div>
         <div id="tab-service-report" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-svc-root"></div></div>
         <div id="tab-announcements" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="ann-root"></div></div>
@@ -1878,25 +1880,29 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php if($_SESSION['role'] === 'ADMIN'): ?>
         <div id="tab-settings" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-cogs text-purple-500 ml-2"></i>تنظیمات و مدیریت سیستم</h1>
-            <div class="card p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30">
+            <div data-scat="work" class="card p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-indigo-100 pb-3"><i class="fas fa-calendar-check text-indigo-500 ml-2"></i>تنظیماتِ کارکرد و مرخصی <small class="text-[11px] text-slate-400 font-bold mr-1">مرخصیِ ماهانه، ساعتِ کار، تعطیلات</small></h3>
                 <div id="wk-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             
             <?php if ($realRole === 'ADMIN'): ?>
-            <div class="card p-6 border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50/30">
+            <div data-scat="comfort" class="card p-6 border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-fuchsia-100 pb-3"><i class="fas fa-compact-disc text-fuchsia-500 ml-2"></i>کتابخانه‌ی موسیقی <small class="text-[11px] text-slate-400 font-bold mr-1">پخش‌کننده‌ی پایین سمت چپ · آپلودِ تکی و زیپ · آهنگ‌های کاربران · سقفِ حجم</small></h3>
                 <div id="cf-lib-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
+            <div data-scat="tools" class="card p-6 border-pink-100 bg-gradient-to-br from-white to-pink-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-pink-100 pb-3"><i class="fas fa-toolbox text-pink-500 ml-2"></i>ابزارها <small class="text-[11px] text-slate-400 font-bold mr-1">انواعِ «تاریخِ قسط»، پیش‌فرض‌های عکس و اقساط، سقفِ PDF · دسترسیِ هر ابزار از «دسترسی‌ها»ی هر کاربر</small></h3>
+                <div id="tools-set-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
             <?php endif; ?>
-            <div class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
+            <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
                 <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                <div class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
+                <div data-scat="bots" class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-emerald-100 pb-3"><i class="fas fa-robot text-emerald-500 ml-2"></i>تنظیمات ربات بله</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای تغییر توکن متصل به سامانه می‌توانید از این بخش استفاده کنید.</p>
                     
@@ -1910,7 +1916,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-6 border-cyan-100 bg-gradient-to-br from-white to-cyan-50/30">
+                <div data-scat="bots" class="card p-6 border-cyan-100 bg-gradient-to-br from-white to-cyan-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-cyan-100 pb-3"><i class="fas fa-robot text-cyan-500 ml-2"></i>ربات درخواست‌های شرکتی</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">این یک ربات کاملاً جدا از ربات پرسنل است، مخصوص شرکت‌های درخواست‌کننده. توکن ربات را اینجا وارد کنید تا به آن وصل شود.</p>
 
@@ -1924,7 +1930,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
+                <div data-scat="issue" class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-blue-100 pb-3"><i class="fas fa-layer-group text-blue-500 ml-2"></i>سقف بیمه‌نامه به ازای هر معرفی‌نامه</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">حداکثر تعداد بیمه‌نامه‌ای که با یک معرفی‌نامه قابل صدور است (پیش‌فرض: ۴ فقره).</p>
                     <div class="float-input">
@@ -1936,7 +1942,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
+                <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-violet-100 pb-3"><i class="fas fa-globe text-violet-500 ml-2"></i>آدرس دامنه‌ی سایت</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای ساخت لینک مینی‌اپ «بازدید سلامت» در بله لازم است (مثال: https://mammut.bbama.ir بدون اسلش انتهایی).</p>
                     <div class="float-input">
@@ -1948,7 +1954,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-6 border-teal-100 bg-gradient-to-br from-white to-teal-50/30 md:col-span-2">
+                <div data-scat="issue" class="card p-6 border-teal-100 bg-gradient-to-br from-white to-teal-50/30 md:col-span-2">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-teal-100 pb-3"><i class="fas fa-calculator text-teal-500 ml-2"></i>تنظیمات استعلام حق بیمه (ثالث)</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">این تخفیف‌ها روی محاسبه‌ی آنلاین حق بیمه‌ی ثالث اثر می‌گذارند. غیرفعال‌کردن هرکدام یعنی آن تخفیف اصلاً در محاسبه لحاظ نمی‌شود.</p>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2000,7 +2006,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-0 overflow-hidden md:col-span-2 border-indigo-100">
+                <div data-scat="data" class="card p-0 overflow-hidden md:col-span-2 border-indigo-100">
                     <div class="bg-gradient-to-l from-indigo-600 via-violet-600 to-fuchsia-600 p-6 text-white relative overflow-hidden">
                         <div class="absolute -left-10 -top-10 w-40 h-40 rounded-full bg-white/10"></div>
                         <div class="absolute left-24 -bottom-16 w-32 h-32 rounded-full bg-white/10"></div>
@@ -2018,7 +2024,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div id="bk-list" class="overflow-x-auto max-h-[420px] overflow-y-auto"></div>
                 </div>
 
-                <div class="card p-6 border-red-100 bg-gradient-to-br from-white to-red-50/30">
+                <div data-scat="data" class="card p-6 border-red-100 bg-gradient-to-br from-white to-red-50/30">
                     <h3 class="font-bold text-red-600 mb-2 border-b border-red-100 pb-3"><i class="fas fa-exclamation-triangle ml-2"></i>پاکسازی و بازنشانی داده‌ها</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">همه‌ی اطلاعات دیتابیس (پرونده‌ها، شرکت‌ها، مالی، اقساط، صورتحساب‌ها، گزارش‌ها، چت‌ها و لاگ‌ها) و همه‌ی فایل‌های بایگانی پاک می‌شوند؛ <b>پیش از حذف، خودکار یک بکاپ کامل در پوشه‌ی backup ساخته می‌شود</b> و اگر بکاپ ساخته نشود چیزی پاک نمی‌شود. (حساب مدیران و تنظیمات پاک نخواهد شد).</p>
                     <button onclick="openResetModal()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/20 hover-target transition-all text-xs">
@@ -2026,7 +2032,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
-                <div class="card p-6 md:col-span-2">
+                <div data-scat="general" class="card p-6 md:col-span-2">
                     <h3 class="font-bold text-slate-700 mb-2 border-b pb-3"><i class="fas fa-info-circle text-blue-500 ml-2"></i>اطلاعات سیستم</h3>
                     <ul class="text-xs font-bold text-slate-500 space-y-3 mt-4 flex flex-col md:flex-row md:gap-8">
                         <li class="flex items-center gap-2"><span>نسخه سامانه:</span> <span class="text-slate-700 font-mono" dir="ltr">Version 2.0.0</span></li>
@@ -3787,10 +3793,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="comfort.js?v=7"></script>
+    <script src="net-watch.js?v=1"></script>
+    <script src="tools.js?v=1"></script>
+    <script src="comfort.js?v=8"></script>
+    <script src="settings-nav.js?v=1"></script>
     <script src="announce.js?v=1"></script>
     <script src="announce-admin.js?v=1"></script>
-    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=2"></script><?php endif; ?>
+    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=3"></script><?php endif; ?>
     <script src="chat-ui.js?v=5"></script>
     <script src="table-count.js?v=4"></script>
     <script>
@@ -8479,7 +8488,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function switchTab(tabId, tabKey) {
             // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
-            if (PERM.custom && !permCan(tabId)) { showToast('به این بخش دسترسی ندارید.', 'error'); return; }
+            if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
             permTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
@@ -8518,8 +8527,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
-            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
+            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
+            if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
             if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
             if (tabId === 'announcements' && window.AnnounceAdmin) AnnounceAdmin.render(document.getElementById('ann-root'));
@@ -11724,6 +11734,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) setHover(false); }, { passive: true });
             window.addEventListener('blur', () => setHover(false));
         })();
+        // منوی «ابزارها» فقط وقتی دست‌کم یک ابزار برای این کاربر روشن است
+        if (window.Tools) Tools.available().then(l => { const n = document.getElementById('nav-tools'); if (n && l.length) n.style.display = ''; }).catch(() => {});
     </script>
 </body>
 </html>

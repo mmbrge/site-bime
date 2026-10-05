@@ -18,7 +18,20 @@ const CF_FEATURES = [
     'dnd'          => ['حالتِ «مزاحم نشوید»', 'both'],
     'status'       => ['وضعیتِ من (در جلسه، ناهار، …)', 'both'],
     'canned'       => ['متن‌های آماده‌ی گفتگو', 'both'],
-    'tools'        => ['ابزارهای سریع (ریال/تومان، تاریخ، اقساط)', 'both'],
+    'tools'        => ['ابزارها (صفحه‌ی ابزارها و جعبه‌ابزار؛ کلیدِ اصلی)', 'both'],
+    // هر ابزار جدا روشن/خاموش می‌شود (صفحه‌ی «ابزارها» و تبِ «ابزار»ِ جعبه‌ابزار هر دو از همین پیروی می‌کنند)
+    'tool_money'   => ['ابزار: ریال ⇄ تومان و عدد به حروف', 'both'],
+    'tool_calc'    => ['ابزار: ماشین‌حساب، درصد و ارزش افزوده', 'both'],
+    'tool_date'    => ['ابزار: تبدیل و محاسبه‌ی تاریخ', 'both'],
+    'tool_inst'    => ['ابزار: محاسبه‌ی اقساط', 'both'],
+    'tool_pdate'   => ['ابزار: تاریخِ قسط (افزودنِ روز/ماه طبقِ نوع)', 'staff'],
+    'tool_img'     => ['ابزار: کم‌کردنِ حجم و اندازه‌ی عکس', 'both'],
+    'tool_conv'    => ['ابزار: تبدیلِ فرمتِ عکس', 'both'],
+    'tool_batch'   => ['ابزار: کم‌کردنِ حجمِ گروهیِ عکس‌ها (ZIP)', 'both'],
+    'tool_img2pdf' => ['ابزار: تبدیلِ عکس‌ها به PDF', 'both'],
+    'tool_pdf'     => ['ابزار: ادغام، جداسازی، چرخش و کم‌کردنِ حجمِ PDF', 'both'],
+    'tool_check'   => ['ابزار: بررسیِ کد ملی، شناسه‌ی ملی، شبا و کارت', 'both'],
+    'tool_text'    => ['ابزار: اصلاحِ متنِ فارسی و تبدیلِ اعداد', 'both'],
     'theme'        => ['ظاهرِ شخصی (تاریک، اندازه‌ی متن، رنگ)', 'both'],
     'morning'      => ['پیامِ صبح‌بخیر و خلاصه‌ی روز', 'both'],
     'birthdays'    => ['تولدِ همکاران و مناسبت‌ها', 'staff'],
@@ -113,6 +126,7 @@ function cf_features($pdo, $type, $id) {
     $out = [];
     foreach (cf_feature_keys($type) as $k) $out[$k] = array_key_exists($k, $ov) ? (bool)$ov[$k] : $type === 'S';
     if (empty($out['music'])) $out['music_upload'] = false;
+    if (empty($out['tools'])) foreach ($out as $k => $v) if (strpos($k, 'tool_') === 0) $out[$k] = false;   // کلیدِ اصلیِ ابزارها خاموش => همه خاموش
     return $out;
 }
 function cf_set_overrides($pdo, $type, $id, array $features) {

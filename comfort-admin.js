@@ -182,7 +182,10 @@
 
     // ================= روشن/خاموش کردنِ امکانات برای هر نفر =================
     const A = {cur: null, items: null};
-    const togglesHtml = items => `<div class="grid sm:grid-cols-2 gap-1.5">${items.map(it => `<label class="flex items-center gap-2 rounded-xl border ${it.changed ? 'border-amber-200 bg-amber-50/40' : 'border-slate-100 bg-white'} px-3 py-2 text-[11.5px] font-bold text-slate-700 cursor-pointer">
+    // امکانات و ابزارها در دو گروهِ جدا (هر ابزار جدا روشن/خاموش می‌شود)
+    const togglesHtml = items => { const tl = items.filter(i => i.key.indexOf('tool_') === 0), ot = items.filter(i => i.key.indexOf('tool_') !== 0);
+        return togglesGrid(ot) + (tl.length ? `<div class="text-[11px] font-black text-slate-500 mt-3 mb-1.5"><i class="fas fa-toolbox text-pink-500 ml-1"></i>ابزارها <small class="font-bold text-slate-400">(«ابزارها» در بالا کلیدِ اصلی است؛ خاموش باشد همه خاموش‌اند)</small></div>` + togglesGrid(tl) : ''); };
+    const togglesGrid = items => `<div class="grid sm:grid-cols-2 gap-1.5">${items.map(it => `<label class="flex items-center gap-2 rounded-xl border ${it.changed ? 'border-amber-200 bg-amber-50/40' : 'border-slate-100 bg-white'} px-3 py-2 text-[11.5px] font-bold text-slate-700 cursor-pointer">
         <input type="checkbox" class="accent-violet-600 w-4 h-4" data-cf="${it.key}" ${it.on ? 'checked' : ''}><span class="flex-1">${esc(it.title)}</span>${it.changed ? '<small class="text-[9.5px] text-amber-600">تغییر یافته</small>' : ''}</label>`).join('')}</div>`;
     const collect = root => { const o = {}; root.querySelectorAll('[data-cf]').forEach(c => { o[c.dataset.cf] = c.checked ? 1 : 0; }); return o; };
     // داخلِ فرمِ «دسترسی‌ها»ی کاربرِ پنل

@@ -532,13 +532,17 @@
         mini.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', e => {
             e.stopPropagation();
             const m = b.dataset.m;
+            // مکث از خودِ نوار: نوار می‌ماند تا بشود دوباره پخش کرد
+            if (m === 'play') P.holdMini = P.playing;
             if (m === 'open') openPlayer(); else if (m === 'play') playPause(); else if (m === 'next') next(); else prev();
         }));
         root.appendChild(mini);
     }
     function renderMini() {
         if (!mini) return;
-        const show = !!(P.cur && P.started && S.open !== 'player');
+        // فقط وقتی آهنگ پخش می‌شود (یا از خودِ نوار مکث شده)؛ اگر در پنل خاموش شد، بعد از بستنِ پنل همان دیسک برمی‌گردد
+        if (P.playing) P.holdMini = false;
+        const show = !!(P.cur && P.started && S.open !== 'player' && (P.playing || P.holdMini));
         root.classList.toggle('cf-has-mini', show);
         if (!P.cur) return;
         const t = P.cur, cv = coverOf(t);
@@ -573,6 +577,7 @@
         if (S.open === 'player') return closePanels();
         closePanels(true);
         S.open = 'player';
+        P.holdMini = false;
         renderMini();
         const m = mp();
         const el = P.panel = document.createElement('div');
@@ -1030,7 +1035,7 @@
     // ================= جعبه‌ابزارِ من =================
     const HUB_TABS = [['todo', 'fa-list-check', 'کارها'], ['health', 'fa-heart-pulse', 'تمرکز'], ['status', 'fa-circle-dot', 'وضعیت'], ['canned', 'fa-bolt', 'متن‌ها'],
                       ['tools', 'fa-calculator', 'ابزار'], ['theme', 'fa-palette', 'ظاهر'], ['keys', 'fa-keyboard', 'میانبر']];
-    const hubTabs = () => HUB_TABS.filter(([k]) => k === 'status' ? (has('status') || has('dnd')) : k === 'keys' ? (has('search') || has('music')) : k === 'theme' ? (has('theme') || has('birthdays') || has('todo') || has('health')) : has(k));
+    const hubTabs = () => HUB_TABS.filter(([k]) => k === 'status' ? (has('status') || has('dnd')) : k === 'keys' ? (has('search') || has('music')) : k === 'theme' ? (has('theme') || has('birthdays') || has('todo') || has('health')) : k === 'tools' ? (has('tools') && Object.keys(S.F).some(x => x.indexOf('tool_') === 0 && S.F[x])) : has(k));
     function openHub(tab) {
         if (S.open === 'hub' && (!tab || tab === S.hubTab)) return closePanels();
         closePanels(true);
@@ -1054,6 +1059,7 @@
     function renderHub() {
         const b = S.hubEl && S.hubEl.querySelector('[data-body]');
         if (!b) return;
+        b.style.padding = '';
         ({todo: hubTodo, health: hubHealth, status: hubStatus, canned: hubCanned, tools: hubTools, theme: hubTheme, keys: hubKeys})[S.hubTab](b);
     }
     // بستن با انیمیشن (instant: وقتی پنلِ دیگری جایش باز می‌شود)
@@ -1283,6 +1289,12 @@
     }
     // ---- ابزارهای سریع ----
     function hubTools(b) {
+        // همان ابزارهای صفحه‌ی «ابزارها» (tools.js)، فشرده برای جعبه‌ابزار
+        if (window.Tools) {
+            b.style.padding = '10px 10px 14px';
+            Tools.mount(b, {compact: true});
+            return;
+        }
         const tj = todayJ();
         b.innerHTML = `<div class="cf-card"><h4><i class="fas fa-coins" style="color:#f59e0b"></i>ریال ⇄ تومان</h4>
                 <div class="cf-seg" data-unit style="background:#f1f5f9"><button data-v="r" class="on">ریال</button><button data-v="t">تومان</button></div>
