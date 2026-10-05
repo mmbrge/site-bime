@@ -261,6 +261,7 @@ function perm_api_map() {
             'save_quota' => 'settings:edit', 'save_site_url' => 'settings:edit', 'save_premium_settings' => 'settings:edit',
         ]],
         'settings' => ['pages' => ['settings'], 'elevate' => true, 'actions' => ['save_token' => 'settings:edit', 'save_company_bot_token' => 'settings:edit']],
+        'brand_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => ['get' => 'any', 'upload' => 'settings:edit', 'remove' => 'settings:edit']],
         'backup_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => [
             'list' => 'settings:view', 'download' => 'settings:export', 'create' => 'settings:edit', 'delete' => 'settings:edit',
             'restore' => 'settings:edit', 'upload_restore' => 'settings:edit',

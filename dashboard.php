@@ -18,6 +18,7 @@ if (!auth_staff_is_active($pdo, $_SESSION['user_id'])) {
 // دسترسیِ سفارشیِ صفحه به صفحه (api/_perm.php): اگر مدیر کل برای این کاربر تعیین کرده باشد، صفحه با چیدمانِ
 // کامل ساخته می‌شود و منوها و دکمه‌هایی که اجازه ندارد در مرورگر پنهان می‌شوند (بررسیِ اصلی در سرور است)
 require_once __DIR__ . '/api/_perm.php';
+require_once __DIR__ . '/api/_brand.php';   // لوگو و فاوآیکنِ تنظیم‌شده
 $permBoot = perm_page_boot($pdo);
 $realRole = perm_real_role();
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
@@ -185,10 +186,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>پورتال مدیریت | بیمه با ما</title>
+    <?php echo brand_favicon_tag($pdo); ?>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <style>
+        /* لوگوی سربرگ: هم‌اندازه‌ی «مربع + بیمه با ما» (ارتفاعِ ۳۶ پیکسل) */
+        .brand-logo { display: block; height: 36px; width: auto; max-width: 190px; object-fit: contain; }
         /* داشبورد مالی: پویانمایی ستون‌ها، نوارها و کارت‌ها */
         @keyframes finRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
         @keyframes finGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -541,6 +545,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             @media (max-width: 1279px) {
                 #main-nav > a.nav-item, #main-nav .menu-trigger { padding: 6px 7px !important; gap: 4px; }
                 .brand-name { display: none !important; }
+                .brand-logo { max-width: 130px !important; }
                 .hdr-clock .hc-w { display: none; }
             }
             @media (max-width: 1100px) { #main-nav .menu-trigger .fa-chevron-down { display: none; } }
@@ -751,9 +756,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="lg:hidden text-slate-600 text-xl hover-target">
                 <i class="fas fa-bars"></i>
             </button>
-            <div class="flex items-center gap-2.5 font-black text-lg lg:text-xl hover-target bg-gradient-to-l from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <div id="hdr-brand" class="flex items-center gap-2.5 font-black text-lg lg:text-xl hover-target bg-gradient-to-l from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <?php if ($brandLogo = brand_url($pdo, 'logo')): ?>
+                <img src="<?php echo htmlspecialchars($brandLogo); ?>" alt="بیمه با ما" class="brand-logo">
+                <?php else: ?>
                 <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>
                 <span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>
+                <?php endif; ?>
             </div>
             <!-- منوی اصلی: پنج بخش؛ کارهای مرتبط داخلِ زیرمنوهای درختی (menu-sub) کنارِ هم آمده‌اند -->
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
@@ -1871,6 +1880,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="wk-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             
+            <div class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
+                <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 <div class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
@@ -8458,7 +8472,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
-            if (tabId === 'settings') { loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
+            if (tabId === 'settings') { loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
             if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
@@ -10224,6 +10238,67 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     : '<p class="text-[11px] text-slate-400">تاریخچه‌ای ثبت نشده (رد یا ارسالِ دوباره‌ای نداشته، یا مایگریشن ۰۱۵ هنوز اجرا نشده).</p>'}</div>`;
                 body.innerHTML = info + docsHtml + inspHtml + histHtml;
             } catch (e) { body.innerHTML = '<p class="text-center text-red-500 p-6">خطا در اتصال به سرور.</p>'; }
+        }
+
+        // ---------------- لوگو و فاوآیکن ----------------
+        const BRAND_CAN_EDIT = <?php echo perm_real_role() === 'ADMIN' ? 'true' : 'false'; ?>;
+        function brandHeaderDefault() {
+            return '<span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>'
+                + '<span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>';
+        }
+        // سربرگ و آیکونِ تب بدونِ بارگذاریِ دوباره‌ی صفحه عوض می‌شوند
+        function applyBrand(d) {
+            const h = document.getElementById('hdr-brand');
+            if (h) h.innerHTML = d.logo ? `<img src="${d.logo.url}" alt="بیمه با ما" class="brand-logo">` : brandHeaderDefault();
+            document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(l => l.remove());
+            if (d.favicon) { const l = document.createElement('link'); l.rel = 'icon'; l.href = d.favicon.url; document.head.appendChild(l); }
+        }
+        async function loadBrandSettings() {
+            const root = document.getElementById('brand-settings-root');
+            if (!root) return;
+            let d;
+            try { d = await (await fetch('api/brand_actions.php?action=get')).json(); } catch (e) { d = {ok: false}; }
+            if (!d.ok) { root.innerHTML = `<p class="text-xs text-rose-600">${d.error || 'خطا در خواندنِ تنظیمات'}</p>`; return; }
+            const box = (kind, title, hint, accept, preview) => `
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+                    <div><b class="text-[13px] text-slate-700">${title}</b><p class="text-[10.5px] text-slate-500 mt-1 leading-5">${hint}</p></div>
+                    ${preview}
+                    ${BRAND_CAN_EDIT ? `<div class="flex flex-wrap gap-2 mt-auto">
+                        <label class="cursor-pointer bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-upload ml-1"></i>${d[kind] ? 'تغییر' : 'آپلود'}
+                            <input type="file" class="hidden" accept="${accept}" data-brand-up="${kind}"></label>
+                        ${d[kind] ? `<button type="button" class="bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black px-4 py-2 rounded-xl" data-brand-rm="${kind}"><i class="fas fa-trash ml-1"></i>حذف و برگشت به پیش‌فرض</button>` : ''}
+                    </div>` : '<p class="text-[10.5px] text-slate-400">تغییرِ لوگو و فاوآیکن فقط با مدیر کل است.</p>'}
+                </div>`;
+            // پیش‌نمایشِ لوگو داخلِ یک سربرگِ نمونه با همان اندازه‌ی واقعی
+            const logoPrev = `<div class="rounded-xl border border-slate-100 px-4 py-3 flex items-center gap-3" style="background:linear-gradient(90deg,#f8fafc,#eef2ff)">
+                    <div class="flex items-center gap-2.5 font-black text-lg bg-gradient-to-l from-blue-600 to-indigo-600 bg-clip-text text-transparent">${d.logo ? `<img src="${d.logo.url}" alt="" class="brand-logo">` : brandHeaderDefault().replace('hidden sm:inline', 'inline')}</div>
+                    <span class="mr-auto text-[10px] text-slate-400 font-bold">پیش‌نمایشِ سربرگ</span></div>
+                ${d.logo && d.logo.w ? `<p class="text-[10px] text-slate-400">ابعادِ فایل: عرض ${faDigits(Math.round(d.logo.w))} · ارتفاع ${faDigits(Math.round(d.logo.h))}</p>` : ''}`;
+            const favPrev = `<div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
+                    <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-t-lg px-3 py-1.5 text-[11px] text-slate-600 shadow-sm" style="max-width:220px">
+                        ${d.favicon ? `<img src="${d.favicon.url}" alt="" style="width:16px;height:16px;object-fit:contain">` : '<i class="fas fa-globe text-slate-300"></i>'}<span class="truncate">پورتال مدیریت | بیمه با ما</span></div>
+                    <span class="mr-auto text-[10px] text-slate-400 font-bold">پیش‌نمایشِ تبِ مرورگر</span>
+                    ${d.favicon ? `<img src="${d.favicon.url}" alt="" style="width:40px;height:40px;object-fit:contain" class="rounded-lg">` : ''}</div>`;
+            root.innerHTML = `<div class="grid md:grid-cols-2 gap-4">
+                ${box('logo', 'لوگوی سربرگ', 'جای «مربع + بیمه با ما» در بالای پنل، با همان ارتفاع (۳۶ پیکسل) نشان داده می‌شود. SVG یا PNG (شفاف بهتر است)؛ WebP و JPG هم قبول می‌شود. حداکثر ۲ مگابایت.', '.svg,.png,.webp,.jpg,.jpeg,image/svg+xml,image/png,image/webp,image/jpeg', logoPrev)}
+                ${box('favicon', 'فاوآیکن (آیکونِ تب)', 'در تبِ مرورگر و نشانه‌گذاری‌ها برای همه‌ی صفحه‌ها (پنل، ورود، پنل شرکت‌ها و مینی‌اپ). ICO، PNG مربعی (مثلاً ۲۵۶×۲۵۶) یا SVG.', '.ico,.png,.svg,image/x-icon,image/png,image/svg+xml', favPrev)}
+            </div>`;
+            root.querySelectorAll('[data-brand-up]').forEach(inp => inp.addEventListener('change', async () => {
+                const f = inp.files[0]; if (!f) return;
+                const fd = new FormData(); fd.append('action', 'upload'); fd.append('kind', inp.dataset.brandUp); fd.append('file', f);
+                let r;
+                try { r = await (await fetch('api/brand_actions.php', {method: 'POST', body: fd})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارسال'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); inp.value = ''; return; }
+                showToast(inp.dataset.brandUp === 'logo' ? 'لوگو ذخیره شد.' : 'فاوآیکن ذخیره شد.', 'success');
+                applyBrand(r); loadBrandSettings();
+            }));
+            root.querySelectorAll('[data-brand-rm]').forEach(b => b.addEventListener('click', async () => {
+                const kind = b.dataset.brandRm;
+                if (window.uiConfirm && !(await uiConfirm('حذف', kind === 'logo' ? 'لوگو حذف شود و سربرگ به حالتِ پیش‌فرض برگردد؟' : 'فاوآیکن حذف شود؟'))) return;
+                const r = await (await fetch('api/brand_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'remove', kind})})).json();
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+                showToast('حذف شد.', 'success'); applyBrand(r); loadBrandSettings();
+            }));
         }
 
         async function loadQuotaSetting() {

@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>پورتال یکپارچه خدمات بیمه</title>
+    <?php require_once __DIR__ . '/api/_brand.php'; echo brand_favicon_tag($pdo); ?>
     
     <!-- اتصال سریع به سرورها -->
     <link rel="preconnect" href="https://cdn.tailwindcss.com">

@@ -292,9 +292,12 @@ function sec_boot($pdo) {
         $names = [];
         array_walk_recursive($_FILES, function ($v, $k) use (&$names) { if ($k === 'name' && is_string($v) && $v !== '') $names[] = $v; });
         $adminPy = $script === 'visit_reports.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
+        // لوگوی SVG فقط برای مدیرِ کل در «تنظیمات ← لوگو و فاوآیکن» (محتوایش آنجا بررسی می‌شود که اسکریپت نداشته باشد)
+        $adminSvg = $script === 'brand_actions.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
         foreach ($names as $n) {
             $b = basename(str_replace('\\', '/', $n));
             if ($adminPy && preg_match('/^[^.]+\.py$/i', $b)) continue;
+            if ($adminSvg && preg_match('/^[^.]+\.svg$/i', $b)) continue;
             if ($b === '' || $b[0] === '.' || preg_match(SEC_BAD_EXT, $b) || preg_match('/[<>"\x00-\x1f]/', $b)) {   // < > " در نامِ فایل در ویندوز هم مجاز نیست
                 sec_event($pdo, 'UPLOAD_BLOCK', 'فایل: ' . $b . ' · ' . $script);
                 sec_deny(400, 'این نوع فایل برای بارگذاری مجاز نیست (' . $b . ').');
