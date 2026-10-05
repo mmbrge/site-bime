@@ -28,10 +28,18 @@ function prof_ready($pdo) {
 
 // ستون‌های عکس و حضور برای SELECT (اگر مایگریشن اجرا نشده، مقدارِ خالی برمی‌گردد و چیزی نمی‌شکند)
 //   avatar، seen_ago (چند ثانیه پیش دیده شده) و is_online
+// ستونِ «وضعیتِ من» (امکاناتِ رفاهی) اگر ساخته شده باشد
+function prof_status_ready($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try { foreach (['users', 'persons', 'company_portal_users'] as $t) $pdo->query("SELECT cf_status FROM `$t` LIMIT 0"); $ok = true; }
+    catch (Throwable $e) { $ok = false; }
+    return $ok;
+}
 function prof_cols($pdo, $a) {
     if (!prof_ready($pdo)) return "NULL AS avatar, NULL AS seen_ago, 0 AS is_online";
     $online = PROF_ONLINE_SEC;
-    return "$a.avatar AS avatar,
+    return "$a.avatar AS avatar, " . (prof_status_ready($pdo) ? "$a.cf_status AS cf_status," : "NULL AS cf_status,") . "
             TIMESTAMPDIFF(SECOND, GREATEST($a.last_seen_at, COALESCE($a.last_offline_at, $a.last_seen_at)), NOW()) AS seen_ago,
             ($a.last_seen_at IS NOT NULL AND $a.last_seen_at >= NOW() - INTERVAL $online SECOND
              AND ($a.last_offline_at IS NULL OR $a.last_offline_at < $a.last_seen_at)) AS is_online";
@@ -41,7 +49,19 @@ function prof_cols($pdo, $a) {
 function prof_presence($row) {
     if (!$row) return null;
     $ago = $row['seen_ago'] ?? null;
-    return ['online' => !empty($row['is_online']), 'ago' => $ago === null ? null : max(0, intval($ago))];
+    return ['online' => !empty($row['is_online']), 'ago' => $ago === null ? null : max(0, intval($ago)), 'status' => prof_status_decode($row['cf_status'] ?? null)];
+}
+
+// «وضعیتِ من»: {code, text, icon, until} یا null (اگر تنظیم نشده یا زمانش گذشته)
+const CF_STATUS = ['ready' => ['آماده', '🟢'], 'meeting' => ['در جلسه', '🗓️'], 'lunch' => ['ناهار', '🍽️'], 'remote' => ['دورکاری', '🏠'],
+                   'busy' => ['مشغول', '⏳'], 'dnd' => ['مزاحم نشوید', '🔕'], 'away' => ['بیرون از دفتر', '🚶'], 'custom' => ['', '💬']];
+function prof_status_decode($raw) {
+    if ($raw === null || $raw === '') return null;
+    $s = json_decode((string)$raw, true);
+    if (!is_array($s) || empty($s['c']) || !isset(CF_STATUS[$s['c']])) return null;
+    if (!empty($s['u']) && intval($s['u']) < time()) return null;
+    $meta = CF_STATUS[$s['c']];
+    return ['code' => $s['c'], 'text' => ($s['t'] ?? '') !== '' ? $s['t'] : $meta[0], 'icon' => $meta[1], 'until' => intval($s['u'] ?? 0)];
 }
 
 // «زنده‌ام»: صفحه‌ی باز هر چند ثانیه صدا می‌زند

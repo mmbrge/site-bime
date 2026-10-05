@@ -57,6 +57,11 @@
     // «آنلاین» / «آخرین بازدید ...» از {online, ago}؛ at = لحظه‌ی دریافت از سرور (تا زمان هم جلو برود)
     function seenLabel(p, at, group) {
         if (!p) return '';
+        // «وضعیتِ من» (امکاناتِ رفاهی): مثلِ «🗓️ در جلسه» کنارِ آنلاین/آخرین بازدید
+        const st = !group && p.status && p.status.text ? ' · ' + (p.status.icon || '') + ' ' + p.status.text : '';
+        return seenBase(p, at, group) + st;
+    }
+    function seenBase(p, at, group) {
         if (p.online) return group ? 'کارشناسان آنلاین هستند' : 'آنلاین';
         const pre = group ? 'آخرین حضورِ کارشناس: ' : 'آخرین بازدید: ';
         if (p.ago === null || p.ago === undefined) return group ? '' : 'هنوز وارد نشده';
@@ -616,6 +621,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
                     ${this.refs.length ? `<button class="cx-topic"><i class="fas fa-tag"></i><span></span><i class="fas fa-chevron-down" style="font-size:9px"></i></button>` : ''}
                     <div class="cx-in-row">
                         <button class="cx-ib cx-emo-btn" title="ایموجی"><i class="far fa-face-smile"></i></button>
+                        ${window.CFCanned ? '<button class="cx-ib cx-canned-btn" title="متن‌های آماده"><i class="fas fa-bolt"></i></button>' : ''}
                         <label class="cx-ib" title="پیوستِ فایل" style="cursor:pointer"><i class="fas fa-paperclip"></i><input type="file" class="cx-file-in" hidden></label>
                         <textarea rows="1" class="cx-ta" placeholder="${window.innerWidth < 640 ? 'پیام بنویسید...' : 'پیام بنویسید... (Enter ارسال، Shift+Enter خطِ تازه)'}"></textarea>
                         <button class="cx-send" title="ارسال"><i class="fas fa-paper-plane"></i></button></div></div>
@@ -632,6 +638,8 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.$('.cx-send').onclick = () => this.send();
             this.$('.cx-file-in').onchange = e => { if (e.target.files[0]) this.attach(e.target.files[0]); e.target.value = ''; };
             this.$('.cx-emo-btn').onclick = e => { e.stopPropagation(); this.emoji(); };
+            const cn = this.$('.cx-canned-btn');
+            if (cn) cn.onclick = e => { e.stopPropagation(); window.CFCanned.pick(cn, txt => { const t = this.$('.cx-ta'); const pos = t.selectionStart ?? t.value.length; t.value = t.value.slice(0, pos) + txt + t.value.slice(t.selectionEnd ?? pos); t.focus(); t.dispatchEvent(new Event('input')); }); };
             this.bindFind();
             // منوی خودِ گفتگو: ⋮، کلیک‌راست روی سرِ گفتگو یا جای خالیِ گفتگو
             const more = this.$('.cx-more'); more.onclick = e => { e.stopPropagation(); const r = more.getBoundingClientRect(); this.threadMenu(r.left + r.width, r.bottom + 4, this.key); };

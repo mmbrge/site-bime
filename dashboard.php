@@ -1880,6 +1880,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="wk-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             
+            <?php if ($realRole === 'ADMIN'): ?>
+            <div class="card p-6 border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-fuchsia-100 pb-3"><i class="fas fa-compact-disc text-fuchsia-500 ml-2"></i>کتابخانه‌ی موسیقی <small class="text-[11px] text-slate-400 font-bold mr-1">پخش‌کننده‌ی پایین سمت چپ · آپلودِ تکی و زیپ · آهنگ‌های کاربران · سقفِ حجم</small></h3>
+                <div id="cf-lib-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
+            <?php endif; ?>
             <div class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
                 <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
@@ -3320,6 +3326,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
             <div class="flex-1 overflow-y-auto px-6 py-4 no-count" id="pm-body"></div>
+            <div id="pm-comfort"></div>
             <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
                 <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
                 <input type="password" id="pm-admin-pass" placeholder="رمزِ خودتان برای تایید" class="border border-slate-200 rounded-xl px-3 py-2 text-xs w-48" autocomplete="new-password">
@@ -3776,7 +3783,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="chat-ui.js?v=4"></script>
+    <script src="comfort.js?v=1"></script>
+    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=1"></script><?php endif; ?>
+    <script src="chat-ui.js?v=5"></script>
     <script src="table-count.js?v=3"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
@@ -7942,9 +7951,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let presenceAt = Date.now();
         function presenceCell(p) {
             if (!window.ChatUI || !p) return '<span class="text-slate-300">—</span>';
-            const l = ChatUI.seenLabel(p, presenceAt).replace('آخرین بازدید: ', '');
-            return p.online ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-black"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
-                            : `<span class="text-slate-400">${l}</span>`;
+            const l = ChatUI.seenLabel(p, presenceAt).replace('آخرین بازدید: ', '').replace(/ · .*$/, '');
+            const st = p.status ? `<span class="block text-[10px] text-violet-600 font-bold">${p.status.icon} ${String(p.status.text).replace(/[<>&"]/g, '')}</span>` : '';
+            return (p.online ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-black"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                            : `<span class="text-slate-400">${l}</span>`) + st;
         }
         async function refreshStaffPresence() {
             if (document.getElementById('tab-staff-users')?.classList.contains('hidden') || document.hidden || !staffUsersCache.length) return;
@@ -7997,6 +8007,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
                         <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
                         ${!co && REAL_ADMIN && u.role !== 'ADMIN' ? `<button onclick="openPermEditor(${u.id})" class="text-violet-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-user-lock ml-1"></i>دسترسی‌ها</button>` : ''}
+                        ${REAL_ADMIN && window.CFAdmin && (co || u.role === 'ADMIN') ? `<button onclick="CFAdmin.openAccess('${co ? 'C' : 'S'}', ${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})" class="text-fuchsia-600 hover:underline text-xs font-bold ml-2" title="موسیقی، کارهای امروز، تمرکز، …"><i class="fas fa-mug-hot ml-1"></i>امکانات</button>` : ''}
                         ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
                 </tr>`;
             }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
@@ -8178,6 +8189,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('pm-copy').innerHTML = '<option value="">کپی از کاربرِ دیگر…</option>' + (d.others || []).map(o => `<option value="${o.id}">${o.name} (${ROLE_FA[o.role] || o.role}${o.custom ? ' · سفارشی' : ''})</option>`).join('');
             pmSetMode(PM.mode, true);   // true: دسترسی‌های ذخیره‌شده را از جدولِ قبلیِ صفحه بازنویسی نکن
             openModal('perm-modal');
+            if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
         }
         function pmSetMode(m, fresh) {
             if (!PM) return;
@@ -8268,6 +8280,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass})});
             const d = await res.json();
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            if (window.CFAdmin) await CFAdmin.permSave();
             showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
             closeModal('perm-modal');
             loadStaffUsers();
@@ -8472,7 +8485,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
-            if (tabId === 'settings') { loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
+            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
             if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
