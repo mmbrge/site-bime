@@ -816,9 +816,9 @@ try {
             $pdo->prepare("UPDATE policy_cases SET folder_path = ? WHERE id = ?")->execute([$caseFolder, $caseId]);
         }
 
-        // اگر فایل صفحه‌های فیشِ اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه ذخیره می‌شود
+        // اگر فایل صفحه‌های فیش یا اعلامیه‌ی اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه ذخیره می‌شود
         $single = (!empty($ocrData['_single']['dir']) && is_dir($ocrData['_single']['dir'])) ? $ocrData['_single'] : null;
-        if ($single && !empty($single['receipts']) && is_file($single['dir'] . '/' . $single['pol'])) {
+        if ($single && (!empty($single['receipts']) || !empty($single['statement'])) && is_file($single['dir'] . '/' . $single['pol'])) {
             if (@copy($single['dir'] . '/' . $single['pol'], $tempPath . '.pol')) { @unlink($tempPath); @rename($tempPath . '.pol', $tempPath); }
         }
         // مرحله ۲: فایل بیمه‌نامه‌ی نهایی ابتدا داخل خودِ پوشه‌ی درخواست ذخیره می‌شود

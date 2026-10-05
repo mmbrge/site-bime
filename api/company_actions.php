@@ -2025,17 +2025,29 @@ try {
         if (!empty($ocrSaved['_single']['dir']) && is_dir($ocrSaved['_single']['dir'])) $single = $ocrSaved['_single'];
         if ($pend && $pend['pending_policy_temp_path'] && is_file($pend['pending_policy_temp_path'])) {
             $src = $pend['pending_policy_temp_path']; $srcName = $pend['pending_policy_orig_name'] ?: 'policy.pdf';
-            // اگر فایل فیشِ اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه بایگانی می‌شود
-            if ($single && !empty($single['receipts']) && is_file($single['dir'] . '/' . $single['pol'])) {
-                $polCopy = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cpol_') . '.pdf';
-                if (@copy($single['dir'] . '/' . $single['pol'], $polCopy)) { @unlink($src); $src = $polCopy; $srcName = 'policy.pdf'; }
-            }
         } elseif (!empty($_FILES['issued_file']['tmp_name']) && is_uploaded_file($_FILES['issued_file']['tmp_name'])) {
             $tmpDir = dirname(__DIR__) . '/tmp_ocr';
             if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
             $ext = strtolower(pathinfo($_FILES['issued_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
             $tmp = $tmpDir . '/' . uniqid('cissued_') . '.' . preg_replace('/[^a-z0-9]/', '', $ext);
-            if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) { $src = $tmp; $srcName = $_FILES['issued_file']['name']; }
+            if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) {
+                $src = $tmp; $srcName = $_FILES['issued_file']['name'];
+                // فایلِ مستقیم (بی‌مرحله‌ی شناسایی) هم از همان الگوریتم می‌گذرد تا فیش‌ها و اعلامیه‌اش جدا شوند
+                // (پوشه‌ی جداسازیِ تلاشِ قبلی مالِ فایلِ دیگری است)
+                if ($single) { cbundle_rrmdir($single['dir']); $single = null; }
+                if ($ext === 'pdf') {
+                    $lay = policy_layout_extract($pdo, $tmp);
+                    if ($lay && !empty($lay['single'])) {
+                        $single = $lay['single'];
+                        if (empty($ocrSaved)) $ocrSaved = policy_data_aliases($lay['data']);
+                    }
+                }
+            }
+        }
+        // اگر فایل فیش یا اعلامیه‌ی اقساط هم داشت، فقط صفحه‌های خودِ بیمه‌نامه به‌عنوانِ فایلِ بیمه‌نامه بایگانی می‌شود
+        if ($src && $single && (!empty($single['receipts']) || !empty($single['statement'])) && is_file($single['dir'] . '/' . $single['pol'])) {
+            $polCopy = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cpol_') . '.pdf';
+            if (@copy($single['dir'] . '/' . $single['pol'], $polCopy)) { @unlink($src); $src = $polCopy; $srcName = 'policy.pdf'; }
         }
         $issueDateIn = trim(p2e_digits((string)($data['issue_date'] ?? ''))) ?: ($ocrSaved['issue_date'] ?? '');
         $res = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $src, $srcName, $issueDateIn);

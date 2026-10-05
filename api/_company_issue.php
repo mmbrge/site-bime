@@ -300,12 +300,19 @@ function policy_store_receipts($siteRoot, $destDir, $srcDir, array $receipts, $s
 function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, $statement, $issueDate) {
     fin_ensure_receipt_cols($pdo);
     $siteRoot = dirname(__DIR__);
-    $st = $pdo->prepare("SELECT folder_path, issued_file_path, total_premium FROM company_request_plates WHERE id = ?");
+    $st = $pdo->prepare("SELECT crp.folder_path, crp.issued_file_path, crp.total_premium, crp.insurance_type, crp.folder_status, crp.issued_at, crp.policy_issue_date, cr.request_kind
+                           FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $st->execute([$plateId]);
     $pl = $st->fetch();
     if (!$pl) return;
     $dest = $pl['folder_path'] && is_dir($pl['folder_path']) ? $pl['folder_path'] : ($pl['issued_file_path'] ? dirname($siteRoot . '/' . $pl['issued_file_path']) : null);
     $stored = $dest ? policy_store_receipts($siteRoot, $dest, $srcDir, $receipts, $statement) : ['receipts' => [], 'statement' => null];
+    // کپیِ «بایگانی صادره» پیش از جدا شدنِ فیش‌ها ساخته شده؛ پوشه‌ی «فیش‌های پرداختی» هم به همان کپی می‌رود
+    if (($stored['receipts'] || $stored['statement']) && $pl['folder_status'] === 'TRANSFERRED' && company_kind_goes_to_sadere($pl['request_kind'] ?? 'NEW_POLICY')) {
+        $ts = policy_issue_ts($issueDate ?: (string)$pl['policy_issue_date'], $pl['issued_at'] ? strtotime($pl['issued_at']) : time());
+        $sadere = build_sadere_base_path($siteRoot, $ts, $pl['insurance_type']) . '/' . basename($dest);
+        if (is_dir($sadere) && is_dir($dest . '/فیش‌های پرداختی')) copy_dir_recursive($dest . '/فیش‌های پرداختی', $sadere . '/فیش‌های پرداختی');
+    }
     $issueDate = fin_parse_jalali($issueDate) ? vsprintf('%04d/%02d/%02d', fin_parse_jalali($issueDate)) : null;
     $pdo->prepare("UPDATE company_request_plates SET receipts_json = ?, statement_file = ?, policy_issue_date = COALESCE(?, policy_issue_date) WHERE id = ?")
         ->execute([$stored['receipts'] ? json_encode($stored['receipts'], JSON_UNESCAPED_UNICODE) : null, $stored['statement'], $issueDate, $plateId]);

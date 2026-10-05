@@ -920,7 +920,7 @@ def main():
         except Exception as e:
             out({"ok": False, "error": "جدا کردنِ صفحه‌ها ممکن نشد.", "debug": str(e)[:300]}); return
         # صفحه‌های فیشِ اقساط (هر قسط یک صفحه) جدا ذخیره می‌شوند تا هر کدام به ردیفِ قسطِ خودش وصل شود
-        receipts, statement = [], None
+        receipts, statement, stm_pages = [], None, []
         for j in range(pend + 1, end + 1):
             tj = normalize_text(texts[j])[:600]
             if RECEIPT_RX.search(tj):
@@ -932,12 +932,18 @@ def main():
                     continue
                 info.update({'page': j, 'file': rfn})
                 receipts.append(info)
-            elif statement is None and re.search(r'اعلامیه\s*آخرین\s*وضعیت', tj):
-                statement = "stm_%03d.pdf" % (i + 1)
-                try:
-                    one = fitz.open(); one.insert_pdf(doc, from_page=j, to_page=j); one.save(os.path.join(outdir, statement)); one.close()
-                except Exception:
-                    statement = None
+            elif re.search(r'اعلامیه\s*آخرین\s*وضعیت', tj):
+                stm_pages.append(j)
+        # اعلامیه‌ی وضعیت ممکن است چند صفحه باشد (اقساطِ زیاد): همه‌ی صفحه‌هایش در یک فایل
+        if stm_pages:
+            statement = "stm_%03d.pdf" % (i + 1)
+            try:
+                one = fitz.open()
+                for j in stm_pages:
+                    one.insert_pdf(doc, from_page=j, to_page=j)
+                one.save(os.path.join(outdir, statement)); one.close()
+            except Exception:
+                statement = None
         receipts.sort(key=lambda r: (r.get('date') or '9999', r['page']))
         # نوعِ پرداختِ هر فیش (اقساط/نقد) از اعلامیه‌ی وضعیت؛ بر اساسِ شماره‌ی فیش، وگرنه تاریخ و مبلغ
         st_rows = []
