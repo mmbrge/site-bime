@@ -13,10 +13,11 @@
     const fa = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
 
     // forced: مدیر نشست را بسته (پیامِ صفحه‌ی ورود فرق می‌کند)
+    // forced: مدیر بست، kicked: با همین حساب از دستگاهِ دیگری وارد شدند
     function leave(forced) {
         if (leaving) return;
         leaving = true;
-        location.href = forced ? CFG.login.replace('idle=1', 'forced=1') : CFG.login;
+        location.href = forced === 'kicked' ? CFG.login.replace('idle=1', 'kicked=1') : forced ? CFG.login.replace('idle=1', 'forced=1') : CFG.login;
     }
     function apply(r) {
         if (!r) return;
@@ -29,7 +30,7 @@
         pending = true;
         if (active) lastPing = Date.now();
         return origFetch(CFG.alive, {credentials: 'same-origin', cache: 'no-store', headers: active ? {'X-User-Activity': '1'} : {}})
-            .then(r => r.json().catch(() => null).then(j => (r.status === 401 ? {session_expired: true, forced: !!(j && j.forced) || r.headers.get('X-Session-Expired') === 'forced'} : j)))
+            .then(r => r.json().catch(() => null).then(j => (r.status === 401 ? {session_expired: true, forced: r.headers.get('X-Session-Expired') === 'kicked' ? 'kicked' : (!!(j && j.forced) || r.headers.get('X-Session-Expired') === 'forced')} : j)))
             .then(apply).catch(() => {}).finally(() => { pending = false; });
     }
     function interact() {
@@ -84,7 +85,7 @@
         } catch (e) {}
         return origFetch(input, init).then(res => {
             const ex = res.headers.get('X-Session-Expired');
-            if (ex) leave(ex === 'forced');
+            if (ex) leave(ex === 'kicked' ? 'kicked' : ex === 'forced');
             return res;
         });
     };

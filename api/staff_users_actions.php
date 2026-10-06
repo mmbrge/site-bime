@@ -47,6 +47,16 @@ function staff_report_pw_ready($pdo) {
 }
 const STAFF_REPORT_PW_MSG = 'برای «رمزِ ویرایشِ گزارش»، مایگریشن migrations/024_report_edit_password.sql را اجرا کنید.';
 
+// تعدادِ دستگاه‌های فعالِ هر کاربر («STAFF:12» => ۲)
+function su_devices_alive_counts($pdo) {
+    $n = [];
+    try {
+        $st = $pdo->prepare("SELECT user_type, user_id, COUNT(*) c FROM sec_devices WHERE " . sec_device_alive_sql() . " GROUP BY user_type, user_id");
+        $st->execute([sec_idle_minutes($pdo)]);
+        foreach ($st->fetchAll() as $r) $n[$r['user_type'] . ':' . $r['user_id']] = intval($r['c']);
+    } catch (Throwable $e) {}
+    return $n;
+}
 function require_admin_password($pdo, $me, $pwd) {
     $st = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
     $st->execute([$me]);
@@ -121,6 +131,52 @@ try {
         out(['ok' => true, 'custom' => true, 'pages' => count($perms)]);
     }
 
+    // ---- دستگاه‌های همزمان: فهرست، سقف، بستن ----
+    if (in_array($action, ['devices_get', 'devices_set_max', 'device_end', 'devices_end_all'], true)) {
+        sec_ensure($pdo);
+        $type = ($data['type'] ?? '') === 'COMPANY' ? 'COMPANY' : 'STAFF';
+        $id = intval($data['id'] ?? 0);
+        $tbl = $type === 'COMPANY' ? 'company_portal_users' : 'users';
+        $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ?");
+        $st->execute([$id]);
+        $u = $st->fetch();
+        if (!$u) out(['ok' => false, 'error' => 'کاربر پیدا نشد.']);
+        $isAdmin = $type === 'STAFF' && $u['role'] === 'ADMIN';
+        if ($action === 'devices_set_max') {
+            if ($isAdmin) out(['ok' => false, 'error' => 'مدیر کل محدودیتِ دستگاه ندارد.']);
+            require_admin_password($pdo, $me, (string)($data['admin_password'] ?? ''));
+            $max = max(1, min(10, intval($data['max'] ?? 1)));
+            $pdo->prepare("UPDATE $tbl SET max_devices = ? WHERE id = ?")->execute([$max, $id]);
+            $u['max_devices'] = $max;
+            // اگر سقف کم شد، دستگاه‌های اضافه (قدیمی‌ترها) همین الان بسته می‌شوند
+            $keep = $pdo->prepare("SELECT token FROM sec_devices WHERE user_type = ? AND user_id = ? AND " . sec_device_alive_sql() . " ORDER BY last_seen DESC LIMIT 1");
+            $keep->execute([$type, $id, sec_idle_minutes($pdo)]);
+            sec_device_enforce($pdo, $type, $id, (string)$keep->fetchColumn());
+            sec_event($pdo, 'ADMIN_ACTION', 'سقفِ دستگاه‌های همزمانِ «' . $u['full_name'] . '» = ' . $max);
+        }
+        if ($action === 'device_end') {
+            $pdo->prepare("UPDATE sec_devices SET ended_at = NOW(), end_reason = 'ADMIN' WHERE id = ? AND user_type = ? AND user_id = ? AND ended_at IS NULL")
+                ->execute([intval($data['device_id'] ?? 0), $type, $id]);
+            sec_event($pdo, 'DEVICE_END', 'یک دستگاهِ «' . $u['full_name'] . '» بسته شد');
+        }
+        if ($action === 'devices_end_all') {
+            $mine = $type === 'STAFF' && $id === $me ? (string)($_SESSION['_sec_dev'] ?? '') : '';
+            $pdo->prepare("UPDATE sec_devices SET ended_at = NOW(), end_reason = 'ADMIN' WHERE user_type = ? AND user_id = ? AND ended_at IS NULL AND token <> ?")->execute([$type, $id, $mine]);
+            sec_event($pdo, 'DEVICE_END', 'همه‌ی دستگاه‌های «' . $u['full_name'] . '» بسته شد');
+        }
+        $st = $pdo->prepare("SELECT id, ip, device, user_agent, created_at, last_seen, ended_at, end_reason, token, (" . sec_device_alive_sql() . ") AS alive
+                               FROM sec_devices WHERE user_type = ? AND user_id = ? AND (ended_at IS NULL OR ended_at > DATE_SUB(NOW(), INTERVAL 7 DAY))
+                              ORDER BY alive DESC, last_seen DESC LIMIT 30");
+        $st->execute([sec_idle_minutes($pdo), $type, $id]);
+        $mineTok = (string)($_SESSION['_sec_dev'] ?? '');
+        $rows = array_map(function ($r) use ($mineTok) {
+            return ['id' => intval($r['id']), 'ip' => $r['ip'], 'device' => $r['device'], 'ua' => $r['user_agent'], 'alive' => !empty($r['alive']),
+                    'created' => str_replace('.', '/', jalali_dt($r['created_at'])), 'last_seen' => str_replace('.', '/', jalali_dt($r['last_seen'])), 'ended' => $r['ended_at'] ? str_replace('.', '/', jalali_dt($r['ended_at'])) : null,
+                    'reason' => $r['end_reason'], 'mine' => $mineTok !== '' && hash_equals($r['token'], $mineTok)];
+        }, $st->fetchAll());
+        out(['ok' => true, 'name' => $u['full_name'], 'is_admin' => $isAdmin, 'max' => $isAdmin ? 0 : max(1, intval($u['max_devices'] ?? 1)), 'devices' => $rows]);
+    }
+
     if ($action === 'list') {
         perm_ensure($pdo);
         $cols = $ready ? ', personnel_code, bale_chat_id IS NOT NULL AND bot_linked_at IS NOT NULL AS bot_linked, bot_linked_at, is_deleted, deleted_at' : '';
@@ -129,7 +185,10 @@ try {
         chat_access_ensure($pdo);
         try { $pdo->query("SELECT chat_companies FROM users LIMIT 0"); $cols .= ', chat_companies'; } catch (Throwable $e) {}
         $cols .= ', perm_json IS NOT NULL AS perm_custom';
+        sec_ensure($pdo);   // ستونِ سقفِ دستگاه و جدولِ دستگاه‌ها
+        $cols .= ', max_devices';
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
+        $devN = su_devices_alive_counts($pdo);
         foreach ($users as &$u) {
             $u['chat_companies'] = chat_companies_decode($u['chat_companies'] ?? null);
             $u['bot_linked'] = !empty($u['bot_linked']);
@@ -144,13 +203,13 @@ try {
             }
         }
         unset($u);
-        foreach ($users as &$u) $u['type'] = 'STAFF';
+        foreach ($users as &$u) { $u['type'] = 'STAFF'; $u['max_devices'] = $u['role'] === 'ADMIN' ? 0 : max(1, intval($u['max_devices'])); $u['devices_active'] = $devN['STAFF:' . $u['id']] ?? 0; }
         unset($u);
 
         // کاربرانِ شرکت‌ها
         $cWhere = $ready ? (empty($data['include_deleted']) ? 'WHERE COALESCE(cpu.is_deleted, 0) = 0' : '') : 'WHERE cpu.is_active = 1';
         $cCols = $ready ? ', (cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked, cpu.is_deleted, cpu.deleted_at' : '';
-        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at $cCols, " . prof_cols($pdo, 'cpu') . ",
+        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at, cpu.max_devices $cCols, " . prof_cols($pdo, 'cpu') . ",
                                       GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR '، ') AS company_names, GROUP_CONCAT(c.id) AS company_ids
                                  FROM company_portal_users cpu
                                  LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
@@ -160,6 +219,7 @@ try {
         foreach ($cUsers as &$u) {
             $u['type'] = 'COMPANY';
             $u['role'] = 'COMPANY';
+            $u['max_devices'] = max(1, intval($u['max_devices'])); $u['devices_active'] = $devN['COMPANY:' . $u['id']] ?? 0;
             $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             $u['bot_linked'] = !empty($u['bot_linked']);
             $u['company_ids'] = $u['company_ids'] ? array_map('intval', explode(',', $u['company_ids'])) : [];

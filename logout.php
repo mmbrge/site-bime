@@ -11,6 +11,7 @@ if (!empty($_SESSION['user_id'])) {
         // «آخرین بازدید» همین لحظه ثبت شود و دیگر آنلاین نشان داده نشود
         require_once __DIR__ . '/api/_profile_core.php';
         presence_off($pdo, 'STAFF', intval($_SESSION['user_id']));
+        if (function_exists('sec_device_end_current')) sec_device_end_current($pdo, 'LOGOUT');   // این دستگاه از فهرستِ دستگاه‌های فعال بیرون می‌رود
     } catch (Throwable $e) {}
 }
 session_unset();

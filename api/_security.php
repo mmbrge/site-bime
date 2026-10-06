@@ -15,6 +15,7 @@ const SEC_EVENT_FA = [
     'IDLE_LOGOUT' => 'خروجِ خودکار (عدمِ فعالیت)', 'FORCED_LOGOUT' => 'خروجِ اجباری توسطِ مدیر', 'CSRF_BLOCK' => 'درخواستِ جعلی از سایتِ دیگر',
     'UPLOAD_BLOCK' => 'آپلودِ فایلِ خطرناک', 'WEBHOOK_FORGED' => 'پیامِ جعلی به ربات', 'IP_BLOCKED' => 'درخواست از IPِ مسدود', 'SUSPICIOUS_INPUT' => 'ورودیِ مشکوک',
     'PERM_DENIED' => 'تلاش برای دسترسیِ غیرمجاز', 'FILE_DENIED' => 'دسترسیِ بدونِ ورود به فایلِ بایگانی', 'ADMIN_ACTION' => 'تغییرِ تنظیماتِ امنیتی',
+    'DEVICE_KICK' => 'خروجِ دستگاهِ قبلی (ورود از دستگاهِ تازه)', 'DEVICE_END' => 'بستنِ دستگاه توسطِ مدیر',
 ];
 
 function sec_ip() { return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45); }
@@ -47,7 +48,98 @@ function sec_ensure($pdo) {
     foreach (['users', 'company_portal_users'] as $t) {
         try { $pdo->query("SELECT sess_epoch FROM $t LIMIT 0"); }
         catch (Throwable $e) { try { $pdo->exec("ALTER TABLE $t ADD COLUMN sess_epoch INT NOT NULL DEFAULT 0"); } catch (Throwable $e2) {} }
+        // سقفِ دستگاه‌های همزمان؛ پیش‌فرض ۱ (برای همه‌ی کاربرانِ فعلی هم همین مقدار می‌نشیند)
+        try { $pdo->query("SELECT max_devices FROM $t LIMIT 0"); }
+        catch (Throwable $e) { try { $pdo->exec("ALTER TABLE $t ADD COLUMN max_devices TINYINT UNSIGNED NOT NULL DEFAULT 1"); } catch (Throwable $e2) {} }
     }
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS sec_devices (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_type VARCHAR(10) NOT NULL, user_id INT NOT NULL, token CHAR(64) NOT NULL,
+            ip VARCHAR(45) NULL, user_agent VARCHAR(300) NULL, device VARCHAR(120) NULL, created_at DATETIME NOT NULL, last_seen DATETIME NOT NULL,
+            ended_at DATETIME NULL, end_reason VARCHAR(20) NULL, UNIQUE KEY uq_token (token), KEY k_user (user_type, user_id, ended_at)) $opt");
+    } catch (Throwable $e) { error_log('[sec_ensure devices] ' . $e->getMessage()); }
+}
+
+// ---------------- دستگاه‌های همزمان ----------------
+// هر ورود (هر مرورگر/دستگاه) یک «دستگاه» است با یک نشانِ تصادفی در نشست. اگر تعدادِ دستگاه‌های فعالِ کاربر از سقفش
+// بیشتر شود، قدیمی‌ترین‌ها همان لحظه بیرون می‌روند (ورودِ تازه برنده است؛ پس اگر کسی رمز را داشته باشد، با ورودِ
+// صاحبِ حساب بیرون انداخته می‌شود و کاربر هم هیچ‌وقت پشتِ نشستِ فراموش‌شده‌ای قفل نمی‌ماند).
+// دو دستگاه با IPِ یکسان هم دو دستگاه حساب می‌شوند. مدیر کل محدودیت ندارد (ولی دستگاه‌هایش ثبت و قابلِ مشاهده است).
+function sec_device_label($ua) {
+    $ua = (string)$ua;
+    $os = preg_match('/Windows/i', $ua) ? 'ویندوز' : (preg_match('/Android/i', $ua) ? 'اندروید' : (preg_match('/iPhone|iPad|iPod/i', $ua) ? 'iOS' : (preg_match('/Mac OS/i', $ua) ? 'مک' : (preg_match('/Linux/i', $ua) ? 'لینوکس' : 'نامشخص'))));
+    $br = preg_match('/Edg\//', $ua) ? 'Edge' : (preg_match('/OPR\/|Opera/', $ua) ? 'Opera' : (preg_match('/Firefox\//', $ua) ? 'Firefox' : (preg_match('/Chrome\//', $ua) ? 'Chrome' : (preg_match('/Safari\//', $ua) ? 'Safari' : 'مرورگر'))));
+    $mob = preg_match('/Mobile|Android|iPhone/i', $ua) ? ' (موبایل)' : '';
+    return $br . ' روی ' . $os . $mob;
+}
+function sec_device_limit($pdo, $type, $uid) {
+    try {
+        if ($type === 'STAFF') {
+            $st = $pdo->prepare("SELECT role, max_devices FROM users WHERE id = ?");
+            $st->execute([intval($uid)]);
+            $r = $st->fetch();
+            if (!$r) return 1;
+            return $r['role'] === 'ADMIN' ? 0 : max(1, intval($r['max_devices']));
+        }
+        $st = $pdo->prepare("SELECT max_devices FROM company_portal_users WHERE id = ?");
+        $st->execute([intval($uid)]);
+        $v = $st->fetchColumn();
+        return $v === false ? 1 : max(1, intval($v));
+    } catch (Throwable $e) { return 0; }   // ستون هنوز ساخته نشده: محدودیتی اعمال نشود
+}
+// دستگاه‌هایی که هنوز «زنده»اند (بسته نشده و در بازه‌ی خروجِ خودکار فعالیت داشته‌اند)
+function sec_device_alive_sql() { return "ended_at IS NULL AND last_seen > DATE_SUB(NOW(), INTERVAL ? MINUTE)"; }
+function sec_idle_minutes($pdo) { return intval(round(max(0.25, floatval(sec_settings($pdo)['sec_idle_hours'] ?? 3)) * 60)); }
+
+function sec_device_register($pdo, $type, $uid) {
+    if (session_status() !== PHP_SESSION_ACTIVE || !$uid) return;
+    sec_ensure($pdo);
+    $token = bin2hex(random_bytes(32));
+    $ua = mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 300);
+    try {
+        $pdo->prepare("INSERT INTO sec_devices (user_type, user_id, token, ip, user_agent, device, created_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())")
+            ->execute([$type, intval($uid), $token, sec_ip(), $ua, sec_device_label($ua)]);
+    } catch (Throwable $e) { error_log('[sec_device_register] ' . $e->getMessage()); return; }
+    $_SESSION['_sec_dev'] = $token;
+    $_SESSION['_sec_dev_seen'] = time();
+    sec_device_enforce($pdo, $type, $uid, $token);
+}
+// اگر از سقف بیشتر شد، قدیمی‌ترین دستگاه‌ها (به‌جز همین دستگاه) بسته می‌شوند
+function sec_device_enforce($pdo, $type, $uid, $keepToken) {
+    $limit = sec_device_limit($pdo, $type, $uid);
+    if ($limit <= 0) return;
+    try {
+        $st = $pdo->prepare("SELECT id, token, ip, device FROM sec_devices WHERE user_type = ? AND user_id = ? AND " . sec_device_alive_sql() . " ORDER BY (token = ?) DESC, created_at DESC, id DESC");
+        $st->execute([$type, intval($uid), sec_idle_minutes($pdo), $keepToken]);
+        $rows = $st->fetchAll();
+        if (count($rows) <= $limit) return;
+        $out = array_slice($rows, $limit);
+        $ids = array_map(function ($r) { return intval($r['id']); }, $out);
+        $pdo->exec("UPDATE sec_devices SET ended_at = NOW(), end_reason = 'REPLACED' WHERE id IN (" . implode(',', $ids) . ")");
+        $desc = implode('، ', array_map(function ($r) { return $r['device'] . ' (' . $r['ip'] . ')'; }, $out));
+        sec_event($pdo, 'DEVICE_KICK', 'سقفِ ' . $limit . ' دستگاه؛ بسته شد: ' . $desc . ' · دستگاهِ تازه: ' . sec_device_label($_SERVER['HTTP_USER_AGENT'] ?? '') . ' (' . sec_ip() . ')');
+    } catch (Throwable $e) { error_log('[sec_device_enforce] ' . $e->getMessage()); }
+}
+// همین دستگاه (خروج از حساب)
+function sec_device_end_current($pdo, $reason = 'LOGOUT') {
+    if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['_sec_dev'])) return;
+    try { $pdo->prepare("UPDATE sec_devices SET ended_at = NOW(), end_reason = ? WHERE token = ? AND ended_at IS NULL")->execute([$reason, (string)$_SESSION['_sec_dev']]); } catch (Throwable $e) {}
+}
+// روی هر درخواستِ کاربرِ واردشده: این دستگاه هنوز مجاز است؟ (نشست‌های قدیمی که نشان ندارند همین‌جا ثبت می‌شوند)
+// برمی‌گرداند: null = مجاز، یا علتِ بسته‌شدن (REPLACED / ADMIN / ...)
+function sec_device_check($pdo, $type, $uid) {
+    if (empty($_SESSION['_sec_dev'])) { sec_device_register($pdo, $type, $uid); return null; }
+    try {
+        $st = $pdo->prepare("SELECT id, user_type, user_id, ended_at, end_reason, last_seen FROM sec_devices WHERE token = ?");
+        $st->execute([(string)$_SESSION['_sec_dev']]);
+        $r = $st->fetch();
+    } catch (Throwable $e) { return null; }
+    if (!$r || $r['user_type'] !== $type || intval($r['user_id']) !== intval($uid)) { sec_device_register($pdo, $type, $uid); return null; }
+    if ($r['ended_at']) return (string)($r['end_reason'] ?: 'ENDED');
+    if (time() - intval($_SESSION['_sec_dev_seen'] ?? 0) >= 30) {   // آخرین فعالیت (هر ۳۰ ثانیه یک بار)
+        $_SESSION['_sec_dev_seen'] = time();
+        try { $pdo->prepare("UPDATE sec_devices SET last_seen = NOW(), ip = ? WHERE id = ?")->execute([sec_ip(), intval($r['id'])]); } catch (Throwable $e) {}
+    }
+    return null;
 }
 
 // چه کسی درخواست را فرستاده (از روی نشست)
@@ -61,7 +153,7 @@ function sec_actor() {
 
 const SEC_SEV_OF = ['LOGIN_FAIL' => 'low', 'LOGIN_LOCK' => 'high', 'LOGIN_BLOCKED' => 'medium', 'NEW_IP' => 'info', 'IDLE_LOGOUT' => 'info', 'FORCED_LOGOUT' => 'info',
                     'CSRF_BLOCK' => 'high', 'UPLOAD_BLOCK' => 'critical', 'WEBHOOK_FORGED' => 'critical', 'IP_BLOCKED' => 'medium', 'SUSPICIOUS_INPUT' => 'medium',
-                    'PERM_DENIED' => 'medium', 'FILE_DENIED' => 'medium', 'ADMIN_ACTION' => 'info'];
+                    'PERM_DENIED' => 'medium', 'FILE_DENIED' => 'medium', 'ADMIN_ACTION' => 'info', 'DEVICE_KICK' => 'medium', 'DEVICE_END' => 'info'];
 
 function sec_event($pdo, $type, $detail = '', $userName = null, $severity = null) {
     sec_ensure($pdo);
@@ -115,8 +207,9 @@ function sec_deny($code, $msg, array $extraHeaders = []) {
 }
 
 // نشستِ کاربر را می‌بندد (برای خروجِ خودکار یا اجباری) و همان لحظه «آفلاین» نشانش می‌دهد
-function sec_kill_session($pdo = null) {
+function sec_kill_session($pdo = null, $deviceReason = 'EXPIRED') {
     [$ut, $uid] = sec_actor();
+    if ($pdo && $deviceReason) sec_device_end_current($pdo, $deviceReason);
     if ($pdo && $uid) {
         try { $pdo->prepare("UPDATE " . ($ut === 'COMPANY' ? 'company_portal_users' : 'users') . " SET last_offline_at = NOW() WHERE id = ?")->execute([$uid]); } catch (Throwable $e) {}
     }
@@ -162,6 +255,15 @@ function sec_session_guard($pdo) {
         sec_deny(401, 'به دلیلِ عدمِ فعالیت از پنل خارج شدید؛ دوباره وارد شوید.', ['X-Session-Expired: 1']);
     }
     if ($active) $_SESSION['_sec_act'] = $now;
+    // دستگاه‌های همزمان: اگر این دستگاه بسته شده (ورود از دستگاهِ دیگر یا بستن توسطِ مدیر)، همین لحظه بیرون
+    $why = sec_device_check($pdo, $ctx, $uid);
+    if ($why !== null) {
+        $byAdmin = $why === 'ADMIN';
+        sec_kill_session($pdo, null);
+        $kickPage = str_replace('idle=1', $byAdmin ? 'forced=1' : 'kicked=1', $loginPage);
+        if (!sec_is_api() && !headers_sent()) { header('Location: ' . $kickPage); exit; }
+        sec_deny(401, $byAdmin ? 'مدیر نشستِ شما را بست؛ دوباره وارد شوید.' : 'با این حساب از دستگاهِ دیگری وارد شدند؛ این دستگاه از حساب خارج شد.', ['X-Session-Expired: ' . ($byAdmin ? 'forced' : 'kicked')]);
+    }
     // خروجِ اجباری: مدیر عددِ sess_epoch کاربر را بالا می‌برد (هر ۱۰ ثانیه یک بار بررسی می‌شود)
     if ($now - intval($_SESSION['_sec_ep_chk'] ?? 0) >= 10) {
         $_SESSION['_sec_ep_chk'] = $now;
@@ -187,6 +289,8 @@ function sec_session_guard($pdo) {
 function sec_on_login($pdo, $type, $uid, $name = '') {
     $_SESSION['_sec_act'] = time();
     $_SESSION['_sec_ep_chk'] = time();
+    unset($_SESSION['_sec_dev']);
+    sec_device_register($pdo, $type, $uid);   // دستگاهِ تازه؛ اگر از سقف گذشت، دستگاهِ قبلی بیرون می‌رود
     try {
         sec_ensure($pdo);
         $st = $pdo->prepare("SELECT sess_epoch FROM " . ($type === 'COMPANY' ? 'company_portal_users' : 'users') . " WHERE id = ?");

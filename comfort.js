@@ -83,20 +83,25 @@
     .cf-disc{position:relative;width:54px;height:54px;border-radius:50%;border:0;padding:0;cursor:pointer;background:transparent;filter:drop-shadow(0 10px 18px rgba(15,23,42,.35));transition:transform .3s cubic-bezier(.2,.9,.3,1.2),opacity .25s}
     /* پخش‌کننده‌ی کوچک: وقتی آهنگی پخش شده و پنل بسته است، دیسک کوچک می‌شود و این نوار جایش باز می‌شود */
     .cf-root.cf-has-mini .cf-disc{transform:scale(.2) rotate(-90deg);opacity:0;pointer-events:none}
-    .cf-mini{position:absolute;left:0;bottom:0;height:44px;width:min(244px,calc(100vw - 28px));display:flex;align-items:center;gap:2px;padding:0 5px 0 4px;border-radius:22px;
-        background:linear-gradient(120deg,#1e1b4b 0%,#0f172a 58%,#0c2a43 100%);color:#e2e8f0;border:1px solid rgba(165,180,252,.22);
-        box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 0 4px rgba(99,102,241,.06);overflow:hidden;isolation:isolate;
-        transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .25s,box-shadow .4s}
-    .cf-root.cf-has-mini .cf-mini{opacity:1;transform:none;pointer-events:auto}
+    .cf-mini{position:absolute;left:0;bottom:0;height:42px;width:min(208px,calc(100vw - 28px));display:flex;align-items:center;gap:1px;padding:0 4px 0 3px;border-radius:21px;
+        background:linear-gradient(120deg,rgba(30,27,75,.92) 0%,rgba(15,23,42,.9) 55%,rgba(12,42,67,.92) 100%);color:#e2e8f0;border:1px solid rgba(165,180,252,.25);
+        -webkit-backdrop-filter:blur(10px) saturate(1.4);backdrop-filter:blur(10px) saturate(1.4);
+        box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 0 4px rgba(99,102,241,.06),inset 0 1px 0 rgba(255,255,255,.08);overflow:hidden;isolation:isolate;
+        transform-origin:left center;opacity:0;transform:scale(.25);pointer-events:none;transition:transform .38s cubic-bezier(.2,.9,.3,1.12),opacity .35s,box-shadow .4s,border-color .35s}
+    /* وقتی موس رویش نیست کم‌رنگ، با رفتنِ موس (یا لمس/فوکوس) کاملاً پررنگ و کمی بزرگ‌تر */
+    .cf-root.cf-has-mini .cf-mini{opacity:.5;transform:none;pointer-events:auto}
+    .cf-root.cf-has-mini .cf-mini:hover,.cf-root.cf-has-mini .cf-mini:focus-within{opacity:1;transform:scale(1.04);border-color:rgba(165,180,252,.55);
+        box-shadow:0 18px 36px -12px rgba(30,27,75,.85),0 0 0 4px rgba(99,102,241,.12),0 0 22px -4px rgba(34,211,238,.45)}
+    @media (hover:none){.cf-root.cf-has-mini .cf-mini{opacity:.88}}
     .cf-mini::before{content:'';pointer-events:none;position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(129,140,248,.2) 50%,transparent 70%);transform:translateX(-120%);opacity:0}
     .cf-mini.on::before{opacity:1;animation:cfSheen 3.6s ease-in-out infinite}
     .cf-mini.on{box-shadow:0 14px 30px -12px rgba(30,27,75,.75),0 0 18px -4px rgba(99,102,241,.55)}
     @keyframes cfSheen{0%{transform:translateX(120%)}60%,100%{transform:translateX(-120%)}}
-    .cf-mini .cf-mc{flex:none;position:relative;width:36px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .cf-mini .cf-mc{flex:none;position:relative;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .cf-mini .cf-mc svg{position:absolute;inset:0;transform:rotate(-90deg)}
     .cf-mini .cf-mc svg circle{fill:none;stroke-width:2.5}
     .cf-mini .cf-mc .cf-mring{stroke:url(#cfmg);stroke-linecap:round;stroke-dasharray:0 101;transition:stroke-dasharray .3s linear}
-    .cf-mini .cf-disk{width:28px;height:28px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+    .cf-mini .cf-disk{width:26px;height:26px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
     .cf-mini .cf-disk::before{content:'';pointer-events:none;position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),radial-gradient(circle at 30% 25%,rgba(255,255,255,.45),transparent 50%)}
     .cf-mini .cf-disk::after{content:'';pointer-events:none;position:absolute;inset:38%;border-radius:50%;background:#0f172a;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
     .cf-mini.on .cf-disk{animation:cfSpin 3.2s linear infinite}
@@ -111,10 +116,10 @@
     @keyframes cfMeq{0%,100%{height:2px}50%{height:8px}}
     .cf-mini .cf-meq i:nth-child(2){animation-delay:.2s}.cf-mini .cf-meq i:nth-child(3){animation-delay:.4s}
     .cf-mini.on .cf-meq{display:inline-flex}
-    .cf-mini button{flex:none;width:24px;height:24px;border-radius:50%;border:0;background:transparent;color:#cbd5e1;cursor:pointer;font-size:10px;transition:background .15s,color .15s,transform .15s;display:flex;align-items:center;justify-content:center}
+    .cf-mini button{flex:none;width:22px;height:22px;border-radius:50%;border:0;background:transparent;color:#cbd5e1;cursor:pointer;font-size:10px;transition:background .15s,color .15s,transform .15s;display:flex;align-items:center;justify-content:center}
     .cf-mini button:hover{background:rgba(255,255,255,.1);color:#fff}
     .cf-mini button:active{transform:scale(.88)}
-    .cf-mini button.pp{width:30px;height:30px;color:#fff;font-size:11px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 4px 12px -4px rgba(99,102,241,.9)}
+    .cf-mini button.pp{width:28px;height:28px;margin:0 1px;color:#fff;font-size:11px;background:var(--cf-acc2,linear-gradient(135deg,#6366f1,#06b6d4));box-shadow:0 4px 12px -4px rgba(99,102,241,.9)}
     .cf-mini button.pp:hover{transform:scale(1.07)}
     .cf-mini button.op{width:20px;height:20px;font-size:8.5px;opacity:.55;margin-right:1px}
     .cf-mini button.op:hover{opacity:1}
@@ -526,9 +531,9 @@
         mini.innerHTML = `<div class="cf-mc" data-m="open" title="بازکردنِ پخش‌کننده"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" stroke="rgba(255,255,255,.1)"></circle>
                 <circle class="cf-mring" cx="18" cy="18" r="16"></circle><defs><linearGradient id="cfmg"><stop offset="0" stop-color="#a5b4fc"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg><span class="cf-disk"></span></div>
             <div class="cf-mt" data-m="open"><b><span></span></b><small><span class="cf-meq"><i></i><i></i><i></i></span><span data-sub></span></small></div>
-            <button type="button" data-m="prev" title="قبلی"><i class="fas fa-backward-step"></i></button>
-            <button type="button" class="pp" data-m="play" title="پخش / مکث"></button>
             <button type="button" data-m="next" title="بعدی"><i class="fas fa-forward-step"></i></button>
+            <button type="button" class="pp" data-m="play" title="پخش / مکث"></button>
+            <button type="button" data-m="prev" title="قبلی"><i class="fas fa-backward-step"></i></button>
             <button type="button" class="op" data-m="open" title="بازکردنِ پخش‌کننده"><i class="fas fa-chevron-up"></i></button>`;
         mini.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', e => {
             e.stopPropagation();

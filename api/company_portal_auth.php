@@ -68,6 +68,7 @@ try {
             if ($u = $st->fetch()) auth_log_login($pdo, 'COMPANY', $u, 'LOGOUT', true);
             require_once __DIR__ . '/_profile_core.php';
             presence_off($pdo, 'COMPANY', intval($_SESSION['company_user_id']));   // «آخرین بازدید» همین لحظه
+            if (function_exists('sec_device_end_current')) sec_device_end_current($pdo, 'LOGOUT');
         }
         $_SESSION = [];
         session_destroy();

@@ -54,13 +54,13 @@ if (!$companies) {
 <script src="../net-watch.js?v=4"></script>
 <script src="../cursor-fx.js?v=1" defer></script>
 <script src="../tools.js?v=2"></script>
-<script src="../comfort.js?v=10"></script>
+<script src="../comfort.js?v=11"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
-<script src="../idle-guard.js?v=1"></script>
+<script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
 <script src="../chat-ui.js?v=7"></script>
 <script src="../money-input.js?v=1"></script>

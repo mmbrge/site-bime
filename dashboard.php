@@ -455,6 +455,19 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                              background: linear-gradient(135deg, var(--c), color-mix(in srgb, var(--c) 60%, #7c3aed)); box-shadow: 0 8px 16px -8px var(--c); }
         .notif-card .nc-t { font-weight: 900; font-size: 13.5px; color: #0f172a; margin-bottom: 2px; }
         .notif-card .nc-b { font-size: 12.5px; color: #475569; line-height: 1.8; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+        .su-dev { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 999px; padding: 2px 8px; }
+        .su-dev:hover { background: #ccfbf1; }
+        .su-dev.over { color: #be123c; background: #fff1f2; border-color: #fecdd3; }
+        .dev-row { display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; background: #fff; }
+        .dev-row.dead { opacity: .6; background: #f8fafc; }
+        .dev-ic { width: 36px; height: 36px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #e0e7ff, #ccfbf1); color: #3730a3; flex-shrink: 0; }
+        .dev-end { border: 0; background: #fff1f2; color: #be123c; font-size: 11px; font-weight: 800; border-radius: 10px; padding: 6px 10px; white-space: nowrap; }
+        .dev-end:hover { background: #ffe4e6; }
+        .dev-max { display: flex; align-items: center; gap: 12px; background: linear-gradient(120deg, #eef2ff, #f0fdfa); border-radius: 16px; padding: 12px 14px; }
+        .dev-step { display: flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 3px; }
+        .dev-step button { width: 30px; height: 30px; border: 0; border-radius: 9px; background: #eef2ff; color: #3730a3; font-weight: 900; font-size: 16px; }
+        .dev-step b { min-width: 28px; text-align: center; font-size: 16px; color: #1e1b4b; }
+        .dev-note { background: #fefce8; border: 1px solid #fde68a; color: #854d0e; border-radius: 14px; padding: 10px 12px; font-size: 12px; font-weight: 700; }
         .notif-card .nc-x { border: 0; background: transparent; color: #94a3b8; width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0; }
         .notif-card .nc-x:hover { background: #f1f5f9; color: #475569; }
         .notif-card.t-company_request { border-right-color: #6366f1; }
@@ -718,7 +731,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
-<script src="idle-guard.js?v=1"></script>
+<script src="idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="plate.css?v=2">
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
@@ -3834,7 +3847,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="net-watch.js?v=4"></script>
     <script src="cursor-fx.js?v=1" defer></script>
     <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=10"></script>
+    <script src="comfort.js?v=11"></script>
     <script src="settings-nav.js?v=2"></script>
     <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
@@ -8091,11 +8104,80 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 whitespace-nowrap">${del ? '' : `
                         ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
                         <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        <button onclick="openUserDevices('${u.type}', ${u.id})" class="su-dev ${u.max_devices && u.devices_active > u.max_devices ? 'over' : ''} ml-2" title="دستگاه‌های همزمان: فعال / مجاز"><i class="fas fa-laptop"></i>${faDigits(String(u.devices_active || 0))}/${u.max_devices ? faDigits(String(u.max_devices)) : '∞'}</button>
                         ${!co && REAL_ADMIN && u.role !== 'ADMIN' ? `<button onclick="openPermEditor(${u.id})" class="text-violet-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-user-lock ml-1"></i>دسترسی‌ها</button>` : ''}
                         ${REAL_ADMIN && window.CFAdmin && (co || u.role === 'ADMIN') ? `<button onclick="CFAdmin.openAccess('${co ? 'C' : 'S'}', ${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})" class="text-fuchsia-600 hover:underline text-xs font-bold ml-2" title="موسیقی، کارهای امروز، تمرکز، …"><i class="fas fa-mug-hot ml-1"></i>امکانات</button>` : ''}
                         ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
                 </tr>`;
             }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
+        }
+
+        // ---------- دستگاه‌های همزمانِ هر کاربر: سقف (پیش‌فرض ۱؛ مدیر کل نامحدود)، دستگاه‌های فعال، بستنِ هر دستگاه ----------
+        async function devicesCall(body) {
+            const r = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            return r.json();
+        }
+        const DEV_REASON = {LOGOUT: 'خروج از حساب', REPLACED: 'ورود از دستگاهِ تازه', ADMIN: 'بسته‌شده توسطِ مدیر', EXPIRED: 'پایانِ نشست'};
+        async function openUserDevices(type, id) {
+            let box = document.getElementById('dev-modal');
+            if (!box) {
+                box = document.createElement('div'); box.id = 'dev-modal'; box.className = 'modal-overlay';
+                box.innerHTML = '<div class="modal-content p-0 overflow-hidden" style="max-width:640px;width:calc(100% - 24px)"><div data-body></div></div>';
+                document.body.appendChild(box);
+                box.addEventListener('click', e => { if (e.target === box) box.classList.remove('active'); });
+            }
+            const body = box.querySelector('[data-body]');
+            const draw = d => {
+                const alive = d.devices.filter(x => x.alive), old = d.devices.filter(x => !x.alive);
+                const row = x => `<div class="dev-row ${x.alive ? '' : 'dead'}">
+                    <span class="dev-ic"><i class="fas ${/موبایل|اندروید|iOS/.test(x.device || '') ? 'fa-mobile-screen' : 'fa-laptop'}"></i></span>
+                    <div class="flex-1 min-w-0"><p class="font-black text-[12.5px] text-slate-800">${x.device || 'دستگاه'} ${x.mine ? '<span class="su-chip" style="background:#dcfce7;color:#15803d">همین دستگاهِ شما</span>' : ''}</p>
+                      <p class="text-[11px] text-slate-500"><span dir="ltr" class="font-mono">${x.ip || ''}</span> · ورود ${faDigits(x.created || '')} · آخرین فعالیت ${faDigits(x.last_seen || '')}</p>
+                      ${x.alive ? '' : `<p class="text-[10.5px] text-slate-400">${DEV_REASON[x.reason] || (x.ended ? 'بسته شد' : 'غیرفعال (بدونِ فعالیت)')}${x.ended ? ' · ' + faDigits(x.ended) : ''}</p>`}</div>
+                    ${x.alive && !x.mine ? `<button type="button" class="dev-end" data-end="${x.id}"><i class="fas fa-power-off ml-1"></i>خروج</button>` : ''}</div>`;
+                body.innerHTML = `<div class="px-5 py-4 text-white flex items-center gap-3" style="background:linear-gradient(120deg,#1e1b4b,#0f766e)">
+                    <span class="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center"><i class="fas fa-shield-halved"></i></span>
+                    <div class="flex-1"><h3 class="font-black">دستگاه‌های ${d.name}</h3><p class="text-[11px] opacity-80">هر مرورگر/دستگاه جدا حساب می‌شود؛ حتی دو دستگاه با یک IP.</p></div>
+                    <button type="button" class="text-white/80 hover:text-white text-xl" data-x><i class="fas fa-times"></i></button></div>
+                  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                    ${d.is_admin ? '<div class="dev-note"><i class="fas fa-crown ml-1"></i>مدیر کل محدودیتِ تعدادِ دستگاه ندارد؛ دستگاه‌هایش فقط برای کنترل نمایش داده می‌شود.</div>' : `
+                    <div class="dev-max">
+                      <div class="flex-1"><p class="font-black text-[13px] text-slate-800">حداکثر دستگاهِ همزمان</p>
+                        <p class="text-[11px] text-slate-500 leading-6">با ورود از دستگاهِ تازه، اگر از این تعداد بیشتر شود قدیمی‌ترین دستگاه فوراً از حساب خارج می‌شود.</p></div>
+                      <div class="dev-step"><button type="button" data-st="-1">−</button><b data-max>${faDigits(String(d.max))}</b><button type="button" data-st="1">+</button></div></div>
+                    <div class="flex gap-2"><input type="password" class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="رمز خودتان (برای ذخیره)" data-pw autocomplete="new-password">
+                      <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 rounded-xl" data-save>ذخیره</button></div>`}
+                    <div><div class="flex items-center justify-between mb-2"><p class="font-black text-[13px] text-slate-700">فعال (${faDigits(String(alive.length))}${d.max ? ' از ' + faDigits(String(d.max)) : ''})</p>
+                      ${alive.filter(x => !x.mine).length ? '<button type="button" class="dev-end" data-all><i class="fas fa-right-from-bracket ml-1"></i>خروجِ همه</button>' : ''}</div>
+                      <div class="space-y-2">${alive.map(row).join('') || '<p class="text-[12px] text-slate-400">الان در هیچ دستگاهی وارد نیست.</p>'}</div></div>
+                    ${old.length ? `<div><p class="font-black text-[12px] text-slate-500 mb-2">۷ روزِ اخیر</p><div class="space-y-2">${old.map(row).join('')}</div></div>` : ''}
+                  </div>`;
+                body.querySelector('[data-x]').onclick = () => box.classList.remove('active');
+                let max = d.max;
+                body.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { max = Math.max(1, Math.min(10, max + Number(b.dataset.st))); body.querySelector('[data-max]').textContent = faDigits(String(max)); });
+                const sv = body.querySelector('[data-save]');
+                if (sv) sv.onclick = async () => {
+                    const r = await devicesCall({action: 'devices_set_max', type, id, max, admin_password: body.querySelector('[data-pw]').value});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('سقفِ دستگاه‌ها ذخیره شد.', 'success'); draw(r); loadStaffUsers();
+                };
+                body.querySelectorAll('[data-end]').forEach(b => b.onclick = async () => {
+                    const r = await devicesCall({action: 'device_end', type, id, device_id: Number(b.dataset.end)});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('آن دستگاه از حساب خارج شد.', 'success'); draw(r); loadStaffUsers();
+                });
+                const all = body.querySelector('[data-all]');
+                if (all) all.onclick = async () => {
+                    const r = await devicesCall({action: 'devices_end_all', type, id});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('همه‌ی دستگاه‌ها از حساب خارج شدند.', 'success'); draw(r); loadStaffUsers();
+                };
+            };
+            body.innerHTML = '<p class="p-10 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></p>';
+            box.classList.add('active');
+            const d = await devicesCall({action: 'devices_get', type, id});
+            if (!d.ok) { box.classList.remove('active'); return showToast(d.error || 'خطا', 'error'); }
+            draw(d);
         }
 
         // ---------- لیستِ کشوییِ چندانتخابی (با جستجو) ----------
