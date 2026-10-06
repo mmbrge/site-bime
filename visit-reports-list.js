@@ -207,14 +207,16 @@
     VR.downloadPopup = r => downloadPopup(r);
     function downloadPopup(r) {
         const opts = [
-            [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها و مدارک (کلِ پوشه‌ی گزارش)'],
-            [`${API}?action=bundle_zip&id=${r.id}`, 'fa-file-zipper text-indigo-500', 'زیپ کامل بدونِ Word', 'PDF + همه‌ی عکس‌ها و مدارک، بدونِ فایلِ Wordِ گزارش'],
-            [fileUrl(r.id, 'pdf'), 'fa-file-pdf text-rose-500', 'فقط فایل گزارش (PDF)', ''],
-            r.has_docx ? [fileUrl(r.id, 'docx'), 'fa-file-word text-blue-600', 'فایل Word گزارش', ''] : null,
-            r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', r.photos_count ? `${fa(r.photos_count)} عکس` : ''] : null,
+            // ستونِ آخر: همان دسترسی‌ای که سرور برای این دانلود می‌خواهد (api/_perm.php)؛ تا دکمه‌ها با قاعده‌ی کلیِ
+            // «زیپ = خروجی» در صفحه‌ی «ساخت گزارش» برای کسی که همین گزارش را صادر کرده پنهان نشوند
+            [`${API}?action=folder_zip&id=${r.id}`, 'fa-box-archive text-violet-500', 'زیپ کاملِ گزارش', 'PDF + Word + همه‌ی عکس‌ها و مدارک (کلِ پوشه‌ی گزارش)', 'vr-list:export|vr-build:create'],
+            [`${API}?action=bundle_zip&id=${r.id}`, 'fa-file-zipper text-indigo-500', 'زیپ کامل بدونِ Word', 'PDF + همه‌ی عکس‌ها و مدارک، بدونِ فایلِ Wordِ گزارش', 'vr-list:export|vr-build:create'],
+            [fileUrl(r.id, 'pdf'), 'fa-file-pdf text-rose-500', 'فقط فایل گزارش (PDF)', '', 'vr-list:view|vr-build:view'],
+            r.has_docx ? [fileUrl(r.id, 'docx'), 'fa-file-word text-blue-600', 'فایل Word گزارش', '', 'vr-list:view|vr-build:view'] : null,
+            r.has_zip ? [fileUrl(r.id, 'zip'), 'fa-file-zipper text-amber-500', 'فقط عکس‌ها (ZIP)', r.photos_count ? `${fa(r.photos_count)} عکس` : '', 'vr-list:view|vr-build:view'] : null,
         ].filter(Boolean);
-        const m = modal({ title: 'دانلود گزارش', icon: 'fa-download', width: '26rem', html: `<div class="space-y-2">${opts.map(([href, ic, t, sub], i) => `
-            <button type="button" data-i="${i}" class="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 p-3 text-right transition-colors">
+        const m = modal({ title: 'دانلود گزارش', icon: 'fa-download', width: '26rem', html: `<div class="space-y-2">${opts.map(([href, ic, t, sub, perm], i) => `
+            <button type="button" data-i="${i}" data-perm="${perm}" class="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 p-3 text-right transition-colors">
                 <i class="fas ${ic} text-xl w-7 text-center"></i><span class="flex-1"><b class="block text-xs text-slate-700">${t}</b>${sub ? `<span class="text-[10px] text-slate-400">${sub}</span>` : ''}</span>
                 <i class="fas fa-arrow-down text-slate-300"></i></button>`).join('')}</div>` });
         m.setTitle('دانلود گزارش', `<span dir="ltr">${esc(r.report_no)}</span> · ${esc(r.insured_name || '')}`);

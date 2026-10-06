@@ -554,9 +554,10 @@ try {
         $fields = vr_fields($pdo, $cat['id']);
         $mapped = vr_map_parsed($res['data'] ?? [], $fields, vr_visitors($pdo, $cat['id']));
         [$mapped, $insHit] = vr_apply_insured_lookup($pdo, $mapped);   // نامِ بیمه‌گذار اول از اشخاص/شرکت‌های خودمان
+        [$mapped, $truncWarn] = vr_fix_truncated($pdo, $res, $fields, $mapped);   // شماره‌ی موتور/شاسیِ بریده‌شده در PDFِ بیمه‌گر
         vr_audit($pdo, $user['id'], 'VR_PARSE', 0, $cat['name'] . ' · ' . $f['name'] . ' · ' . ($res['parser_used'] ?? ''));
         vr_out(['ok' => true, 'form' => $mapped, 'insured_source' => $insHit ? $insHit['source_fa'] : null, 'parser_used' => $res['parser_used'] ?? null, 'method' => $res['method'] ?? null,
-                'parser_error' => $res['parser_error'] ?? null, 'found' => count(array_filter($res['data'] ?? []))]);
+                'parser_error' => $res['parser_error'] ?? null, 'found' => count(array_filter($res['data'] ?? [])), 'warnings' => $truncWarn]);
     }
 
     // اطلاعاتِ یک بازدید سلامت برای پُرکردنِ فرمِ صدور (پاپ‌آپِ صفحه‌ی بازدیدها)

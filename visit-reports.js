@@ -62,7 +62,10 @@
         return new Promise((resolve) => {
             const x = new XMLHttpRequest();
             x.open('POST', API);
-            if (onProgress) x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+            if (onProgress) {
+                x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+                x.upload.onload = () => onProgress(1);   // ارسال تمام شد (حتی اگر مرورگر درصد نداده باشد)
+            }
             x.onload = async () => { try { resolve(JSON.parse(x.responseText)); } catch (e) { resolve({ ok: false, error: x.status === 413 ? 'حجمِ فایل‌ها بیش از حدِ مجازِ سرور است.' : await withTrace(x.status, badResponse(x.status, x.responseText)) }); } };
             x.onerror = () => resolve({ ok: false, error: 'خطای شبکه؛ اتصال را بررسی کنید.' });
             x.send(fd);
@@ -131,6 +134,10 @@
     .vr-lbl{display:block;font-size:.72rem;font-weight:700;color:#475569;margin-bottom:.3rem}
     .vr-lbl .req{color:#ef4444;margin-right:2px}
     .vr-flash{animation:vrFlash 1.6s ease both}
+    .vr-trunc input,.vr-trunc textarea{border-color:#f43f5e!important;background:#fff1f2!important;box-shadow:0 0 0 3px rgba(244,63,94,.15)!important}
+    .vr-trunc.vr-trunc-ok input,.vr-trunc.vr-trunc-ok textarea{border-color:#6366f1!important;background:#eef2ff!important;box-shadow:0 0 0 3px rgba(99,102,241,.15)!important}
+    .vr-trunc-note{margin-top:4px;font-size:10.5px;font-weight:800;line-height:1.8;color:#be123c}
+    .vr-trunc-note.ok{color:#4338ca}
     @keyframes vrFlash{0%{background:#fef9c3;border-color:#facc15}100%{background:#fff}}
     .vr-cat{cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s;border:2px solid transparent}
     .vr-cat:hover{transform:translateY(-3px);box-shadow:0 12px 30px -12px rgba(79,70,229,.35)}
@@ -1008,6 +1015,29 @@
             const used = { custom: 'الگوریتمِ اختصاصی', generic: 'الگوریتمِ عمومی', 'custom+generic': 'الگوریتمِ اختصاصی + عمومی' }[d.parser_used] || '';
             st.className = 'vr-parse-st text-[11px] font-bold mt-1.5 text-emerald-600';
             st.innerHTML = `<i class="fas fa-circle-check"></i> ${fa(d.found)} مورد پیدا شد (${used}). خانه‌های زرد را بررسی کنید.${d.parser_error ? ` <span class="text-amber-600">· خطای پارسر: ${esc(d.parser_error)}</span>` : ''}`;
+            this.showParseWarnings(d.warnings || []);
+        }
+        // شماره‌ی موتور/شاسی که در خودِ PDFِ بیمه‌گر بریده شده: خانه‌اش قرمز (یا آبی اگر از سوابق کامل شد) با توضیح
+        showParseWarnings(list) {
+            this.root.querySelectorAll('.vr-trunc-note').forEach(n => n.remove());
+            this.root.querySelectorAll('.vr-trunc').forEach(n => n.classList.remove('vr-trunc', 'vr-trunc-ok'));
+            list.forEach(w => {
+                const wrap = w.field && this.root.querySelector(`[data-wrap="${w.field}"]`);
+                const note = document.createElement('p');
+                note.className = 'vr-trunc-note ' + (w.level === 'info' ? 'ok' : '');
+                note.innerHTML = `<i class="fas ${w.level === 'info' ? 'fa-wand-magic-sparkles' : 'fa-triangle-exclamation'}"></i> ${esc(w.msg)}`;
+                if (wrap) {
+                    wrap.classList.add('vr-trunc'); if (w.level === 'info') wrap.classList.add('vr-trunc-ok');
+                    wrap.appendChild(note);
+                    const inp = wrap.querySelector('input,textarea');
+                    if (inp && w.level !== 'info') inp.addEventListener('input', () => { wrap.classList.remove('vr-trunc'); note.remove(); }, {once: true});
+                } else {
+                    const st = this.$('.vr-parse-st'); if (st) st.after(note);
+                }
+                toast(w.msg, w.level === 'info' ? 'info' : 'warning');
+            });
+            const first = this.root.querySelector('.vr-trunc:not(.vr-trunc-ok)');
+            if (first) first.scrollIntoView({behavior: 'smooth', block: 'center'});
         }
 
         // ---------------- اعتبارسنجی و ارسال ----------------
@@ -1120,9 +1150,17 @@
             const btn = this.$('.vr-submit'), bar = this.$('.vr-progress'), st = this.$('.vr-status');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ساخت...';
             bar.classList.remove('hidden');
-            const setP = (p, t) => { bar.firstElementChild.style.width = Math.round(p * 100) + '%'; st.textContent = t; };
+            // درصدِ نوشته‌شده همیشه همان درصدِ نوار است: ارسال ۵ تا ۶۵٪، ساختِ گزارش روی سرور ۶۵ تا ۹۷٪ (آرام‌آرام)، پایان ۱۰۰٪
+            let cur = 0, buildT = null;
+            const setP = (p, t) => { cur = Math.max(cur, Math.min(1, p)); bar.firstElementChild.style.width = (cur * 100).toFixed(1) + '%'; st.textContent = t + (t ? ' ' + fa(Math.round(cur * 100)) + '٪' : ''); };
+            const building = () => {
+                if (buildT) return;
+                setP(0.65, 'ساختِ PDF و Word و بایگانیِ عکس‌ها...');
+                buildT = setInterval(() => setP(cur + (0.97 - cur) * 0.035, 'ساختِ PDF و Word و بایگانیِ عکس‌ها...'), 300);
+            };
             setP(0.05, 'در حال ارسال...');
-            const d = await apiForm(fd, p => setP(0.05 + p * 0.6, `ارسالِ اطلاعات و عکس‌ها... ${fa(Math.round(p * 100))}٪`));
+            const d = await apiForm(fd, p => { if (p >= 1) building(); else setP(0.05 + p * 0.6, 'ارسالِ اطلاعات و عکس‌ها...'); });
+            clearInterval(buildT);
             setP(1, d.ok ? 'انجام شد' : '');
             this.busy = false;
             if (!d.ok) {

@@ -589,6 +589,64 @@ function vr_run_parser($pdo, $pdfAbs, $parserAbs = null) {
     return $j;
 }
 
+// ---------------------------------------------------------------------
+//  مقدارِ بریده‌شده در خودِ PDFِ بیمه‌گر (مثلاً شماره‌ی موتورِ بلند در پیشنهادِ پاسارگاد که فقط ۱۲ کاراکترِ اولش چاپ
+//  می‌شود): پارسر آن را علامت می‌زند (truncated). اگر همین خودرو (با شاسیِ کامل یا موتورِ کامل) در سوابقِ سایت
+//  هست، مقدارِ کامل از همان‌جا گذاشته می‌شود؛ وگرنه خانه در فرم با هشدار مشخص می‌شود تا از کارت خودرو کامل شود.
+// ---------------------------------------------------------------------
+function vr_norm_id($v) { return strtoupper(preg_replace('/[\s\-_.\/]+/u', '', p2e_digits((string)$v))); }
+// مقدارِ کامل در سوابق: $want = engine | chassis ، $prefix = بخشِ چاپ‌شده، $other = مقدارِ کاملِ آن یکی (شاسی یا موتور)
+function vr_lookup_full_id($pdo, $want, $prefix, $other) {
+    $prefix = vr_norm_id($prefix); $other = vr_norm_id($other);
+    if (strlen($prefix) < 6 || strlen($other) < 6) return null;
+    $src = [['company_request_plates', 'engine_no', 'chassis_no', 'vin'], ['policy_cases', 'engine_num', 'chassis_num', 'vin'], ['visit_reports', 'engine_no', 'chassis_no', null]];
+    $found = [];
+    foreach ($src as [$t, $eng, $ch, $vin]) {
+        $n = function ($c) { return "UPPER(REPLACE(REPLACE($c, ' ', ''), '-', ''))"; };
+        $chExpr = $vin ? "({$n($ch)} = ? OR {$n($vin)} = ?)" : "{$n($ch)} = ?";
+        if ($want === 'engine') { $col = $eng; $where = "$chExpr AND {$n($eng)} LIKE ?"; $args = $vin ? [$other, $other] : [$other]; }
+        else { $col = $vin ? "COALESCE(NULLIF($ch, ''), $vin)" : $ch; $where = "{$n($eng)} = ? AND ({$n($ch)} LIKE ?" . ($vin ? " OR {$n($vin)} LIKE ?" : '') . ")"; $args = [$other]; }
+        $args[] = $prefix . '%';
+        if ($want !== 'engine' && $vin) $args[] = $prefix . '%';
+        try {
+            $st = $pdo->prepare("SELECT $col AS v FROM $t WHERE $where LIMIT 20");
+            $st->execute($args);
+            foreach ($st->fetchAll() as $r) { $v = vr_norm_id($r['v']); if (strlen($v) > strlen($prefix) && strpos($v, $prefix) === 0) $found[$v] = true; }
+        } catch (Throwable $e) {}
+    }
+    return count($found) === 1 ? array_keys($found)[0] : null;   // فقط وقتی یک جوابِ قطعی هست
+}
+function vr_fix_truncated($pdo, array $res, array $fields, array $mapped) {
+    $tr = (array)($res['truncated'] ?? []);
+    if (!$tr) return [$mapped, []];
+    $d = (array)($res['data'] ?? []);
+    $fieldFor = function (array $want) use ($fields) {
+        foreach ($fields as $f) {
+            $keys = array_merge([$f['field_key']], array_filter(array_map('trim', explode(',', (string)$f['parser_keys']))));
+            if (array_intersect($keys, $want)) return $f['field_key'];
+        }
+        return null;
+    };
+    $first = function (array $keys) use ($d) { foreach ($keys as $k) if (!empty($d[$k])) return (string)$d[$k]; return ''; };
+    $warn = [];
+    foreach ([['engine', ['engine_no', 'motor'], ['chassis_no', 'shasi', 'vin'], 'شماره موتور'], ['chassis', ['chassis_no', 'shasi', 'vin'], ['engine_no', 'motor'], 'شماره شاسی']] as [$kind, $keys, $otherKeys, $label]) {
+        if (!array_intersect($keys, $tr)) continue;
+        $prefix = $first($keys);
+        $otherTrunc = (bool)array_intersect($otherKeys, $tr);
+        $full = $otherTrunc ? null : vr_lookup_full_id($pdo, $kind, $prefix, $first($otherKeys));
+        $fk = $fieldFor($keys);
+        if ($full) {
+            if ($fk) $mapped['fields'][$fk] = $full;
+            $warn[] = ['field' => $fk, 'level' => 'info', 'value' => $full,
+                       'msg' => "{$label} در PDFِ بیمه‌گر ناقص چاپ شده بود ({$prefix})؛ مقدارِ کامل از سوابقِ همین خودرو در سایت گذاشته شد: {$full} — یک بار با کارت خودرو تطبیق دهید."];
+        } else {
+            $warn[] = ['field' => $fk, 'level' => 'warn', 'value' => $prefix,
+                       'msg' => "{$label} در خودِ PDFِ بیمه‌گر بریده شده و فقط «{$prefix}» چاپ شده است (ادامه‌اش در فایل نیست). لطفاً از کارت خودرو کامل کنید."];
+        }
+    }
+    return [$mapped, $warn];
+}
+
 // خروجیِ پارسر => مقدارِ فیلدهای فرم (نام فیلد، یا یکی از «کلیدهای پارسر»ِ تعریف‌شده برای آن فیلد)
 function vr_map_parsed(array $data, array $fields, array $visitors) {
     $pick = function (array $keys) use ($data) {

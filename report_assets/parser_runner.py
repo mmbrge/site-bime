@@ -361,6 +361,55 @@ def _clean(d):
     return out
 
 
+# ---------------------------------------------------------------------------
+#  مقدارِ بریده‌شده در خودِ PDF
+# ---------------------------------------------------------------------------
+# بعضی فرم‌های بیمه‌گر (مثلاً پیشنهادِ پاساргاد با JasperReports) مقدارِ بلندتر از خانه را بی‌صدا می‌بُرند: فقط همان
+# کاراکترهایی که در خانه جا می‌شوند در فایل نوشته می‌شود و بقیه اصلاً در PDF نیست. نشانه‌اش این است که متن تا لبه‌ی
+# خطِ جداکننده‌ی خانه چسبیده است. چنین کلیدهایی برگردانده می‌شوند تا سایت از سوابقِ خودش کاملشان کند یا هشدار بدهد.
+TRUNC_KEYS = ('engine_no', 'motor', 'chassis_no', 'shasi', 'vin')
+
+
+def detect_truncated(pdf_path, data):
+    vals = {k: str(data.get(k) or '').strip() for k in TRUNC_KEYS}
+    vals = {k: v for k, v in vals.items() if len(v) >= 6}
+    if not vals:
+        return []
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        import fitz
+    doc = fitz.open(pdf_path)
+    out = []
+    try:
+        for page in doc:
+            vlines = []
+            for dr in page.get_drawings():
+                for it in dr.get('items', []):
+                    if it[0] == 'l' and abs(it[1].x - it[2].x) < 0.6:
+                        vlines.append((it[1].x, min(it[1].y, it[2].y), max(it[1].y, it[2].y)))
+                    elif it[0] == 're':
+                        r = it[1]
+                        vlines.append((r.x0, r.y0, r.y1)); vlines.append((r.x1, r.y0, r.y1))
+            if not vlines:
+                continue
+            for w in page.get_text('words'):
+                txt = w[4].strip().upper()
+                for k, v in vals.items():
+                    if k in out or txt != v.upper():
+                        continue
+                    x0, y0, x1, y1 = w[0], w[1], w[2], w[3]
+                    cy = (y0 + y1) / 2
+                    # خطِ عمودیِ خانه درست چسبیده به ابتدا یا انتهای متن (کمتر از ۱٫۵ پوینت فاصله)
+                    for lx, ly0, ly1 in vlines:
+                        if ly0 - 2 <= cy <= ly1 + 2 and (0 <= x0 - lx <= 1.5 or 0 <= lx - x1 <= 1.5):
+                            out.append(k)
+                            break
+    finally:
+        doc.close()
+    return out
+
+
 def main():
     if len(sys.argv) < 2:
         _out({'ok': False, 'error': 'usage: parser_runner.py file.pdf [parser.py]'})
@@ -421,8 +470,13 @@ def main():
         except Exception:
             traceback.print_exc(file=sys.stderr)
 
+    try:
+        truncated = detect_truncated(pdf_path, data)
+    except BaseException as e:
+        truncated = []
+        errors.append('truncated: %s' % e)
     _out({'ok': True, 'data': {k: v for k, v in data.items() if v != ''}, 'method': method, 'parser_used': used,
-          'parser_error': parser_error, 'raw_len': len(raw_text), 'raw_preview': raw_text[:3000],
+          'parser_error': parser_error, 'raw_len': len(raw_text), 'raw_preview': raw_text[:3000], 'truncated': truncated,
           'checked': [(c['line'] + ' ← ' + c['label']) if len(c['label']) < 12 else c['label'] for c in checkboxes if c['checked']]})
     return 0
 
