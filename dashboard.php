@@ -3847,12 +3847,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="net-watch.js?v=4"></script>
     <script src="cursor-fx.js?v=1" defer></script>
     <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=11"></script>
+    <script src="comfort.js?v=12"></script>
     <script src="settings-nav.js?v=2"></script>
     <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
-    <script src="chat-ui.js?v=7"></script>
+    <script src="chat-ui.js?v=8"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه

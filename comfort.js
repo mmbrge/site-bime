@@ -311,7 +311,30 @@
     .cf-cpick .it small{display:block;font-size:10.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     html.cf-dark{filter:invert(.9) hue-rotate(180deg);background:#fff}
     html.cf-dark img,html.cf-dark video,html.cf-dark canvas,html.cf-dark iframe,html.cf-dark .plate,html.cf-dark .ir-plate,html.cf-dark #cf-root,html.cf-dark .cf-pops,html.cf-dark .cf-bday,html.cf-dark [data-cf-noinv]{filter:invert(1) hue-rotate(180deg)}
-    @media (max-width:640px){.cf-root{left:10px;bottom:10px}.cf-disc{width:46px;height:46px}.cf-hubbtn{width:40px;height:40px;border-radius:13px}.cf-panel,.cf-root.cf-has-mini .cf-panel{left:0;bottom:106px;width:calc(100vw - 20px);max-height:68vh}.cf-pops{left:10px;bottom:72px}}
+    /* موبایل: دکمه‌ها کوچک‌تر و هنگامِ اسکرول به پایین کنار می‌روند؛ پخش‌کننده و جعبه‌ابزار به‌شکلِ «برگه‌ی پایینِ صفحه»
+       (تمام‌عرض، با دستگیره، پس‌زمینه‌ی تیره، بستن با کشیدن به پایین یا زدن بیرونِ برگه) */
+    .cf-sheet-bd{position:fixed;inset:0;z-index:9399;background:rgba(2,6,23,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:cfBdIn .25s ease both}
+    .cf-sheet-bd.out{animation:cfBdOut .22s ease forwards}
+    @keyframes cfBdIn{from{opacity:0}}@keyframes cfBdOut{to{opacity:0}}
+    @keyframes cfSheetIn{from{transform:translateY(100%)}to{transform:none}}
+    @keyframes cfSheetOut{to{transform:translateY(100%)}}
+    @media (max-width:640px){
+        .cf-root{left:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));transition:transform .35s cubic-bezier(.2,.9,.3,1),opacity .3s}
+        .cf-root.cf-tuck:not(.cf-sheet){transform:translateX(calc(-100% - 16px));opacity:0;pointer-events:none}
+        .cf-dock{gap:8px}
+        .cf-disc{width:42px;height:42px}
+        .cf-hubbtn{width:38px;height:38px;border-radius:13px;font-size:14px}
+        .cf-mini{width:min(300px,calc(100vw - 20px))}
+        .cf-root.cf-sheet .cf-dock,.cf-root.cf-sheet .cf-mini{opacity:0!important;pointer-events:none}
+        .cf-panel,.cf-root.cf-has-mini .cf-panel{position:fixed;left:0;right:0;bottom:0;width:100%;max-height:min(86vh,760px);max-height:min(86dvh,760px);border-radius:26px 26px 0 0;
+            border-bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);transform-origin:bottom center;animation:cfSheetIn .34s cubic-bezier(.2,.9,.3,1);touch-action:pan-y}
+        .cf-panel.cf-out{animation:cfSheetOut .22s cubic-bezier(.4,0,1,1) forwards}
+        .cf-panel.cf-drag{animation:none;transition:none}
+        .cf-panel .cf-ph{padding-top:22px;position:relative}
+        .cf-panel .cf-ph::before{content:'';pointer-events:none;position:absolute;top:8px;left:50%;width:44px;height:5px;margin-left:-22px;border-radius:3px;background:rgba(148,163,184,.55)}
+        .cf-panel .cf-x{width:34px;height:34px}
+        .cf-pops{left:10px;bottom:72px}
+    }
     `;
     function injectCss() { if (document.getElementById('cf-css')) return; const st = document.createElement('style'); st.id = 'cf-css'; st.textContent = CSS; document.head.appendChild(st); }
 
@@ -609,6 +632,7 @@
                 <button class="cf-ib" data-a="lib" title="فهرست و آهنگ‌های من"><i class="fas fa-list-ul"></i></button></div>
             <div class="cf-lib ${LS.get('libOpen', false) ? '' : 'cf-hidden'}" data-lib></div>`;
         root.appendChild(el);
+        sheetOn(el);
         renderGenres(); renderNow(); renderSeek(); renderLib();
         vzEnsure(); vzStart();
         const on = (a, fn) => el.querySelectorAll(`[data-a="${a}"]`).forEach(b => b.addEventListener('click', fn));
@@ -1081,6 +1105,7 @@
             <div class="cf-tabs">${tabs.map(([k, ic, t]) => `<button data-t="${k}" class="${S.hubTab === k ? 'on' : ''}"><i class="fas ${ic}"></i>${t}</button>`).join('')}</div>
             <div class="cf-body" data-body></div>`;
         root.appendChild(el);
+        sheetOn(el);
         el.querySelector('[data-a="close"]').onclick = closePanels;
         const an = el.querySelector('[data-a="ann"]'); if (an) an.onclick = () => { closePanels(); window.Announce.history(); };
         el.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { S.hubTab = b.dataset.t; el.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); renderHub(); }));
@@ -1102,7 +1127,40 @@
         });
         P.panel = null; S.hubEl = null;
         S.open = null;
+        sheetOff(instant === true);
         renderMini();
+    }
+    // ---- برگه‌ی پایینِ صفحه در موبایل ----
+    const isPhone = () => window.matchMedia && matchMedia('(max-width:640px)').matches;
+    function sheetOn(el) {
+        if (!isPhone() || !el) return;
+        root.classList.add('cf-sheet');
+        root.classList.remove('cf-tuck');
+        if (!S.bd) {
+            S.bd = document.createElement('div');
+            S.bd.className = 'cf-sheet-bd';
+            S.bd.addEventListener('click', () => closePanels());
+            document.body.appendChild(S.bd);
+        }
+        // کشیدنِ سرِ برگه به پایین = بستن
+        const head = el.querySelector('.cf-ph');
+        if (!head) return;
+        let y0 = null, dy = 0;
+        head.addEventListener('touchstart', e => { if (e.target.closest('button,input,select')) return; y0 = e.touches[0].clientY; dy = 0; el.classList.add('cf-drag'); }, {passive: true});
+        head.addEventListener('touchmove', e => { if (y0 === null) return; dy = Math.max(0, e.touches[0].clientY - y0); el.style.transform = `translateY(${dy}px)`; }, {passive: true});
+        head.addEventListener('touchend', () => {
+            if (y0 === null) return;
+            y0 = null; el.classList.remove('cf-drag');
+            if (dy > 90) { el.style.transform = ''; closePanels(); }
+            else { el.style.transition = 'transform .25s ease'; el.style.transform = ''; setTimeout(() => { el.style.transition = ''; }, 260); }
+        });
+    }
+    function sheetOff(instant) {
+        if (root) root.classList.remove('cf-sheet');
+        const bd = S.bd; S.bd = null;
+        if (!bd) return;
+        if (instant) { bd.remove(); return; }
+        bd.classList.add('out'); setTimeout(() => bd.remove(), 230);
     }
     // ---- کارها ----
     function hubTodo(b) {
@@ -1680,6 +1738,19 @@
             hubBtn.onclick = () => openHub();
             dock.appendChild(hubBtn);
         }
+        // موبایل: با اسکرول به پایین دکمه‌ها کنار می‌روند تا روی محتوا نباشند؛ با اسکرول به بالا یا کمی مکث برمی‌گردند
+        let lastY = new WeakMap(), tuckT = null;
+        document.addEventListener('scroll', e => {
+            if (!isPhone() || S.open) return;
+            const t = e.target === document ? document.scrollingElement || document.documentElement : e.target;
+            if (!t || t.closest && t.closest('.cf-root')) return;
+            const y = t.scrollTop || 0, prev = lastY.get(t) ?? y;
+            lastY.set(t, y);
+            if (y - prev > 6) root.classList.add('cf-tuck');
+            else if (prev - y > 6) root.classList.remove('cf-tuck');
+            clearTimeout(tuckT);
+            tuckT = setTimeout(() => root.classList.remove('cf-tuck'), 1400);
+        }, {capture: true, passive: true});
         document.addEventListener('mousedown', e => {
             // کلیکِ بیرونِ پنل (پخش‌کننده یا جعبه‌ابزار) می‌بنددش؛ دکمه‌های گوشه (root) خودشان باز/بسته می‌کنند
             if (!S.open || root.contains(e.target) || e.target.closest('.cf-cpick,.cf-modal,.cf-pal,.cf-pops,#cf-up-pill')) return;

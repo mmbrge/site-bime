@@ -577,6 +577,28 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 @keyframes jWave{0%,100%{transform:rotate(0)}15%,45%,75%{transform:rotate(22deg)}30%,60%,90%{transform:rotate(-12deg)}}
 @keyframes jDrive{0%{transform:translateX(60px);opacity:0}50%{transform:translateX(-8px);opacity:1}70%{transform:translateX(4px)}100%{transform:none}}
 @keyframes jBounce{0%{transform:scale(.3)}40%{transform:scale(1.3) translateY(-10px)}65%{transform:scale(.92)}85%{transform:scale(1.05)}100%{transform:none}}
+/* موبایل: گفتگوی باز تمام‌صفحه با سرتیتر و نوارِ نوشتنِ جمع‌وجور؛ فاصله‌ی امن برای ناچ و نوارِ پایینِ گوشی */
+.cx-mobfull{position:fixed!important;inset:0!important;width:100%!important;height:100vh!important;height:100dvh!important;min-height:0!important;z-index:9500;margin:0!important;animation:cxMobIn .28s cubic-bezier(.2,.9,.3,1)}
+@keyframes cxMobIn{from{transform:translateX(-24px);opacity:.4}to{transform:none;opacity:1}}
+.cx-mobfull .cx{border-radius:0;height:100%}
+html.cx-mob-lock,html.cx-mob-lock body{overflow:hidden!important;overscroll-behavior:none}
+html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
+@media (max-width:640px){
+  .cx{font-size:13.5px}
+  .cx-side-h{padding:12px 12px 6px}
+  .cx-search{margin:0 12px 8px}
+  .cx-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:0 12px 10px;-webkit-overflow-scrolling:touch}
+  .cx-chips::-webkit-scrollbar{display:none}
+  .cx-th{padding:10px 8px;border-radius:16px}
+  .cx-mobfull .cx-head{padding-top:max(10px,env(safe-area-inset-top,0px));box-shadow:0 6px 18px -14px rgba(15,23,42,.45);position:relative;z-index:2}
+  .cx-mobfull .cx-compose{padding:6px 8px max(8px,env(safe-area-inset-bottom,0px))}
+  .cx-head .cx-ib{width:34px;height:34px;border-radius:11px}
+  .cx-in-row{gap:5px!important}
+  .cx-in-row .cx-ib{width:36px;height:36px;flex-shrink:0}
+  .cx-in-row textarea{min-height:40px;font-size:14px;padding:8px 11px;border-radius:20px}
+  .cx-send{width:42px;height:42px;border-radius:50%}
+  .cx-body{padding-left:10px!important;padding-right:10px!important}
+}
 @media (max-width:820px){
   .cx-side{width:100%;border-left:0}
   .cx.cx-full.cx-conv-open .cx-side{display:none}
@@ -720,6 +742,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.search = null; this.presence = null; this.state = null; this.selecting = false; this.selected = new Set();
             if (this.root) this.root.classList.remove('cx-selmode');
             this.root.classList.add('cx-conv-open');
+            this.mobFull(true);
             if (this.o.mode === 'full') this.renderThreads();
             const main = this.$('.cx-main');
             main.innerHTML = `<div class="cx-head"><button class="cx-ib cx-back" title="بازگشت"><i class="fas fa-arrow-right"></i></button><span class="cx-skel" style="width:40px;height:40px;margin:0"></span><div class="cx-head-b"><b>...</b></div></div><div class="cx-body"><div class="cx-skel" style="width:60%"></div><div class="cx-skel" style="width:45%;margin-right:auto"></div><div class="cx-skel" style="width:55%"></div></div>`;
@@ -734,7 +757,42 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
             this.setTyping(d.typing);
             if (this.o.mode === 'full') { const t = this.threads.find(x => x.key === key); if (t && t.unread) { t.unread = 0; this.renderThreads(); this.renderChips(); if (this.o.onUnread) this.o.onUnread(this.threads.reduce((a, x) => a + (x.unread || 0), 0)); } }
         }
-        back() { this.key = null; this.root.classList.remove('cx-conv-open'); this.renderThreads(); }
+        back(fromPop) {
+            // دکمه‌ی «بازگشت» گوشی و دکمه‌ی بازگشتِ گفتگو یکی‌اند
+            if (!fromPop && this._hist) { this._hist = false; try { history.back(); } catch (e) {} }
+            this.key = null; this.root.classList.remove('cx-conv-open'); this.mobFull(false); this.renderThreads();
+        }
+        // موبایل: گفتگوی باز تمام‌صفحه می‌شود (مثلِ پیام‌رسان‌ها) و با «بازگشت» به فهرست برمی‌گردد
+        mobFull(on) {
+            if (this.o.mode !== 'full' || !this.el || !this.el.parentNode) return;
+            const phone = window.matchMedia && matchMedia('(max-width:640px)').matches;
+            if (on && phone && !this._ph) {
+                this._ph = document.createComment('cx-place');
+                this.el.parentNode.insertBefore(this._ph, this.el);
+                document.body.appendChild(this.el);
+                this.el.classList.add('cx-mobfull');
+                document.documentElement.classList.add('cx-mob-lock');
+                try { history.pushState({cxConv: 1}, ''); this._hist = true; } catch (e) {}
+                if (!this._popB) {
+                    this._popB = () => { if (this._hist) { this._hist = false; if (this._ph) this.back(true); } };
+                    window.addEventListener('popstate', this._popB);
+                    // اگر صفحه‌ی گفتگوها پنهان شد (رفتن به بخشِ دیگر) یا صفحه پهن شد، تمام‌صفحه بسته می‌شود
+                    window.addEventListener('resize', () => { if (this._ph && !matchMedia('(max-width:640px)').matches) this.mobFull(false); });
+                }
+                clearInterval(this._phT);
+                this._phT = setInterval(() => {
+                    if (!this._ph) return clearInterval(this._phT);
+                    const host = this._ph.parentNode;
+                    if (!host || !document.contains(host) || host.closest('.hidden') || !host.getClientRects().length) this.back();
+                }, 800);
+            } else if (!on && this._ph) {
+                clearInterval(this._phT);
+                if (this._ph.parentNode) this._ph.parentNode.insertBefore(this.el, this._ph);
+                this._ph.remove(); this._ph = null;
+                this.el.classList.remove('cx-mobfull');
+                document.documentElement.classList.remove('cx-mob-lock');
+            }
+        }
 
         renderConv() {
             const h = this.head, full = this.o.mode === 'full';
