@@ -108,6 +108,9 @@ function life_ensure($pdo) {
             phone VARCHAR(30) NULL, result VARCHAR(60) NULL, next_j CHAR(10) NULL, next_g DATE NULL, text TEXT NULL, created_by INT NULL, KEY k_pol (policy_id), KEY k_next (next_g)) $o",
         "CREATE TABLE IF NOT EXISTS life_imports (id INT AUTO_INCREMENT PRIMARY KEY, file_name VARCHAR(255) NULL, created_by INT NULL, created_at DATETIME NULL, range_from CHAR(10) NULL,
             range_to CHAR(10) NULL, stats_json TEXT NULL) $o",
+        // چه کسانی این بیمه‌نامه را پیگیری می‌کنند (auto=1: خودکار با ثبتِ تماس/پرداخت؛ 0: تعیینِ دستی)
+        "CREATE TABLE IF NOT EXISTS life_followers (policy_id INT NOT NULL, user_id INT NOT NULL, auto TINYINT NOT NULL DEFAULT 1, added_by INT NULL, added_at DATETIME NULL,
+            PRIMARY KEY (policy_id, user_id), KEY k_user (user_id)) $o",
         "CREATE TABLE IF NOT EXISTS life_templates (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(190) NOT NULL, file_path VARCHAR(600) NULL, footer_text TEXT NULL,
             is_default TINYINT NOT NULL DEFAULT 0, created_at DATETIME NULL, created_by INT NULL) $o",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[life_ensure] ' . $e->getMessage()); } }
@@ -393,6 +396,20 @@ function life_rrmdir($dir) {
     foreach (scandir($dir) as $f) { if ($f === '.' || $f === '..') continue; $p = $dir . '/' . $f; is_dir($p) ? life_rrmdir($p) : @unlink($p); }
     @rmdir($dir);
 }
+// کاربری که تماس/پرداخت/یادداشت ثبت می‌کند خودکار «پیگیری‌کننده»ی آن بیمه‌نامه می‌شود
+function life_follow($pdo, $policyId, $uid, $auto = 1, $by = null) {
+    if (!$uid) return;
+    $pdo->prepare("INSERT INTO life_followers (policy_id, user_id, auto, added_by, added_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE auto = LEAST(auto, VALUES(auto))")
+        ->execute([intval($policyId), intval($uid), $auto ? 1 : 0, $by ?: $uid]);
+}
+function life_followers($pdo, $policyId) {
+    $st = $pdo->prepare("SELECT f.user_id, f.auto, u.full_name FROM life_followers f JOIN users u ON u.id = f.user_id WHERE f.policy_id = ? ORDER BY f.auto, f.added_at");
+    $st->execute([intval($policyId)]);
+    return array_map(function ($r) { return ['id' => intval($r['user_id']), 'name' => $r['full_name'], 'auto' => intval($r['auto'])]; }, $st->fetchAll());
+}
+// حق‌بیمه‌ی کلِ یک سال = مبلغِ قسط × تعدادِ قسط در سال (بر اساسِ روشِ پرداخت)
+function life_annual($amount, $method) { return intval($amount) * life_per_year($method); }
+
 // مبلغِ پرداخت‌های ثبت‌شده‌ی یک قسط (کش در paid_amount)
 function life_refresh_paid($pdo, $instId) {
     $pdo->prepare("UPDATE life_installments SET paid_amount = (SELECT COALESCE(SUM(amount), 0) FROM life_payments WHERE installment_id = ? AND voided_at IS NULL), updated_at = NOW() WHERE id = ?")

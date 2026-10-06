@@ -12,7 +12,9 @@ function life_agg_sql() {
                    MIN(CASE WHEN $rem > 0 AND i.due_g < :today3 THEN i.due_g END) AS oldest_overdue_g,
                    SUM(CASE WHEN i.inst_no = 1 THEN 1 ELSE 0 END) AS has_first,
                    SUM(CASE WHEN i.inst_no = 1 THEN $paid ELSE 0 END) AS first_paid,
-                   MIN(i.amount) AS min_amount
+                   MIN(i.amount) AS min_amount,
+                   SUBSTRING_INDEX(GROUP_CONCAT(i.amount ORDER BY i.inst_no ASC), ',', 1) AS first_amount,
+                   SUBSTRING_INDEX(GROUP_CONCAT(i.amount ORDER BY i.inst_no DESC), ',', 1) AS last_amount
               FROM life_installments i GROUP BY i.policy_id";
 }
 
@@ -53,6 +55,10 @@ function life_filter_sql(array $f, &$params) {
                 AND n.id = (SELECT MAX(n2.id) FROM life_notes n2 WHERE n2.policy_id = p.id AND n2.kind = 'call'))";
         $params[':fu'] = date('Y-m-d');
     }
+    // پیگیری‌کننده: شناسه‌ی کاربر، یا «none» برای بیمه‌نامه‌های بی‌پیگیری‌کننده
+    $fol = (string)($f['follower'] ?? '');
+    if ($fol === 'none') $w[] = "NOT EXISTS (SELECT 1 FROM life_followers lf WHERE lf.policy_id = p.id)";
+    elseif (intval($fol) > 0) { $w[] = "EXISTS (SELECT 1 FROM life_followers lf WHERE lf.policy_id = p.id AND lf.user_id = :fol)"; $params[':fol'] = intval($fol); }
     if (!empty($f['no_phone'])) $w[] = "(COALESCE(p.holder_mobile, '') = '' AND COALESCE(p.phones, '') = '')";
     if (!empty($f['ids']) && is_array($f['ids'])) { $ids = array_filter(array_map('intval', $f['ids'])); if ($ids) $w[] = "p.id IN (" . implode(',', $ids) . ")"; }
     return $w;
@@ -77,7 +83,10 @@ function life_list($pdo, array $f, $page = 1, $per = 30, $all = false) {
                                 (SELECT n.at FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_call,
                                 (SELECT n.result FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_result,
                                 (SELECT n.next_j FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS next_follow,
-                                (SELECT COUNT(*) FROM life_notes n WHERE n.policy_id = p.id AND n.kind <> 'sys') AS notes_count
+                                (SELECT COUNT(*) FROM life_notes n WHERE n.policy_id = p.id AND n.kind <> 'sys') AS notes_count,
+                                (SELECT u.full_name FROM life_notes n JOIN users u ON u.id = n.created_by WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_call_by,
+                                (SELECT GROUP_CONCAT(u.full_name ORDER BY lf.auto, lf.added_at SEPARATOR '، ') FROM life_followers lf JOIN users u ON u.id = lf.user_id WHERE lf.policy_id = p.id) AS followers,
+                                a.first_amount, a.last_amount
                          $from ORDER BY $order$lim");
     $st->execute($params);
     $rows = [];
@@ -88,12 +97,16 @@ function life_list($pdo, array $f, $page = 1, $per = 30, $all = false) {
 function life_list_row(array $r) {
     $o = [];
     foreach (['id', 'policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'phones', 'insured_name', 'insured_nid', 'issue_j', 'start_j', 'end_j', 'pay_method', 'policy_status',
-              'field_name', 'variant', 'agent', 'branch', 'contract_name', 'channel', 'pay_id', 'duration', 'policy_year', 'next_due', 'last_result', 'next_follow', 'note'] as $k) $o[$k] = $r[$k] ?? null;
+              'field_name', 'variant', 'agent', 'branch', 'contract_name', 'channel', 'pay_id', 'duration', 'policy_year', 'next_due', 'last_result', 'next_follow', 'note', 'last_call_by', 'followers'] as $k) $o[$k] = $r[$k] ?? null;
     foreach (['inst_count', 'max_inst', 'total_amount', 'total_paid', 'total_rem', 'overdue_count', 'overdue_amount', 'notes_count'] as $k) $o[$k] = intval($r[$k] ?? 0);
     $o['last_call'] = !empty($r['last_call']) ? life_g2j(substr($r['last_call'], 0, 10)) . ' ' . substr($r['last_call'], 11, 5) : null;
     $o['overdue_days'] = !empty($r['oldest_overdue_g']) ? max(0, intval((strtotime(date('Y-m-d')) - strtotime($r['oldest_overdue_g'])) / 86400)) : 0;
     $o['first_unpaid'] = intval($r['has_first'] ?? 0) > 0 && intval($r['first_paid'] ?? 0) === 0 && intval($r['total_paid'] ?? 0) === 0;
-    $o['annual_est'] = intval($r['min_amount'] ?? 0) * life_per_year($r['pay_method'] ?? '');
+    // حق‌بیمه‌ی کلِ یک سال: سالِ جاری بر اساسِ آخرین قسط، سالِ اول بر اساسِ قسطِ اول (حق‌بیمه‌ی عمر هر سال افزایش دارد)
+    $o['annual_premium'] = life_annual($r['last_amount'] ?? 0, $r['pay_method'] ?? '');
+    $o['first_year_premium'] = life_annual($r['first_amount'] ?? 0, $r['pay_method'] ?? '');
+    $o['annual_est'] = $o['annual_premium'];
+    $o['per_year'] = life_per_year($r['pay_method'] ?? '');
     return $o;
 }
 
@@ -142,7 +155,12 @@ function life_detail($pdo, $id) {
     $out['extra'] = json_decode((string)$p['extra_json'], true) ?: (object)[];
     $out['phones_list'] = life_phone_list($p);
     $out['archive'] = $p['archive_dir'];
-    $out['annual_est'] = ($insts ? min(array_column($insts, 'amount')) : 0) * life_per_year($p['pay_method']);
+    $out['per_year'] = life_per_year($p['pay_method']);
+    $out['annual_premium'] = $insts ? life_annual(end($insts)['amount'], $p['pay_method']) : 0;
+    $out['first_year_premium'] = $insts ? life_annual($insts[0]['amount'], $p['pay_method']) : 0;
+    $out['annual_est'] = $out['annual_premium'];
+    $out['followers'] = life_followers($pdo, $id);
+    $out['total_all'] = array_sum(array_column($insts, 'amount'));
     $out['first_unpaid'] = false;
     foreach ($insts as $i) if ($i['inst_no'] === 1 && $i['eff_paid'] === 0) $out['first_unpaid'] = $sum['paid'] === 0;
     return ['policy' => $out, 'insts' => $insts, 'notes' => $notes, 'sum' => $sum];
@@ -204,7 +222,7 @@ function life_stats($pdo, array $f) {
     $st->execute($allP + [':t4' => $today]);
     $byDue = array_map(function ($r) { return ['m' => $r['m'], 'amount' => intval($r['amount']), 'paid' => intval($r['paid']), 'n' => intval($r['n']), 'over' => intval($r['over_amount'])]; }, $st->fetchAll());
     // فروش: صدور ماه به ماه (تعداد و برآوردِ حق‌بیمه‌ی سالانه)
-    $st = $pdo->prepare("SELECT p.issue_j, p.pay_method, COALESCE(a.min_amount, 0) AS min_amount $from");
+    $st = $pdo->prepare("SELECT p.issue_j, p.pay_method, COALESCE(a.first_amount, 0) AS min_amount $from");
     $st->execute($params);
     $sales = []; $salesTotal = 0; $methods = [];
     foreach ($st->fetchAll() as $r) {
@@ -259,13 +277,14 @@ function life_export_columns() {
         'issue_j' => ['تاریخ صدور', 'p', false], 'start_j' => ['تاریخ شروع', 'p', false], 'end_j' => ['تاریخ پایان', 'p', false], 'duration' => ['مدت (سال)', 'p', true],
         'policy_year' => ['سال بیمه‌ای', 'p', true], 'pay_method' => ['روش پرداخت', 'p', false], 'policy_status' => ['وضعیت بیمه‌نامه', 'p', false], 'field_name' => ['رشته', 'p', false],
         'variant' => ['طرح', 'p', false], 'contract_name' => ['قرارداد', 'p', false], 'agent' => ['نماینده', 'p', false], 'branch' => ['شعبه', 'p', false], 'channel' => ['کانال فروش', 'p', false],
-        'pay_id' => ['شناسه واریز', 'p', false], 'annual_est' => ['برآورد حق‌بیمه‌ی سالانه', 'p', true], 'inst_count' => ['تعداد اقساط ثبت‌شده', 'p', true],
+        'pay_id' => ['شناسه واریز', 'p', false], 'annual_premium' => ['حق‌بیمه‌ی کلِ یک سال (سالِ جاری)', 'p', true], 'first_year_premium' => ['حق‌بیمه‌ی سالِ اول', 'p', true],
+        'per_year' => ['تعداد قسط در سال', 'p', true], 'inst_count' => ['تعداد اقساط ثبت‌شده', 'p', true],
         'total_amount' => ['جمع مبلغ اقساط', 'p', true], 'total_paid' => ['جمع پرداختی', 'p', true], 'total_rem' => ['جمع مانده', 'p', true],
         'overdue_count' => ['تعداد اقساط معوق', 'p', true], 'overdue_amount' => ['مبلغ معوق', 'p', true], 'next_due' => ['نزدیک‌ترین سررسیدِ پرداخت‌نشده', 'p', false],
-        'last_call' => ['آخرین تماس', 'p', false], 'last_result' => ['نتیجه‌ی آخرین تماس', 'p', false], 'next_follow' => ['پیگیری بعدی', 'p', false], 'note' => ['یادداشت بیمه‌نامه', 'p', false],
+        'followers' => ['پیگیری‌کنندگان', 'p', false], 'last_call' => ['آخرین تماس', 'p', false], 'last_call_by' => ['آخرین تماس توسط', 'p', false], 'last_result' => ['نتیجه‌ی آخرین تماس', 'p', false], 'next_follow' => ['پیگیری بعدی', 'p', false], 'note' => ['یادداشت بیمه‌نامه', 'p', false],
         'inst_no' => ['شماره قسط', 'i', true], 'internal_no' => ['شماره داخلی قسط', 'i', false], 'due_j' => ['تاریخ سررسید', 'i', false], 'amount' => ['مبلغ قسط', 'i', true],
         'excel_collected' => ['وصول طبق اکسل بیمه‌گر', 'i', true], 'paid_amount' => ['پرداخت‌های ثبت‌شده', 'i', true], 'eff_paid' => ['پرداختی قسط', 'i', true], 'rem' => ['مانده قسط', 'i', true],
-        'status_fa' => ['وضعیت قسط', 'i', false], 'days' => ['روز از سررسید', 'i', true], 'pay_dates' => ['تاریخ‌های پرداخت', 'i', false], 'pay_refs' => ['شماره‌های پیگیری', 'i', false],
+        'status_fa' => ['وضعیت قسط', 'i', false], 'days' => ['روز از سررسید', 'i', true], 'pay_dates' => ['تاریخ‌های پرداخت', 'i', false], 'pay_refs' => ['شماره‌های پیگیری', 'i', false], 'pay_by' => ['ثبت پرداخت توسط', 'i', false],
         'cleared_note' => ['توضیح تسویه', 'i', false],
     ];
 }
@@ -300,7 +319,7 @@ function life_export($pdo, array $f, $mode, array $cols) {
     $pays = [];
     if ($insts) {
         $ids = implode(',', array_map(function ($i) { return intval($i['id']); }, $insts));
-        foreach ($pdo->query("SELECT installment_id, paid_j, ref_no FROM life_payments WHERE voided_at IS NULL AND installment_id IN ($ids) ORDER BY paid_g, id") as $x) $pays[intval($x['installment_id'])][] = $x;
+        foreach ($pdo->query("SELECT p.installment_id, p.paid_j, p.ref_no, u.full_name AS by_name FROM life_payments p LEFT JOIN users u ON u.id = p.created_by WHERE p.voided_at IS NULL AND p.installment_id IN ($ids) ORDER BY p.paid_g, p.id") as $x) $pays[intval($x['installment_id'])][] = $x;
     }
     // ترتیبِ بیمه‌نامه‌ها همان ترتیبِ فهرست
     $order = array_flip(array_keys($byId));
@@ -313,7 +332,7 @@ function life_export($pdo, array $f, $mode, array $cols) {
         $v = $p + ['inst_no' => intval($i['inst_no']), 'internal_no' => $i['internal_no'], 'due_j' => $i['due_j'], 'amount' => intval($i['amount']), 'excel_collected' => intval($i['excel_collected']),
                    'paid_amount' => intval($i['paid_amount']), 'eff_paid' => $eff, 'rem' => intval($i['amount']) - $eff, 'status_fa' => LIFE_STATUS_FA[$s],
                    'days' => $i['due_g'] ? intval((strtotime($today) - strtotime($i['due_g'])) / 86400) : '', 'pay_dates' => implode('، ', array_column($px, 'paid_j')),
-                   'pay_refs' => implode('، ', array_filter(array_column($px, 'ref_no'))), 'cleared_note' => $i['cleared_note']];
+                   'pay_refs' => implode('، ', array_filter(array_column($px, 'ref_no'))), 'pay_by' => implode('، ', array_unique(array_filter(array_column($px, 'by_name')))), 'cleared_note' => $i['cleared_note']];
         if ($i['pay_id']) $v['pay_id'] = $i['pay_id'];
         $rows[] = array_map(function ($c) use ($v) { return $v[$c] ?? ''; }, $cols);
     }

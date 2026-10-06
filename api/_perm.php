@@ -311,7 +311,8 @@ function perm_api_map() {
             'bootstrap' => 'life-dash:view|life-policies:view|life-import:view|life-archive:view|life-settings:view', 'stats' => 'life-dash:view',
             'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view', 'policy_save' => 'life-policies:edit',
             'policy_delete' => 'life-policies:delete', 'export' => 'life-policies:export', 'purge_candidates' => 'life-policies:delete', 'purge' => 'life-policies:delete',
-            'phones_save' => 'life-calls:create|life-policies:edit', 'note_add' => 'life-calls:create', 'note_delete' => 'life-calls:delete',
+            'phones_save' => 'life-calls:create|life-policies:edit', 'follow_toggle' => 'life-calls:create|life-pay:create|life-policies:edit',
+            'followers_save' => 'life-policies:edit', 'staff_options' => 'life-policies:view', 'note_add' => 'life-calls:create', 'note_delete' => 'life-calls:delete',
             'inst_save' => 'life-pay:edit', 'inst_add' => 'life-pay:create', 'inst_delete' => 'life-policies:delete', 'pay_add' => 'life-pay:create', 'pay_void' => 'life-pay:delete',
             'inst_file' => 'life-pay:view|life-archive:view', 'inst_file_upload' => 'life-pay:create', 'inst_file_delete' => 'life-pay:delete',
             'receipt_docx' => 'life-pay:view', 'receipt_html' => 'life-pay:view', 'receipt_pdf' => 'life-pay:view', 'templates' => 'life-pay:view|life-settings:view',
@@ -319,6 +320,7 @@ function perm_api_map() {
             'colmap_get' => 'life-settings:view|life-import:view', 'colmap_save' => 'life-settings:edit', 'colmap_headers' => 'life-settings:edit',
             'import_preview' => 'life-import:create', 'import_commit' => 'life-import:create', 'imports_list' => 'life-import:view',
             'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
+            'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit', 'bot_remind' => 'life-calls:create',
         ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [

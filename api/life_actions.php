@@ -8,6 +8,7 @@ require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_life.php';
 require_once __DIR__ . '/finance_core.php';
 require_once __DIR__ . '/_xlsx_writer.php';
+require_once __DIR__ . '/_life_bot.php';
 
 $out = function ($a) { if (!headers_sent()) header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 $fail = function ($msg) use ($out) { $out(['ok' => false, 'error' => $msg]); };
@@ -39,6 +40,7 @@ function life_my_perms($pdo) {
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = ($isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST) + $_GET;
 $action = (string)($data['action'] ?? '');
+if (($data['follower'] ?? '') === 'me') $data['follower'] = $uid;   // فیلترِ «پیگیری‌های من»
 
 // اکشن => دسترسیِ لازم
 $need = [
@@ -46,7 +48,8 @@ $need = [
     'stats' => 'life-dash:view', 'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view',
     'policy_save' => 'life-policies:edit', 'policy_delete' => 'life-policies:delete', 'export' => 'life-policies:export',
     'purge_candidates' => 'life-policies:delete', 'purge' => 'life-policies:delete',
-    'phones_save' => 'life-calls:create|life-policies:edit',
+    'phones_save' => 'life-calls:create|life-policies:edit', 'follow_toggle' => 'life-calls:create|life-pay:create|life-policies:edit',
+    'followers_save' => 'life-policies:edit', 'staff_options' => 'life-policies:view',
     'note_add' => 'life-calls:create', 'note_delete' => 'life-calls:delete',
     'inst_save' => 'life-pay:edit', 'inst_add' => 'life-pay:create', 'inst_delete' => 'life-policies:delete',
     'pay_add' => 'life-pay:create', 'pay_void' => 'life-pay:delete', 'inst_file' => 'life-pay:view|life-archive:view',
@@ -56,6 +59,8 @@ $need = [
     'tpl_delete' => 'life-settings:edit', 'tpl_sample' => 'life-settings:view', 'tpl_file' => 'life-settings:view',
     'colmap_get' => 'life-settings:view|life-import:view', 'colmap_save' => 'life-settings:edit', 'colmap_headers' => 'life-settings:edit',
     'import_preview' => 'life-import:create', 'import_commit' => 'life-import:create', 'imports_list' => 'life-import:view',
+    'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit',
+    'bot_remind' => 'life-calls:create',
     'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
 ];
 if (!isset($need[$action])) $fail('درخواست نامعتبر است.');
@@ -65,6 +70,8 @@ if (!life_can($pdo, $need[$action])) {
     $fail('شما به این عملیات دسترسی ندارید («' . (perm_pages()[$pg][0] ?? $pg) . '» - ' . (PERM_OPS[$op] ?? $op) . '). از مدیر کل بخواهید دسترسی‌تان را تنظیم کند.');
 }
 life_ensure($pdo);
+lbot_ensure($pdo);
+if ($action === 'bootstrap') lbot_lazy_reminders($pdo);   // یادآوری‌های ربات اگر کرون تنظیم نشده باشد
 
 // فایلِ آپلودی => [tmp, نام, پسوند] یا خطا
 function life_upload($key, array $exts, $maxMb = 20) {
@@ -115,7 +122,7 @@ function life_unique_file($dir, $base, $ext) {
 switch ($action) {
 // ---------------------------------------------------------------------
 case 'bootstrap':
-    $out(['ok' => true, 'perms' => life_my_perms($pdo), 'is_admin' => perm_real_role() === 'ADMIN', 'today_j' => life_today_j(), 'pdf_ok' => fin_pdf_converter_available(), 'pay_methods' => LIFE_PAY_METHODS,
+    $out(['ok' => true, 'perms' => life_my_perms($pdo), 'is_admin' => perm_real_role() === 'ADMIN', 'me' => $uid, 'today_j' => life_today_j(), 'pdf_ok' => fin_pdf_converter_available(), 'pay_methods' => LIFE_PAY_METHODS,
           'call_results' => LIFE_CALL_RESULTS, 'status_fa' => LIFE_STATUS_FA, 'templates' => life_can($pdo, 'life-pay:view|life-settings:view') ? life_templates($pdo) : [],
           'export_columns' => array_map(function ($v) { return ['label' => $v[0], 'level' => $v[1]]; }, life_export_columns()),
           'lists' => ['pay_methods' => $pdo->query("SELECT DISTINCT pay_method FROM life_policies WHERE pay_method IS NOT NULL AND pay_method <> '' ORDER BY pay_method")->fetchAll(PDO::FETCH_COLUMN),
@@ -130,6 +137,14 @@ case 'list':
 case 'detail':
     $d = life_detail($pdo, intval($data['id'] ?? 0));
     if (!$d) $fail('بیمه‌نامه پیدا نشد.');
+    // بیمه‌گذار به ربات وصل است؟ (کد ملی + یکی از شماره‌های همین بیمه‌نامه)
+    $d['policy']['bot_linked'] = 0;
+    if ($d['policy']['holder_nid']) {
+        $st = $pdo->prepare("SELECT phone FROM life_bot_links WHERE kind = 'CUSTOMER' AND nid = ?");
+        $st->execute([$d['policy']['holder_nid']]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ph) if (in_array($ph, array_column($d['policy']['phones_list'], 'phone'), true)) $d['policy']['bot_linked']++;
+    }
+    $d['policy']['bot_ready'] = lbot_token($pdo) !== '';
     $out(['ok' => true] + $d);
 
 case 'export_columns':
@@ -245,8 +260,42 @@ case 'note_add':
         }
     }
     $pdo->prepare("UPDATE life_policies SET updated_at = NOW() WHERE id = ?")->execute([$id]);
+    life_follow($pdo, $id, $uid);
     life_write_archive($pdo, $id);
     $out(['ok' => true]);
+
+case 'follow_toggle':
+    $id = intval($data['id'] ?? 0);
+    if (!life_policy_row($pdo, $id)) $fail('بیمه‌نامه پیدا نشد.');
+    $st = $pdo->prepare("SELECT COUNT(*) FROM life_followers WHERE policy_id = ? AND user_id = ?");
+    $st->execute([$id, $uid]);
+    if (intval($st->fetchColumn())) { $pdo->prepare("DELETE FROM life_followers WHERE policy_id = ? AND user_id = ?")->execute([$id, $uid]); $on = false; }
+    else { life_follow($pdo, $id, $uid, 0); $on = true; }
+    life_sys_note($pdo, $id, life_user_name($pdo, $uid) . ($on ? ' پیگیریِ این بیمه‌نامه را بر عهده گرفت.' : ' از پیگیری‌کنندگان خارج شد.'), $uid);
+    $out(['ok' => true, 'following' => $on, 'followers' => life_followers($pdo, $id)]);
+
+case 'followers_save':
+    $id = intval($data['id'] ?? 0);
+    if (!life_policy_row($pdo, $id)) $fail('بیمه‌نامه پیدا نشد.');
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array)($data['user_ids'] ?? [])))));
+    $before = array_column(life_followers($pdo, $id), 'name', 'id');
+    $pdo->prepare("DELETE FROM life_followers WHERE policy_id = ?" . ($ids ? " AND user_id NOT IN (" . implode(',', $ids) . ")" : ''))->execute([$id]);
+    foreach ($ids as $x) life_follow($pdo, $id, $x, 0, $uid);
+    $after = life_followers($pdo, $id);
+    $names = array_column($after, 'name', 'id');
+    $add = array_diff_key($names, $before); $rm = array_diff_key($before, $names);
+    if ($add || $rm) life_sys_note($pdo, $id, 'پیگیری‌کنندگان: ' . trim(($add ? 'افزوده: ' . implode('، ', $add) : '') . ($add && $rm ? ' · ' : '') . ($rm ? 'برداشته: ' . implode('، ', $rm) : '')), $uid);
+    $out(['ok' => true, 'followers' => $after]);
+
+case 'staff_options':
+    // کاربرانی که به بخشِ عمر دسترسی دارند (برای تعیینِ پیگیری‌کننده و فیلتر)
+    $o = [];
+    foreach ($pdo->query("SELECT id, full_name, role, perm_json FROM users WHERE COALESCE(is_deleted, 0) = 0 ORDER BY full_name")->fetchAll() as $u) {
+        $ok = $u['role'] === 'ADMIN' || $u['role'] === 'LIFE';
+        if (!$ok && $u['perm_json']) { $pp = json_decode((string)$u['perm_json'], true); $ok = is_array($pp) && !empty($pp['life-policies']); }
+        if ($ok) $o[] = ['id' => intval($u['id']), 'name' => $u['full_name']];
+    }
+    $out(['ok' => true, 'users' => $o, 'me' => $uid]);
 
 case 'note_delete':
     $st = $pdo->prepare("SELECT * FROM life_notes WHERE id = ?");
@@ -335,6 +384,7 @@ case 'pay_add':
         ->execute([$i['id'], $i['policy_id'], $amount, $j, $g, $method, trim(p2e_digits((string)($data['ref_no'] ?? ''))) ?: null, trim((string)($data['note'] ?? '')) ?: null, $file, $uid]);
     $payId = intval($pdo->lastInsertId());
     life_refresh_paid($pdo, intval($i['id']));
+    life_follow($pdo, intval($i['policy_id']), $uid);
     life_sys_note($pdo, intval($i['policy_id']), 'پرداختِ ' . number_format($amount) . ' ریال برای قسطِ ' . $i['inst_no'] . ' ثبت شد (' . $method . ', ' . $j . ').', $uid, intval($i['id']));
     life_write_archive($pdo, intval($i['policy_id']));
     $out(['ok' => true, 'payment_id' => $payId]);
@@ -531,6 +581,54 @@ case 'imports_list':
                    'by' => life_user_name($pdo, $r['created_by']), 'range_from' => $r['range_from'], 'range_to' => $r['range_to'], 'stats' => json_decode((string)$r['stats_json'], true) ?: []];
     }
     $out(['ok' => true, 'rows' => $rows]);
+
+// ---------------------------------------------------------------------
+//  ربات بله‌ی بیمه عمر
+// ---------------------------------------------------------------------
+case 'bot_get':
+    $s = lbot_settings($pdo);
+    $tok = lbot_token($pdo);
+    $c = $pdo->query("SELECT kind, COUNT(*) n FROM life_bot_links GROUP BY kind")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
+    $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(str_replace('\\', '/', dirname((string)$_SERVER['SCRIPT_NAME'])), '/');
+    $last = intval(life_setting($pdo, 'life_bot_last_run', 0));
+    $rm = $pdo->query("SELECT kind, COUNT(*) n FROM life_reminders WHERE sent_on >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY kind")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $out(['ok' => true, 'settings' => array_diff_key($s, ['cron_key' => 1]), 'has_token' => $tok !== '',
+          'token_masked' => $tok !== '' ? substr($tok, 0, 6) . '…' . substr($tok, -4) : '', 'username' => life_setting($pdo, 'life_bot_username', ''),
+          'secure' => life_setting($pdo, 'life_bot_hook_key', '') !== '', 'customers' => intval($c['CUSTOMER'] ?? 0), 'staff' => intval($c['STAFF'] ?? 0),
+          'cron_url' => $base . '/life_cron.php?key=' . $s['cron_key'], 'last_run' => $last ? life_g2j(date('Y-m-d', $last)) . ' ' . date('H:i', $last) : '',
+          'sent_30' => $rm]);
+
+case 'bot_save_token':
+    $token = trim((string)($data['token'] ?? ''));
+    if (!preg_match('/^\d+:[A-Za-z0-9_\-]{10,}$/', $token)) $fail('توکن درست نیست (شکلِ ۱۲۳۴۵:ABC... از @BotFather بله).');
+    life_setting_set($pdo, 'life_bot_token', $token);
+    $hook = sec_set_webhook($pdo, 'life', $token);
+    $me = lbot_api($pdo, 'getMe', []);
+    if (!empty($me['username'])) life_setting_set($pdo, 'life_bot_username', $me['username']);
+    $out(['ok' => true, 'webhook' => !empty($hook['ok']), 'webhook_error' => $hook['error'] ?? null, 'username' => $me['username'] ?? null]);
+
+case 'bot_save_settings':
+    lbot_settings_save($pdo, (array)($data['settings'] ?? []));
+    $out(['ok' => true]);
+
+case 'bot_run':
+    @set_time_limit(300);
+    $out(['ok' => true] + lbot_run_reminders($pdo, true));
+
+case 'bot_remind':
+    $p = life_policy_row($pdo, intval($data['id'] ?? 0));
+    if (!$p) $fail('بیمه‌نامه پیدا نشد.');
+    if (lbot_token($pdo) === '') $fail('ربات بله‌ی بیمه عمر هنوز راه‌اندازی نشده است (تنظیمات ← ربات بله).');
+    $d = life_detail($pdo, intval($p['id']));
+    $target = null;
+    foreach ($d['insts'] as $i) if ($i['rem'] > 0 && (!$target || ($i['days'] ?? -999) > 0)) { $target = $i; if (($i['days'] ?? 0) > 0) break; }
+    if (!empty($data['installment_id'])) foreach ($d['insts'] as $i) if ($i['id'] === intval($data['installment_id'])) $target = $i;
+    if (!$target || $target['rem'] <= 0) $fail('قسطِ پرداخت‌نشده‌ای نیست.');
+    $n = lbot_remind_inst($pdo, $p, $target, 'manual', $target['days'] > 0 ? life_fa($target['days']) . ' روز از سررسیدش گذشته و هنوز پرداخت نشده است' : 'در تاریخِ ' . life_fa($target['due_j']) . ' سررسید می‌شود', $uid);
+    if (!$n) $fail('بیمه‌گذار هنوز به ربات وصل نشده است؛ لینکِ ربات را برایش بفرستید تا با شماره و کد ملی وارد شود.');
+    life_follow($pdo, intval($p['id']), $uid);
+    $out(['ok' => true, 'sent' => $n]);
 
 // ---------------------------------------------------------------------
 case 'archive_list':

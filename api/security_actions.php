@@ -87,7 +87,7 @@ function sec_checks($pdo) {
     $add('idle', 'نشست', 'خروجِ خودکار بعد از عدمِ فعالیت', 'ok', 'کاربری که ' . fa_digits(rtrim(rtrim(number_format($idle / 3600, 2), '0'), '.')) . ' ساعت با پنل کار نکند خودکار خارج می‌شود؛ کسی که کار می‌کند داخل می‌ماند.', '', 2);
     $add('lock', 'ورود', 'قفلِ ورود بعد از تلاش‌های ناموفق', 'ok', 'بعد از ' . fa_digits(max(3, intval($s['sec_max_attempts'] ?? 5))) . ' تلاشِ ناموفق، ورود ' . fa_digits(max(1, intval($s['sec_lock_minutes'] ?? 15))) . ' دقیقه قفل می‌شود.', '', 3);
     // ربات‌ها
-    foreach (['company' => ['company_bot_token', 'company_bot_hook_key', 'ربات بله‌ی شرکت‌ها'], 'staff' => ['bot_token', 'bot_hook_key', 'ربات بله‌ی پرسنل/مشتریان']] as $w => [$tk, $hk, $label]) {
+    foreach (['company' => ['company_bot_token', 'company_bot_hook_key', 'ربات بله‌ی شرکت‌ها'], 'staff' => ['bot_token', 'bot_hook_key', 'ربات بله‌ی پرسنل/مشتریان'], 'life' => ['life_bot_token', 'life_bot_hook_key', 'ربات بله‌ی بیمه عمر']] as $w => [$tk, $hk, $label]) {
         $hasTok = sec_setting_raw($pdo, $tk) !== '';
         if (!$hasTok) { $add('hook_' . $w, 'ربات‌ها', 'وب‌هوکِ امنِ ' . $label, 'ok', 'توکنِ این ربات تنظیم نشده است.', '', 0); continue; }
         $hasKey = ($s[$hk] ?? '') !== '';
@@ -335,7 +335,7 @@ switch ($action) {
 
     case 'fix_webhooks':
         $res = [];
-        foreach (['company' => ['company_bot_token', 'ربات شرکت‌ها'], 'staff' => ['bot_token', 'ربات پرسنل/مشتریان']] as $w => [$tk, $label]) {
+        foreach (['company' => ['company_bot_token', 'ربات شرکت‌ها'], 'staff' => ['bot_token', 'ربات پرسنل/مشتریان'], 'life' => ['life_bot_token', 'ربات بیمه عمر']] as $w => [$tk, $label]) {
             if (sec_setting_raw($pdo, $tk) === '') { $res[] = ['label' => $label, 'ok' => null, 'msg' => 'توکن تنظیم نشده']; continue; }
             $r = sec_set_webhook($pdo, $w);
             $res[] = ['label' => $label, 'ok' => !empty($r['ok']), 'msg' => !empty($r['ok']) ? 'وصل شد: ' . $r['url'] : ($r['error'] ?? 'خطا')];

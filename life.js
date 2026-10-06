@@ -373,6 +373,7 @@
     const Pol = {
         render(root) {
             const f = L.list.f;
+            if (!L.staff) { L.staff = []; api('staff_options').then(r => { L.staff = r.users; if (L.tab === 'life-policies') this.render(root); }).catch(() => {}); }
             const pm = (L.boot.lists.pay_methods || []).map(m => `<option ${m === f.pay_method ? 'selected' : ''}>${esc(m)}</option>`).join('');
             const ps = (L.boot.lists.policy_status || []).map(m => `<option ${m === f.policy_status ? 'selected' : ''}>${esc(m)}</option>`).join('');
             root.innerHTML = shell('life-policies', `
@@ -393,6 +394,7 @@
                     <label><span>روش پرداخت</span><select class="lf-sel" data-k="pay_method"><option value="">همه</option>${pm}</select></label>
                     <label><span>وضعیت بیمه‌نامه</span><select class="lf-sel" data-k="policy_status"><option value="">همه</option>${ps}</select></label>
                     <label><span>مرتب‌سازی</span><select class="lf-sel" data-k="sort">${[['overdue', 'بیشترین معوق'], ['rem', 'بیشترین مانده'], ['next_due', 'نزدیک‌ترین سررسید'], ['issue', 'جدیدترین صدور'], ['issue_asc', 'قدیمی‌ترین صدور'], ['name', 'نام'], ['recent', 'آخرین تغییر']].map(([v, t]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+                    <label><span>پیگیری‌کننده</span><select class="lf-sel" data-k="follower"><option value="">همه</option><option value="me" ${f.follower === 'me' ? 'selected' : ''}>پیگیری‌های من</option><option value="none" ${f.follower === 'none' ? 'selected' : ''}>بدونِ پیگیری‌کننده</option>${(L.staff || []).map(u => `<option value="${u.id}" ${String(f.follower) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
                     <label class="lf-chk" style="flex:0 0 auto;max-width:none;flex-direction:row"><input type="checkbox" data-k="followup" ${f.followup ? 'checked' : ''}>پیگیریِ سررسیده</label>
                     <label class="lf-chk" style="flex:0 0 auto;max-width:none;flex-direction:row"><input type="checkbox" data-k="no_phone" ${f.no_phone ? 'checked' : ''}>بدونِ شماره</label>
                     <button class="lf-btn s" data-a="reset"><i class="fas fa-rotate-left"></i>حذفِ فیلترها</button>
@@ -433,19 +435,21 @@
             const sel = L.list.sel;
             const phones = r => r.holder_mobile ? `<button class="lf-ph" data-copy="${esc(r.holder_mobile)}" title="کپی"><i class="fas fa-copy text-[10px]"></i><span class="lf-mono">${fa(r.holder_mobile)}</span></button>` : '<span class="lf-tag r"><i class="fas fa-phone-slash"></i>ندارد</span>';
             const od = r => r.overdue_count ? `<b class="text-red-700">${money(r.overdue_amount)}</b><small class="block text-red-500">${fa(r.overdue_count)} قسط · ${fa(r.overdue_days)} روز</small>` : '<span class="lf-tag g"><i class="fas fa-check"></i>ندارد</span>';
-            box.innerHTML = `<div class="lf-tblwrap lf-scroll"><table class="lf-tbl"><thead><tr><th style="width:34px"><input type="checkbox" data-all class="lf-cb"></th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>موبایل</th><th>صدور</th><th>روش پرداخت</th><th>اقساط</th><th>پرداختی / مانده</th><th>معوق</th><th>آخرین تماس</th><th>پیگیری</th></tr></thead><tbody>
+            box.innerHTML = `<div class="lf-tblwrap lf-scroll"><table class="lf-tbl"><thead><tr><th style="width:34px"><input type="checkbox" data-all class="lf-cb"></th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>موبایل</th><th>صدور</th><th>روش پرداخت</th><th>اقساط</th><th>پرداختی / مانده</th><th>معوق</th><th>حق‌بیمه‌ی یک سال</th><th>آخرین تماس</th><th>پیگیری‌کنندگان</th><th>پیگیری بعدی</th></tr></thead><tbody>
                 ${d.rows.map(r => `<tr data-id="${r.id}" class="${sel.has(r.id) ? 'sel' : ''}"><td data-stop><input type="checkbox" data-sel="${r.id}" ${sel.has(r.id) ? 'checked' : ''}></td>
                     <td><b>${esc(r.holder_name || '—')}</b><small class="block text-slate-500 lf-mono">${fa(r.holder_nid || '')}</small></td>
                     <td><span class="lf-mono font-bold">${fa(r.policy_no)}</span>${r.first_unpaid ? '<small class="block"><span class="lf-tag r">قسطِ اول پرداخت نشده</span></small>' : ''}</td>
                     <td data-stop>${phones(r)}</td><td>${jd(r.issue_j)}</td><td>${esc(r.pay_method || '')}</td>
                     <td><span class="lf-tag">${fa(r.inst_count)} قسط</span>${r.next_due ? `<small class="block text-slate-500 mt-1">بعدی: ${fa(r.next_due)}</small>` : ''}</td>
                     <td><span class="text-green-700 font-bold">${money(r.total_paid)}</span><small class="block text-slate-500">مانده ${money(r.total_rem)}</small></td>
-                    <td>${od(r)}</td><td>${r.last_call ? `${fa(r.last_call)}<small class="block text-slate-500">${esc(r.last_result || '')}</small>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td>${od(r)}</td><td>${money(r.annual_premium)}<small class="block text-slate-500">${fa(r.per_year)} قسط در سال</small></td>
+                    <td>${r.last_call ? `${fa(r.last_call)}<small class="block text-slate-500">${esc(r.last_result || '')}${r.last_call_by ? ' · ' + esc(r.last_call_by) : ''}</small>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td style="max-width:180px;white-space:normal">${r.followers ? `<span class="text-[11px] font-bold text-cyan-800"><i class="fas fa-user-check ml-1"></i>${esc(r.followers)}</span>` : '<span class="text-slate-300">—</span>'}</td>
                     <td>${r.next_follow ? `<span class="lf-tag a">${fa(r.next_follow)}</span>` : ''}</td></tr>`).join('')}
             </tbody></table></div>
             <div class="lf-cards">${d.rows.map(r => `<div class="lf-pc" data-id="${r.id}"><div class="h"><div class="min-w-0"><div class="n truncate">${esc(r.holder_name || '—')}</div><div class="m"><span class="lf-mono">${fa(r.policy_no)}</span> · ${jd(r.issue_j)}</div></div>
                     <label data-stop class="lf-chk"><input type="checkbox" data-sel="${r.id}" ${sel.has(r.id) ? 'checked' : ''}></label></div>
-                <div class="row" data-stop>${phones(r)}<span class="lf-tag">${esc(r.pay_method || '')}</span><span class="lf-tag">${fa(r.inst_count)} قسط</span>${r.first_unpaid ? '<span class="lf-tag r">قسطِ اول پرداخت نشده</span>' : ''}${r.next_follow ? `<span class="lf-tag a"><i class="fas fa-phone"></i>${fa(r.next_follow)}</span>` : ''}</div>
+                <div class="row" data-stop>${phones(r)}<span class="lf-tag">${esc(r.pay_method || '')}</span><span class="lf-tag">${fa(r.inst_count)} قسط</span>${r.first_unpaid ? '<span class="lf-tag r">قسطِ اول پرداخت نشده</span>' : ''}${r.next_follow ? `<span class="lf-tag a"><i class="fas fa-phone"></i>${fa(r.next_follow)}</span>` : ''}${r.followers ? `<span class="lf-tag b"><i class="fas fa-user-check"></i>${esc(r.followers)}</span>` : ''}</div>
                 <div class="amt"><div><small>پرداختی</small><b class="text-green-700">${short(r.total_paid)}</b></div><div><small>مانده</small><b>${short(r.total_rem)}</b></div><div><small>معوق</small><b class="${r.overdue_count ? 'text-red-700' : 'text-green-700'}">${r.overdue_count ? short(r.overdue_amount) + ' · ' + fa(r.overdue_count) + ' قسط' : 'ندارد'}</b></div></div></div>`).join('')}</div>
             ${this.pager(d)}`;
             box.querySelectorAll('[data-copy]').forEach(b => b.onclick = e => { e.stopPropagation(); copy(b.dataset.copy); });
@@ -539,6 +543,7 @@
             if (!tabs.some(t => t[0] === L.det.tab)) L.det.tab = 'inst';
             const phoneBtns = p.phones_list.map(x => `<span class="inline-flex gap-1"><button class="cp" data-copy="${esc(x.phone)}" title="کپی ${esc(x.label || '')}"><i class="fas fa-copy ml-1"></i><span class="lf-mono">${fa(x.phone)}</span>${x.label ? ` <small>(${esc(x.label)})</small>` : ''}</button><a class="cp" href="tel:${esc(x.phone)}" title="تماس"><i class="fas fa-phone"></i></a></span>`).join('');
             const canPh = can('life-calls', 'create') || can('life-policies', 'edit');
+            const canFol = can('life-calls', 'create') || can('life-pay', 'create') || can('life-policies', 'edit');
             ov.querySelector('.lf-dr').innerHTML = `
             <div class="lf-dh"><div class="flex items-start gap-3"><div class="min-w-0 flex-1">
                 <h2 class="truncate">${esc(p.holder_name || '—')}</h2>
@@ -546,7 +551,11 @@
                     ${p.holder_nid ? `<button class="cp" data-copy="${esc(p.holder_nid)}"><i class="fas fa-copy ml-1"></i>کد ملی <span class="lf-mono">${fa(p.holder_nid)}</span></button>` : ''}
                     ${p.pay_id ? `<button class="cp" data-copy="${esc(p.pay_id)}"><i class="fas fa-copy ml-1"></i>شناسه واریز <span class="lf-mono">${fa(p.pay_id)}</span></button>` : ''}
                     <span>${esc(p.pay_method || '')} · صدور ${jd(p.issue_j)}</span></div>
-                <div class="sub mt-2">${phoneBtns || '<span class="cp" style="background:rgba(244,63,94,.35)"><i class="fas fa-phone-slash ml-1"></i>شماره‌ی تماس ثبت نشده</span>'}${canPh ? '<button class="cp" data-a="phones"><i class="fas fa-pen ml-1"></i>شماره‌ها</button>' : ''}</div>
+                <div class="sub mt-2"><span><i class="fas fa-user-check ml-1"></i>پیگیری‌کنندگان:</span>${p.followers.length ? p.followers.map(x => `<span class="cp" style="cursor:default" title="${x.auto ? 'خودکار با ثبتِ تماس/پرداخت' : 'تعیین‌شده'}">${esc(x.name)}${x.auto ? '' : ' ★'}</span>`).join('') : '<span class="opacity-80">هنوز کسی</span>'}
+                    ${canFol ? `<button class="cp" data-a="follow" style="background:rgba(255,255,255,.3)">${p.followers.some(x => x.id === L.boot.me) ? '<i class="fas fa-user-minus ml-1"></i>دیگر پیگیری نمی‌کنم' : '<i class="fas fa-user-plus ml-1"></i>پیگیری می‌کنم'}</button>` : ''}
+                    ${can('life-policies', 'edit') ? '<button class="cp" data-a="fols"><i class="fas fa-users-gear ml-1"></i>تعیین</button>' : ''}</div>
+                <div class="sub mt-2">${phoneBtns || '<span class="cp" style="background:rgba(244,63,94,.35)"><i class="fas fa-phone-slash ml-1"></i>شماره‌ی تماس ثبت نشده</span>'}${canPh ? '<button class="cp" data-a="phones"><i class="fas fa-pen ml-1"></i>شماره‌ها</button>' : ''}
+                    ${p.bot_ready ? `<span class="cp" style="cursor:default;background:${p.bot_linked ? 'rgba(34,197,94,.35)' : 'rgba(255,255,255,.12)'}"><i class="fas fa-robot ml-1"></i>${p.bot_linked ? 'به ربات وصل است' : 'به ربات وصل نیست'}</span>${p.bot_linked && can('life-calls', 'create') && s.rem > 0 ? '<button class="cp" data-a="remind"><i class="fas fa-bell ml-1"></i>ارسالِ یادآوری در ربات</button>' : ''}` : ''}</div>
             </div><button class="lf-x x" data-a="close"><i class="fas fa-xmark"></i></button></div>
             <div class="lf-dt">${tabs.map(t => `<button data-tab="${t[0]}" class="${t[0] === L.det.tab ? 'on' : ''}"><i class="fas ${t[1]} ml-1"></i>${t[2]}</button>`).join('')}</div></div>
             <div class="lf-db">
@@ -557,6 +566,9 @@
             ov.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copy(b.dataset.copy));
             ov.querySelector('[data-a=close]').onclick = () => this.close();
             const ph = ov.querySelector('[data-a=phones]'); if (ph) ph.onclick = () => this.phones();
+            const fl = ov.querySelector('[data-a=follow]'); if (fl) fl.onclick = async () => { try { const r = await api('follow_toggle', {id: p.id}); toast(r.following ? 'به پیگیری‌کنندگان اضافه شدید.' : 'از پیگیری‌کنندگان خارج شدید.', 'success'); this.refresh(); } catch (e) { toast(e.message, 'error'); } };
+            const fs = ov.querySelector('[data-a=fols]'); if (fs) fs.onclick = () => this.followers();
+            const rmb = ov.querySelector('[data-a=remind]'); if (rmb) rmb.onclick = async () => { busy(rmb, true); try { await api('bot_remind', {id: p.id}); toast('یادآوری در ربات بله برای بیمه‌گذار فرستاده شد.', 'success'); this.refresh(); } catch (e) { toast(e.message, 'error'); busy(rmb, false); } };
             ov.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { L.det.tab = b.dataset.tab; this.draw(); });
             const box = ov.querySelector('[data-box=tab]');
             if (L.det.tab === 'inst') this.drawInsts(box);
@@ -668,6 +680,20 @@
             if (!(await confirmUi('حذفِ فایل', `«${name}» از بایگانیِ قسط حذف شود؟`, {danger: true, ok: 'حذف'}))) return;
             try { await api('inst_file_delete', {id: i.id, name}); this.refresh(); } catch (e) { toast(e.message, 'error'); }
         },
+        async followers() {
+            const p = L.det.d.policy;
+            if (!L.staff || !L.staff.length) { try { L.staff = (await api('staff_options')).users; } catch (e) { toast(e.message, 'error'); return; } }
+            const cur = new Set(p.followers.map(x => x.id));
+            const m = modal('پیگیری‌کنندگانِ این بیمه‌نامه', `<p class="text-[11.5px] text-slate-500 mb-3">هر کس تماس یا پرداختی ثبت کند خودکار اضافه می‌شود؛ این‌جا می‌توانید دستی هم تعیین کنید.</p>
+                <div class="grid gap-1" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">${L.staff.map(u => `<label class="lf-chk" style="background:#f8fafc;border-radius:10px;padding:7px 9px"><input type="checkbox" value="${u.id}" ${cur.has(u.id) ? 'checked' : ''}>${esc(u.name)}</label>`).join('')}</div>`,
+                '<button class="lf-btn s" data-x2>انصراف</button><button class="lf-btn p" data-ok><i class="fas fa-floppy-disk"></i>ذخیره</button>', {icon: 'fa-users-gear'});
+            m.querySelector('[data-x2]').onclick = () => m.close();
+            m.querySelector('[data-ok]').onclick = async e => {
+                busy(e.currentTarget, true);
+                try { await api('followers_save', {id: p.id, user_ids: [...m.querySelectorAll('input:checked')].map(x => +x.value)}); m.close(); toast('ذخیره شد.', 'success'); this.refresh(); }
+                catch (er) { toast(er.message, 'error'); busy(e.currentTarget, false); }
+            };
+        },
         phones() {
             const p = L.det.d.policy;
             const others = p.phones_list.filter(x => x.phone !== p.holder_mobile);
@@ -737,7 +763,8 @@
             const extra = Object.entries(p.extra || {}).filter(([k]) => !F.some(f => f[1] === k));
             box.innerHTML = `<div class="lf-card"><h3><i class="fas fa-id-card text-blue-600"></i>مشخصاتِ بیمه‌نامه ${ed ? '<button class="lf-btn o sm mr-auto" data-a="edit"><i class="fas fa-pen"></i>ویرایش</button>' : ''}</h3>
                 <div class="lf-kv">${F.map(([k, l]) => `<div><small>${l}</small><b class="${/nid|pay_id|_j$/.test(k) ? 'lf-mono' : ''}">${esc(fa(p[k] ?? '')) || '—'}</b></div>`).join('')}
-                    <div><small>برآوردِ حق‌بیمه‌ی سالانه</small><b>${money(p.annual_est)}</b></div></div>
+                    <div><small>حق‌بیمه‌ی کلِ یک سال (سالِ جاری)</small><b>${money(p.annual_premium)}</b></div><div><small>حق‌بیمه‌ی سالِ اول</small><b>${money(p.first_year_premium)}</b></div>
+                    <div><small>تعداد قسط در سال</small><b>${fa(p.per_year)}</b></div><div><small>جمعِ همه‌ی اقساطِ ثبت‌شده</small><b>${money(p.total_all)}</b></div></div>
                 ${p.note ? `<div class="mt-3 text-[12px] bg-amber-50 border border-amber-100 rounded-xl p-3 whitespace-pre-wrap"><b class="block text-amber-800 mb-1">یادداشتِ بیمه‌نامه</b>${esc(p.note)}</div>` : ''}</div>
             ${extra.length ? `<div class="lf-card"><h3><i class="fas fa-table-list text-slate-500"></i>همه‌ی ستون‌های اکسل <small>(آخرین ورود)</small></h3><div class="lf-kv">${extra.map(([k, v]) => `<div><small>${esc(k)}</small><b>${esc(fa(v))}</b></div>`).join('')}</div></div>` : ''}
             <div class="lf-card"><h3><i class="fas fa-folder-tree text-amber-600"></i>بایگانی</h3><div class="text-[12px] text-slate-600 lf-mono" style="direction:rtl">${esc(p.archive || 'هنوز ساخته نشده')}</div>
@@ -834,8 +861,8 @@
             let saved = {};
             try { saved = JSON.parse(localStorage.getItem('lf:exp') || '{}'); } catch (e) {}
             const mode0 = saved.mode || 'policy';
-            const defP = ['policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'phones', 'issue_j', 'pay_method', 'total_amount', 'total_paid', 'total_rem', 'overdue_count', 'overdue_amount', 'next_due', 'last_call', 'last_result'];
-            const defI = ['policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'pay_method', 'inst_no', 'due_j', 'amount', 'eff_paid', 'rem', 'status_fa', 'days', 'pay_dates', 'pay_refs'];
+            const defP = ['policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'phones', 'issue_j', 'pay_method', 'total_amount', 'total_paid', 'total_rem', 'overdue_count', 'overdue_amount', 'annual_premium', 'next_due', 'last_call', 'last_call_by', 'last_result', 'followers'];
+            const defI = ['policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'pay_method', 'inst_no', 'due_j', 'amount', 'eff_paid', 'rem', 'status_fa', 'days', 'pay_dates', 'pay_refs', 'pay_by', 'followers'];
             const chosen = new Set(saved['c_' + mode0] || (mode0 === 'inst' ? defI : defP));
             const m = modal('خروجیِ اکسل', `
                 <div class="flex flex-wrap gap-3 items-center mb-3"><div class="lf-seg" data-mode><button data-v="policy" class="${mode0 === 'policy' ? 'on' : ''}">هر بیمه‌نامه یک ردیف</button><button data-v="inst" class="${mode0 === 'inst' ? 'on' : ''}">هر قسط یک ردیف</button></div>
@@ -1146,8 +1173,9 @@
                 <div class="space-y-4"><div class="lf-card"><h3><i class="fas fa-receipt text-blue-600"></i>قالب‌های رسید</h3><div data-tpls><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     ${ed ? `<div class="border-t border-slate-100 mt-3 pt-3 space-y-2"><b class="text-[12px]">افزودنِ قالبِ Word</b><div class="lf-grid lf-g2"><input class="lf-in" data-tn placeholder="نامِ قالب"><label class="lf-btn o" style="cursor:pointer"><i class="fas fa-file-word text-blue-600"></i><span data-tfn>انتخابِ فایلِ docx</span><input type="file" class="hidden" accept=".docx" data-tf></label></div>
                         <textarea class="lf-ta" rows="2" data-tt placeholder="متنِ زیرِ جدول برای این قالب"></textarea><div class="flex gap-2 flex-wrap"><button class="lf-btn p" data-tup><i class="fas fa-upload"></i>بارگذاریِ قالب</button><a class="lf-btn s" href="${url('tpl_sample')}"><i class="fas fa-download"></i>دریافتِ قالبِ نمونه (Word)</a></div></div>` : ''}</div>
+                    <div class="lf-card" data-bot><h3><i class="fas fa-robot text-cyan-600"></i>ربات بله‌ی بیمه عمر <small>یادآوریِ اقساط به مشتری و کارِ همکاران از ربات</small></h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     <div class="lf-card"><h3><i class="fas fa-code text-violet-600"></i>کدهای قالب <small>روی هر کد بزنید تا کپی شود</small></h3><div data-codes class="flex flex-col gap-1"></div></div></div></div>`);
-            this.cols(root); this.tpls(root);
+            this.cols(root); this.tpls(root); this.bot(root);
             const hdr = root.querySelector('[data-hdr]');
             if (hdr) hdr.onchange = async () => {
                 if (!hdr.files[0]) return;
@@ -1188,6 +1216,46 @@
                     else toast('قالب ذخیره شد.', 'success');
                     this.render(root);
                 } catch (e) { toast(e.message, 'error'); busy(tu, false); }
+            };
+        },
+        async bot(root) {
+            const box = root.querySelector('[data-bot]'), ed = can('life-settings', 'edit');
+            let r;
+            try { r = await api('bot_get'); } catch (e) { box.innerHTML = `<div class="lf-empty">${esc(e.message)}</div>`; return; }
+            const S = r.settings;
+            const num = (k, l, h) => `<label><span class="lf-lbl">${l}</span><input class="lf-in" data-s="${k}" inputmode="numeric" value="${fa(S[k])}" ${ed ? '' : 'disabled'}>${h ? `<small class="text-[10px] text-slate-400">${h}</small>` : ''}</label>`;
+            const chk = (k, l) => `<label class="lf-chk"><input type="checkbox" data-s="${k}" ${+S[k] ? 'checked' : ''} ${ed ? '' : 'disabled'}>${l}</label>`;
+            box.innerHTML = `<h3><i class="fas fa-robot text-cyan-600"></i>ربات بله‌ی بیمه عمر <small>یادآوریِ اقساط به مشتری و کارِ همکاران از ربات</small></h3>
+                <div class="flex flex-wrap gap-2 mb-3">${r.has_token ? `<span class="lf-tag g"><i class="fas fa-plug"></i>متصل${r.username ? ' · @' + esc(r.username) : ''}</span>` : '<span class="lf-tag r">توکن تنظیم نشده</span>'}
+                    ${r.has_token ? (r.secure ? '<span class="lf-tag g"><i class="fas fa-shield-halved"></i>وب‌هوکِ امن</span>' : '<span class="lf-tag a">وب‌هوک تنظیم نشده</span>') : ''}
+                    <span class="lf-tag b">${fa(r.customers)} بیمه‌گذارِ متصل</span><span class="lf-tag v">${fa(r.staff)} همکارِ متصل</span>${r.last_run ? `<span class="lf-tag">آخرین ارسال: ${fa(r.last_run)}</span>` : ''}
+                    ${Object.keys(r.sent_30 || {}).length ? `<span class="lf-tag">۳۰ روزِ اخیر: ${Object.entries(r.sent_30).map(([k, v]) => ({before: 'قبل از سررسید', due: 'روزِ سررسید', overdue: 'معوق', manual: 'دستی', digest: 'خلاصه‌ی همکاران'}[k] || k) + ' ' + fa(v)).join(' · ')}</span>` : ''}</div>
+                ${ed ? `<div class="flex gap-2 mb-3"><input class="lf-in lf-mono" data-tok placeholder="${r.has_token ? esc(r.token_masked) + ' (برای عوض کردن، توکنِ تازه)' : 'توکنِ ربات از @BotFather بله'}" dir="ltr"><button class="lf-btn p" data-savetok><i class="fas fa-link"></i>ذخیره و اتصال</button></div>` : ''}
+                <div class="lf-grid lf-g2">${num('remind_before_days', 'یادآوری چند روز قبل از سررسید')}${num('remind_overdue_every', 'معوق: هر چند روز یک بار', '۰ = خاموش')}
+                    ${num('remind_overdue_max', 'حداکثر یادآوریِ معوق برای هر قسط')}${num('remind_hour', 'ساعتِ شروعِ ارسال (۰ تا ۲۳)')}</div>
+                <div class="flex flex-wrap gap-3 my-3">${chk('remind_enabled', 'یادآوری به بیمه‌گذار')}${chk('remind_on_due', 'روزِ سررسید هم')}${chk('staff_digest', 'خلاصه‌ی صبحگاهیِ پیگیری‌ها برای همکاران')}</div>
+                <label class="block mb-2"><span class="lf-lbl">متنِ یادآوری <small class="text-slate-400">کدها: {نام} {شماره_قسط} {شماره_بیمه_نامه} {مبلغ} {سررسید} {زمان} {شناسه_واریز}</small></span><textarea class="lf-ta" rows="3" data-s="remind_text" ${ed ? '' : 'disabled'}>${esc(S.remind_text)}</textarea></label>
+                <label class="block mb-2"><span class="lf-lbl">متنِ «تماس با ما»</span><textarea class="lf-ta" rows="2" data-s="contact_text" ${ed ? '' : 'disabled'}>${esc(S.contact_text)}</textarea></label>
+                <label class="block mb-2"><span class="lf-lbl">پیامِ خوش‌آمد</span><input class="lf-in" data-s="welcome_text" value="${esc(S.welcome_text)}" ${ed ? '' : 'disabled'}></label>
+                <p class="text-[11px] text-slate-500 leading-6 mb-2"><i class="fas fa-circle-info ml-1"></i>زیرِ پیامِ اقساطِ مشتری، متنِ زیرِ جدولِ «قالبِ پیش‌فرضِ رسید» نوشته می‌شود. یادآوری‌ها بدونِ کرون هم با اولین استفاده از پنل یا ربات در هر ساعت فرستاده می‌شوند؛ برای دقتِ بیشتر این آدرس را در کرونِ هاست (هر ساعت) بگذارید:</p>
+                ${ed ? `<div class="flex gap-2 items-center mb-3"><input class="lf-in lf-mono text-[11px]" readonly value="${esc(r.cron_url)}" dir="ltr"><button class="lf-btn s sm" data-copycron><i class="fas fa-copy"></i></button></div>
+                <div class="flex gap-2 flex-wrap"><button class="lf-btn p" data-savebot><i class="fas fa-floppy-disk"></i>ذخیره‌ی تنظیماتِ ربات</button><button class="lf-btn o" data-runbot><i class="fas fa-paper-plane"></i>ارسالِ یادآوری‌ها همین حالا</button></div>` : ''}`;
+            const q = k => box.querySelector(k);
+            if (q('[data-copycron]')) q('[data-copycron]').onclick = () => copy(r.cron_url);
+            if (q('[data-savetok]')) q('[data-savetok]').onclick = async e => {
+                const t = q('[data-tok]').value.trim(); if (!t) { toast('توکن را وارد کنید.', 'warning'); return; }
+                busy(e.currentTarget, true);
+                try { const x = await api('bot_save_token', {token: t}); toast(x.webhook ? 'ربات وصل شد' + (x.username ? ' (@' + x.username + ')' : '') + '.' : 'توکن ذخیره شد ولی وب‌هوک تنظیم نشد: ' + (x.webhook_error || ''), x.webhook ? 'success' : 'warning'); this.bot(root); }
+                catch (er) { toast(er.message, 'error'); busy(e.currentTarget, false); }
+            };
+            if (q('[data-savebot]')) q('[data-savebot]').onclick = async () => {
+                const o = {}; box.querySelectorAll('[data-s]').forEach(i => { o[i.dataset.s] = i.type === 'checkbox' ? (i.checked ? 1 : 0) : (i.inputMode === 'numeric' ? en(i.value) : i.value); });
+                try { await api('bot_save_settings', {settings: o}); toast('تنظیماتِ ربات ذخیره شد.', 'success'); } catch (er) { toast(er.message, 'error'); }
+            };
+            if (q('[data-runbot]')) q('[data-runbot]').onclick = async e => {
+                busy(e.currentTarget, true);
+                try { const x = await api('bot_run'); toast(x.skipped ? x.skipped : `ارسال شد: ${fa(x.before)} قبل از سررسید، ${fa(x.due)} روزِ سررسید، ${fa(x.overdue)} معوق، ${fa(x.digest)} خلاصه‌ی همکار.`, x.skipped ? 'warning' : 'success'); this.bot(root); }
+                catch (er) { toast(er.message, 'error'); busy(e.currentTarget, false); }
             };
         },
         async cols(root) {

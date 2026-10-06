@@ -27,7 +27,7 @@ function sec_settings($pdo) {
     if ($s !== null) return $s;
     $s = SEC_DEFAULTS;
     try {
-        foreach ($pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'sec\\_%' OR setting_key IN ('company_bot_hook_key', 'bot_hook_key')")->fetchAll() as $r) {
+        foreach ($pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'sec\\_%' OR setting_key IN ('company_bot_hook_key', 'bot_hook_key', 'life_bot_hook_key')")->fetchAll() as $r) {
             $s[$r['setting_key']] = (string)$r['setting_value'];
         }
     } catch (Throwable $e) {}
@@ -368,7 +368,7 @@ function sec_boot($pdo) {
     } catch (Throwable $e) {}
     $s = sec_settings($pdo);
     // وب‌هوکِ ربات‌ها: اگر کلید تعیین شده، فقط درخواستِ دارای همان کلید پذیرفته می‌شود
-    $hookKey = ['company_bot_webhook.php' => 'company_bot_hook_key', 'bale_webhook.php' => 'bot_hook_key'][$script] ?? null;
+    $hookKey = ['company_bot_webhook.php' => 'company_bot_hook_key', 'bale_webhook.php' => 'bot_hook_key', 'life_bot_webhook.php' => 'life_bot_hook_key'][$script] ?? null;
     if ($hookKey) {
         $k = (string)($s[$hookKey] ?? '');
         if ($k !== '' && !hash_equals($k, (string)($_GET['k'] ?? ''))) {
@@ -465,11 +465,10 @@ function sec_xss_filter($buf, $phase = 0) {
 // ---------------- وب‌هوکِ امن برای ربات‌ها ----------------
 // آدرسِ وب‌هوک یک کلیدِ تصادفی می‌گیرد (?k=...) و از آن به بعد فقط درخواستِ دارای همان کلید پذیرفته می‌شود.
 // کلید فقط وقتی ذخیره می‌شود که بله وب‌هوکِ تازه را پذیرفته باشد (تا ربات قطع نشود).
-// $which: company (ربات شرکت‌ها، company_bot_webhook.php) | staff (ربات کارکنان، bale_webhook.php)
+// $which: company (ربات شرکت‌ها، company_bot_webhook.php) | staff (ربات کارکنان، bale_webhook.php) | life (ربات بیمه عمر، life_bot_webhook.php)
 function sec_set_webhook($pdo, $which, $token = null) {
-    $tokKey = $which === 'company' ? 'company_bot_token' : 'bot_token';
-    $hookKey = $which === 'company' ? 'company_bot_hook_key' : 'bot_hook_key';
-    $file = $which === 'company' ? 'company_bot_webhook.php' : 'bale_webhook.php';
+    [$tokKey, $hookKey, $file] = ['company' => ['company_bot_token', 'company_bot_hook_key', 'company_bot_webhook.php'], 'life' => ['life_bot_token', 'life_bot_hook_key', 'life_bot_webhook.php']][$which]
+        ?? ['bot_token', 'bot_hook_key', 'bale_webhook.php'];
     if ($token === null) {
         $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
         $st->execute([$tokKey]);
