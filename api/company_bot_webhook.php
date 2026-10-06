@@ -15,6 +15,7 @@ require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_chat_state.php';
+require_once __DIR__ . '/_mk_bot.php';   // منوی بازاریابان و کارشناسانِ تماس
 
 $update = json_decode(file_get_contents('php://input'), true);
 if (!$update) exit;
@@ -54,7 +55,7 @@ function chat_accounts($chat) {
     $st = $pdo->prepare("SELECT * FROM company_portal_users WHERE bale_chat_id = ? AND bot_linked_at IS NOT NULL AND is_active = 1 AND COALESCE(is_deleted, 0) = 0");
     $st->execute([$chat]);
     foreach ($st->fetchAll() as $u) { $u['role'] = null; $out[] = ['type' => 'COMPANY', 'user' => $u]; }
-    return $out;
+    return array_merge($out, mkb_chat_accounts($pdo, $chat));
 }
 function current_account($chat, $accounts) {
     if (!$accounts) return null;
@@ -116,6 +117,7 @@ function show_admin_notifs($chat, $acc, $multi) {
 }
 
 function main_menu($acc, $multi = false, $notifCount = null) {
+    if (is_marketer($acc)) return mkb_menu($multi);
     if (is_company($acc)) {
         $rows = [
             [['text' => '📋 درخواست‌های من'], ['text' => '➕ ثبت درخواست جدید']],
@@ -195,7 +197,7 @@ function handle_contact($chat, $fromId, $contact) {
         say($chat, 'لطفاً فقط شماره‌ی خودتان را با دکمه‌ی «📱 ورود با شماره تلفن» بفرستید (ارسالِ مخاطب یا شماره‌ی دیگران پذیرفته نمی‌شود).', contact_kb()); return;
     }
     $phone = auth_norm_phone($contact['phone_number'] ?? '');
-    $accounts = $phone ? auth_accounts_by_phone($pdo, $phone) : [];
+    $accounts = $phone ? array_merge(auth_accounts_by_phone($pdo, $phone), mkb_accounts_by_phone($pdo, $phone)) : [];
     if (!$accounts) {
         say($chat, "❌ شماره‌ی " . fa($phone ?: ($contact['phone_number'] ?? '')) . " در سامانه‌ی «بیمه با ما» برای هیچ کاربری ثبت نشده است.\nاگر فکر می‌کنید اشتباهی شده، با مدیر سامانه تماس بگیرید.", contact_kb());
         return;
@@ -203,8 +205,9 @@ function handle_contact($chat, $fromId, $contact) {
     // این گفتگو قبلاً به حسابِ دیگری وصل بود؟ آن اتصال برداشته می‌شود
     $pdo->prepare("UPDATE users SET bale_chat_id = NULL, bot_linked_at = NULL WHERE bale_chat_id = ?")->execute([$chat]);
     $pdo->prepare("UPDATE company_portal_users SET bale_chat_id = NULL, bot_linked_at = NULL WHERE bale_chat_id = ?")->execute([$chat]);
+    try { $pdo->prepare("UPDATE mk_people SET bale_chat_id = NULL, bot_linked_at = NULL WHERE bale_chat_id = ?")->execute([$chat]); } catch (Throwable $e) {}
     foreach ($accounts as $a) {
-        $table = $a['type'] === 'STAFF' ? 'users' : 'company_portal_users';
+        $table = $a['type'] === 'STAFF' ? 'users' : ($a['type'] === 'MARKETER' ? 'mk_people' : 'company_portal_users');
         $pdo->prepare("UPDATE $table SET bale_chat_id = ?, bot_linked_at = NOW() WHERE id = ?")->execute([$chat, $a['user']['id']]);
     }
     st_set($chat, null, ['ctx' => auth_account_key($accounts[0])]);
@@ -596,7 +599,7 @@ function send_rel_file($chat, $rel, $caption = '') {
 // ---------------------------------------------------------------------
 function show_account($chat, $acc, $accounts) {
     $u = $acc['user'];
-    $t = "👤 {$u['full_name']}\nنقش: " . auth_role_fa($acc['type'], $u['role'] ?? null) . "\nنام کاربری: {$u['username']}\nموبایل: " . fa($u['mobile_number'] ?: '-')
+    $t = "👤 {$u['full_name']}\nنقش: " . auth_role_fa($acc['type'], $u['role'] ?? null) . (($u['username'] ?? '') !== '' ? "\nنام کاربری: {$u['username']}" : '') . "\nموبایل: " . fa(($u['mobile_number'] ?? '') ?: '-')
        . "\nاتصال به ربات: از " . jdate_short($u['bot_linked_at']);
     if (is_company($acc)) $t .= "\nشرکت‌ها: " . implode('، ', array_column(company_ids_of($acc), 'name'));
     if (count($accounts) > 1) $t .= "\n\nحساب‌های دیگرِ همین شماره: " . implode('، ', array_map(fn($a) => $a['user']['full_name'] . ' (' . auth_role_fa($a['type'], $a['user']['role'] ?? null) . ')',
@@ -632,6 +635,7 @@ if (!empty($update['callback_query'])) {
         foreach ($accounts as $x) if (auth_account_key($x) === "$a1:$a2") { st_set($chat, null, ['ctx' => "$a1:$a2"]); say($chat, "حساب فعال: {$x['user']['full_name']} (" . auth_role_fa($x['type'], $x['user']['role'] ?? null) . ")", main_menu($x, true)); }
         exit;
     }
+    if (is_marketer($acc) && strpos($cmd, 'mk') === 0) { mkb_callback($chat, $acc, $cmd, $a1, $a2); exit; }
     if ($cmd === 'notifs') {   // دکمه‌ی زیرِ پیامِ «اعلان تازه دارید» - حتی اگر حسابِ فعالِ این گفتگو حسابِ دیگری باشد
         foreach (array_merge([$acc], $accounts) as $x) if (is_admin($x)) { st_set($chat, null, ['ctx' => auth_account_key($x)]); show_admin_notifs($chat, $x, count($accounts) > 1); break; }
         exit;
@@ -718,7 +722,8 @@ $s = st_get($chat);
 // دکمه‌های منوی اصلی همیشه کار می‌کنند و هر حالتِ نیمه‌کاره را می‌بندند
 $menuButtons = ['📋 درخواست‌های من', '➕ ثبت درخواست جدید', '📎 ارسال مدرک', '💬 گفتگو با بیمه با ما', '🔎 جستجوی بیمه‌نامه',
                 '📥 درخواست‌های شرکت‌ها', '🗂 مدارک تگ‌نشده', '💬 پیام‌های شرکت‌ها', '🔎 جستجوی صادره', '📊 خلاصه وضعیت',
-                '👤 حساب من', '🔑 بازیابی رمز عبور', '🚪 خروج از حساب', '🔄 تغییر حساب', '🔙 منوی اصلی', '❌ انصراف', '/start', '/menu'];
+                '👤 حساب من', '🔑 بازیابی رمز عبور', '🚪 خروج از حساب', '🔄 تغییر حساب', '🔙 منوی اصلی', '❌ انصراف', '/start', '/menu',
+                '🧾 ثبت فروش', '🎁 محاسبه نرخ پاداش', '💰 درآمد این ماه', '📊 گزارشات'];
 if (mb_strpos($text, NOTIF_BTN) === 0) {   // «🔔 اعلان‌ها» یا «🔔 اعلان‌ها (۳)»
     st_reset($chat);
     if (is_admin($acc)) show_admin_notifs($chat, $acc, $multi);
@@ -742,7 +747,10 @@ if (in_array($text, $menuButtons, true)) {
             say($chat, 'کدام حساب؟', ikb(array_map(fn($x) => [['text' => $x['user']['full_name'] . ' - ' . auth_role_fa($x['type'], $x['user']['role'] ?? null), 'callback_data' => 'ctx:' . auth_account_key($x)]], $accounts)));
             break;
         default:
-            if (is_company($acc)) {
+            if (is_marketer($acc)) {
+                if (in_array($text, MKB_BTNS, true)) mkb_menu_action($chat, $acc, $text, $multi);
+                else say($chat, 'این گزینه برای حساب شما نیست.', main_menu($acc, $multi));
+            } elseif (is_company($acc)) {
                 if ($text === '📋 درخواست‌های من') co_list_requests($chat, $acc);
                 elseif ($text === '➕ ثبت درخواست جدید') nr_start($chat, $acc);
                 elseif ($text === '📎 ارسال مدرک') co_pick_request_for_doc($chat, $acc);
@@ -773,6 +781,7 @@ if ($text === '✅ پایان ارسال') {
 }
 
 // حالت‌های در جریان
+if (is_marketer($acc) && in_array($s['state'], ['MK_SALE', 'MK_CALC'], true) && $text !== '' && mkb_state($chat, $acc, $s['state'], $s['temp'], $text)) exit;
 switch ($s['state']) {
     case 'NR':
         if (!is_company($acc)) break;

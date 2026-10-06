@@ -347,7 +347,7 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
 function bk_reset_keep_tables() {
     return ['users', 'system_settings', 'finance_settings', 'invoice_templates',
             'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
-            'report_insureds', 'report_insured_categories', 'life_templates'];
+            'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards'];
 }
 function bk_reset_sections() {
     return [
@@ -368,7 +368,10 @@ function bk_reset_sections() {
             'tables' => ['visit_reports', 'visit_report_photos', 'visit_report_versions']],
         'life' => ['label' => 'بیمه عمر',
             'desc' => 'بیمه‌نامه‌ها و اقساطِ عمر، پرداخت‌ها، تماس‌ها و یادداشت‌ها، سابقه‌ی ورودِ اکسل و بایگانیِ بیمه عمر (قالب‌های رسید و تنظیمِ ستون‌ها می‌مانند)',
-            'tables' => ['life_policies', 'life_installments', 'life_payments', 'life_notes', 'life_imports']],
+            'tables' => ['life_policies', 'life_installments', 'life_payments', 'life_notes', 'life_imports', 'life_followers', 'life_bot_links', 'life_bot_state', 'life_reminders']],
+        'marketing' => ['label' => 'بازاریابی و فروش',
+            'desc' => 'بازاریابان و کارشناسانِ تماس و همه‌ی فروش‌هایشان (انواعِ بیمه‌نامه، کارمزدها، سطح‌ها و قوانینِ پاداش می‌مانند)',
+            'tables' => ['mk_people', 'mk_sales']],
         'messages' => ['label' => 'پیام‌ها، اعلان‌ها و لاگ‌ها',
             'desc' => 'تیکت‌ها، چت داخلی، اعلان‌ها، لاگ‌های ورود و کارها، کدهای ورود و درخواست‌های بازیابی رمز',
             'tables' => ['messages', 'staff_chat_messages', 'tickets', 'ticket_messages', 'admin_notifications', 'app_notifications', 'user_notifications',

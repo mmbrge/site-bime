@@ -49,6 +49,12 @@ function perm_catalog() {
             'life-archive' => ['بایگانی بیمه عمر', ['view', 'export']],
             'life-settings' => ['تنظیمات بیمه عمر (ستون‌ها و قالب رسید)', ['view', 'edit']],
         ]],
+        ['بازاریابی و فروش', [
+            'mk-dash' => ['داشبورد فروشِ بازاریابان', ['view', 'export']],
+            'mk-sales' => ['فروش‌های بازاریابان', ['view', 'create', 'edit', 'delete', 'export']],
+            'mk-people' => ['بازاریابان و کارشناسانِ تماس', ['view', 'create', 'edit', 'delete']],
+            'mk-settings' => ['تنظیمات بازاریابی (کارمزد، پاداش، سطح، حقوق)', ['view', 'edit']],
+        ]],
         ['مالی', [
             'fin-dashboard' => ['داشبورد مالی', ['view']],
             'fin-installments' => ['مرکز اقساط', $all],
@@ -322,6 +328,13 @@ function perm_api_map() {
             'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
             'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit', 'bot_remind' => 'life-calls:create',
         ]],
+        'mk_actions' => ['pages' => ['mk-sales'], 'actions' => [
+            'bootstrap' => 'mk-dash:view|mk-sales:view|mk-people:view|mk-settings:view', 'dash' => 'mk-dash:view', 'income' => 'mk-dash:view|mk-people:view',
+            'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete', 'people_list' => 'mk-people:view|mk-dash:view',
+            'person_save' => 'mk-people:create|mk-people:edit', 'person_delete' => 'mk-people:delete', 'person_unlink' => 'mk-people:edit', 'settings_get' => 'mk-settings:view|mk-sales:view',
+            'settings_save' => 'mk-settings:edit', 'types_save' => 'mk-settings:edit', 'levels_save' => 'mk-settings:edit', 'rewards_save' => 'mk-settings:edit', 'level_image' => 'mk-settings:edit',
+            'calc' => 'mk-sales:view|mk-settings:view', 'reward_calc' => 'mk-sales:view|mk-settings:view', 'export' => 'mk-sales:export|mk-dash:export', 'pdf' => 'mk-sales:export|mk-dash:export',
+        ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [
             'bootstrap' => 'vr-build:view|vr-list:view|vr-settings:view', 'last_trace' => 'vr-build:create|vr-list:edit|vr-settings:view',
@@ -397,6 +410,9 @@ function perm_activity_labels() {
         'life_actions.inst_save' => 'ویرایشِ قسطِ بیمه عمر', 'life_actions.inst_add' => 'افزودنِ قسطِ بیمه عمر', 'life_actions.purge' => 'حذفِ بیمه‌نامه‌های عمرِ بدونِ پرداخت',
         'life_actions.policy_delete' => 'حذفِ بیمه‌نامه‌ی عمر', 'life_actions.export' => 'خروجیِ اکسلِ بیمه عمر', 'life_actions.archive_zip' => 'خروجیِ زیپ از بایگانیِ بیمه عمر',
         'life_actions.inst_file_upload' => 'بارگذاریِ فایلِ قسطِ بیمه عمر',
+        'mk_actions.sale_save' => 'ثبت / ویرایشِ فروشِ بازاریاب', 'mk_actions.sale_void' => 'ابطالِ فروشِ بازاریاب', 'mk_actions.person_save' => 'ثبت / ویرایشِ بازاریاب',
+        'mk_actions.person_delete' => 'حذفِ بازاریاب', 'mk_actions.types_save' => 'تغییرِ انواع و کارمزدِ بازاریابی', 'mk_actions.levels_save' => 'تغییرِ سطح‌های بازاریابی',
+        'mk_actions.rewards_save' => 'تغییرِ قوانینِ پاداشِ مشتری', 'mk_actions.settings_save' => 'تغییرِ تنظیماتِ حقوقِ بازاریابان', 'mk_actions.export' => 'خروجیِ اکسلِ بازاریابی', 'mk_actions.pdf' => 'گزارشِ PDFِ بازاریابی',
         'file_manager.zip_folder' => 'خروجیِ زیپ از بایگانی', 'file_manager.zip_range' => 'خروجیِ زیپ از بایگانی', 'settings_actions.save_quota' => 'تغییرِ تنظیماتِ سامانه',
     ];
 }

@@ -31,6 +31,7 @@ function auth_norm_phone($p) {
 
 function auth_role_fa($type, $role = null) {
     if ($type === 'COMPANY') return 'کاربر شرکت';
+    if ($type === 'MARKETER') return $role === 'CALLER' ? 'کارشناس تماس' : 'بازاریاب';
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی',
             'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? 'کاربر پنل';
 }
@@ -130,7 +131,7 @@ function cbot_notify_staff($pdo, $roles, $text, $markup = null) {
 // قطعِ اتصالِ یک حساب از ربات (مثلاً وقتی شماره‌اش در پنل عوض شد یا حذف شد) + پیام به همان گفتگو
 function auth_unlink_bot($pdo, $type, $id, $message = null) {
     if (!auth_schema_ready($pdo)) return;
-    $table = $type === 'STAFF' ? 'users' : 'company_portal_users';
+    $table = $type === 'STAFF' ? 'users' : ($type === 'MARKETER' ? 'mk_people' : 'company_portal_users');
     $st = $pdo->prepare("SELECT bale_chat_id FROM $table WHERE id = ?");
     $st->execute([$id]);
     $chat = $st->fetchColumn();

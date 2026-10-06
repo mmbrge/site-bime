@@ -30,6 +30,23 @@ $isParsian = ($_SESSION['role'] ?? '') === 'PARSIAN';
 $isLife = ($_SESSION['role'] ?? '') === 'LIFE';
 // منوی «بیمه عمر»: مدیر کل، کاربر بیمه عمر و هر کسی که دسترسیِ سفارشی دارد (منوهای بی‌اجازه در مرورگر پنهان می‌شوند)
 $lifeAccess = $isLife || ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
+// منوی «بازاریابی و فروش»: مدیر کل و دسترسی‌های سفارشی (منوهای بی‌اجازه در مرورگر پنهان می‌شوند)
+$mkAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
+$mkMenuHtml = !$mkAccess ? '' : '
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-bullhorn ml-1"></i> بازاریابی
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab(\'mk-dash\')" id="nav-mk-dash" class="nav-item menu-link font-black text-orange-700"><i class="fas fa-chart-line ml-2"></i> داشبورد فروش <small class="text-[10px] text-slate-400 font-bold mr-1">کلی و هر بازاریاب</small></a>
+                        <a href="#" onclick="switchTab(\'mk-sales\')" id="nav-mk-sales" class="nav-item menu-link"><i class="fas fa-receipt ml-2"></i> فروش‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">ثبت، محاسبه‌گر، اکسل</small></a>
+                        <a href="#" onclick="switchTab(\'mk-people\')" id="nav-mk-people" class="nav-item menu-link"><i class="fas fa-user-tie ml-2"></i> بازاریابان و کارشناسانِ تماس</a>
+                        <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab(\'mk-settings\')" id="nav-mk-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات بازاریابی <small class="text-[10px] text-slate-400 font-bold mr-1">کارمزد، پاداش، سطح، حقوق</small></a>
+                    </div>
+                </div>
+';
 $lifeMenuHtml = !$lifeAccess ? '' : '
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
@@ -936,7 +953,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php endif; ?>
                     </div>
                 </div>
-                <?php echo $lifeMenuHtml; ?>
+                <?php echo $lifeMenuHtml . $mkMenuHtml; ?>
                 <?php endif; /* !$isParsian && !$isLife */ ?>
             </nav>
         </div>
@@ -2649,7 +2666,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endif; ?>
         <?php if ($lifeAccess): ?>
         <!-- ======================= بیمه عمر - life.js ======================= -->
-        <?php foreach (['life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings'] as $__lt): ?>
+        <?php foreach (array_merge(['life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings'], $mkAccess ? ['mk-dash', 'mk-sales', 'mk-people', 'mk-settings'] : []) as $__lt): ?>
         <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root" class="life-root"></div></div>
         <?php endforeach; ?>
         <?php endif; ?>
@@ -3898,7 +3915,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=9"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
-    <?php if ($lifeAccess): ?><script src="life.js?v=1"></script><?php endif; ?>
+    <?php if ($lifeAccess): ?><script src="life.js?v=2"></script><?php endif; ?>
+    <?php if ($mkAccess): ?><script src="marketing.js?v=1"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -3925,7 +3943,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -8737,6 +8755,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
+            if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();
