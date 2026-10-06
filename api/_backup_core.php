@@ -347,7 +347,7 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
 function bk_reset_keep_tables() {
     return ['users', 'system_settings', 'finance_settings', 'invoice_templates',
             'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
-            'report_insureds', 'report_insured_categories'];
+            'report_insureds', 'report_insured_categories', 'life_templates'];
 }
 function bk_reset_sections() {
     return [
@@ -366,6 +366,9 @@ function bk_reset_sections() {
         'visit_reports' => ['label' => 'گزارش‌های بازدید',
             'desc' => 'گزارش‌های صادرشده با عکس‌ها و نسخه‌های قبلی، دفترِ اکسل و بایگانیِ گزارشات (شماره‌ی گزارش از اول؛ تنظیمات و قالب‌ها می‌مانند)',
             'tables' => ['visit_reports', 'visit_report_photos', 'visit_report_versions']],
+        'life' => ['label' => 'بیمه عمر',
+            'desc' => 'بیمه‌نامه‌ها و اقساطِ عمر، پرداخت‌ها، تماس‌ها و یادداشت‌ها، سابقه‌ی ورودِ اکسل و بایگانیِ بیمه عمر (قالب‌های رسید و تنظیمِ ستون‌ها می‌مانند)',
+            'tables' => ['life_policies', 'life_installments', 'life_payments', 'life_notes', 'life_imports']],
         'messages' => ['label' => 'پیام‌ها، اعلان‌ها و لاگ‌ها',
             'desc' => 'تیکت‌ها، چت داخلی، اعلان‌ها، لاگ‌های ورود و کارها، کدهای ورود و درخواست‌های بازیابی رمز',
             'tables' => ['messages', 'staff_chat_messages', 'tickets', 'ticket_messages', 'admin_notifications', 'app_notifications', 'user_notifications',
@@ -434,6 +437,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($arch . '/بایگانی وارداتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
         if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot)); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
+        if ($has('life')) bk_rrmdir_contents($arch . '/بایگانی بیمه عمر');
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
         if ($has('other')) foreach (['/بایگانی', '/tmp_ocr', '/tmp_recon', '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
     }

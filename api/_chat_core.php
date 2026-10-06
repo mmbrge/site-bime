@@ -166,7 +166,7 @@ function chat_threads($pdo, $actor, $q = '') {
 
 function chat_role_fa($role) {
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما',
-            'PARSIAN' => 'کارمند بیمه با ما (پارسیان)'][$role] ?? 'همکار';
+            'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? 'همکار';
 }
 
 // «گفتگوی تازه»: جستجو بینِ کارکنان، شرکت‌ها و همکاران

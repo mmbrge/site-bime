@@ -26,6 +26,27 @@ $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
 // نقش «کاربر پارسیان»: فقط ساخت/دیدن/ویرایشِ گزارش‌های بازدیدِ خودش (هیچ بخشِ دیگری از پنل را نمی‌بیند)
 $isParsian = ($_SESSION['role'] ?? '') === 'PARSIAN';
+// نقش «کاربر بیمه عمر»: فقط بخشِ بیمه عمر (داشبورد، بیمه‌نامه‌ها و اقساط، ورودِ اکسل، بایگانیِ عمر) و گفتگو
+$isLife = ($_SESSION['role'] ?? '') === 'LIFE';
+// منوی «بیمه عمر»: مدیر کل، کاربر بیمه عمر و هر کسی که دسترسیِ سفارشی دارد (منوهای بی‌اجازه در مرورگر پنهان می‌شوند)
+$lifeAccess = $isLife || ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
+$lifeMenuHtml = !$lifeAccess ? '' : '
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-heart-pulse ml-1"></i> بیمه عمر
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                        <span id="life-nav-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab(\'life-dash\')" id="nav-life-dash" class="nav-item menu-link font-black text-cyan-700"><i class="fas fa-chart-pie ml-2"></i> داشبورد بیمه عمر <small class="text-[10px] text-slate-400 font-bold mr-1">وصول، معوق، فروش</small></a>
+                        <a href="#" onclick="switchTab(\'life-policies\')" id="nav-life-policies" class="nav-item menu-link"><i class="fas fa-file-medical ml-2"></i> بیمه‌نامه‌ها و اقساط <small class="text-[10px] text-slate-400 font-bold mr-1">پرداخت، تماس، رسید</small></a>
+                        <a href="#" onclick="switchTab(\'life-import\')" id="nav-life-import" class="nav-item menu-link"><i class="fas fa-file-import ml-2"></i> ورود از اکسل <small class="text-[10px] text-slate-400 font-bold mr-1">گزارشِ اقساطِ بیمه‌گر</small></a>
+                        <a href="#" onclick="switchTab(\'life-archive\')" id="nav-life-archive" class="nav-item menu-link"><i class="fas fa-box-archive ml-2"></i> بایگانی بیمه عمر</a>
+                        <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab(\'life-settings\')" id="nav-life-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات بیمه عمر <small class="text-[10px] text-slate-400 font-bold mr-1">ستون‌ها، قالب رسید</small></a>
+                    </div>
+                </div>
+';
 // منوی «گزارش بازدید»: مدیر کل، کاربر پارسیان، و هر کسی که در «تنظیمات گزارش» اجازه‌ی صدورِ حداقل یک نوع را دارد
 $vrAccess = false;
 try {
@@ -117,7 +138,7 @@ function finance_nav($active, $canSeeCompanies = true) {
 }
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -790,7 +811,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
                 <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
-                <?php if (!$isParsian): ?>
+                <?php if ($isLife) echo $lifeMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
+                <?php if (!$isParsian && !$isLife): ?>
 
                 <?php if (!$isLiaison): ?>
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
@@ -914,7 +936,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php endif; ?>
                     </div>
                 </div>
-                <?php endif; /* !$isParsian */ ?>
+                <?php echo $lifeMenuHtml; ?>
+                <?php endif; /* !$isParsian && !$isLife */ ?>
             </nav>
         </div>
 
@@ -2217,7 +2240,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
                     <option value="">همه‌ی نقش‌ها</option>
                     <optgroup label="کارکنانِ بیمه با ما"><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option>
-                    <option value="LIAISON_ALL">کارمند بیمه با ما (عادی و پارسیان)</option><option value="COMPANY_LIAISON">کارمند بیمه با ما (عادی)</option><option value="PARSIAN">کارمند بیمه با ما (پارسیان)</option></optgroup>
+                    <option value="LIAISON_ALL">کارمند بیمه با ما (عادی و پارسیان)</option><option value="COMPANY_LIAISON">کارمند بیمه با ما (عادی)</option><option value="PARSIAN">کارمند بیمه با ما (پارسیان)</option><option value="LIFE">کاربر بیمه عمر</option></optgroup>
                     <optgroup label="بیرون از مجموعه"><option value="COMPANY">کاربر شرکت</option></optgroup>
                 </select>
             </div>
@@ -2623,6 +2646,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div id="cm-cards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"><p class="text-center text-slate-400 text-xs py-10 col-span-full">در حال بارگذاری...</p></div>
         </div>
         <?php endif; ?>
+        <?php endif; ?>
+        <?php if ($lifeAccess): ?>
+        <!-- ======================= بیمه عمر - life.js ======================= -->
+        <?php foreach (['life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings'] as $__lt): ?>
+        <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root" class="life-root"></div></div>
+        <?php endforeach; ?>
         <?php endif; ?>
 
         <div class="footer-credit mt-auto">
@@ -3237,6 +3266,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><span><b>کارشناس مالی</b><small>همه‌ی بخش‌های کارشناسِ صدور + اقساط، دریافت، پرداخت و صورتحساب</small></span></button>
                         <button type="button" data-r="COMPANY_LIAISON" style="--c:#7c3aed" onclick="ufPickRole('COMPANY_LIAISON')"><i class="fas fa-user-tie"></i><span><b>کارمند بیمه با ما <em>(عادی)</em></b><small>درخواست‌های شرکت‌ها، صادره‌ها، مالی (بدونِ حذف)، بایگانی و گفتگو</small></span></button>
                         <button type="button" data-r="PARSIAN" style="--c:#c026d3" onclick="ufPickRole('PARSIAN')"><i class="fas fa-file-circle-check"></i><span><b>کارمند بیمه با ما <em>(پارسیان)</em></b><small>فقط ساختِ گزارشِ بازدید و گزارش‌های صادره‌ی خودش</small></span></button>
+                        <button type="button" data-r="LIFE" style="--c:#0891b2" onclick="ufPickRole('LIFE')"><i class="fas fa-heart-pulse"></i><span><b>کاربر بیمه عمر</b><small>فقط بخشِ بیمه عمر (داشبورد، بیمه‌نامه‌ها و اقساط، تماس، پرداخت، بایگانیِ عمر) و گفتگو</small></span></button>
                         <div class="uf-rgrp"><span class="uf-gate" style="--g:#0d9488"><i class="fas fa-building"></i>بیرون از مجموعه · ورود از درگاهِ «کارشناسِ شرکت‌ها»</span></div>
                         <button type="button" data-r="COMPANY" style="--c:#0d9488" onclick="ufPickRole('COMPANY')"><i class="fas fa-building"></i><span><b>کاربر شرکت</b><small>پنلِ شرکت: ثبتِ درخواستِ بیمه و مدارک، فقط برای شرکت(های) انتخاب‌شده</small></span></button>
                     </div>
@@ -3868,6 +3898,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=9"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
+    <?php if ($lifeAccess): ?><script src="life.js?v=1"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -3893,7 +3924,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
-            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements'];
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -4537,7 +4569,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
 
-        <?php if (!$isLiaison && !$isParsian): ?>
+        <?php if (!$isLiaison && !$isParsian && !$isLife): ?>
         // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» و «کاربر پارسیان» به این بخش دسترسی ندارند
         setInterval(checkBotStatus, 5000);
         checkBotStatus();
@@ -4559,6 +4591,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endif; ?>
         <?php if ($isParsian): ?>
         switchTab('vr-build');
+        <?php endif; ?>
+        <?php if ($isLife): ?>
+        setTimeout(() => switchTab('life-dash'), 0);
         <?php endif; ?>
         // دسترسیِ سفارشی بدونِ «داشبورد»: اولین صفحه‌ای که اجازه دارد
         if (PERM.custom && !permCan('dashboard')) setTimeout(() => {   // بعد از اجرای کاملِ اسکریپت (ثابت‌های پایین‌تر آماده باشند)
@@ -8021,7 +8056,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)', LIFE: 'کاربر بیمه عمر'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
@@ -8701,6 +8736,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'issue-group') loadIssueGroup();
             if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
+            if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

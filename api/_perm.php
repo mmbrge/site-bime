@@ -40,6 +40,15 @@ function perm_catalog() {
             'vr-list' => ['گزارش‌های صادرشده', ['view', 'edit', 'delete', 'export']],
             'vr-settings' => ['تنظیمات گزارش', ['view', 'edit']],
         ]],
+        ['بیمه عمر', [
+            'life-dash' => ['داشبورد بیمه عمر', ['view']],
+            'life-policies' => ['بیمه‌نامه‌ها و اقساط عمر', ['view', 'edit', 'delete', 'export']],
+            'life-calls' => ['تماس‌ها و یادداشت‌های بیمه عمر', ['view', 'create', 'delete']],
+            'life-pay' => ['پرداخت‌ها و رسیدِ اقساط عمر', ['view', 'create', 'edit', 'delete']],
+            'life-import' => ['ورود از اکسل (اقساط عمر)', ['view', 'create']],
+            'life-archive' => ['بایگانی بیمه عمر', ['view', 'export']],
+            'life-settings' => ['تنظیمات بیمه عمر (ستون‌ها و قالب رسید)', ['view', 'edit']],
+        ]],
         ['مالی', [
             'fin-dashboard' => ['داشبورد مالی', ['view']],
             'fin-installments' => ['مرکز اقساط', $all],
@@ -81,6 +90,10 @@ function perm_role_defaults($role) {
     $mine = ['my-work' => $pages['my-work'][1]];   // «کارکرد من» برای همه
     if ($role === 'ADMIN') return $full(array_keys($pages));
     if ($role === 'PARSIAN') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'vr-build' => ['view', 'create'], 'vr-list' => ['view', 'edit', 'export']] + $mine;
+    // «کاربر بیمه عمر»: گفتگوها، کارکرد و بخشِ بیمه عمر (بدونِ حذف و تنظیمات)
+    if ($role === 'LIFE') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'life-dash' => ['view'], 'life-policies' => ['view', 'edit', 'export'],
+        'life-calls' => ['view', 'create'], 'life-pay' => ['view', 'create', 'edit'], 'life-import' => ['view', 'create'], 'life-archive' => ['view', 'export'],
+        'life-settings' => ['view']] + $mine;
     if ($role === 'COMPANY_LIAISON') {
         $d = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'export'], 'companies-inbox' => ['view'],
               'issued-list' => ['view', 'export'], 'companies-finance' => ['view', 'export'], 'filemanager' => ['view', 'export']];
@@ -294,6 +307,19 @@ function perm_api_map() {
             'svc_pay_save' => 'my-work:edit|service-report:edit', 'svc_pay_delete' => 'my-work:edit|service-report:edit',
             'svc_list' => 'service-report:view', 'svc_overview' => 'service-report:view', 'svc_service_receipt' => 'service-report:view', 'svc_save' => 'service-report:edit', 'svc_delete' => 'service-report:edit',
         ]],
+        'life_actions' => ['pages' => ['life-policies'], 'actions' => [
+            'bootstrap' => 'life-dash:view|life-policies:view|life-import:view|life-archive:view|life-settings:view', 'stats' => 'life-dash:view',
+            'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view', 'policy_save' => 'life-policies:edit',
+            'policy_delete' => 'life-policies:delete', 'export' => 'life-policies:export', 'purge_candidates' => 'life-policies:delete', 'purge' => 'life-policies:delete',
+            'phones_save' => 'life-calls:create|life-policies:edit', 'note_add' => 'life-calls:create', 'note_delete' => 'life-calls:delete',
+            'inst_save' => 'life-pay:edit', 'inst_add' => 'life-pay:create', 'inst_delete' => 'life-policies:delete', 'pay_add' => 'life-pay:create', 'pay_void' => 'life-pay:delete',
+            'inst_file' => 'life-pay:view|life-archive:view', 'inst_file_upload' => 'life-pay:create', 'inst_file_delete' => 'life-pay:delete',
+            'receipt_docx' => 'life-pay:view', 'receipt_html' => 'life-pay:view', 'receipt_pdf' => 'life-pay:view', 'templates' => 'life-pay:view|life-settings:view',
+            'tpl_upload' => 'life-settings:edit', 'tpl_save' => 'life-settings:edit', 'tpl_delete' => 'life-settings:edit', 'tpl_sample' => 'life-settings:view', 'tpl_file' => 'life-settings:view',
+            'colmap_get' => 'life-settings:view|life-import:view', 'colmap_save' => 'life-settings:edit', 'colmap_headers' => 'life-settings:edit',
+            'import_preview' => 'life-import:create', 'import_commit' => 'life-import:create', 'imports_list' => 'life-import:view',
+            'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
+        ]],
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [
             'bootstrap' => 'vr-build:view|vr-list:view|vr-settings:view', 'last_trace' => 'vr-build:create|vr-list:edit|vr-settings:view',
@@ -364,6 +390,11 @@ function perm_activity_labels() {
         'staff_users_actions.create' => 'ساختِ کاربر', 'staff_users_actions.update' => 'ویرایشِ کاربر', 'staff_users_actions.delete' => 'حذفِ کاربر', 'staff_users_actions.perm_save' => 'تعیینِ دسترسیِ کاربر',
         'staff_users_actions.handle_reset' => 'رسیدگی به درخواستِ بازیابیِ رمز', 'staff_users_actions.devices_set_max' => 'تعیینِ سقفِ دستگاه‌های همزمان', 'staff_users_actions.device_end' => 'بستنِ دستگاهِ کاربر', 'staff_users_actions.devices_end_all' => 'بستنِ همه‌ی دستگاه‌های کاربر', 'user_actions.send_message' => 'پیام به کاربرِ ربات', 'ticket_actions.reply' => 'پاسخ به تیکت',
         'backup_actions.create' => 'پشتیبان‌گیری', 'backup_actions.restore' => 'بازگردانیِ پشتیبان', 'backup_actions.download' => 'دانلودِ فایلِ پشتیبان',
+        'life_actions.import_commit' => 'ورودِ اکسلِ اقساطِ بیمه عمر', 'life_actions.pay_add' => 'ثبتِ پرداختِ قسطِ بیمه عمر', 'life_actions.pay_void' => 'ابطالِ پرداختِ قسطِ بیمه عمر',
+        'life_actions.note_add' => 'ثبتِ تماس / یادداشتِ بیمه عمر', 'life_actions.phones_save' => 'ثبتِ شماره‌ی تماسِ بیمه‌گذارِ عمر', 'life_actions.policy_save' => 'ویرایشِ بیمه‌نامه‌ی عمر',
+        'life_actions.inst_save' => 'ویرایشِ قسطِ بیمه عمر', 'life_actions.inst_add' => 'افزودنِ قسطِ بیمه عمر', 'life_actions.purge' => 'حذفِ بیمه‌نامه‌های عمرِ بدونِ پرداخت',
+        'life_actions.policy_delete' => 'حذفِ بیمه‌نامه‌ی عمر', 'life_actions.export' => 'خروجیِ اکسلِ بیمه عمر', 'life_actions.archive_zip' => 'خروجیِ زیپ از بایگانیِ بیمه عمر',
+        'life_actions.inst_file_upload' => 'بارگذاریِ فایلِ قسطِ بیمه عمر',
         'file_manager.zip_folder' => 'خروجیِ زیپ از بایگانی', 'file_manager.zip_range' => 'خروجیِ زیپ از بایگانی', 'settings_actions.save_quota' => 'تغییرِ تنظیماتِ سامانه',
     ];
 }

@@ -19,12 +19,26 @@ if (!$archiveRoot) {
 
 $action = $_GET['action'] ?? '';
 
+// «بایگانی بیمه عمر» فقط برای کسی که دسترسیِ «بایگانی بیمه عمر» دارد (مدیر کل همیشه)
+$fmLifeOk = true;
+if (perm_real_role() !== 'ADMIN') {
+    $__pp = perm_user_custom($pdo, $_SESSION['user_id']);
+    if ($__pp === null) $__pp = perm_role_defaults(perm_real_role());
+    $fmLifeOk = perm_allows($__pp, 'life-archive:view');
+}
+function fm_hidden($archiveRoot, $abs) {
+    if (!empty($GLOBALS['fmLifeOk'])) return false;
+    $life = $archiveRoot . '/بایگانی بیمه عمر';
+    return $abs === $life || strpos($abs, $life . '/') === 0;
+}
+
 // امن‌سازی مسیر: مسیر درخواستی هرگز نباید از ریشه‌ی بایگانی بیرون بزند
 function safe_resolve($archiveRoot, $relative) {
     $relative = str_replace(['..'], '', (string)$relative);
     $target = realpath($archiveRoot . '/' . ltrim($relative, '/'));
     if ($target === false) return null;
     if (strpos($target, $archiveRoot) !== 0) return null;
+    if (fm_hidden($archiveRoot, $target)) return null;
     return $target;
 }
 
@@ -46,6 +60,7 @@ try {
         foreach (scandir($dir) as $entry) {
             if ($entry === '.' || $entry === '..') continue;
             $full = $dir . '/' . $entry;
+            if (fm_hidden($archiveRoot, $full)) continue;
             $relChild = trim(str_replace($archiveRoot, '', $full), '/');
             if (is_dir($full)) {
                 // تعداد فایل‌های داخل پوشه (فقط شمارش سطحی-بازگشتی سبک، برای نمایش خلاصه)
@@ -100,7 +115,7 @@ try {
         $zip->open($zipPath, ZipArchive::CREATE);
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS));
         foreach ($rii as $file) {
-            if ($file->isFile()) {
+            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname())) {
                 $localName = substr($file->getPathname(), strlen($target) + 1);
                 $zip->addFile($file->getPathname(), $localName);
             }
@@ -131,7 +146,7 @@ try {
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($archiveRoot, FilesystemIterator::SKIP_DOTS));
         $count = 0;
         foreach ($rii as $file) {
-            if ($file->isFile() && $file->getMTime() >= $fromTs && $file->getMTime() < $toTs) {
+            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && $file->getMTime() >= $fromTs && $file->getMTime() < $toTs) {
                 $localName = substr($file->getPathname(), strlen($archiveRoot) + 1);
                 $zip->addFile($file->getPathname(), $localName);
                 $count++;
@@ -158,7 +173,7 @@ try {
         $results = [];
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($archiveRoot, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
         foreach ($rii as $item) {
-            if (mb_stripos($item->getFilename(), $q) !== false) {
+            if (mb_stripos($item->getFilename(), $q) !== false && !fm_hidden($archiveRoot, $item->getPathname())) {
                 $rel = trim(str_replace($archiveRoot, '', $item->getPathname()), '/');
                 $results[] = [
                     'type' => $item->isDir() ? 'dir' : 'file',

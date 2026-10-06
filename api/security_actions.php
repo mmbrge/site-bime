@@ -220,7 +220,7 @@ function sec_sessions($pdo) {
         'STAFF' => "SELECT id, full_name, username, role $pres FROM users WHERE COALESCE(is_deleted, 0) = 0",
         'COMPANY' => "SELECT id, full_name, username, 'COMPANY' role $pres FROM company_portal_users WHERE is_active = 1 AND COALESCE(is_deleted, 0) = 0",
     ];
-    $roleFa = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'COMPANY' => 'کاربرِ شرکت'];
+    $roleFa = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر', 'COMPANY' => 'کاربرِ شرکت'];
     foreach ($lists as $type => $q) {
         try { $rows = $pdo->query($q)->fetchAll(); } catch (Throwable $e) { continue; }
         foreach ($rows as $r) {

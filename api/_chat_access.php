@@ -18,7 +18,7 @@ function chat_access_ensure($pdo) {
     }
 }
 
-const CHAT_COMPANY_ROLE_OPTIONS = ['OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'همکار · پنل پارسیان'];
+const CHAT_COMPANY_ROLE_OPTIONS = ['OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'همکار · پنل پارسیان', 'LIFE' => 'همکار · بیمه عمر'];
 
 function chat_company_roles($pdo) {
     static $cache = null;

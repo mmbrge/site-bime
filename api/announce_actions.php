@@ -20,7 +20,7 @@ $action = (string)($data['action'] ?? '');
 $role = $A[3];
 
 const ANN_TEMPLATES = ['info', 'warning', 'danger', 'rules', 'celebrate', 'news', 'maintenance', 'holiday', 'birthday'];
-const ANN_ROLES = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند پارسیان'];
+const ANN_ROLES = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند پارسیان', 'LIFE' => 'کاربر بیمه عمر'];
 const ANN_BDAY_DEFAULTS = ['ann_bday_self' => '1', 'ann_bday_all' => '1',
     'ann_bday_self_title' => 'تولدت مبارک {name}! 🎂', 'ann_bday_self_body' => "امروز روزِ توست!\nاز طرفِ همه‌ی ما در «بیمه با ما» صمیمانه تولدت را تبریک می‌گوییم.\nسالی پر از سلامتی، شادی و موفقیت برایت آرزو می‌کنیم. 🎉",
     'ann_bday_all_title' => 'امروز تولدِ {name} است 🎉', 'ann_bday_all_body' => "به {name} تبریک بگوییم و روزش را شیرین کنیم!\nاز بخشِ گفتگوها برایش پیامِ تبریک بفرستید. 🎈"];

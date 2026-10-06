@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // درگاهِ «همکار بیمه»: همه‌ی نقش‌های داخلی (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما - عادی و پارسیان)
         // کاربرِ شرکت از درگاهِ «کارشناس شرکت‌ها» وارد می‌شود (api/company_portal_auth.php)
-        $gateOk = $user && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN'], true);
+        $gateOk = $user && in_array($user['role'], ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN', 'LIFE'], true);
 
         if ($user && password_verify($password, $user['password_hash']) && !$gateOk) {
             $error = 'نقشِ این حساب برای ورود تعریف نشده است؛ با مدیر کل تماس بگیرید.';

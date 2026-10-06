@@ -88,7 +88,7 @@ function wk_pdf($pdo, array $uids, $from, $to) {
         $first = false;
         $name = (string)$u['full_name'];
         $roleFa = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما',
-                   'PARSIAN' => 'کارمند بیمه با ما (پارسیان)'][$u['role']] ?? 'همکار';
+                   'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$u['role']] ?? 'همکار';
         [$days, $sm, $st] = wk_pdf_stats($pdo, $uid, $from, $to);
         $bal = wk_balance($pdo, $uid, $tjy, $tjm);
         $auto = wk_auto_tasks($pdo, $uid, $from, $to);

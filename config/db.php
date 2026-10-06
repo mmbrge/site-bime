@@ -49,11 +49,14 @@ try {
 // قبل از این فایل باز کرده (همه‌ی بخش‌های پنلِ داخلی) برایش بسته است. اینجا هیچ نشستی باز نمی‌شود تا
 // نشستِ جداگانه‌ی پنل شرکت‌ها و وب‌اپ دست نخورد.
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
-    if (($_SESSION['role'] ?? '') === 'PARSIAN' && session_name() !== 'bime_company_portal') {
+    if (in_array($_SESSION['role'] ?? '', ['PARSIAN', 'LIFE'], true) && session_name() !== 'bime_company_portal') {
         $__vrScript = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
-        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php', '/api/work_actions.php',
+        // «کاربر بیمه عمر» (LIFE) همین محدودیت را دارد ولی به‌جای گزارشِ بازدید، فقط بخشِ بیمه عمر و بایگانیِ خودش
+        $__isLife = ($_SESSION['role'] ?? '') === 'LIFE';
+        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', $__isLife ? '/api/life_actions.php' : '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php', '/api/work_actions.php',
                         // امکاناتِ رفاهی (اگر مدیر برایش روشن کرده)، اعلان‌های پاپ‌آپ و بررسیِ نشست برای خروجِ خودکار
                         '/api/comfort_actions.php', '/api/announce_actions.php', '/api/alive.php', '/api/tools_actions.php'];
+        if ($__isLife) $__vrAllowed[] = '/Archive/_guard.php';   // فقط پوشه‌ی «بایگانی بیمه عمر» (در خودِ _guard.php)
         $__vrOk = false;
         foreach ($__vrAllowed as $__a) if (substr($__vrScript, -strlen($__a)) === $__a) { $__vrOk = true; break; }
         // اگر مدیر کل برایش دسترسیِ سفارشی تعیین کرده، همان دسترسی‌ها (api/_perm.php) تعیین‌کننده است
@@ -71,7 +74,7 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
         if (!$__vrOk) {
             if (strpos($__vrScript, '/api/') !== false) {
                 header('Content-Type: application/json; charset=utf-8');
-                echo json_encode(['ok' => false, 'error' => 'این بخش برای «کاربر پارسیان» در دسترس نیست.'], JSON_UNESCAPED_UNICODE);
+                echo json_encode(['ok' => false, 'error' => 'این بخش برای «' . ($__isLife ? 'کاربر بیمه عمر' : 'کاربر پارسیان') . '» در دسترس نیست.'], JSON_UNESCAPED_UNICODE);
             } else {
                 header('Location: ' . (strpos($__vrScript, '/company-portal/') !== false || strpos($__vrScript, '/webapp/') !== false ? '../dashboard.php' : 'dashboard.php'));
             }

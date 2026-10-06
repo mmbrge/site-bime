@@ -21,6 +21,18 @@ if (!empty($_COOKIE[session_name()])) {
     session_start();
     require $siteRoot . '/config/db.php';   // سپرِ امنیتی (خروجِ خودکار، IPِ مسدود، ...) هم همین‌جا اجرا می‌شود
     $allowed = !empty($_SESSION['user_id']);
+    // بایگانیِ بیمه عمر: فقط با دسترسیِ «بایگانی بیمه عمر» یا «پرداخت‌های اقساط عمر»؛ «کاربر بیمه عمر» هم فقط همین پوشه را می‌بیند
+    if ($allowed) {
+        $__life = mb_strpos($rel, 'Archive/بایگانی/بایگانی بیمه عمر/') === 0;
+        $__role = $_SESSION['role'] ?? '';
+        if ($__role === 'LIFE' && !$__life) $allowed = false;
+        elseif ($__life && $__role !== 'ADMIN') {
+            require_once $siteRoot . '/api/_perm.php';
+            $__pp = perm_user_custom($pdo, $_SESSION['user_id']);
+            if ($__pp === null) $__pp = perm_role_defaults($__role);
+            $allowed = perm_allows($__pp, 'life-archive:view|life-pay:view');
+        }
+    }
     session_write_close();
 }
 // ۲) نشستِ پنلِ شرکت‌ها: فقط پوشه‌هایی که نامِ شرکتِ خودش در مسیرشان است

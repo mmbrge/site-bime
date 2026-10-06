@@ -68,3 +68,6 @@ report_assets/logs/
 !tmp_ocr/.htaccess
 !tmp_recon/.htaccess
 !tmpl_invoice/.htaccess
+
+# بایگانیِ بیمه عمر (روی هاست ساخته می‌شود؛ اطلاعاتِ واقعیِ مشتری)
+Archive/بایگانی/بایگانی بیمه عمر/
