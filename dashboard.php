@@ -3873,7 +3873,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=13"></script>
-    <script src="visit-reports-list.js?v=10"></script>
+    <script src="visit-reports-list.js?v=11"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=3"></script><?php endif; ?>
     <?php endif; ?>
     <script>
