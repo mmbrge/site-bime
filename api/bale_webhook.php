@@ -115,6 +115,11 @@ function kb($rows, $oneTime = false) {
     return ['keyboard' => $rows, 'resize_keyboard' => true, 'one_time_keyboard' => $oneTime];
 }
 function kb_remove() { return ['remove_keyboard' => true]; }
+// شماره‌ی تماسِ «تأییدشده»: فقط وقتی user_idِ مخاطب با فرستنده‌ی پیام یکی است
+function bale_contact_is_own($contact, $fromId) {
+    return is_array($contact) && !empty($contact['user_id']) && $fromId !== null && $fromId !== ''
+        && strval($contact['user_id']) === strval($fromId) && trim((string)($contact['phone_number'] ?? '')) !== '';
+}
 function kb_request_contact() {
     return kb([[ ['text' => '📱 اشتراک‌گذاری شماره تماس', 'request_contact' => true] ]], true);
 }
@@ -1852,7 +1857,9 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
     }
 
     if ($session['conversation_state'] === 'AWAITING_CONTACT_SHARE') {
-        if ($contact && (empty($contact['user_id']) || $contact['user_id'] == $sender_user_id)) {
+        // شماره فقط وقتی تأییدشده است که خودِ کاربر شماره‌ی خودش را فرستاده باشد (contact.user_id == from.id)؛
+        // شماره‌ی دیگران، مخاطبِ فورواردشده یا پیامی بدونِ user_id پذیرفته نمی‌شود (توصیه‌ی امنیتیِ بله)
+        if ($contact && bale_contact_is_own($contact, $sender_user_id)) {
             $mobile = $contact['phone_number'] ?? null;
             $national_code = $session['temp_national_code'];
             $pdo->prepare("DELETE FROM bot_sessions WHERE chat_id = ?")->execute([$chat_id]);

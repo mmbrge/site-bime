@@ -445,6 +445,8 @@ function validate_bale_init_data($initData, $botToken) {
     $computedHash = hash_hmac('sha256', $dataCheckString, $secretKey);
     if (!hash_equals($computedHash, $hash)) return null;
 
+    // جلوی استفاده‌ی دوباره از initDataِ قدیمی (مثلاً کپی‌شده) گرفته می‌شود: حداکثر ۲۴ ساعت از بازشدنِ مینی‌اپ
+    if (!empty($data['auth_date']) && abs(time() - intval($data['auth_date'])) > 86400) return null;
     $user = json_decode($data['user'], true);
     return $user['id'] ?? null;
 }

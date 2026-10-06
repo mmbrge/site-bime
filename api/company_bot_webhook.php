@@ -189,8 +189,10 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
 // ---------------------------------------------------------------------
 function handle_contact($chat, $fromId, $contact) {
     global $pdo;
-    if (!empty($contact['user_id']) && strval($contact['user_id']) !== strval($fromId)) {
-        say($chat, 'لطفاً فقط شماره‌ی خودتان را با دکمه‌ی زیر بفرستید.', contact_kb()); return;
+    // شماره فقط وقتی تأییدشده است که خودِ کاربر شماره‌ی خودش را با دکمه فرستاده باشد (contact.user_id == from.id)؛
+    // مخاطبِ دیگران، مخاطبِ فورواردشده یا پیامِ بدونِ user_id برای ورود پذیرفته نمی‌شود (توصیه‌ی امنیتیِ بله)
+    if (empty($contact['user_id']) || $fromId === null || strval($contact['user_id']) !== strval($fromId)) {
+        say($chat, 'لطفاً فقط شماره‌ی خودتان را با دکمه‌ی «📱 ورود با شماره تلفن» بفرستید (ارسالِ مخاطب یا شماره‌ی دیگران پذیرفته نمی‌شود).', contact_kb()); return;
     }
     $phone = auth_norm_phone($contact['phone_number'] ?? '');
     $accounts = $phone ? auth_accounts_by_phone($pdo, $phone) : [];
