@@ -23,6 +23,10 @@ function imp_excel_columns() {
         'no_claim_years' => ['تعداد سال عدم خسارت'], 'liability' => ['تعهد مالی'], 'diya' => ['تعهد جانی'], 'driver_cover' => ['تعهد سرنشین'],
         'prev_claims' => ['وضعیت خسارت ثالث بیمه نامه قبلی'], 'ncd' => ['درصد تخفیف عدم خسارت ثالث'], 'owner_name' => ['مالک', 'نام مالک'],
         'customer_no' => ['شماره مشتری'],
+        // ورودِ بایگانیِ قبلی (api/_legacy.php): پرداخت‌کننده، الگوی مالی، کد پرسنلی
+        'payer_name' => ['نام پرداخت کننده'], 'payer_last' => ['نام خانوادگی پرداخت کننده'], 'payer_nid' => ['کد ملی پرداخت کننده'],
+        'payer_pcode' => ['کد پرسنلی پرداخت کننده'], 'fin_pattern' => ['الگوی مالی'], 'pcode' => ['کد پرسنلی'],
+        'birth_date' => ['تاریخ تولد بیمه گذار'], 'endorse_no_col' => ['شماره الحاقیه'],
     ];
 }
 
@@ -156,7 +160,7 @@ function imp_parse_excel($pdo, $path) {
             'month' => $issue ? sprintf('%04d-%02d', $jy, $jm) : '', 'month_fa' => $issue ? jalali_month_name($jm) . ' ' . $jy : '',
             'insured' => $insured, 'insured_id' => $insuredId, 'contract_party' => $r['contract_party'] ?? '', 'car_name' => $carName,
             'premium' => imp_int($r['premium'] ?? ''), 'has_prev_body' => $type === 'BODY' ? ($hasPrev ? 'YES' : 'NO') : null,
-            'expiry' => $prevExp ?: ($zero ? '' : $start), 'zero_km' => $zero, 'pf' => $pf,
+            'expiry' => $prevExp ?: ($zero ? '' : $start), 'zero_km' => $zero, 'pf' => $pf, 'raw' => $r,
         ];
     }
     if (!$out) return ['error' => 'زیرِ سرستون‌ها ردیفی پیدا نشد.'];

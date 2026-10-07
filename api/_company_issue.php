@@ -19,8 +19,11 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     if (!$plate) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
     $kind = $plate['request_kind'] ?? 'NEW_POLICY';
     $isImport = !empty($plate['is_import']);
+    // «ورودِ بایگانیِ قبلی» (api/_legacy.php): تاریخ‌ها از خودِ بیمه‌نامه، بدونِ پیام به شرکت
+    $isLegacy = !empty($GLOBALS['CIS_LEGACY']);
     // ردیفِ وارداتی: تاریخ صدور همان تاریخِ اکسلِ بیمه‌گر است (اگر از فایل خوانده نشد)
     if ($isImport && !trim((string)$policyIssueDate) && !empty($plate['import_issue_date'])) $policyIssueDate = $plate['import_issue_date'];
+    $isImport = $isImport || $isLegacy;   // از اینجا به بعد بایگانیِ قبلی هم مثلِ وارداتی: تاریخِ صدور از بیمه‌نامه
 
     $plateDisplay = company_row_label($plate);
     // همان قاعده‌ی نام‌گذاری پرسنلی: پلاک بدون خط‌تیره‌ی داخلی، و «/» شماره‌ی بیمه‌نامه با «∕»
@@ -67,7 +70,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     }
     // اقساطِ همین بیمه‌نامه طبقِ قسط‌بندیِ شرکت (ردیفِ وارداتی قسط ندارد)
     $installmentCount = 0;
-    if ($totalPremium && !$isImport) {
+    if ($totalPremium && (!$isImport || ($isLegacy && empty($plate['is_import'])))) {
         $genResult = company_generate_installments($pdo, $plateId);
         $installmentCount = $genResult['count'] ?? 0;
     }

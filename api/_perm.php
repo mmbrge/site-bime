@@ -246,6 +246,11 @@ function perm_api_map() {
             'create' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
             'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export',
         ]],
+        'legacy_actions' => ['pages' => ['legacy-import'], 'elevate' => true, 'actions' => [
+            'preview' => 'legacy-import:create', 'commit' => 'legacy-import:create', 'batches' => 'legacy-import:view', 'rollback' => 'legacy-import:delete',
+            'staging' => 'legacy-import:view', 'upload_zip' => 'legacy-import:create', 'scan' => 'legacy-import:create', 'scan_result' => 'legacy-import:view',
+            'merge' => 'legacy-import:create', 'find_policy' => 'legacy-import:view',
+        ]],
         'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
             'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',
             'update_row' => 'import-archive:edit', 'bulk_skip' => 'import-archive:edit', 'delete_rows' => 'import-archive:delete', 'export' => 'import-archive:export',
