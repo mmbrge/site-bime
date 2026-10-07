@@ -236,7 +236,7 @@ function legacy_commit($pdo, $siteRoot, $tok, array $choice, $userId) {
         if ($r['target'] === 'P' && strlen((string)$r['holder_nid']) !== 10) { $r['target'] = 'C'; $r['_note'] = 'کد ملیِ ده‌رقمی نداشت؛ شرکتی ثبت شد.'; }
         $sel[] = $r;
     }
-    if (!$sel && !($data['orphans'] ?? [])) return ['ok' => false, 'error' => 'ردیفِ تازه‌ای برای ثبت نیست.'];
+    if (!$sel && !($data['endorsements'] ?? [])) return ['ok' => false, 'error' => 'ردیفِ تازه‌ای برای ثبت نیست.'];
 
     $pdo->prepare("INSERT INTO legacy_batches (title, files, options, created_by) VALUES (?, ?, ?, ?)")
         ->execute([mb_substr((string)($choice['title'] ?? ''), 0, 250) ?: 'ورودِ بایگانیِ قبلی', json_encode(array_column($data['files'], 'name'), JSON_UNESCAPED_UNICODE),
@@ -353,6 +353,9 @@ function legacy_commit($pdo, $siteRoot, $tok, array $choice, $userId) {
                                (int)($pf['liability'] ?? 0) ?: null, $ts, $ts, $ts, $noInst ? 1 : 0, $noInst, $batch]);
                 $caseId = (int)$pdo->lastInsertId();
                 $pdo->prepare("UPDATE policy_cases SET unique_code = ? WHERE id = ?")->execute([generate_case_unique_code($caseId), $caseId]);
+                // «اطلاعات صدور» (تاریخ شروع/انقضا، شماره مرکزی و ...) مثلِ صدورِ عادی؛ مغایرت‌گیری هم از همین می‌خواند
+                $ii = policy_fields_to_issue_info($pf + ['vin' => $r['vin']]);
+                if ($ii) $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $caseId]);
                 legacy_personnel_folders($pdo, $siteRoot, $caseId, null);
                 if (!$noInst) { try { fin_generate_installments($pdo, $caseId); } catch (Throwable $e) {} }
                 $item->execute([$batch, 'P', $caseId, null, $personId, $introId, $k === 0 ? $createdPerson : 0, $k === 0 ? 1 : 0, null, $r['key'], null]);

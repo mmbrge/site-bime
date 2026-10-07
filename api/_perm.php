@@ -251,6 +251,10 @@ function perm_api_map() {
             'staging' => 'legacy-import:view', 'upload_zip' => 'legacy-import:create', 'scan' => 'legacy-import:create', 'scan_result' => 'legacy-import:view',
             'merge' => 'legacy-import:create', 'find_policy' => 'legacy-import:view',
         ]],
+        'recon_actions' => ['pages' => ['pasargad-recon'], 'elevate' => true, 'actions' => [
+            'run' => 'pasargad-recon:create', 'runs' => 'pasargad-recon:view', 'items' => 'pasargad-recon:view', 'export' => 'pasargad-recon:export',
+            'resolve' => 'pasargad-recon:edit', 'mark' => 'pasargad-recon:edit', 'import' => 'pasargad-recon:create', 'delete_run' => 'pasargad-recon:create',
+        ]],
         'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
             'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',
             'update_row' => 'import-archive:edit', 'bulk_skip' => 'import-archive:edit', 'delete_rows' => 'import-archive:delete', 'export' => 'import-archive:export',

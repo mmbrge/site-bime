@@ -154,6 +154,7 @@ function issuance_nav($active, $isLiaison) {
     $items[] = ['endorsements', 'fa-file-pen', 'الحاقیه‌ها', 'iss-n-endo'];
     if (!$isLiaison) $items[] = ['issue-group', 'fa-layer-group', 'صدور گروهی', 'iss-n-group'];
     if (!$isLiaison) $items[] = ['import-archive', 'fa-box-archive', 'بایگانی وارداتی', 'iss-n-import'];
+    if (!$isLiaison) $items[] = ['pasargad-recon', 'fa-scale-unbalanced', 'مغایرت با پاسارگاد', 'iss-n-recon'];
     if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی قبلی', 'iss-n-legacy'];
     if (!$isLiaison) $items[] = ['renewals', 'fa-bell', 'اعلام تمدید', 'iss-n-renew'];
     $h = '<div class="iss-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-stamp"></i></span><div><b>مرکز صدور</b><small>همه‌ی ردیف‌های شرکتی و کارکنان، از درخواست تا صادره</small></div></div><div class="iss-nav">';
@@ -912,6 +913,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     $g1 = ($canSeeCompanies && !$isLiaison ? $bmLink('issue-queue', 'fa-list-check', 'در حال صدور', 'ثبتِ صدور و بیمه‌نامه') : '')
                         . ($canSeeCompanies ? $bmLink('issued-list', 'fa-file-circle-check', 'صادره‌ها', 'جستجو، اکسل، فایل') . $bmLink('endorsements', 'fa-file-pen', 'الحاقیه‌ها', 'اضافی، برگشتی، فسخ و اثرِ مالی') : '')
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('issue-group', 'fa-layer-group', 'صدورِ گروهی', 'فایلِ PDFِ بیمه‌گر') . $bmLink('import-archive', 'fa-box-archive', 'بایگانیِ وارداتی', 'اکسلِ بیمه‌گر') . $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص') : '')
+                        . ($canSeeCompanies && !$isLiaison ? $bmLink('pasargad-recon', 'fa-scale-unbalanced', 'مغایرت‌گیری با پاسارگاد', 'خروجیِ هفتگی/ماهانه با سایت') : '')
                         . ($isAdminRole ? $bmLink('legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی‌های قبلی', 'اکسل‌ها، پوشه‌ها، ادغام') : '');
                     $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
@@ -2572,6 +2574,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <?php echo issuance_nav('import-archive', $isLiaison); ?>
             <div id="imp-root"></div>
         </div>
+        <!-- ======================= مغایرت‌گیری با پاسارگاد - recon.js ======================= -->
+        <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
+            <div id="recon-root" class="space-y-4"></div>
+        </div>
         <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
         <!-- ======================= ورودِ بایگانی‌های قبلی - legacy-import.js ======================= -->
         <div id="tab-legacy-import" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
@@ -4022,6 +4029,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="renewals.js?v=2"></script>
     <script src="endorse.js?v=1"></script>
     <script src="legacy-import.js?v=1"></script>
+    <script src="recon.js?v=1"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=3"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
@@ -4049,7 +4057,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
-        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'legacy-import', 'issue-group',
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
@@ -9028,6 +9036,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
             if (tabId === 'endorsements' && window.Endorse) Endorse.init(document.getElementById('endo-root'));
             if (tabId === 'legacy-import' && window.LegacyImport) LegacyImport.init(document.getElementById('legacy-root'));
+            if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
