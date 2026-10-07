@@ -207,6 +207,7 @@ function perm_api_map() {
     return [
         'company_actions' => ['pages' => [$req], 'elevate' => true, 'actions' => [
             'finance_summary' => 'companies-finance:view|dashboard:view', 'finance_chart' => 'companies-finance:view|dashboard:view',
+            'excel_sample' => $req . ':view|companies-manage:view|settings:view', 'excel_map_get' => 'settings:view|companies-manage:view', 'excel_map_save' => 'settings:edit|companies-manage:edit', 'excel_headers' => 'settings:edit|companies-manage:edit',
             'dashboard_alerts' => 'dashboard:view', 'issue_queue' => 'issue-queue:view|issued-list:view|issue-group:view',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any',

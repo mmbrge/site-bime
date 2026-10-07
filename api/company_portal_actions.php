@@ -17,6 +17,7 @@ $allowedCompanyIds = $session['company_ids'];
 $schemaProblem = company_schema_problem($pdo);
 if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem], JSON_UNESCAPED_UNICODE); exit; }
 company_ensure_coverage_column($pdo);
+company_ensure_car_type($pdo);
 
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
@@ -31,6 +32,31 @@ function resolve_company_id($allowedIds, $requested) {
 }
 
 try {
+    // ---- اکسلِ خودروها: فایلِ نمونه و پیش‌نمایشِ ردیف‌ها (همان ستون‌هایی که در تنظیماتِ «بیمه با ما» تعریف شده) ----
+    if ($action === 'excel_sample') {
+        require_once __DIR__ . '/finance_core.php';
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $p = company_excel_sample_path();
+        header_remove('Content-Type');
+        xlsx_send($p, 'نمونه اکسل درخواست بیمه.xlsx');
+        exit;
+    }
+    if ($action === 'preview_excel_rows') {
+        require_once __DIR__ . '/finance_core.php';
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل را انتخاب کنید.']); exit; }
+        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ اکسل (xlsx) یا csv.']); exit; }
+        $parsed = company_read_import_input([], $f);
+        if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
+        $rows = array_map(function ($r) { return ['p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4'], 'chassis_no' => $r['chassis_no'], 'engine_no' => $r['engine_no'],
+            'is_new_vehicle' => $r['is_new_vehicle'], 'car_name' => $r['car_name'], 'car_type' => $r['car_type'] ?? null, 'car_value' => $r['car_value'], 'liability_limit' => $r['liability_limit'],
+            'insurance_type' => $r['insurance_type'], 'expiry_j' => $r['expiry_date_jalali'] ? str_replace('.', '/', $r['expiry_date_jalali']) : '', 'ref_policy_number' => $r['ref_policy_number'],
+            'endorsement_request' => $r['endorsement_request'], 'cancellation_reason' => $r['cancellation_reason'], 'note' => $r['row_note']]; }, $parsed['rows']);
+        echo json_encode(['ok' => true, 'rows' => $rows, 'errors' => $parsed['errors']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- شرکت‌هایی که این کاربر به آن‌ها دسترسی دارد (برای پرکردن انتخابگر) ----
     if ($action === 'my_companies') {
         echo json_encode(['ok' => true, 'companies' => $session['companies']], JSON_UNESCAPED_UNICODE);
@@ -102,7 +128,7 @@ try {
         $stmt = $pdo->prepare("SELECT id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
                                        car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
                                        insurance_type, status, expiry_date,
-                                       skip_health_inspection, has_prev_body, car_name, row_note, policy_number, issued_at,
+                                       skip_health_inspection, has_prev_body, car_name, car_type, row_note, policy_number, issued_at,
                                        issued_file_path, issued_file_path IS NOT NULL AS has_issued_file, selected_coverages
                                 FROM company_request_plates WHERE request_id = ? ORDER BY id");
         $stmt->execute([$requestId]);
@@ -372,11 +398,12 @@ try {
         if (is_array($plates)) {
             // ردیف می‌تواند با پلاک باشد یا - برای لیفتراک و خودروی صفرکیلومتر - فقط با
             // شماره شاسی. ارزش خودرو (بدنه) و سقف تعهد مالی (ثالث) هم همین‌جا گرفته می‌شود.
+            company_ensure_car_type($pdo);
             $insPlate = $pdo->prepare("INSERT INTO company_request_plates
                 (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
                  car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
-                 insurance_type, skip_health_inspection)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                 insurance_type, skip_health_inspection, car_name, car_type, expiry_date, row_note)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             foreach ($plates as $p) {
                 $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');
                 $pletter = trim($p['letter'] ?? ''); $pp4 = trim($p['p4'] ?? '');
@@ -384,13 +411,16 @@ try {
                 if ($pp1 === '' && $pp2 === '' && $pletter === '' && $pp4 === '' && $chassis === '') continue;
                 $pInsType = in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $p['insurance_type'] : null;
                 $isNew = !empty($p['is_new_vehicle']) ? 1 : 0;
+                $pExp = null;
+                if (!$isNew && trim((string)($p['expiry_j'] ?? '')) !== '') { require_once __DIR__ . '/finance_core.php'; $pExp = fin_jalali_to_date(p2e_digits(trim($p['expiry_j']))) ?: null; }
                 $insPlate->execute([$requestId, $pp1 ?: null, $pp2 ?: null, $pletter ?: null, $pp4 ?: null,
                                     $chassis ?: null, trim($p['engine_no'] ?? '') ?: null, $isNew,
                                     company_parse_money($p['car_value'] ?? ''), company_parse_money($p['liability_limit'] ?? ''),
                                     trim($p['ref_policy_number'] ?? '') ?: null,
                                     trim($p['endorsement_request'] ?? '') ?: null,
                                     trim($p['cancellation_reason'] ?? '') ?: null,
-                                    $pInsType, $isNew ? 1 : 0]);
+                                    $pInsType, $isNew ? 1 : 0, mb_substr(trim((string)($p['car_name'] ?? '')), 0, 190) ?: null, mb_substr(trim((string)($p['car_type'] ?? '')), 0, 120) ?: null,
+                                    $pExp, mb_substr(trim((string)($p['note'] ?? '')), 0, 500) ?: null]);
             }
         }
 

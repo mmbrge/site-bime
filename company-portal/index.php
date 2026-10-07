@@ -287,6 +287,14 @@ if (!$companies) {
             <input type="file" id="nr-letter" accept=".pdf,.jpg,.jpeg,.png,.webp">
         </div>
 
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 mb-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div><b class="text-[12px] text-emerald-800">ورودِ خودروها از اکسل</b><p class="text-[10.5px] text-slate-500">فهرستِ خودروها را در اکسل بدهید؛ ردیف‌ها همین‌جا پر می‌شوند و می‌توانید قبل از ثبت ویرایششان کنید.</p></div>
+                <div class="flex gap-2"><a href="../api/company_portal_actions.php?action=excel_sample" class="text-[11px] font-bold bg-white border border-emerald-300 text-emerald-700 rounded-lg px-3 py-1.5">دانلودِ نمونه‌ی اکسل</a>
+                    <label class="text-[11px] font-bold bg-emerald-600 text-white rounded-lg px-3 py-1.5 cursor-pointer">انتخابِ فایلِ اکسل<input type="file" id="nr-excel" accept=".xlsx,.csv" class="hidden" onchange="importPlatesExcel(this)"></label></div>
+            </div>
+            <div id="nr-excel-msg" class="text-[11px] mt-1"></div>
+        </div>
         <label class="text-xs font-bold text-slate-500 block mb-2">پلاک‌های این درخواست (اختیاری - می‌توانید چند پلاک اضافه کنید)</label>
         <div id="nr-plates-list" class="space-y-2 mb-2"></div>
         <button type="button" onclick="addPlateRow('nr-plates-list')" class="text-xs font-bold text-blue-600 mb-4"><i class="fas fa-plus ml-1"></i>افزودن پلاک</button>
@@ -558,14 +566,23 @@ function addPlateRow(containerId) {
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
             </button>
         </div>
-        <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 mt-1.5 cursor-pointer">
-            <input type="checkbox" class="plate-isnew" onchange="togglePlateNoPlate(this)">
-            پلاک ندارد (لیفتراک یا خودروی صفرکیلومتر)
-        </label>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+            <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 cursor-pointer">
+                <input type="checkbox" class="plate-noplate" onchange="togglePlateNoPlate(this)"> پلاک ندارد (لیفتراک / ماشین‌آلات)
+            </label>
+            <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 cursor-pointer">
+                <input type="checkbox" class="plate-isnew" onchange="togglePlateNoPlate(this)"> صفر کیلومتر
+            </label>
+        </div>
         <div class="plate-chassis-box hidden grid grid-cols-2 gap-1.5 mt-1.5">
-            <input class="plate-chassis border rounded-lg p-2 text-xs" placeholder="شماره شاسی" dir="ltr">
+            <input class="plate-chassis border rounded-lg p-2 text-xs" placeholder="شماره شاسی (VIN)" dir="ltr">
             <input class="plate-engine border rounded-lg p-2 text-xs" placeholder="شماره موتور" dir="ltr">
         </div>
+        <div class="grid grid-cols-2 gap-1.5 mt-1.5">
+            <input class="plate-carname border rounded-lg p-2 text-xs" placeholder="نام خودرو (مثلاً پژو ۲۰۶)">
+            <input class="plate-cartype border rounded-lg p-2 text-xs" placeholder="تیپ (مثلاً تیپ ۵)">
+        </div>
+        <input class="plate-expiry border rounded-lg p-2 text-xs w-full mt-1.5" placeholder="تاریخ انقضای بیمه‌نامه‌ی قبلی (مثلاً ۱۴۰۵/۰۹/۱۵)" dir="ltr">
         <select class="plate-instype text-xs border rounded-lg p-1.5 w-full mt-1.5" onchange="togglePlateValueBox(this)">
             <option value="THIRDPARTY">بیمه‌ی درخواستی: ثالث</option>
             <option value="BODY">بیمه‌ی درخواستی: بدنه</option>
@@ -622,16 +639,52 @@ function collectNrCounts() {
     return out;
 }
 
-// «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود
+// «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود.
+// «صفر کیلومتر»: شماره شاسی لازم است (پلاک اختیاری)، تاریخِ انقضای بیمه‌نامه‌ی قبلی ندارد و بازدیدِ سلامت نمی‌خواهد.
 function togglePlateNoPlate(cb) {
     const row = cb.closest('.plate-row');
-    row.querySelector('.plate-chassis-box').classList.toggle('hidden', !cb.checked);
+    const noPlate = row.querySelector('.plate-noplate').checked, isNew = row.querySelector('.plate-isnew').checked;
+    row.querySelector('.plate-chassis-box').classList.toggle('hidden', !(noPlate || isNew));
+    row.querySelector('.plate-expiry').classList.toggle('hidden', isNew);
+    if (isNew) row.querySelector('.plate-expiry').value = '';
     row.querySelectorAll('.plate-p1, .plate-p2, .plate-p4, .plate-letter').forEach(i => {
-        i.disabled = cb.checked;
-        i.classList.toggle('opacity-40', cb.checked);
-        if (cb.checked) i.value = '';
+        i.disabled = noPlate;
+        i.classList.toggle('opacity-40', noPlate);
+        if (noPlate) i.value = '';
     });
 }
+// اکسلِ خودروها => ردیف‌های همین فرم (برای بازبینی پیش از ثبت)
+async function importPlatesExcel(inp) {
+    const f = inp.files[0]; if (!f) return;
+    const msg = document.getElementById('nr-excel-msg');
+    msg.innerHTML = '<span class="text-slate-500">در حال خواندن…</span>';
+    const fd = new FormData(); fd.append('action', 'preview_excel_rows'); fd.append('file', f);
+    try {
+        const r = await (await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd})).json();
+        inp.value = '';
+        if (!r.ok) { msg.innerHTML = `<span class="text-rose-600 font-bold">${escH(r.error || 'خطا')}</span>`; return; }
+        // ثالث و بدنه‌ی یک خودرو (دو ردیفِ پشتِ هم) در فرم یک ردیفِ «هردو» می‌شود
+        const merged = [];
+        r.rows.forEach(x => { const prev = merged[merged.length - 1]; const key = [x.p1, x.p2, x.letter, x.p4, x.chassis_no].join('|');
+            if (prev && prev.key === key && prev.insurance_type !== x.insurance_type) { prev.insurance_type = 'BOTH'; prev.car_value = prev.car_value || x.car_value; prev.liability_limit = prev.liability_limit || x.liability_limit; }
+            else merged.push(Object.assign({key}, x)); });
+        const list = document.getElementById('nr-plates-list');
+        merged.forEach(x => {
+            addPlateRow('nr-plates-list');
+            const row = list.lastElementChild, set = (c, v) => { const el = row.querySelector(c); if (el && v !== null && v !== undefined && v !== '') el.value = v; };
+            if (!x.p1 && !x.p2 && x.chassis_no) row.querySelector('.plate-noplate').checked = true;
+            if (Number(x.is_new_vehicle)) row.querySelector('.plate-isnew').checked = true;
+            togglePlateNoPlate(row.querySelector('.plate-isnew'));
+            set('.plate-p1', x.p1); set('.plate-p2', x.p2); set('.plate-letter', x.letter); set('.plate-p4', x.p4);
+            set('.plate-chassis', x.chassis_no); set('.plate-engine', x.engine_no); set('.plate-carname', x.car_name); set('.plate-cartype', x.car_type); set('.plate-expiry', x.expiry_j);
+            set('.plate-instype', x.insurance_type); togglePlateValueBox(row.querySelector('.plate-instype'));
+            set('.plate-carvalue', x.car_value ? Number(x.car_value).toLocaleString('en-US') : ''); set('.plate-liability', x.liability_limit ? Number(x.liability_limit).toLocaleString('en-US') : '');
+            set('.plate-refpolicy', x.ref_policy_number); set('.plate-endorse', x.endorsement_request);
+        });
+        msg.innerHTML = `<span class="text-emerald-700 font-bold">${merged.length.toLocaleString('fa-IR')} خودرو از اکسل اضافه شد؛ بازبینی و بعد «ثبت» را بزنید.</span>` + (r.errors && r.errors.length ? `<div class="text-amber-700 mt-1">${r.errors.slice(0, 6).map(escH).join('<br>')}</div>` : '');
+    } catch (e) { msg.innerHTML = '<span class="text-rose-600">خطا در ارتباط با سرور.</span>'; }
+}
+function escH(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
 // ارزش خودرو فقط برای بدنه، سقف تعهد مالی فقط برای ثالث
 function togglePlateValueBox(sel) {
@@ -650,6 +703,9 @@ function collectPlateRows(containerId) {
         chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(),
         engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
         is_new_vehicle: row.querySelector('.plate-isnew')?.checked ? 1 : 0,
+        car_name: (row.querySelector('.plate-carname')?.value || '').trim(),
+        car_type: (row.querySelector('.plate-cartype')?.value || '').trim(),
+        expiry_j: row.querySelector('.plate-isnew')?.checked ? '' : (row.querySelector('.plate-expiry')?.value || '').trim(),
         car_value: (row.querySelector('.plate-carvalue')?.value || '').trim(),
         liability_limit: (row.querySelector('.plate-liability')?.value || '').trim(),
         ref_policy_number: (row.querySelector('.plate-refpolicy')?.value || '').trim(),
@@ -799,6 +855,7 @@ async function openRequestDetail(id) {
                         ? plateHtml(p)
                         : `<div class="border-2 border-dashed border-slate-400 rounded-md px-2.5 py-1 font-black text-xs text-slate-600" dir="ltr" title="شماره شاسی">${p.chassis_no || 'بدون شناسه'}</div>`}
                     <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
+                    ${p.car_name || p.car_type ? `<span class="text-[10px] font-bold text-slate-600">${escH([p.car_name, p.car_type].filter(Boolean).join(' · '))}</span>` : ''}
                     ${faNum(p.expiry_date_jalali) ? `<span class="text-[10px] text-slate-400">انقضا: ${faNum(p.expiry_date_jalali)}</span>`
                         : (Number(p.is_new_vehicle) ? '<span class="text-[10px] text-slate-400">صفر کیلومتر</span>' : '')}
                     ${p.insurance_type === 'BODY' && p.car_value ? `<span class="text-[10px] text-slate-500">ارزش: ${faMoney(p.car_value)}</span>` : ''}

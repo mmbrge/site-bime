@@ -674,6 +674,15 @@ function company_parse_money($text) {
     return money_to_int($text) ?: null;
 }
 
+// «صفر کیلومتر»: بله / صفر / نو / ✓ / x / 1
+function company_parse_zero_km($v) {
+    if (is_bool($v) || is_int($v)) return (bool)$v;
+    $t = str_replace(['ي', 'ك', "\xE2\x80\x8C", ' '], ['ی', 'ک', '', ''], mb_strtolower(trim(p2e_digits((string)$v))));
+    if ($t === '') return false;
+    if (in_array($t, ['1', 'yes', 'y', 'true', 'x', '*', '✓', '✔', 'صفر', 'نو', 'جدید', 'صفرکیلومتر', 'بله', 'هست', 'دارد'], true)) return true;
+    if (in_array($t, ['0', 'no', 'n', 'false', 'خیر', 'نه', 'نیست', 'ندارد', 'کارکرده'], true)) return false;
+    return company_parse_yes_no($v) === 'YES';
+}
 function company_parse_yes_no($text) {
     if (is_bool($text)) return $text ? 'YES' : 'NO';
     if (is_int($text)) return $text ? 'YES' : 'NO';
@@ -758,7 +767,9 @@ function company_parse_letter_rows($raw) {
             $chassis = trim((string)$plateText);
         }
         if (!$plate && $chassis === '') {
-            $errors[] = "ردیف {$lineNo}: نه پلاک خوانده شد و نه شماره شاسی («" . mb_substr((string)$plateText, 0, 40) . "»).";
+            $pt = trim(str_replace('ایران', '', (string)$plateText));
+            $errors[] = "ردیف {$lineNo}: نه پلاک خوانده شد و نه شماره شاسی" . ($pt !== '' ? " («" . mb_substr((string)$plateText, 0, 40) . "»)" : '')
+                . (company_parse_zero_km($r['is_new_vehicle'] ?? '') ? ' - برای خودروی صفرکیلومتر شماره شاسی (VIN) را بنویسید.' : '.');
             continue;
         }
 
@@ -770,9 +781,11 @@ function company_parse_letter_rows($raw) {
         $expiry = $expiryRaw === '' ? null : (preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryRaw) ? $expiryRaw : fin_jalali_to_date($expiryRaw));
         if ($expiryRaw !== '' && !$expiry) $errors[] = "ردیف {$lineNo}: تاریخ انقضای «{$expiryRaw}» خوانده نشد (این ردیف بدون تاریخ ساخته می‌شود).";
 
-        $isNew = company_parse_yes_no($r['is_new_vehicle'] ?? ($r['new'] ?? '')) === 'YES';
+        $isNew = company_parse_zero_km($r['is_new_vehicle'] ?? ($r['new'] ?? ''));
         // اگر پلاک ندارد و تاریخ انقضا هم ندارد، عملاً خودروی صفرکیلومتر است
         if (!$plate && !$expiry) $isNew = true;
+        // خودروی صفرکیلومتر بیمه‌نامه‌ی قبلی (و تاریخِ انقضا) ندارد
+        if ($isNew && $expiry) { $errors[] = "ردیف {$lineNo}: صفرکیلومتر است؛ تاریخِ انقضای «{$expiryRaw}» نادیده گرفته شد."; $expiry = null; }
 
         // نوعِ درخواستِ این ردیف: صدورِ جدید، الحاقیه‌ی تغییر اطلاعات، یا فسخ
         $reqKind = company_parse_row_request($r['request'] ?? ($r['request_type'] ?? ($r['نوع درخواست'] ?? '')));
@@ -793,6 +806,7 @@ function company_parse_letter_rows($raw) {
             // همه‌ی تاریخ‌های نمایشیِ سایت شمسی‌اند؛ تاریخ میلادی فقط برای ذخیره در دیتابیس است
             'expiry_date_jalali' => $expiry ? jalali_from_gregorian_ts_dotted(strtotime($expiry)) : null,
             'car_name' => trim((string)($r['car_name'] ?? ($r['car'] ?? ''))) ?: null,
+            'car_type' => trim((string)($r['car_type'] ?? ($r['tip'] ?? ''))) ?: null,
             'model_year' => p2e_digits(trim((string)($r['model_year'] ?? ($r['model'] ?? '')))) ?: null,
             'prev_policy_number' => p2e_digits(trim((string)($r['prev_policy_number'] ?? ''))) ?: null,
             'row_note' => trim((string)($r['note'] ?? '')) ?: null,
@@ -808,7 +822,7 @@ function company_parse_letter_rows($raw) {
         $base['plate_display'] = company_row_label($base);
         // مدل و بیمه‌نامه‌ی قبلی در «اطلاعات صدور»ِ ردیف هم می‌نشیند تا در پنجره‌ی صدور آماده باشد
         $ii = array_filter(['car_model_year' => $base['model_year'], 'prev_policy_number' => $base['prev_policy_number'],
-                            'chassis_no' => $base['chassis_no'], 'engine_no' => $base['engine_no'],
+                            'chassis_no' => $base['chassis_no'], 'engine_no' => $base['engine_no'], 'car_system' => $base['car_name'], 'car_tip' => $base['car_type'],
                             'prev_insurer' => trim((string)($r['prev_insurer'] ?? '')) ?: null]);
         $base['issue_info'] = $ii ? json_encode($ii, JSON_UNESCAPED_UNICODE) : null;
 
@@ -861,7 +875,30 @@ function company_counts_from_labels($in) {
 // ستون‌ها با نامِ سرستونشان شناخته می‌شوند (نه با جایشان)، پس ترتیبِ ستون‌ها مهم
 // نیست و ستون‌های اضافه هم نادیده گرفته می‌شوند. برای هر فیلد چند نامِ رایج پذیرفته
 // می‌شود تا کاربر مجبور نباشد فایلش را بازنویسی کند.
+// عنوانِ فارسیِ هر فیلدِ اکسل (برای تنظیمات و فایلِ نمونه)
+function company_excel_field_labels() {
+    return ['plate' => 'پلاک (کامل در یک ستون)', 'plate_two' => 'دو رقمِ پلاک', 'plate_letter' => 'حرفِ پلاک', 'plate_three' => 'سه رقمِ پلاک', 'plate_iran' => 'کد ایران',
+            'chassis_no' => 'شماره شاسی / VIN', 'engine_no' => 'شماره موتور', 'is_new_vehicle' => 'صفر کیلومتر (بله/خیر)', 'car_name' => 'نام خودرو (سیستم)', 'car_type' => 'تیپ خودرو',
+            'model_year' => 'مدل (سال ساخت)', 'insurance_type' => 'نوع بیمه (ثالث/بدنه/هردو)', 'car_value' => 'ارزش خودرو (بدنه)', 'liability_limit' => 'سقف تعهد مالی (ثالث)',
+            'expiry_date' => 'تاریخ انقضای بیمه‌نامه‌ی قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی', 'has_prev_body' => 'بیمه بدنه‌ی قبلی دارد؟',
+            'health_inspection' => 'بازدید سلامت لازم است؟', 'request' => 'نوع درخواست (صدور/الحاقیه/فسخ)', 'ref_policy_number' => 'شماره بیمه‌نامه (برای الحاقیه/فسخ)',
+            'endorsement_request' => 'خواسته‌ی الحاقیه', 'cancellation_reason' => 'دلیل فسخ', 'note' => 'توضیح'];
+}
+// نام‌های اضافه‌ای که مدیر در «تنظیمات ← صدور و استعلام ← ستون‌های اکسلِ شرکت‌ها» برای هر فیلد تعریف کرده
+function company_excel_custom_map() {
+    global $pdo;
+    static $c = null;
+    if ($c !== null) return $c;
+    $c = [];
+    try { $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'company_excel_map'"); $st->execute(); $c = json_decode((string)$st->fetchColumn(), true) ?: []; } catch (Throwable $e) {}
+    return $c;
+}
 function company_excel_column_map() {
+    $base = company_excel_column_map_base();
+    foreach (company_excel_custom_map() as $f => $names) if (isset($base[$f]) && is_array($names)) $base[$f] = array_values(array_unique(array_merge(array_map('strval', $names), $base[$f])));
+    return $base;
+}
+function company_excel_column_map_base() {
     return [
         'plate'          => ['پلاک', 'شماره پلاک', 'شمارهپلاک', 'plate'],
         'chassis_no'     => ['شماره شاسی', 'شمارهشاسی', 'شاسی', 'vin', 'chassis', 'chassis no', 'شماره شاسی/vin'],
@@ -870,7 +907,8 @@ function company_excel_column_map() {
         'liability_limit'=> ['تعهد مالی', 'سقف تعهد', 'سقف تعهد مالی', 'تعهد', 'liability'],
         'insurance_type' => ['نوع بیمه', 'نوع بیمه نامه', 'نوع بیمه‌نامه', 'نوع بیمهنامه', 'نوع', 'type'],
         'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'تاریخ اتمام بیمه نامه', 'تاریخ اتمام', 'expiry'],
-        'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'تیپ', 'car'],
+        'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'سیستم خودرو', 'car'],
+        'car_type'       => ['تیپ', 'تیپ خودرو', 'تیپ و مدل', 'tip', 'trim'],
         'model_year'     => ['مدل', 'سال ساخت', 'مدل خودرو', 'model'],
         'prev_policy_number' => ['شماره بیمه نامه قبلی', 'شماره بیمه‌نامه قبلی', 'بیمه نامه قبلی', 'شماره بیمه نامه سال قبل'],
         'plate_two'      => ['دو رقم پلاک', 'دو رقم'],
@@ -879,7 +917,7 @@ function company_excel_column_map() {
         'plate_iran'     => ['کد ایران', 'ایران', 'کد شهر'],
         'has_prev_body'  => ['بیمه بدنه قبل', 'بدنه قبل', 'بیمه قبلی'],
         'health_inspection' => ['بازدید سلامت', 'بازدید'],
-        'is_new_vehicle' => ['صفر کیلومتر', 'صفرکیلومتر', 'خودرو صفر', 'صفر'],
+        'is_new_vehicle' => ['صفر کیلومتر', 'صفرکیلومتر', 'خودرو صفر', 'صفر', 'نو', 'خودرو نو'],
         'ref_policy_number' => ['شماره بیمه نامه', 'شماره بیمه‌نامه', 'بیمه نامه', 'شماره بیمهنامه', 'policy', 'policy no'],
         'endorsement_request' => ['خواسته', 'درخواست الحاقیه', 'موضوع الحاقیه', 'شرح الحاقیه'],
         'cancellation_reason' => ['دلیل فسخ', 'علت فسخ', 'دلیل'],
@@ -938,11 +976,56 @@ function company_rows_from_spreadsheet($path) {
         }
         // ردیفِ کاملاً خالی را رد کن
         if (!$rec) continue;
-        if (empty($rec['plate']) && empty($rec['chassis_no'])) continue;
+        // ردیفی که نه پلاک دارد نه شاسی ولی چیزِ دیگری دارد (مثلاً نامِ خودرو) به پارسر می‌رود تا خطایش گزارش شود
+        if (empty($rec['plate']) && empty($rec['chassis_no']) && empty($rec['plate_three']) && count($rec) < 2) continue;
         $out[] = $rec;
     }
     if (!$out) return ['error' => 'زیر سرستون‌ها هیچ ردیفِ پُری پیدا نشد.'];
     return ['rows' => $out];
+}
+
+// فایلِ نمونه‌ی اکسلِ درخواست (برای شرکت‌ها و مدیر): سرستون‌ها همان نام‌هایی است که سامانه می‌شناسد + شیتِ راهنما
+function company_excel_sample_path() {
+    require_once __DIR__ . '/_xlsx_writer.php';
+    $L = company_excel_field_labels();
+    $map = company_excel_column_map();
+    $cols = ['plate', 'chassis_no', 'engine_no', 'is_new_vehicle', 'car_name', 'car_type', 'model_year', 'insurance_type', 'car_value', 'liability_limit', 'expiry_date', 'prev_policy_number', 'note'];
+    $hdr = array_map(function ($f) use ($map) { return $map[$f][0]; }, $cols);
+    $rows = [
+        ['12 ب 345 ایران 67', '', '', 'خیر', 'پژو 206', 'تیپ 5', '1401', 'ثالث', '', '2,000,000,000', '1405/09/15', '14/30054/0-0/1404/1234', ''],
+        ['24 ج 567 ایران 11', '', '', 'خیر', 'تویوتا هایلوکس', 'دو کابین', '1399', 'هردو', '18,000,000,000', '4,000,000,000', '1405/10/01', '', 'ثالث و بدنه با هم'],
+        ['', 'NAAP41FE5PJ123456', '164B0123456', 'بله', 'دنا پلاس', 'توربو اتوماتیک', '1405', 'بدنه', '14,500,000,000', '', '', '', 'صفر کیلومتر - هنوز پلاک نگرفته'],
+        ['', 'FD30-112233', '', 'خیر', 'لیفتراک', '3 تن دیزلی', '1398', 'ثالث', '', '1,500,000,000', '1405/08/20', '', 'بدون پلاک (ماشین‌آلات)'],
+    ];
+    $guide = [];
+    foreach ($cols as $f) $guide[] = [$map[$f][0], $L[$f], implode('، ', array_slice($map[$f], 1, 6))];
+    $guide[] = ['', '', ''];
+    $guide[] = ['نکته', 'هر خودرو یک ردیف؛ برای «ثالث و بدنه» بنویسید «هردو».', ''];
+    $guide[] = ['نکته', 'خودروی صفرکیلومتر: ستونِ صفر کیلومتر = بله، شماره شاسی لازم است، تاریخِ انقضا ندارد و بازدید سلامت نمی‌خواهد.', ''];
+    $guide[] = ['نکته', 'پلاک را می‌شود در یک ستون نوشت یا در چهار ستونِ «دو رقم پلاک / حرف پلاک / سه رقم پلاک / کد ایران».', ''];
+    $guide[] = ['نکته', 'ترتیبِ ستون‌ها مهم نیست و ستون‌های اضافه نادیده گرفته می‌شوند.', ''];
+    return xlsx_build_book([
+        ['name' => 'خودروها', 'headers' => $hdr, 'rows' => $rows, 'numeric' => []],
+        ['name' => 'راهنما', 'headers' => ['سرستون', 'معنی', 'نام‌های دیگری که شناخته می‌شود'], 'rows' => $guide],
+    ]);
+}
+// سرستون‌های یک فایلِ اکسل و فیلدی که هر کدام به آن می‌خورد (برای «یادگرفتن» از فایلِ یک شرکت)
+function company_excel_headers($path) {
+    $table = function_exists('fin_read_spreadsheet') ? fin_read_spreadsheet($path) : null;
+    if (!$table) return ['error' => 'فایل خوانده نشد.'];
+    $lookup = [];
+    foreach (company_excel_column_map() as $field => $names) foreach ($names as $n) $lookup[company_normalize_header($n)] = $field;
+    $best = null; $bestN = -1;
+    foreach (array_slice($table, 0, 20) as $row) {
+        if (!is_array($row)) continue;
+        $vals = array_values(array_filter(array_map('trim', array_map('strval', $row)), 'strlen'));
+        if (count($vals) < 2) continue;
+        $n = 0; foreach ($vals as $v) if (isset($lookup[company_normalize_header($v)])) $n++;
+        if ($n > $bestN) { $bestN = $n; $best = $vals; }
+        if ($n >= 3) break;
+    }
+    if (!$best) return ['error' => 'سرستونی پیدا نشد.'];
+    return ['headers' => array_map(function ($h) use ($lookup) { return ['name' => $h, 'field' => $lookup[company_normalize_header($h)] ?? '']; }, $best)];
 }
 
 // ورودیِ «ورود ردیف‌ها» می‌تواند متنِ چسبانده‌شده باشد یا فایل (JSON/متن/اکسل/CSV).
@@ -1334,10 +1417,19 @@ function company_ensure_coverage_column($pdo) {
 
 // «اطلاعات صدور» (مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو) که کارشناس هنگام صدور تکمیل می‌کند؛
 // برای ردیف شرکتی و پرونده‌ی کارکنان در یک ستونِ JSON ذخیره می‌شود (خودکار ساخته می‌شود)
+// «تیپِ» خودرو جدا از «نامِ» خودرو (مثلاً پژو ۲۰۶ / تیپ ۵)
+function company_ensure_car_type($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'car_type'")->fetch()) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN car_type VARCHAR(120) NULL AFTER car_name"); }
+    catch (Throwable $e) { error_log('[car_type column] ' . $e->getMessage()); }
+}
 function company_ensure_issue_info_cols($pdo) {
     static $done = false;
     if ($done) return;
     $done = true;
+    company_ensure_car_type($pdo);
     foreach (['company_request_plates', 'policy_cases'] as $t) {
         try {
             if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE 'issue_info'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN issue_info TEXT NULL");

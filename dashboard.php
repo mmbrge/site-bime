@@ -2063,6 +2063,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div data-scat="issue" class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-emerald-100 pb-3 flex items-center flex-wrap gap-2"><span><i class="fas fa-file-excel text-emerald-500 ml-2"></i>ستون‌های اکسلِ درخواستِ شرکت‌ها</span>
+                        <a href="api/company_actions.php?action=excel_sample" class="mr-auto text-[11px] font-bold bg-white border border-emerald-200 text-emerald-700 rounded-lg px-3 py-1.5"><i class="fas fa-download ml-1"></i>فایلِ نمونه (همان که شرکت‌ها در پنلشان دارند)</a></h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">اکسلی که شرکت‌ها برای درخواست می‌دهند با نامِ سرستون‌ها خوانده می‌شود (ترتیب مهم نیست). برای هر فیلد، نام‌هایی را که شرکت‌ها در فایلشان می‌نویسند اضافه کنید (با «،» جدا کنید)؛ یا فایلِ یک شرکت را بدهید تا سرستون‌هایش را به فیلدها وصل کنید. همین ستون‌ها در ورودِ اکسل در پنل و در پنلِ شرکت‌ها به کار می‌رود.</p>
+                    <div id="cxl-root" class="text-xs text-slate-400">در حال بارگذاری…</div>
+                </div>
+
                 <div data-scat="issue" class="card p-6 border-teal-100 bg-gradient-to-br from-white to-teal-50/30 md:col-span-2">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-teal-100 pb-3"><i class="fas fa-calculator text-teal-500 ml-2"></i>تنظیمات استعلام حق بیمه (ثالث)</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">این تخفیف‌ها روی محاسبه‌ی آنلاین حق بیمه‌ی ثالث اثر می‌گذارند. غیرفعال‌کردن هرکدام یعنی آن تخفیف اصلاً در محاسبه لحاظ نمی‌شود.</p>
@@ -2864,12 +2871,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <input type="text" id="aap-p2" maxlength="3" inputmode="numeric" placeholder="۳۴۵" class="ip-cell ip-wide">
                 <span class="ip-ir"><small>ایران</small><input type="text" id="aap-p1" maxlength="2" inputmode="numeric" placeholder="۶۷"></span>
             </div>
-            <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-2 cursor-pointer">
-                <input type="checkbox" id="aap-isnew" onchange="toggleNoPlate('aap')"> پلاک ندارد (لیفتراک یا خودروی صفرکیلومتر)
-            </label>
+            <div class="flex flex-wrap gap-x-5 gap-y-1 mb-2">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="aap-noplate" onchange="toggleNoPlate('aap')"> پلاک ندارد (لیفتراک / ماشین‌آلات)</label>
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="aap-isnew" onchange="toggleNoPlate('aap')"> صفر کیلومتر</label>
+            </div>
             <div id="aap-chassis-box" class="grid grid-cols-2 gap-3 hidden">
                 <div class="float-input"><input type="text" id="aap-chassis" dir="ltr" placeholder=" "><label>شماره شاسی</label></div>
                 <div class="float-input"><input type="text" id="aap-engine" dir="ltr" placeholder=" "><label>شماره موتور</label></div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input"><input type="text" id="aap-car-name" placeholder=" "><label>نام خودرو (مثلاً پژو ۲۰۶)</label></div>
+                <div class="float-input"><input type="text" id="aap-car-type" placeholder=" "><label>تیپ خودرو (مثلاً تیپ ۵)</label></div>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input"><input type="text" id="aap-carvalue" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
@@ -2888,7 +2900,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="aap-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
                     <label>نوع بیمه</label>
                 </div>
-                <div class="float-input"><input type="text" id="aap-expiry" dir="ltr" inputmode="numeric" placeholder=" "><label>تاریخ انقضا (شمسی، مثلاً ۱۴۰۵/۰۷/۳۰)</label></div>
+                <div class="float-input" id="aap-expiry-box"><input type="text" id="aap-expiry" dir="ltr" inputmode="numeric" placeholder=" "><label>تاریخ انقضا (شمسی، مثلاً ۱۴۰۵/۰۷/۳۰)</label></div>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-500 mb-4">
                 <input type="checkbox" id="aap-skip-health"> این پلاک نیاز به بازدید سلامت ندارد
@@ -3057,7 +3069,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="cre-insurance-type"><option value="">نامشخص</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select>
                     <label>نوع بیمه</label>
                 </div>
-                <div class="float-input"><input type="text" id="cre-expiry" dir="ltr" placeholder=" "><label>تاریخ انقضا (۱۴۰۵/۰۷/۳۰)</label></div>
+                <div class="float-input" id="cre-expiry-box"><input type="text" id="cre-expiry" dir="ltr" placeholder=" "><label>تاریخ انقضا (۱۴۰۵/۰۷/۳۰)</label></div>
             </div>
             <div class="float-input">
                 <select id="cre-has-prev-body">
@@ -3068,7 +3080,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label>بیمه بدنه قبل</label>
             </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-2 cursor-pointer">
-                <input type="checkbox" id="cre-isnew" onchange="toggleNoPlate('cre')"> پلاک ندارد (لیفتراک یا خودروی صفرکیلومتر)
+                <input type="checkbox" id="cre-noplate" onchange="toggleNoPlate('cre')"> پلاک ندارد (لیفتراک / ماشین‌آلات)</label>
+            <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-2 cursor-pointer">
+                <input type="checkbox" id="cre-isnew" onchange="toggleNoPlate('cre')"> صفر کیلومتر (بدونِ بیمه‌نامه‌ی قبلی و بازدیدِ سلامت)
             </label>
             <div id="cre-chassis-box" class="grid grid-cols-2 gap-3 hidden">
                 <div class="float-input"><input type="text" id="cre-chassis" dir="ltr" placeholder=" "><label>شماره شاسی</label></div>
@@ -3086,7 +3100,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </select>
                 <label>دلیل فسخ</label>
             </div>
-            <div class="float-input"><input type="text" id="cre-car-name" placeholder=" "><label>نام/تیپ خودرو</label></div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="float-input"><input type="text" id="cre-car-name" placeholder=" "><label>نام خودرو</label></div>
+                <div class="float-input"><input type="text" id="cre-car-type" placeholder=" "><label>تیپ خودرو</label></div>
+            </div>
             <div class="float-input"><input type="text" id="cre-note" placeholder=" "><label>توضیح این ردیف</label></div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-4 cursor-pointer">
                 <input type="checkbox" id="cre-skip-health"> این خودرو نیاز به بازدید سلامت ندارد
@@ -3143,7 +3160,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
       "plate_two": "31", "plate_letter": "ع", "plate_three": "693", "plate_iran": "21",
       "insurance_type": "بدنه",
       "expiry_date": "1405/07/30",
-      "car_name": "پژو 206", "model_year": "1400",
+      "car_name": "پژو 206", "car_type": "تیپ 5", "model_year": "1400",
       "car_value": "5,000,000,000",
       "has_prev_body": "بله",
       "health_inspection": "لازم"
@@ -3199,6 +3216,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <textarea id="cli-raw" rows="7" dir="ltr" placeholder='{ "rows": [ ... ] }  یا هر خط: پلاک | نوع | انقضا' class="w-full text-[11px] font-mono border rounded-xl p-3 mb-2"></textarea>
             <div class="float-input"><input type="file" id="cli-file" accept=".json,.txt,.tex,.csv,.xlsx,.xls" placeholder=" "><label>یا فایل: اکسل (xlsx/csv)، JSON یا متن</label></div>
+            <p class="text-[10.5px] text-slate-500 -mt-2 mb-3">ستون‌های اکسل از «تنظیمات ← صدور و استعلام ← ستون‌های اکسلِ شرکت‌ها» قابلِ تعریف است. <a href="api/company_actions.php?action=excel_sample" class="text-blue-600 font-bold">دانلودِ فایلِ نمونه</a></p>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-3 cursor-pointer">
                 <input type="checkbox" id="cli-replace"> ردیف‌های قبلیِ صادرنشده را پاک کن و از نو بساز
             </label>
@@ -3993,7 +4011,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=13"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=3"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=4"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -5724,7 +5742,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // فیلدهای بی‌ربط به نوعِ این درخواست پنهان می‌شوند تا فرم شلوغ نشود
             applyKindFieldVisibility('aap');
             document.getElementById('aap-request-id').value = requestId;
-            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-expiry'].forEach(id => document.getElementById(id).value = '');
+            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-expiry','aap-chassis','aap-engine','aap-car-name','aap-car-type','aap-carvalue','aap-liability'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            ['aap-noplate','aap-isnew'].forEach(id => { document.getElementById(id).checked = false; });
+            toggleNoPlate('aap');
             document.getElementById('aap-insurance-type').value = '';
             document.getElementById('aap-skip-health').checked = false;
             openModal('admin-add-plate-modal');
@@ -5743,6 +5763,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 chassis_no: document.getElementById('aap-chassis').value.trim(),
                 engine_no: document.getElementById('aap-engine').value.trim(),
                 is_new_vehicle: document.getElementById('aap-isnew').checked ? 1 : 0,
+                car_name: document.getElementById('aap-car-name').value.trim(),
+                car_type: document.getElementById('aap-car-type').value.trim(),
                 car_value: document.getElementById('aap-carvalue').value.trim(),
                 liability_limit: document.getElementById('aap-liability').value.trim(),
                 insurance_type: document.getElementById('aap-insurance-type').value,
@@ -5916,7 +5938,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-2 text-[10px] text-slate-400">${e2pNum(idx + 1)}</td>
                     <td class="p-2">
                         ${rowIdentityHtml(p)}
-                        ${p.car_name ? `<p class="text-[10px] text-slate-400 mt-0.5">${p.car_name}</p>` : ''}
+                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold">${fmEsc([p.car_name, p.car_type].filter(Boolean).join(' · '))}</p>` : ''}
+                        ${Number(p.is_new_vehicle) ? '<p class="text-[10px] text-emerald-600 font-bold">صفر کیلومتر</p>' : ''}
                         ${p.engine_no ? `<p class="text-[10px] text-slate-400" dir="ltr">موتور: ${p.engine_no}</p>` : ''}
                         ${p.row_note ? `<p class="text-[10px] text-slate-400">${p.row_note}</p>` : ''}
                         ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
@@ -6440,16 +6463,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // «پلاک ندارد»: خانه‌های پلاک غیرفعال می‌شوند و به‌جایش شماره شاسی/موتور گرفته می‌شود
+        // «پلاک ندارد» (لیفتراک/ماشین‌آلات) و «صفر کیلومتر» جدا هستند: صفرکیلومتر شماره شاسی می‌خواهد (پلاک اختیاری)،
+        // تاریخِ انقضای بیمه‌نامه‌ی قبلی ندارد و بازدیدِ سلامت نمی‌خواهد
         function toggleNoPlate(prefix) {
-            const on = document.getElementById(prefix + '-isnew').checked;
-            document.getElementById(prefix + '-chassis-box').classList.toggle('hidden', !on);
+            const g = id => document.getElementById(prefix + '-' + id);
+            const noPlate = !!(g('noplate') && g('noplate').checked), isNew = !!(g('isnew') && g('isnew').checked);
+            g('chassis-box').classList.toggle('hidden', !(noPlate || isNew));
             ['p1', 'p2', 'p4', 'letter'].forEach(k => {
-                const el = document.getElementById(prefix + '-' + k);
+                const el = g(k);
                 if (!el) return;
-                el.disabled = on;
-                el.classList.toggle('opacity-40', on);
-                if (on) el.value = '';
+                el.disabled = noPlate;
+                el.classList.toggle('opacity-40', noPlate);
+                if (noPlate) el.value = '';
             });
+            const eb = g('expiry-box'); if (eb) eb.classList.toggle('hidden', isNew);
+            if (isNew && g('expiry')) g('expiry').value = '';
+            if (isNew && g('skip-health')) g('skip-health').checked = true;
         }
 
         function openRowEdit(plateId) {
@@ -6473,8 +6502,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cre-carvalue').value = mfmt(p.car_value);
             document.getElementById('cre-liability').value = mfmt(p.liability_limit);
             document.getElementById('cre-isnew').checked = !!Number(p.is_new_vehicle);
+            document.getElementById('cre-noplate').checked = !(p.plate_p1 || p.plate_p2 || p.plate_p4) && !!p.chassis_no && !Number(p.is_new_vehicle);
             toggleNoPlate('cre');
             document.getElementById('cre-car-name').value = p.car_name || '';
+            document.getElementById('cre-car-type').value = p.car_type || '';
             document.getElementById('cre-note').value = p.row_note || '';
             document.getElementById('crow-edit-modal').classList.add('active');
         }
@@ -6500,6 +6531,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 car_value: document.getElementById('cre-carvalue').value.trim(),
                 liability_limit: document.getElementById('cre-liability').value.trim(),
                 car_name: document.getElementById('cre-car-name').value.trim(),
+                car_type: document.getElementById('cre-car-type').value.trim(),
                 row_note: document.getElementById('cre-note').value.trim(),
             };
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
@@ -6714,7 +6746,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.holder_name || dash}</td>
                     <td class="p-3" dir="ltr">${r.personnel_code ? e2p(r.personnel_code) : dash}</td>
                     <td class="p-3">${isP ? `<span class="plate-display font-bold">${formatPlateHtml(r.plate_display)}</span>` : rowIdentityHtml(r)}
-                        ${r.car_name ? `<p class="text-[10px] text-slate-400">${r.car_name}</p>` : ''}</td>
+                        ${r.car_name || r.car_type ? `<p class="text-[10px] text-slate-400">${fmEsc([r.car_name, r.car_type].filter(Boolean).join(' · '))}</p>` : ''}</td>
                     <td class="p-3">${r.insurance_type_fa}
                         ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.period_title) || dash}</td>
@@ -6860,7 +6892,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${iiRo('نوع بیمه / درخواست', kindLine)}
                         ${iiRo('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
                         ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
-                        ${iiRo('خودرو (درخواست)', r.car_name)}
+                        ${iiRo('خودرو (درخواست)', [r.car_name, r.car_type].filter(Boolean).join(' · '))}
                         ${r.insurance_type === 'BODY' ? iiRo('ارزش خودرو (ریال)', r.car_value || r.estimated_car_value ? money(r.car_value || r.estimated_car_value) : '', {copy: String(r.car_value || r.estimated_car_value || '')}) : iiRo('تعهد مالی (ریال)', (r.liability_limit || r.liability_limit_case) ? money(r.liability_limit || r.liability_limit_case) : '', {copy: String(r.liability_limit || r.liability_limit_case || '')})}
                         ${iiRo('انقضای بیمه‌نامه‌ی قبلی', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {digits: true})}
                         ${r.ref_policy_number ? iiRo('بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true}) : ''}
@@ -7200,7 +7232,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.plate ? formatPlateHtml(r.plate) : `<span dir="ltr">${r.chassis_no || '—'}</span>`}</td>
                     <td class="p-3">${r.insurance_type_fa}</td>
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
-                    <td class="p-3">${r.car_name || '—'}</td>
+                    <td class="p-3">${fmEsc([r.car_name, r.car_type].filter(Boolean).join(' · ')) || '—'}</td>
                     <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
@@ -7249,7 +7281,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
                     ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
                     ${infoCell('VIN', r.vin, {ltr: true})}
-                    ${infoCell('خودرو', r.car_name)}
+                    ${infoCell('خودرو', [r.car_name, r.car_type].filter(Boolean).join(' · '))}
                     ${infoCell('سیستم', r.car_system)}
                     ${infoCell('تیپ', r.car_type)}
                     ${infoCell('مدل', r.car_model_year, {ltr: true})}
@@ -8888,6 +8920,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
+            if (tabId === 'settings') cxlLoad();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
@@ -8919,6 +8952,46 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'vr-settings' && window.VR && VR.initSettingsTab) VR.initSettingsTab();
         }
         window.tabLoad = tabLoad;
+        // ---------- ستون‌های اکسلِ درخواستِ شرکت‌ها (تنظیمات) ----------
+        let CXL = null;
+        async function cxlLoad() {
+            const box = document.getElementById('cxl-root');
+            if (!box) return;
+            try { const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'excel_map_get'})})).json(); if (!r.ok) { box.textContent = r.error || 'خطا'; return; } CXL = r.fields; }
+            catch (e) { box.textContent = 'خطا در اتصال'; return; }
+            box.innerHTML = `<div class="overflow-x-auto rounded-xl border border-slate-100"><table class="w-full text-[11.5px] no-count"><thead><tr class="bg-slate-50 text-slate-500"><th class="p-2 text-right">فیلد</th><th class="p-2 text-right">نام‌هایی که خودِ سامانه می‌شناسد</th><th class="p-2 text-right" style="min-width:260px">نام‌های اضافه (شما)</th></tr></thead><tbody>
+                ${CXL.map(f => `<tr class="border-t border-slate-100"><td class="p-2 font-bold text-slate-700 whitespace-nowrap">${fmEsc(f.label)}</td><td class="p-2 text-slate-400">${f.builtin.slice(0, 6).map(fmEsc).join('، ')}</td>
+                    <td class="p-2"><input class="w-full border rounded-lg px-2 py-1.5 text-[11.5px]" data-cxl="${f.field}" value="${fmAttr(f.custom.join('، '))}" placeholder="نام‌های دیگرِ این ستون در اکسلِ شرکت‌ها"></td></tr>`).join('')}</tbody></table></div>
+                <div class="flex flex-wrap gap-2 mt-3"><button type="button" onclick="cxlSave()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-save ml-1"></i>ذخیره‌ی ستون‌ها</button>
+                    <label class="bg-white border border-slate-200 hover:bg-slate-50 font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"><i class="fas fa-wand-magic-sparkles ml-1 text-violet-500"></i>یادگرفتن از فایلِ یک شرکت<input type="file" accept=".xlsx,.csv" class="hidden" onchange="cxlLearn(this)"></label></div>
+                <div id="cxl-learn" class="mt-3"></div>`;
+        }
+        async function cxlSave() {
+            const map = {};
+            document.querySelectorAll('[data-cxl]').forEach(i => { const v = i.value.split(/[،,\n]+/).map(x => x.trim()).filter(Boolean); if (v.length) map[i.dataset.cxl] = v; });
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'excel_map_save', map})})).json();
+            showToast(r.ok ? 'ستون‌های اکسل ذخیره شد.' : (r.error || 'خطا'), r.ok ? 'success' : 'error');
+            if (r.ok) cxlLoad();
+        }
+        async function cxlLearn(inp) {
+            const f = inp.files[0]; if (!f) return;
+            const fd = new FormData(); fd.append('action', 'excel_headers'); fd.append('file', f); inp.value = '';
+            const r = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+            const box = document.getElementById('cxl-learn');
+            if (!r.ok) { box.innerHTML = `<p class="text-rose-600 font-bold">${fmEsc(r.error || 'خطا')}</p>`; return; }
+            const opts = sel => `<option value="">— نادیده بگیر —</option>` + Object.entries(r.labels).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${fmEsc(v)}</option>`).join('');
+            box.innerHTML = `<div class="rounded-xl border border-violet-200 bg-violet-50/50 p-3"><b class="text-violet-800 text-[12px]">سرستون‌های «${fmEsc(f.name)}»</b><p class="text-[10.5px] text-slate-500 mb-2">برای هر سرستون فیلدش را انتخاب کنید (سبزها را سامانه خودش شناخته)؛ با «افزودن» به نام‌های اضافه‌ی همان فیلد اضافه می‌شود و بعد «ذخیره» را بزنید.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${r.headers.map((h, i) => `<div class="flex items-center gap-2"><span class="flex-1 font-bold ${h.field ? 'text-emerald-700' : 'text-slate-700'} truncate" title="${fmAttr(h.name)}">${fmEsc(h.name)}</span><select class="border rounded-lg px-2 py-1 text-[11px]" data-cxh="${i}" data-name="${fmAttr(h.name)}">${opts(h.field)}</select></div>`).join('')}</div>
+                <button type="button" onclick="cxlApply()" class="mt-3 bg-violet-600 text-white font-bold px-4 py-2 rounded-xl text-xs">افزودن به ستون‌ها</button></div>`;
+        }
+        function cxlApply() {
+            let n = 0;
+            document.querySelectorAll('[data-cxh]').forEach(s => { if (!s.value) return; const inp = document.querySelector(`[data-cxl="${s.value}"]`); if (!inp) return;
+                const cur = inp.value.split(/[،,]+/).map(x => x.trim()).filter(Boolean), name = s.dataset.name;
+                const f = (CXL || []).find(x => x.field === s.value); const known = f ? f.builtin.map(x => x.replace(/\s+/g, '')) : [];
+                if (!cur.includes(name) && !known.includes(name.replace(/\s+/g, ''))) { cur.push(name); inp.value = cur.join('، '); n++; } });
+            showToast(n ? `${e2pNum(n)} نام اضافه شد؛ «ذخیره‌ی ستون‌ها» را بزنید.` : 'همه‌ی سرستون‌ها از قبل شناخته‌شده بودند.', 'info');
+        }
 
         // ======================= بخش مالی =======================
         const FIN_API = 'api/finance_actions.php';

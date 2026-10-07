@@ -21,6 +21,7 @@ if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem
 
 // ستونِ «پوشش‌های درخواستی» هر ردیف (بدنه) خودکار ساخته می‌شود؛ نیازی به اجرای SQL دستی نیست
 company_ensure_coverage_column($pdo);
+company_ensure_car_type($pdo);
 imp_ensure($pdo);   // «بایگانی وارداتی»: ستون‌های is_import و ... (خودکار)
 
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
@@ -42,13 +43,53 @@ function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
 $adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
-              'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user'];
+              'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 try {
+    // ---- اکسلِ درخواستِ شرکت‌ها: فایلِ نمونه، ستون‌های قابلِ تنظیم و یادگرفتن از فایلِ یک شرکت ----
+    if ($action === 'excel_sample') {
+        require_once __DIR__ . '/_xlsx_writer.php';
+        xlsx_send(company_excel_sample_path(), 'نمونه اکسل درخواست بیمه شرکت‌ها.xlsx');
+        exit;
+    }
+    if ($action === 'excel_map_get') {
+        $base = company_excel_column_map_base();
+        $custom = company_excel_custom_map();
+        $out = [];
+        foreach (company_excel_field_labels() as $f => $label) $out[] = ['field' => $f, 'label' => $label, 'builtin' => $base[$f] ?? [], 'custom' => array_values((array)($custom[$f] ?? []))];
+        echo json_encode(['ok' => true, 'fields' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'excel_map_save') {
+        $labels = company_excel_field_labels();
+        $clean = [];
+        foreach ((array)($data['map'] ?? []) as $f => $names) {
+            if (!isset($labels[$f])) continue;
+            $v = array_values(array_unique(array_filter(array_map(function ($x) { return mb_substr(trim((string)$x), 0, 80); }, is_array($names) ? $names : preg_split('/[،,\n]+/u', (string)$names)), 'strlen')));
+            if ($v) $clean[$f] = array_slice($v, 0, 30);
+        }
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('company_excel_map', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([json_encode((object)$clean, JSON_UNESCAPED_UNICODE)]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+    if ($action === 'excel_headers') {
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل را انتخاب کنید.']); exit; }
+        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط xlsx یا csv.']); exit; }
+        $tmp = sys_get_temp_dir() . '/' . uniqid('chdr_') . '.' . $ext;
+        @copy($f['tmp_name'], $tmp);
+        $r = company_excel_headers($tmp);
+        @unlink($tmp);
+        if (isset($r['error'])) { echo json_encode(['ok' => false, 'error' => $r['error']], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'headers' => $r['headers'], 'labels' => company_excel_field_labels()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- گزارش مالی خلاصه‌ی شرکت‌های درخواست‌کننده (فقط خواندنی - برای ADMIN و همکار) ----
     if ($action === 'finance_summary') {
         $stmt = $pdo->query("
@@ -1122,6 +1163,8 @@ try {
             $expiry = trim($r['expiry_date'] ?? '') ?: null;
             if ($expiry && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry)) $expiry = fin_jalali_to_date($expiry);
             $isNew = !empty($r['is_new_vehicle']) ? 1 : 0;
+            if ($isNew) $expiry = null;   // صفرکیلومتر بیمه‌نامه‌ی قبلی ندارد
+            if ($isNew && !$hasPlate && $chassis === '') { $errors[] = "ردیف $n (صفرکیلومتر): شماره شاسی را وارد کنید."; continue; }
 
             $liability = null; $carValue = null; $cov = null;
             if ($kind === 'NEW_POLICY') {
@@ -1144,13 +1187,14 @@ try {
                         trim(p2e_digits($r['ref_policy_number'] ?? '')) ?: null, trim($r['endorsement_request'] ?? '') ?: null,
                         trim($r['cancellation_reason'] ?? '') ?: null, $type, $expiry,
                         ($isNew || !empty($r['skip_health_inspection'])) ? 1 : 0,
-                        trim($r['car_name'] ?? '') ?: null,
+                        trim($r['car_name'] ?? '') ?: null, mb_substr(trim($r['car_type'] ?? ''), 0, 120) ?: null,
                         $type === 'BODY' && in_array($r['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $r['has_prev_body'] : null,
                         trim($r['row_note'] ?? '') ?: null, $cov];
             $classes[] = in_array($r['vehicle_class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $r['vehicle_class'] : null;
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
 
+        company_ensure_car_type($pdo);
         $pdo->beginTransaction();
         $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, ?, 'NEW')")
             ->execute([$companyId, trim($data['request_text'] ?? '') ?: null, $insurer, $kind, json_encode(company_normalize_requested_counts($counts))]);
@@ -1159,8 +1203,8 @@ try {
         $ins = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
              car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
-             insurance_type, expiry_date, skip_health_inspection, car_name, has_prev_body, row_note, selected_coverages)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+             insurance_type, expiry_date, skip_health_inspection, car_name, car_type, has_prev_body, row_note, selected_coverages)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $plateIds = [];
         foreach ($clean as $vals) { $ins->execute(array_merge([$requestId], $vals)); $plateIds[] = (int)$pdo->lastInsertId(); }
         $pdo->commit();
@@ -1235,23 +1279,24 @@ try {
         if ($expiryDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryDate)) $expiryDate = fin_jalali_to_date($expiryDate);
         $isNew = !empty($data['is_new_vehicle']) ? 1 : 0;
         $skipHealth = ($isNew || !empty($data['skip_health_inspection'])) ? 1 : 0;
+        if ($isNew) $expiryDate = null;   // صفرکیلومتر بیمه‌نامه‌ی قبلی ندارد
         // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
         if ($p1 === '' && $p2 === '' && $letter === '' && $p4 === '' && $chassis === '') {
-            echo json_encode(['ok' => false, 'error' => 'یا پلاک را کامل وارد کنید یا شماره شاسی را.']); exit;
+            echo json_encode(['ok' => false, 'error' => $isNew ? 'برای خودروی صفرکیلومتر شماره شاسی را وارد کنید.' : 'یا پلاک را کامل وارد کنید یا شماره شاسی را.']); exit;
         }
-
+        company_ensure_car_type($pdo);
         $stmt = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
              car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
-             insurance_type, expiry_date, skip_health_inspection, car_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+             insurance_type, expiry_date, skip_health_inspection, car_name, car_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([$requestId, $p1 ?: null, $p2 ?: null, $letter ?: null, $p4 ?: null,
                         $chassis ?: null, trim($data['engine_no'] ?? '') ?: null, $isNew,
                         company_parse_money($data['car_value'] ?? ''), company_parse_money($data['liability_limit'] ?? ''),
                         trim($data['ref_policy_number'] ?? '') ?: null,
                         trim($data['endorsement_request'] ?? '') ?: null,
                         trim($data['cancellation_reason'] ?? '') ?: null,
-                        $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null]);
+                        $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null, mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null]);
         $newPlateId = $pdo->lastInsertId();
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
         company_sync_plate_status($pdo, $newPlateId);
@@ -1622,6 +1667,11 @@ try {
         $hasPrevBody = in_array($data['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $data['has_prev_body'] : null;
         $expiry = trim($data['expiry_date'] ?? '') ?: null;
         if ($expiry && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry)) $expiry = fin_jalali_to_date($expiry);
+        $isNewRow = !empty($data['is_new_vehicle']);
+        company_ensure_car_type($pdo);
+        $pdo->prepare("UPDATE company_request_plates SET car_type = ? WHERE id = ?")->execute([mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null, $plateId]);
+        // صفرکیلومتر: بدونِ تاریخِ انقضا و بدونِ بازدیدِ سلامت
+        if ($isNewRow) { $pdo->prepare("UPDATE company_request_plates SET expiry_date = NULL WHERE id = ?")->execute([$plateId]); $expiry = null; $data['skip_health_inspection'] = 1; }
 
         $pdo->prepare("UPDATE company_request_plates SET
                           plate_p1 = COALESCE(?, plate_p1), plate_p2 = COALESCE(?, plate_p2),
@@ -1729,8 +1779,8 @@ try {
                               (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no,
                                is_new_vehicle, car_value, liability_limit, ref_policy_number, endorsement_request,
                                cancellation_reason, insurance_type, expiry_date,
-                               skip_health_inspection, has_prev_body, car_name, row_note, issue_info)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                               skip_health_inspection, has_prev_body, car_name, car_type, row_note, issue_info)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
         foreach ($parsed['rows'] as $r) {
             $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
@@ -1740,7 +1790,7 @@ try {
                            $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
                            $r['ref_policy_number'], $r['endorsement_request'], $r['cancellation_reason'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
-                           $r['has_prev_body'], $r['car_name'], $r['row_note'], $r['issue_info'] ?? null]);
+                           $r['has_prev_body'], $r['car_name'], $r['car_type'] ?? null, $r['row_note'], $r['issue_info'] ?? null]);
             $newIds[] = $pdo->lastInsertId();
             $created++;
         }

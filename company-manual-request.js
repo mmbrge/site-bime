@@ -19,7 +19,7 @@
     let root = null;
     let seq = 0;
 
-    const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false,
+    const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
         carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
         refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false });
     // سواری/وانت یا سنگین: انتخابِ کاربر، وگرنه حدس از نام خودرو (مثل سرور)
@@ -166,15 +166,17 @@
     function rowCard(r, i) {
         const body = r.type === 'BODY';
         const tBadge = body ? '<span class="px-2 py-0.5 rounded-lg bg-violet-100 text-violet-700 text-[10px] font-black">بدنه</span>' : '<span class="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-700 text-[10px] font-black">ثالث</span>';
+        // صفرکیلومتر: شماره شاسی لازم است (پلاک اگر گرفته باشد اختیاری)
+        const vinBox = `<div class="grid grid-cols-2 gap-2"><div><label class="lbl">شماره شاسی (VIN) *</label><input data-r="chassis" class="inp" dir="ltr" value="${esc(r.chassis)}"></div>
+               <div><label class="lbl">شماره موتور</label><input data-r="engine" class="inp" dir="ltr" value="${esc(r.engine)}"></div></div>`;
         const plate = r.noPlate
-            ? `<div class="grid grid-cols-2 gap-2"><div><label class="lbl">شماره شاسی (VIN) *</label><input data-r="chassis" class="inp" dir="ltr" value="${esc(r.chassis)}"></div>
-               <div><label class="lbl">شماره موتور</label><input data-r="engine" class="inp" dir="ltr" value="${esc(r.engine)}"></div></div>`
+            ? vinBox
             // مثلِ بقیه‌ی فرم‌های پنل: چپ‌به‌راست [۲ رقم = p4] [حرف] [۳ رقم] [ایران + کد شهر = p1]
             : `<div><label class="lbl">پلاک *</label><div class="ir-pin" dir="ltr"><span class="ip-flag"></span>
                 <input data-r="p4" class="ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲" value="${esc(fa(r.p4))}">
                 <select data-r="letter" class="ip-cell ip-letter" dir="rtl">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
                 <input data-r="p2" class="ip-cell ip-wide" maxlength="3" inputmode="numeric" placeholder="۳۴۵" value="${esc(fa(r.p2))}">
-                <span class="ip-ir"><small>ایران</small><input data-r="p1" maxlength="2" inputmode="numeric" placeholder="۶۷" value="${esc(fa(r.p1))}"></span></div></div>`;
+                <span class="ip-ir"><small>ایران</small><input data-r="p1" maxlength="2" inputmode="numeric" placeholder="۶۷" value="${esc(fa(r.p1))}"></span></div>${r.isNew ? '<p class="text-[9.5px] text-slate-400 mt-1">صفرکیلومتر: اگر هنوز پلاک نگرفته، خالی بگذارید.</p>' + vinBox : ''}</div>`;
         const kindFields = isNew() ? (body ? `
                 <div><label class="lbl">ارزش خودرو (ریال) *</label><input data-r="carValue" class="inp money-input" value="${esc(money(r.carValue))}" placeholder="۵,۰۰۰,۰۰۰,۰۰۰"></div>
                 <div><label class="lbl">بیمه بدنه قبل</label><select data-r="prevBody" class="inp"><option value="">نامشخص</option><option value="YES" ${r.prevBody === 'YES' ? 'selected' : ''}>دارد</option><option value="NO" ${r.prevBody === 'NO' ? 'selected' : ''}>ندارد</option></select></div>
@@ -219,7 +221,9 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div class="md:col-span-2">${plate}</div>
               <div><label class="lbl">نام خودرو</label><input data-r="carName" class="inp" value="${esc(r.carName)}" placeholder="مثلاً پژو ۲۰۶"></div>
-              <div><label class="lbl">تاریخ انقضای بیمه‌نامه‌ی قبلی</label><input data-r="expiry" class="inp text-center" dir="ltr" value="${esc(fa(r.expiry))}" placeholder="۱۴۰۵/۰۸/۱۵"></div>
+              <div><label class="lbl">تیپ خودرو</label><input data-r="carType" class="inp" value="${esc(r.carType || '')}" placeholder="مثلاً تیپ ۵"></div>
+              ${r.isNew ? '<div class="md:col-span-4 text-[10.5px] text-emerald-700 font-bold bg-emerald-50 rounded-lg px-2 py-1.5">صفر کیلومتر: بیمه‌نامه‌ی قبلی و تاریخِ انقضا ندارد و بازدیدِ سلامت لازم نیست.</div>'
+                : `<div><label class="lbl">تاریخ انقضای بیمه‌نامه‌ی قبلی</label><input data-r="expiry" class="inp text-center" dir="ltr" value="${esc(fa(r.expiry))}" placeholder="۱۴۰۵/۰۸/۱۵"></div>`}
               ${kindFields}
               <div class="md:col-span-4"><label class="lbl">توضیح این ردیف</label><input data-r="note" class="inp" value="${esc(r.note)}"></div>
             </div>
@@ -363,8 +367,8 @@
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
                 plate_p1: r.noPlate ? '' : r.p1, plate_letter: r.noPlate ? '' : r.letter, plate_p2: r.noPlate ? '' : r.p2, plate_p4: r.noPlate ? '' : r.p4,
-                chassis_no: r.noPlate ? r.chassis : '', engine_no: r.noPlate ? r.engine : '', is_new_vehicle: r.isNew ? 1 : 0,
-                car_name: r.carName, expiry_date: en(r.expiry), liability_limit: st.liabilityPerRow ? r.liability : '',
+                chassis_no: r.noPlate || r.isNew ? en(r.chassis) : '', engine_no: r.noPlate || r.isNew ? en(r.engine) : '', is_new_vehicle: r.isNew ? 1 : 0,
+                car_name: r.carName, car_type: r.carType || '', expiry_date: r.isNew ? '' : en(r.expiry), liability_limit: st.liabilityPerRow ? r.liability : '',
                 car_value: en(r.carValue), has_prev_body: r.prevBody, skip_health_inspection: r.skipHealth ? 1 : 0,
                 vehicle_class: r.type === 'BODY' ? vclassOf(r) : '',
                 coverages: r.type === 'BODY' && r.customCov ? covOut(r.cov || {}) : null,
