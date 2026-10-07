@@ -88,7 +88,8 @@ try {
     if ($action === 'perm_get') {
         perm_ensure($pdo);
         $id = intval($data['id'] ?? 0);
-        $st = $pdo->prepare("SELECT id, full_name, role, perm_json FROM users WHERE id = ?");
+        perm_fm_ensure($pdo);
+        $st = $pdo->prepare("SELECT id, full_name, role, perm_json, fm_acl FROM users WHERE id = ?");
         $st->execute([$id]);
         $u = $st->fetch();
         if (!$u) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
@@ -104,7 +105,25 @@ try {
         }
         out(['ok' => true, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
              'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : []),
-             'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others]);
+             'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others,
+             'fm_acl' => (object)perm_fm_sanitize(json_decode((string)$u['fm_acl'], true) ?: []), 'fm_levels' => PERM_FM_LEVELS]);
+    }
+    // پوشه‌های بایگانی (فقط پوشه‌ها، یک سطح) برای تنظیمِ دسترسیِ پوشه‌به‌پوشه
+    if ($action === 'fm_tree') {
+        if (!$realAdmin) out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        $root = realpath(dirname(__DIR__) . '/Archive/بایگانی');
+        $rel = perm_fm_norm($data['path'] ?? '');
+        $dir = $root ? realpath($root . ($rel !== '' ? '/' . $rel : '')) : false;
+        if (!$dir || ($dir !== $root && strpos($dir, $root . DIRECTORY_SEPARATOR) !== 0) || !is_dir($dir)) out(['ok' => false, 'error' => 'پوشه پیدا نشد.']);
+        $dirs = [];
+        foreach (scandir($dir) as $e) {
+            if ($e === '.' || $e === '..' || $e[0] === '.' || !is_dir($dir . '/' . $e)) continue;
+            $sub = 0; foreach (scandir($dir . '/' . $e) as $x) if ($x !== '.' && $x !== '..' && $x[0] !== '.' && is_dir($dir . '/' . $e . '/' . $x)) $sub++;
+            $dirs[] = ['name' => $e, 'path' => ($rel !== '' ? $rel . '/' : '') . $e, 'subs' => $sub];
+            if (count($dirs) >= 400) break;
+        }
+        usort($dirs, function ($a, $b) { return strcmp($a['name'], $b['name']); });
+        out(['ok' => true, 'path' => $rel, 'dirs' => $dirs]);
     }
     // دسترسیِ کاربرِ دیگر (برای «کپی از کاربر…»)
     if ($action === 'perm_peek') {
@@ -124,6 +143,12 @@ try {
         $role = $st->fetchColumn();
         if ($role === false) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
         if ($role === 'ADMIN') out(['ok' => false, 'error' => 'مدیر کل همیشه به همه‌چیز دسترسی دارد؛ برای محدود کردن، اول نقشش را عوض کنید.']);
+        // دسترسیِ پوشه‌های بایگانی (مستقل از «پیش‌فرضِ نقش / سفارشی»)
+        if (array_key_exists('fm_acl', $data)) {
+            perm_fm_ensure($pdo);
+            $acl = perm_fm_sanitize($data['fm_acl'] ?? []);
+            $pdo->prepare("UPDATE users SET fm_acl = ? WHERE id = ?")->execute([$acl ? json_encode((object)$acl, JSON_UNESCAPED_UNICODE) : null, $id]);
+        }
         if (($data['mode'] ?? '') !== 'custom') {
             $pdo->prepare("UPDATE users SET perm_json = NULL WHERE id = ?")->execute([$id]);
             out(['ok' => true, 'custom' => false]);

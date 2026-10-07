@@ -28,7 +28,16 @@ if (perm_real_role() !== 'ADMIN') {
 }
 // «بایگانی نامه‌ها» (شاملِ نامه‌های محرمانه) فقط برای مدیر کل؛ بقیه از بخشِ نامه‌ها
 $fmLettersOk = perm_real_role() === 'ADMIN';
+// دسترسیِ پوشه‌به‌پوشه‌ی همین کاربر (از «کاربران ← دسترسی‌ها ← پوشه‌های بایگانی»)
+$fmAcl = perm_fm_acl($pdo);
+function fm_rel($archiveRoot, $abs) { return trim(str_replace('\\', '/', substr($abs, strlen($archiveRoot))), '/'); }
+function fm_level($archiveRoot, $abs) { return perm_fm_level($GLOBALS['fmAcl'] ?? null, fm_rel($archiveRoot, $abs)); }
 function fm_hidden($archiveRoot, $abs) {
+    $acl = $GLOBALS['fmAcl'] ?? null;
+    if ($acl !== null && $abs !== $archiveRoot) {
+        $rel = fm_rel($archiveRoot, $abs);
+        if (is_dir($abs) ? !perm_fm_visible($acl, $rel) : perm_fm_level($acl, $rel) === 'none') return true;
+    }
     $lt = $archiveRoot . '/بایگانی نامه‌ها';
     if (empty($GLOBALS['fmLettersOk']) && ($abs === $lt || strpos($abs, $lt . '/') === 0)) return true;
     if (!empty($GLOBALS['fmLifeOk'])) return false;
@@ -70,16 +79,16 @@ try {
                 // تعداد فایل‌های داخل پوشه (فقط شمارش سطحی-بازگشتی سبک، برای نمایش خلاصه)
                 $fileCount = 0;
                 $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($full, FilesystemIterator::SKIP_DOTS));
-                foreach ($rii as $f) if ($f->isFile()) $fileCount++;
+                foreach ($rii as $f) if ($f->isFile() && ($fmAcl === null || !fm_hidden($archiveRoot, $f->getPathname()))) $fileCount++;
                 $items[] = [
-                    'type' => 'dir', 'name' => $entry, 'path' => $relChild,
+                    'type' => 'dir', 'name' => $entry, 'path' => $relChild, 'can_dl' => fm_level($archiveRoot, $full) === 'download', 'pass' => $fmAcl !== null && fm_level($archiveRoot, $full) === 'none',
                     'modified' => date('Y-m-d H:i:s', filemtime($full)),
                     'created' => date('Y-m-d H:i:s', filectime($full)),
                     'file_count' => $fileCount,
                 ];
             } else {
                 $items[] = [
-                    'type' => 'file', 'name' => $entry, 'path' => $relChild,
+                    'type' => 'file', 'name' => $entry, 'path' => $relChild, 'can_dl' => fm_level($archiveRoot, $full) === 'download',
                     'size' => format_file_size(filesize($full)), 'icon' => icon_for_file($entry),
                     'modified' => date('Y-m-d H:i:s', filemtime($full)),
                     'created' => date('Y-m-d H:i:s', filectime($full)),
@@ -93,7 +102,7 @@ try {
             return strcmp($a['name'], $b['name']);
         });
 
-        echo json_encode(['ok' => true, 'path' => $relPath, 'items' => $items]);
+        echo json_encode(['ok' => true, 'path' => $relPath, 'items' => $items, 'level' => $relPath === '' && $fmAcl !== null ? ($fmAcl[''] ?? 'download') : fm_level($archiveRoot, $dir), 'restricted' => $fmAcl !== null]);
         exit;
     }
 
@@ -101,8 +110,14 @@ try {
     if ($action === 'download') {
         $target = safe_resolve($archiveRoot, $_GET['path'] ?? '');
         if (!$target || !is_file($target)) { http_response_code(404); exit; }
-        header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename="' . basename($target) . '"');
+        $inline = !empty($_GET['inline']);
+        // «فقط دیدن»: باز کردن در مرورگر بله، دانلود نه
+        if (!$inline && fm_level($archiveRoot, $target) !== 'download') { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo 'شما فقط اجازه‌ی دیدنِ این پوشه را دارید (دانلود ممکن نیست).'; exit; }
+        $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
+        $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'txt' => 'text/plain; charset=utf-8'][$ext] ?? 'application/octet-stream';
+        header('Content-Type: ' . ($inline ? $mime : 'application/octet-stream'));
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Disposition: ' . ($inline && $mime !== 'application/octet-stream' ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(basename($target)));
         header('Content-Length: ' . filesize($target));
         readfile($target);
         exit;
@@ -112,6 +127,7 @@ try {
     if ($action === 'zip_folder') {
         $target = safe_resolve($archiveRoot, $_GET['path'] ?? '');
         if (!$target || !is_dir($target)) { http_response_code(404); exit; }
+        if (fm_level($archiveRoot, $target) !== 'download') { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo 'اجازه‌ی دانلودِ این پوشه را ندارید.'; exit; }
 
         $tmpDir = sys_get_temp_dir();
         $zipPath = $tmpDir . '/' . uniqid('archive_') . '.zip';
@@ -119,7 +135,7 @@ try {
         $zip->open($zipPath, ZipArchive::CREATE);
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS));
         foreach ($rii as $file) {
-            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname())) {
+            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && fm_level($archiveRoot, $file->getPathname()) === 'download') {
                 $localName = substr($file->getPathname(), strlen($target) + 1);
                 $zip->addFile($file->getPathname(), $localName);
             }
@@ -150,7 +166,7 @@ try {
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($archiveRoot, FilesystemIterator::SKIP_DOTS));
         $count = 0;
         foreach ($rii as $file) {
-            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && $file->getMTime() >= $fromTs && $file->getMTime() < $toTs) {
+            if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && fm_level($archiveRoot, $file->getPathname()) === 'download' && $file->getMTime() >= $fromTs && $file->getMTime() < $toTs) {
                 $localName = substr($file->getPathname(), strlen($archiveRoot) + 1);
                 $zip->addFile($file->getPathname(), $localName);
                 $count++;

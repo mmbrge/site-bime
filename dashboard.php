@@ -3482,6 +3482,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="pm-sep"><span><i class="fas fa-star ml-1"></i>امکانات، ابزارها و سرویس — جدا از نقش، برای همین کاربر</span></div>
                 <div id="pm-comfort"></div>
                 <div id="pm-svc"></div>
+                <div id="pm-fm"></div>
             </div>
             <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
                 <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
@@ -3506,6 +3507,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .pm-sw:checked { background: linear-gradient(120deg, #7c3aed, #4f46e5); } .pm-sw:checked::after { right: 19px; }
         .pm-sw:disabled { opacity: .4; cursor: not-allowed; }
         .pm-tbl tr.pm-off td { opacity: .45; }
+        .pmf-body { padding: 10px 12px 12px; } .pmf-hint { font-size: 10.5px; color: #64748b; line-height: 1.9; margin-bottom: 8px; }
+        .pmf-row { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 10px; font-size: 11.5px; } .pmf-row:hover { background: #f8fafc; }
+        .pmf-row .nm { flex: 1; min-width: 0; font-weight: 800; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pmf-row .tg { width: 22px; height: 22px; border-radius: 7px; border: 0; background: #f1f5f9; color: #64748b; cursor: pointer; font-size: 10px; flex: none; }
+        .pmf-row select { border: 1px solid #e2e8f0; border-radius: 9px; font-size: 11px; padding: 3px 6px; font-family: inherit; background: #fff; max-width: 150px; }
+        .pmf-row select.set { border-color: #a5b4fc; background: #eef2ff; font-weight: 800; }
+        .pmf-eff { font-size: 9.5px; font-weight: 900; border-radius: 99px; padding: 1px 7px; flex: none; }
+        .pmf-eff.none { background: #ffe4e6; color: #9f1239; } .pmf-eff.view { background: #fef3c7; color: #92400e; } .pmf-eff.download { background: #dcfce7; color: #166534; }
         .pm-tbl td .pm-hint { display: block; font-size: 10px; color: #94a3b8; font-weight: 700; }
         .pm-chg { font-size: 9.5px; color: #d97706; font-weight: 800; margin-right: 6px; }
         .pm-tbl { width: 100%; font-size: 12px; }
@@ -4996,7 +5005,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
                                 <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
                             </div>
-                            <a href="api/file_manager.php?action=zip_folder&path=${encodeURIComponent(item.path)}" class="mt-3 block text-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-file-zipper ml-1"></i>دانلود ZIP این پوشه</a>
+                            ${item.pass ? '<span class="mt-3 block text-center bg-slate-50 text-slate-400 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-route ml-1"></i>مسیرِ پوشه‌های مجاز</span>' : item.can_dl === false ? '<span class="mt-3 block text-center bg-slate-50 text-slate-400 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>فقط دیدن</span>' : `<a href="api/file_manager.php?action=zip_folder&path=${encodeURIComponent(item.path)}" class="mt-3 block text-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-file-zipper ml-1"></i>دانلود ZIP این پوشه</a>`}
                         </div>`;
                     } else {
                         const isImg = item.icon === 'image';
@@ -5007,7 +5016,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-[10px] text-slate-400">${item.size}</p>
                             <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
                             <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
-                            <a href="${item.download_url}" class="mt-2 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a>
+                            ${item.can_dl === false ? `<a href="${item.download_url}&inline=1" target="_blank" class="mt-2 block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>باز کردن</a>` : `<a href="${item.download_url}" class="mt-2 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a>`}
                         </div>`;
                     }
                 }).join('');
@@ -5030,7 +5039,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ['<i class="fas fa-file-zipper ml-2 text-blue-500"></i>دانلود ZIP', () => window.open('api/file_manager.php?action=zip_folder&path=' + encodeURIComponent(path), '_blank')],
                   ]
                 : [
-                    ['<i class="fas fa-eye ml-2 text-slate-500"></i>باز کردن', () => window.open('api/file_manager.php?action=download&path=' + encodeURIComponent(path), '_blank')],
+                    ['<i class="fas fa-eye ml-2 text-slate-500"></i>باز کردن', () => window.open('api/file_manager.php?action=download&inline=1&path=' + encodeURIComponent(path), '_blank')],
                     ['<i class="fas fa-download ml-2 text-blue-500"></i>دانلود', () => window.open('api/file_manager.php?action=download&path=' + encodeURIComponent(path), '_blank')],
                   ];
             menu.innerHTML = items.map((it, i) => `<div class="px-4 py-2 hover:bg-slate-50 cursor-pointer" data-i="${i}">${it[0]}</div>`).join('');
@@ -8477,6 +8486,58 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             openModal('perm-modal');
             if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
             pmSvcLoad(d.user.id);   // دسترسی به سرویسِ رفت‌وآمد
+            pmFmInit(d);   // دسترسیِ پوشه‌به‌پوشه‌ی بایگانی
+        }
+        // ---------- دسترسیِ پوشه‌به‌پوشه‌ی «بایگانی فایل‌ها» ----------
+        let PMF = null;   // {acl: {مسیر: سطح}, levels, open: Set}
+        function pmFmInit(d) {
+            const box = document.getElementById('pm-fm');
+            if (!REAL_ADMIN || !d.fm_levels) { box.innerHTML = ''; PMF = null; return; }
+            PMF = {acl: Object.assign({}, d.fm_acl || {}), levels: d.fm_levels, kids: {}, open: new Set()};
+            box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#475569;--b:#0f172a"><i class="fas fa-folder-tree"></i></span>پوشه‌های بایگانی <small class="text-[10px] text-slate-400 font-bold mr-1">دسترسیِ پوشه‌به‌پوشه</small>
+                    <button type="button" class="pm-row-all mr-auto" onclick="pmFmClear()">پاک کردنِ همه‌ی قاعده‌ها</button></h4>
+                <div class="pmf-body"><div class="pmf-hint">بدونِ قاعده، کاربر همه‌ی پوشه‌های «بایگانی فایل‌ها» را مطابقِ دسترسیِ همان صفحه می‌بیند. برای هر پوشه یکی را انتخاب کنید: <b>بدونِ دسترسی</b> (اصلاً نبیند)، <b>فقط دیدن</b> (باز کردن و پیش‌نمایش، بدونِ دانلود و ZIP) یا <b>دیدن و دانلود</b>؛ زیرپوشه‌ها همان را به ارث می‌برند مگر برایشان جدا تعیین کنید.
+                    مثلاً «پیش‌فرض: بدونِ دسترسی» و فقط پوشه‌ی یک شرکت «دیدن و دانلود».</div>
+                    <div class="pmf-row" style="background:#f8fafc"><span class="nm"><i class="fas fa-box-archive ml-1 text-slate-400"></i>پیش‌فرضِ همه‌ی پوشه‌ها (ریشه)</span>${pmFmSel('')}</div>
+                    <div id="pmf-tree" class="mt-1"><div class="text-[11px] text-slate-400 p-2"><i class="fas fa-spinner fa-spin"></i></div></div></div></div>`;
+            pmFmLoad('');
+        }
+        function pmFmEff(path) {
+            const a = PMF.acl; let best = -1, lv = a[''] || 'download';
+            Object.keys(a).forEach(p => { if (p && (path === p || path.indexOf(p + '/') === 0) && p.length > best) { best = p.length; lv = a[p]; } });
+            return lv;
+        }
+        function pmFmSel(path) {
+            const v = PMF.acl[path] || '';
+            return `<select class="${v ? 'set' : ''}" data-fmp="${fmAttr(path)}" onchange="pmFmSet(this)"><option value="">${path === '' ? 'همه (مثلِ صفحه)' : 'مثلِ پوشه‌ی بالایی'}</option>${Object.entries(PMF.levels).map(([k, t]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+        }
+        function pmFmSet(sel) {
+            const p = sel.dataset.fmp;
+            if (sel.value) PMF.acl[p] = sel.value; else delete PMF.acl[p];
+            sel.classList.toggle('set', !!sel.value);
+            pmFmPaint();
+        }
+        function pmFmClear() { PMF.acl = {}; document.querySelectorAll('#pm-fm select[data-fmp]').forEach(s => { s.value = ''; s.classList.remove('set'); }); pmFmPaint(); }
+        function pmFmPaint() { document.querySelectorAll('#pmf-tree [data-eff]').forEach(e => { const lv = pmFmEff(e.dataset.eff); e.className = 'pmf-eff ' + lv; e.textContent = PMF.levels[lv]; }); }
+        async function pmFmLoad(path) {
+            if (!PMF.kids[path]) {
+                try { const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'fm_tree', path})})).json(); PMF.kids[path] = r.ok ? r.dirs : []; } catch (e) { PMF.kids[path] = []; }
+            }
+            pmFmDraw();
+        }
+        function pmFmToggle(path) { if (PMF.open.has(path)) PMF.open.delete(path); else PMF.open.add(path); pmFmLoad(path); }
+        function pmFmDraw() {
+            const rows = (path, depth) => (PMF.kids[path] || []).map(d => `<div class="pmf-row" style="padding-right:${6 + depth * 18}px">
+                    ${d.subs ? `<button type="button" class="tg" onclick="pmFmToggle('${fmAttr(d.path)}')"><i class="fas fa-chevron-${PMF.open.has(d.path) ? 'down' : 'left'}"></i></button>` : '<span style="width:22px;flex:none"></span>'}
+                    <span class="nm" title="${fmAttr(d.path)}"><i class="fas fa-folder ml-1 text-amber-400"></i>${fmEsc(d.name)}</span><span data-eff="${fmAttr(d.path)}"></span>${pmFmSel(d.path)}</div>`
+                + (PMF.open.has(d.path) ? rows(d.path, depth + 1) : '')).join('');
+            const t = document.getElementById('pmf-tree');
+            if (t) t.innerHTML = rows('', 0) || '<div class="text-[11px] text-slate-400 p-2">پوشه‌ای در بایگانی نیست.</div>';
+            // قاعده‌هایی که پوشه‌شان دیگر وجود ندارد هم دیده شوند
+            const shown = new Set([...document.querySelectorAll('#pmf-tree [data-fmp]')].map(x => x.dataset.fmp));
+            const orphan = Object.keys(PMF.acl).filter(p => p && !shown.has(p) && !Object.keys(PMF.kids).some(k => (PMF.kids[k] || []).some(d => d.path === p)));
+            if (t && orphan.length) t.insertAdjacentHTML('beforeend', `<div class="text-[10px] text-slate-400 font-bold mt-2 px-1">قاعده‌های پوشه‌های داخلی‌تر:</div>` + orphan.map(p => `<div class="pmf-row"><span class="nm" dir="auto">${fmEsc(p)}</span><span data-eff="${fmAttr(p)}"></span>${pmFmSel(p)}</div>`).join(''));
+            pmFmPaint();
         }
         // دسترسی به سرویسِ رفت‌وآمد: بدونِ آن، بخشِ سرویس در «کارکرد من» و پنجره‌ی ثبتِ روز دیده نمی‌شود
         let PM_SVC = null;
@@ -8597,7 +8658,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const pass = document.getElementById('pm-admin-pass').value;
             if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('pm-admin-pass').focus(); return; }
             if (PM.mode === 'custom' && !Object.keys(PM.perms).length && !(await uiConfirm('بدونِ هیچ دسترسی', 'این کاربر به هیچ صفحه‌ای دسترسی نخواهد داشت. ادامه می‌دهید؟', {ok: 'بله، ذخیره شود', danger: true}))) return;
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass})});
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass}, PMF ? {fm_acl: PMF.acl} : {}))});
             const d = await res.json();
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
             if (window.CFAdmin) await CFAdmin.permSave();

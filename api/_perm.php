@@ -298,7 +298,7 @@ function perm_api_map() {
             'list' => 'staff-users:view|login-logs:view', 'presence' => 'staff-users:view|login-logs:view', 'login_logs' => 'login-logs:view',
             'create' => 'staff-users:create', 'update' => 'staff-users:edit', 'update_role' => 'staff-users:edit', 'delete' => 'staff-users:delete',
             'send_message' => 'staff-users:view', 'reset_requests' => 'staff-users:view', 'handle_reset' => 'staff-users:edit',
-            'perm_get' => 'staff-users:view', 'perm_peek' => 'staff-users:view', 'perm_save' => 'staff-users:edit',
+            'perm_get' => 'staff-users:view', 'perm_peek' => 'staff-users:view', 'perm_save' => 'staff-users:edit', 'fm_tree' => 'staff-users:edit',
             'devices_get' => 'staff-users:view', 'devices_set_max' => 'staff-users:edit', 'device_end' => 'staff-users:edit', 'devices_end_all' => 'staff-users:edit',
         ]],
         'settings_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => [
@@ -591,4 +591,65 @@ function perm_page_boot($pdo) {
     if ($perms === null) return ['custom' => false];
     perm_elevate();
     return ['custom' => true, 'p' => (object)$perms];
+}
+
+// =====================================================================
+//  دسترسیِ پوشه‌به‌پوشه‌ی «بایگانی فایل‌ها» (ستونِ users.fm_acl)
+//  {مسیرِ نسبی => سطح}؛ کلیدِ '' = پیش‌فرضِ ریشه. سطح‌ها: none (نبیند)، view (ببیند و باز کند)، download (دانلود و ZIP هم).
+//  هر مسیر سطحِ نزدیک‌ترین قاعده‌ی بالادستش را می‌گیرد؛ پوشه‌ای که خودش «بدون دسترسی» است ولی زیرپوشه‌ی مجاز دارد،
+//  فقط برای رسیدن به همان زیرپوشه دیده می‌شود. مدیر کل همیشه همه‌چیز را دارد. بدونِ قاعده = مثلِ قبل.
+// =====================================================================
+const PERM_FM_LEVELS = ['none' => 'بدونِ دسترسی', 'view' => 'فقط دیدن', 'download' => 'دیدن و دانلود'];
+function perm_fm_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try { $pdo->query("SELECT fm_acl FROM users LIMIT 0"); }
+    catch (Throwable $e) { try { $pdo->exec("ALTER TABLE users ADD COLUMN fm_acl MEDIUMTEXT NULL"); } catch (Throwable $e2) { error_log('[perm_fm_ensure] ' . $e2->getMessage()); } }
+}
+function perm_fm_norm($rel) {
+    $rel = str_replace('\\', '/', (string)$rel);
+    $parts = array_filter(explode('/', $rel), function ($p) { return $p !== '' && $p !== '.' && $p !== '..'; });
+    return implode('/', $parts);
+}
+function perm_fm_sanitize($raw) {
+    $out = [];
+    foreach ((array)$raw as $k => $v) {
+        $k = perm_fm_norm($k);
+        if (!isset(PERM_FM_LEVELS[$v]) || mb_strlen($k) > 400) continue;
+        $out[$k] = $v;
+        if (count($out) >= 500) break;
+    }
+    return $out;
+}
+// قواعدِ کاربرِ فعلی (null = بدونِ محدودیت)
+function perm_fm_acl($pdo, $uid = null) {
+    static $cache = [];
+    $uid = intval($uid ?? ($_SESSION['user_id'] ?? 0));
+    if (!$uid) return null;
+    if ($uid === intval($_SESSION['user_id'] ?? 0) && perm_real_role() === 'ADMIN') return null;
+    if (array_key_exists($uid, $cache)) return $cache[$uid];
+    perm_fm_ensure($pdo);
+    try { $st = $pdo->prepare("SELECT role, fm_acl FROM users WHERE id = ?"); $st->execute([$uid]); $r = $st->fetch(); } catch (Throwable $e) { $r = null; }
+    if (!$r || $r['role'] === 'ADMIN') return $cache[$uid] = null;
+    $a = perm_fm_sanitize(json_decode((string)$r['fm_acl'], true) ?: []);
+    return $cache[$uid] = ($a ?: null);
+}
+function perm_fm_level($acl, $rel) {
+    if ($acl === null) return 'download';
+    $rel = perm_fm_norm($rel);
+    $best = -1; $lv = $acl[''] ?? 'download';
+    foreach ($acl as $p => $v) {
+        if ($p === '') continue;
+        if (($rel === $p || strpos($rel, $p . '/') === 0) && strlen($p) > $best) { $best = strlen($p); $lv = $v; }
+    }
+    return $lv;
+}
+// پوشه دیده شود؟ (خودش مجاز است یا راهی به زیرپوشه‌ی مجاز است)
+function perm_fm_visible($acl, $rel) {
+    if ($acl === null) return true;
+    $rel = perm_fm_norm($rel);
+    if ($rel === '' || perm_fm_level($acl, $rel) !== 'none') return true;
+    foreach ($acl as $p => $v) if ($v !== 'none' && $p !== '' && strpos($p, $rel . '/') === 0) return true;
+    return false;
 }
