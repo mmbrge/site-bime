@@ -97,7 +97,7 @@ function sec_checks($pdo) {
     }
     // فایل‌ها و پوشه‌ها
     $guards = ['Archive/.htaccess' => 'بایگانی', 'Archive/_guard.php' => 'نگهبانِ بایگانی', 'config/.htaccess' => 'تنظیمات', 'uploads/.htaccess' => 'آپلودها',
-               'queue/.htaccess' => 'صفِ پردازش', 'tmp_ocr/.htaccess' => 'موقتِ OCR', 'migrations/.htaccess' => 'مایگریشن‌ها', 'report_assets/.htaccess' => 'فایل‌های گزارش', 'موقت/.htaccess' => 'موقت'];
+               'queue/.htaccess' => 'صفِ پردازش', 'tmp_ocr/.htaccess' => 'موقتِ OCR', 'migrations/.htaccess' => 'مایگریشن‌ها', 'report_assets/.htaccess' => 'فایل‌های گزارش', 'موقت/.htaccess' => 'موقت', 'api/.htaccess' => 'کتابخانه‌های API', 'api/py/.htaccess' => 'اسکریپت‌های پایتون'];
     $miss = [];
     foreach ($guards as $f => $l) if (!is_file($root . '/' . $f)) $miss[] = $l;
     $add('htaccess', 'فایل‌ها', 'محافظِ پوشه‌ها (اجرانشدنِ فایلِ آپلودی، بسته‌بودنِ پوشه‌های داخلی)', $miss ? 'bad' : 'ok',
@@ -395,7 +395,7 @@ switch ($action) {
             $items[] = ['title' => 'بسته‌بودنِ فایل‌های بایگانی بدونِ ورود', 'ok' => $r['code'] === 0 ? null : !$open,
                         'detail' => $r['code'] === 0 ? 'سایت در دسترس نبود' : ($open ? 'فایل بدونِ ورود دانلود شد! (mod_rewrite روشن نیست یا .htaccess بایگانی خوانده نمی‌شود)' : 'بسته است (HTTP ' . $r['code'] . ')')];
         }
-        foreach (['config/db.local.php' => 'پوشه‌ی config', 'migrations/' => 'پوشه‌ی migrations', 'report_assets/parser_runner.py' => 'فایل‌های گزارش (کدِ پایتون)', '.git/HEAD' => 'پوشه‌ی .git', 'backup/' => 'پوشه‌ی پشتیبان‌ها'] as $p => $title) {
+        foreach (['config/db.local.php' => 'پوشه‌ی config', 'api/_security.php' => 'کتابخانه‌های API (فایل‌های _)', 'migrations/' => 'پوشه‌ی migrations', 'report_assets/parser_runner.py' => 'فایل‌های گزارش (کدِ پایتون)', '.git/HEAD' => 'پوشه‌ی .git', 'backup/' => 'پوشه‌ی پشتیبان‌ها'] as $p => $title) {
             $exists = file_exists($root . '/' . rtrim($p, '/'));
             if (!$exists) continue;
             $r = sec_probe(sec_path_url($p));

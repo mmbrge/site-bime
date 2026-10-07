@@ -50,11 +50,16 @@ if (!$allowed && !empty($_COOKIE['bime_company_portal']) && mb_strpos($rel, 'Arc
             $st = $pdo->prepare("SELECT c.name FROM company_portal_user_companies x JOIN companies c ON c.id = x.company_id
                                  JOIN company_portal_users u ON u.id = x.portal_user_id WHERE x.portal_user_id = ? AND u.is_active = 1");
             $st->execute([$cu]);
+            // فقط وقتی یکی از پوشه‌های مسیر دقیقاً پوشه‌ی همان شرکت است، نه هر مسیری که نامِ شرکت تکه‌ای از آن باشد
+            // (وگرنه شرکتی با نامِ کوتاه، مثلاً «پارس»، به پوشه‌ی شرکتِ «پارسیان» هم دسترسی پیدا می‌کرد)
+            require_once $siteRoot . '/api/_case_helpers.php';
+            $segs = explode('/', $rel);
             foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $name) {
                 $name = trim((string)$name);
                 if ($name === '') continue;
                 $clean = trim(preg_replace('/[\\\\\/:*?"<>|]+/u', ' ', $name));
-                if (mb_strpos($rel, $name) !== false || ($clean !== '' && mb_strpos($rel, $clean) !== false)) { $allowed = true; break; }
+                $folder = sanitize_folder_name($name);
+                foreach ($segs as $sg) if ($sg === $name || $sg === $folder || ($clean !== '' && $sg === $clean)) { $allowed = true; break 2; }
             }
         } catch (Throwable $e) {}
     }

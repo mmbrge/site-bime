@@ -353,6 +353,10 @@ function sec_boot($pdo) {
         header('X-Frame-Options: SAMEORIGIN');
         header('Referrer-Policy: strict-origin-when-cross-origin');
         header('Permissions-Policy: geolocation=(self), camera=(self), microphone=(self)');
+        // هیچ سایتِ دیگری نتواند صفحه‌ها را قاب کند یا تگِ <base>/<object> تزریق‌شده کار کند
+        header("Content-Security-Policy: base-uri 'self'; object-src 'none'; frame-ancestors 'self'");
+        if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'))
+            header('Strict-Transport-Security: max-age=15552000');
         header_remove('X-Powered-By');
     }
     sec_cookie();
@@ -389,6 +393,18 @@ function sec_boot($pdo) {
                 sec_event($pdo, 'CSRF_BLOCK', 'Origin: ' . $origin . ' → ' . ($_SERVER['REQUEST_URI'] ?? ''));
                 sec_deny(403, 'درخواست از سایتِ دیگری فرستاده شده بود و رد شد.');
             }
+        }
+    }
+    // جعلِ درخواست با «پیوند» (GET) از سایتِ دیگر: کوکیِ SameSite=Lax در بازکردنِ پیوند هم فرستاده می‌شود، پس
+    // API هیچ درخواستِ GETِ میان‌سایتی را نمی‌پذیرد (مرورگرهای امروزی Sec-Fetch-Site را می‌فرستند) و در مرورگرهای قدیمی
+    // هم کارهای تغییردهنده (حذف، ذخیره، ارسال، ...) فقط با POST انجام می‌شوند
+    if (sec_is_api() && in_array($method, ['GET', 'HEAD'], true) && !in_array($script, ['life_cron.php', 'server_time.php'], true)) {
+        $site = strtolower((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''));
+        $act = strtolower((string)($_GET['action'] ?? ''));
+        if ($site === 'cross-site' || ($act !== '' && preg_match('/(^|_)(delete|remove|purge|void|recall|reject|approve|reset|restore|cancel|unlink|kill|block|unblock|force|save|update|create|add|send|issue|import|toggle|set|logout|run|remind)(_|$)/', $act)
+                && !preg_match('/^(set_template_preview|set_template_download|set_parser_download|set_layout_asset)$/', $act))) {
+            sec_event($pdo, 'CSRF_BLOCK', 'GET ' . ($site !== '' ? '(' . $site . ') ' : '') . ($_SERVER['REQUEST_URI'] ?? ''));
+            sec_deny(403, 'این درخواست باید از داخلِ خودِ پنل فرستاده شود و رد شد.');
         }
     }
     // آپلودِ فایلِ اجرایی/خطرناک (php، html، svg، ...) - فایلِ پارسرِ پایتون فقط برای مدیرِ کل در تنظیماتِ گزارش

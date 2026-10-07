@@ -349,7 +349,7 @@ function perm_api_map() {
         ]],
         'lt_actions' => ['pages' => ['lt-box'], 'actions' => [
             'bootstrap' => 'lt-box:view|lt-settings:view', 'list' => 'lt-box:view', 'export' => 'lt-box:export', 'detail' => 'lt-box:view', 'preview_html' => 'lt-box:view',
-            'pdf' => 'lt-box:view', 'docx' => 'lt-box:view', 'file' => 'lt-box:view', 'letterhead_img' => 'lt-box:view|lt-settings:view', 'signer_img' => 'lt-box:view|lt-settings:view',
+            'pdf' => 'lt-box:view', 'docx' => 'lt-box:view', 'file' => 'lt-box:view', 'letterhead_img' => 'lt-box:view|lt-settings:view', 'signer_img' => 'lt-box:create|lt-box:edit|lt-settings:view',
             'draft_preview' => 'lt-box:create|lt-box:edit', 'save' => 'lt-box:create|lt-box:edit', 'issue' => 'lt-box:create', 'send' => 'lt-box:create', 'recall' => 'lt-box:edit',
             'set_status' => 'lt-box:edit|lt-box:create', 'delete' => 'lt-box:delete', 'file_upload' => 'lt-box:create|lt-box:edit', 'file_delete' => 'lt-box:edit|lt-box:delete',
             'word_upload' => 'lt-box:create|lt-box:edit', 'ref_add' => 'lt-box:view', 'ref_done' => 'lt-box:view', 'preview_number' => 'lt-box:view|lt-settings:view',

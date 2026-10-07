@@ -1,2 +1,8 @@
-Require all denied
-Deny from all
+# این پوشه فقط برای خودِ برنامه است و از بیرون قابلِ دسترسی نیست (سپرِ امنیتی)
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

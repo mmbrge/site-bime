@@ -5016,6 +5016,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             bc.innerHTML = html;
         }
 
+        // نام و مسیرِ فایل‌های بایگانی (ممکن است از بارگذاریِ کاربران یا ZIP بیایند) پیش از درج در صفحه خنثی می‌شوند
+        const fmEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const fmAttr = v => fmEsc(String(v ?? '').replace(/['\\]/g, ''));
         var fmSearchSeq = 0, fmSearchTimer = null;
         // silent: همگام‌سازیِ خودکار (جستجو و حالتِ صفحه دست نمی‌خورد)
         async function fmOpen(path, silent) {
@@ -5032,15 +5035,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             try {
                 const res = await fetch('api/file_manager.php?action=list&path=' + encodeURIComponent(path));
                 const data = await res.json();
-                if (!data.ok) { content.innerHTML = `<div class="col-span-full card p-10 text-center text-red-500">${data.error}</div>`; return; }
+                if (!data.ok) { content.innerHTML = `<div class="col-span-full card p-10 text-center text-red-500">${fmEsc(data.error)}</div>`; return; }
                 if (data.items.length === 0) { content.innerHTML = '<div class="col-span-full card p-10 text-center text-slate-400"><i class="fas fa-inbox text-3xl mb-2 block opacity-50"></i>این پوشه خالی است.</div>'; return; }
 
                 content.innerHTML = data.items.map(item => {
                     if (item.type === 'dir') {
-                        return `<div class="card p-4 hover:shadow-lg transition-all border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'dir', '${item.path.replace(/'/g,"")}')">
-                            <div class="cursor-pointer flex-1" ondblclick="fmOpen('${item.path.replace(/'/g,"")}')" title="برای ورود دوبار کلیک کنید">
+                        return `<div class="card p-4 hover:shadow-lg transition-all border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'dir', '${fmAttr(item.path)}')">
+                            <div class="cursor-pointer flex-1" ondblclick="fmOpen('${fmAttr(item.path)}')" title="برای ورود دوبار کلیک کنید">
                                 ${fmIconFor('dir')}
-                                <p class="text-xs font-bold text-slate-700 mt-2 break-words">${item.name}</p>
+                                <p class="text-xs font-bold text-slate-700 mt-2 break-words">${fmEsc(item.name)}</p>
                                 <p class="text-[10px] text-slate-400 mt-1">${e2p(item.file_count)} فایل</p>
                                 <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
                                 <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
@@ -5050,9 +5053,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     } else {
                         const isImg = item.icon === 'image';
                         const preview = isImg ? `<img src="/Archive/بایگانی/${encodeFilePath(item.path)}" onclick="openImageZoom('/Archive/بایگانی/${encodeFilePath(item.path)}')" class="w-full h-24 object-cover rounded-lg cursor-zoom-in border">` : `<div class="h-24 flex items-center justify-center">${fmIconFor('file', item.icon)}</div>`;
-                        return `<div class="card p-4 border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'file', '${item.path.replace(/'/g,"")}')">
+                        return `<div class="card p-4 border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'file', '${fmAttr(item.path)}')">
                             ${preview}
-                            <p class="text-[11px] font-bold text-slate-700 mt-2 break-words" dir="ltr">${item.name}</p>
+                            <p class="text-[11px] font-bold text-slate-700 mt-2 break-words" dir="ltr">${fmEsc(item.name)}</p>
                             <p class="text-[10px] text-slate-400">${item.size}</p>
                             <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
                             <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
@@ -5106,9 +5109,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (seq !== fmSearchSeq) return;   // در این فاصله چیزِ دیگری تایپ شده
                 if (!data.ok || data.data.length === 0) { resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400">نتیجه‌ای یافت نشد.</div>'; return; }
                 resultsBox.innerHTML = data.data.map(r => `
-                    <div onclick="fmOpen('${r.path.replace(/'/g,"")}')" class="card p-3 flex items-center gap-3 cursor-pointer hover:bg-emerald-50/50">
+                    <div onclick="fmOpen('${fmAttr(r.path)}')" class="card p-3 flex items-center gap-3 cursor-pointer hover:bg-emerald-50/50">
                         <i class="fas ${r.type === 'dir' ? 'fa-folder text-amber-400' : 'fa-file text-slate-400'} text-lg"></i>
-                        <div><p class="text-xs font-bold">${r.name}</p><p class="text-[10px] text-slate-400" dir="ltr">${r.path}</p></div>
+                        <div><p class="text-xs font-bold">${fmEsc(r.name)}</p><p class="text-[10px] text-slate-400" dir="ltr">${fmEsc(r.path)}</p></div>
                     </div>`).join('');
             } catch(e) { resultsBox.innerHTML = '<div class="card p-6 text-center text-red-500">خطا در جستجو.</div>'; }
         }
@@ -11258,7 +11261,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const box = document.getElementById('staffchat-list');
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
             box.innerHTML = data.conversations.map(u => `
-                <div onclick="openStaffChatWith(${u.id}, '${u.full_name}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentStaffChatUserId === u.id ? 'bg-blue-50' : ''}">
+                <div onclick="openStaffChatWith(${u.id}, '${fmAttr(u.full_name || '')}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentStaffChatUserId === u.id ? 'bg-blue-50' : ''}">
                     <div class="flex items-center justify-between">
                         <span class="font-bold text-sm">${u.full_name}</span>
                         ${u.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${u.unread}</span>` : ''}

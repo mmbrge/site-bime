@@ -41,7 +41,7 @@ function safe_resolve($archiveRoot, $relative) {
     $relative = str_replace(['..'], '', (string)$relative);
     $target = realpath($archiveRoot . '/' . ltrim($relative, '/'));
     if ($target === false) return null;
-    if (strpos($target, $archiveRoot) !== 0) return null;
+    if ($target !== $archiveRoot && strpos($target, $archiveRoot . DIRECTORY_SEPARATOR) !== 0) return null;   // فقط داخلِ خودِ بایگانی (نه پوشه‌ی هم‌نامِ کناری)
     if (fm_hidden($archiveRoot, $target)) return null;
     return $target;
 }
