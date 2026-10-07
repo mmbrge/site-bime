@@ -314,7 +314,7 @@ function perm_api_map() {
             'svc_list' => 'service-report:view', 'svc_overview' => 'service-report:view', 'svc_service_receipt' => 'service-report:view', 'svc_save' => 'service-report:edit', 'svc_delete' => 'service-report:edit',
         ]],
         'life_actions' => ['pages' => ['life-policies'], 'actions' => [
-            'bootstrap' => 'life-dash:view|life-policies:view|life-import:view|life-archive:view|life-settings:view', 'stats' => 'life-dash:view',
+            'bootstrap' => 'life-dash:view|life-policies:view|life-import:view|life-archive:view|life-settings:view', 'stats' => 'life-dash:view', 'collect_report' => 'life-dash:view', 'collect_export' => 'life-dash:view|life-policies:export',
             'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view', 'policy_save' => 'life-policies:edit',
             'policy_delete' => 'life-policies:delete', 'export' => 'life-policies:export', 'purge_candidates' => 'life-policies:delete', 'purge' => 'life-policies:delete',
             'phones_save' => 'life-calls:create|life-policies:edit', 'follow_toggle' => 'life-calls:create|life-pay:create|life-policies:edit',
@@ -330,7 +330,7 @@ function perm_api_map() {
         ]],
         'mk_actions' => ['pages' => ['mk-sales'], 'actions' => [
             'bootstrap' => 'mk-dash:view|mk-sales:view|mk-people:view|mk-settings:view', 'dash' => 'mk-dash:view', 'income' => 'mk-dash:view|mk-people:view',
-            'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete', 'people_list' => 'mk-people:view|mk-dash:view',
+            'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete', 'sale_delete' => 'mk-sales:delete', 'people_list' => 'mk-people:view|mk-dash:view',
             'person_save' => 'mk-people:create|mk-people:edit', 'person_delete' => 'mk-people:delete', 'person_unlink' => 'mk-people:edit', 'settings_get' => 'mk-settings:view|mk-sales:view',
             'settings_save' => 'mk-settings:edit', 'types_save' => 'mk-settings:edit', 'levels_save' => 'mk-settings:edit', 'rewards_save' => 'mk-settings:edit', 'level_image' => 'mk-settings:edit',
             'calc' => 'mk-sales:view|mk-settings:view', 'reward_calc' => 'mk-sales:view|mk-settings:view', 'export' => 'mk-sales:export|mk-dash:export', 'pdf' => 'mk-sales:export|mk-dash:export',
@@ -410,7 +410,7 @@ function perm_activity_labels() {
         'life_actions.inst_save' => 'ویرایشِ قسطِ بیمه عمر', 'life_actions.inst_add' => 'افزودنِ قسطِ بیمه عمر', 'life_actions.purge' => 'حذفِ بیمه‌نامه‌های عمرِ بدونِ پرداخت',
         'life_actions.policy_delete' => 'حذفِ بیمه‌نامه‌ی عمر', 'life_actions.export' => 'خروجیِ اکسلِ بیمه عمر', 'life_actions.archive_zip' => 'خروجیِ زیپ از بایگانیِ بیمه عمر',
         'life_actions.inst_file_upload' => 'بارگذاریِ فایلِ قسطِ بیمه عمر',
-        'mk_actions.sale_save' => 'ثبت / ویرایشِ فروشِ بازاریاب', 'mk_actions.sale_void' => 'ابطالِ فروشِ بازاریاب', 'mk_actions.person_save' => 'ثبت / ویرایشِ بازاریاب',
+        'mk_actions.sale_save' => 'ثبت / ویرایشِ فروشِ بازاریاب', 'mk_actions.sale_void' => 'ابطالِ فروشِ بازاریاب', 'mk_actions.sale_delete' => 'حذفِ فروشِ بازاریاب', 'mk_actions.person_save' => 'ثبت / ویرایشِ بازاریاب',
         'mk_actions.person_delete' => 'حذفِ بازاریاب', 'mk_actions.types_save' => 'تغییرِ انواع و کارمزدِ بازاریابی', 'mk_actions.levels_save' => 'تغییرِ سطح‌های بازاریابی',
         'mk_actions.rewards_save' => 'تغییرِ قوانینِ پاداشِ مشتری', 'mk_actions.settings_save' => 'تغییرِ تنظیماتِ حقوقِ بازاریابان', 'mk_actions.export' => 'خروجیِ اکسلِ بازاریابی', 'mk_actions.pdf' => 'گزارشِ PDFِ بازاریابی',
         'file_manager.zip_folder' => 'خروجیِ زیپ از بایگانی', 'file_manager.zip_range' => 'خروجیِ زیپ از بایگانی', 'settings_actions.save_quota' => 'تغییرِ تنظیماتِ سامانه',

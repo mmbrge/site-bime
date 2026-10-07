@@ -335,6 +335,7 @@
                 <div class="lf-card"><h3><i class="fas fa-ranking-star text-red-600"></i>بیشترین معوقات</h3><div id="lfd-top"></div></div>
                 <div class="lf-card"><h3><i class="fas fa-phone text-cyan-700"></i>پیگیری‌های سررسیده <small>(تاریخِ پیگیریِ بعدیِ آخرین تماس رسیده)</small></h3><div id="lfd-fu"></div></div>
             </div>
+            <div class="lf-card" data-collect><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
             ${d.last_import ? `<div class="text-[11px] text-slate-500 font-bold px-2"><i class="fas fa-file-excel text-green-600 ml-1"></i>آخرین ورودِ اکسل: ${esc(d.last_import.file_name)} · ${fa(d.last_import.at_j)}${d.last_import.range_from ? ` · بازه‌ی سررسید ${fa(d.last_import.range_from)} تا ${fa(d.last_import.range_to)}` : ''}</div>` : ''}`;
             body.querySelectorAll('[data-go]').forEach(k => k.onclick = () => { L.list.f = Object.assign({sort: 'overdue'}, JSON.parse(k.dataset.go || '{}')); L.list.page = 1; switchTab('life-policies'); });
             const drawCharts = () => {
@@ -364,6 +365,34 @@
             body.querySelector('#lfd-top').innerHTML = d.top.length ? d.top.map(li).join('') : '<div class="lf-empty"><i class="fas fa-face-smile"></i>بدهیِ معوقی نیست</div>';
             body.querySelector('#lfd-fu').innerHTML = d.followups.length ? d.followups.map(r => `<div class="lf-li" data-id="${r.id}"><span class="av" style="background:#ecfeff;color:#0e7490"><i class="fas fa-phone"></i></span><div class="flex-1 min-w-0"><b class="block truncate">${esc(r.holder_name)}</b><small class="text-slate-500">آخرین تماس: ${fa(r.last_call || '')} · ${esc(r.last_result || '')}</small></div><span class="lf-tag a">${fa(r.next_follow)}</span></div>`).join('') : '<div class="lf-empty"><i class="fas fa-mug-hot"></i>پیگیریِ سررسیده‌ای نیست</div>';
             body.querySelectorAll('.lf-li[data-id]').forEach(x => x.onclick = () => Det.open(+x.dataset.id));
+            this.collect(body.querySelector('[data-collect]'));
+        },
+        // وصولِ ماه به ماه به تفکیکِ همکار + مقایسه‌ی ماهِ انتخابی با ماهِ قبل
+        async collect(box, jy, jm) {
+            if (!box) return;
+            const tj = todayJ();
+            jy = jy || +tj.slice(0, 4); jm = jm || +tj.slice(5, 7);
+            let d;
+            try { d = await api('collect_report', {jy}); } catch (e) { box.innerHTML = `<div class="lf-empty">${esc(e.message)}</div>`; return; }
+            const pm = jm > 1 ? jm - 1 : null;
+            const years = []; for (let y = +tj.slice(0, 4); y >= 1400; y--) years.push(y);
+            const pct = (a, b) => !b ? (a ? '<span class="lf-tag g">تازه</span>' : '—') : `<span class="lf-tag ${a >= b ? 'g' : 'r'}">${a >= b ? '▲' : '▼'} ${fa(Math.abs(Math.round((a - b) * 100 / b)))}٪</span>`;
+            box.innerHTML = `<h3><i class="fas fa-people-group text-emerald-600"></i>وصولِ ماه به ماه به تفکیکِ همکار <small>پرداخت‌های ثبت‌شده بر اساسِ تاریخِ پرداخت · تماس‌ها بر اساسِ زمانِ تماس</small>
+                    <span class="mr-auto flex gap-2 items-center"><select class="lf-sel" style="width:auto" data-cy>${years.map(y => `<option ${y === jy ? 'selected' : ''} value="${y}">${fa(y)}</option>`).join('')}</select>
+                    <select class="lf-sel" style="width:auto" data-cm>${MONTHS.map((m, i) => `<option value="${i + 1}" ${i + 1 === jm ? 'selected' : ''}>${m}</option>`).join('')}</select>
+                    ${can('life-policies', 'export') || can('life-dash') ? '<button class="lf-btn o sm" data-cx><i class="fas fa-file-excel text-green-600"></i>اکسل</button>' : ''}</span></h3>
+                ${d.users.length ? `<div data-cc></div>
+                <div class="lf-scroll mt-3"><table class="lf-tbl"><thead><tr><th>همکار</th><th>${MONTHS[jm - 1]}</th>${pm ? `<th>${MONTHS[pm - 1]}</th><th>تغییر</th>` : ''}<th>پرداخت‌ها / تماس‌های ${MONTHS[jm - 1]}</th><th>جمعِ سال</th><th>تماس‌های سال</th><th>پیگیری‌ها</th><th>معوقِ فعلیِ پیگیری‌ها</th></tr></thead><tbody>
+                ${d.users.map(u => { const c = u.months[jm], p = pm ? u.months[pm] : null; return `<tr style="cursor:default"><td><b>${esc(u.name)}</b></td><td class="font-black text-green-700">${money(c.amount)}</td>${pm ? `<td>${money(p.amount)}</td><td>${pct(c.amount, p.amount)}</td>` : ''}
+                    <td>${fa(c.n)} پرداخت · ${fa(c.calls)} تماس</td><td>${money(u.total)}</td><td>${fa(u.calls)}</td><td>${fa(u.following || 0)}</td><td>${u.overdue_now ? `<span class="text-red-700 font-bold">${money(u.overdue_now)}</span> <small class="text-slate-500">(${fa(u.overdue_policies)})</small>` : '—'}</td></tr>`; }).join('')}
+                <tr style="background:#f0fdf4;font-weight:900"><td>جمع</td><td>${money(d.month_totals[jm])}</td>${pm ? `<td>${money(d.month_totals[pm])}</td><td>${pct(d.month_totals[jm], d.month_totals[pm])}</td>` : ''}<td></td><td>${money(d.total)}</td><td></td><td></td><td></td></tr></tbody></table></div>`
+                : '<div class="lf-empty"><i class="fas fa-hand-holding-dollar"></i>در این سال پرداختی به نامِ همکاران ثبت نشده است.</div>'}`;
+            box.querySelector('[data-cy]').onchange = e => this.collect(box, +e.target.value, jm);
+            box.querySelector('[data-cm]').onchange = e => this.collect(box, jy, +e.target.value);
+            const cx = box.querySelector('[data-cx]'); if (cx) cx.onclick = () => download(url('collect_export', {jy}));
+            const cc = box.querySelector('[data-cc]');
+            if (cc) barChart(cc, d.users.map(u => u.name), [{name: MONTHS[jm - 1], color: C1, values: d.users.map(u => u.months[jm].amount)}].concat(pm ? [{name: MONTHS[pm - 1], color: C2, values: d.users.map(u => u.months[pm].amount)}] : []), short,
+                i => `<span class="sw" style="background:${C1}"></span>${MONTHS[jm - 1]}: ${money(d.users[i].months[jm].amount)} (${fa(d.users[i].months[jm].n)} پرداخت، ${fa(d.users[i].months[jm].calls)} تماس)` + (pm ? `<br><span class="sw" style="background:${C2}"></span>${MONTHS[pm - 1]}: ${money(d.users[i].months[pm].amount)}` : ''));
         },
     };
 

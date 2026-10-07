@@ -46,7 +46,7 @@
     .mk-card h3{font-size:13.5px;font-weight:900;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}.mk-card h3 small{font-weight:600;color:#64748b;font-size:11px}
     .mk-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:13px;padding:8px 13px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;text-decoration:none}
     .mk-btn:disabled{opacity:.45;cursor:not-allowed}.mk-btn.p{background:linear-gradient(120deg,#c2410c,#be185d);color:#fff}.mk-btn.s{background:#f1f5f9;color:#334155}.mk-btn.o{background:#fff;color:#334155;border:1px solid #e2e8f0}
-    .mk-btn.g{background:#059669;color:#fff}.mk-btn.r{background:#fff1f2;color:#be123c}.mk-btn.sm{padding:5px 9px;font-size:11px;border-radius:10px}
+    .mk-btn.g{background:#059669;color:#fff}.mk-btn.r{background:#fff1f2;color:#be123c}.mk-btn.a{background:#fffbeb;color:#b45309}.mk-btn.sm{padding:5px 9px;font-size:11px;border-radius:10px}
     .mk-in,.mk-sel,.mk-ta{border:1px solid #e2dcd8;border-radius:12px;padding:8px 10px;font-size:12.5px;font-family:inherit;background:#fff;width:100%;min-width:0}
     .mk-in:focus,.mk-sel:focus,.mk-ta:focus{outline:2px solid #fed7aa;border-color:#fb923c}
     .mk-lbl{display:block;font-size:11px;font-weight:800;color:#475569;margin-bottom:4px}
@@ -297,7 +297,8 @@
             try { d = await api('sales_list', f); } catch (e) { box.innerHTML = `<div class="mk-empty">${esc(e.message)}</div>`; return; }
             root.querySelector('[data-sum]').innerHTML = `<span class="mk-tag">${fa(d.sum.n)} فروش</span><span class="mk-tag b">حق‌بیمه ${short(d.sum.premium)}</span><span class="mk-tag v">کارمزد ${short(d.sum.comm)}</span><span class="mk-tag g">حق بازاریابی ${short(d.sum.fee)}</span>`;
             if (!d.rows.length) { box.innerHTML = '<div class="mk-empty"><i class="fas fa-receipt"></i>فروشی با این فیلترها نیست.</div>'; return; }
-            const act = r => r.status !== 'OK' ? `<span class="mk-tag r" title="${esc(r.void_reason || '')}">باطل${r.void_by_name ? ' · ' + esc(r.void_by_name) : ''}</span>` : `${can('mk-sales', 'edit') ? `<button class="mk-btn s sm" data-ed="${r.id}"><i class="fas fa-pen"></i></button>` : ''}${can('mk-sales', 'delete') ? `<button class="mk-btn r sm" data-vd="${r.id}"><i class="fas fa-ban"></i></button>` : ''}`;
+            const del = r => can('mk-sales', 'delete') ? `<button class="mk-btn r sm" data-del="${r.id}" title="حذفِ کامل"><i class="fas fa-trash"></i></button>` : '';
+            const act = r => `<button class="mk-btn s sm" data-dt="${r.id}" title="جزئیات"><i class="fas fa-circle-info"></i></button>` + (r.status !== 'OK' ? `<span class="mk-tag r" title="${esc(r.void_reason || '')}">باطل${r.void_by_name ? ' · ' + esc(r.void_by_name) : ''}</span>${del(r)}` : `${can('mk-sales', 'edit') ? `<button class="mk-btn s sm" data-ed="${r.id}"><i class="fas fa-pen"></i></button>` : ''}${can('mk-sales', 'delete') ? `<button class="mk-btn a sm" data-vd="${r.id}" title="ابطال"><i class="fas fa-ban"></i></button>` : ''}${del(r)}`);
             box.innerHTML = `<div class="mk-tblwrap mk-scroll"><table class="mk-tbl"><thead><tr><th>تاریخ</th><th>بازاریاب</th><th>نوع</th><th>حق‌بیمه</th><th>کارمزد</th><th>سهم</th><th>حق بازاریابی</th><th>مشتری</th><th>ثبت</th><th></th></tr></thead><tbody>
                 ${d.rows.map(r => `<tr class="${r.status !== 'OK' ? 'void' : ''}"><td>${fa(r.sale_j)}</td><td><b>${esc(r.full_name)}</b></td><td>${esc(r.type_name)}</td><td>${money(r.premium)}</td><td>${money(r.commission_amount)}<small class="block text-slate-400">${fa(+r.commission_pct)}٪</small></td>
                     <td>${fa(+r.share_pct)}٪</td><td class="text-green-700 font-bold">${money(r.fee_amount)}</td><td>${esc(r.customer_name || '—')}${r.policy_no ? `<small class="block text-slate-400" dir="ltr">${esc(fa(r.policy_no))}</small>` : ''}</td>
@@ -305,11 +306,25 @@
                 <div class="mk-cards">${d.rows.map(r => `<div class="mk-pc" style="${r.status !== 'OK' ? 'opacity:.55' : ''}"><div class="flex items-center gap-2"><b class="flex-1">${esc(r.full_name)}</b><span class="mk-tag">${fa(r.sale_j)}</span></div>
                     <div class="text-[12px] mt-1">${esc(r.type_name)}${r.customer_name ? ' · ' + esc(r.customer_name) : ''}</div><div class="flex flex-wrap gap-1 mt-2 items-center"><span class="mk-tag b">${money(r.premium)}</span><span class="mk-tag g">${money(r.fee_amount)}</span><span class="mk-tag ${r.source === 'BOT' ? 'v' : ''}">${r.source === 'BOT' ? 'ربات' : 'پنل'}</span><span class="mr-auto flex gap-1">${act(r)}</span></div></div>`).join('')}</div>`;
             box.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => this.form(d.rows.find(r => +r.id === +b.dataset.ed), () => this.load(root)));
+            box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+                const r = d.rows.find(x => +x.id === +b.dataset.del);
+                if (!(await confirmUi('حذفِ کاملِ فروش', `فروشِ ${r.full_name} (${r.type_name} · ${money(r.premium)} ریال · ${fa(r.sale_j)}) کاملاً حذف شود؟ از گزارش‌ها و درآمدِ او هم حذف می‌شود و برگشت ندارد.`, {danger: true, ok: 'حذف'}))) return;
+                try { await api('sale_delete', {id: r.id}); toast('فروش حذف شد.', 'success'); this.load(root); } catch (e) { toast(e.message, 'error'); }
+            });
+            box.querySelectorAll('[data-dt]').forEach(b => b.onclick = () => this.detail(d.rows.find(x => +x.id === +b.dataset.dt)));
             box.querySelectorAll('[data-vd]').forEach(b => b.onclick = async () => {
                 const reason = window.uiPrompt ? await uiPrompt('ابطالِ فروش', '', {hint: 'دلیلِ ابطال:', ok: 'ابطال', danger: true}) : '';
                 if (reason === null) return;
                 try { await api('sale_void', {id: +b.dataset.vd, reason}); toast('فروش باطل شد.', 'success'); this.load(root); } catch (e) { toast(e.message, 'error'); }
             });
+        },
+        detail(r) {
+            const t = (k, v) => `<div class="mk-row" style="padding:8px 10px"><small class="text-slate-500 font-bold">${k}</small><b>${v || '—'}</b></div>`;
+            modal('جزئیاتِ فروش #' + fa(r.id), `<div class="mk-grid mk-g3">${t('بازاریاب', esc(r.full_name))}${t('نوعِ بیمه‌نامه', esc(r.type_name))}${t('تاریخِ فروش', fa(r.sale_j))}
+                ${t('حق‌بیمه', money(r.premium) + ' ریال')}${t('کارمزدِ نمایندگی', money(r.commission_amount) + ' (' + fa(+r.commission_pct) + '٪)')}${t('سهمِ بازاریاب از کارمزد', fa(+r.share_pct) + '٪')}
+                ${t('حق بازاریابی', money(r.fee_amount) + ' ریال')}${t('مشتری', esc(r.customer_name))}${t('موبایلِ مشتری', `<span dir="ltr">${esc(fa(r.customer_mobile || ''))}</span>`)}
+                ${t('شماره‌ی بیمه‌نامه', `<span dir="ltr">${esc(fa(r.policy_no || ''))}</span>`)}${t('ثبت از', r.source === 'BOT' ? 'ربات بله (خودِ بازاریاب)' : 'پنل')}${t('ثبت‌کننده‌ی پنل', esc(r.by_name))}
+                ${t('زمانِ ثبت', fa(r.created_at_j || ''))}${t('وضعیت', r.status === 'OK' ? 'معتبر' : 'باطل' + (r.void_reason ? ': ' + esc(r.void_reason) : '') + (r.void_by_name ? ' · ' + esc(r.void_by_name) : ''))}${t('توضیح', esc(r.note))}</div>`, '');
         },
         form(r, done) {
             const m = modal(r ? 'ویرایشِ فروش' : 'ثبتِ فروش', `<div class="mk-grid mk-g2">

@@ -366,3 +366,48 @@ function life_delete_policy($pdo, $id, $withArchive = true) {
     }
     return true;
 }
+
+// ---------------------------------------------------------------------
+//  وصولِ ماه به ماه به تفکیکِ همکار (پرداخت‌های ثبت‌شده بر اساسِ تاریخِ پرداخت + تعدادِ تماس‌ها)
+// ---------------------------------------------------------------------
+function life_collect_report($pdo, $jy) {
+    $jy = intval($jy);
+    $users = [];
+    $row = function ($uid, $name) use (&$users) {
+        if (!isset($users[$uid])) $users[$uid] = ['id' => $uid, 'name' => $name ?: 'نامشخص', 'months' => array_fill(1, 12, ['amount' => 0, 'n' => 0, 'calls' => 0, 'policies' => 0]), 'total' => 0, 'n' => 0, 'calls' => 0];
+    };
+    $st = $pdo->prepare("SELECT p.created_by AS uid, u.full_name, CAST(SUBSTRING(p.paid_j, 6, 2) AS UNSIGNED) AS m, SUM(p.amount) AS amount, COUNT(*) AS n, COUNT(DISTINCT p.policy_id) AS pol
+                           FROM life_payments p LEFT JOIN users u ON u.id = p.created_by
+                          WHERE p.voided_at IS NULL AND p.paid_j LIKE ? GROUP BY p.created_by, u.full_name, m");
+    $st->execute([$jy . '/%']);
+    foreach ($st->fetchAll() as $r) {
+        $uid = intval($r['uid']); $m = intval($r['m']);
+        if ($m < 1 || $m > 12) continue;
+        $row($uid, $r['full_name']);
+        $users[$uid]['months'][$m]['amount'] = intval($r['amount']); $users[$uid]['months'][$m]['n'] = intval($r['n']); $users[$uid]['months'][$m]['policies'] = intval($r['pol']);
+        $users[$uid]['total'] += intval($r['amount']); $users[$uid]['n'] += intval($r['n']);
+    }
+    // تماس‌ها (بر اساسِ ماهِ شمسیِ زمانِ تماس)
+    $from = date('Y-m-d', jalali_to_gregorian_ts($jy, 1, 1)); $to = date('Y-m-d', jalali_to_gregorian_ts($jy + 1, 1, 1));
+    $st = $pdo->prepare("SELECT n.created_by AS uid, u.full_name, n.at FROM life_notes n LEFT JOIN users u ON u.id = n.created_by WHERE n.kind = 'call' AND n.at >= ? AND n.at < ? AND n.created_by IS NOT NULL");
+    $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) {
+        [, $m] = jalali_from_gregorian_ts(strtotime($r['at']));
+        $uid = intval($r['uid']);
+        $row($uid, $r['full_name']);
+        $users[$uid]['months'][$m]['calls']++; $users[$uid]['calls']++;
+    }
+    // بیمه‌نامه‌هایی که پیگیری می‌کنند و معوقِ فعلی‌شان
+    foreach ($users as $uid => &$u) {
+        if (!$uid) continue;
+        $l = life_list($pdo, ['follower' => $uid, 'status' => 'overdue'], 1, 5);
+        $u['following'] = intval($pdo->query("SELECT COUNT(*) FROM life_followers WHERE user_id = " . intval($uid))->fetchColumn());
+        $u['overdue_now'] = $l['sum']['overdue']; $u['overdue_policies'] = $l['total'];
+    }
+    unset($u);
+    $list = array_values($users);
+    usort($list, function ($a, $b) { return $b['total'] <=> $a['total']; });
+    $tot = array_fill(1, 12, 0);
+    foreach ($list as $u) foreach ($u['months'] as $m => $x) $tot[$m] += $x['amount'];
+    return ['jy' => $jy, 'users' => $list, 'month_totals' => $tot, 'total' => array_sum($tot)];
+}

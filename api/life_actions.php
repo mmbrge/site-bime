@@ -45,7 +45,7 @@ if (($data['follower'] ?? '') === 'me') $data['follower'] = $uid;   // فیلت�
 // اکشن => دسترسیِ لازم
 $need = [
     'bootstrap' => 'life-dash:view|life-policies:view|life-import:view|life-archive:view|life-settings:view',
-    'stats' => 'life-dash:view', 'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view',
+    'stats' => 'life-dash:view', 'collect_report' => 'life-dash:view', 'collect_export' => 'life-dash:view|life-policies:export', 'list' => 'life-policies:view', 'detail' => 'life-policies:view', 'export_columns' => 'life-policies:view',
     'policy_save' => 'life-policies:edit', 'policy_delete' => 'life-policies:delete', 'export' => 'life-policies:export',
     'purge_candidates' => 'life-policies:delete', 'purge' => 'life-policies:delete',
     'phones_save' => 'life-calls:create|life-policies:edit', 'follow_toggle' => 'life-calls:create|life-pay:create|life-policies:edit',
@@ -130,6 +130,28 @@ case 'bootstrap':
 
 case 'stats':
     $out(['ok' => true] + life_stats($pdo, $data));
+
+case 'collect_report':
+    $jy = intval($data['jy'] ?? 0) ?: intval(substr(life_today_j(), 0, 4));
+    $out(['ok' => true] + life_collect_report($pdo, $jy));
+
+case 'collect_export':
+    $jy = intval($data['jy'] ?? 0) ?: intval(substr(life_today_j(), 0, 4));
+    $r = life_collect_report($pdo, $jy);
+    $heads = ['همکار'];
+    for ($m = 1; $m <= 12; $m++) $heads[] = jalali_month_name($m) . ' (وصول)';
+    $heads = array_merge($heads, ['جمع وصول', 'تعداد پرداخت', 'تعداد تماس', 'بیمه‌نامه‌های پیگیری', 'معوق فعلیِ پیگیری‌ها']);
+    $rows = [];
+    foreach ($r['users'] as $u) {
+        $x = [$u['name']];
+        for ($m = 1; $m <= 12; $m++) $x[] = $u['months'][$m]['amount'];
+        $rows[] = array_merge($x, [$u['total'], $u['n'], $u['calls'], $u['following'] ?? 0, $u['overdue_now'] ?? 0]);
+    }
+    $t = ['جمع']; for ($m = 1; $m <= 12; $m++) $t[] = $r['month_totals'][$m];
+    $rows[] = array_merge($t, [$r['total'], '', '', '', '']);
+    $path = xlsx_build($heads, $rows, 'وصول همکاران ' . $jy, range(1, 17));
+    xlsx_send($path, 'وصول به تفکیک همکار - ' . $jy . '.xlsx');
+    exit;
 
 case 'list':
     $out(['ok' => true] + life_list($pdo, $data, $data['page'] ?? 1, $data['per'] ?? 30));

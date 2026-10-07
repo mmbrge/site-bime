@@ -27,7 +27,7 @@ $data = ($isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) :
 $action = (string)($data['action'] ?? '');
 $need = [
     'bootstrap' => 'mk-dash:view|mk-sales:view|mk-people:view|mk-settings:view', 'dash' => 'mk-dash:view', 'income' => 'mk-dash:view|mk-people:view',
-    'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete',
+    'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete', 'sale_delete' => 'mk-sales:delete',
     'people_list' => 'mk-people:view|mk-dash:view', 'person_save' => 'mk-people:create|mk-people:edit', 'person_delete' => 'mk-people:delete', 'person_unlink' => 'mk-people:edit',
     'settings_get' => 'mk-settings:view|mk-sales:view', 'settings_save' => 'mk-settings:edit', 'types_save' => 'mk-settings:edit', 'levels_save' => 'mk-settings:edit',
     'rewards_save' => 'mk-settings:edit', 'level_image' => 'mk-settings:edit', 'calc' => 'mk-sales:view|mk-settings:view', 'reward_calc' => 'mk-sales:view|mk-settings:view',
@@ -114,6 +114,8 @@ case 'sales_list':
                          LEFT JOIN users v ON v.id = s.voided_by WHERE " . implode(' AND ', $w) . " ORDER BY s.sale_g DESC, s.id DESC LIMIT 1000");
     $st->execute($a);
     $rows = $st->fetchAll();
+    foreach ($rows as &$x) $x['created_at_j'] = $x['created_at'] ? life_like_g2j($x['created_at']) . ' ' . substr($x['created_at'], 11, 5) : '';
+    unset($x);
     $ok = array_filter($rows, function ($r) { return $r['status'] === 'OK'; });
     $out(['ok' => true, 'rows' => $rows, 'sum' => ['n' => count($ok), 'premium' => array_sum(array_column($ok, 'premium')), 'fee' => array_sum(array_column($ok, 'fee_amount')), 'comm' => array_sum(array_column($ok, 'commission_amount'))]]);
 
@@ -150,6 +152,16 @@ case 'sale_save':
 case 'sale_void':
     $pdo->prepare("UPDATE mk_sales SET status = 'VOID', voided_at = NOW(), voided_by = ?, void_reason = ? WHERE id = ? AND status = 'OK'")
         ->execute([$uid, mb_substr(trim((string)($data['reason'] ?? '')), 0, 300) ?: null, intval($data['id'] ?? 0)]);
+    $out(['ok' => true]);
+
+case 'sale_delete':
+    // حذفِ کامل (برخلافِ ابطال، در گزارش‌ها هم دیده نمی‌شود)
+    $st = $pdo->prepare("SELECT s.*, p.full_name FROM mk_sales s JOIN mk_people p ON p.id = s.person_id WHERE s.id = ?");
+    $st->execute([intval($data['id'] ?? 0)]);
+    $sale = $st->fetch();
+    if (!$sale) $fail('فروش پیدا نشد.');
+    $pdo->prepare("DELETE FROM mk_sales WHERE id = ?")->execute([$sale['id']]);
+    if (function_exists('sec_event')) sec_event($pdo, 'ADMIN_ACTION', 'حذفِ فروشِ بازاریاب: ' . $sale['full_name'] . ' · ' . $sale['type_name'] . ' · ' . $sale['premium'] . ' ریال · ' . $sale['sale_j']);
     $out(['ok' => true]);
 
 case 'people_list':
