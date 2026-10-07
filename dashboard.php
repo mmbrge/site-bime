@@ -63,6 +63,8 @@ $ltMenuHtml = !$ltAccess ? '' : '
                     </div>
                 </div>
 ';
+// «مالیِ درمان تکمیلی»: مدیر کل و دسترسی‌های سفارشی
+$hlAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 $lifeMenuHtml = !$lifeAccess ? '' : '
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
@@ -564,6 +566,33 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .menu-link.active-sub > i:first-child { background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff; box-shadow: 0 4px 10px -4px rgba(37,99,235,.6); }
         .menu-sep { margin: 6px 10px; background: linear-gradient(90deg, transparent, #e2e8f0, transparent); }
         @keyframes menuIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        /* ---- «بیمه با ما»: منوی بزرگ به تفکیکِ رشته‌ی بیمه ---- */
+        .bm-trigger { background: linear-gradient(120deg, #2563eb, #7c3aed 55%, #db2777); color: #fff !important; padding: 7px 13px !important; border-radius: 999px; box-shadow: 0 8px 18px -10px rgba(124,58,237,.8); }
+        .bm-trigger:hover, .bm-mega.open .bm-trigger { filter: brightness(1.08); color: #fff !important; }
+        .bm-panel .bm-top { display: flex; align-items: baseline; gap: 10px; padding: 4px 8px 10px; flex-wrap: wrap; }
+        .bm-panel .bm-top b { font-size: 12.5px; font-weight: 900; color: #1e293b; } .bm-panel .bm-top small { font-size: 10.5px; color: #94a3b8; font-weight: 700; }
+        .bm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .bm-sec { border: 1px solid #eef2f7; border-radius: 18px; padding: 8px; background: linear-gradient(180deg, color-mix(in srgb, var(--c1) 6%, #fff), #fff 60%); display: flex; flex-direction: column; }
+        .bm-head { display: flex; align-items: center; gap: 10px; padding: 4px 4px 8px; border-bottom: 1px dashed color-mix(in srgb, var(--c1) 30%, #e2e8f0); margin-bottom: 4px; }
+        .bm-ic { width: 38px; height: 38px; border-radius: 13px; background: linear-gradient(135deg, var(--c1), var(--c2)); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; box-shadow: 0 8px 16px -10px var(--c1); }
+        .bm-head b { display: block; font-size: 13px; font-weight: 900; color: #0f172a; } .bm-head small { display: block; font-size: 10px; color: #64748b; font-weight: 700; }
+        .bm-sec .menu-link { white-space: normal; }
+        .bm-sec .menu-link .bm-l { display: flex; flex-direction: column; line-height: 1.35; } .bm-sec .menu-link .bm-l small { font-size: 9.5px; color: #94a3b8; font-weight: 600; }
+        .bm-sec .menu-link:hover > i:first-child, .bm-sec .menu-link.active-sub > i:first-child { background: linear-gradient(135deg, var(--c1), var(--c2)); color: #fff; }
+        .bm-sec .menu-link.active-sub { background: color-mix(in srgb, var(--c1) 8%, #fff); }
+        .bm-set { margin-top: auto; padding-top: 4px; border-top: 1px dashed #e2e8f0; }
+        .bm-set .menu-link > i:first-child { background: #f8fafc; }
+        @media (min-width: 1024px) {
+            #main-nav .menu-group.bm-mega .menu-trigger.bm-trigger, #main-nav .menu-group.bm-mega.open .menu-trigger.bm-trigger, #main-nav .menu-group.bm-mega:hover .menu-trigger.bm-trigger {
+                background: linear-gradient(120deg, #2563eb, #7c3aed 55%, #db2777); color: #fff !important; box-shadow: 0 8px 18px -10px rgba(124,58,237,.8); }
+            .bm-mega > .bm-panel { position: fixed; top: 78px; left: 0; right: 0; margin: 0 auto; width: min(1120px, 94vw); padding: 12px; border-radius: 22px; max-height: calc(100vh - 100px); overflow: auto; }
+            .bm-mega > .bm-panel::before { top: -14px; height: 14px; }
+            .bm-mega > .bm-panel::after { display: none; }
+        }
+        @media (max-width: 1023px) {
+            .bm-trigger { margin: 4px 0; }
+            .bm-grid { grid-template-columns: minmax(0, 1fr); }
+        }
         /* ---- زیرمنوی درختی (menu-sub): در دسکتاپ کنارِ منو باز می‌شود، در موبایل زیرِ خودش و تو‌رفته ---- */
         .menu-sub { position: relative; }
         .menu-sub-trigger { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 11px; font-weight: 700; color: #475569;
@@ -852,6 +881,61 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <?php endif; ?>
                 <?php echo $chatNavHtml; ?>
 
+                <!-- ===== «بیمه با ما»: منوی درختیِ بزرگ به تفکیکِ رشته‌ی بیمه (هر بخش با کارها و تنظیماتِ خودش) ===== -->
+                <?php
+                $bmLink = function ($tab, $icon, $label, $hint = '', $id = true, $extra = '') {
+                    return '<a href="#" onclick="switchTab(\'' . $tab . '\')' . $extra . '" ' . ($id ? 'id="nav-' . $tab . '"' : 'data-bm="' . $tab . '"') . ' class="nav-item menu-link"><i class="fas ' . $icon . ' ml-2"></i><span class="bm-l">' . $label . ($hint !== '' ? '<small>' . $hint . '</small>' : '') . '</span></a>';
+                };
+                $bmSecs = [];
+                if ($canSeeCompanies || !$isLiaison) {
+                    $x = '';
+                    if ($canSeeCompanies) $x .= $bmLink($isLiaison ? 'issued-list' : 'issue-queue', 'fa-stamp', 'مرکز صدور', 'در حال صدور، صادره، گروهی', false);
+                    if ($canSeeCompanies) $x .= $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور', false);
+                    if (!$isLiaison) $x .= $bmLink('records', 'fa-id-card', 'کارکنان (کسر از حقوق)', 'پرونده‌ها و معرفی‌نامه‌ها', false);
+                    if (!$isLiaison) $x .= $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامتِ خودرو', 'عکس‌ها و مدارک', false);
+                    if ($canSeeCompanies && !$isLiaison) $x .= $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص', false);
+                    if ($vrAccess) $x .= $bmLink('vr-build', 'fa-file-circle-plus', 'گزارشِ بازدید', 'ساخت و صادرشده‌ها', false);
+                    $set = '';
+                    if ($canSeeCompanies && !$isLiaison) $set .= $bmLink('companies-manage', 'fa-gear', 'مدیریتِ شرکت‌ها', '', false);
+                    if ($vrAccess && ($_SESSION['role'] ?? '') === 'ADMIN') $set .= $bmLink('vr-settings', 'fa-sliders', 'تنظیماتِ گزارشِ بازدید', '', false);
+                    $bmSecs[] = ['ثالث و بدنه', 'صدور، شرکت‌ها، کارکنان، بازدید', 'fa-car-side', '#2563eb', '#06b6d4', $x, $set];
+                }
+                if ($lifeAccess) $bmSecs[] = ['بیمه عمر', 'اقساط، وصول، تماس، رسید', 'fa-heart-pulse', '#db2777', '#f97316',
+                    $bmLink('life-dash', 'fa-chart-pie', 'داشبوردِ بیمه عمر', 'وصول، معوق، همکاران') . $bmLink('life-policies', 'fa-file-medical', 'بیمه‌نامه‌ها و اقساط', 'پرداخت، تماس، رسید')
+                    . $bmLink('life-import', 'fa-file-import', 'ورود از اکسل', 'گزارشِ اقساطِ بیمه‌گر') . $bmLink('life-archive', 'fa-box-archive', 'بایگانیِ بیمه عمر'),
+                    $bmLink('life-settings', 'fa-sliders', 'تنظیماتِ بیمه عمر', 'ستون‌ها، رسید، ربات')];
+                if ($hlAccess) $bmSecs[] = ['درمان تکمیلی', 'قراردادها، اقساط، وصول، پاسارگاد', 'fa-stethoscope', '#059669', '#0e7490',
+                    $bmLink('hl-dash', 'fa-chart-pie', 'داشبوردِ مالیِ درمان', 'وصول، معوق، نمودار') . $bmLink('hl-contracts', 'fa-file-contract', 'قراردادها و اقساط', 'تعریفِ اقساطِ هر شرکت')
+                    . $bmLink('hl-pay', 'fa-hand-holding-dollar', 'دریافت‌ها', 'به ما یا مستقیم به بیمه‌گر') . $bmLink('hl-settle', 'fa-building-columns', 'پرداخت به پاسارگاد', 'تسویه‌ی وجوهِ دریافتی'),
+                    $bmLink('hl-settings', 'fa-sliders', 'تنظیماتِ درمان تکمیلی', 'روش‌های پرداخت، بیمه‌گرها')];
+                if ($mkAccess) $bmSecs[] = ['بازاریابی و فروش', 'بازاریابان، فروش، پاداش، حقوق', 'fa-bullhorn', '#c2410c', '#be185d',
+                    $bmLink('mk-dash', 'fa-chart-line', 'داشبوردِ فروش', 'کلی و هر بازاریاب') . $bmLink('mk-sales', 'fa-receipt', 'فروش‌ها', 'ثبت، محاسبه‌گر، اکسل') . $bmLink('mk-people', 'fa-user-tie', 'بازاریابان و کارشناسانِ تماس'),
+                    $bmLink('mk-settings', 'fa-sliders', 'تنظیماتِ بازاریابی', 'کارمزد، پاداش، سطح')];
+                if ($ltAccess) $bmSecs[] = ['اتوماسیونِ نامه‌ها', 'صادره، وارده، ارجاع، کارتابلِ شرکت‌ها', 'fa-envelope-open-text', '#4338ca', '#0891b2',
+                    $bmLink('lt-box', 'fa-inbox', 'کارتابلِ نامه‌ها', 'صادره، وارده، ارجاع') . $bmLink('lt-box', 'fa-pen-nib', 'نامه‌ی جدید', 'با سربرگ و شماره‌ی خودکار', false, '; window.Letters && Letters.compose({}); return false;'),
+                    $bmLink('lt-settings', 'fa-sliders', 'تنظیماتِ نامه‌ها', 'شماره، سربرگ، قالب، امضا')];
+                ?>
+                <?php if ($bmSecs): ?>
+                <div class="menu-group bm-mega">
+                    <button type="button" class="menu-trigger bm-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-shield-heart ml-1"></i> بیمه با ما
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel bm-panel">
+                        <div class="bm-top"><b><i class="fas fa-layer-group"></i> همه‌ی بخش‌ها به تفکیکِ رشته‌ی بیمه</b><small>هر بخش کارها و تنظیماتِ خودش را دارد</small></div>
+                        <div class="bm-grid">
+                        <?php foreach ($bmSecs as [$t, $sub, $ic, $c1, $c2, $links, $set]): ?>
+                            <div class="bm-sec" style="--c1:<?php echo $c1; ?>;--c2:<?php echo $c2; ?>">
+                                <div class="bm-head"><span class="bm-ic"><i class="fas <?php echo $ic; ?>"></i></span><div><b><?php echo $t; ?></b><small><?php echo $sub; ?></small></div></div>
+                                <div class="bm-links"><?php echo $links; ?></div>
+                                <?php if ($set !== ''): ?><div class="bm-set"><?php echo $set; ?></div><?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <!-- ===== صدور بیمه: کارکنان، شرکت‌ها، لیست صدور/صادره‌ها و گزارش بازدید ===== -->
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
@@ -969,7 +1053,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php endif; ?>
                     </div>
                 </div>
-                <?php echo $ltMenuHtml . $lifeMenuHtml . $mkMenuHtml; ?>
                 <?php endif; /* !$isParsian && !$isLife */ ?>
             </nav>
         </div>
@@ -2687,6 +2770,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endforeach; ?>
         <?php endif; ?>
 
+        <?php if ($hlAccess): ?>
+        <!-- ======================= مالیِ درمان تکمیلی - health.js ======================= -->
+        <?php foreach (['hl-dash', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'] as $__lt): ?>
+        <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root"></div></div>
+        <?php endforeach; ?>
+        <?php endif; ?>
         <?php if ($ltAccess): ?>
         <!-- ======================= اتوماسیون نامه‌ها - letters.js ======================= -->
         <?php foreach (['lt-box', 'lt-settings'] as $__lt): ?>
@@ -3941,6 +4030,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($lifeAccess): ?><script src="life.js?v=2"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=1"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
+    <?php if ($hlAccess): ?><script src="health.js?v=1"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -3967,7 +4057,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -4010,6 +4100,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (m && !el.closest('#perm-modal')) el.classList.toggle('perm-hide', !permCan(m[1]));
             });
             document.querySelectorAll('#main-nav .menu-sub').forEach(sub => sub.classList.toggle('perm-hide', !sub.querySelector('.nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .bm-sec').forEach(sec => sec.classList.toggle('perm-hide', !sec.querySelector('.bm-links .nav-item:not(.perm-hide)')));
             document.querySelectorAll('#main-nav .menu-group').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
             // دکمه‌های عملیات
             document.querySelectorAll('button, a[onclick], a[href*="action="], label[onclick], [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
@@ -8484,7 +8575,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         // آیکن و رنگِ هر گروهِ دسترسی
         function pmGroupIcon(name) {
-            const M = [['عمومی', 'fa-house', '#0ea5e9', '#6366f1'], ['کارکنان', 'fa-id-card', '#2563eb', '#0ea5e9'], ['شرکت', 'fa-building', '#4f46e5', '#7c3aed'],
+            const M = [['عمر', 'fa-heart-pulse', '#db2777', '#f97316'], ['درمان', 'fa-stethoscope', '#059669', '#0e7490'], ['بازاریابی', 'fa-bullhorn', '#c2410c', '#be185d'],
+                       ['نامه', 'fa-envelope-open-text', '#4338ca', '#0891b2'], ['مالیِ شرکت', 'fa-coins', '#16a34a', '#0d9488'],
+                       ['عمومی', 'fa-house', '#0ea5e9', '#6366f1'], ['کارکنان', 'fa-id-card', '#2563eb', '#0ea5e9'], ['شرکت', 'fa-building', '#4f46e5', '#7c3aed'],
                        ['صدور', 'fa-stamp', '#0d9488', '#059669'], ['بازدید', 'fa-clipboard-check', '#ea580c', '#f59e0b'], ['مالی', 'fa-coins', '#16a34a', '#0d9488'],
                        ['بایگانی', 'fa-box-archive', '#475569', '#0f172a'], ['پرسنلی', 'fa-user-clock', '#db2777', '#7c3aed']];
             const m = M.find(x => String(name).indexOf(x[0]) !== -1) || ['', 'fa-layer-group', '#6366f1', '#8b5cf6'];
@@ -8746,6 +8839,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.querySelectorAll('.menu-sub-trigger.sub-active').forEach(t => t.classList.remove('sub-active'));
             const activeSub = activeNav && activeNav.closest('.menu-sub');
             if (activeSub) activeSub.querySelector('.menu-sub-trigger').classList.add('sub-active');
+            // پیوندهای «بیمه با ما» که نسخه‌ی دومِ یک زبانه‌اند (data-bm)
+            document.querySelectorAll('[data-bm]').forEach(el => el.classList.toggle('active-sub', el.dataset.bm === tabId));
             // گروه‌های باز را ببند تا منو تمیز بماند
             document.querySelectorAll('.menu-group').forEach(g => {
                 g.classList.remove('open');
@@ -8781,6 +8876,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
+            if (tabId.indexOf('hl-') === 0 && window.Health) Health.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

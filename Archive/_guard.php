@@ -26,7 +26,7 @@ if (!empty($_COOKIE[session_name()])) {
         $__life = mb_strpos($rel, 'Archive/بایگانی/بایگانی بیمه عمر/') === 0;
         $__role = $_SESSION['role'] ?? '';
         // بایگانیِ نامه‌ها: مستقیم فقط مدیر کل (بقیه از داخلِ بخشِ نامه‌ها، با بررسیِ محرمانگی)
-        if (mb_strpos($rel, 'Archive/بایگانی/بایگانی نامه‌ها/') === 0 && $__role !== 'ADMIN') $allowed = false;
+        if ((mb_strpos($rel, 'Archive/بایگانی/بایگانی نامه‌ها/') === 0 || mb_strpos($rel, 'Archive/مالی/درمان تکمیلی/') === 0) && $__role !== 'ADMIN') $allowed = false;
         elseif ($__role === 'LIFE' && !$__life) $allowed = false;
         elseif ($__life && $__role !== 'ADMIN') {
             require_once $siteRoot . '/api/_perm.php';
@@ -38,7 +38,7 @@ if (!empty($_COOKIE[session_name()])) {
     session_write_close();
 }
 // ۲) نشستِ پنلِ شرکت‌ها: فقط پوشه‌هایی که نامِ شرکتِ خودش در مسیرشان است
-if (!$allowed && !empty($_COOKIE['bime_company_portal']) && mb_strpos($rel, 'Archive/بایگانی/بایگانی نامه‌ها/') !== 0) {
+if (!$allowed && !empty($_COOKIE['bime_company_portal']) && mb_strpos($rel, 'Archive/بایگانی/بایگانی نامه‌ها/') !== 0 && mb_strpos($rel, 'Archive/مالی/درمان تکمیلی/') !== 0) {
     session_name('bime_company_portal');
     session_start();
     if (!isset($pdo)) require $siteRoot . '/config/db.php';

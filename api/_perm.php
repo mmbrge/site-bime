@@ -17,25 +17,25 @@ function perm_catalog() {
             'dashboard' => ['داشبورد', ['view']],
             'tickets' => ['گفتگوها', ['view', 'create', 'edit', 'delete']],
         ]],
-        ['کارکنان (کسر از حقوق)', [
+        ['ثالث و بدنه › کارکنان (کسر از حقوق)', [
             'records' => ['مدیریت پرونده‌ها و معرفی‌نامه‌ها', $all],
             'health' => ['بازدید سلامت و مدارک', ['view', 'edit', 'export']],
             'approved-reviews' => ['بازدیدهای تاییدشده', ['view', 'export']],
             'cases' => ['صدور بیمه‌نامه‌ی کارکنان', ['view', 'edit', 'delete', 'export']],
         ]],
-        ['شرکت‌ها', [
+        ['ثالث و بدنه › شرکت‌ها', [
             'companies-requests' => ['درخواست‌های شرکتی', $all],
             'companies-inbox' => ['صندوق ورودی مدارک', ['view', 'edit', 'delete']],
             'companies-manage' => ['مدیریت شرکت‌ها', $all],
         ]],
-        ['مرکز صدور', [
+        ['ثالث و بدنه › مرکز صدور', [
             'issue-queue' => ['در حال صدور (ثبت صدور)', ['view', 'edit', 'export']],
             'issued-list' => ['صادره‌ها', ['view', 'edit', 'export']],
             'issue-group' => ['صدور گروهی (فایل بیمه‌گر)', ['view', 'create']],
             'import-archive' => ['بایگانی وارداتی (اکسلِ بیمه‌گر)', $all],
             'renewals' => ['اعلام تمدید (شرکت‌ها و اشخاص)', ['view', 'create', 'edit', 'export']],
         ]],
-        ['گزارش بازدید', [
+        ['ثالث و بدنه › گزارش بازدید', [
             'vr-build' => ['ساخت گزارش بازدید', ['view', 'create']],
             'vr-list' => ['گزارش‌های صادرشده', ['view', 'edit', 'delete', 'export']],
             'vr-settings' => ['تنظیمات گزارش', ['view', 'edit']],
@@ -49,6 +49,13 @@ function perm_catalog() {
             'life-archive' => ['بایگانی بیمه عمر', ['view', 'export']],
             'life-settings' => ['تنظیمات بیمه عمر (ستون‌ها و قالب رسید)', ['view', 'edit']],
         ]],
+        ['درمان تکمیلی (مالی، اقساط و تسویه با پاسارگاد)', [
+            'hl-dash' => ['داشبوردِ مالیِ درمان تکمیلی و معوقات', ['view', 'export']],
+            'hl-contracts' => ['قراردادها و اقساطِ درمان تکمیلی', ['view', 'create', 'edit', 'delete', 'export']],
+            'hl-pay' => ['دریافت‌های درمان تکمیلی (به ما / به بیمه‌گر)', ['view', 'create', 'edit', 'delete', 'export']],
+            'hl-settle' => ['پرداخت به پاسارگاد (تسویه با بیمه‌گر)', ['view', 'create', 'delete']],
+            'hl-settings' => ['تنظیماتِ مالیِ درمان تکمیلی', ['view', 'edit']],
+        ]],
         ['بازاریابی و فروش', [
             'mk-dash' => ['داشبورد فروشِ بازاریابان', ['view', 'export']],
             'mk-sales' => ['فروش‌های بازاریابان', ['view', 'create', 'edit', 'delete', 'export']],
@@ -60,7 +67,7 @@ function perm_catalog() {
             'lt-secret' => ['دیدنِ نامه‌های محرمانه و سرّی', ['view']],
             'lt-settings' => ['تنظیماتِ نامه‌ها (الگوی شماره، سربرگ، دسته‌ها، قالب‌ها، امضاها)', ['view', 'edit']],
         ]],
-        ['مالی', [
+        ['مالیِ شرکت‌ها (ثالث و بدنه)', [
             'fin-dashboard' => ['داشبورد مالی', ['view']],
             'fin-installments' => ['مرکز اقساط', $all],
             'fin-payments' => ['دریافت‌ها، پرداخت‌ها و چک‌ها', $all],
@@ -333,6 +340,13 @@ function perm_api_map() {
             'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
             'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit', 'bot_remind' => 'life-calls:create',
         ]],
+        'hl_actions' => ['pages' => ['hl-dash'], 'actions' => [
+            'bootstrap' => 'hl-dash:view|hl-contracts:view|hl-pay:view|hl-settle:view|hl-settings:view', 'dash' => 'hl-dash:view',
+            'contracts_list' => 'hl-contracts:view|hl-dash:view', 'contract_get' => 'hl-contracts:view|hl-pay:view', 'contract_save' => 'hl-contracts:create|hl-contracts:edit', 'contract_delete' => 'hl-contracts:delete',
+            'inst_list' => 'hl-contracts:view|hl-dash:view', 'pay_list' => 'hl-pay:view', 'pay_save' => 'hl-pay:create', 'pay_update' => 'hl-pay:edit', 'pay_void' => 'hl-pay:delete', 'pay_file' => 'hl-pay:view',
+            'settle_list' => 'hl-settle:view', 'settle_save' => 'hl-settle:create', 'settle_void' => 'hl-settle:delete', 'settle_file' => 'hl-settle:view',
+            'export' => 'hl-dash:export|hl-contracts:export|hl-pay:export', 'settings_get' => 'hl-settings:view', 'settings_save' => 'hl-settings:edit',
+        ]],
         'lt_actions' => ['pages' => ['lt-box'], 'actions' => [
             'bootstrap' => 'lt-box:view|lt-settings:view', 'list' => 'lt-box:view', 'export' => 'lt-box:export', 'detail' => 'lt-box:view', 'preview_html' => 'lt-box:view',
             'pdf' => 'lt-box:view', 'docx' => 'lt-box:view', 'file' => 'lt-box:view', 'letterhead_img' => 'lt-box:view|lt-settings:view', 'signer_img' => 'lt-box:view|lt-settings:view',
@@ -428,6 +442,9 @@ function perm_activity_labels() {
         'mk_actions.sale_save' => 'ثبت / ویرایشِ فروشِ بازاریاب', 'mk_actions.sale_void' => 'ابطالِ فروشِ بازاریاب', 'mk_actions.sale_delete' => 'حذفِ فروشِ بازاریاب', 'mk_actions.person_save' => 'ثبت / ویرایشِ بازاریاب',
         'mk_actions.person_delete' => 'حذفِ بازاریاب', 'mk_actions.types_save' => 'تغییرِ انواع و کارمزدِ بازاریابی', 'mk_actions.levels_save' => 'تغییرِ سطح‌های بازاریابی',
         'mk_actions.rewards_save' => 'تغییرِ قوانینِ پاداشِ مشتری', 'mk_actions.settings_save' => 'تغییرِ تنظیماتِ حقوقِ بازاریابان', 'mk_actions.export' => 'خروجیِ اکسلِ بازاریابی', 'mk_actions.pdf' => 'گزارشِ PDFِ بازاریابی',
+        'hl_actions.contract_save' => 'ثبت / ویرایشِ قراردادِ درمان تکمیلی', 'hl_actions.contract_delete' => 'حذفِ قراردادِ درمان تکمیلی', 'hl_actions.pay_save' => 'ثبتِ دریافتِ درمان تکمیلی',
+        'hl_actions.pay_void' => 'ابطالِ دریافتِ درمان تکمیلی', 'hl_actions.pay_update' => 'ویرایشِ دریافتِ درمان تکمیلی', 'hl_actions.settle_save' => 'ثبتِ پرداخت به پاسارگاد', 'hl_actions.settle_void' => 'ابطالِ پرداخت به پاسارگاد',
+        'hl_actions.export' => 'خروجیِ اکسلِ درمان تکمیلی', 'hl_actions.settings_save' => 'تغییرِ تنظیماتِ درمان تکمیلی',
         'lt_actions.save' => 'نوشتن / ویرایشِ نامه', 'lt_actions.issue' => 'صدورِ نامه (شماره‌ی خودکار)', 'lt_actions.send' => 'ارسالِ نامه به کارتابلِ شرکت', 'lt_actions.delete' => 'حذفِ نامه',
         'lt_actions.ref_add' => 'ارجاعِ نامه', 'lt_actions.word_upload' => 'بارگذاریِ نسخه‌ی Wordِ نامه', 'lt_actions.file_upload' => 'افزودنِ پیوستِ نامه', 'lt_actions.export' => 'خروجیِ اکسلِ دفترِ نامه‌ها',
         'lt_actions.settings_save' => 'تغییرِ تنظیماتِ نامه‌ها', 'lt_actions.counter_set' => 'تغییرِ شمارنده‌ی نامه‌ها',

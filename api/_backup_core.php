@@ -372,6 +372,9 @@ function bk_reset_sections() {
         'marketing' => ['label' => 'بازاریابی و فروش',
             'desc' => 'بازاریابان و کارشناسانِ تماس و همه‌ی فروش‌هایشان (انواعِ بیمه‌نامه، کارمزدها، سطح‌ها و قوانینِ پاداش می‌مانند)',
             'tables' => ['mk_people', 'mk_sales']],
+        'health' => ['label' => 'مالیِ درمان تکمیلی',
+            'desc' => 'قراردادهای درمان تکمیلی، اقساط، دریافت‌ها، پرداخت‌ها به بیمه‌گر و رسیدهایشان (تنظیمات می‌ماند)',
+            'tables' => ['hl_contracts', 'hl_installments', 'hl_payments', 'hl_alloc', 'hl_settlements']],
         'letters' => ['label' => 'اتوماسیونِ نامه‌ها',
             'desc' => 'همه‌ی نامه‌های صادره/وارده، پیوست‌ها، ارجاع‌ها، سابقه و بایگانیِ نامه‌ها (شماره‌ی نامه‌ها از اول؛ دسته‌ها، قالب‌ها، امضاها و تنظیمات می‌مانند)',
             'tables' => ['lt_letters', 'lt_files', 'lt_log', 'lt_refs', 'lt_counters']],
@@ -441,9 +444,10 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
             bk_rrmdir_contents($tmp, ['شرکت‌ها', 'چت شرکت‌ها', 'چت داخلی']);
         }
         if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($arch . '/بایگانی وارداتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
-        if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot)); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
+        if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot), ['درمان تکمیلی']); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
         if ($has('life')) bk_rrmdir_contents($arch . '/بایگانی بیمه عمر');
+        if ($has('health')) bk_rrmdir_contents(finance_root($siteRoot) . '/درمان تکمیلی');
         if ($has('letters')) bk_rrmdir_contents($arch . '/بایگانی نامه‌ها', ['_تنظیمات']);
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
         if ($has('other')) foreach (['/بایگانی', '/tmp_ocr', '/tmp_recon', '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
