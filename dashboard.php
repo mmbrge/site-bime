@@ -904,10 +904,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     $bmLink('life-dash', 'fa-chart-pie', 'داشبوردِ بیمه عمر', 'وصول، معوق، همکاران') . $bmLink('life-policies', 'fa-file-medical', 'بیمه‌نامه‌ها و اقساط', 'پرداخت، تماس، رسید')
                     . $bmLink('life-import', 'fa-file-import', 'ورود از اکسل', 'گزارشِ اقساطِ بیمه‌گر') . $bmLink('life-archive', 'fa-box-archive', 'بایگانیِ بیمه عمر'),
                     $bmLink('life-settings', 'fa-sliders', 'تنظیماتِ بیمه عمر', 'ستون‌ها، رسید، ربات')];
-                if ($hlAccess) $bmSecs[] = ['درمان تکمیلی', 'قراردادها، اقساط، وصول، پاسارگاد', 'fa-stethoscope', '#059669', '#0e7490',
-                    $bmLink('hl-dash', 'fa-chart-pie', 'داشبوردِ مالیِ درمان', 'وصول، معوق، نمودار') . $bmLink('hl-contracts', 'fa-file-contract', 'قراردادها و اقساط', 'تعریفِ اقساطِ هر شرکت')
-                    . $bmLink('hl-pay', 'fa-hand-holding-dollar', 'دریافت‌ها', 'به ما یا مستقیم به بیمه‌گر') . $bmLink('hl-settle', 'fa-building-columns', 'پرداخت به پاسارگاد', 'تسویه‌ی وجوهِ دریافتی'),
-                    $bmLink('hl-settings', 'fa-sliders', 'تنظیماتِ درمان تکمیلی', 'روش‌های پرداخت، بیمه‌گرها')];
+                if ($hlAccess) $bmSecs[] = ['درمان تکمیلی', 'صورتحساب ماهانه، وصول، رسیدها، پاسارگاد', 'fa-stethoscope', '#059669', '#0e7490',
+                    $bmLink('hl-dash', 'fa-chart-pie', 'داشبوردِ مالیِ درمان', 'وصول، معوق، نمودار') . $bmLink('hl-ledger', 'fa-table-list', 'دفترِ ماهانه', 'صورتحساب، پرسنل، وصول، واریز')
+                    . $bmLink('hl-receipts', 'fa-inbox', 'رسیدهای دریافتی', 'عکس‌های گروه‌های ربات') . $bmLink('hl-contracts', 'fa-file-contract', 'قراردادها و الحاقیه‌ها', 'بردرو، طرح‌ها، صورت‌حساب')
+                    . $bmLink('hl-members', 'fa-users', 'بیمه‌شدگان', 'لیستِ بیمه‌گر') . $bmLink('hl-pay', 'fa-hand-holding-dollar', 'دریافت‌ها', 'به ما یا مستقیم به بیمه‌گر') . $bmLink('hl-settle', 'fa-building-columns', 'واریز به پاسارگاد', 'تحویل و تسویه‌ی وجوه'),
+                    $bmLink('hl-settings', 'fa-sliders', 'تنظیماتِ درمان تکمیلی', 'گروه‌های ربات، روش‌ها، مهلت‌ها')];
                 if ($mkAccess) $bmSecs[] = ['بازاریابی و فروش', 'بازاریابان، فروش، پاداش، حقوق', 'fa-bullhorn', '#c2410c', '#be185d',
                     $bmLink('mk-dash', 'fa-chart-line', 'داشبوردِ فروش', 'کلی و هر بازاریاب') . $bmLink('mk-sales', 'fa-receipt', 'فروش‌ها', 'ثبت، محاسبه‌گر، اکسل') . $bmLink('mk-people', 'fa-user-tie', 'بازاریابان و کارشناسانِ تماس'),
                     $bmLink('mk-settings', 'fa-sliders', 'تنظیماتِ بازاریابی', 'کارمزد، پاداش، سطح')];
@@ -2772,7 +2773,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if ($hlAccess): ?>
         <!-- ======================= مالیِ درمان تکمیلی - health.js ======================= -->
-        <?php foreach (['hl-dash', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'] as $__lt): ?>
+        <?php foreach (['hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'] as $__lt): ?>
         <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root"></div></div>
         <?php endforeach; ?>
         <?php endif; ?>
@@ -4030,7 +4031,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($lifeAccess): ?><script src="life.js?v=3"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
-    <?php if ($hlAccess): ?><script src="health.js?v=1"></script><?php endif; ?>
+    <?php if ($hlAccess): ?><script src="health.js?v=2"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -4057,7 +4058,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';

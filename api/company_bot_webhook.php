@@ -700,9 +700,40 @@ if (!empty($update['callback_query'])) {
 }
 
 // ---------------------------------------------------------------------
+//  گروه‌ها
+// ---------------------------------------------------------------------
+function cbot_group_update($chat, $message) {
+    global $pdo;
+    $cid = (string)$chat['id']; $title = mb_substr(trim((string)($chat['title'] ?? '')), 0, 190);
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS cbot_groups (chat_id VARCHAR(40) PRIMARY KEY, title VARCHAR(190) NULL, last_seen_at DATETIME NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $pdo->prepare("INSERT INTO cbot_groups (chat_id, title, last_seen_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE title = VALUES(title), last_seen_at = NOW()")->execute([$cid, $title ?: null]);
+    } catch (Throwable $e) { error_log('[cbot_groups] ' . $e->getMessage()); }
+    if (!$message) return;
+    $text = trim(p2e_digits((string)($message['text'] ?? '')));
+    // «/id» در گروه: شناسه‌ی گروه برای تنظیماتِ «گروه‌های رسیدِ درمان»
+    if (preg_match('~^/(id|chatid)(@\S+)?$~i', $text) || $text === 'شناسه گروه') { say($cid, "🆔 شناسه‌ی این گروه: " . $cid . "\nدر پنل: تنظیماتِ سامانه ← درمان تکمیلی ← «گروه‌های رسیدِ پرداخت»."); return; }
+    if (empty($message['photo']) && empty($message['document'])) return;
+    require_once __DIR__ . '/_hl.php';
+    hl_ensure($pdo);
+    if (!hl_is_receipt_group($pdo, $cid)) return;
+    $dup = $pdo->prepare("SELECT COUNT(*) FROM hl_inbox WHERE chat_id = ? AND message_id = ?"); $dup->execute([$cid, (string)($message['message_id'] ?? '')]);
+    if (intval($dup->fetchColumn())) return;
+    $r = bot_save_incoming_file($message, hl_root() . '/.upload');
+    if (!$r['ok']) { say($cid, '⚠️ ' . $r['error']); return; }
+    $from = $message['from'] ?? [];
+    $id = hl_inbox_add($pdo, $r['path'], ['source' => 'BOT', 'chat_id' => $cid, 'chat_title' => $title, 'sender' => trim(($from['first_name'] ?? '') . ' ' . ($from['last_name'] ?? '')) . (!empty($from['username']) ? ' (@' . $from['username'] . ')' : ''),
+                                          'sender_id' => isset($from['id']) ? (string)$from['id'] : null, 'message_id' => (string)($message['message_id'] ?? ''), 'caption' => (string)($message['caption'] ?? '')]);
+    if ($id && intval(hl_settings($pdo)['receipt_ack'])) say($cid, '✅ رسید دریافت شد و برای ثبت در سامانه‌ی «بیمه با ما» قرار گرفت (شماره‌ی پیگیری ' . fa($id) . ').');
+}
+
+// ---------------------------------------------------------------------
 //  پیام‌ها
 // ---------------------------------------------------------------------
 $message = $update['message'] ?? null;
+// گروه‌ها: فهرستِ گروه‌هایی که ربات در آن‌هاست (برای تنظیمات) + رسیدهای پرداختِ درمان تکمیلی در گروه‌های تعیین‌شده
+$gchat = $message['chat'] ?? ($update['my_chat_member']['chat'] ?? null);
+if ($gchat && in_array($gchat['type'] ?? '', ['group', 'supergroup'], true)) { cbot_group_update($gchat, $message); exit; }
 if (!$message || ($message['chat']['type'] ?? 'private') !== 'private') exit;
 $chat = $message['chat']['id'];
 $fromId = $message['from']['id'] ?? null;
