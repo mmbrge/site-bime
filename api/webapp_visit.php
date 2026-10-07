@@ -8,6 +8,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_case_doc_upload.php';   // عکس/گالری/PDF برای مدارک + «چند مدرک در یک PDF»
 
 $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
@@ -131,36 +132,12 @@ try {
             $docKey = $_POST['doc_key'] ?? '';
             $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
             if (!isset($required[$docKey])) { echo json_encode(['ok' => false, 'error' => 'مورد انتخابی نامعتبر است.']); exit; }
-            if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) {
-                echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد. لطفاً دوباره تلاش کنید.']); exit;
-            }
-
-            $siteRoot = dirname(__DIR__);
-            $tmpDir = build_temp_plate_path($siteRoot, time(), $case['insured_national_id'] ?: $person['national_code'], $case['plate']);
-            if (!is_dir($tmpDir) && !@mkdir($tmpDir, 0777, true) && !is_dir($tmpDir)) {
-                echo json_encode(['ok' => false, 'error' => 'خطا در آماده‌سازی پوشه‌ی ذخیره‌سازی.']); exit;
-            }
-            $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION)) ?: 'jpg';
-            // نام فایل بر اساس عنوانِ فارسیِ خودِ مدرک + کد ملیِ شخص ذخیره می‌شود، نه timestamp.
-            // کد ملی لازم است چون چند پرونده/شخص ممکن است همزمان در پوشه‌ی موقت فایل داشته باشند
-            // و بدون آن نام‌ها با هم قاطی می‌شوند.
-            $docLabelForName = $required[$docKey] ?? $docKey;
-            $ownerNid = $case['insured_national_id'] ?: ($person['national_code'] ?? '');
-            $baseName = sanitize_folder_name("({$docLabelForName}) " . ($ownerNid ?: 'نامشخص'));
-            $destPath = unique_dest_path($tmpDir . '/' . $baseName . '.' . $ext);
-            if (!move_uploaded_file($_FILES['file']['tmp_name'], $destPath)) {
-                echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل. لطفاً دوباره تلاش کنید.']); exit;
-            }
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) compress_image_if_needed($destPath);
-            $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
-
-            // ارسالِ دوباره‌ی مدرکی که رد شده بود در تاریخچه‌ی بررسی ثبت می‌شود
-            $wasRej = $pdo->prepare("SELECT doc_label FROM case_documents WHERE case_id = ? AND doc_key = ? AND status = 'REJECTED' LIMIT 1");
-            $wasRej->execute([$caseId, $docKey]);
-            if (($rejLabel = $wasRej->fetchColumn()) !== false) review_log($pdo, 'CASE_DOC', 'RESUBMITTED', ['case_id' => $caseId, 'key' => $docKey, 'label' => $rejLabel, 'note' => 'ارسالِ دوباره توسط کاربر']);
-            $pdo->prepare("DELETE FROM case_documents WHERE case_id = ? AND doc_key = ? AND status IN ('PENDING','REJECTED')")->execute([$caseId, $docKey]);
-            $pdo->prepare("INSERT INTO case_documents (case_id, doc_key, doc_label, file_path, status) VALUES (?, ?, ?, ?, 'PENDING')")
-                ->execute([$caseId, $docKey, $required[$docKey], $relPath]);
+            if (case_doc_locked($pdo, $caseId, $docKey)) { echo json_encode(['ok' => false, 'error' => 'این مدرک ارسال یا تایید شده و تا مشخص شدنِ نتیجه قابل تغییر نیست.']); exit; }
+            // عکس (دوربین/گالری) یا PDF (تک‌صفحه یا چندصفحه) — نوعِ واقعیِ فایل از محتوایش تشخیص داده می‌شود
+            $chk = case_doc_check_upload($_FILES['file'] ?? null);
+            if (!$chk['ok']) { echo json_encode($chk, JSON_UNESCAPED_UNICODE); exit; }
+            $r = case_doc_store_user($pdo, dirname(__DIR__), $case, $person, $docKey, $required[$docKey], $_FILES['file']['tmp_name'], $chk['ext'], true);
+            if (!$r['ok']) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
 
             maybe_advance_case_status($pdo, $caseId);
             echo json_encode(['ok' => true]);
@@ -168,6 +145,28 @@ try {
             error_log('[webapp_visit upload_doc] ' . $e->getMessage());
             echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
         }
+        exit;
+    }
+
+    // =====================================================================
+    //  «چند مدرک در یک PDF»: صفحه‌ها جدا و پیش‌نمایش می‌شوند؛ کاربر نوعِ هر صفحه را انتخاب می‌کند
+    // =====================================================================
+    if (in_array($action, ['split_upload', 'split_page', 'split_assign'], true)) {
+        $tok = $_POST['token'] ?? ($_GET['token'] ?? ($jsonBody['token'] ?? ''));
+        $person = resolve_visit_person($pdo, $tok);
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        $siteRoot = dirname(__DIR__);
+        if ($action === 'split_page') { case_doc_split_serve($siteRoot, $person, $_GET['job'] ?? '', intval($_GET['n'] ?? 0), $_GET['kind'] ?? 'png'); exit; }
+        $caseId = intval($_POST['case_id'] ?? ($jsonBody['case_id'] ?? 0));
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN'");
+        $stmt->execute([$caseId, $person['id']]);
+        $case = $stmt->fetch();
+        if (!$case) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        if ($action === 'split_upload') { echo json_encode(case_doc_split_upload($pdo, $siteRoot, $person, $_FILES['file'] ?? null), JSON_UNESCAPED_UNICODE); exit; }
+        $required = get_required_docs_v2($case['insurance_type'], $case['ownership_choice'], $case['prev_body_insurance'], $case['insured_relationship']);
+        $r = case_doc_split_assign($pdo, $siteRoot, $case, $person, $jsonBody['job'] ?? '', $jsonBody['items'] ?? [], $required);
+        if (!empty($r['ok'])) maybe_advance_case_status($pdo, $caseId);
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -135,6 +135,13 @@ async function initCamera() {
 const IS_IOS = !!(window.CameraLib && CameraLib.isIOS());
 function iosShot() {
   CameraLib.nativeCapture(async file => {
+    // بازدیدِ سلامت: فقط عکسِ همین لحظه (فایلِ قدیمی یعنی از گالری آمده)
+    if (MODE === 'health' && file && file.lastModified && Date.now() - file.lastModified > 3 * 60 * 1000) {
+      document.getElementById('error-title').textContent = 'فقط عکس با دوربین';
+      document.getElementById('error-text').textContent = 'عکسِ بازدید باید همین الان با دوربین گرفته شود؛ انتخاب از گالری مجاز نیست.';
+      showStage('error');
+      return;
+    }
     showStage('loading');
     capturedBlob = await CameraLib.shrink(file, 4000, CameraLib.UPLOAD_MAX);
     document.getElementById('shot-img').src = URL.createObjectURL(capturedBlob);

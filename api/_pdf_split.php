@@ -179,14 +179,14 @@ function pdf_split_job_create($pdo, $siteRoot, $file, $ownerId) {
     if (empty($r['ok'])) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => $r['error'] ?? 'جدا کردنِ صفحه‌ها ممکن نشد.']; }
     @unlink($src);
     $name = pdf_split_safe_name($file['name']);
-    @file_put_contents($dir . '/job.json', json_encode(['owner' => intval($ownerId), 'pages' => intval($r['pages']), 'name' => $name], JSON_UNESCAPED_UNICODE));
+    @file_put_contents($dir . '/job.json', json_encode(['owner' => (string)$ownerId, 'pages' => intval($r['pages']), 'name' => $name], JSON_UNESCAPED_UNICODE));
     return ['ok' => true, 'token' => $token, 'pages' => intval($r['pages']), 'name' => $name];
 }
 function pdf_split_job_info($siteRoot, $token, $ownerId) {
     $dir = pdf_split_job_dir($siteRoot, $token);
     if (!$dir) return null;
     $j = json_decode((string)@file_get_contents($dir . '/job.json'), true);
-    if (!is_array($j) || intval($j['owner'] ?? 0) !== intval($ownerId)) return null;
+    if (!is_array($j) || (string)($j['owner'] ?? '') !== (string)$ownerId || (string)$ownerId === '') return null;
     $j['dir'] = $dir;
     return $j;
 }

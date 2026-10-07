@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ثبت درخواست بیمه</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<script src="../doc-split.js?v=1"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -305,18 +306,27 @@
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:90%"></div></div></div>
   <p class="desc" style="margin-bottom:12px;" id="docs-hint">هرکدام از موارد زیر را که آماده دارید انتخاب و عکس/فایل آن را ارسال کنید:</p>
   <div class="doc-grid" id="docs-grid"></div>
+  <!-- «چند مدرک در یک PDF» (webapp/doc-split.js) -->
+  <div id="multi-pdf-wrap" style="display:none; margin-top:12px; background:rgba(245,158,11,.12); border:1px dashed rgba(245,158,11,.6); border-radius:14px; padding:12px; text-align:center;">
+    <p style="font-size:11px; color:#fcd34d; margin:0 0 8px; line-height:1.8;">مدارکتان را در یک فایلِ PDF دارید؟ بفرستید؛ صفحه‌ها را نشان می‌دهیم تا بگویید هر صفحه کدام مدرک است.</p>
+    <button class="btn btn-outline" style="margin-top:0;" onclick="document.getElementById('multi-pdf-input').click()">📚 ارسال چند مدرک در یک PDF</button>
+    <input type="file" id="multi-pdf-input" accept="application/pdf,.pdf" style="display:none;" onchange="onMultiPdfPicked(event)">
+  </div>
   <div id="docs-continue-wrap"></div>
 
   <!-- گزینه‌های دریافت عکس (وقتی یک مدرک انتخاب شود نمایش داده می‌شود) -->
   <div id="doc-capture-area" style="display:none; margin-top:14px;">
     <p class="desc" id="doc-capture-title" style="margin-bottom:10px;"></p>
-    <div class="btn-row">
-      <button class="btn btn-outline" onclick="pickDocFromCamera()">🖼 انتخاب از گالری</button>
-      <button class="btn btn-outline" onclick="pickDocFromGallery()">📁 انتخاب فایل</button>
+    <!-- اولویت با دوربین است؛ گالری و PDF (تک‌صفحه یا چندصفحه) هم برای مدارک مجاز است -->
+    <button class="btn btn-primary" onclick="pickDocFromCamera()">📸 گرفتن عکس با دوربین</button>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-outline" onclick="pickDocFromGallery()">🖼 انتخاب از گالری</button>
+      <button class="btn btn-outline" onclick="pickDocPdf()">📄 ارسال PDF</button>
     </div>
-    <button class="btn btn-primary" onclick="openDocCameraInBrowser()" style="margin-top:10px;">📷 گرفتن عکس زنده با دوربین (در مرورگر)</button>
+    <button class="btn btn-outline" onclick="openDocCameraInBrowser()" style="margin-top:10px;">📷 دوربینِ باکیفیت‌تر (در مرورگر)</button>
     <input type="file" id="doc-camera-input" accept="image/*" capture="environment" onchange="onDocFileSelected(event)">
-    <input type="file" id="doc-gallery-input" accept="image/*,application/pdf" onchange="onDocFileSelected(event)">
+    <input type="file" id="doc-gallery-input" accept="image/*" onchange="onDocFileSelected(event)">
+    <input type="file" id="doc-pdf-input" accept="application/pdf,.pdf" onchange="onDocFileSelected(event)">
     <div id="doc-upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
   </div>
 </div>
@@ -817,6 +827,8 @@ async function renderDocsGrid() {
             const statusLine = d.status ? `<span style="font-size:9.5px;opacity:.8;">${STATUS_LABEL[d.status]}</span>` : '';
             return `<div class="doc-btn ${cls}" onclick="selectDoc('${d.key}')"><span>${d.label}</span>${statusLine}${d.status==='REJECTED' && d.reject_reason ? `<span style="font-size:9px;color:#fca5a5;">${d.reject_reason}</span>`:''}</div>`;
         }).join('');
+        const openCount = docsData.filter(d => d.status !== 'APPROVED' && d.status !== 'PENDING').length;
+        document.getElementById('multi-pdf-wrap').style.display = openCount > 1 ? 'block' : 'none';
         if (data.all_done) {
             document.getElementById('docs-hint').innerHTML = '✅ همه‌ی مدارک لازم دریافت شد.';
             document.getElementById('docs-continue-wrap').innerHTML = '<button class="btn btn-primary" onclick="goToScreen(\'review\')">ادامه به بازبینی نهایی ›</button>';
@@ -863,6 +875,14 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function pickDocFromGallery() { document.getElementById('doc-gallery-input').click(); }
+function pickDocPdf() { document.getElementById('doc-pdf-input').click(); }
+// «چند مدرک در یک PDF»
+function onMultiPdfPicked(ev) {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    DocSplit.start({ api: API, token: TOKEN, caseId, docs: docsData, file, toast: showToast, onDone: () => renderDocsGrid() });
+}
 function onDocFileSelected(ev) {
     const file = ev.target.files[0];
     if (!file) return;
@@ -873,7 +893,8 @@ async function uploadDocFile(file) {
     if (!activeDocKey) return;
     document.getElementById('doc-upload-progress-note').style.display = 'block';
     const fd = new FormData();
-    fd.append('token', TOKEN); fd.append('case_id', caseId); fd.append('doc_key', activeDocKey); fd.append('file', file, 'doc.jpg');
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    fd.append('token', TOKEN); fd.append('case_id', caseId); fd.append('doc_key', activeDocKey); fd.append('file', file, isPdf ? 'doc.pdf' : (file.name || 'doc.jpg'));
     try {
         const res = await fetch(`${API}?action=upload_doc`, { method:'POST', body: fd });
         const data = await res.json();

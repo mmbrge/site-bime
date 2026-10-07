@@ -254,6 +254,21 @@ try {
             echo json_encode(['ok' => false, 'error' => $big ? 'حجم عکس بیش از حد مجاز است؛ لطفاً دوباره عکس بگیرید.' : 'عکس کامل دریافت نشد؛ لطفاً دوباره تلاش کنید.']); exit;
         }
 
+        // بازدیدِ سلامت فقط با دوربین: فایل باید عکس باشد (نه PDF و ...) و اگر تاریخِ عکاسیِ EXIF دارد،
+        // نباید قدیمی باشد (عکسِ گالری که روزها پیش گرفته شده پذیرفته نمی‌شود)
+        $imgInfo = @getimagesize($_FILES['photo']['tmp_name']);
+        if (!$imgInfo || !in_array($imgInfo[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) {
+            echo json_encode(['ok' => false, 'error' => 'فقط عکسی که با دوربین گرفته می‌شود پذیرفته است.']); exit;
+        }
+        if ($imgInfo[2] === IMAGETYPE_JPEG && function_exists('exif_read_data')) {
+            $exif = @exif_read_data($_FILES['photo']['tmp_name']);
+            $shot = $exif['DateTimeOriginal'] ?? ($exif['DateTimeDigitized'] ?? null);
+            $shotTs = $shot ? strtotime(str_replace(':', '-', substr($shot, 0, 10)) . substr($shot, 10)) : false;
+            if ($shotTs && $shotTs < time() - 86400) {
+                echo json_encode(['ok' => false, 'error' => 'این عکس قدیمی است؛ عکسِ بازدید باید همین الان با دوربین گرفته شود.']); exit;
+            }
+        }
+
         $plate = resolve_plate($pdo, $session);
         $stmt = $pdo->prepare("SELECT national_code FROM persons WHERE id = ?");
         $stmt->execute([$session['person_id']]);

@@ -71,8 +71,11 @@
   }
   .fsd-shutter:active { transform: scale(.92); padding: 7px; }
   .fsd-shutter:disabled { opacity: .5; }
-  .fsd-gallery { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.2); border: none;
-                 color: #fff; font-size: 19px; cursor: pointer; flex-shrink: 0; }
+  .fsd-gallery { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.2); border: none;
+                 color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+  .fsd-gallery small { font-size: 9px; font-weight: 800; margin-top: 2px; }
+  .multi-pdf { margin-top: 14px; background: rgba(245,158,11,.12); border: 1px dashed rgba(245,158,11,.6); border-radius: 14px; padding: 12px; text-align: center; }
+  .multi-pdf p { font-size: 11px; color: #fcd34d; margin: 0 0 8px; line-height: 1.8; }
   .fsd-btn { border: none; border-radius: 14px; padding: 12px 18px; font-size: 13px; font-weight: 800; cursor: pointer; }
   .fsd-confirm { background: #10b981; color: #fff; }
   .fsd-retake { background: rgba(255,255,255,.22); color: #fff; }
@@ -106,6 +109,12 @@
 
 <p class="desc" id="docs-hint">در حال بارگذاری...</p>
 <div class="doc-grid" id="docs-grid"></div>
+<!-- «چند مدرک در یک PDF»: هر صفحه جدا نشان داده می‌شود و کاربر نوعِ هر صفحه را انتخاب می‌کند (webapp/doc-split.js) -->
+<div class="multi-pdf" id="multi-pdf-wrap" style="display:none;">
+  <p>مدارکتان را در یک فایلِ PDF دارید؟ بفرستید؛ صفحه‌ها را نشان می‌دهیم تا بگویید هر صفحه کدام مدرک است.</p>
+  <button class="btn btn-outline" style="margin-top:0;" onclick="document.getElementById('multi-pdf-input').click()">📚 ارسال چند مدرک در یک PDF</button>
+  <input type="file" id="multi-pdf-input" accept="application/pdf,.pdf" style="display:none;" onchange="onMultiPdfPicked(event)">
+</div>
 <div id="docs-continue-wrap"></div>
 
 <!-- ==================== دوربین تمام‌صفحه (عمودی) برای مدارک ==================== -->
@@ -130,9 +139,9 @@
   <div class="fsd-zoom" id="fsd-zoom-wrap"></div>
 
   <div class="fsd-bottom" id="fsd-capture-bar">
-    <button class="fsd-gallery" onclick="pickFromGallery()" title="گالری">🖼</button>
+    <button class="fsd-gallery" onclick="pickFromGallery()" title="انتخاب از گالری">🖼<small>گالری</small></button>
     <button class="fsd-shutter" id="fsd-shutter" onpointerdown="takeShot(event)" title="گرفتن عکس"></button>
-    <button class="fsd-gallery" onclick="pickFromFile()" title="فایل">📁</button>
+    <button class="fsd-gallery" onclick="pickFromFile()" title="ارسال PDF">📄<small>PDF</small></button>
   </div>
   <div class="fsd-bottom" id="fsd-preview-bar" style="display:none;">
     <button class="fsd-btn fsd-retake" onclick="retake()">🔁 دوباره</button>
@@ -166,6 +175,7 @@
   <p class="desc" id="capture-title" style="margin:0 0 8px;"></p>
   <video id="video" autoplay playsinline muted style="display:none;"></video>
   <img id="shot-img" class="shot" src="" style="display:none;">
+  <button class="btn btn-primary" id="ios-cam-btn" style="display:none;" onclick="iosCamFromChoice()">📸 گرفتن عکس با دوربین</button>
   <div id="live-controls" style="display:none;">
     <button class="btn btn-primary" onclick="takeShot()">📸 گرفتن عکس</button>
   </div>
@@ -175,16 +185,17 @@
   </div>
   <div class="btn-row" style="margin-top:8px;">
     <button class="btn btn-outline" onclick="pickFromGallery()">🖼 انتخاب از گالری</button>
-    <button class="btn btn-outline" onclick="pickFromFile()">📁 انتخاب فایل</button>
+    <button class="btn btn-outline" onclick="pickFromFile()">📄 ارسال PDF</button>
   </div>
   <button class="btn btn-outline" onclick="cancelCapture()" style="margin-top:8px;">انصراف</button>
-  <input type="file" id="gallery-input" accept="image/*" capture="environment" style="display:none;" onchange="onFilePicked(event)">
-  <input type="file" id="file-input" accept="image/*,application/pdf" style="display:none;" onchange="onFilePicked(event)">
+  <input type="file" id="gallery-input" accept="image/*" style="display:none;" onchange="onFilePicked(event)">
+  <input type="file" id="file-input" accept="application/pdf,.pdf,image/*" style="display:none;" onchange="onFilePicked(event)">
 </div>
 <canvas id="canvas"></canvas>
 <div class="toast" id="toast"></div>
 
 <script src="../camera-lib.js?v=3"></script>
+<script src="../doc-split.js?v=1"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -265,9 +276,10 @@ function renderGrid() {
             if (secondsLeft <= 0) { clearInterval(countdownTimer); returnToVisitHub(); }
         }, 1000);
     } else {
-        document.getElementById('docs-hint').textContent = 'هرکدام از موارد زیر را که آماده دارید انتخاب و عکس آن را ارسال کنید:';
+        document.getElementById('docs-hint').textContent = 'روی هر مدرک بزنید و عکسش را بگیرید؛ از گالری هم می‌شود انتخاب کرد یا PDF فرستاد:';
         document.getElementById('docs-continue-wrap').innerHTML = '';
     }
+    document.getElementById('multi-pdf-wrap').style.display = (!allSubmitted && docsData.filter(d => d.status !== 'APPROVED' && d.status !== 'PENDING').length > 1) ? 'block' : 'none';
 }
 function returnToVisitHub() { location.href = `index_visit.html?t=${encodeURIComponent(TOKEN)}`; }
 
@@ -317,8 +329,19 @@ function openIosDocCamera(doc) {
     });
 }
 
+// آیفون: دوربینِ داخلِ صفحه نداریم؛ پنجره‌ی انتخاب با «دوربین» در اولویت، و گالری/PDF کنارش
+function showIosChoice(doc) {
+    activeDocKey = doc.key;
+    document.getElementById('ios-cam-btn').style.display = 'flex';
+    document.getElementById('capture-area').style.display = 'block';
+    document.getElementById('capture-area').scrollIntoView({behavior:'smooth'});
+}
+function iosCamFromChoice() {
+    const doc = docsData.find(d => d.key === activeDocKey);
+    if (doc) openIosDocCamera(doc);
+}
 async function openDocFullscreen(doc) {
-    if (IS_IOS) { openIosDocCamera(doc); return; }
+    if (IS_IOS) { showIosChoice(doc); return; }
     document.getElementById('doc-curtain').style.display = 'flex';
     try {
         stopStream();
@@ -464,8 +487,16 @@ function onFilePicked(ev) {
     capturedBlob = file;
     confirmUpload();
 }
+// «چند مدرک در یک PDF»
+function onMultiPdfPicked(ev) {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    DocSplit.start({ api: API, token: TOKEN, caseId: CASE_ID, docs: docsData, file, toast: showToast, onDone: () => loadDocs() });
+}
 function cancelCapture() {
     stopStream();
+    document.getElementById('ios-cam-btn').style.display = 'none';
     capturedBlob = null; activeDocKey = null;
     document.getElementById('capture-area').style.display = 'none';
     document.getElementById('video').style.display = 'none';
@@ -499,7 +530,9 @@ async function confirmUpload() {
     // عکسِ بزرگ‌تر از سقفِ ارسالِ سرور پیش از ارسال کوچک می‌شود (PDF دست نمی‌خورد)
     if (window.CameraLib) capturedBlob = await CameraLib.fitForUpload(capturedBlob, 4000);
     const fd = new FormData();
-    fd.append('token', TOKEN); fd.append('case_id', CASE_ID); fd.append('doc_key', activeDocKey); fd.append('file', capturedBlob, 'doc.jpg');
+    // نامِ واقعیِ فایل (PDF/عکسِ گالری) فرستاده می‌شود؛ سرور هم نوع را از محتوای فایل تشخیص می‌دهد
+    const isPdf = capturedBlob.type === 'application/pdf' || /\.pdf$/i.test(capturedBlob.name || '');
+    fd.append('token', TOKEN); fd.append('case_id', CASE_ID); fd.append('doc_key', activeDocKey); fd.append('file', capturedBlob, isPdf ? 'doc.pdf' : (capturedBlob.name || 'doc.jpg'));
     try {
         const data = await uploadDocWithProgress(`${API}?action=upload_doc`, fd);
         if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); return; }
@@ -527,7 +560,7 @@ async function confirmUpload() {
     await loadDocs();
     const first = docsData.find(d => d.status !== 'APPROVED' && d.status !== 'PENDING');
     // روی آیفون دوربین بدون لمسِ کاربر باز نمی‌شود؛ کاربر روی مدرک می‌زند
-    if (first && IS_IOS) { showToast('روی هر مدرک بزنید تا دوربینِ آیفون باز شود.'); return; }
+    if (first && IS_IOS) { showToast('روی هر مدرک بزنید؛ دوربین، گالری یا PDF را انتخاب کنید.'); return; }
     if (first) { activeDocKey = first.key; await openDocFullscreen(first); }
 })();
 </script>

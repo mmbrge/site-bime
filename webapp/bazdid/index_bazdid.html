@@ -440,16 +440,13 @@
 
     <!-- اگر دوربین زنده در دسترس نبود (مثلاً داخل WebView مینی‌اپ)، این گزینه‌ها نمایش داده می‌شود -->
     <div id="capture-choice" class="capture-area">
-      <p class="desc" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">دسترسی مستقیم به دوربین ممکن نشد؛ از یکی از این روش‌ها استفاده کنید:</p>
-      <div class="btn-row">
-        <button class="btn btn-outline" onclick="pickFromCamera()">🖼 انتخاب از گالری</button>
-        <button class="btn btn-outline" onclick="pickFromGallery()">📁 انتخاب فایل</button>
-      </div>
-      <button class="btn btn-primary" onclick="openCameraInBrowser()" style="margin-top:10px;">📷 گرفتن عکس زنده با دوربین (در مرورگر)</button>
+      <!-- بازدیدِ سلامت فقط و فقط با دوربین (گالری و فایل عمداً حذف شده‌اند) -->
+      <p class="desc" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">دوربینِ داخلِ صفحه باز نشد. عکسِ بازدید فقط با دوربین گرفته می‌شود (انتخاب از گالری مجاز نیست):</p>
+      <button class="btn btn-primary" onclick="pickFromCamera()">📸 گرفتن عکس با دوربینِ گوشی</button>
+      <button class="btn btn-outline" onclick="openCameraInBrowser()" style="margin-top:10px;">📷 دوربینِ زنده در مرورگر</button>
       <div id="upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
     </div>
     <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="onFileSelected(event)">
-    <input type="file" id="gallery-input" accept="image/*" onchange="onFileSelected(event)">
 
     <!-- برای مرحله‌ی چندعکسی -->
     <div id="multi-actions" style="display:none;">
@@ -910,6 +907,7 @@ async function waitForAttempt() {
 function openIosCamera() {
     // باید هم‌زمان با لمسِ کاربر باشد (پیش از هر await)
     CameraLib.nativeCapture(async file => {
+        if (!isFreshCameraFile(file)) { rejectStaleFile(); return; }
         if (!(await waitForAttempt())) { showToast('شروع بازدید انجام نشد؛ دوباره تلاش کنید.'); return; }
         setIosBusy(true);
         try {
@@ -1348,11 +1346,19 @@ document.addEventListener('visibilitychange', async () => {
   } catch(e) {}
 });
 
-function pickFromGallery() { document.getElementById('gallery-input').click(); }
+// عکسِ بازدید باید «همین الان» با دوربین گرفته شده باشد. بعضی گوشی‌ها با وجودِ capture باز هم
+// گالری را پیشنهاد می‌کنند؛ فایلی که زمانِ ساختش چند دقیقه قبل است، یعنی از گالری آمده و پذیرفته نمی‌شود.
+const CAMERA_FRESH_MS = 3 * 60 * 1000;
+function isFreshCameraFile(file) {
+  if (!file || !/^image\//i.test(file.type || 'image/')) return false;
+  return !file.lastModified || (Date.now() - file.lastModified) < CAMERA_FRESH_MS;
+}
+function rejectStaleFile() { showToast('⚠️ عکسِ بازدید باید همین الان با دوربین گرفته شود؛ انتخاب از گالری مجاز نیست.'); }
 function onFileSelected(ev) {
   const file = ev.target.files[0];
   if (!file) return;
   ev.target.value = '';
+  if (!isFreshCameraFile(file)) { rejectStaleFile(); return; }
   uploadPhoto(file);
 }
 
