@@ -26,7 +26,11 @@ if (perm_real_role() !== 'ADMIN') {
     if ($__pp === null) $__pp = perm_role_defaults(perm_real_role());
     $fmLifeOk = perm_allows($__pp, 'life-archive:view');
 }
+// «بایگانی نامه‌ها» (شاملِ نامه‌های محرمانه) فقط برای مدیر کل؛ بقیه از بخشِ نامه‌ها
+$fmLettersOk = perm_real_role() === 'ADMIN';
 function fm_hidden($archiveRoot, $abs) {
+    $lt = $archiveRoot . '/بایگانی نامه‌ها';
+    if (empty($GLOBALS['fmLettersOk']) && ($abs === $lt || strpos($abs, $lt . '/') === 0)) return true;
     if (!empty($GLOBALS['fmLifeOk'])) return false;
     $life = $archiveRoot . '/بایگانی بیمه عمر';
     return $abs === $life || strpos($abs, $life . '/') === 0;

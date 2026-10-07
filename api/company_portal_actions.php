@@ -214,6 +214,9 @@ try {
                                        . ($r['policy_number'] ? ' - شماره ' . $r['policy_number'] : ''),
                              'at' => $r['issued_at']];
             }
+            // نامه‌های تازه در «اتوماسیون نامه‌ها»
+            require_once __DIR__ . '/_lt.php';
+            foreach (lt_portal_events($pdo, $since, $until, array_map('intval', $allowedCompanyIds)) as $e) $events[] = $e;
             usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
             return $events;
         };

@@ -116,6 +116,12 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
         }
     } catch (Throwable $e) { /* ... */ }
 
+    // اتوماسیونِ نامه‌ها: پاسخ‌های تازه‌ی شرکت‌ها و نامه‌هایی که به من ارجاع شده
+    try {
+        require_once __DIR__ . '/_lt.php';
+        foreach (lt_staff_events($pdo, $since, $until, $userId) as $e) $add($e['type'], $e['title'], $e['body'], $e['at'], $e['tab']);
+    } catch (Throwable $e) { /* ... */ }
+
     usort($events, fn($a, $b) => strcmp($a['at'], $b['at']));
     return $events;
 }

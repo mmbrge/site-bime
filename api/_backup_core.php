@@ -347,7 +347,7 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
 function bk_reset_keep_tables() {
     return ['users', 'system_settings', 'finance_settings', 'invoice_templates',
             'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
-            'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards'];
+            'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards', 'lt_categories', 'lt_templates', 'lt_signers'];
 }
 function bk_reset_sections() {
     return [
@@ -372,6 +372,9 @@ function bk_reset_sections() {
         'marketing' => ['label' => 'بازاریابی و فروش',
             'desc' => 'بازاریابان و کارشناسانِ تماس و همه‌ی فروش‌هایشان (انواعِ بیمه‌نامه، کارمزدها، سطح‌ها و قوانینِ پاداش می‌مانند)',
             'tables' => ['mk_people', 'mk_sales']],
+        'letters' => ['label' => 'اتوماسیونِ نامه‌ها',
+            'desc' => 'همه‌ی نامه‌های صادره/وارده، پیوست‌ها، ارجاع‌ها، سابقه و بایگانیِ نامه‌ها (شماره‌ی نامه‌ها از اول؛ دسته‌ها، قالب‌ها، امضاها و تنظیمات می‌مانند)',
+            'tables' => ['lt_letters', 'lt_files', 'lt_log', 'lt_refs', 'lt_counters']],
         'messages' => ['label' => 'پیام‌ها، اعلان‌ها و لاگ‌ها',
             'desc' => 'تیکت‌ها، چت داخلی، اعلان‌ها، لاگ‌های ورود و کارها، کدهای ورود و درخواست‌های بازیابی رمز',
             'tables' => ['messages', 'staff_chat_messages', 'tickets', 'ticket_messages', 'admin_notifications', 'app_notifications', 'user_notifications',
@@ -441,6 +444,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot)); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
         if ($has('life')) bk_rrmdir_contents($arch . '/بایگانی بیمه عمر');
+        if ($has('letters')) bk_rrmdir_contents($arch . '/بایگانی نامه‌ها', ['_تنظیمات']);
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
         if ($has('other')) foreach (['/بایگانی', '/tmp_ocr', '/tmp_recon', '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
     }

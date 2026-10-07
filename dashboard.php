@@ -47,6 +47,22 @@ $mkMenuHtml = !$mkAccess ? '' : '
                     </div>
                 </div>
 ';
+// منوی «اتوماسیون نامه‌ها»: مدیر کل و دسترسی‌های سفارشی
+$ltAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
+$ltMenuHtml = !$ltAccess ? '' : '
+                <div class="menu-group">
+                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
+                        <i class="fas fa-envelope-open-text ml-1"></i> نامه‌ها
+                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
+                    </button>
+                    <div class="menu-panel">
+                        <a href="#" onclick="switchTab(\'lt-box\')" id="nav-lt-box" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-inbox ml-2"></i> کارتابل نامه‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">صادره، وارده، ارجاع</small></a>
+                        <a href="#" onclick="switchTab(\'lt-box\'); window.Letters && Letters.compose({}); return false;" class="nav-item menu-link"><i class="fas fa-pen-nib ml-2"></i> نامه‌ی جدید <small class="text-[10px] text-slate-400 font-bold mr-1">با سربرگ و شماره‌ی خودکار</small></a>
+                        <div class="menu-sep"></div>
+                        <a href="#" onclick="switchTab(\'lt-settings\')" id="nav-lt-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات نامه‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">شماره، سربرگ، قالب، امضا</small></a>
+                    </div>
+                </div>
+';
 $lifeMenuHtml = !$lifeAccess ? '' : '
                 <div class="menu-group">
                     <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
@@ -953,7 +969,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <?php endif; ?>
                     </div>
                 </div>
-                <?php echo $lifeMenuHtml . $mkMenuHtml; ?>
+                <?php echo $ltMenuHtml . $lifeMenuHtml . $mkMenuHtml; ?>
                 <?php endif; /* !$isParsian && !$isLife */ ?>
             </nav>
         </div>
@@ -2671,6 +2687,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endforeach; ?>
         <?php endif; ?>
 
+        <?php if ($ltAccess): ?>
+        <!-- ======================= اتوماسیون نامه‌ها - letters.js ======================= -->
+        <?php foreach (['lt-box', 'lt-settings'] as $__lt): ?>
+        <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root"></div></div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+
         <div class="footer-credit mt-auto">
             <div class="footer-box group/author hover-target relative">
                 <span>طراحی و توسعه سیستم :</span>
@@ -3917,6 +3940,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="renewals.js?v=2"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=2"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=1"></script><?php endif; ?>
+    <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
@@ -3943,7 +3967,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings'];
         function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
@@ -8756,6 +8780,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
+            if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();

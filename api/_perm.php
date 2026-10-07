@@ -55,6 +55,11 @@ function perm_catalog() {
             'mk-people' => ['بازاریابان و کارشناسانِ تماس', ['view', 'create', 'edit', 'delete']],
             'mk-settings' => ['تنظیمات بازاریابی (کارمزد، پاداش، سطح، حقوق)', ['view', 'edit']],
         ]],
+        ['اتوماسیون نامه‌ها', [
+            'lt-box' => ['کارتابل و دفترِ نامه‌ها (نوشتن، صدور، ارجاع، Word/PDF)', ['view', 'create', 'edit', 'delete', 'export']],
+            'lt-secret' => ['دیدنِ نامه‌های محرمانه و سرّی', ['view']],
+            'lt-settings' => ['تنظیماتِ نامه‌ها (الگوی شماره، سربرگ، دسته‌ها، قالب‌ها، امضاها)', ['view', 'edit']],
+        ]],
         ['مالی', [
             'fin-dashboard' => ['داشبورد مالی', ['view']],
             'fin-installments' => ['مرکز اقساط', $all],
@@ -328,6 +333,16 @@ function perm_api_map() {
             'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
             'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit', 'bot_remind' => 'life-calls:create',
         ]],
+        'lt_actions' => ['pages' => ['lt-box'], 'actions' => [
+            'bootstrap' => 'lt-box:view|lt-settings:view', 'list' => 'lt-box:view', 'export' => 'lt-box:export', 'detail' => 'lt-box:view', 'preview_html' => 'lt-box:view',
+            'pdf' => 'lt-box:view', 'docx' => 'lt-box:view', 'file' => 'lt-box:view', 'letterhead_img' => 'lt-box:view|lt-settings:view', 'signer_img' => 'lt-box:view|lt-settings:view',
+            'draft_preview' => 'lt-box:create|lt-box:edit', 'save' => 'lt-box:create|lt-box:edit', 'issue' => 'lt-box:create', 'send' => 'lt-box:create', 'recall' => 'lt-box:edit',
+            'set_status' => 'lt-box:edit|lt-box:create', 'delete' => 'lt-box:delete', 'file_upload' => 'lt-box:create|lt-box:edit', 'file_delete' => 'lt-box:edit|lt-box:delete',
+            'word_upload' => 'lt-box:create|lt-box:edit', 'ref_add' => 'lt-box:view', 'ref_done' => 'lt-box:view', 'preview_number' => 'lt-box:view|lt-settings:view',
+            'tpl_get' => 'lt-box:view', 'tpl_save' => 'lt-settings:edit|lt-box:create', 'tpl_delete' => 'lt-settings:edit',
+            'settings_get' => 'lt-settings:view', 'settings_save' => 'lt-settings:edit', 'categories_save' => 'lt-settings:edit', 'signers_save' => 'lt-settings:edit',
+            'signer_image' => 'lt-settings:edit', 'letterhead_upload' => 'lt-settings:edit', 'counter_set' => 'lt-settings:edit',
+        ]],
         'mk_actions' => ['pages' => ['mk-sales'], 'actions' => [
             'bootstrap' => 'mk-dash:view|mk-sales:view|mk-people:view|mk-settings:view', 'dash' => 'mk-dash:view', 'income' => 'mk-dash:view|mk-people:view',
             'sales_list' => 'mk-sales:view', 'sale_save' => 'mk-sales:create|mk-sales:edit', 'sale_void' => 'mk-sales:delete', 'sale_delete' => 'mk-sales:delete', 'people_list' => 'mk-people:view|mk-dash:view',
@@ -413,6 +428,9 @@ function perm_activity_labels() {
         'mk_actions.sale_save' => 'ثبت / ویرایشِ فروشِ بازاریاب', 'mk_actions.sale_void' => 'ابطالِ فروشِ بازاریاب', 'mk_actions.sale_delete' => 'حذفِ فروشِ بازاریاب', 'mk_actions.person_save' => 'ثبت / ویرایشِ بازاریاب',
         'mk_actions.person_delete' => 'حذفِ بازاریاب', 'mk_actions.types_save' => 'تغییرِ انواع و کارمزدِ بازاریابی', 'mk_actions.levels_save' => 'تغییرِ سطح‌های بازاریابی',
         'mk_actions.rewards_save' => 'تغییرِ قوانینِ پاداشِ مشتری', 'mk_actions.settings_save' => 'تغییرِ تنظیماتِ حقوقِ بازاریابان', 'mk_actions.export' => 'خروجیِ اکسلِ بازاریابی', 'mk_actions.pdf' => 'گزارشِ PDFِ بازاریابی',
+        'lt_actions.save' => 'نوشتن / ویرایشِ نامه', 'lt_actions.issue' => 'صدورِ نامه (شماره‌ی خودکار)', 'lt_actions.send' => 'ارسالِ نامه به کارتابلِ شرکت', 'lt_actions.delete' => 'حذفِ نامه',
+        'lt_actions.ref_add' => 'ارجاعِ نامه', 'lt_actions.word_upload' => 'بارگذاریِ نسخه‌ی Wordِ نامه', 'lt_actions.file_upload' => 'افزودنِ پیوستِ نامه', 'lt_actions.export' => 'خروجیِ اکسلِ دفترِ نامه‌ها',
+        'lt_actions.settings_save' => 'تغییرِ تنظیماتِ نامه‌ها', 'lt_actions.counter_set' => 'تغییرِ شمارنده‌ی نامه‌ها',
         'file_manager.zip_folder' => 'خروجیِ زیپ از بایگانی', 'file_manager.zip_range' => 'خروجیِ زیپ از بایگانی', 'settings_actions.save_quota' => 'تغییرِ تنظیماتِ سامانه',
     ];
 }

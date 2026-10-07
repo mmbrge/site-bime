@@ -49,7 +49,7 @@ if (!$companies) {
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
-<script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-3xl, body > .modal-overlay > *'};</script>
+<script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=4"></script>
 <script src="../cursor-fx.js?v=1" defer></script>
@@ -64,6 +64,7 @@ if (!$companies) {
 <link rel="stylesheet" href="../plate.css?v=2">
 <script src="../chat-ui.js?v=8"></script>
 <script src="../money-input.js?v=1"></script>
+<script src="../letters-portal.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
@@ -126,6 +127,37 @@ if (!$companies) {
                   padding: 14px 16px; box-shadow: 0 10px 28px rgba(15,23,42,.14); cursor: pointer; pointer-events: auto;
                   opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .3s; }
     .notif-card.show { opacity: 1; transform: translateX(0); }
+    /* ===== طراحیِ تازه‌ی پنل ===== */
+    .pt-hero { position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0 14px; padding:18px 18px; border-radius:26px; color:#fff;
+               background:linear-gradient(120deg,#0f172a,#1d4ed8 55%,#0891b2); box-shadow:0 24px 44px -30px #1d4ed8; }
+    .pt-hero::after { content:''; position:absolute; width:300px; height:300px; border-radius:50%; left:-90px; top:-170px; background:rgba(255,255,255,.09); pointer-events:none; }
+    .pt-hero::before { content:''; position:absolute; width:160px; height:160px; border-radius:50%; left:28%; bottom:-110px; background:rgba(34,211,238,.18); pointer-events:none; }
+    .pt-out { background:rgba(255,255,255,.14); color:#fff; font-weight:800; font-size:12px; border-radius:12px; padding:8px 12px; border:0; }
+    .pt-bell button { color:#fff !important; }
+    .pt-tabs { display:flex; gap:6px; background:#fff; border:1.5px solid #dbe3ee; border-radius:20px; padding:5px; margin-bottom:14px; box-shadow:0 8px 24px -20px rgba(15,23,42,.4); }
+    .pt-tabs button { flex:1; display:flex; align-items:center; justify-content:center; gap:7px; border:0; background:transparent; border-radius:15px; padding:11px 8px; font-family:inherit; font-weight:800; font-size:13px; color:#475569; transition:.15s; }
+    .pt-tabs button.on { background:linear-gradient(120deg,#1d4ed8,#0891b2); color:#fff; box-shadow:0 10px 20px -14px #1d4ed8; }
+    .pt-tabs b { font-size:10.5px; min-width:20px; height:20px; padding:0 6px; border-radius:99px; background:rgba(15,23,42,.08); display:inline-flex; align-items:center; justify-content:center; }
+    .pt-tabs button.on b { background:rgba(255,255,255,.22); }
+    .pt-tabs b.red { background:#ef4444 !important; color:#fff; }
+    .pt-stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+    .pt-stat { background:#fff; border:1.5px solid #dbe3ee; border-radius:18px; padding:12px 14px; display:flex; align-items:center; gap:10px; }
+    .pt-stat .i { width:38px; height:38px; border-radius:13px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+    .pt-stat b { display:block; font-size:19px; font-weight:900; line-height:1.15; color:#0f172a; } .pt-stat small { font-size:11px; font-weight:700; color:#64748b; }
+    .pt-new { background:linear-gradient(120deg,#2563eb,#0891b2); color:#fff; font-weight:800; font-size:13px; border-radius:16px; padding:12px 18px; box-shadow:0 14px 26px -18px #2563eb; display:inline-flex; align-items:center; border:0; }
+    .pt-chips { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:12px; }
+    .pt-chips button { flex-shrink:0; border:1.5px solid #dbe3ee; background:#fff; color:#475569; font-family:inherit; font-weight:800; font-size:11.5px; border-radius:12px; padding:7px 11px; display:inline-flex; gap:6px; align-items:center; }
+    .pt-chips button.on { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
+    .pt-chips button i { font-style:normal; font-size:10px; background:#f1f5f9; border-radius:8px; padding:1px 6px; }
+    .pt-req-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .pt-req { background:#fff; border:1.5px solid #dbe3ee; border-radius:20px; padding:14px 15px; cursor:pointer; transition:.15s; position:relative; overflow:hidden; }
+    .pt-req:hover { border-color:#93c5fd; box-shadow:0 14px 30px -24px rgba(29,78,216,.6); transform:translateY(-1px); }
+    .pt-req::before { content:''; position:absolute; right:0; top:0; bottom:0; width:5px; background:var(--c,#3b82f6); }
+    .pt-steps { display:flex; gap:4px; margin-top:10px; }
+    .pt-steps i { flex:1; height:6px; border-radius:99px; background:#e2e8f0; }
+    .pt-steps i.on { background:var(--c,#3b82f6); }
+    .pt-prog { height:6px; border-radius:99px; background:#f1f5f9; overflow:hidden; margin-top:6px; } .pt-prog i { display:block; height:100%; background:linear-gradient(90deg,#10b981,#22c55e); border-radius:99px; }
+    @media (max-width: 767px) { .pt-req-grid { grid-template-columns:minmax(0,1fr); } .pt-hero { border-radius:22px; padding:15px; } .pt-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 <link rel="stylesheet" href="../ui-scroll.css?v=1">
 </head>
@@ -133,38 +165,49 @@ if (!$companies) {
 <div class="cursor-dot"></div>
 <div class="cursor-outline"></div>
 
-<div class="max-w-3xl mx-auto p-4 pb-20">
-    <div class="flex items-center justify-between py-5">
-        <div class="flex items-center gap-3">
+<div class="max-w-5xl mx-auto p-4 pb-24">
+    <!-- سربرگِ پنل: شرکت، کاربر، اعلان‌ها -->
+    <div class="pt-hero">
+        <div class="flex items-center gap-3 min-w-0" style="z-index:1">
             <!-- عکسِ پروفایل: با کلیک عوض می‌شود و در گفتگو با «بیمه با ما» دیده می‌شود -->
-            <button type="button" id="me-avatar" onclick="changeMyAvatar()" title="عکسِ پروفایل" class="relative hover:scale-105 transition-transform"></button>
-            <div>
-            <h1 class="font-black text-lg"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'چند شرکت'; ?></h1>
-            <p class="text-xs text-slate-400"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?></p>
+            <button type="button" id="me-avatar" onclick="changeMyAvatar()" title="عکسِ پروفایل" class="relative hover:scale-105 transition-transform shrink-0"></button>
+            <div class="min-w-0">
+                <h1 class="font-black text-lg truncate"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'پنلِ شرکت‌ها (' . count($companies) . ' شرکت)'; ?></h1>
+                <p class="text-xs opacity-80 truncate"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?> · پنلِ همکارانِ «بیمه با ما»</p>
             </div>
         </div>
-        <div class="flex items-center gap-3">
-            <span id="notif-bell-mount" class="inline-flex"></span>
-            <button onclick="doLogout()" class="text-xs font-bold text-red-500 hover-target">خروج</button>
+        <div class="flex items-center gap-2" style="z-index:1">
+            <span id="notif-bell-mount" class="inline-flex pt-bell"></span>
+            <button onclick="doLogout()" class="pt-out hover-target">خروج</button>
         </div>
     </div>
 
-    <button onclick="openNewRequestModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-blue-500/20 mb-6 transition-colors">
-        <span class="ml-2">+</span> ثبت درخواست جدید
-    </button>
-
-    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h2 class="text-sm font-bold text-slate-500">درخواست‌های من</h2>
-        <div class="relative flex-1 min-w-[180px]">
-            <input type="search" id="req-search" oninput="debouncedRequestSearch()" placeholder="جستجو: شماره درخواست، پلاک، شماره شاسی، خودرو یا متن..."
-                   class="w-full border border-slate-200 rounded-xl py-2 pr-9 pl-3 text-xs outline-none focus:border-blue-500">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
-                 class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">
-                <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
-            </svg>
-        </div>
+    <!-- زبانه‌ها -->
+    <div class="pt-tabs" role="tablist">
+        <button type="button" data-ptab="requests" class="on" onclick="showPortalTab('requests')"><i class="fas fa-clipboard-list"></i>درخواست‌ها<b id="pt-req-count"></b></button>
+        <button type="button" data-ptab="letters" onclick="showPortalTab('letters')"><i class="fas fa-envelope-open-text"></i>اتوماسیون نامه‌ها<b id="pt-letters-badge" class="hidden red"></b></button>
     </div>
-    <div id="requests-list" class="space-y-3"></div>
+
+    <!-- ================= درخواست‌ها ================= -->
+    <section id="pt-requests">
+        <div id="req-stats" class="pt-stats"></div>
+        <div class="flex gap-2 items-center flex-wrap mb-3">
+            <button onclick="openNewRequestModal()" class="pt-new hover-target"><span class="ml-1 text-lg leading-none">+</span> ثبت درخواست جدید</button>
+            <div class="relative flex-1 min-w-[200px]">
+                <input type="search" id="req-search" oninput="debouncedRequestSearch()" placeholder="جستجو: شماره درخواست، پلاک، شماره شاسی، خودرو یا متن..."
+                       class="w-full border border-slate-200 bg-white rounded-2xl py-3 pr-10 pl-3 text-xs outline-none focus:border-blue-500">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                     class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                </svg>
+            </div>
+        </div>
+        <div id="req-chips" class="pt-chips"></div>
+        <div id="requests-list" class="pt-req-grid"></div>
+    </section>
+
+    <!-- ================= اتوماسیون نامه‌ها (letters-portal.js) ================= -->
+    <section id="pt-letters" class="hidden"><div id="letters-root"></div></section>
 </div>
 
 <button onclick="openChatModal()" title="گفتگو با پشتیبانی" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center z-50">
@@ -351,7 +394,7 @@ function applyNotifResponse(data) {
 if (window.NotifBell) NotifBell.init({
     mount: document.getElementById('notif-bell-mount'),
     storageKey: 'notif:portal:<?php echo intval($_SESSION['company_user_id']); ?>',
-    onOpenItem: it => { if (it.type === 'chat') openChatModal(); },
+    onOpenItem: it => { if (it.type === 'chat') openChatModal(); else if (it.type === 'letter') showPortalTab('letters'); },
     onServerAction: async (act, id) => {
         const data = await notifFetch({notif_action: act, id});
         applyNotifResponse(data).forEach(e => pushNotification(e.title, e.body, e.type, e.id));
@@ -364,6 +407,7 @@ function pushNotification(title, body, type, id) {
         if (id) notifFetch({notif_action: 'read', id}).then(applyNotifResponse).catch(() => {});
         return;
     }
+    if (type === 'letter' && window.PortalLetters) PortalLetters.refresh();
     if (window.NotifBell) NotifBell.add({title, body, type});
     const box = document.getElementById('notif-stack');
     if (!box) return;
@@ -421,34 +465,65 @@ async function doLogout() {
     location.reload();
 }
 
+// ---- زبانه‌های پنل: درخواست‌ها | اتوماسیون نامه‌ها ----
+function showPortalTab(t) {
+    document.querySelectorAll('[data-ptab]').forEach(b => b.classList.toggle('on', b.dataset.ptab === t));
+    document.getElementById('pt-requests').classList.toggle('hidden', t !== 'requests');
+    document.getElementById('pt-letters').classList.toggle('hidden', t !== 'letters');
+    if (t === 'letters' && window.PortalLetters) PortalLetters.open(document.getElementById('letters-root'));
+    try { sessionStorage.setItem('pt-tab', t); } catch (e) {}
+}
+const REQ_STEPS = ['NEW', 'DOCS_PENDING', 'DOCS_REVIEW', 'READY_FOR_ISSUE', 'ISSUED'];
+const REQ_HEX = {NEW: '#3b82f6', DOCS_PENDING: '#f59e0b', DOCS_REVIEW: '#8b5cf6', READY_FOR_ISSUE: '#06b6d4', ISSUED: '#10b981', CANCELLED: '#ef4444'};
+const REQ_ICON = {NEW: '🆕', DOCS_PENDING: '📎', DOCS_REVIEW: '🔎', READY_FOR_ISSUE: '🖨️', ISSUED: '✅', CANCELLED: '⛔'};
+let reqAll = [], reqFilter = '';
 async function loadRequests() {
     const q = (document.getElementById('req-search')?.value || '').trim();
     const res = await fetch('../api/company_portal_actions.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'my_requests', q})});
     const data = await res.json();
+    reqAll = data.ok ? data.requests : [];
+    // کارت‌های آمار و تراشه‌های وضعیت (با همان وضعیت‌های قبلی)
+    const cnt = {}; reqAll.forEach(r => { cnt[r.status] = (cnt[r.status] || 0) + 1; });
+    const rows = reqAll.reduce((a, r) => a + r.body_count + r.third_count, 0), issued = reqAll.reduce((a, r) => a + r.body_issued + r.third_issued, 0);
+    const stat = (ic, bg, v, l) => `<div class="pt-stat"><span class="i" style="background:${bg}">${ic}</span><span><b>${faNum(v)}</b><small>${l}</small></span></div>`;
+    document.getElementById('req-stats').innerHTML = q ? '' : stat('📋', '#eff6ff', reqAll.length, 'کلِ درخواست‌ها')
+        + stat('⏳', '#fffbeb', (cnt.NEW || 0) + (cnt.DOCS_PENDING || 0) + (cnt.DOCS_REVIEW || 0) + (cnt.READY_FOR_ISSUE || 0), 'در جریان')
+        + stat('📎', '#fef3c7', cnt.DOCS_PENDING || 0, 'منتظرِ مدارکِ شما') + stat('✅', '#ecfdf5', issued, 'بیمه‌نامه‌ی صادره') + stat('🚗', '#f0f9ff', rows, 'ردیفِ خودرو');
+    document.getElementById('pt-req-count').textContent = faNum(reqAll.length);
+    document.getElementById('req-chips').innerHTML = [['', 'همه', reqAll.length]].concat(Object.keys(STATUS_FA).filter(k => cnt[k]).map(k => [k, STATUS_FA[k], cnt[k]]))
+        .map(([k, l, n]) => `<button type="button" class="${reqFilter === k ? 'on' : ''}" onclick="reqFilter='${k}';renderRequests()">${k ? REQ_ICON[k] + ' ' : ''}${l}<i>${faNum(n)}</i></button>`).join('');
+    renderRequests(q);
+}
+function renderRequests(q) {
+    q = q === undefined ? (document.getElementById('req-search')?.value || '').trim() : q;
+    document.querySelectorAll('#req-chips button').forEach((b, i) => b.classList.toggle('on', (b.getAttribute('onclick') || '').indexOf(`reqFilter='${reqFilter}'`) === 0));
     const box = document.getElementById('requests-list');
-    if (!data.ok || !data.requests.length) {
-        box.innerHTML = `<p class="text-center text-xs text-slate-400 py-10">${q ? 'برای این جستجو درخواستی پیدا نشد.' : 'هنوز درخواستی ثبت نکرده‌اید.'}</p>`;
+    const list = reqAll.filter(r => !reqFilter || r.status === reqFilter);
+    if (!list.length) {
+        box.innerHTML = `<div class="card p-10 text-center text-xs text-slate-400" style="grid-column:1/-1"><div class="text-3xl mb-2">🗂️</div>${q ? 'برای این جستجو درخواستی پیدا نشد.' : (reqFilter ? 'درخواستی با این وضعیت نیست.' : 'هنوز درخواستی ثبت نکرده‌اید. با «ثبت درخواست جدید» شروع کنید.')}</div>`;
         return;
     }
-    box.innerHTML = data.requests.map(r => `
-        <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick="openRequestDetail(${r.id})">
-            <div class="flex items-center justify-between mb-1">
-                <span class="font-bold text-sm">درخواست ${r.ref_code ? '<span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg px-2 py-0.5 text-[12px]">شناسه‌ی ' + faNum(r.ref_code) + '</span>' : '#' + faNum(r.id)}${r.company_name ? ' - ' + r.company_name : ''}</span>
-                <span class="flex items-center gap-1.5">
-                    ${r.request_kind && r.request_kind !== 'NEW_POLICY'
-                        ? `<span class="status-badge ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-600' : 'bg-rose-50 text-rose-600'}">${r.request_kind_fa}</span>` : ''}
-                    <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${STATUS_FA[r.status] || r.status}</span>
-                </span>
+    box.innerHTML = list.map(r => {
+        const c = REQ_HEX[r.status] || '#3b82f6', step = REQ_STEPS.indexOf(r.status), total = r.body_count + r.third_count, iss = r.body_issued + r.third_issued;
+        return `<div class="pt-req" style="--c:${c}" onclick="openRequestDetail(${r.id})">
+            <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0"><div class="font-black text-[13.5px]">${r.ref_code ? 'شناسه‌ی ' + faNum(r.ref_code) : 'درخواست #' + faNum(r.id)}</div>
+                    ${r.company_name && COMPANIES_DATA.length > 1 ? `<div class="text-[11px] text-slate-500 truncate">${r.company_name}</div>` : ''}</div>
+                <span class="flex items-center gap-1 flex-wrap justify-end">
+                    ${r.request_kind && r.request_kind !== 'NEW_POLICY' ? `<span class="status-badge ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-600' : 'bg-rose-50 text-rose-600'}">${r.request_kind_fa}</span>` : ''}
+                    <span class="status-badge ${STATUS_COLOR[r.status] || ''}">${REQ_ICON[r.status] || ''} ${STATUS_FA[r.status] || r.status}</span></span>
             </div>
-            <p class="text-xs text-slate-500 line-clamp-2">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
+            <p class="text-xs text-slate-500 line-clamp-2 mt-1.5 leading-6">${r.request_text ? r.request_text : '(بدون توضیح متنی)'}</p>
             ${r.requested_counts_fa ? `<p class="text-[11px] font-bold text-indigo-600 mt-1">درخواستی: ${r.requested_counts_fa}</p>` : ''}
             <div class="flex flex-wrap gap-1 mt-2">
-                ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5">بدنه: ${faNum(r.body_count)} درخواستی / ${faNum(r.body_issued)} صادره</span>` : ''}
-                ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث: ${faNum(r.third_count)} درخواستی / ${faNum(r.third_issued)} صادره</span>` : ''}
+                ${r.body_count ? `<span class="text-[10px] font-bold bg-cyan-50 text-cyan-700 rounded-lg px-2 py-0.5">بدنه: ${faNum(r.body_issued)} از ${faNum(r.body_count)} صادر شده</span>` : ''}
+                ${r.third_count ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 rounded-lg px-2 py-0.5">ثالث: ${faNum(r.third_issued)} از ${faNum(r.third_count)} صادر شده</span>` : ''}
             </div>
-            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${faNum(r.created_at_jalali)} · آخرین ویرایش: ${faNum(r.updated_at_jalali)}</p>
-        </div>
-    `).join('');
+            ${total ? `<div class="pt-prog" title="پیشرفتِ صدور"><i style="width:${Math.round(iss * 100 / total)}%"></i></div>` : ''}
+            ${r.status !== 'CANCELLED' ? `<div class="pt-steps" title="مرحله‌ی درخواست">${REQ_STEPS.map((s, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div>` : ''}
+            <p class="text-[10px] text-slate-400 mt-2">${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ثبت: ${faNum(r.created_at_jalali)} · آخرین تغییر: ${faNum(r.updated_at_jalali)}</p>
+        </div>`;
+    }).join('');
 }
 
 const COMPANIES_DATA = <?php echo json_encode($companies, JSON_UNESCAPED_UNICODE); ?>;
@@ -979,6 +1054,13 @@ async function changeMyAvatar() {
 paintMyAvatar(); loadMyAvatar();
 
 loadRequests();
+// زبانه‌ی آخر (بعد از تازه‌سازیِ صفحه) و شمارِ نامه‌های خوانده‌نشده
+window.addEventListener('load', () => {
+    let t = 'requests'; try { t = sessionStorage.getItem('pt-tab') || 'requests'; } catch (e) {}
+    if (location.hash === '#letters') t = 'letters';
+    if (t === 'letters') showPortalTab('letters');
+    if (window.PortalLetters) PortalLetters.badge();
+});
 
 // ================= نشانگرِ اختصاصیِ موس =================
 // دقیقاً همان پیاده‌سازیِ پنل خودمان: همه‌ی نوشتن‌ها یک بار در هر فریم انجام می‌شود،
