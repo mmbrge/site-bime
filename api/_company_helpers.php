@@ -186,6 +186,8 @@ function company_doc_types() {
         'new_car_card'      => 'کارت ماشین جدید',
         'new_ownership_doc' => 'سند جدید',
         'other'             => 'سایر مدارک',
+        // خودروی صفر کیلومتر: به‌جای کارت ماشین/سند، فاکتورِ فروش
+        'sales_invoice'     => 'فاکتور فروش',
         // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
         'car_card_or_title' => 'کارت ماشین یا سند',
     ];
@@ -210,7 +212,7 @@ function company_doc_type_is_folder($key) {
 //     اجباری (با has_prev_body مشخص می‌شود)؛ «بازدید سلامت» برای بعضی خودروها
 //     اجباری است و برای بعضی نه (skip_health_inspection)؛ و «گزارش بازدید» در
 //     صورت وجودِ بازدید سلامت اجباری است.
-function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY') {
+function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false) {
     $has = fn($k) => in_array($k, $assignedDocTypes, true);
     $items = [];
 
@@ -252,15 +254,15 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
         ];
     }
 
-    // ---- گروه ۱: کارت ماشین (پشت و رو) یا سند - همیشه اجباری ----
-    $cardOk = ($has('car_card_front') && $has('car_card_back')) || $has('ownership_doc') || $has('car_card_or_title');
+    // ---- گروه ۱: کارت ماشین (پشت و رو) یا سند - همیشه اجباری؛ صفر کیلومتر: فاکتورِ فروش هم کافی است ----
+    $cardOk = ($has('car_card_front') && $has('car_card_back')) || $has('ownership_doc') || $has('car_card_or_title') || ($isNew && $has('sales_invoice'));
     $items[] = [
         'key' => 'car_card_or_title',
-        'label' => 'کارت ماشین (پشت و رو) یا سند',
+        'label' => $isNew ? 'فاکتور فروش (صفر کیلومتر) یا کارت ماشین/سند' : 'کارت ماشین (پشت و رو) یا سند',
         'required' => true,
         'satisfied' => $cardOk,
-        'upload_types' => ['car_card_front', 'car_card_back', 'ownership_doc'],
-        'hint' => 'یا هر دو روی کارت ماشین، یا سند مالکیت',
+        'upload_types' => $isNew ? ['sales_invoice', 'car_card_front', 'car_card_back', 'ownership_doc'] : ['car_card_front', 'car_card_back', 'ownership_doc'],
+        'hint' => $isNew ? 'خودروی صفر کیلومتر: فاکتورِ فروش؛ اگر کارت یا سند صادر شده، همان' : 'یا هر دو روی کارت ماشین، یا سند مالکیت',
     ];
 
     if ($insuranceTypeEnum === 'BODY') {
@@ -314,9 +316,9 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
 }
 
 // فهرستِ «چه چیزی کم دارد» - فقط آیتم‌های اجباریِ تکمیل‌نشده
-function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY') {
+function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false) {
     $missing = [];
-    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody, $kind) as $it) {
+    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody, $kind, $isNew) as $it) {
         if ($it['required'] && !$it['satisfied']) $missing[$it['key']] = $it['label'];
     }
     return $missing;
@@ -366,7 +368,7 @@ function company_sync_plate_status($pdo, $plateId) {
     $stmt->execute([$plateId]);
     $types = array_filter(array_column($stmt->fetchAll(), 'doc_type'));
     $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types,
-                                          $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY');
+                                          $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY', !empty($plate['is_new_vehicle']));
     // ردیفِ وارداتی: اطلاعاتِ لازم (شماره بیمه‌نامه، تاریخ صدور، پلاک یا شاسی) هم باید کامل باشد
     if (!empty($plate['is_import']) && imp_missing_info($plate)) $missing['_info'] = 'اطلاعات';
     $newStatus = $missing ? 'PENDING' : 'READY_FOR_ISSUE';
@@ -454,7 +456,7 @@ function company_request_rows_text_report($pdo, $requestId) {
         $lines[] = $line;
         if ($kind === 'ENDORSEMENT' && !empty($p['endorsement_request'])) $lines[] = '    خواسته: ' . $p['endorsement_request'];
         if ($kind === 'CANCELLATION' && !empty($p['cancellation_reason'])) $lines[] = '    دلیل فسخ: ' . $p['cancellation_reason'];
-        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind);
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind, !empty($p['is_new_vehicle']));
         if ($missing) $lines[] = '    ناموجود: ' . implode('، ', array_values($missing));
     }
 
@@ -1371,12 +1373,17 @@ function company_generate_installments($pdo, $plateId) {
     if (!function_exists('fin_plan_build')) require_once __DIR__ . '/finance_core.php';
     fin_contracts_ensure($pdo);
     imp_ensure($pdo);
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.is_import FROM company_request_plates crp
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.is_import, cr.request_kind FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $stmt->execute([$plateId]);
     $plate = $stmt->fetch();
     // «بایگانی وارداتی» قسط و ردیفِ مالی ندارد
     if ($plate && !empty($plate['is_import'])) return ['ok' => false, 'count' => 0, 'error' => 'ردیفِ وارداتی قسط ندارد.'];
+    if ($plate && !empty($plate['no_installments'])) return ['ok' => false, 'count' => 0, 'error' => 'این بیمه‌نامه «بدونِ قسط» ثبت شده (بایگانیِ قبلی).'];
+    // الحاقیه و فسخ، قسطِ جدا ندارند (اثرِ مالی‌شان روی بیمه‌نامه‌ی اصلی ثبت می‌شود)
+    if ($plate && ($plate['request_kind'] ?? 'NEW_POLICY') !== 'NEW_POLICY') return ['ok' => false, 'count' => 0, 'error' => 'ردیفِ الحاقیه/فسخ قسط ندارد.'];
+    if (!function_exists('endo_has_finance')) require_once __DIR__ . '/_endorse.php';
+    if ($plate && endo_has_finance($pdo, 'C', $plateId)) return ['ok' => false, 'count' => 0, 'error' => 'این بیمه‌نامه الحاقیه‌ی دارای اثرِ مالی دارد؛ برای ساختِ دوباره‌ی اقساط اول آن الحاقیه را حذف کنید.'];
     if (!$plate || $plate['status'] !== 'ISSUED' || empty($plate['total_premium'])) {
         return ['ok' => false, 'error' => 'پلاک صادر نشده یا حق بیمه ثبت نشده است.'];
     }

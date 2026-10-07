@@ -151,6 +151,7 @@ function issuance_nav($active, $isLiaison) {
     $items = [];
     if (!$isLiaison) $items[] = ['issue-queue', 'fa-list-check', 'در حال صدور', 'iss-n-queue'];
     $items[] = ['issued-list', 'fa-file-circle-check', 'صادره‌ها', 'iss-n-issued'];
+    $items[] = ['endorsements', 'fa-file-pen', 'الحاقیه‌ها', 'iss-n-endo'];
     if (!$isLiaison) $items[] = ['issue-group', 'fa-layer-group', 'صدور گروهی', 'iss-n-group'];
     if (!$isLiaison) $items[] = ['import-archive', 'fa-box-archive', 'بایگانی وارداتی', 'iss-n-import'];
     if (!$isLiaison) $items[] = ['renewals', 'fa-bell', 'اعلام تمدید', 'iss-n-renew'];
@@ -908,7 +909,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if ($canSeeCompanies || !$isLiaison) {
                     // ثالث و بدنه: همه‌ی کارهای صدور، شرکت‌ها، کارکنان، بازدید و مالیِ شرکت‌ها (منوهای جداگانه‌ی «صدور بیمه» و «مالی» حذف شدند)
                     $g1 = ($canSeeCompanies && !$isLiaison ? $bmLink('issue-queue', 'fa-list-check', 'در حال صدور', 'ثبتِ صدور و بیمه‌نامه') : '')
-                        . ($canSeeCompanies ? $bmLink('issued-list', 'fa-file-circle-check', 'صادره‌ها', 'جستجو، اکسل، فایل') : '')
+                        . ($canSeeCompanies ? $bmLink('issued-list', 'fa-file-circle-check', 'صادره‌ها', 'جستجو، اکسل، فایل') . $bmLink('endorsements', 'fa-file-pen', 'الحاقیه‌ها', 'اضافی، برگشتی، فسخ و اثرِ مالی') : '')
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('issue-group', 'fa-layer-group', 'صدورِ گروهی', 'فایلِ PDFِ بیمه‌گر') . $bmLink('import-archive', 'fa-box-archive', 'بایگانیِ وارداتی', 'اکسلِ بیمه‌گر') . $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص') : '');
                     $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
@@ -2517,6 +2518,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="il-kind" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
                 <select id="il-insurer" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
                 <select id="il-import" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="برچسبِ بایگانی وارداتی"><option value="">با و بدونِ «بایگانی وارداتی»</option><option value="1">فقط بایگانی وارداتی</option><option value="0">بدونِ بایگانی وارداتی</option></select>
+                <select id="il-endo" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="الحاقیه"><option value="">با و بدونِ الحاقیه</option><option value="has">دارای الحاقیه</option><option value="cancelled">فسخ‌شده</option><option value="none">بدونِ الحاقیه</option></select>
                 <input type="text" id="il-exp-from" oninput="debouncedIssuedList()" placeholder="انقضای قبلی از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-exp-to" oninput="debouncedIssuedList()" placeholder="انقضای قبلی تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
             </div>
@@ -2567,6 +2569,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-import-archive" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('import-archive', $isLiaison); ?>
             <div id="imp-root"></div>
+        </div>
+        <!-- ======================= الحاقیه‌ها - endorse.js ======================= -->
+        <div id="tab-endorsements" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('endorsements', $isLiaison); ?>
+            <div id="endo-root" class="space-y-4"></div>
         </div>
         <!-- ======================= اعلام تمدید - renewals.js ======================= -->
         <div id="tab-renewals" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
@@ -2940,6 +2947,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="ownership_doc">سند</option>
                     <option value="car_card_front">کارت ماشین رو</option>
                     <option value="car_card_back">کارت ماشین پشت</option>
+                    <option value="sales_invoice">فاکتور فروش (صفر کیلومتر)</option>
                     <option value="prev_third_policy">بیمه ثالث قبل</option>
                     <option value="prev_body_policy">بیمه بدنه قبل</option>
                     <option value="health_inspection">بازدید سلامت (زیپ/عکس)</option>
@@ -4003,6 +4011,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=9"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
+    <script src="endorse.js?v=1"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=3"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
@@ -4030,7 +4039,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
-        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'issue-group',
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
@@ -5788,7 +5797,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
             policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
-            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست',
+            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش',
         };
         const ROW_STATUS_COLOR = {
             PENDING: 'bg-amber-100 text-amber-700', READY_FOR_ISSUE: 'bg-cyan-100 text-cyan-700',
@@ -7196,6 +7205,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 expiry_from: ((document.getElementById('il-exp-from') || {}).value || '').trim(),
                 expiry_to: ((document.getElementById('il-exp-to') || {}).value || '').trim(),
                 import: (document.getElementById('il-import') || {}).value || '',
+                endo: (document.getElementById('il-endo') || {}).value || '',
             };
         }
 
@@ -7239,7 +7249,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.insurance_type_fa}</td>
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
                     <td class="p-3">${fmEsc([r.car_name, r.car_type].filter(Boolean).join(' · ')) || '—'}</td>
-                    <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}</td>
+                    <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}${Number(r.endo_count) || Number(r.is_cancelled) ? `<div class="mt-0.5">${window.Endorse ? Endorse.badge(r) : ''}</div>${r.final_premium !== null && r.final_premium !== undefined && Number(r.endo_count) ? `<small class="block text-[10px] text-indigo-700 font-bold">نهایی: ${money(r.final_premium)}</small>` : ''}` : ''}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
@@ -7272,12 +7282,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${infoCell('نوع بیمه', r.insurance_type_fa)}
                     ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
                     ${infoCell('حق بیمه (ریال)', r.total_premium ? money(r.total_premium) : '')}
+                    ${Number(r.endo_count) ? infoCell('حق بیمه‌ی نهایی (با الحاقیه‌ها)', money(r.final_premium)) : ''}
+                    ${Number(r.is_cancelled) ? infoCell('فسخ', 'از ' + faDigits(r.cancelled_on || '')) : ''}
                     ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
                     ${infoCell('کد یکتای مرکزی', r.central_unique_code, {ltr: true})}
                     ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
                     ${infoCell('وضعیت بایگانی', r.folder_status === 'TRANSFERRED' ? 'منتقل شد' : (r.folder_status === 'FAILED' ? 'ناموفق' : ''))}
                 </div>
 
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<div class="flex items-center justify-between gap-2 mb-2"><h4 class="text-xs font-bold text-slate-500"><i class="fas fa-file-pen text-indigo-400 ml-1"></i>الحاقیه‌ها ${window.Endorse ? Endorse.badge(r) : ''}</h4>
+                    ${IS_ADMIN && window.Endorse ? `<button onclick="Endorse.open({source: '${r.source === 'COMPANY' ? 'C' : 'P'}', refId: ${Number(r.row_id) || 0}, onDone: () => { document.getElementById('il-detail-modal') && document.getElementById('il-detail-modal').classList.remove('active'); loadIssuedList(); }})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>ثبتِ الحاقیه برای این بیمه‌نامه</button>` : ''}</div>
+                <div class="border border-slate-200 rounded-xl p-2 mb-4 text-[11px]" data-endolist="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id) || 0}"><span class="text-slate-400">${Number(r.endo_count) ? 'در حال بارگذاری...' : 'الحاقیه‌ای ثبت نشده.'}</span></div>` : ''}
                 ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-sack-dollar text-indigo-400 ml-1"></i>مالی، اقساط و فیش‌های پرداختی</h4>
                 <div class="border border-indigo-100 rounded-xl p-3 mb-4" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id || r.id) || 0}"></div></div>` : ''}
 
@@ -7315,6 +7330,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${r.source === 'COMPANY' ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.request_id}" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-zipper ml-1"></i>دانلود صادره‌های این درخواست</a>` : ''}
                 </div>`;
             document.getElementById('il-detail-modal').classList.add('active');
+            if (window.Endorse) Endorse.mountLists(document.getElementById('il-detail-body'));
         }
 
         // خروجی اکسل، دقیقاً با همان فیلترهایی که الان روی جدول اعمال شده
@@ -7601,7 +7617,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             renderCitPreview(doc);
             citCheckPages(doc);
             const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
-                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title'];
+                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title','sales_invoice'];
             // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
             // تا اول نوعِ فایل انتخاب شود و بعد فیلدهای مربوط به همان نوع ظاهر شوند
             document.getElementById('cit-doc-type').value = (doc.file_kind === 'LETTER' || doc.doc_type === 'letter') ? 'letter'
@@ -7750,6 +7766,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         // pre (اختیاری، از «بایگانی وارداتی»): {pf: داده‌ی اکسلِ بیمه‌گر برای پیش‌پر کردن، label, onDone}
         function openMarkIssued(plateId, pre) {
+            // ردیفِ «الحاقیه» یا «فسخ»: صدورش یعنی ثبتِ الحاقیه روی بیمه‌نامه‌ی اصلی (با اثرِ مالی) - endorse.js
+            if (!pre && ['ENDORSEMENT', 'CANCELLATION'].includes(currentRequestKind) && window.Endorse) {
+                const row = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(plateId)) || {};
+                Endorse.open({requestPlateId: plateId, refPolicy: row.ref_policy_number || '', onDone: () => {
+                    if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+                    if (typeof loadIssueQueue === 'function' && document.getElementById('tab-issue-queue') && !document.getElementById('tab-issue-queue').classList.contains('hidden')) loadIssueQueue();
+                }});
+                return;
+            }
             window.CIS_PRE = pre || null;
             document.getElementById('cis-plate-id').value = plateId;
             document.getElementById('cis-file').value = '';
@@ -8991,6 +9016,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'issue-group') loadIssueGroup();
             if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
+            if (tabId === 'endorsements' && window.Endorse) Endorse.init(document.getElementById('endo-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);

@@ -285,10 +285,10 @@ function imp_list($pdo, array $f) {
     foreach ($rows as $r) {
         $rd = $docs[(int)$r['id']] ?? [];
         $types = array_values(array_filter(array_column($rd, 'doc_type')));
-        $check = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body']);
+        $check = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], 'NEW_POLICY', !empty($r['is_new_vehicle']));
         foreach ($check as &$it) $it['docs'] = array_values(array_filter($rd, fn($d) => in_array($d['doc_type'], $it['upload_types'], true) || $d['doc_type'] === $it['key']));
         unset($it);
-        $missDocs = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body']);
+        $missDocs = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], 'NEW_POLICY', !empty($r['is_new_vehicle']));
         $missInfo = imp_missing_info($r);
         if ($missF === 'info' && !$missInfo) continue;
         if ($missF !== '' && $missF !== 'info' && !isset($missDocs[$missF])) continue;

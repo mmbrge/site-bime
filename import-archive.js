@@ -338,7 +338,7 @@
         renderRow(r);
     }
 
-    const DOC_OPTS = ['car_card_front', 'car_card_back', 'ownership_doc', 'prev_body_policy', 'prev_third_policy', 'health_inspection', 'health_report', 'other'];
+    const DOC_OPTS = ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'prev_body_policy', 'prev_third_policy', 'health_inspection', 'health_report', 'other'];
     const docLabel = k => (S.meta && S.meta.doc_types && S.meta.doc_types[k]) || k;
 
     function renderRow(r) {
@@ -459,6 +459,7 @@
     function guessType(name, row, taken) {
         const n = en(name).toLowerCase();
         const ext = n.split('.').pop();
+        if (/فاکتور|invoice|factor/.test(n)) return 'sales_invoice';
         if (/پشت|back|posht/.test(n)) return 'car_card_back';
         if (/سند|ownership|sanad/.test(n)) return 'ownership_doc';
         if (/(بدنه|body).*(قبل|prev|old)|(قبل|prev|old).*(بدنه|body)/.test(n)) return 'prev_body_policy';

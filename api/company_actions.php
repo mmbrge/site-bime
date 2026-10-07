@@ -308,13 +308,13 @@ try {
             $types = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $kind = $r['request_kind'] ?? 'NEW_POLICY';
 
-            $r['checklist'] = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind);
+            $r['checklist'] = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']));
             foreach ($r['checklist'] as &$item) {
                 $item['docs'] = array_values(array_filter($rowDocs,
                     fn($d) => in_array($d['doc_type'], $item['upload_types'], true) || $d['doc_type'] === $item['key']));
             }
             unset($item);
-            $r['missing_docs'] = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind);
+            $r['missing_docs'] = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']));
             $r['is_ready'] = empty($r['missing_docs']);
             $r['all_docs'] = $rowDocs;
 
@@ -575,6 +575,9 @@ try {
     if ($action === 'issued_list' || ($_GET['action'] ?? '') === 'issued_list') {
         $data = $data + $_GET;   // خروجی اکسل (GET) هم همه‌ی فیلترها را داشته باشد، از جمله شرکت
         company_ensure_issue_info_cols($pdo);
+        require_once __DIR__ . '/_endorse.php';
+        endo_ensure($pdo);   // ستون‌های «الحاقیه» (تعداد، حق بیمه‌ی نهایی، فسخ)
+        $endoF = (string)($data['endo'] ?? '');   // '' | 'has' | 'cancelled' | 'none'
         $expFromI = fin_jalali_to_date($data['expiry_from'] ?? '');
         $expToI = fin_jalali_to_date($data['expiry_to'] ?? '');
         $insurerF = $data['insurer'] ?? '';
@@ -637,6 +640,8 @@ try {
                     'status_fa' => company_plate_status_fa('ISSUED', $kind),
                     'folder_status' => $r['folder_status'], 'issued_file_path' => $r['issued_file_path'],
                     'issue_info' => issue_info_decode($r['issue_info'] ?? null),
+                    'endo_count' => (int)($r['endo_count'] ?? 0), 'final_premium' => $r['final_premium'] !== null ? (int)$r['final_premium'] : null,
+                    'is_cancelled' => (int)($r['is_cancelled'] ?? 0), 'cancelled_on' => $r['cancelled_on'] ?? null,
                 ];
             }
         }
@@ -694,6 +699,8 @@ try {
                         'intro_letter_j' => (!empty($r['intro_letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', $r['intro_letter_date'], $lm)) ? sprintf('%04d/%02d/%02d', $lm[1], $lm[2], $lm[3]) : null,
                         'intro_month_fa' => $r['introduction_id'] ? (function () use ($r) { [$y, $m] = intro_letter_month(['letter_date' => $r['intro_letter_date'], 'created_at' => $r['intro_created_at']]); return jalali_month_name($m) . ' ' . $y; })() : null,
                         'issue_info' => issue_info_decode($r['issue_info'] ?? null),
+                        'endo_count' => (int)($r['endo_count'] ?? 0), 'final_premium' => isset($r['final_premium']) && $r['final_premium'] !== null ? (int)$r['final_premium'] : null,
+                        'is_cancelled' => (int)($r['is_cancelled'] ?? 0), 'cancelled_on' => $r['cancelled_on'] ?? null,
                     ];
                 }
             } catch (Throwable $e) { /* اگر ستونی نبود، دست‌کم شرکتی‌ها نمایش داده شوند */ }
@@ -712,6 +719,10 @@ try {
         }
 
         usort($rows, fn($a, $b) => strcmp((string)$b['issued_at'], (string)$a['issued_at']));
+        // فیلترِ الحاقیه: دارای الحاقیه / فسخ‌شده / بدونِ الحاقیه
+        if ($endoF === 'has') $rows = array_values(array_filter($rows, fn($r) => !empty($r['endo_count'])));
+        elseif ($endoF === 'cancelled') $rows = array_values(array_filter($rows, fn($r) => !empty($r['is_cancelled'])));
+        elseif ($endoF === 'none') $rows = array_values(array_filter($rows, fn($r) => empty($r['endo_count'])));
 
         // ---------- شمارش‌ها روی همین فیلترها ----------
         $counts = ['total' => count($rows), 'company' => 0, 'personnel' => 0, 'body' => 0, 'third' => 0, 'premium' => 0, 'import' => 0];
@@ -719,7 +730,8 @@ try {
             $r['source'] === 'COMPANY' ? $counts['company']++ : $counts['personnel']++;
             if (!empty($r['is_import'])) $counts['import']++;
             $r['insurance_type'] === 'BODY' ? $counts['body']++ : $counts['third']++;
-            $counts['premium'] += intval($r['total_premium']);
+            // حق بیمه‌ی نهایی (با الحاقیه‌ها) اگر الحاقیه دارد
+            $counts['premium'] += $r['final_premium'] !== null && !empty($r['endo_count']) ? (int)$r['final_premium'] : intval($r['total_premium']);
         }
 
         // ---------- خروجی اکسل ----------
@@ -728,7 +740,7 @@ try {
             $headers = ['ردیف', 'منبع', 'نوع درخواست', 'شرکت / کارفرما', 'بیمه‌گذار', 'کد ملی / اقتصادی', 'تلفن',
                         'پلاک', 'شماره شاسی', 'شماره موتور', 'نوع بیمه', 'بیمه‌گر', 'شماره بیمه‌نامه',
                         'شماره بیمه‌نامه مرجع', 'خودرو', 'سیستم', 'تیپ', 'مدل', 'رنگ', 'کاربری', 'VIN',
-                        'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'حق بیمه (ریال)',
+                        'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'حق بیمه (ریال)', 'تعداد الحاقیه', 'حق بیمه نهایی (ریال)', 'فسخ',
                         'تاریخ درخواست', 'تاریخ انقضا', 'تاریخ صدور', 'وضعیت', 'توضیح درخواست',
                         'کد پرسنلی', 'تاریخ صدور معرفی‌نامه', 'ماه معرفی‌نامه'];
             $out = [];
@@ -740,6 +752,7 @@ try {
                     $r['policy_number'], $r['ref_policy_number'], $r['car_name'], $r['car_system'], $r['car_type'],
                     $r['car_model_year'], $r['car_color'], $r['car_usage'], $r['vin'],
                     $r['car_value'], $r['liability_limit'], $r['total_premium'],
+                    $r['endo_count'] ?: '', !empty($r['endo_count']) ? $r['final_premium'] : $r['total_premium'], !empty($r['is_cancelled']) ? 'فسخ ' . fa_digits((string)$r['cancelled_on']) : '',
                     fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits(($r['policy_issue_date'] ?? '') ?: $r['issued_at_jalali']), $r['status_fa'],
                     $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
                     $r['personnel_code'] ?? '', fa_digits($r['intro_letter_j'] ?? ''), $r['intro_month_fa'] ?? '',
@@ -747,7 +760,7 @@ try {
             }
             $rangeFa = ($data['issued_from'] ?? ($_GET['issued_from'] ?? '')) ?: 'ابتدا';
             $rangeTo = ($data['issued_to'] ?? ($_GET['issued_to'] ?? '')) ?: 'امروز';
-            $path = xlsx_build($headers, $out, 'صادره‌ها', [0, 21, 22, 23]);
+            $path = xlsx_build($headers, $out, 'صادره‌ها', [0, 21, 22, 23, 25]);
             // اسمِ فایل نمی‌تواند «/» داشته باشد؛ تاریخ‌ها با خط تیره و رقم فارسی
             $rangeFa = fa_digits(str_replace('/', '-', $rangeFa)); $rangeTo = fa_digits(str_replace('/', '-', $rangeTo));
             xlsx_send($path, 'بیمه‌نامه‌های صادره ' . $rangeFa . ' تا ' . $rangeTo . '.xlsx');
@@ -1407,7 +1420,7 @@ try {
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             // چک‌لیستِ کاملِ همین ردیف: هر آیتم با تیک/ضربدر، اجباری یا اختیاری، و
             // مدرکِ متناظرش (اگر موجود است) تا در جدول قابل باز کردن باشد
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind);
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -1418,7 +1431,7 @@ try {
             }
             unset($item);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind);
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
             $p['expiry_date_jalali'] = $p['expiry_date'] ? jd(strtotime($p['expiry_date'])) : null;
             $p['issued_at_jalali'] = $p['issued_at'] ? jd(strtotime($p['issued_at'])) : null;
             $stmtInst = $pdo->prepare("SELECT * FROM company_installments WHERE plate_id = ? ORDER BY inst_number");

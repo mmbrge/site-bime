@@ -272,7 +272,7 @@ function request_detail_text($req, $forStaff = false) {
     foreach (array_slice($plates, 0, 25) as $i => $p) {
         $st->execute([$p['id']]);
         $assigned = array_values(array_filter(array_column($st->fetchAll(), 'doc_type')));
-        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assigned, $p['has_prev_body'], $kind);
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assigned, $p['has_prev_body'], $kind, !empty($p['is_new_vehicle']));
         $t .= "\n" . fa($i + 1) . ") " . fa(company_row_label($p)) . " · " . insurance_type_fa($p['insurance_type']) . " · " . company_plate_status_fa($p['status'], $kind);
         if ($p['status'] === 'ISSUED' && $p['policy_number']) $t .= " · ش " . fa($p['policy_number']);
         if ($missing && $p['status'] !== 'ISSUED') $t .= "\n   ⚠️ کم دارد: " . implode('، ', array_values($missing));

@@ -284,6 +284,9 @@ function fin_generate_installments($pdo, $caseId, $count = null, $method = null,
     $stmt->execute([$caseId]);
     $case = $stmt->fetch();
     if (!$case || $case['status'] !== 'ISSUED') return ['ok' => false, 'error' => 'پرونده صادر نشده است.'];
+    if (!empty($case['no_installments'])) return ['ok' => false, 'error' => 'این بیمه‌نامه «بدونِ قسط» ثبت شده (بایگانیِ قبلی).'];
+    if (!function_exists('endo_has_finance')) require_once __DIR__ . '/_endorse.php';
+    if (endo_has_finance($pdo, 'P', $caseId)) return ['ok' => false, 'error' => 'این بیمه‌نامه الحاقیه‌ی دارای اثرِ مالی دارد؛ برای ساختِ دوباره‌ی اقساط اول آن الحاقیه را حذف کنید.'];
     $premium = money_to_int($case['total_premium']);
     if (!$premium) return ['ok' => false, 'error' => 'حق بیمه‌ی این پرونده ثبت نشده است.'];
 
@@ -329,6 +332,9 @@ function fin_generate_installments($pdo, $caseId, $count = null, $method = null,
 // =====================================================================
 function fin_sync_installments($pdo) {
     fin_ensure_schema($pdo);
+    // بیمه‌نامه‌ای که الحاقیه دارد (اقساطش عمداً با حق بیمه‌ی اصلی برابر نیست) یا «بدونِ قسط» ثبت شده، دوباره ساخته نمی‌شود
+    if (!function_exists('endo_ensure')) require_once __DIR__ . '/_endorse.php';
+    endo_ensure($pdo);
     $out = ['personnel' => 0, 'company' => 0];
     try {
         $rows = $pdo->query("
@@ -337,7 +343,7 @@ function fin_sync_installments($pdo) {
             LEFT JOIN (SELECT pi.case_id, COUNT(*) AS cnt, SUM(pi.amount) AS total,
                               SUM(CASE WHEN COALESCE(pi.settled_to_pasargad,0) = 1 OR EXISTS (SELECT 1 FROM payment_allocations pa WHERE pa.installment_id = pi.id) THEN 1 ELSE 0 END) AS touched
                        FROM policy_installments pi GROUP BY pi.case_id) x ON x.case_id = pc.id
-            WHERE pc.status = 'ISSUED' AND COALESCE(pc.is_direct_payment,0) = 0
+            WHERE pc.status = 'ISSUED' AND COALESCE(pc.is_direct_payment,0) = 0 AND COALESCE(pc.endo_count,0) = 0 AND COALESCE(pc.no_installments,0) = 0
         ")->fetchAll();
         foreach ($rows as $r) {
             $premium = money_to_int($r['total_premium']);
@@ -358,7 +364,8 @@ function fin_sync_installments($pdo) {
             LEFT JOIN (SELECT ci.plate_id, COUNT(*) AS cnt, SUM(ci.amount) AS total,
                               SUM(CASE WHEN ci.settled_to_pasargad = 1 OR EXISTS (SELECT 1 FROM company_payment_allocations a WHERE a.installment_id = ci.id) THEN 1 ELSE 0 END) AS touched
                        FROM company_installments ci GROUP BY ci.plate_id) x ON x.plate_id = crp.id
-            WHERE crp.status = 'ISSUED' AND NOT EXISTS (SELECT 1 FROM company_requests cri WHERE cri.id = crp.request_id AND cri.is_import = 1)
+            WHERE crp.status = 'ISSUED' AND COALESCE(crp.endo_count,0) = 0 AND COALESCE(crp.no_installments,0) = 0
+              AND EXISTS (SELECT 1 FROM company_requests cri WHERE cri.id = crp.request_id AND cri.is_import = 0 AND cri.request_kind = 'NEW_POLICY')
         ")->fetchAll();
         foreach ($rows as $r) {
             $premium = money_to_int($r['total_premium']);

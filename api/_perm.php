@@ -33,6 +33,9 @@ function perm_catalog() {
             'issued-list' => ['صادره‌ها', ['view', 'edit', 'export']],
             'issue-group' => ['صدور گروهی (فایل بیمه‌گر)', ['view', 'create']],
             'import-archive' => ['بایگانی وارداتی (اکسلِ بیمه‌گر)', $all],
+            'endorsements' => ['الحاقیه‌ها (اضافی، برگشتی، فسخ) و اثرِ مالی‌شان', $all],
+            'legacy-import' => ['ورودِ بایگانی‌های قبلی (اکسل و پوشه‌ها)', $all],
+            'pasargad-recon' => ['مغایرت‌گیری با خروجیِ پاسارگاد', ['view', 'create', 'edit', 'export']],
             'renewals' => ['اعلام تمدید (شرکت‌ها و اشخاص)', ['view', 'create', 'edit', 'export']],
         ]],
         ['ثالث و بدنه › گزارش بازدید', [
@@ -117,7 +120,7 @@ function perm_role_defaults($role) {
         'life-settings' => ['view']] + $mine;
     if ($role === 'COMPANY_LIAISON') {
         $d = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'export'], 'companies-inbox' => ['view'],
-              'issued-list' => ['view', 'export'], 'companies-finance' => ['view', 'export'], 'filemanager' => ['view', 'export']];
+              'issued-list' => ['view', 'export'], 'endorsements' => ['view', 'export'], 'companies-finance' => ['view', 'export'], 'filemanager' => ['view', 'export']];
         foreach ($fin as $k) $d[$k] = array_values(array_diff($pages[$k][1], ['delete']));   // مالی: همه جز حذف
         return $d + $mine;
     }
@@ -236,6 +239,12 @@ function perm_api_map() {
         ]],
         'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
             'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',
+        ]],
+        'endorse_actions' => ['pages' => ['endorsements'], 'elevate' => true, 'actions' => [
+            'read' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'policy_search' => 'endorsements:view|endorsements:create|issue-queue:edit|companies-requests:edit',
+            'policy_info' => 'endorsements:view|issued-list:view|issue-queue:edit|companies-requests:view', 'preview' => 'endorsements:create|issue-queue:edit|companies-requests:edit',
+            'create' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
+            'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export',
         ]],
         'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
             'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',

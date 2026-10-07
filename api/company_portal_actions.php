@@ -142,7 +142,7 @@ try {
             $p['plate_display'] = company_row_label($p);
             $p['coverages_fa'] = company_coverages_fa($p['selected_coverages'] ?? null);
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind);
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -152,7 +152,7 @@ try {
             }
             unset($item);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind);
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
             if ($p['expiry_date']) $p['expiry_date_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['expiry_date']));
             if ($p['issued_at']) $p['issued_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($p['issued_at']));
         }
