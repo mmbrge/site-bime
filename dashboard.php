@@ -4027,8 +4027,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=9"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
-    <?php if ($lifeAccess): ?><script src="life.js?v=2"></script><?php endif; ?>
-    <?php if ($mkAccess): ?><script src="marketing.js?v=1"></script><?php endif; ?>
+    <?php if ($lifeAccess): ?><script src="life.js?v=3"></script><?php endif; ?>
+    <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=1"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
