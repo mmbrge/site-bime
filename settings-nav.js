@@ -12,10 +12,27 @@
         ['comfort', 'امکاناتِ رفاهی', 'fa-mug-hot', 'کتابخانه‌ی موسیقی و سقفِ حجم', '#d946ef', '#ec4899'],
         ['data', 'پشتیبان و داده‌ها', 'fa-database', 'پشتیبان‌گیری، خروجی/ورود و بازنشانی', '#475569', '#0f172a'],
     ];
-    const LINKS = [
-        ['fin-settings', 'تنظیماتِ مالی', 'fa-coins'], ['vr-settings', 'تنظیماتِ گزارش بازدید', 'fa-clipboard-check'], ['announcements', 'اعلان‌های پاپ‌آپ', 'fa-bullhorn'],
-        ['security', 'سپرِ امنیتی', 'fa-shield-halved'], ['staff-users', 'کاربران و دسترسی‌ها', 'fa-user-shield'],
+    // تنظیماتِ هر بخش (همان صفحه‌ای که در منوی خودِ آن بخش هم هست) داخلِ همین صفحه باز می‌شود
+    const MODS = [
+        ['life-settings', 'بیمه عمر', 'fa-heart-pulse', 'ستون‌های اکسل، قالبِ رسید، ربات', '#db2777', '#f97316'],
+        ['hl-settings', 'درمان تکمیلی', 'fa-stethoscope', 'گروه‌های رسیدِ ربات، روش‌ها، مهلت‌ها', '#059669', '#0e7490'],
+        ['mk-settings', 'بازاریابی و فروش', 'fa-bullhorn', 'کارمزد، پاداش، سطح، حقوق', '#c2410c', '#be185d'],
+        ['lt-settings', 'اتوماسیونِ نامه‌ها', 'fa-envelope-open-text', 'الگوی شماره، سربرگ، قالب، امضا', '#4338ca', '#0891b2'],
+        ['fin-settings', 'مالیِ شرکت‌ها (ثالث و بدنه)', 'fa-coins', 'اقساط، صورتحساب، کارمزد', '#16a34a', '#0d9488'],
+        ['vr-settings', 'گزارشِ بازدید', 'fa-clipboard-check', 'قالب‌ها، فیلدها، بازدیدکنندگان', '#ea580c', '#f59e0b'],
     ];
+    const LINKS = [
+        ['announcements', 'اعلان‌های پاپ‌آپ', 'fa-bullhorn'], ['security', 'سپرِ امنیتی', 'fa-shield-halved'], ['staff-users', 'کاربران و دسترسی‌ها', 'fa-user-shield'],
+    ];
+    let borrowed = null, host = null, curKey = null;
+    // محتوای امانتیِ یک بخش به زبانه‌ی خودش برمی‌گردد
+    function release() {
+        if (!borrowed) return;
+        const src = document.getElementById('tab-' + borrowed.tab);
+        if (src) borrowed.nodes.forEach(n => src.appendChild(n));
+        borrowed = null;
+        if (host) { host.innerHTML = ''; host.classList.add('stn-off'); }
+    }
     const CSS = `
     .stn-wrap{display:flex;gap:20px;align-items:flex-start}
     .stn-side{width:262px;flex:none;position:sticky;top:12px;background:#fff;border:1px solid #eef2f7;border-radius:26px;padding:12px;box-shadow:0 14px 34px -26px rgba(15,23,42,.45)}
@@ -61,29 +78,55 @@
         while (tab.firstChild) main.appendChild(tab.firstChild);
         tab.classList.remove('space-y-6');
         const links = LINKS.filter(l => document.getElementById('tab-' + l[0]) && document.getElementById('nav-' + l[0]));
+        const can = t => !window.permCan || window.permCan(t);
+        const mods = MODS.filter(m => document.getElementById('tab-' + m[0]) && can(m[0]));
         const side = document.createElement('aside'); side.className = 'stn-side';
         side.innerHTML = `<h4><i class="fas fa-gear"></i>تنظیمات</h4>` + cats.map(c => `<button type="button" class="stn-it" data-c="${c[0]}" style="--a:${c[4]};--b:${c[5]}"><span class="ic"><i class="fas ${c[2]}"></i></span>
             <span style="min-width:0"><b>${c[1]}</b><small>${c[3]}</small></span><span class="n">${cards.filter(x => x.dataset.scat === c[0]).length}</span></button>`).join('')
-            + (links.length ? `<div class="stn-sep">تنظیماتِ بخش‌های دیگر</div>` + links.map(l => `<button type="button" class="stn-lk" data-l="${l[0]}"><i class="fas ${l[2]}"></i>${l[1]}<i class="fas fa-arrow-up-left-from-circle"></i></button>`).join('') : '');
+            + (mods.length ? `<div class="stn-sep">تنظیماتِ بخش‌ها</div>` + mods.map(m => `<button type="button" class="stn-it" data-m="${m[0]}" style="--a:${m[4]};--b:${m[5]}"><span class="ic"><i class="fas ${m[2]}"></i></span>
+                <span style="min-width:0"><b>${m[1]}</b><small>${m[3]}</small></span></button>`).join('') : '')
+            + (links.length ? `<div class="stn-sep">مدیریت</div>` + links.map(l => `<button type="button" class="stn-lk" data-l="${l[0]}"><i class="fas ${l[2]}"></i>${l[1]}<i class="fas fa-arrow-up-left-from-circle"></i></button>`).join('') : '');
         const head = document.createElement('div'); head.className = 'stn-head';
         main.insertBefore(head, main.firstChild);
         const wrap = document.createElement('div'); wrap.className = 'stn-wrap';
         wrap.appendChild(side); wrap.appendChild(main); tab.appendChild(wrap);
+        host = document.createElement('div'); host.className = 'stn-mod stn-off'; main.appendChild(host);
+        const setHead = c => { head.style.cssText = `--a:${c[4]};--b:${c[5]}`; head.innerHTML = `<span class="ic"><i class="fas ${c[2]}"></i></span><div><h2>${c[1]}</h2><p>${c[3]}</p></div>`; };
+        const openMod = t => {
+            const m = mods.find(x => x[0] === t); if (!m) return;
+            release();
+            const src = document.getElementById('tab-' + t); if (!src) return;
+            borrowed = {tab: t, nodes: [...src.childNodes]};
+            borrowed.nodes.forEach(n => host.appendChild(n));
+            host.classList.remove('stn-off');
+            cards.forEach(x => x.classList.add('stn-off'));
+            main.querySelectorAll('.grid').forEach(g => { if (g.querySelector('[data-scat]')) g.classList.add('stn-off'); });
+            side.querySelectorAll('[data-c],[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === t));
+            setHead([t, 'تنظیماتِ ' + m[1], m[2], m[3] + ' - همان صفحه‌ای که در منوی خودِ این بخش هم هست', m[4], m[5]]);
+            curKey = 'm:' + t;
+            try { localStorage.setItem('stn:cat', curKey); } catch (e) {}
+            if (typeof window.tabLoad === 'function') window.tabLoad(t);
+        };
         const show = k => {
+            if (String(k).indexOf('m:') === 0 && mods.some(m => 'm:' + m[0] === k)) { openMod(k.slice(2)); return; }
+            release();
+            curKey = k;
             const c = cats.find(x => x[0] === k) || cats[0];
             cards.forEach(x => x.classList.toggle('stn-off', x.dataset.scat !== c[0]));
             // ردیف‌های شبکه‌ای که هیچ کارتِ دیدنی ندارند پنهان شوند
             main.querySelectorAll('.grid').forEach(g => { if (g.querySelector('[data-scat]')) g.classList.toggle('stn-off', ![...g.children].some(ch => ch.dataset && ch.dataset.scat && !ch.classList.contains('stn-off'))); });
-            side.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === c[0]));
-            head.style.cssText = `--a:${c[4]};--b:${c[5]}`;
-            head.innerHTML = `<span class="ic"><i class="fas ${c[2]}"></i></span><div><h2>${c[1]}</h2><p>${c[3]}</p></div>`;
+            side.querySelectorAll('[data-c],[data-m]').forEach(b => b.classList.toggle('on', b.dataset.c === c[0]));
+            setHead(c);
             try { localStorage.setItem('stn:cat', c[0]); } catch (e) {}
         };
         side.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { show(b.dataset.c); if (window.innerWidth >= 1024) tab.scrollIntoView({block: 'start', behavior: 'smooth'}); });
+        side.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { openMod(b.dataset.m); if (window.innerWidth >= 1024) tab.scrollIntoView({block: 'start', behavior: 'smooth'}); });
         side.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { if (typeof window.switchTab === 'function') window.switchTab(b.dataset.l); });
+        restoreFn = () => { if (curKey && curKey.indexOf('m:') === 0 && !borrowed) openMod(curKey.slice(2)); };
         let last = null; try { last = localStorage.getItem('stn:cat'); } catch (e) {}
         show(last || cats[0][0]);
     }
-    window.SettingsNav = {init, show: k => { const b = document.querySelector(`.stn-it[data-c="${k}"]`); if (b) b.click(); }};
+    let restoreFn = () => {};
+    window.SettingsNav = {init, release, restore: () => restoreFn(), show: k => { const b = document.querySelector(`.stn-it[data-c="${k}"],.stn-it[data-m="${k}"]`); if (b) b.click(); }};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

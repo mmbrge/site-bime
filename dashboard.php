@@ -250,6 +250,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <style>
+        /* فاصله‌ی یکسان بینِ کارت‌ها و جدول‌های پشتِ‌سرِهم در بدنه‌ی صفحه‌های ماژولی (عمر، بازاریابی، درمان، نامه‌ها) - مثلِ بقیه‌ی صفحه‌ها */
+        :is(.lf, .mk, .hl, .lt) :is([data-body], #lfd-body):not([contenteditable]) { display: flex; flex-direction: column; gap: 16px; }
+        :is(.lf, .mk, .hl, .lt) [data-list] > :is(.hl-card, .mk-card, .lf-card, .lt-card) + :is(.hl-card, .mk-card, .lf-card, .lt-card) { margin-top: 16px; }
         /* لوگوی سربرگ: هم‌اندازه‌ی «مربع + بیمه با ما» (ارتفاعِ ۳۶ پیکسل) */
         .brand-logo { display: block; height: 36px; width: auto; max-width: 190px; object-fit: contain; }
         /* داشبورد مالی: پویانمایی ستون‌ها، نوارها و کارت‌ها */
@@ -382,7 +385,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .su-seg { display: inline-flex; background: #f1f5f9; border-radius: 12px; padding: 3px; gap: 2px; }
         .su-seg button { font-size: 11px; font-weight: 700; color: #64748b; padding: 6px 12px; border-radius: 9px; transition: all .2s; }
         .su-seg button.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
-        .su-chip { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; }
+        .su-chip { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; margin-block: 2px; border-radius: 999px; background: #f1f5f9; color: #475569; }
         .su-chip.ad { background: #eef2ff; color: #4338ca; }
         .su-chip.co { background: #ecfdf5; color: #047857; }
         .su-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -581,6 +584,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .bm-sec .menu-link:hover > i:first-child, .bm-sec .menu-link.active-sub > i:first-child { background: linear-gradient(135deg, var(--c1), var(--c2)); color: #fff; }
         .bm-sec .menu-link.active-sub { background: color-mix(in srgb, var(--c1) 8%, #fff); }
         .bm-set { margin-top: auto; padding-top: 4px; border-top: 1px dashed #e2e8f0; }
+        .bm-grp { padding: 2px 0 4px; } .bm-grp + .bm-grp { border-top: 1px dashed color-mix(in srgb, var(--c1) 18%, #eef2f7); padding-top: 6px; }
+        .bm-gh { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 900; color: color-mix(in srgb, var(--c1) 75%, #0f172a); padding: 4px 6px 2px; }
+        .bm-gh i { font-size: 10px; opacity: .8; }
+        .bm-search { margin-right: auto; border: 1px solid #e2e8f0; border-radius: 999px; padding: 6px 12px; font-size: 11.5px; font-family: inherit; width: min(300px, 100%); background: #f8fafc; }
+        .bm-search:focus { outline: 2px solid #c7d2fe; background: #fff; }
+        .bm-sec.bm-hide, .bm-grp.bm-hide, .bm-sec .menu-link.bm-hide { display: none !important; }
+        @media (min-width: 1024px) {
+            .bm-sec.bm-wide { grid-column: span 2; }
+            .bm-sec.bm-wide .bm-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; align-items: start; }
+            .bm-sec.bm-wide .bm-grp + .bm-grp { border-top: 0; }
+            .bm-sec.bm-wide .bm-grp { border-right: 1px dashed color-mix(in srgb, var(--c1) 18%, #eef2f7); padding-right: 6px; }
+        }
         .bm-set .menu-link > i:first-child { background: #f8fafc; }
         @media (min-width: 1024px) {
             #main-nav .menu-group.bm-mega .menu-trigger.bm-trigger, #main-nav .menu-group.bm-mega.open .menu-trigger.bm-trigger, #main-nav .menu-group.bm-mega:hover .menu-trigger.bm-trigger {
@@ -886,19 +901,28 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 $bmLink = function ($tab, $icon, $label, $hint = '', $id = true, $extra = '') {
                     return '<a href="#" onclick="switchTab(\'' . $tab . '\')' . $extra . '" ' . ($id ? 'id="nav-' . $tab . '"' : 'data-bm="' . $tab . '"') . ' class="nav-item menu-link"><i class="fas ' . $icon . ' ml-2"></i><span class="bm-l">' . $label . ($hint !== '' ? '<small>' . $hint . '</small>' : '') . '</span></a>';
                 };
+                // زیرگروهِ درختی داخلِ یک بخش (مثلاً «مرکز صدور» داخلِ «ثالث و بدنه»)
+                $bmGroup = function ($title, $icon, $links) { return $links === '' ? '' : '<div class="bm-grp"><div class="bm-gh"><i class="fas ' . $icon . '"></i>' . $title . '</div>' . $links . '</div>'; };
+                $isAdminRole = ($_SESSION['role'] ?? '') === 'ADMIN';
                 $bmSecs = [];
                 if ($canSeeCompanies || !$isLiaison) {
-                    $x = '';
-                    if ($canSeeCompanies) $x .= $bmLink($isLiaison ? 'issued-list' : 'issue-queue', 'fa-stamp', 'مرکز صدور', 'در حال صدور، صادره، گروهی', false);
-                    if ($canSeeCompanies) $x .= $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور', false);
-                    if (!$isLiaison) $x .= $bmLink('records', 'fa-id-card', 'کارکنان (کسر از حقوق)', 'پرونده‌ها و معرفی‌نامه‌ها', false);
-                    if (!$isLiaison) $x .= $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامتِ خودرو', 'عکس‌ها و مدارک', false);
-                    if ($canSeeCompanies && !$isLiaison) $x .= $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص', false);
-                    if ($vrAccess) $x .= $bmLink('vr-build', 'fa-file-circle-plus', 'گزارشِ بازدید', 'ساخت و صادرشده‌ها', false);
+                    // ثالث و بدنه: همه‌ی کارهای صدور، شرکت‌ها، کارکنان، بازدید و مالیِ شرکت‌ها (منوهای جداگانه‌ی «صدور بیمه» و «مالی» حذف شدند)
+                    $g1 = ($canSeeCompanies && !$isLiaison ? $bmLink('issue-queue', 'fa-list-check', 'در حال صدور', 'ثبتِ صدور و بیمه‌نامه') : '')
+                        . ($canSeeCompanies ? $bmLink('issued-list', 'fa-file-circle-check', 'صادره‌ها', 'جستجو، اکسل، فایل') : '')
+                        . ($canSeeCompanies && !$isLiaison ? $bmLink('issue-group', 'fa-layer-group', 'صدورِ گروهی', 'فایلِ PDFِ بیمه‌گر') . $bmLink('import-archive', 'fa-box-archive', 'بایگانیِ وارداتی', 'اکسلِ بیمه‌گر') . $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص') : '');
+                    $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
+                    $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
+                        . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات') : '';
+                    $g4 = $vrAccess ? $bmLink('vr-build', 'fa-file-circle-plus', 'ساختِ گزارشِ بازدید') . $bmLink('vr-list', 'fa-folder-open', 'گزارش‌های صادرشده') : '';
+                    $g5 = $bmLink('fin-dashboard', 'fa-chart-pie', 'داشبوردِ مالی') . $bmLink('fin-installments', 'fa-list-ol', 'مرکزِ اقساط', 'دریافت و پرداخت روی هر قسط') . $bmLink('fin-payments', 'fa-arrow-right-arrow-left', 'دریافت‌ها، پرداخت‌ها و چک‌ها')
+                        . $bmLink('fin-tracking', 'fa-magnifying-glass-location', 'پیگیری', 'کدِ رهگیریِ قسط') . $bmLink('fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها') . $bmLink('fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری با اکسل')
+                        . ($canSeeCompanies ? $bmLink('companies-finance', 'fa-sack-dollar', 'گزارشِ مالیِ شرکت‌ها') : '') . ($isAdminRole ? $bmLink('fin-contracts', 'fa-file-contract', 'قراردادهای پرداخت') : '');
+                    $x = $bmGroup('مرکزِ صدور', 'fa-stamp', $g1) . $bmGroup('شرکت‌ها', 'fa-building', $g2) . $bmGroup('کارکنان (کسر از حقوق)', 'fa-id-card', $g3)
+                        . $bmGroup('گزارشِ بازدید', 'fa-clipboard-check', $g4) . $bmGroup('مالیِ شرکت‌ها و اقساط', 'fa-coins', $g5);
                     $set = '';
-                    if ($canSeeCompanies && !$isLiaison) $set .= $bmLink('companies-manage', 'fa-gear', 'مدیریتِ شرکت‌ها', '', false);
-                    if ($vrAccess && ($_SESSION['role'] ?? '') === 'ADMIN') $set .= $bmLink('vr-settings', 'fa-sliders', 'تنظیماتِ گزارشِ بازدید', '', false);
-                    $bmSecs[] = ['ثالث و بدنه', 'صدور، شرکت‌ها، کارکنان، بازدید', 'fa-car-side', '#2563eb', '#06b6d4', $x, $set];
+                    if ($canSeeCompanies && !$isLiaison) $set .= $bmLink('companies-manage', 'fa-gear', 'مدیریتِ شرکت‌ها', 'اطلاعات، ستون‌های اکسل، کاربران');
+                    if ($isAdminRole) $set .= $bmLink('fin-settings', 'fa-money-check-dollar', 'تنظیماتِ مالی') . ($vrAccess ? $bmLink('vr-settings', 'fa-sliders', 'تنظیماتِ گزارشِ بازدید') : '');
+                    $bmSecs[] = ['ثالث و بدنه', 'صدور، شرکت‌ها، کارکنان، بازدید، مالی و اقساط', 'fa-car-side', '#2563eb', '#06b6d4', $x, $set, true];
                 }
                 if ($lifeAccess) $bmSecs[] = ['بیمه عمر', 'اقساط، وصول، تماس، رسید', 'fa-heart-pulse', '#db2777', '#f97316',
                     $bmLink('life-dash', 'fa-chart-pie', 'داشبوردِ بیمه عمر', 'وصول، معوق، همکاران') . $bmLink('life-policies', 'fa-file-medical', 'بیمه‌نامه‌ها و اقساط', 'پرداخت، تماس، رسید')
@@ -923,10 +947,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <i class="fas fa-chevron-down text-[9px] mr-1"></i>
                     </button>
                     <div class="menu-panel bm-panel">
-                        <div class="bm-top"><b><i class="fas fa-layer-group"></i> همه‌ی بخش‌ها به تفکیکِ رشته‌ی بیمه</b><small>هر بخش کارها و تنظیماتِ خودش را دارد</small></div>
+                        <div class="bm-top"><b><i class="fas fa-layer-group"></i> همه‌ی بخش‌ها به تفکیکِ رشته‌ی بیمه</b><small>هر بخش کارها و تنظیماتِ خودش را دارد؛ تنظیماتِ همه‌ی بخش‌ها در «تنظیماتِ سامانه» هم هست</small>
+                            <input type="search" class="bm-search" placeholder="جستجو در منو… (مثلاً صادره، اقساط، رسید)" oninput="bmFilter(this.value)" onclick="event.stopPropagation()"></div>
                         <div class="bm-grid">
-                        <?php foreach ($bmSecs as [$t, $sub, $ic, $c1, $c2, $links, $set]): ?>
-                            <div class="bm-sec" style="--c1:<?php echo $c1; ?>;--c2:<?php echo $c2; ?>">
+                        <?php foreach ($bmSecs as $__sec): [$t, $sub, $ic, $c1, $c2, $links, $set] = $__sec; ?>
+                            <div class="bm-sec<?php echo !empty($__sec[7]) ? ' bm-wide' : ''; ?>" style="--c1:<?php echo $c1; ?>;--c2:<?php echo $c2; ?>">
                                 <div class="bm-head"><span class="bm-ic"><i class="fas <?php echo $ic; ?>"></i></span><div><b><?php echo $t; ?></b><small><?php echo $sub; ?></small></div></div>
                                 <div class="bm-links"><?php echo $links; ?></div>
                                 <?php if ($set !== ''): ?><div class="bm-set"><?php echo $set; ?></div><?php endif; ?>
@@ -936,85 +961,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
                 <?php endif; ?>
-
-                <!-- ===== صدور بیمه: کارکنان، شرکت‌ها، لیست صدور/صادره‌ها و گزارش بازدید ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-file-shield ml-1"></i> صدور بیمه
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                        <span id="ops-badge" class="hidden bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full mr-1"></span>
-                    </button>
-                    <div class="menu-panel">
-                        <?php if ($canSeeCompanies): ?>
-                        <a href="#" onclick="switchTab('<?php echo $isLiaison ? 'issued-list' : 'issue-queue'; ?>')" class="nav-item menu-link font-black text-teal-700"><i class="fas fa-stamp ml-2"></i> مرکز صدور <small class="text-[10px] text-slate-400 font-bold mr-1">در حال صدور · صادره · گروهی</small></a>
-                        <div class="menu-sep"></div>
-                        <?php endif; ?>
-                        <?php if (!$isLiaison): ?>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-id-card ml-2"></i><span class="ms-t">کارکنان (کسر از حقوق)<small>پرونده، بازدید سلامت، صدور</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">کارکنان (کسر از حقوق)</div>
-                                <a href="#" onclick="switchTab('records')" id="nav-records" class="nav-item menu-link"><i class="fas fa-folder-open ml-2"></i> مدیریت پرونده‌ها</a>
-                                <a href="#" onclick="switchTab('health')" id="nav-health" class="nav-item menu-link"><i class="fas fa-heart-pulse ml-2"></i> بازدید سلامت و مدارک</a>
-                                <a href="#" onclick="switchTab('approved-reviews')" id="nav-approved-reviews" class="nav-item menu-link"><i class="fas fa-circle-check ml-2"></i> بازدیدهای تاییدشده</a>
-                                <a href="#" onclick="switchTab('cases')" id="nav-cases" class="nav-item menu-link"><i class="fas fa-file-signature ml-2"></i> صدور بیمه‌نامه</a>
-                                <a href="#" onclick="switchTab('queue')" id="nav-queue" class="nav-item menu-link"><i class="fas fa-microchip ml-2"></i> صف پردازش OCR <small class="text-[10px] text-slate-400 font-bold mr-1">درخواست‌های ربات</small></a>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        <?php if ($canSeeCompanies): ?>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-building ml-2"></i><span class="ms-t">شرکت‌ها<small>درخواست، مدارک، مدیریت</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">شرکت‌ها</div>
-                                <a href="#" onclick="switchTab('companies-requests')" id="nav-companies-requests" class="nav-item menu-link"><i class="fas fa-file-lines ml-2"></i> درخواست‌های شرکتی</a>
-                                <a href="#" onclick="switchTab('companies-inbox')" id="nav-companies-inbox" class="nav-item menu-link"><i class="fas fa-inbox ml-2"></i> صندوق ورودی مدارک</a>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('companies-manage')" id="nav-companies-manage" class="nav-item menu-link"><i class="fas fa-gear ml-2"></i> مدیریت شرکت‌ها</a><?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-stamp ml-2"></i><span class="ms-t">صدور و صادره‌ها<small>لیست صدور و بیمه‌نامه‌های صادره</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">صدور و صادره‌ها</div>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-queue')" id="nav-issue-queue" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> در حال صدور</a><?php endif; ?>
-                                <a href="#" onclick="switchTab('issued-list')" id="nav-issued-list" class="nav-item menu-link"><i class="fas fa-file-circle-check ml-2"></i> صادره‌ها</a>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('issue-group')" id="nav-issue-group" class="nav-item menu-link"><i class="fas fa-layer-group ml-2"></i> صدور گروهی (فایل بیمه‌گر)</a><?php endif; ?>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('import-archive')" id="nav-import-archive" class="nav-item menu-link"><i class="fas fa-box-archive ml-2"></i> بایگانی وارداتی <small class="text-[10px] text-slate-400 font-bold mr-1">اکسلِ بیمه‌گر</small></a><?php endif; ?>
-                                <?php if (!$isLiaison): ?><a href="#" onclick="switchTab('renewals')" id="nav-renewals" class="nav-item menu-link"><i class="fas fa-bell ml-2"></i> اعلام تمدید <small class="text-[10px] text-slate-400 font-bold mr-1">شرکت‌ها و اشخاص</small></a><?php endif; ?>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-<?php echo $vrSubHtml; ?>
-                    </div>
-                </div>
-
-                <!-- ===== مالی: داشبورد، اقساط و دریافت‌ها، تسویه و گزارش‌ها ===== -->
-                <div class="menu-group">
-                    <button type="button" class="menu-trigger" aria-expanded="false" onclick="toggleMenuGroup(this)">
-                        <i class="fas fa-calculator ml-1"></i> مالی
-                        <i class="fas fa-chevron-down text-[9px] mr-1"></i>
-                    </button>
-                    <div class="menu-panel">
-                        <a href="#" onclick="switchTab('fin-dashboard')" id="nav-fin-dashboard" class="nav-item menu-link"><i class="fas fa-chart-pie ml-2"></i> داشبورد مالی</a>
-                        <a href="#" onclick="switchTab('fin-installments')" id="nav-fin-installments" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-list-ol ml-2"></i> مرکز اقساط <small class="text-[10px] text-slate-400 font-bold mr-1">دریافت و پرداخت روی هر قسط</small></a>
-                        <a href="#" onclick="switchTab('fin-payments')" id="nav-fin-payments" class="nav-item menu-link"><i class="fas fa-arrow-right-arrow-left ml-2"></i> دریافت‌ها، پرداخت‌ها و چک‌ها</a>
-                        <a href="#" onclick="switchTab('fin-tracking')" id="nav-fin-tracking" class="nav-item menu-link"><i class="fas fa-magnifying-glass-location ml-2"></i> پیگیری <small class="text-[10px] text-slate-400 font-bold mr-1">کد رهگیریِ قسط یا شناسه‌ی درخواست</small></a>
-                        <a href="#" onclick="switchTab('fin-invoices')" id="nav-fin-invoices" class="nav-item menu-link"><i class="fas fa-file-invoice ml-2"></i> صورتحساب‌ها</a>
-                        <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-scale-balanced ml-2"></i><span class="ms-t">گزارش‌ها و ابزار<small>مغایرت، شرکت‌ها، تسویه‌های قبلی</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
-                            <div class="menu-subpanel">
-                                <div class="ms-head">گزارش‌ها و ابزار</div>
-                                <a href="#" onclick="switchTab('fin-reconcile')" id="nav-fin-reconcile" class="nav-item menu-link"><i class="fas fa-scale-balanced ml-2"></i> مغایرت‌گیری با اکسل</a>
-                                <?php if ($canSeeCompanies): ?><a href="#" onclick="switchTab('companies-finance')" id="nav-companies-finance" class="nav-item menu-link"><i class="fas fa-sack-dollar ml-2"></i> گزارش مالی شرکت‌ها</a><?php endif; ?>
-                            </div>
-                        </div>
-                        <?php if($_SESSION['role'] === 'ADMIN'): ?>
-                        <div class="menu-sep"></div>
-                        <a href="#" onclick="switchTab('fin-contracts')" id="nav-fin-contracts" class="nav-item menu-link"><i class="fas fa-file-contract ml-2"></i> قراردادهای پرداخت</a>
-                        <a href="#" onclick="switchTab('fin-settings')" id="nav-fin-settings" class="nav-item menu-link"><i class="fas fa-money-check-dollar ml-2"></i> تنظیمات مالی</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
 
 <?php echo $personnelMenuHtml; ?>
                 <!-- ===== بایگانی و مدیریت: بایگانی، کاربران و سامانه ===== -->
@@ -1041,13 +987,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-cogs ml-2"></i><span class="ms-t">تنظیمات<small>سامانه، سپر امنیتی</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
                             <div class="menu-subpanel">
                                 <div class="ms-head">تنظیمات</div>
-                                <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیمات سیستم <small class="text-[10px] text-slate-400 font-bold mr-1">ربات، مرخصی، پشتیبان‌گیری</small></a>
+                                <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-sliders ml-2"></i> تنظیماتِ سامانه <small class="text-[10px] text-slate-400 font-bold mr-1">همه‌ی بخش‌ها، ربات، پشتیبان‌گیری</small></a>
                                 <a href="#" onclick="switchTab('announcements')" id="nav-announcements" class="nav-item menu-link"><i class="fas fa-bullhorn ml-2"></i> اعلان‌های پاپ‌آپ <small class="text-[10px] text-slate-400 font-bold mr-1">هشدار، اطلاعیه، قوانین، تولد</small></a>
                                 <a href="#" onclick="switchTab('security')" id="nav-security" class="nav-item menu-link"><i class="fas fa-shield-halved ml-2"></i> سپر امنیتی <small class="text-[10px] text-slate-400 font-bold mr-1">گزارش، نشست‌ها، رخدادها</small></a>
                             </div>
                         </div>
                         <?php else: ?>
-                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیمات سیستم <small class="text-[10px] text-slate-400 font-bold mr-1">ربات، مرخصی، پشتیبان‌گیری</small></a>
+                        <a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-item menu-link"><i class="fas fa-cogs ml-2"></i> تنظیماتِ سامانه <small class="text-[10px] text-slate-400 font-bold mr-1">همه‌ی بخش‌ها، ربات، پشتیبان‌گیری</small></a>
                         <a href="#" onclick="switchTab('announcements')" id="nav-announcements" class="nav-item menu-link"><i class="fas fa-bullhorn ml-2"></i> اعلان‌های پاپ‌آپ <small class="text-[10px] text-slate-400 font-bold mr-1">هشدار، اطلاعیه، قوانین، تولد</small></a>
                         <?php endif; ?>
                         <?php endif; ?>
@@ -4008,7 +3954,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="cursor-fx.js?v=1" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=12"></script>
-    <script src="settings-nav.js?v=2"></script>
+    <script src="settings-nav.js?v=3"></script>
     <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
@@ -4101,6 +4047,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (m && !el.closest('#perm-modal')) el.classList.toggle('perm-hide', !permCan(m[1]));
             });
             document.querySelectorAll('#main-nav .menu-sub').forEach(sub => sub.classList.toggle('perm-hide', !sub.querySelector('.nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .bm-grp').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
             document.querySelectorAll('#main-nav .bm-sec').forEach(sec => sec.classList.toggle('perm-hide', !sec.querySelector('.bm-links .nav-item:not(.perm-hide)')));
             document.querySelectorAll('#main-nav .menu-group').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
             // دکمه‌های عملیات
@@ -6834,7 +6781,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-[11px] text-slate-400">درخواست ${r.ref_code ? 'شناسه‌ی ' + e2pNum(r.ref_code) : '#' + e2pNum(r.id)} · ${r.request_kind_fa} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
                         <span class="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${expCls}">${dte === null ? 'بدون انقضا' : (dte < 0 ? `${e2pNum(-dte)} روز گذشته` : `نزدیک‌ترین انقضا: ${e2pNum(dte)} روز`)}</span>
                     </div>
-                    <div class="grid grid-cols-4 gap-1.5 my-3 text-center">
+                    <div class="grid grid-cols-4 gap-1.5 mt-4 mb-3 text-center">
                         <div class="rounded-lg bg-slate-50 p-1.5"><p class="text-[9px] text-slate-500">صادرنشده</p><p class="font-black text-slate-700">${e2pNum(open)}</p></div>
                         <div class="rounded-lg bg-emerald-50 p-1.5"><p class="text-[9px] text-emerald-700">آماده</p><p class="font-black text-emerald-700">${e2pNum(ready)}</p></div>
                         <div class="rounded-lg bg-cyan-50 p-1.5"><p class="text-[9px] text-cyan-700">بدنه</p><p class="font-black text-cyan-800">${e2pNum(r.body_rows)}</p></div>
@@ -8822,6 +8769,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
             if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
             permTab = tabId;
+            if (window.SettingsNav && SettingsNav.release) SettingsNav.release();   // تنظیماتِ بخشی که داخلِ «تنظیماتِ سامانه» باز بود به زبانه‌ی خودش برمی‌گردد
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const target = document.getElementById('tab-' + tabId);
             if (!target) { showToast('این بخش هنوز در دسترس نیست.', 'error'); return; }
@@ -8853,6 +8801,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             // در موبایل، بعد از انتخاب یک تب، منو خودکار بسته شود
             if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
+            tabLoad(tabId, tabKey);
+            permSchedule();
+        }
+        // جستجو در منوی درختیِ «بیمه با ما»
+        function bmFilter(q) {
+            const n = v => String(v || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\u200f\u200e]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const k = n(q);
+            document.querySelectorAll('#main-nav .bm-sec').forEach(sec => {
+                const title = n(sec.querySelector('.bm-head') ? sec.querySelector('.bm-head').textContent : '');
+                let any = false;
+                sec.querySelectorAll('.menu-link').forEach(a => { const hit = !k || title.includes(k) || n(a.textContent).includes(k); a.classList.toggle('bm-hide', !hit); if (hit && !a.classList.contains('perm-hide')) any = true; });
+                sec.querySelectorAll('.bm-grp').forEach(g => g.classList.toggle('bm-hide', !!k && !g.querySelector('.menu-link:not(.bm-hide)')));
+                sec.classList.toggle('bm-hide', !!k && !any);
+            });
+        }
+        // بارگذاریِ محتوای هر زبانه (جدا از نمایشش، تا «تنظیماتِ سامانه» هم بتواند تنظیماتِ یک بخش را داخلِ خودش باز کند)
+        function tabLoad(tabId, tabKey) {
             // بارگذاریِ همه‌ی تب‌های مالی از یک جا انجام می‌شود: initFinance(tabId) در پایینِ همین تابع
             // (که اول bootstrap را می‌گیرد و کشویی‌های دوره/شرکت را پر می‌کند)
             if (tabId === 'records') loadRecords();
@@ -8861,6 +8826,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'queue') loadQueue();
             if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
+            if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
@@ -8890,8 +8856,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'vr-build' && window.VR) VR.initBuildTab();
             if (tabId === 'vr-list' && window.VR) VR.initListTab();
             if (tabId === 'vr-settings' && window.VR && VR.initSettingsTab) VR.initSettingsTab();
-            permSchedule();
         }
+        window.tabLoad = tabLoad;
 
         // ======================= بخش مالی =======================
         const FIN_API = 'api/finance_actions.php';

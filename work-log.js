@@ -138,7 +138,7 @@
     .wk-lbl{font-size:10.5px;font-weight:800;color:#64748b;margin-bottom:3px;display:block}
     .wk-tl{position:relative;padding-right:18px} .wk-tl::before{content:'';pointer-events:none;position:absolute;right:6px;top:4px;bottom:4px;width:2px;background:#e2e8f0;border-radius:2px}
     .wk-tl > div{position:relative;padding:4px 0 6px} .wk-tl > div::before{content:'';pointer-events:none;position:absolute;right:-16px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--c,#94a3b8);box-shadow:0 0 0 3px #fff}
-    .wk-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:900;border-radius:999px;padding:2px 8px}
+    .wk-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:900;border-radius:999px;padding:2px 8px;margin-block:2px}
     .wk-jp{position:absolute;z-index:99999999;width:252px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 20px 40px -15px rgba(15,23,42,.35);padding:10px;direction:rtl}
     .wk-jp-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px} .wk-jp-h b{font-size:12px} .wk-jp-h button{width:24px;height:26px;border-radius:9px;background:#f1f5f9;font-weight:900}
     .wk-jp-g{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center} .wk-jp-g i{font-style:normal;font-size:10px;color:#94a3b8;font-weight:800}
