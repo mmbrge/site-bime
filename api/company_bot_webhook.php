@@ -389,7 +389,7 @@ function nr_submit($chat, $acc, $t) {
 function doc_types_kb($requestId) {
     $types = company_doc_types();
     unset($types['car_card_or_title']);
-    $types = ['letter' => 'نامه‌ی درخواست'] + $types;
+    $types = ['letter' => 'نامه‌ی درخواست', 'mixed' => '📚 چند مدرک در یک PDF'] + $types;
     $rows = []; $row = [];
     foreach ($types as $k => $l) { $row[] = ['text' => $l, 'callback_data' => "dt:{$requestId}:{$k}"]; if (count($row) === 2) { $rows[] = $row; $row = []; } }
     if ($row) $rows[] = $row;
@@ -416,18 +416,28 @@ function co_store_doc($chat, $acc, $t, $message) {
     if (!$saved['ok']) { say($chat, '❌ ' . $saved['error']); return; }
     $rel = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
     $isLetter = ($t['doc_type'] ?? '') === 'letter';
+    $isMixed = ($t['doc_type'] ?? '') === 'mixed';   // «چند مدرک در یک PDF»: نوعِ هر صفحه را کارشناس تعیین می‌کند
     $pdo->prepare("INSERT INTO company_documents (company_id, request_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$req['company_id'], $req['id'], $acc['user']['id'], $rel, $saved['orig_name'], $isLetter ? 'LETTER' : 'SUPPORTING_DOC',
-                   $isLetter ? 'letter' : ($t['doc_type'] ?? null), $isLetter ? 'ASSIGNED' : 'UNASSIGNED']);
+                   $isLetter ? 'letter' : ($isMixed ? null : ($t['doc_type'] ?? null)), $isLetter ? 'ASSIGNED' : 'UNASSIGNED']);
     $docId = $pdo->lastInsertId();
     if ($isLetter) {
         $placed = company_place_letter($pdo, $siteRoot, $req['id'], $saved['path'], strtolower(pathinfo($saved['path'], PATHINFO_EXTENSION)) ?: 'pdf');
         if ($placed) { $rel = $placed; $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([$rel, $docId]); }
         $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$rel, $req['id']]);
     }
-    $t['count'] = intval($t['count'] ?? 0) + 1;
+    // PDFِ چندصفحه‌ای: هر صفحه یک مدرکِ جدا (برای بررسی و نوع‌گذاریِ تک‌تکِ صفحه‌ها در پنل)
+    $pages = 1;
+    if (!$isLetter) {
+        require_once __DIR__ . '/_pdf_split.php';
+        $sp = company_split_document($pdo, $siteRoot, $docId);
+        if ($sp && !empty($sp['ok'])) $pages = intval($sp['pages']);
+    }
+    $t['count'] = intval($t['count'] ?? 0) + $pages;
     st_set($chat, 'UPDOC', $t);
-    say($chat, '✅ «' . ($isLetter ? 'نامه‌ی درخواست' : company_doc_type_label($t['doc_type'])) . '» دریافت شد (' . fa($t['count']) . ' فایل). فایل بعدی را بفرستید یا «✅ پایان ارسال» را بزنید.',
+    say($chat, '✅ «' . ($isLetter ? 'نامه‌ی درخواست' : ($isMixed ? 'فایلِ چند مدرکی' : company_doc_type_label($t['doc_type']))) . '» دریافت شد'
+        . ($pages > 1 ? ' — PDFِ ' . fa($pages) . ' صفحه‌ای بود و هر صفحه جدا ثبت شد' : '')
+        . ' (' . fa($t['count']) . ' فایل). فایل بعدی را بفرستید یا «✅ پایان ارسال» را بزنید.',
         kb([[['text' => '✅ پایان ارسال']]]));
 }
 
@@ -652,7 +662,9 @@ if (!empty($update['callback_query'])) {
             case 'dt':
                 if (co_owned_request($acc, intval($a1))) {
                     st_set($chat, 'UPDOC', ['ctx' => auth_account_key($acc), 'request_id' => intval($a1), 'doc_type' => $a2, 'count' => 0]);
-                    say($chat, '📤 فایلِ «' . ($a2 === 'letter' ? 'نامه‌ی درخواست' : company_doc_type_label($a2)) . '» را بفرستید (PDF یا عکس؛ برای بازدید سلامت زیپ هم می‌شود). چند فایل را پشتِ‌هم بفرستید.', kb([[['text' => '✅ پایان ارسال']]]));
+                    say($chat, $a2 === 'mixed'
+                        ? '📤 PDFی که چند مدرک داخلش است را بفرستید؛ هر صفحه جدا ثبت و جدا بررسی می‌شود. چند فایل را پشتِ‌هم بفرستید.'
+                        : '📤 فایلِ «' . ($a2 === 'letter' ? 'نامه‌ی درخواست' : company_doc_type_label($a2)) . '» را بفرستید (PDF یا عکس؛ برای بازدید سلامت زیپ هم می‌شود). چند فایل را پشتِ‌هم بفرستید.', kb([[['text' => '✅ پایان ارسال']]]));
                 }
                 break;
             case 'pol':

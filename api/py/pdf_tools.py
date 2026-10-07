@@ -2,7 +2,8 @@
 # فایل: api/py/pdf_tools.py
 # ابزارهای PDF برای صفحه‌ی «ابزارها» (api/tools_actions.php) با همان PyMuPDF که برای بیمه‌نامه‌ها استفاده می‌شود.
 #   python3 pdf_tools.py <op> <outdir> <params.json> <file1.pdf> [file2.pdf ...]
-#   op: merge | extract | split | compress | toimg | rotate
+#   op: merge | extract | split | compress | toimg | rotate | pages
+#   pages: هر صفحه یک PDFِ جدا (p001.pdf, p002.pdf, ...) کنارِ هم در outdir — برای جدا کردنِ مدارکِ چندصفحه‌ای (api/_pdf_split.php)
 # خروجی (stdout): JSON  {"ok": true, "file": "out.pdf", "name": "...", "pages": n, "size": bytes, "note": "..."}
 import json
 import os
@@ -181,6 +182,32 @@ def main():
                         pix = d.load_page(p).get_pixmap(matrix=mat, alpha=False)
                         z.writestr('%s - صفحه %d.%s' % (base, p + 1, fmt), pix.tobytes('png' if fmt == 'png' else 'jpeg'))
                 out({'ok': True, 'file': 'out.zip', 'name': base + ' (عکسِ صفحه‌ها).zip', 'pages': len(pages), 'size': os.path.getsize(path)})
+        elif op == 'pages':
+            d = docs[0]
+            n = len(d)
+            mx = max(1, min(200, int(params.get('max') or 60)))
+            if n > mx:
+                out({'ok': False, 'error': 'فایل %d صفحه دارد؛ بیشتر از %d صفحه جدا نمی‌شود.' % (n, mx), 'pages': n})
+                return
+            files_out = []
+            thumbs = []
+            if not params.get('count_only') and (n > 1 or params.get('force')):
+                for p in range(n):
+                    one = fitz.open()
+                    one.insert_pdf(d, from_page=p, to_page=p)
+                    name = 'p%03d.pdf' % (p + 1)
+                    save_pdf(one, os.path.join(outdir, name))
+                    files_out.append(name)
+                    if params.get('thumbs'):   # پیش‌نمایشِ کوچک برای پنجره‌ی انتخابِ نوعِ هر صفحه
+                        try:
+                            pg = d.load_page(p)
+                            z = 720.0 / max(pg.rect.width, pg.rect.height, 1)
+                            pix = pg.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False)
+                            pix.save(os.path.join(outdir, 'p%03d.png' % (p + 1)))
+                            thumbs.append('p%03d.png' % (p + 1))
+                        except Exception:
+                            pass
+            out({'ok': True, 'pages': n, 'files': files_out, 'thumbs': thumbs})
         elif op == 'rotate':
             d = docs[0]
             pages = parse_ranges(params.get('pages'), len(d))

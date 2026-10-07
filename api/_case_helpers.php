@@ -1579,11 +1579,16 @@ function admin_store_case_doc($pdo, $siteRoot, $caseId, $docKey, $docLabel, $fil
     if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
         return ['ok' => false, 'error' => 'فایلِ «' . $docLabel . '» دریافت نشد (شاید حجمش زیاد است).'];
     }
+    return admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel, $file['tmp_name'], strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'jpg', $userId, true);
+}
+
+// همان، برای فایلی که از قبل روی سرور است (مثلاً یک صفحه‌ی جداشده از PDFِ چند مدرکی — api/_pdf_split.php)
+function admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel, $srcPath, $ext, $userId = null, $isUpload = false) {
     $tmpDir = temp_archive_root($siteRoot) . '/مدارک دستی ادمین';
     if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
-    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'jpg';
     $destPath = $tmpDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
-    if (!move_uploaded_file($file['tmp_name'], $destPath)) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.'];
+    $moved = $isUpload ? move_uploaded_file($srcPath, $destPath) : (@rename($srcPath, $destPath) || (@copy($srcPath, $destPath) && @unlink($srcPath)));
+    if (!$moved) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.'];
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($destPath, 2621440, 3200);
     $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
     // نسخه‌ی قبلیِ همان مدرک (در انتظار/ردشده) جایش را به این می‌دهد؛ «سایر مدارک» روی هم انباشته می‌شوند

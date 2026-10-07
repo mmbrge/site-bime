@@ -41,7 +41,7 @@ if ($action === '' && !$isJson && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' 
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
-$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'update_row',
+$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
@@ -1365,7 +1365,7 @@ try {
         $requestId = intval($data['request_id'] ?? 0);
         $stmt = $pdo->prepare("SELECT cd.*, c.name AS company_name FROM company_documents cd
                                 JOIN companies c ON c.id = cd.company_id
-                                WHERE cd.request_id = ? AND cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC");
+                                WHERE cd.request_id = ? AND cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC, cd.id ASC");
         $stmt->execute([$requestId]);
         $rows = $stmt->fetchAll();
         foreach ($rows as &$r) $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
@@ -1451,10 +1451,57 @@ try {
     if ($action === 'list_inbox') {
         $stmt = $pdo->query("SELECT cd.*, c.name AS company_name FROM company_documents cd
                               JOIN companies c ON c.id = cd.company_id
-                              WHERE cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC LIMIT 300");
+                              WHERE cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC, cd.id ASC LIMIT 300");
         $rows = $stmt->fetchAll();
         foreach ($rows as &$r) $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
         echo json_encode(['ok' => true, 'documents' => $rows], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- PDFِ چند مدرکی: هر صفحه یک مدرکِ «تخصیص‌نیافته»ی جدا، تا تک‌تک بررسی و نوع‌گذاری شود ----
+    // split_document: یک مدرکِ موجود (صندوق ورودی یا مدرکِ یک ردیف) صفحه‌به‌صفحه جدا می‌شود
+    if ($action === 'split_document') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $r = company_split_document($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), true);
+        echo json_encode($r ?: ['ok' => false, 'error' => 'جدا کردن ممکن نشد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // doc_pages: شمارِ صفحه‌های یک مدرک (برای نمایشِ دکمه‌ی «جدا کردنِ صفحه‌ها» در پنجره‌ی تگ‌گذاری)
+    if ($action === 'doc_pages') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $st = $pdo->prepare("SELECT file_path FROM company_documents WHERE id = ?");
+        $st->execute([intval($data['doc_id'] ?? 0)]);
+        $fp = $st->fetchColumn();
+        $n = $fp ? pdf_page_count($pdo, dirname(__DIR__) . '/' . ltrim($fp, '/')) : null;
+        echo json_encode(['ok' => true, 'pages' => $n]);
+        exit;
+    }
+    // upload_combined_pdf: کارشناس یک PDFِ ترکیبی برای یک درخواست (و اختیاری یک ردیف) بارگذاری می‌کند
+    if ($action === 'upload_combined_pdf') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $requestId = intval($data['request_id'] ?? 0);
+        $plateId = intval($data['plate_id'] ?? 0) ?: null;
+        $stmt = $pdo->prepare("SELECT cr.id, cr.company_id, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt->execute([$requestId]);
+        $rq = $stmt->fetch();
+        if (!$rq) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+        if ($plateId) {
+            $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE id = ? AND request_id = ?");
+            $st->execute([$plateId, $requestId]);
+            if (!$st->fetchColumn()) $plateId = null;
+        }
+        $f = $_FILES['file'] ?? [];
+        if (strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ PDF.']); exit; }
+        $siteRoot = dirname(__DIR__);
+        $saved = company_store_uploaded_file($f, company_unassigned_temp_path($siteRoot, $rq['company_name']), 41943040);
+        if (!$saved['ok']) { echo json_encode($saved, JSON_UNESCAPED_UNICODE); exit; }
+        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status) VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', NULL, 'UNASSIGNED')")
+            ->execute([$rq['company_id'], $requestId, $plateId, ltrim(str_replace($siteRoot, '', $saved['path']), '/'), $saved['orig_name']]);
+        $docId = intval($pdo->lastInsertId());
+        $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
+        $sp = company_split_document($pdo, $siteRoot, $docId);
+        if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? ''], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'pages' => $sp ? intval($sp['pages']) : 1], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

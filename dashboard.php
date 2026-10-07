@@ -2928,6 +2928,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <!-- پیش‌نمایشِ خودِ فایل، تا بشود دید این مدرک چیست و مالِ کدام پلاک است -->
             <div id="cit-preview" class="mb-3 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"></div>
+            <!-- PDFِ چندصفحه‌ای: پیشنهادِ جدا کردنِ صفحه‌ها (هر صفحه یک مدرکِ جدا برای تگ‌گذاری) -->
+            <div id="cit-split" class="hidden mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 flex items-center justify-between gap-2"></div>
 
             <div class="float-input"><select id="cit-request" onchange="onCitRequestChange()"></select><label>درخواست مربوطه</label></div>
 
@@ -6022,6 +6024,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-teal-100">
                     <i class="fas fa-cloud-arrow-up"></i>بارگذاری نامه/مدرک عمومی (بدون پلاک مشخص)
                     <input type="file" class="hidden" onchange="uploadPlateDocDirect(null, this)">
+                </label>
+                <label class="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100" title="هر صفحه‌ی PDF یک مدرکِ جدا می‌شود و در «بررسی مدارک» تک‌تک نوع و ردیفش را تعیین می‌کنید">
+                    <i class="fas fa-scissors"></i>PDFِ چند مدرکی (هر صفحه جدا بررسی و نوع‌گذاری شود)
+                    <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="uploadCombinedPdf(null, this)">
                 </label>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
@@ -7396,6 +7402,52 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
+        // PDFِ چند مدرکی: روی سرور صفحه‌به‌صفحه جدا می‌شود و هر صفحه یک مدرکِ «تخصیص‌نیافته»ی این درخواست می‌شود
+        async function uploadCombinedPdf(plateId, input) {
+            const f = input.files[0];
+            input.value = '';
+            if (!f) return;
+            const fd = new FormData();
+            fd.append('action', 'upload_combined_pdf');
+            fd.append('request_id', currentRequestId);
+            if (plateId) fd.append('plate_id', plateId);
+            fd.append('file', f);
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                showToast(data.pages > 1 ? `${faDigits(data.pages)} صفحه جدا شد؛ حالا نوع و ردیفِ هر صفحه را تعیین کنید.` : ('فایل یک صفحه است و برای تگ‌گذاری ثبت شد.' + (data.note ? ' ' + data.note : '')), data.pages > 1 ? 'success' : 'warning');
+                if (currentRequestId) { openCompanyRequestDetail(currentRequestId); openRequestDocsReview(currentRequestId); }
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // در پنجره‌ی تگ‌گذاری: اگر PDF چند صفحه است، پیشنهادِ جدا کردن
+        async function citCheckPages(doc) {
+            const box = document.getElementById('cit-split');
+            box.classList.add('hidden'); box.innerHTML = '';
+            if (!/\.pdf$/i.test(doc.file_path || '')) return;
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_pages', doc_id: doc.id})})).json();
+                if (String(document.getElementById('cit-doc-id').value) !== String(doc.id) || !(data.pages > 1)) return;
+                box.innerHTML = `<span><i class="fas fa-layer-group ml-1"></i>این PDF <b>${faDigits(data.pages)} صفحه</b> دارد. اگر چند مدرکِ مختلف است، صفحه‌ها را جدا کنید تا هرکدام جدا نوع‌گذاری شود.</span>
+                    <button type="button" onclick="splitCompanyDoc(${doc.id})" class="shrink-0 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-scissors ml-1"></i>جدا کردنِ صفحه‌ها</button>`;
+                box.classList.remove('hidden');
+            } catch (e) {}
+        }
+
+        function splitCompanyDoc(docId) {
+            showConfirm('جدا کردنِ صفحه‌ها', 'هر صفحه‌ی این PDF یک مدرکِ جدا می‌شود (فایلِ ترکیبی حذف می‌شود) و باید هر صفحه را جدا تگ‌گذاری کنید. ادامه می‌دهید؟', async () => {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_document', doc_id: docId})})).json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                showToast(`${faDigits(data.pages)} صفحه جدا شد؛ هر صفحه را جدا تگ‌گذاری کنید.`, 'success');
+                document.getElementById('cinbox-tag-modal').classList.remove('active');
+                if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+                else if (data.request_id && currentRequestId && String(data.request_id) === String(currentRequestId)) openRequestDocsReview(currentRequestId);
+                else loadCompanyInbox();
+                if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+            });
+        }
+
         let companyInboxCache = [];
         let currentDocsReviewRequestId = null;
 
@@ -7547,6 +7599,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === doc.request_id ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
 
             renderCitPreview(doc);
+            citCheckPages(doc);
             const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
                                 'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title'];
             // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
@@ -7563,7 +7616,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cit-insurance-type').value = '';
             document.getElementById('cit-expiry').value = '';
             document.getElementById('cit-skip-health').checked = false;
-            await loadPlatesForCitRequest(sel.value, null);
+            // صفحه‌ی جداشده از PDFی که برای یک ردیفِ مشخص فرستاده شده بود، همان ردیف را از پیش انتخاب‌شده دارد
+            await loadPlatesForCitRequest(sel.value, String(sel.value) === String(doc.request_id) ? doc.plate_id : null);
             document.getElementById('cinbox-tag-modal').classList.add('active');
         }
 
@@ -9971,7 +10025,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <input type="text" id="adm-other-name" class="hidden border rounded-lg px-2 py-1.5 text-xs" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">
                             <input type="file" id="adm-doc-file" class="border rounded-lg px-2 py-1.5 text-xs">
                         </div>
-                        <button onclick="uploadAdminCaseDoc(${caseId})" class="mt-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                            <button onclick="uploadAdminCaseDoc(${caseId})" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
+                            <label class="bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer" title="هر صفحه جدا نمایش داده می‌شود و نوعِ مدرکِ هر صفحه را انتخاب می‌کنید">
+                                <i class="fas fa-scissors ml-1"></i>PDFِ چند مدرکی (تفکیکِ صفحه‌ها)
+                                <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(${caseId}, this, () => { openCase(${caseId}); loadCases(); })"></label>
+                        </div>
                     </div>` : ''}
                 `;
                 // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
@@ -10285,6 +10344,101 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (data.ok) { showToast('اطلاعات ذخیره شد.', 'success'); openCase(caseId); loadCases(); }
                 else showToast(data.error || 'خطا', 'error');
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // ======================= PDFِ چند مدرکی برای پرونده‌ی کارکنان =======================
+        // فایل روی سرور صفحه‌به‌صفحه جدا می‌شود؛ هر صفحه با پیش‌نمایش نشان داده می‌شود و نوعِ مدرکش انتخاب می‌شود.
+        // چند صفحه با یک نوع (مثلاً رو و پشتِ کارت) یک PDF می‌شوند؛ صفحه‌ی «نادیده» ذخیره نمی‌شود.
+        let CSPLIT = null;
+        async function caseSplitStart(caseId, input, onDone) {
+            const f = input.files[0];
+            input.value = '';
+            if (!f) return;
+            if (!/\.pdf$/i.test(f.name)) { showToast('فقط فایلِ PDF.', 'warning'); return; }
+            const fd = new FormData();
+            fd.append('action', 'split_upload'); fd.append('case_id', caseId); fd.append('file', f);
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let data;
+            try { data = await (await fetch('api/case_actions.php', {method: 'POST', body: fd})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            CSPLIT = {caseId, token: data.token, pages: data.pages, name: data.name, docs: data.required_docs || {}, onDone};
+            caseSplitRender();
+        }
+        function caseSplitUrl(n, kind) { return `api/case_actions.php?action=split_page&token=${CSPLIT.token}&n=${n}&kind=${kind}`; }
+        function caseSplitRender() {
+            let m = document.getElementById('csplit-modal');
+            if (!m) {
+                m = document.createElement('div');
+                m.id = 'csplit-modal';
+                m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3';
+                m.style.zIndex = '1000002';
+                document.body.appendChild(m);
+            }
+            const opts = `<option value="skip">— نادیده (ذخیره نشود) —</option>`
+                + Object.entries(CSPLIT.docs).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')
+                + `<option value="other">سایر مدارک (نام بنویسید)</option>`;
+            const cards = Array.from({length: CSPLIT.pages}, (_, i) => i + 1).map(n => `
+                <div class="csplit-card rounded-xl border-2 border-slate-200 bg-white p-2 flex flex-col gap-1.5" data-n="${n}">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                        <span>صفحه‌ی ${faDigits(n)} از ${faDigits(CSPLIT.pages)}</span>
+                        <a href="${caseSplitUrl(n, 'pdf')}" target="_blank" class="text-blue-600 hover:underline font-normal"><i class="fas fa-up-right-from-square ml-1"></i>باز کردن</a>
+                    </div>
+                    <img src="${caseSplitUrl(n, 'png')}" alt="صفحه ${n}" loading="lazy" class="w-full h-44 object-contain bg-slate-50 rounded-lg cursor-zoom-in" onclick="openImageZoom(this.src, 'صفحه ${faDigits(n)}')">
+                    <select class="csplit-key border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="caseSplitOnPick(this)">${opts}</select>
+                    <input type="text" class="csplit-other hidden border border-slate-300 rounded-lg p-1.5 text-[11px]" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">
+                </div>`).join('');
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-scissors ml-1 text-amber-600"></i>تفکیکِ صفحه‌های «${CSPLIT.name}»</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">${faDigits(CSPLIT.pages)} صفحه جدا شد. برای هر صفحه نوعِ مدرک را انتخاب کنید. اگر چند صفحه یک مدرک‌اند (مثلاً رو و پشتِ کارت)، همه را همان نوع بزنید تا یک فایل شوند. صفحه‌های «نادیده» ذخیره نمی‌شوند.</p></div>
+                    <button onclick="caseSplitClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${cards}</div>
+                <div class="p-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span id="csplit-sum" class="text-[11px] text-slate-500"></span>
+                    <div class="flex gap-2"><button onclick="caseSplitClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">انصراف</button>
+                    <button id="csplit-save" onclick="caseSplitSave()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-xl"><i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها</button></div>
+                </div></div>`;
+            caseSplitSummary();
+        }
+        function caseSplitOnPick(sel) {
+            const card = sel.closest('.csplit-card');
+            card.querySelector('.csplit-other').classList.toggle('hidden', sel.value !== 'other');
+            card.classList.toggle('border-teal-400', sel.value !== 'skip');
+            card.classList.toggle('border-slate-200', sel.value === 'skip');
+            caseSplitSummary();
+        }
+        function caseSplitSummary() {
+            const picked = [...document.querySelectorAll('#csplit-modal .csplit-key')].filter(s => s.value !== 'skip').length;
+            const el = document.getElementById('csplit-sum');
+            if (el) el.textContent = `${faDigits(picked)} از ${faDigits(CSPLIT.pages)} صفحه نوع‌گذاری شده`;
+        }
+        function caseSplitClose() {
+            const m = document.getElementById('csplit-modal');
+            if (m) m.remove();
+            CSPLIT = null;
+        }
+        async function caseSplitSave() {
+            const items = [...document.querySelectorAll('#csplit-modal .csplit-card')].map(c => ({
+                n: Number(c.dataset.n), doc_key: c.querySelector('.csplit-key').value, other_name: c.querySelector('.csplit-other').value.trim()
+            })).filter(x => x.doc_key !== 'skip');
+            if (!items.length) { showToast('برای هیچ صفحه‌ای نوعِ مدرک انتخاب نشده.', 'warning'); return; }
+            const noName = items.find(x => x.doc_key === 'other' && !x.other_name);
+            if (noName) { showToast(`برای صفحه‌ی ${faDigits(noName.n)} نامِ مدرک را بنویسید.`, 'warning'); return; }
+            const btn = document.getElementById('csplit-save');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+            let data;
+            try {
+                data = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'split_assign', case_id: CSPLIT.caseId, token: CSPLIT.token, items, done: 1})})).json();
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!data.ok) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها'; showToast(data.error || 'خطا', 'error'); return; }
+            const done = CSPLIT.onDone;
+            caseSplitClose();
+            showToast(`${faDigits((data.saved || []).length)} مدرک ثبت و تایید شد: ` + (data.saved || []).map(x => x.label + (x.pages.length > 1 ? ` (${faDigits(x.pages.length)} صفحه)` : '')).join('، ')
+                + ((data.failed || []).length ? ` · ناموفق: ${data.failed.join('، ')}` : ''), (data.failed || []).length ? 'warning' : 'success');
+            if (typeof done === 'function') done();
         }
 
         async function uploadAdminCaseDoc(caseId) {
@@ -11868,6 +12022,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                   + (data.case && data.case.insurance_type === 'BODY' && window.VR && VR.openTargetBuilder ? `<div class="rounded-lg border-2 border-violet-200 bg-violet-50 p-2 text-[11px] text-violet-700">
                         <div class="font-bold">گزارش بازدید</div>
                         <button type="button" onclick="openCaseVisitReport(${caseId}, renderMcChecklist)" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-2 py-0.5 rounded"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button></div>` : '')
+                  + `<div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
+                        <div class="font-bold">PDFِ چند مدرکی</div>
+                        <label class="inline-block mt-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 px-2 py-0.5 rounded cursor-pointer"><i class="fas fa-scissors ml-1"></i>تفکیکِ صفحه‌ها
+                            <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(document.getElementById('mc-case-id').value, this, renderMcChecklist)"></label></div>`
                   + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
                         <div class="font-bold">سایر مدارک (اختیاری)</div>
                         <input type="text" id="mc-post-other-name" placeholder="نام مدرک" class="mt-1 w-full border border-slate-300 rounded p-1 text-[11px]">

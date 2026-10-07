@@ -951,6 +951,7 @@ async function portalUploadRowDoc(plateId, typeElId, input) {
 
 const DOC_TYPE_OPTIONS = [
     ['letter', 'نامه‌ی درخواست (اگر موقع ثبت درخواست نامه ارسال نشده بود)'],
+    ['mixed', 'چند مدرکِ مختلف در یک PDF (هر صفحه جدا بررسی می‌شود)'],
     ['ownership_doc', 'سند'],
     ['car_card_front', 'کارت ماشین رو'],
     ['car_card_back', 'کارت ماشین پشت'],
@@ -1004,7 +1005,7 @@ async function uploadDocuments() {
     const files = document.getElementById('doc-upload-input').files;
     if (!files.length) { showToast('حداقل یک فایل انتخاب کنید.'); return; }
     const rows = document.querySelectorAll('#doc-upload-rows .du-row');
-    let okCount = 0;
+    let okCount = 0, splitPages = 0;
     for (let i = 0; i < files.length; i++) {
         const row = rows[i];
         const fd = new FormData();
@@ -1021,10 +1022,10 @@ async function uploadDocuments() {
         try {
             const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
             const data = await res.json();
-            if (data.ok) okCount++;
+            if (data.ok) { okCount++; if (Number(data.pages) > 1) splitPages += Number(data.pages); }
         } catch (e) { /* ادامه با فایل بعدی */ }
     }
-    showToast(`${okCount} از ${files.length} فایل آپلود شد.`);
+    showToast(`${okCount} از ${files.length} فایل آپلود شد.` + (splitPages ? ` PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا شدند (${splitPages} صفحه) تا هر صفحه جدا بررسی شود.` : ''));
     document.getElementById('doc-upload-input').value = '';
     document.getElementById('doc-upload-rows').innerHTML = '';
     openRequestDetail(activeRequestId);

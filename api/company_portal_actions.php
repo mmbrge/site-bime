@@ -465,6 +465,7 @@ try {
 
         $relPath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
         $suggestedType = trim($data['doc_type'] ?? '') ?: null;
+        if ($suggestedType === 'mixed') $suggestedType = null;   // «چند مدرک در یک PDF»: نوعِ هر صفحه را کارشناس تعیین می‌کند
         $p1 = trim($data['plate_p1'] ?? '') ?: null; $p2 = trim($data['plate_p2'] ?? '') ?: null;
         $letter = trim($data['plate_letter'] ?? '') ?: null; $p4 = trim($data['plate_p4'] ?? '') ?: null;
 
@@ -491,10 +492,18 @@ try {
             }
             $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$relPath, $requestId]);
         }
-        cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "📎 مدرکِ تازه از «{$companyName}» برای درخواست #{$requestId}: " . ($isLetter ? 'نامه‌ی درخواست' : company_doc_type_label($suggestedType)),
+        // PDFِ چندصفحه‌ای (چند مدرک در یک فایل): هر صفحه یک مدرکِ جدا می‌شود تا جدا بررسی و نوع‌گذاری شود
+        $pages = 1;
+        if (!$isLetter) {
+            require_once __DIR__ . '/_pdf_split.php';
+            $sp = company_split_document($pdo, $siteRoot, $docId);
+            if ($sp && !empty($sp['ok'])) $pages = intval($sp['pages']);
+        }
+        cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "📎 مدرکِ تازه از «{$companyName}» برای درخواست #{$requestId}: " . ($isLetter ? 'نامه‌ی درخواست' : company_doc_type_label($suggestedType))
+            . ($pages > 1 ? " (PDFِ {$pages} صفحه‌ای؛ هر صفحه جدا برای تگ‌گذاری)" : ''),
             ['inline_keyboard' => [[['text' => 'مشاهده', 'callback_data' => 'lreq:' . $requestId]]]]);
 
-        echo json_encode(['ok' => true]);
+        echo json_encode(['ok' => true, 'pages' => $pages]);
         exit;
     }
 

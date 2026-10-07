@@ -53,7 +53,7 @@ try {
     // ---- بارگذاریِ مستقیمِ مدرک و تکمیل/ویرایشِ دستیِ اطلاعاتِ درخواست فقط برای مدیر کل ----
     // (فیلدهای نام‌گذاریِ هنگامِ صدور - پلاک و نام بیمه‌گذار - برای کارشناسِ صدور آزاد می‌ماند)
     if (($_SESSION['role'] ?? '') !== 'ADMIN'
-        && (($_POST['action'] ?? '') === 'admin_upload_case_doc'
+        && (in_array(($_POST['action'] ?? ''), ['admin_upload_case_doc', 'split_upload'], true) || $action === 'split_assign'
             || ($action === 'set_naming' && (($data['insured_national_id'] ?? '') !== '' || ($data['ownership_choice'] ?? '') !== '' || ($data['prev_body_insurance'] ?? '') !== '')))) {
         echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
         exit;
@@ -61,7 +61,7 @@ try {
 
     // ---- درخواستِ «خارج از فاز عملیاتی» فقط قابلِ دیدن است؛ هیچ کارِ عملیاتی روی آن انجام نمی‌شود ----
     $mutating = ['approve_all_docs', 'approve_doc', 'reject_doc', 'request_fix', 'review_health_photo', 'approve_health',
-                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report'];
+                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report', 'split_upload', 'split_assign'];
     $postAction = $_POST['action'] ?? '';
     $guardAction = in_array($action, $mutating, true) ? $action : (in_array($postAction, $mutating, true) ? $postAction : '');
     if ($guardAction !== '') {
@@ -665,6 +665,82 @@ try {
         $stmt->execute([$caseId]);
         if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
         echo json_encode(admin_store_case_doc($pdo, dirname(__DIR__), $caseId, $docKey, $docLabel, $_FILES['file'], $_SESSION['user_id']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- PDFِ چند مدرکی: هر صفحه جدا پیش‌نمایش می‌شود و کارشناس نوعِ هر صفحه را انتخاب می‌کند ----
+    // ۱) split_upload: فایل صفحه‌به‌صفحه در یک پوشه‌ی موقت (توکن) جدا می‌شود
+    if (($_POST['action'] ?? '') === 'split_upload') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $caseId = intval($_POST['case_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        $stmt->execute([$caseId]);
+        $c = $stmt->fetch();
+        if (!$c) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        $r = pdf_split_job_create($pdo, dirname(__DIR__), $_FILES['file'] ?? [], $_SESSION['user_id']);
+        if (!empty($r['ok'])) $r['required_docs'] = get_required_docs_v2($c['insurance_type'], $c['ownership_choice'], $c['prev_body_insurance'], $c['insured_relationship']);
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ۲) split_page: پیش‌نمایشِ یک صفحه (png کوچک یا pdfِ همان صفحه)
+    if ($action === 'split_page') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $kind = ($_GET['kind'] ?? '') === 'png' ? 'png' : 'pdf';
+        $p = pdf_split_job_page_path(dirname(__DIR__), $_GET['token'] ?? '', $_SESSION['user_id'], intval($_GET['n'] ?? 0), $kind);
+        if (!$p) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'صفحه پیدا نشد (شاید زمانش گذشته؛ دوباره بارگذاری کنید).'], JSON_UNESCAPED_UNICODE); exit; }
+        header('Content-Type: ' . ($kind === 'png' ? 'image/png' : 'application/pdf'));
+        header('Content-Disposition: inline; filename="page-' . intval($_GET['n']) . '.' . $kind . '"');
+        header('Cache-Control: private, max-age=3600');
+        header('Content-Length: ' . filesize($p));
+        readfile($p);
+        exit;
+    }
+    // ۳) split_assign: صفحه‌هایی که نوعشان انتخاب شده ذخیره و تایید می‌شوند؛ چند صفحه با یک نوع => یک PDF
+    if ($action === 'split_assign') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $siteRoot = dirname(__DIR__);
+        $caseId = intval($data['case_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        $stmt->execute([$caseId]);
+        $c = $stmt->fetch();
+        if (!$c) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        $job = pdf_split_job_info($siteRoot, $data['token'] ?? '', $_SESSION['user_id']);
+        if (!$job) { echo json_encode(['ok' => false, 'error' => 'زمانِ این فایل گذشته؛ دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $required = get_required_docs_v2($c['insurance_type'], $c['ownership_choice'], $c['prev_body_insurance'], $c['insured_relationship']);
+        $groups = [];   // کلید => ['key','label','pages'=>[]]
+        foreach ((array)($data['items'] ?? []) as $it) {
+            $n = intval($it['n'] ?? 0);
+            $key = trim((string)($it['doc_key'] ?? ''));
+            if ($n < 1 || $n > intval($job['pages']) || $key === '' || $key === 'skip') continue;
+            if ($key === 'other') {
+                $label = mb_substr(trim((string)($it['other_name'] ?? '')), 0, 120);
+                if ($label === '') { echo json_encode(['ok' => false, 'error' => 'برای صفحه‌ی ' . $n . ' («سایر مدارک») نامِ مدرک را بنویسید.'], JSON_UNESCAPED_UNICODE); exit; }
+                $g = 'other:' . $label;
+            } else {
+                if (!isset($required[$key])) continue;
+                $label = $required[$key];
+                $g = $key;
+            }
+            if (!isset($groups[$g])) $groups[$g] = ['key' => $key, 'label' => $label, 'pages' => []];
+            $groups[$g]['pages'][] = $n;
+        }
+        if (!$groups) { echo json_encode(['ok' => false, 'error' => 'برای هیچ صفحه‌ای نوعِ مدرک انتخاب نشده.'], JSON_UNESCAPED_UNICODE); exit; }
+        $saved = []; $errors = [];
+        foreach ($groups as $g) {
+            sort($g['pages']);
+            $files = array_map(function ($n) use ($job) { return $job['dir'] . sprintf('/p%03d.pdf', $n); }, $g['pages']);
+            $files = array_values(array_filter($files, 'is_file'));
+            if (!$files) { $errors[] = $g['label']; continue; }
+            $src = $files[0];
+            if (count($files) > 1) {
+                $src = pdf_merge_files($pdo, $files, $job['dir'] . '/m_' . uniqid() . '.pdf');
+                if (!$src) { $errors[] = $g['label']; continue; }
+            }
+            $r = admin_store_case_doc_file($pdo, $siteRoot, $caseId, $g['key'], $g['label'], $src, 'pdf', $_SESSION['user_id']);
+            if (!empty($r['ok'])) $saved[] = ['label' => $g['label'], 'pages' => $g['pages']]; else $errors[] = $g['label'];
+        }
+        if (!empty($data['done'])) pdf_split_rrmdir($job['dir']);
+        echo json_encode(['ok' => (bool)$saved, 'saved' => $saved, 'failed' => $errors, 'error' => $saved ? null : 'ذخیره‌ی صفحه‌ها ممکن نشد.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
