@@ -59,6 +59,56 @@ function sec_probe($url) {
 }
 function sec_path_url($rel) { return sec_base_url() . '/' . implode('/', array_map('rawurlencode', explode('/', $rel))); }
 
+// تابع‌هایی که OCR، استخراج/تقسیمِ PDF و ابزارهای PDF برای اجرای پایتون لازم دارند نباید در disable_functions باشند
+// (بعد از عوض کردنِ نسخه‌ی PHP بعضی هاست‌ها این‌ها را برای نسخه‌ی تازه می‌بندند) + یک اجرای واقعیِ پایتون و PyMuPDF
+function sec_exec_check($pdo) {
+    $need = ['proc_open' => 'OCR، استخراج و تقسیمِ PDF، ابزارهای PDF', 'proc_close' => 'همان', 'shell_exec' => 'تبدیلِ Word به PDF و تستِ پایتون در تنظیمات',
+             'exec' => 'آزمایشگاهِ OCR', 'escapeshellarg' => 'اجرای امنِ دستورها'];
+    $disabled = array_filter(array_map('trim', explode(',', strtolower((string)ini_get('disable_functions')))));
+    $off = [];
+    foreach ($need as $fn => $use) if (in_array($fn, $disabled, true) || !function_exists($fn)) $off[] = $fn . ' (' . $use . ')';
+    $fix = 'در cPanel بخشِ Select PHP Version ← Options (یا MultiPHP INI Editor) این تابع‌ها را از disable_functions بردارید؛ اگر دسترسی ندارید از پشتیبانیِ هاست بخواهید برای همین نسخه‌ی PHP بازشان کنند.';
+    if ($off) return ['bad', 'PHP ' . PHP_VERSION . ' — این تابع‌ها بسته‌اند: ' . implode('، ', $off), $fix];
+    if (!function_exists('proc_open')) return ['bad', 'proc_open در دسترس نیست.', $fix];
+    // اجرای واقعی: نسخه‌ی پایتون + بارگذاریِ PyMuPDF (کتابخانه‌ی PDFِ اسکریپت‌ها)
+    $py = 'python3';
+    try {
+        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'");
+        $st->execute();
+        $v = trim((string)$st->fetchColumn());
+        if ($v !== '') $py = $v; elseif (is_file('/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3')) $py = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
+    } catch (Throwable $e) {}
+    $home = getenv('HOME');
+    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
+    $env = ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8'];
+    $code = "import sys\ntry:\n    try:\n        import pymupdf as fitz\n    except ImportError:\n        import fitz\n    m = 'PyMuPDF ' + str(getattr(fitz, 'VersionBind', '?'))\nexcept Exception as e:\n    m = 'NO_FITZ ' + str(e)[:80]\nprint(sys.version.split()[0] + ' | ' + m)";
+    // نتیجه‌ی موفقِ اجرای واقعی ۱۰ دقیقه نگه داشته می‌شود (کلید شاملِ نسخه‌ی PHP است: بعد از عوض کردنِ نسخه فوراً دوباره آزمایش می‌شود)
+    $cacheF = rtrim(sys_get_temp_dir(), '/') . '/bime_exec_' . md5(__DIR__ . '|' . PHP_VERSION . '|' . $py) . '.json';
+    $cached = is_file($cacheF) && filemtime($cacheF) > time() - 600 ? json_decode((string)@file_get_contents($cacheF), true) : null;
+    if (is_array($cached) && count($cached) === 3) return $cached;
+    $res = sec_exec_run($py, $code, $env, $fix);
+    if ($res[0] === 'ok') @file_put_contents($cacheF, json_encode($res, JSON_UNESCAPED_UNICODE));   // خطا نگه داشته نمی‌شود تا بعد از رفعش فوراً سبز شود
+    return $res;
+}
+function sec_exec_run($py, $code, array $env, $fix) {
+    $t0 = microtime(true);
+    $proc = @proc_open([$py, '-c', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) return ['bad', 'proc_open باز است ولی اجرای پایتون شکست خورد (' . $py . ').', $fix];
+    $out = trim((string)stream_get_contents($pipes[1])); $err = trim((string)stream_get_contents($pipes[2]));
+    fclose($pipes[1]); fclose($pipes[2]);
+    $rc = proc_close($proc);
+    $ms = intval((microtime(true) - $t0) * 1000);
+    if ($rc !== 0 || $out === '') {
+        return ['bad', 'پایتون اجرا نشد (کد ' . $rc . '): ' . mb_substr($err !== '' ? $err : 'خروجی خالی', 0, 200),
+                'مسیرِ پایتون در «تنظیماتِ گزارش بازدید» (' . $py . ') را بررسی کنید؛ اگر درست است، از پشتیبانیِ هاست بخواهید اجرای برنامه از PHP را برای این نسخه باز کنند.'];
+    }
+    if (strpos($out, 'NO_FITZ') !== false) {
+        return ['warn', 'پایتون اجرا شد (' . explode(' | ', $out)[0] . ') ولی PyMuPDF بارگذاری نشد؛ استخراج و تقسیمِ PDF کار نمی‌کند.',
+                'در محیطِ پایتونِ سایت (Setup Python App) بسته‌ی pymupdf را نصب کنید یا مسیرِ پایتون را در تنظیماتِ گزارش بازدید درست کنید.'];
+    }
+    return ['ok', 'PHP ' . PHP_VERSION . ' — تابع‌های لازم باز است و پایتون واقعاً اجرا شد: Python ' . $out . ' (' . fa_digits($ms) . ' میلی‌ثانیه).', ''];
+}
+
 // ---------------- بررسی‌های امنیتی ----------------
 function sec_checks($pdo) {
     $s = sec_settings($pdo);
@@ -82,6 +132,8 @@ function sec_checks($pdo) {
     $de = strtolower((string)get_cfg_var('display_errors'));
     $add('display_errors', 'سرور', 'نمایشِ خطاهای PHP به کاربر', 'ok',
          in_array($de, ['1', 'on', 'stdout'], true) ? 'در php.ini روشن است ولی سپرِ امنیتی روی همه‌ی صفحه‌ها خاموشش می‌کند.' : 'خاموش است؛ جزئیاتِ فنی به بیرون درز نمی‌کند.', '', 1);
+    [$exSt, $exDetail, $exFix] = sec_exec_check($pdo);
+    $add('exec', 'سرور', 'اجرای پایتون از PHP (OCR، استخراج و تقسیمِ PDF)', $exSt, $exDetail, $exFix, 3);
     $idle = max(0.25, floatval($s['sec_idle_hours'] ?? 3)) * 3600;
     $gc = intval(ini_get('session.gc_maxlifetime'));
     $add('gc', 'نشست', 'عمرِ نشست در سرور در برابرِ زمانِ خروجِ خودکار', $gc >= $idle ? 'ok' : 'warn',
