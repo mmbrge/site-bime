@@ -45,6 +45,9 @@ if (!$companies) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="../cursor-pref.js?v=1"></script>
+<script>window.MAINT_BASE = '../';</script>
+<script src="../maint-watch.js?v=1"></script>
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -52,9 +55,9 @@ if (!$companies) {
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=4"></script>
-<script src="../cursor-fx.js?v=1" defer></script>
+<script src="../cursor-fx.js?v=2" defer></script>
 <script src="../tools.js?v=2"></script>
-<script src="../comfort.js?v=12"></script>
+<script src="../comfort.js?v=13"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=2"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
@@ -62,15 +65,16 @@ if (!$companies) {
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
-<script src="../chat-ui.js?v=8"></script>
+<script src="../chat-ui.js?v=9"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
-    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
-    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
-    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
-    body { font-family: 'Vazir', sans-serif; background: #f1f5f9; color: #334155; margin: 0; }
+    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
+    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; font-display: swap; }
+    @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+    body { font-family: 'Vazir', Tahoma, sans-serif; background: #f1f5f9; color: #334155; margin: 0; }
+        button, input, select, textarea { font-family: inherit; }
     .card { background: #fff; border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1.5px solid #dbe3ee; }
     /* ردیف‌های ریزِ درخواست: کادرِ پررنگ‌تر و منظم */
     .prow { background:#fff; border:2px solid #cbd5e1; border-radius:16px; margin-bottom:10px; overflow:hidden; box-shadow:0 2px 8px rgba(15,23,42,.05); }
@@ -97,7 +101,7 @@ if (!$companies) {
        دوباره محاسبه نشود. */
     .cursor-dot, .cursor-outline { display: none; }
     @media (hover: hover) and (pointer: fine) {
-        * { cursor: none !important; }
+        html:not(.cur-native) * { cursor: none !important; }
         .cursor-dot, .cursor-outline { display: block; }
     }
     .cursor-dot { position: fixed; left: 0; top: 0; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; pointer-events: none; z-index: 2147483647; transform: translate(var(--cx, -100px), var(--cy, -100px)) translate(-50%, -50%); transition: background .2s; box-shadow: 0 0 10px rgba(59,130,246,.5); will-change: transform; }
@@ -162,6 +166,7 @@ if (!$companies) {
 <link rel="stylesheet" href="../ui-scroll.css?v=1">
 </head>
 <body class="min-h-screen">
+<?php require_once __DIR__ . '/../api/_loader.php'; site_loader($pdo, '../', 'در حالِ آماده‌سازیِ پنلِ شرکت'); ?>
 <div class="cursor-dot"></div>
 <div class="cursor-outline"></div>
 

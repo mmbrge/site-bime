@@ -17,6 +17,7 @@ require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلتر�
 require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_chat_access.php';
 require_once __DIR__ . '/_profile_core.php';
+require_once __DIR__ . '/_chat_profile.php';
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'این بخش فقط برای مدیر کل است.'], JSON_UNESCAPED_UNICODE);
@@ -220,6 +221,7 @@ try {
             $u['chat_companies'] = chat_companies_decode($u['chat_companies'] ?? null);
             $u['bot_linked'] = !empty($u['bot_linked']);
             $u['has_report_pw'] = !empty($u['has_report_pw']);
+            $u['profile'] = cprof_get($pdo, $u['id']);
             $u['perm_custom'] = !empty($u['perm_custom']) && $u['role'] !== 'ADMIN';
             $u['presence'] = prof_presence($u); unset($u['seen_ago'], $u['is_online']);
             if ($ready) {
@@ -326,6 +328,7 @@ try {
         $newId = intval($pdo->lastInsertId());
         if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $newId]); } catch (Throwable $e) {} }
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
+        if (!empty($data['profile']) && is_array($data['profile'])) cprof_save($pdo, $newId, $data['profile']);
         $rpw = (string)($data['report_edit_password'] ?? '');
         $warn = null;
         if ($rpw !== '') { if (strlen($rpw) < 4) $warn = 'رمزِ ویرایشِ گزارش باید حداقل ۴ کاراکتر باشد؛ ثبت نشد.'; elseif (!staff_set_report_pw($pdo, $newId, $rpw, false)) $warn = STAFF_REPORT_PW_MSG; }
@@ -397,6 +400,7 @@ try {
         if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $id]); } catch (Throwable $e) {} }
         if ($rpw !== '' || $rpwClear) staff_set_report_pw($pdo, $id, $rpw, $rpwClear);
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
+        if (!empty($data['profile']) && is_array($data['profile'])) { $pr = cprof_save($pdo, $id, $data['profile']); if (empty($pr['ok'])) out($pr); }
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
             auth_unlink_bot($pdo, 'STAFF', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");

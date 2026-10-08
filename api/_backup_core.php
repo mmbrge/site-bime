@@ -347,7 +347,9 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
 function bk_reset_keep_tables() {
     return ['users', 'system_settings', 'finance_settings', 'invoice_templates',
             'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
-            'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards', 'lt_categories', 'lt_templates', 'lt_signers'];
+            'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards', 'lt_categories', 'lt_templates', 'lt_signers',
+            // تنظیماتِ دیگر: دسترسیِ امکاناتِ رفاهی، IPهای مسدود، سرویس‌های رفت‌وآمد و تنظیمِ کارکردِ هر نفر
+            'cf_access', 'cf_blocked', 'sec_blocked_ips', 'sec_devices', 'work_services', 'work_service_access', 'work_profiles'];
 }
 function bk_reset_sections() {
     return [
@@ -357,7 +359,7 @@ function bk_reset_sections() {
         'companies' => ['label' => 'شرکت‌ها و درخواست‌های شرکتی',
             'desc' => 'شرکت‌ها، درخواست‌ها و ردیف‌ها، مدارک، کاربرانِ شرکت‌ها، چت و ربات شرکت‌ها، بایگانیِ شرکتی و بایگانیِ وارداتی',
             'tables' => ['companies', 'company_requests', 'company_request_plates', 'company_documents', 'company_portal_users', 'company_portal_user_companies',
-                         'company_bot_state', 'company_chat_messages', 'bot_known_groups', 'import_batches']],
+                         'company_bot_state', 'company_chat_messages', 'bot_known_groups', 'import_batches', 'cbot_groups', 'fin_contracts', 'renewal_notices']],
         'finance' => ['label' => 'مالی',
             'desc' => 'اقساط، دریافت‌ها و تخصیص‌ها، چک‌ها، صورتحساب‌ها، دوره‌ها، تسویه‌ها و مغایرت‌ها (شماره‌ی صورتحساب از اول)',
             'tables' => ['billing_periods', 'cheques', 'company_installments', 'company_payments', 'company_payment_allocations', 'invoices', 'invoice_lines',
@@ -374,14 +376,24 @@ function bk_reset_sections() {
             'tables' => ['mk_people', 'mk_sales']],
         'health' => ['label' => 'مالیِ درمان تکمیلی',
             'desc' => 'قراردادهای درمان تکمیلی، اقساط، دریافت‌ها، پرداخت‌ها به بیمه‌گر و رسیدهایشان (تنظیمات می‌ماند)',
-            'tables' => ['hl_contracts', 'hl_installments', 'hl_payments', 'hl_alloc', 'hl_settlements']],
+            'tables' => ['hl_contracts', 'hl_installments', 'hl_payments', 'hl_alloc', 'hl_settlements', 'hl_endorsements', 'hl_members', 'hl_inbox']],
         'letters' => ['label' => 'اتوماسیونِ نامه‌ها',
             'desc' => 'همه‌ی نامه‌های صادره/وارده، پیوست‌ها، ارجاع‌ها، سابقه و بایگانیِ نامه‌ها (شماره‌ی نامه‌ها از اول؛ دسته‌ها، قالب‌ها، امضاها و تنظیمات می‌مانند)',
             'tables' => ['lt_letters', 'lt_files', 'lt_log', 'lt_refs', 'lt_counters']],
+        'endorse' => ['label' => 'الحاقیه‌ها، ورودِ بایگانیِ قبلی و مغایرت‌گیری',
+            'desc' => 'الحاقیه‌های ثبت‌شده (حق بیمه‌ی نهایی و اثرِ مالی‌شان برمی‌گردد)، سابقه‌ی دسته‌های ورودِ بایگانی و مغایرت‌گیری‌های پاسارگاد',
+            'tables' => ['policy_endorsements', 'legacy_batches', 'legacy_items', 'recon_runs', 'recon_items']],
         'messages' => ['label' => 'پیام‌ها، اعلان‌ها و لاگ‌ها',
-            'desc' => 'تیکت‌ها، چت داخلی، اعلان‌ها، لاگ‌های ورود و کارها، کدهای ورود و درخواست‌های بازیابی رمز',
+            'desc' => 'تیکت‌ها، چت داخلی و واکنش‌ها، اعلان‌ها و پاپ‌آپ‌ها، لاگ‌های ورود، رخدادهای امنیتی و دستگاه‌ها، کدهای ورود و درخواست‌های بازیابی رمز',
             'tables' => ['messages', 'staff_chat_messages', 'tickets', 'ticket_messages', 'admin_notifications', 'app_notifications', 'user_notifications',
-                         'notification_cursors', 'audit_logs', 'login_logs', 'login_otps', 'phone_otps', 'password_reset_requests', 'bot_sessions', 'webapp_sessions']],
+                         'notification_cursors', 'audit_logs', 'login_logs', 'login_otps', 'phone_otps', 'password_reset_requests', 'bot_sessions', 'webapp_sessions',
+                         'chat_messages', 'chat_hidden', 'chat_reactions', 'chat_state', 'chat_typing', 'ann_items', 'ann_reads', 'security_events', 'edit_locks']],
+        'worklog' => ['label' => 'کارکرد، مرخصی و سرویس',
+            'desc' => 'حضور و شرحِ کارِ روزانه، فعالیت‌های خودکار، مرخصی‌ها، رفت‌وآمد با سرویس و پرداخت‌های سرویس (تعریفِ سرویس‌ها و تنظیمِ هر نفر می‌ماند)',
+            'tables' => ['work_days', 'work_presence', 'work_activity', 'work_leaves', 'work_service_days', 'work_service_pays']],
+        'comfort' => ['label' => 'امکاناتِ رفاهی',
+            'desc' => 'آهنگ‌ها (کتابخانه و شخصی) با فایل‌هایشان، فهرست‌های پخش و پسندها، کارهای امروز، پاسخ‌های آماده و ترجیحاتِ کاربران (دسترسی‌ها می‌ماند)',
+            'tables' => ['cf_tracks', 'cf_playlists', 'cf_likes', 'cf_todos', 'cf_canned', 'cf_prefs', 'cf_quota']],
         'users' => ['label' => 'کاربرانِ داخلی (به‌جز مدیر کل)',
             'desc' => 'کارشناسان صدور و مالی و همکارانِ بیمه با ما (پنل عادی و پارسیان)؛ حساب‌های مدیر کل همیشه می‌مانند',
             'tables' => []],
@@ -426,6 +438,19 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         if (!$has('visit_reports')) $try("UPDATE `visit_reports` SET `company_plate_id` = NULL");
     }
     if ($has('finance')) $try("DELETE FROM `finance_settings` WHERE `setting_key` IN ('invoice_counter', 'invoice_counter_year')");
+    // الحاقیه‌ها به بیمه‌نامه‌ی شرکتی/کارکنان وصل‌اند: اگر خودِ بیمه‌نامه‌ها پاک شدند، الحاقیه‌هایشان هم (و سابقه‌ی ورود/مغایرت که دیگر معنا ندارد)
+    if (!$has('endorse') && ($has('companies') || $has('personnel'))) {
+        if ($has('companies')) $try("DELETE FROM `policy_endorsements` WHERE `source` = 'C'");
+        if ($has('personnel')) $try("DELETE FROM `policy_endorsements` WHERE `source` = 'P'");
+        foreach (['legacy_items', 'legacy_batches', 'recon_items', 'recon_runs'] as $t) $wipe($t);
+    }
+    // الحاقیه‌ها پاک شدند ولی بیمه‌نامه‌ها نه: حق بیمه‌ی نهایی و وضعیتِ فسخِ روی ردیف‌ها به حالتِ بی‌الحاقیه برمی‌گردد
+    if ($has('endorse')) {
+        foreach (['company_request_plates', 'policy_cases'] as $t) if (!$has($t === 'policy_cases' ? 'personnel' : 'companies'))
+            $try("UPDATE `$t` SET `endo_count` = 0, `endo_total` = 0, `final_premium` = NULL, `is_cancelled` = 0, `cancelled_on` = NULL, `end_date_j` = NULL");
+        foreach (['company_installments', 'policy_installments'] as $t) $try("UPDATE `$t` SET `endorsement_id` = NULL");
+    }
+    if ($has('comfort')) $try("UPDATE `users` SET `cf_status` = NULL");
     if ($has('visit_reports')) $try("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%'");
     if ($has('users')) {
         $try("DELETE FROM `users` WHERE `role` <> 'ADMIN'");
@@ -436,7 +461,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
     // فایل‌ها
     $arch = archive_root($siteRoot); $tmp = temp_archive_root($siteRoot);
     if ($full) {
-        foreach (['/Archive/بایگانی', '/Archive/مالی', '/موقت', '/بایگانی', '/tmp_ocr', '/tmp_recon',
+        foreach (['/Archive/بایگانی', '/Archive/مالی', '/موقت', '/بایگانی', '/tmp_ocr', '/tmp_recon', '/uploads/music',
                   '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
     } else {
         if ($has('personnel')) {
@@ -450,6 +475,8 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         if ($has('health')) bk_rrmdir_contents(finance_root($siteRoot) . '/درمان تکمیلی');
         if ($has('letters')) bk_rrmdir_contents($arch . '/بایگانی نامه‌ها', ['_تنظیمات']);
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
+        if ($has('endorse')) bk_rrmdir_contents($siteRoot . '/موقت/ورود بایگانی');
+        if ($has('comfort')) bk_rrmdir_contents($siteRoot . '/uploads/music');
         if ($has('other')) foreach (['/بایگانی', '/tmp_ocr', '/tmp_recon', '/queue/pending', '/queue/done', '/queue/case_uploads', '/queue/attachments'] as $rel) bk_rrmdir_contents($siteRoot . $rel);
     }
     if ($full || $has('messages')) @file_put_contents($siteRoot . '/queue/bale_debug.log', '');

@@ -10,6 +10,7 @@ function life_agg_sql() {
                    SUM(CASE WHEN $rem > 0 AND i.due_g < :today2 THEN $rem ELSE 0 END) AS overdue_amount,
                    MIN(CASE WHEN $rem > 0 THEN i.due_j END) AS next_due,
                    MIN(CASE WHEN $rem > 0 AND i.due_g < :today3 THEN i.due_g END) AS oldest_overdue_g,
+                   SUM(CASE WHEN " . life_sql_await('i') . " THEN 1 ELSE 0 END) AS await_count,
                    SUM(CASE WHEN i.inst_no = 1 THEN 1 ELSE 0 END) AS has_first,
                    SUM(CASE WHEN i.inst_no = 1 THEN $paid ELSE 0 END) AS first_paid,
                    MIN(i.amount) AS min_amount,
@@ -43,6 +44,7 @@ function life_filter_sql(array $f, &$params) {
         case 'overdue': $w[] = "COALESCE(a.overdue_count, 0) > 0"; break;
         case 'unpaid': $w[] = "COALESCE(a.total_rem, 0) > 0"; break;
         case 'paid': $w[] = "COALESCE(a.total_rem, 0) = 0 AND COALESCE(a.inst_count, 0) > 0"; break;
+        case 'await': $w[] = "COALESCE(a.await_count, 0) > 0"; break;
         case 'first_unpaid': $w[] = "a.has_first > 0 AND COALESCE(a.first_paid, 0) = 0 AND COALESCE(a.total_paid, 0) = 0"; break;
     }
     $oc = trim((string)($f['overdue_count'] ?? ''));
@@ -79,7 +81,7 @@ function life_list($pdo, array $f, $page = 1, $per = 30, $all = false) {
     $lim = $all ? '' : " LIMIT $per OFFSET " . (($page - 1) * $per);
     $st = $pdo->prepare("SELECT p.*, COALESCE(a.inst_count, 0) AS inst_count, COALESCE(a.max_inst, 0) AS max_inst, COALESCE(a.total_amount, 0) AS total_amount,
                                 COALESCE(a.total_paid, 0) AS total_paid, COALESCE(a.total_rem, 0) AS total_rem, COALESCE(a.overdue_count, 0) AS overdue_count,
-                                COALESCE(a.overdue_amount, 0) AS overdue_amount, a.next_due, a.oldest_overdue_g, a.has_first, a.first_paid, a.min_amount,
+                                COALESCE(a.overdue_amount, 0) AS overdue_amount, COALESCE(a.await_count, 0) AS await_count, a.next_due, a.oldest_overdue_g, a.has_first, a.first_paid, a.min_amount,
                                 (SELECT n.at FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_call,
                                 (SELECT n.result FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS last_result,
                                 (SELECT n.next_j FROM life_notes n WHERE n.policy_id = p.id AND n.kind = 'call' ORDER BY n.at DESC, n.id DESC LIMIT 1) AS next_follow,
@@ -98,7 +100,7 @@ function life_list_row(array $r) {
     $o = [];
     foreach (['id', 'policy_no', 'holder_name', 'holder_nid', 'holder_mobile', 'phones', 'insured_name', 'insured_nid', 'issue_j', 'start_j', 'end_j', 'pay_method', 'policy_status',
               'field_name', 'variant', 'agent', 'branch', 'contract_name', 'channel', 'pay_id', 'duration', 'policy_year', 'next_due', 'last_result', 'next_follow', 'note', 'last_call_by', 'followers'] as $k) $o[$k] = $r[$k] ?? null;
-    foreach (['inst_count', 'max_inst', 'total_amount', 'total_paid', 'total_rem', 'overdue_count', 'overdue_amount', 'notes_count'] as $k) $o[$k] = intval($r[$k] ?? 0);
+    foreach (['inst_count', 'max_inst', 'total_amount', 'total_paid', 'total_rem', 'overdue_count', 'overdue_amount', 'notes_count', 'await_count'] as $k) $o[$k] = intval($r[$k] ?? 0);
     $o['last_call'] = !empty($r['last_call']) ? life_g2j(substr($r['last_call'], 0, 10)) . ' ' . substr($r['last_call'], 11, 5) : null;
     $o['overdue_days'] = !empty($r['oldest_overdue_g']) ? max(0, intval((strtotime(date('Y-m-d')) - strtotime($r['oldest_overdue_g'])) / 86400)) : 0;
     $o['first_unpaid'] = intval($r['has_first'] ?? 0) > 0 && intval($r['first_paid'] ?? 0) === 0 && intval($r['total_paid'] ?? 0) === 0;
@@ -125,7 +127,7 @@ function life_detail($pdo, $id) {
     }
     $st = $pdo->prepare("SELECT * FROM life_installments WHERE policy_id = ? ORDER BY inst_no");
     $st->execute([$id]);
-    $insts = []; $sum = ['amount' => 0, 'paid' => 0, 'rem' => 0, 'overdue' => 0, 'overdue_count' => 0];
+    $insts = []; $sum = ['amount' => 0, 'paid' => 0, 'rem' => 0, 'overdue' => 0, 'overdue_count' => 0, 'await' => 0, 'await_count' => 0];
     foreach ($st->fetchAll() as $i) {
         $s = life_inst_status($i, $today);
         $eff = !empty($i['cleared']) ? intval($i['amount']) : min(intval($i['amount']), max(intval($i['excel_collected']), intval($i['paid_amount'])));
@@ -140,6 +142,7 @@ function life_detail($pdo, $id) {
             'days' => $i['due_g'] ? intval((strtotime($today) - strtotime($i['due_g'])) / 86400) : null];
         $sum['amount'] += intval($i['amount']); $sum['paid'] += $eff; $sum['rem'] += $rem;
         if ($s === 'OVERDUE' || ($s === 'PARTIAL' && $i['due_g'] < $today)) { $sum['overdue'] += $rem; $sum['overdue_count']++; }
+        if ($s === 'PAID_US') { $sum['await'] += intval($i['amount']); $sum['await_count']++; }
     }
     $nt = $pdo->prepare("SELECT * FROM life_notes WHERE policy_id = ? ORDER BY at DESC, id DESC");
     $nt->execute([$id]);
@@ -313,6 +316,7 @@ function life_export($pdo, array $f, $mode, array $cols) {
     if ($is === 'unpaid') $iw[] = life_sql_rem('i') . " > 0";
     if ($is === 'overdue') { $iw[] = life_sql_rem('i') . " > 0 AND i.due_g < ?"; $ip[] = $today; }
     if ($is === 'paid') $iw[] = life_sql_rem('i') . " = 0";
+    if ($is === 'await') $iw[] = life_sql_await('i');
     $st = $pdo->prepare("SELECT i.* FROM life_installments i WHERE " . implode(' AND ', $iw) . " ORDER BY i.policy_id, i.inst_no");
     $st->execute($ip);
     $insts = $st->fetchAll();

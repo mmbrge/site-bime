@@ -14,7 +14,9 @@ require_once __DIR__ . '/_case_helpers.php';
 
 const LIFE_PAY_METHODS = ['کارت به کارت', 'واریز به حساب', 'درگاه / پرداخت اینترنتی', 'نقدی', 'چک', 'سایر'];
 const LIFE_CALL_RESULTS = ['پاسخ داد', 'پاسخ نداد', 'خاموش / در دسترس نبود', 'قولِ پرداخت داد', 'پرداخت کرد', 'شماره اشتباه', 'تماس بعداً', 'انصراف / عدم تمایل', 'سایر'];
-const LIFE_STATUS_FA = ['PAID' => 'پرداخت‌شده', 'PARTIAL' => 'بخشی پرداخت‌شده', 'OVERDUE' => 'معوق', 'DUE' => 'سررسید نشده'];
+// PAID: پرداخت به بیمه‌گر هم انجام شده (طبقِ اکسلِ بیمه‌گر، «تسویه نزدِ بیمه‌گر»، یا پرداختِ نهایی وقتی مرحله‌ی بیمه‌گر خاموش است)
+// PAID_US: بیمه‌گذار به ما پرداخت کرده و نوبتِ پرداخت به بیمه‌گر است — دیگر معوق نیست
+const LIFE_STATUS_FA = ['PAID' => 'پرداخت‌شده', 'PAID_US' => 'پرداخت‌شده به ما · منتظرِ پرداخت به بیمه‌گر', 'PARTIAL' => 'بخشی پرداخت‌شده', 'OVERDUE' => 'معوق', 'DUE' => 'سررسید نشده'];
 // تعدادِ قسط در سال بر اساسِ روشِ پرداخت (برای برآوردِ حق‌بیمه‌ی سالانه)
 const LIFE_PER_YEAR = ['ماهانه' => 12, 'دوماهه' => 6, 'دو ماهه' => 6, 'سه ماهه' => 4, 'سه‌ماهه' => 4, 'چهار ماهه' => 3, 'شش ماهه' => 2, 'شش‌ماهه' => 2, 'سالانه' => 1, 'یکجا' => 1];
 
@@ -114,6 +116,13 @@ function life_ensure($pdo) {
         "CREATE TABLE IF NOT EXISTS life_templates (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(190) NOT NULL, file_path VARCHAR(600) NULL, footer_text TEXT NULL,
             is_default TINYINT NOT NULL DEFAULT 0, created_at DATETIME NULL, created_by INT NULL) $o",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[life_ensure] ' . $e->getMessage()); } }
+    // پرداختِ «نهایی» (وقتی مرحله‌ی پرداخت به بیمه‌گر خاموش است) و جمعِ آن روی قسط
+    foreach ([['life_payments', 'is_final', "TINYINT NOT NULL DEFAULT 0"], ['life_installments', 'paid_final', "BIGINT NOT NULL DEFAULT 0"]] as [$t, $c, $def]) {
+        try {
+            $has = $pdo->query("SHOW COLUMNS FROM $t LIKE '$c'")->fetch();
+            if (!$has) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $def");
+        } catch (Throwable $e) { error_log('[life_ensure] ' . $e->getMessage()); }
+    }
     // قالبِ پیش‌فرضِ داخلیِ رسید (بدونِ فایل) همیشه هست
     try {
         if (!intval($pdo->query("SELECT COUNT(*) FROM life_templates WHERE file_path IS NULL")->fetchColumn())) {
@@ -170,8 +179,11 @@ function life_sql_paid($a = 'i') { return "(CASE WHEN $a.cleared = 1 THEN $a.amo
 function life_sql_rem($a = 'i') { return "($a.amount - " . life_sql_paid($a) . ")"; }
 function life_inst_status(array $i, $today = null) {
     $today = $today ?: date('Y-m-d');
-    $paid = !empty($i['cleared']) ? intval($i['amount']) : min(intval($i['amount']), max(intval($i['excel_collected']), intval($i['paid_amount'])));
-    if ($paid >= intval($i['amount']) && intval($i['amount']) > 0) return 'PAID';
+    $amt = intval($i['amount']);
+    $paid = !empty($i['cleared']) ? $amt : min($amt, max(intval($i['excel_collected']), intval($i['paid_amount'])));
+    $atInsurer = !empty($i['cleared']) ? $amt : max(intval($i['excel_collected']), intval($i['paid_final'] ?? 0));
+    if ($amt > 0 && $atInsurer >= $amt) return 'PAID';
+    if ($paid >= $amt && $amt > 0) return 'PAID_US';
     if ($paid > 0) return 'PARTIAL';
     if ($i['due_g'] && $i['due_g'] < $today) return 'OVERDUE';
     return 'DUE';
@@ -412,9 +424,14 @@ function life_annual($amount, $method) { return intval($amount) * life_per_year(
 
 // مبلغِ پرداخت‌های ثبت‌شده‌ی یک قسط (کش در paid_amount)
 function life_refresh_paid($pdo, $instId) {
-    $pdo->prepare("UPDATE life_installments SET paid_amount = (SELECT COALESCE(SUM(amount), 0) FROM life_payments WHERE installment_id = ? AND voided_at IS NULL), updated_at = NOW() WHERE id = ?")
-        ->execute([$instId, $instId]);
+    $pdo->prepare("UPDATE life_installments SET paid_amount = (SELECT COALESCE(SUM(amount), 0) FROM life_payments WHERE installment_id = ? AND voided_at IS NULL),
+                          paid_final = (SELECT COALESCE(SUM(amount), 0) FROM life_payments WHERE installment_id = ? AND voided_at IS NULL AND is_final = 1), updated_at = NOW() WHERE id = ?")
+        ->execute([$instId, $instId, $instId]);
 }
+// «مرحله‌ی پرداخت به بیمه‌گر» خاموش است؟ (تنظیماتِ بیمه عمر) — از لحظه‌ی خاموش‌کردن به بعد، پرداختِ ثبت‌شده آخرین مرحله است
+function life_insurer_step_off($pdo) { return life_setting($pdo, 'life_skip_insurer_step', '0') === '1'; }
+// شرطِ SQL: قسطی که به ما پرداخت شده ولی هنوز نزدِ بیمه‌گر تسویه نشده
+function life_sql_await($a = 'i') { return "($a.cleared = 0 AND $a.amount > 0 AND GREATEST($a.excel_collected, $a.paid_amount) >= $a.amount AND GREATEST($a.excel_collected, $a.paid_final) < $a.amount)"; }
 
 require_once __DIR__ . '/_life_import.php';
 require_once __DIR__ . '/_life_query.php';

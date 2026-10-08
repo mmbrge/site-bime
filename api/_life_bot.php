@@ -145,7 +145,7 @@ function lbot_footer($pdo) {
     try { return (string)$pdo->query("SELECT footer_text FROM life_templates ORDER BY is_default DESC, file_path IS NULL DESC, id LIMIT 1")->fetchColumn(); }
     catch (Throwable $e) { return ''; }
 }
-const LBOT_ST_ICON = ['PAID' => '✅', 'PARTIAL' => '🟡', 'OVERDUE' => '🔴', 'DUE' => '⏳'];
+const LBOT_ST_ICON = ['PAID' => '✅', 'PAID_US' => '☑️', 'PARTIAL' => '🟡', 'OVERDUE' => '🔴', 'DUE' => '⏳'];
 
 // ---------------------------------------------------------------------
 //  یادآوری‌ها

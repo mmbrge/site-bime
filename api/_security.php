@@ -287,6 +287,12 @@ function sec_session_guard($pdo) {
 
 // هنگامِ ورودِ موفق: شروعِ شمارشِ فعالیت و ثبتِ نسخه‌ی نشست
 function sec_on_login($pdo, $type, $uid, $name = '') {
+    // حالتِ به‌روزرسانی: فقط مدیر کل وارد می‌شود
+    if (sec_maint_state($pdo)['on']) {
+        $isAdmin = false;
+        if ($type === 'STAFF') { try { $st = $pdo->prepare("SELECT role FROM users WHERE id = ?"); $st->execute([intval($uid)]); $isAdmin = $st->fetchColumn() === 'ADMIN'; } catch (Throwable $e) {} }
+        if (!$isAdmin) { $_SESSION = []; @session_destroy(); sec_maint_respond($pdo, true); }
+    }
     $_SESSION['_sec_act'] = time();
     $_SESSION['_sec_ep_chk'] = time();
     unset($_SESSION['_sec_dev']);
@@ -415,7 +421,7 @@ function sec_boot($pdo) {
         // لوگوی SVG فقط برای مدیرِ کل در «تنظیمات ← لوگو و فاوآیکن» (محتوایش آنجا بررسی می‌شود که اسکریپت نداشته باشد)
         $adminSvg = $script === 'brand_actions.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
         foreach ($names as $n) {
-            $b = basename(str_replace('\\', '/', $n));
+            $b = (string)preg_replace('~^.*[/\\\\]~su', '', $n);   // نه basename(): در PHP 7.4 حروفِ فارسیِ اولِ نام را می‌اندازد
             if ($adminPy && preg_match('/^[^.]+\.py$/i', $b)) continue;
             if ($adminSvg && preg_match('/^[^.]+\.svg$/i', $b)) continue;
             if ($b === '' || $b[0] === '.' || preg_match(SEC_BAD_EXT, $b) || preg_match('/[<>"\x00-\x1f]/', $b)) {   // < > " در نامِ فایل در ویندوز هم مجاز نیست
@@ -437,6 +443,7 @@ function sec_boot($pdo) {
             }
         }
     }
+    sec_maint_gate($pdo, $script);
     sec_session_guard($pdo);
     if (sec_is_api() && !in_array($script, SEC_XSS_SKIP, true)) ob_start('sec_xss_filter', 4194304);   // فایل‌های بزرگ تکه‌تکه و دست‌نخورده رد می‌شوند
 }
@@ -503,4 +510,72 @@ function sec_set_webhook($pdo, $which, $token = null) {
     if (empty($r['ok'])) return ['ok' => false, 'error' => 'بله وب‌هوک را نپذیرفت' . (!empty($r['description']) ? ': ' . $r['description'] : '') . '.', 'url' => preg_replace('/\?k=.*/', '', $url)];
     $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$hookKey, $key]);
     return ['ok' => true, 'url' => preg_replace('/\?k=.*/', '', $url)];
+}
+
+
+// ---------------- حالتِ به‌روزرسانی (تنظیمات ← حالتِ به‌روزرسانی) ----------------
+// مدیر کل سایت را برای بقیه می‌بندد: صفحه‌ها «در حالِ به‌روزرسانی» نشان می‌دهند و APIها پاسخِ ۵۰۳ با maintenance=true می‌دهند.
+// می‌شود زمانِ شروع را چند دقیقه بعد گذاشت تا کاربران هشدارِ شمارش معکوس ببینند و کارشان را ذخیره کنند.
+// ربات‌ها (وب‌هوک‌ها) و کرون همیشه کار می‌کنند؛ صفحه‌ی ورود باز است ولی فقط مدیر کل وارد می‌شود.
+function sec_maint_state($pdo) {
+    static $m = null;
+    if ($m !== null) return $m;
+    $m = ['on' => false, 'scheduled' => false, 'at' => 0, 'msg' => '', 'until' => ''];
+    try {
+        $st = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('maint_on', 'maint_at', 'maint_msg', 'maint_until')");
+        $v = [];
+        foreach ($st->fetchAll() as $r) $v[$r['setting_key']] = (string)$r['setting_value'];
+        $at = intval($v['maint_at'] ?? 0);
+        $m['msg'] = $v['maint_msg'] ?? '';
+        $m['until'] = $v['maint_until'] ?? '';
+        $m['at'] = $at;
+        $m['on'] = ($v['maint_on'] ?? '0') === '1' && ($at <= 0 || $at <= time());
+        $m['scheduled'] = ($v['maint_on'] ?? '0') === '1' && $at > time();
+    } catch (Throwable $e) {}
+    return $m;
+}
+function sec_maint_is_admin() {
+    // (در maint_status.php نشست read_and_close است؛ پس به‌جای «فعال بودن»، خودِ داده‌های نشست ملاک است)
+    return (session_status() === PHP_SESSION_ACTIVE || !empty($_SESSION)) && session_name() !== 'bime_company_portal' && ($_SESSION['role'] ?? '') === 'ADMIN' && !empty($_SESSION['user_id']);
+}
+function sec_maint_respond($pdo, $forceJson = false) {
+    $m = sec_maint_state($pdo);
+    $msg = 'سایت در حالِ به‌روزرسانی است' . ($m['until'] !== '' ? ' (تا حدودِ ' . $m['until'] . ')' : '') . '؛ چند دقیقه‌ی دیگر دوباره امتحان کنید.';
+    $wantsJson = $forceJson && (sec_is_api() || stripos((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'json') !== false || stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'json') !== false || strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest');
+    if (!headers_sent()) {
+        http_response_code(503);
+        header('Retry-After: 60');
+        header('Cache-Control: no-store');
+        header('X-Maintenance: 1');
+    }
+    while (ob_get_level()) @ob_end_clean();
+    if (sec_is_api() || $wantsJson) {
+        if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'maintenance' => true, 'error' => $msg], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (!headers_sent()) header('Content-Type: text/html; charset=utf-8');
+    $mMsg = $m['msg']; $mUntil = $m['until']; $mLogo = '';
+    try {
+        $lg = json_decode((string)$pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'brand_logo'")->fetchColumn(), true);
+        if (is_array($lg) && !empty($lg['file'])) $mLogo = '/uploads/brand/' . rawurlencode(basename($lg['file'])) . '?v=' . intval($lg['v'] ?? 0);
+    } catch (Throwable $e) {}
+    include dirname(__DIR__) . '/errors/maintenance.php';
+    exit;
+}
+function sec_maint_gate($pdo, $script) {
+    $m = sec_maint_state($pdo);
+    if (!$m['on'] || sec_maint_is_admin()) return;
+    // اسکریپت‌هایی که دیتابیس را پیش از session_start وصل می‌کنند: نشستِ پنل فقط‌خواندنی نگاه می‌شود تا مدیر کل بی‌دلیل بسته نشود
+    if (session_status() === PHP_SESSION_NONE && !headers_sent() && !empty($_COOKIE[session_name()])) {
+        @session_start(['read_and_close' => true]);
+        if (sec_maint_is_admin()) return;
+    }
+    // همیشه باز: وضعیت، ورود و خروج، ساعتِ سرور، کرون (وب‌هوک‌ها پیش از این برگشته‌اند)
+    if (in_array($script, ['maint_status.php', 'otp_login.php', 'company_portal_auth.php', 'logout.php', 'server_time.php', 'life_cron.php', 'maintenance.php'], true)) return;
+    [$ut] = sec_actor();
+    // صفحه (نه API) بدونِ کاربرِ واردشده: فرمِ ورود دیده می‌شود (ورودِ غیرِمدیر در sec_on_login رد می‌شود)
+    if (!sec_is_api() && !$ut && in_array($script, ['index.php'], true)) return;
+    if (!sec_is_api() && !$ut && strpos(str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '')), '/company-portal/') !== false) return;
+    sec_maint_respond($pdo);
 }

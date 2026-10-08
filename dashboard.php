@@ -247,6 +247,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="cursor-pref.js?v=1"></script>
+    <script src="maint-watch.js?v=1"></script>
     <title>پورتال مدیریت | بیمه با ما</title>
     <?php echo brand_favicon_tag($pdo); ?>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -270,13 +272,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .fin-slice { transition: opacity .2s, transform .2s; transform-box: fill-box; transform-origin: center; cursor: pointer; }
         .fin-slice:hover { opacity: .85; transform: scale(1.04); }
         .fin-bar:hover { filter: brightness(1.1); }
-        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
-        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
-        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
-        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Light.woff2') format('woff2'); font-weight: 300; }
-        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
+        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Light.woff2') format('woff2'); font-weight: 300; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: url('Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
         
-        body { font-family: 'Vazir', sans-serif; overflow-x: hidden; color: #334155; margin: 0; }
+        body { font-family: 'Vazir', Tahoma, sans-serif; overflow-x: hidden; color: #334155; margin: 0; }
+        button, input, select, textarea { font-family: inherit; }
         
         .hero-bg { position: fixed; inset: 0; z-index: -2; background-image: url('Image/asli1.jpg'); background-size: cover; background-position: center; }
         /* این لایه زیرِ یک پرده‌ی سفیدِ ۸۵٪ است، پس بلورش عملاً دیده نمی‌شد و فقط هزینه داشت */
@@ -287,7 +290,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            تبلت هم بی‌معنی است و هم بی‌خود هزینه دارد (و cursor:none آزاردهنده است). */
         .cursor-dot, .cursor-outline { display: none; }
         @media (hover: hover) and (pointer: fine) {
-            * { cursor: none !important; }
+            html:not(.cur-native) * { cursor: none !important; }
             .cursor-dot, .cursor-outline { display: block; }
         }
         /* موقعیتِ نشانگر با متغیرهای CSS (--cx/--cy/--ox/--oy) و transform تنظیم می‌شود، نه
@@ -837,6 +840,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="h-screen flex flex-col">
+<?php require_once __DIR__ . '/api/_loader.php'; site_loader($pdo); ?>
 
     <div class="hero-bg"></div>
     <div id="tsparticles"></div>
@@ -1666,6 +1670,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button onclick="document.getElementById('case-detail-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
                     </span>
                 </div>
+                <div id="case-lock" data-lock="" class="px-5 pt-3 empty:hidden"></div>
                 <div id="case-detail-body" class="flex-1 overflow-y-auto p-5 space-y-4"></div>
             </div>
         </div>
@@ -2152,6 +2157,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <i class="fas fa-trash-restore ml-2"></i> بازنشانی و حذف کلیه پرونده‌ها
                     </button>
                 </div>
+
+                <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+                <div data-scat="general" class="card p-0 md:col-span-2 overflow-hidden" id="mt-card">
+                    <div class="p-5 text-white relative overflow-hidden" style="background:linear-gradient(120deg,#0f172a,#3730a3 55%,#0e7490)">
+                        <div class="absolute -left-10 -top-12 w-44 h-44 rounded-full" style="background:rgba(255,255,255,.08)"></div>
+                        <h3 class="font-black text-base relative"><i class="fas fa-screwdriver-wrench ml-2"></i>حالتِ به‌روزرسانی (بستنِ سایت برای کاربران)</h3>
+                        <p class="text-[11.5px] leading-6 mt-1 relative" style="color:rgba(255,255,255,.8)">وقتی فایل‌ها را روی هاست عوض می‌کنید یا تغییرِ بزرگی می‌دهید، سایت را ببندید: همه (همکاران، شرکت‌ها، کارکنان در وب‌اپ) صفحه‌ی «در حالِ به‌روزرسانی» را می‌بینند و فقط مدیر کل کار می‌کند. با «شروع با تأخیر» اول به کاربرانِ آنلاین شمارشِ معکوس نشان داده می‌شود تا کارشان را ذخیره کنند. ربات‌ها و یادآورها کار می‌کنند.</p>
+                        <div class="relative mt-3 flex flex-wrap gap-2 items-center" id="mt-state"></div>
+                    </div>
+                    <div class="p-5 grid md:grid-cols-3 gap-3 text-xs">
+                        <label class="md:col-span-3 flex flex-col gap-1 font-bold text-slate-500">پیامِ صفحه (اختیاری)<textarea id="mt-msg" rows="2" maxlength="600" class="border rounded-xl px-3 py-2 text-sm font-normal" placeholder="مثلاً: در حالِ اضافه کردنِ بخشِ تازه‌ی الحاقیه‌ها هستیم."></textarea></label>
+                        <label class="flex flex-col gap-1 font-bold text-slate-500">زمانِ تقریبیِ بازگشت (اختیاری)<input id="mt-until" maxlength="60" class="border rounded-xl px-3 py-2 text-sm font-normal" placeholder="مثلاً ساعت ۱۴:۳۰"></label>
+                        <label class="flex flex-col gap-1 font-bold text-slate-500">شروعِ بستن<select id="mt-delay" class="border rounded-xl px-3 py-2 text-sm font-normal"><option value="0">همین الان</option><option value="2">۲ دقیقه‌ی دیگر (با شمارشِ معکوس)</option><option value="5">۵ دقیقه‌ی دیگر</option><option value="10">۱۰ دقیقه‌ی دیگر</option><option value="15">۱۵ دقیقه‌ی دیگر</option><option value="30">۳۰ دقیقه‌ی دیگر</option></select></label>
+                        <div class="flex items-end gap-2 flex-wrap">
+                            <button type="button" id="mt-on" onclick="maintSave(true)" class="bg-rose-600 hover:bg-rose-700 text-white font-black px-4 py-2.5 rounded-xl"><i class="fas fa-lock ml-1"></i>بستنِ سایت</button>
+                            <button type="button" id="mt-off" onclick="maintSave(false)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2.5 rounded-xl"><i class="fas fa-lock-open ml-1"></i>بازکردنِ سایت</button>
+                            <a href="errors/maintenance.php" target="_blank" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2.5 rounded-xl"><i class="fas fa-eye ml-1"></i>پیش‌نمایش</a>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <div data-scat="general" class="card p-6 md:col-span-2">
                     <h3 class="font-bold text-slate-700 mb-2 border-b pb-3"><i class="fas fa-info-circle text-blue-500 ml-2"></i>اطلاعات سیستم</h3>
@@ -2784,6 +2810,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content creq-wide-modal p-6 relative max-h-[90vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('creq-detail-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">جزئیات درخواست شرکتی</h3>
+            <div id="creq-lock" data-lock=""></div>
             <div id="creq-detail-body" class="text-sm"></div>
         </div>
     </div>
@@ -3081,6 +3108,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div class="modal-content w-full max-w-md p-6 relative max-h-[85vh] overflow-y-auto">
             <button type="button" onclick="document.getElementById('crow-edit-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-4">ویرایش ردیف</h3>
+            <div id="cre-lock" data-lock=""></div>
             <input type="hidden" id="cre-plate-id">
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک</label>
             <div class="ir-pin mb-3" dir="ltr">
@@ -3409,6 +3437,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <h4><span class="uf-step">۳</span>شرکت(ها)ی این کاربر *</h4>
                         <div class="msd" id="uf-companies"></div>
                         <p class="text-[10.5px] text-slate-400 mt-1.5">می‌توانید چند شرکت انتخاب کنید؛ کاربر در پنلش بین آن‌ها جابه‌جا می‌شود.</p>
+                    </section>
+                    <section class="uf-sec" id="uf-prof-sec">
+                        <h4><i class="fas fa-id-card text-sky-500"></i>پروفایل در گفتگو <em class="text-[10px] text-slate-400 font-bold">(همکاران با زدن روی نام/عکس می‌بینند؛ خودِ کاربر هم ویرایش می‌کند)</em></h4>
+                        <div class="uf-grid">
+                            <label class="uf-f"><span>سمت</span><input id="uf-pf-title" maxlength="120" placeholder="مثلاً کارشناسِ ارشدِ صدور"></label>
+                            <label class="uf-f"><span>تخصصِ بیمه‌ای <em>(با ، جدا کنید)</em></span><input id="uf-pf-specialty" maxlength="255" placeholder="بدنه، ثالث، عمر"></label>
+                            <label class="uf-f"><span>شماره‌ی داخلی</span><input id="uf-pf-ext" maxlength="20" dir="ltr" inputmode="numeric" placeholder="۱۲۳"></label>
+                            <label class="uf-f"><span>شماره‌ی تماس</span><input id="uf-pf-phone" maxlength="30" dir="ltr" inputmode="tel" placeholder="۰۲۱۱۲۳۴۵۶۷۸"></label>
+                            <label class="uf-f"><span>ساعتِ پاسخگویی</span><input id="uf-pf-hours" maxlength="120" placeholder="شنبه تا چهارشنبه ۸ تا ۱۶"></label>
+                            <label class="uf-f" style="grid-column:1/-1"><span>درباره‌ی من (بیو)</span><textarea id="uf-pf-bio" maxlength="500" rows="2" class="border rounded-xl px-3 py-2 text-sm" placeholder="چند خط درباره‌ی کار و حوزه‌ی پاسخگویی"></textarea></label>
+                        </div>
                     </section>
                     <section class="uf-sec" id="uf-chat-sec">
                         <h4><i class="fas fa-comments text-indigo-500"></i>گفتگو با شرکت‌ها</h4>
@@ -4004,14 +4043,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
     <script src="net-watch.js?v=4"></script>
-    <script src="cursor-fx.js?v=1" defer></script>
+    <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=12"></script>
+    <script src="comfort.js?v=13"></script>
     <script src="settings-nav.js?v=3"></script>
     <script src="announce.js?v=2"></script>
     <script src="announce-admin.js?v=1"></script>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
-    <script src="chat-ui.js?v=8"></script>
+    <script src="chat-ui.js?v=9"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
@@ -4029,8 +4068,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="renewals.js?v=2"></script>
     <script src="endorse.js?v=1"></script>
     <script src="legacy-import.js?v=1"></script>
+    <script src="edit-lock.js?v=1"></script>
     <script src="recon.js?v=1"></script>
-    <?php if ($lifeAccess): ?><script src="life.js?v=3"></script><?php endif; ?>
+    <?php if ($lifeAccess): ?><script src="life.js?v=4"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=2"></script><?php endif; ?>
@@ -5935,6 +5975,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function openCompanyRequestDetail(id) {
+            const lk = document.getElementById('creq-lock'); if (lk) lk.setAttribute('data-lock', 'req:' + id);
             currentRequestId = id;
             let data;
             try {
@@ -6518,6 +6559,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const p = currentRequestRows.find(x => String(x.id) === String(plateId));
             if (!p) { showToast('ردیف پیدا نشد.', 'error'); return; }
             document.getElementById('cre-plate-id').value = p.id;
+            document.getElementById('cre-lock').setAttribute('data-lock', 'plate:' + p.id);
             document.getElementById('cre-p4').value = p.plate_p4 || '';
             document.getElementById('cre-letter').value = p.plate_letter || '';
             document.getElementById('cre-p2').value = p.plate_p2 || '';
@@ -6911,6 +6953,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const plateHtml = /ایران/.test(plate) ? formatPlateHtml(plate) : iiEsc(plate);
             const kindLine = [r.insurance_type_fa, r.request_kind_fa && r.request_kind !== 'NEW_POLICY' ? r.request_kind_fa : ''].filter(Boolean).join(' · ');
             return `
+            <div data-lock="${isP ? 'case' : 'plate'}:${r.id}"></div>
             <div class="space-y-3 mb-4" id="ii-card">
                 <div class="flex items-center justify-between flex-wrap gap-2">
                     <h4 class="text-sm font-black text-slate-700"><i class="fas fa-clipboard-list text-teal-500 ml-1"></i>اطلاعات برای صدور</h4>
@@ -8512,6 +8555,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
             ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
             ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
+            const pf = (u && u.profile) || {};
+            ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { ufG('uf-pf-' + k).value = pf[k] || ''; });
             ufG('uf-pass-lbl').textContent = u ? 'رمز عبورِ جدید (خالی = بدون تغییر)' : 'رمز عبور * (حداقل ۶)';
             ufG('uf-kicker').textContent = u ? (co ? 'کاربرِ شرکت' : 'کاربرِ داخلی') : 'کاربرِ تازه';
             ufG('uf-title').textContent = u ? 'ویرایشِ ' + (u.full_name || u.username) : 'افزودن کاربر';
@@ -8544,6 +8589,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ufG('uf-role').value = r;
             ufG('uf-company-sec').classList.toggle('hidden', !co);
             ufG('uf-chat-sec').classList.toggle('hidden', co || r === 'ADMIN');
+            ufG('uf-prof-sec').classList.toggle('hidden', co);
             ufG('uf-rpw-sec').classList.toggle('hidden', co);
             ufG('uf-personnel-box').classList.toggle('hidden', co);
             const rest = ufG('uf-rest');
@@ -8573,6 +8619,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 body.personnel_code = ufG('uf-personnel').value.trim();
                 body.report_edit_password = ufG('uf-rpw').value;
                 if (role !== 'ADMIN') { const m = ufG('uf-chat-mode').dataset.v || 'ROLE'; body.chat_companies = m === 'LIST' ? msdValue('uf-chatcos') : m; }
+                body.profile = {};
+                ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { body.profile[k] = ufG('uf-pf-' + k).value.trim(); });
             }
             if (ufG('uf-avatar-changed').value || !edit) body.avatar = ufG('uf-avatar').value;
             if (edit) {
@@ -9018,6 +9066,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
+            if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
@@ -9819,6 +9868,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function openCase(caseId, mode) {
             currentCaseId = caseId;
             if (mode) currentCaseMode = mode;
+            const clk = document.getElementById('case-lock'); if (clk) clk.setAttribute('data-lock', 'case:' + caseId);
             document.getElementById('case-detail-modal').classList.remove('hidden');
             document.getElementById('case-detail-modal').classList.add('flex');
             const body = document.getElementById('case-detail-body');
@@ -12222,6 +12272,35 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ---- حذف اطلاعات: همه / فقط بخش‌های انتخابی / همه به‌جز انتخابی‌ها ----
         let resetMode = 'all', resetSecs = [];
+        // ---------- حالتِ به‌روزرسانی ----------
+        function maintPaint(d) {
+            const box = document.getElementById('mt-state'); if (!box || !d || !d.ok) return;
+            const chip = (bg, html) => `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black" style="background:${bg}">${html}</span>`;
+            box.innerHTML = (d.on ? chip('rgba(244,63,94,.35)', '<i class="fas fa-lock"></i>سایت برای کاربران بسته است' + (d.since ? ' · از ' + e2p(d.since) : ''))
+                : d.scheduled ? chip('rgba(245,158,11,.35)', '<i class="fas fa-hourglass-half"></i>بسته می‌شود تا ' + e2p(Math.ceil(d.seconds_left / 60)) + ' دقیقه‌ی دیگر')
+                : chip('rgba(16,185,129,.35)', '<i class="fas fa-lock-open"></i>سایت برای همه باز است'))
+                + chip('rgba(255,255,255,.14)', '<i class="fas fa-users"></i>' + e2p(d.active_users || 0) + ' کاربرِ آنلاین (غیرِ مدیر)');
+            const m = document.getElementById('mt-msg'), u = document.getElementById('mt-until');
+            if (m && document.activeElement !== m) m.value = d.msg || '';
+            if (u && document.activeElement !== u) u.value = d.until || '';
+        }
+        async function maintLoad() {
+            try { const r = await fetch('api/maint_actions.php?action=get', {cache: 'no-store'}); maintPaint(await r.json()); } catch (e) {}
+        }
+        async function maintSave(on) {
+            const delay = Number(document.getElementById('mt-delay').value || 0);
+            if (on && !(await (window.uiConfirm ? uiConfirm('بستنِ سایت', delay ? `سایت ${e2p(delay)} دقیقه‌ی دیگر برای همه جز مدیر کل بسته می‌شود (کاربرانِ آنلاین شمارشِ معکوس می‌بینند). ادامه؟` : 'سایت همین الان برای همه جز مدیر کل بسته می‌شود. ادامه؟', {}) : confirm('بستن؟')))) return;
+            try {
+                const r = await fetch('api/maint_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'save', on: on ? 1 : 0, delay_minutes: delay, msg: document.getElementById('mt-msg').value, until: document.getElementById('mt-until').value})});
+                const d = await r.json();
+                if (!d.ok) return showToast(d.error || 'خطا', 'error');
+                maintPaint(d);
+                showToast(on ? (delay ? 'زمان‌بندی شد؛ کاربران شمارشِ معکوس می‌بینند.' : 'سایت برای کاربران بسته شد.') : 'سایت برای همه باز شد.', 'success');
+                if (window.MaintWatch) MaintWatch.check();
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
         async function openResetModal() {
             document.getElementById('reset-modal').classList.add('active');
             document.getElementById('reset-password-input').value = '';
@@ -12269,6 +12348,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const warn = [];
             if (!t.includes('finance') && (t.includes('personnel') || t.includes('companies'))) warn.push('«مالی» می‌ماند ولی پرونده‌ها/شرکت‌هایی که اقساط و صورتحساب‌ها به آن‌ها وصل‌اند پاک می‌شوند؛ ردیف‌های مالیِ آن‌ها بی‌صاحب می‌مانند.');
             if (!t.includes('visit_reports') && (t.includes('personnel') || t.includes('companies'))) warn.push('گزارش‌های بازدید می‌مانند ولی اتصالشان به درخواست‌های پاک‌شده برداشته می‌شود.');
+            if (!t.includes('endorse') && (t.includes('personnel') || t.includes('companies'))) warn.push('الحاقیه‌های بیمه‌نامه‌های پاک‌شده و سابقه‌ی ورودِ بایگانی/مغایرت‌گیری هم پاک می‌شوند (بدونِ بیمه‌نامه معنا ندارند).');
+            if (t.includes('endorse') && !(t.includes('personnel') && t.includes('companies'))) warn.push('با پاک شدنِ الحاقیه‌ها، حق بیمه‌ی نهایی و وضعیتِ فسخِ بیمه‌نامه‌های باقی‌مانده به حالتِ بدونِ الحاقیه برمی‌گردد (اقساطی که الحاقیه ساخته یا تغییر داده بود همان‌طور می‌ماند).');
+            if (t.includes('users') && !t.includes('worklog')) warn.push('کاربرانِ داخلی پاک می‌شوند ولی کارکرد و مرخصی‌هایشان می‌ماند؛ برای پاک شدنِ آن‌ها «کارکرد، مرخصی و سرویس» را هم انتخاب کنید.');
             const w = document.getElementById('reset-dep-warn');
             w.innerHTML = warn.map(x => '<i class="fas fa-triangle-exclamation ml-1"></i>' + x).join('<br>'); w.classList.toggle('hidden', !warn.length);
             const btn = document.getElementById('reset-go-btn');

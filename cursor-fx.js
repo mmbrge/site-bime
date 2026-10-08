@@ -46,8 +46,9 @@
     document.addEventListener('mouseup', up, {passive: true});
     window.addEventListener('blur', up);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const fancy = () => !document.documentElement.classList.contains('cur-simple') && !document.documentElement.classList.contains('cur-native');
     document.addEventListener('click', e => {
-        if (reduce || !e.isTrusted || (e.clientX === 0 && e.clientY === 0)) return;
+        if (reduce || !fancy() || !e.isTrusted || (e.clientX === 0 && e.clientY === 0)) return;
         const x = e.clientX, y = e.clientY;
         const r = document.createElement('div');
         r.className = 'cfx-ripple';

@@ -184,7 +184,7 @@ function life_receipt_html(array $r, array $tpl) {
     $rows = '';
     foreach ($r['insts'] as $i) {
         $on = $i['id'] === $r['inst']['id'];
-        $cls = ['PAID' => 'ok', 'PARTIAL' => 'part', 'OVERDUE' => 'bad', 'DUE' => 'due'][$i['status']];
+        $cls = ['PAID' => 'ok', 'PAID_US' => 'ok', 'PARTIAL' => 'part', 'OVERDUE' => 'bad', 'DUE' => 'due'][$i['status']];
         $rows .= '<tr' . ($on ? ' class="on"' : '') . '><td>' . life_fa($i['inst_no']) . ($on ? ' ◀' : '') . '</td><td>' . life_fa($i['due_j']) . '</td><td>' . life_money($i['amount']) . '</td><td>'
                . life_money($i['eff_paid']) . '</td><td>' . life_money($i['rem']) . '</td><td><span class="st ' . $cls . '">' . $h($i['status_fa']) . '</span></td></tr>';
     }

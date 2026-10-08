@@ -77,6 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="cursor-pref.js?v=1"></script>
+    <link rel="preload" href="Font/Vazir-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="Font/Vazir-Bold.woff2" as="font" type="font/woff2" crossorigin>
     <title>پورتال یکپارچه خدمات بیمه</title>
     <?php require_once __DIR__ . '/api/_brand.php'; echo brand_favicon_tag($pdo); ?>
     
@@ -92,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (window.tailwind) tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Vazir', 'sans-serif'], },
+                    fontFamily: { sans: ['Vazir', 'Tahoma', 'sans-serif'], },
                     colors: {
                         brand: { dark: '#1e293b', light: '#f8fafc', accent: '#00d2ff' }
                     }
@@ -103,9 +106,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     <style>
         /* ================= فونت‌ها ================= */
-        @font-face { font-family: 'Vazir'; src: url('https://cdn.fontcdn.ir/Font/Persian/Vazir/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-style: normal; font-display: swap; }
-        @font-face { font-family: 'Vazir'; src: url('https://cdn.fontcdn.ir/Font/Persian/Vazir/Vazir-Bold.woff2') format('woff2'); font-weight: bold; font-style: normal; font-display: swap; }
-        @font-face { font-family: 'Vazir'; src: url('https://cdn.fontcdn.ir/Font/Persian/Vazir/Vazir-Black.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
+        /* فونت از خودِ سایت (پوشه‌ی Font) نه از CDNِ بیرونی: روی موبایل و بعضی شبکه‌ها CDN کُند/بسته بود و صفحه‌ی ورود با فونتِ پیش‌فرض می‌ماند.
+           local() اگر وزیر روی دستگاه نصب باشد همان را برمی‌دارد؛ swap یعنی متن هیچ‌وقت نامرئی نمی‌ماند */
+        @font-face { font-family: 'Vazir'; src: local('Vazir'), local('Vazirmatn'), url('Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-style: normal; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: local('Vazir Medium'), local('Vazirmatn Medium'), url('Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: local('Vazir Bold'), local('Vazirmatn Bold'), url('Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; font-style: normal; font-display: swap; }
+        @font-face { font-family: 'Vazir'; src: local('Vazir Black'), local('Vazirmatn Black'), url('Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
+        /* فونت مستقیم روی صفحه (نه فقط از تنظیمِ Tailwind که روی شبکه‌ی کُندِ موبایل گاهی اصلاً نمی‌رسد)؛ فرم‌ها خودشان ارث نمی‌برند */
+        html, body { font-family: 'Vazir', Tahoma, 'Segoe UI', sans-serif; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        button, input, select, textarea { font-family: inherit; }
 
         /* ================= موس اختصاصی ================= */
         /* روی دستگاهِ لمسی نشانگرِ اختصاصی روشن نمی‌شود (هم بی‌معنی است، هم cursor:none
@@ -113,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         * { user-select: none; }
         .cursor-dot, .cursor-outline { display: none; }
         @media (hover: hover) and (pointer: fine) {
-            * { cursor: none !important; }
+            html:not(.cur-native) * { cursor: none !important; }
             .cursor-dot, .cursor-outline { display: block; }
         }
 
@@ -343,6 +352,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <link rel="stylesheet" href="ui-scroll.css?v=1">
 </head>
 <body class="scroll-dark font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
+<?php require_once __DIR__ . '/api/_loader.php'; site_loader($pdo, '', 'در حالِ بارگذاری'); ?>
 
     <!-- موس اختصاصی -->
     <div class="cursor-dot"></div>
@@ -520,7 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     <!-- بارگذاری ذرات -->
     <script>window.CURSOR_FX_COLOR = '#00d2ff';</script>
-    <script src="cursor-fx.js?v=1" defer></script>
+    <script src="cursor-fx.js?v=2" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
 
     <script>

@@ -17,7 +17,7 @@
     const todayJ = () => window.IrTime ? IrTime.jdate(IrTime.now()) : (L.boot ? L.boot.today_j : '');
     const nowHM = () => { if (window.IrTime) return IrTime.hm(IrTime.now()); const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
     const isPhone = () => window.matchMedia && matchMedia('(max-width: 767px)').matches;
-    const ST = {PAID: ['پرداخت‌شده', 'ok', 'fa-circle-check'], PARTIAL: ['بخشی پرداخت‌شده', 'part', 'fa-circle-half-stroke'], OVERDUE: ['معوق', 'bad', 'fa-triangle-exclamation'], DUE: ['سررسید نشده', 'due', 'fa-clock']};
+    const ST = {PAID: ['پرداخت‌شده', 'ok', 'fa-circle-check'], PAID_US: ['پرداخت‌شده به ما · منتظرِ پرداخت به بیمه‌گر', 'wait', 'fa-hourglass-half'], PARTIAL: ['بخشی پرداخت‌شده', 'part', 'fa-circle-half-stroke'], OVERDUE: ['معوق', 'bad', 'fa-triangle-exclamation'], DUE: ['سررسید نشده', 'due', 'fa-clock']};
     const C1 = '#2a78d6', C2 = '#eb6834';   // سری‌های نمودار: سررسید (آبی)، وصول (نارنجی)
 
     const L = {boot: null, booting: null, tab: null, list: {f: {sort: 'overdue'}, page: 1, sel: new Set(), data: null}, dash: {f: {}}, imp: null, arch: {path: '', q: ''}, det: null};
@@ -82,7 +82,7 @@
     .lf-chk{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;user-select:none}
     .lf-chk input{width:16px;height:16px;accent-color:#2563eb}
     .lf-st{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:900;border-radius:999px;padding:2px 9px;white-space:nowrap}
-    .lf-st.ok{background:#dcfce7;color:#166534}.lf-st.part{background:#fef3c7;color:#92400e}.lf-st.bad{background:#fee2e2;color:#991b1b}.lf-st.due{background:#eef2ff;color:#3730a3}
+    .lf-st.ok{background:#dcfce7;color:#166534}.lf-st.part{background:#fef3c7;color:#92400e}.lf-st.bad{background:#fee2e2;color:#991b1b}.lf-st.due{background:#eef2ff;color:#3730a3}.lf-st.wait{background:#e0f2fe;color:#075985}
     .lf-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;border-radius:9px;padding:2px 8px;background:#f1f5f9;color:#475569;white-space:nowrap}
     .lf-tag.b{background:#e0f2fe;color:#075985}.lf-tag.r{background:#ffe4e6;color:#9f1239}.lf-tag.a{background:#fef3c7;color:#92400e}.lf-tag.g{background:#dcfce7;color:#166534}.lf-tag.v{background:#ede9fe;color:#5b21b6}
     .lf-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
@@ -414,7 +414,7 @@
                     <button class="lf-btn s" data-a="more"><i class="fas fa-filter"></i>فیلترها</button>
                 </div>
                 <div class="lf-f" data-box="more">
-                    <label><span>وضعیت</span><select class="lf-sel" data-k="status"><option value="">همه</option>${[['overdue', 'دارای قسطِ معوق'], ['unpaid', 'دارای مانده (پرداخت‌نشده)'], ['paid', 'بدونِ بدهی'], ['first_unpaid', 'قسطِ اولِ پرداخت‌نشده']].map(([v, t]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+                    <label><span>وضعیت</span><select class="lf-sel" data-k="status"><option value="">همه</option>${[['overdue', 'دارای قسطِ معوق'], ['unpaid', 'دارای مانده (پرداخت‌نشده)'], ['paid', 'بدونِ بدهی'], ['await', 'منتظرِ پرداخت به بیمه‌گر'], ['first_unpaid', 'قسطِ اولِ پرداخت‌نشده']].map(([v, t]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
                     <label><span>تعدادِ اقساطِ معوق</span><select class="lf-sel" data-k="overdue_count"><option value="">مهم نیست</option>${[['0', 'بدونِ معوق'], ['1', 'یک قسط'], ['2', 'دو قسط'], ['2+', 'دو قسط و بیشتر'], ['3+', 'سه قسط و بیشتر']].map(([v, t]) => `<option value="${v}" ${f.overdue_count === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
                     <label><span>ماهِ سررسید از</span><select class="lf-sel" data-k="due_from">${monthOpts(f.due_from, 'همه')}</select></label>
                     <label><span>ماهِ سررسید تا</span><select class="lf-sel" data-k="due_to">${monthOpts(f.due_to, 'همه')}</select></label>
@@ -588,7 +588,8 @@
             </div><button class="lf-x x" data-a="close"><i class="fas fa-xmark"></i></button></div>
             <div class="lf-dt">${tabs.map(t => `<button data-tab="${t[0]}" class="${t[0] === L.det.tab ? 'on' : ''}"><i class="fas ${t[1]} ml-1"></i>${t[2]}</button>`).join('')}</div></div>
             <div class="lf-db">
-                <div class="lf-ms"><div><small>جمعِ اقساط</small><b>${money(s.amount)}</b></div><div><small>پرداختی</small><b class="text-green-700">${money(s.paid)}</b></div><div><small>مانده</small><b>${money(s.rem)}</b></div><div><small>معوق</small><b class="${s.overdue ? 'text-red-700' : 'text-green-700'}">${s.overdue ? money(s.overdue) + ' · ' + fa(s.overdue_count) + ' قسط' : 'ندارد'}</b></div></div>
+                <div data-lock="life:${p.id}"></div>
+                <div class="lf-ms"><div><small>جمعِ اقساط</small><b>${money(s.amount)}</b></div><div><small>پرداختی</small><b class="text-green-700">${money(s.paid)}</b></div><div><small>مانده</small><b>${money(s.rem)}</b></div><div><small>معوق</small><b class="${s.overdue ? 'text-red-700' : 'text-green-700'}">${s.overdue ? money(s.overdue) + ' · ' + fa(s.overdue_count) + ' قسط' : 'ندارد'}</b></div>${s.await_count ? `<div><small>منتظرِ پرداخت به بیمه‌گر</small><b class="text-sky-700">${money(s.await)} · ${fa(s.await_count)} قسط</b></div>` : ''}</div>
                 ${p.first_unpaid ? '<div class="lf-card" style="background:#fff1f2;border-color:#fecdd3;padding:10px 12px;color:#9f1239;font-weight:800;font-size:12px"><i class="fas fa-circle-exclamation ml-1"></i>قسطِ اول پرداخت نشده و هیچ پرداختی ثبت نشده است (نامزدِ «اعتبارسنجی و پاک‌سازی»).</div>' : ''}
                 <div data-box="tab"></div>
             </div>`;
@@ -610,7 +611,7 @@
             const add = can('life-pay', 'create') ? `<button class="lf-btn o sm" data-a="iadd"><i class="fas fa-plus"></i>افزودنِ قسط</button>` : '';
             box.innerHTML = `<div class="flex items-center justify-between gap-2 mb-2"><b class="text-[13px]">اقساط</b><div class="flex gap-2">${add}</div></div>
             <div class="flex flex-col gap-2">${d.insts.map(i => {
-                const cls = i.status === 'PAID' ? 'ok' : (i.status === 'OVERDUE' || (i.status === 'PARTIAL' && i.days > 0)) ? 'bad' : '';
+                const cls = i.status === 'PAID' || i.status === 'PAID_US' ? 'ok' : (i.status === 'OVERDUE' || (i.status === 'PARTIAL' && i.days > 0)) ? 'bad' : '';
                 const openB = L.det.open.has(i.id);
                 const pays = i.payments.length, files = i.files.filter(f => f.name !== 'اطلاعات قسط.txt').length;
                 return `<div class="lf-inst ${cls}" data-iid="${i.id}"><div class="lf-ih">
@@ -619,6 +620,7 @@
                         <div><small>پرداختی</small><b class="text-green-700">${money(i.eff_paid)}</b>${i.cleared ? '<small class="text-green-700">تسویه نزدِ بیمه‌گر</small>' : i.excel_collected && i.excel_collected >= i.paid_amount ? '<small class="text-slate-500">طبقِ اکسل</small>' : ''}</div><div><small>مانده</small><b>${money(i.rem)}</b></div></div>
                     <div class="lf-ia">${stChip(i.status)}
                         ${can('life-pay', 'create') && i.rem > 0 ? `<button class="lf-btn g sm" data-a="pay"><i class="fas fa-money-bill-wave"></i>ثبتِ پرداخت</button>` : ''}
+                        ${can('life-pay', 'edit') && i.status === 'PAID_US' ? `<button class="lf-btn o sm" data-a="clear" title="پول به بیمه‌گر پرداخت شد"><i class="fas fa-building-columns text-sky-600"></i>پرداخت به بیمه‌گر شد</button>` : ''}
                         ${can('life-pay') ? `<button class="lf-btn o sm" data-a="rcpt"><i class="fas fa-receipt text-blue-600"></i>رسید</button>` : ''}
                         <button class="lf-btn s sm" data-a="tog"><i class="fas fa-chevron-${openB ? 'up' : 'down'}"></i>${fa(pays)} پرداخت · ${fa(files)} فایل</button></div></div>
                     ${openB ? this.instBody(i) : ''}</div>`;
@@ -678,7 +680,7 @@
         },
         async clearToggle(i) {
             let note = '';
-            if (!i.cleared) { note = window.uiPrompt ? await uiPrompt('تسویه نزدِ بیمه‌گر', 'تسویه‌ی دستی', {hint: 'این قسط پرداخت‌شده حساب می‌شود (مثلاً مستقیم به بیمه‌گر پرداخت شده). توضیح:'}) : 'تسویه‌ی دستی'; if (note === null) return; }
+            if (!i.cleared) { const us = i.status === 'PAID_US', def = us ? 'پرداخت به بیمه‌گر انجام شد' : 'تسویه‌ی دستی'; note = window.uiPrompt ? await uiPrompt(us ? 'پرداخت به بیمه‌گر' : 'تسویه نزدِ بیمه‌گر', def, {hint: us ? 'مبلغِ این قسط به بیمه‌گر پرداخت شد و قسط «پرداخت‌شده» می‌شود. توضیح (مثلاً شماره‌ی فیش):' : 'این قسط پرداخت‌شده حساب می‌شود (مثلاً مستقیم به بیمه‌گر پرداخت شده). توضیح:'}) : def; if (note === null) return; }
             try { await api('inst_save', {id: i.id, cleared: i.cleared ? 0 : 1, cleared_note: note}); this.refresh(); } catch (e) { toast(e.message, 'error'); }
         },
         async instDelete(i) {
@@ -896,7 +898,7 @@
             const m = modal('خروجیِ اکسل', `
                 <div class="flex flex-wrap gap-3 items-center mb-3"><div class="lf-seg" data-mode><button data-v="policy" class="${mode0 === 'policy' ? 'on' : ''}">هر بیمه‌نامه یک ردیف</button><button data-v="inst" class="${mode0 === 'inst' ? 'on' : ''}">هر قسط یک ردیف</button></div>
                     <span class="lf-tag b">${ids ? fa(ids.length) + ' بیمه‌نامه‌ی انتخاب‌شده' : 'همه‌ی ردیف‌های فیلترشده (' + fa(L.list.data ? L.list.data.total : 0) + ')'}</span></div>
-                <div data-inst class="lf-f mb-3 ${mode0 === 'inst' ? '' : 'hidden'}"><label><span>اقساط</span><select class="lf-sel" data-f="inst_status"><option value="">همه‌ی اقساط</option><option value="unpaid">فقط پرداخت‌نشده / مانده‌دار</option><option value="overdue">فقط معوق</option><option value="paid">فقط پرداخت‌شده</option></select></label>
+                <div data-inst class="lf-f mb-3 ${mode0 === 'inst' ? '' : 'hidden'}"><label><span>اقساط</span><select class="lf-sel" data-f="inst_status"><option value="">همه‌ی اقساط</option><option value="unpaid">فقط پرداخت‌نشده / مانده‌دار</option><option value="overdue">فقط معوق</option><option value="paid">فقط پرداخت‌شده</option><option value="await">فقط منتظرِ پرداخت به بیمه‌گر</option></select></label>
                     <small class="text-slate-500 self-center">فیلترِ ماهِ سررسیدِ صفحه هم روی اقساط اعمال می‌شود.</small></div>
                 <div class="flex gap-2 mb-2"><button class="lf-btn s sm" data-a="all">همه</button><button class="lf-btn s sm" data-a="none">هیچ</button><button class="lf-btn s sm" data-a="def">پیش‌فرض</button></div>
                 <div data-cols class="grid gap-1" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))"></div>`,
@@ -1202,9 +1204,10 @@
                 <div class="space-y-4"><div class="lf-card"><h3><i class="fas fa-receipt text-blue-600"></i>قالب‌های رسید</h3><div data-tpls><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     ${ed ? `<div class="border-t border-slate-100 mt-3 pt-3 space-y-2"><b class="text-[12px]">افزودنِ قالبِ Word</b><div class="lf-grid lf-g2"><input class="lf-in" data-tn placeholder="نامِ قالب"><label class="lf-btn o" style="cursor:pointer"><i class="fas fa-file-word text-blue-600"></i><span data-tfn>انتخابِ فایلِ docx</span><input type="file" class="hidden" accept=".docx" data-tf></label></div>
                         <textarea class="lf-ta" rows="2" data-tt placeholder="متنِ زیرِ جدول برای این قالب"></textarea><div class="flex gap-2 flex-wrap"><button class="lf-btn p" data-tup><i class="fas fa-upload"></i>بارگذاریِ قالب</button><a class="lf-btn s" href="${url('tpl_sample')}"><i class="fas fa-download"></i>دریافتِ قالبِ نمونه (Word)</a></div></div>` : ''}</div>
+                    <div class="lf-card" data-flow><h3><i class="fas fa-route text-sky-600"></i>روندِ پرداخت</h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     <div class="lf-card" data-bot><h3><i class="fas fa-robot text-cyan-600"></i>ربات بله‌ی بیمه عمر <small>یادآوریِ اقساط به مشتری و کارِ همکاران از ربات</small></h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     <div class="lf-card"><h3><i class="fas fa-code text-violet-600"></i>کدهای قالب <small>روی هر کد بزنید تا کپی شود</small></h3><div data-codes class="flex flex-col gap-1"></div></div></div></div>`);
-            this.cols(root); this.tpls(root); this.bot(root);
+            this.cols(root); this.tpls(root); this.bot(root); this.flow(root);
             const hdr = root.querySelector('[data-hdr]');
             if (hdr) hdr.onchange = async () => {
                 if (!hdr.files[0]) return;
@@ -1246,6 +1249,21 @@
                     this.render(root);
                 } catch (e) { toast(e.message, 'error'); busy(tu, false); }
             };
+        },
+        async flow(root) {
+            const box = root.querySelector('[data-flow]'), ed = can('life-settings', 'edit');
+            if (!box) return;
+            let r;
+            try { r = await api('flow_get'); } catch (e) { box.innerHTML = `<div class="lf-empty">${esc(e.message)}</div>`; return; }
+            box.innerHTML = `<h3><i class="fas fa-route text-sky-600"></i>روندِ پرداخت <small>بعد از ثبتِ پرداختِ بیمه‌گذار</small></h3>
+                <div class="flex flex-col gap-2 text-[12px] leading-7">
+                    <label class="lf-chk"><input type="radio" name="lf-flow" value="0" ${r.skip_insurer ? '' : 'checked'} ${ed ? '' : 'disabled'}><span><b>دو مرحله‌ای</b> — پرداختِ بیمه‌گذار ← «پرداخت‌شده به ما · منتظرِ پرداخت به بیمه‌گر» ← بعد از پرداخت به بیمه‌گر (اکسلِ بیمه‌گر یا دکمه‌ی «پرداخت به بیمه‌گر شد») «پرداخت‌شده»</span></label>
+                    <label class="lf-chk"><input type="radio" name="lf-flow" value="1" ${r.skip_insurer ? 'checked' : ''} ${ed ? '' : 'disabled'}><span><b>یک مرحله‌ای</b> — مرحله‌ی پرداخت به بیمه‌گر نداریم؛ ثبتِ پرداختِ بیمه‌گذار آخرین مرحله است و قسط «پرداخت‌شده» می‌شود</span></label>
+                    <small class="text-slate-500">تغییر فقط روی پرداخت‌هایی اثر دارد که از این به بعد ثبت می‌شوند؛ پرداخت‌های قبلی همان‌طور می‌مانند.${r.skip_insurer && r.since ? ' (یک مرحله‌ای از ' + fa(r.since) + ')' : ''}${r.await ? ' · الان ' + fa(r.await) + ' قسط منتظرِ پرداخت به بیمه‌گر است.' : ''}</small></div>`;
+            box.querySelectorAll('input[name=lf-flow]').forEach(x => x.onchange = async () => {
+                try { await api('flow_save', {skip_insurer: x.value === '1' ? 1 : 0}); toast('روندِ پرداخت ذخیره شد.', 'success'); this.flow(root); }
+                catch (e) { toast(e.message, 'error'); this.flow(root); }
+            });
         },
         async bot(root) {
             const box = root.querySelector('[data-bot]'), ed = can('life-settings', 'edit');

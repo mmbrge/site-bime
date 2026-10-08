@@ -60,7 +60,7 @@ $need = [
     'colmap_get' => 'life-settings:view|life-import:view', 'colmap_save' => 'life-settings:edit', 'colmap_headers' => 'life-settings:edit',
     'import_preview' => 'life-import:create', 'import_commit' => 'life-import:create', 'imports_list' => 'life-import:view',
     'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit',
-    'bot_remind' => 'life-calls:create',
+    'bot_remind' => 'life-calls:create', 'flow_get' => 'life-settings:view|life-pay:view', 'flow_save' => 'life-settings:edit',
     'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
 ];
 if (!isset($need[$action])) $fail('درخواست نامعتبر است.');
@@ -368,6 +368,18 @@ case 'inst_save':
     }
     $out(['ok' => true]);
 
+// تنظیمِ روندِ پرداخت: با یا بدونِ مرحله‌ی «پرداخت به بیمه‌گر» (تغییر فقط روی پرداخت‌های بعد از همین لحظه اثر دارد)
+case 'flow_get':
+    $out(['ok' => true, 'skip_insurer' => life_insurer_step_off($pdo), 'since' => life_setting($pdo, 'life_skip_insurer_since', ''),
+          'await' => intval($pdo->query("SELECT COUNT(*) FROM life_installments i WHERE " . life_sql_await('i'))->fetchColumn())]);
+case 'flow_save':
+    $on = !empty($data['skip_insurer']);
+    if ($on !== life_insurer_step_off($pdo)) {
+        life_setting_set($pdo, 'life_skip_insurer_step', $on ? '1' : '0');
+        life_setting_set($pdo, 'life_skip_insurer_since', $on ? life_today_j() . ' ' . date('H:i') : '');
+    }
+    $out(['ok' => true, 'skip_insurer' => $on]);
+
 case 'inst_delete':
     $i = life_inst_row($pdo, $data['id'] ?? 0);
     if (!$i) $fail('قسط پیدا نشد.');
@@ -402,8 +414,10 @@ case 'pay_add':
         if (!move_uploaded_file($u['tmp'], $dest)) $fail('ذخیره‌ی فایل ممکن نشد.');
         $file = life_rel($dest);
     }
-    $pdo->prepare("INSERT INTO life_payments (installment_id, policy_id, amount, paid_j, paid_g, method, ref_no, note, file_path, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
-        ->execute([$i['id'], $i['policy_id'], $amount, $j, $g, $method, trim(p2e_digits((string)($data['ref_no'] ?? ''))) ?: null, trim((string)($data['note'] ?? '')) ?: null, $file, $uid]);
+    // وقتی «مرحله‌ی پرداخت به بیمه‌گر» در تنظیمات خاموش است، همین پرداخت آخرین مرحله است (قسط «پرداخت‌شده» می‌شود)
+    $final = life_insurer_step_off($pdo) ? 1 : 0;
+    $pdo->prepare("INSERT INTO life_payments (installment_id, policy_id, amount, paid_j, paid_g, method, ref_no, note, file_path, created_by, created_at, is_final) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)")
+        ->execute([$i['id'], $i['policy_id'], $amount, $j, $g, $method, trim(p2e_digits((string)($data['ref_no'] ?? ''))) ?: null, trim((string)($data['note'] ?? '')) ?: null, $file, $uid, $final]);
     $payId = intval($pdo->lastInsertId());
     life_refresh_paid($pdo, intval($i['id']));
     life_follow($pdo, intval($i['policy_id']), $uid);

@@ -1443,9 +1443,14 @@
                 <div style="display:flex;gap:6px;align-items:center"><input class="cf-in" data-f="bmd" placeholder="ماه/روز، مثل ۰۷/۱۵" dir="ltr" value="${esc(fa(bd.md || ''))}" style="width:140px">
                 <label style="font-size:10.5px;display:flex;align-items:center;gap:4px"><input type="checkbox" data-f="bshow" ${bd.show ? 'checked' : ''}> همکاران روزِ تولدم را ببینند</label>
                 <button class="cf-btn" data-a="bsave" style="margin-right:auto">ثبت</button></div></div>` : ''}
+            ${window.CursorPref && window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches ? `<div class="cf-card"><h4><i class="fas fa-arrow-pointer" style="color:#7c3aed"></i>نشانگرِ موس <small style="font-weight:600;color:#94a3b8">فقط روی همین دستگاه</small></h4>
+                <div class="cf-seg" data-cur style="background:#f1f5f9;flex-wrap:wrap">${[['fancy', 'با انیمیشن'], ['simple', 'بدونِ انیمیشن'], ['native', 'معمولیِ سیستم']].map(([k, x]) => `<button data-v="${k}" class="${CursorPref.get() === k ? 'on' : ''}">${x}</button>`).join('')}</div>
+                <p style="font-size:10.5px;color:#64748b;margin-top:6px;line-height:1.9">اگر پنل روی این سیستم کُند است «معمولیِ سیستم» را بزنید؛ نشانگرِ اولیه‌ی ویندوز برمی‌گردد و هیچ انیمیشنی اجرا نمی‌شود.${CursorPref.chosen() ? ' <a href="#" data-cur-auto style="color:#4f46e5">خودکار (بر اساسِ توانِ سیستم)</a>' : ' الان: خودکار.'}</p></div>` : ''}
             <div class="cf-card"><h4><i class="fas fa-bell" style="color:#0ea5e9"></i>اعلانِ مرورگر</h4>
                 <div class="cf-line"><span class="grow" style="font-size:11px">یادآورها وقتی پنل در پس‌زمینه است هم اعلان بدهند</span><label class="cf-sw"><input type="checkbox" data-f="notif" ${S.prefs.notify && S.prefs.notify.browser ? 'checked' : ''}><span></span></label></div></div>`;
         const saveT = part => { const n = Object.assign(t, part); savePrefs({theme: n}); applyTheme(); };
+        b.querySelectorAll('[data-cur] button').forEach(x => x.addEventListener('click', () => { CursorPref.set(x.dataset.v); toast('نشانگرِ موس: ' + CursorPref.LABELS[x.dataset.v], 'success'); hubTheme(b); }));
+        const ca = b.querySelector('[data-cur-auto]'); if (ca) ca.addEventListener('click', e => { e.preventDefault(); CursorPref.set(''); hubTheme(b); });
         b.querySelectorAll('[data-mode] button').forEach(x => x.addEventListener('click', () => { b.querySelectorAll('[data-mode] button').forEach(y => y.classList.toggle('on', y === x)); saveT({mode: x.dataset.v}); }));
         const fr = b.querySelector('[data-font]');
         if (fr) { fr.addEventListener('input', () => { b.querySelector('[data-fv]').textContent = fa(fr.value) + '٪'; }); fr.addEventListener('change', () => saveT({font: +fr.value})); }

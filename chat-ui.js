@@ -440,6 +440,36 @@
 .cx-drop.show{display:flex;animation:cxFade .2s both}
 .cx-skel{height:52px;border-radius:14px;margin:6px;background:linear-gradient(90deg,var(--soft),var(--hover),var(--soft));background-size:200% 100%;animation:cxShim 1.2s infinite}
 .cx-back{display:none}
+.cx-full .cx-back{display:inline-flex}
+.cx-head .cx-av,.cx-head-b b{cursor:pointer}
+.cx-head-b b:hover{text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px}
+.cx-prof{position:absolute;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;animation:cxProfIn .28s cubic-bezier(.2,.9,.3,1) both}
+@keyframes cxProfIn{from{transform:translateX(-28px);opacity:0}to{transform:none;opacity:1}}
+.cx-prof-top{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);padding-top:max(10px,env(safe-area-inset-top,0px))}
+.cx-prof-top b{flex:1;font-size:14px;font-weight:900}
+.cx-prof-sc{flex:1;overflow-y:auto;padding:0 0 max(18px,env(safe-area-inset-bottom,0px))}
+.cx-prof-hero{position:relative;padding:26px 18px 18px;text-align:center;background:linear-gradient(135deg,var(--me1),var(--me2));color:#fff;overflow:hidden}
+.cx-prof-hero::after{content:'';position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.22),transparent 70%);left:-70px;top:-120px}
+.cx-prof-hero .cx-av{width:96px!important;height:96px!important;border-radius:32px!important;font-size:30px!important;margin:0 auto;border:3px solid rgba(255,255,255,.55);box-shadow:0 16px 30px -14px rgba(0,0,0,.5)}
+.cx-prof-hero h3{margin:12px 0 2px;font-size:19px;font-weight:900}
+.cx-prof-hero .cx-prof-role{display:inline-flex;gap:6px;align-items:center;font-size:11px;font-weight:800;background:rgba(255,255,255,.18);border-radius:999px;padding:3px 12px;margin-top:4px}
+.cx-prof-hero .cx-prof-pr{font-size:11px;opacity:.9;margin-top:8px}
+.cx-prof-cards{display:flex;flex-direction:column;gap:10px;padding:14px;max-width:560px;margin:0 auto;width:100%}
+.cx-prof-c{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:12px 14px}
+.cx-prof-c h4{margin:0 0 8px;font-size:11.5px;color:var(--muted);font-weight:800;display:flex;align-items:center;gap:6px}
+.cx-prof-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed var(--line)}
+.cx-prof-row:first-of-type{border-top:0}
+.cx-prof-row i.ic{width:34px;height:34px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--hover);color:var(--acc);flex-shrink:0}
+.cx-prof-row div{flex:1;min-width:0}.cx-prof-row small{display:block;font-size:10.5px;color:var(--muted)}.cx-prof-row b{font-size:13px;word-break:break-word}
+.cx-prof-chips{display:flex;flex-wrap:wrap;gap:6px}.cx-prof-chips span{background:var(--hover);color:var(--acc);border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:800}
+.cx-prof-bio{font-size:12.5px;line-height:2;white-space:pre-wrap;color:var(--text)}
+.cx-prof-f{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cx-prof-f label{display:flex;flex-direction:column;gap:4px;font-size:10.5px;color:var(--muted);font-weight:800}
+.cx-prof-f label.w{grid-column:1/-1}
+.cx-prof-f input,.cx-prof-f textarea{border:1px solid var(--line);background:var(--soft);color:var(--text);border-radius:12px;padding:8px 10px;font:inherit;font-size:12.5px;font-weight:600}
+.cx-prof-act{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.cx-prof-act button{border:0;border-radius:14px;padding:9px 16px;font-weight:800;font-size:12px;display:inline-flex;gap:6px;align-items:center}
+.cx-prof-act .p{background:linear-gradient(135deg,var(--me1),var(--me2));color:#fff}.cx-prof-act .s{background:var(--soft);color:var(--text);border:1px solid var(--line)}
+@media (max-width:640px){.cx-prof-f{grid-template-columns:1fr}.cx-prof{position:fixed;z-index:9600;border-radius:0;height:100vh;height:100dvh}}
 .cx-av img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
 .cx-av em{font-style:normal;font-size:1.35em;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
 .cx-av .cx-on{position:absolute;bottom:-2px;right:-2px;width:13px;height:13px;border-radius:50%;background:#22c55e;border:2.5px solid var(--panel,#fff);animation:cxPulse 2.2s infinite}
@@ -649,6 +679,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                 ${full ? `<aside class="cx-side">
                     <div class="cx-side-h"><h3><i class="fas fa-comments" style="color:var(--acc)"></i> گفتگوها</h3>
                         <button class="cx-ib cx-mute-all ${MUTE.all() ? 'cx-muted' : ''}" title="${MUTE.all() ? 'وصلِ صدای همه‌ی گفتگوها' : 'قطعِ صدای همه‌ی گفتگوها'}"><i class="fas ${MUTE.all() ? 'fa-volume-xmark' : 'fa-volume-high'}"></i></button>
+                        <button class="cx-ib cx-myprof" title="پروفایلِ من"><i class="fas fa-id-badge"></i></button>
                         <button class="cx-ib cx-prim cx-new" title="گفتگوی تازه"><i class="fas fa-pen-to-square"></i></button></div>
                     <label class="cx-search"><i class="fas fa-magnifying-glass"></i><input class="cx-q" placeholder="جستجوی نام، کد ملی یا متن پیام..."></label>
                     <div class="cx-chips"></div>
@@ -660,6 +691,19 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             this.root = this.$('.cx');
             if (full) {
                 this.$('.cx-new').onclick = () => this.newChat();
+                this.$('.cx-myprof').onclick = () => this.profile('me');
+                // Esc: اول پنجره‌ی پروفایل، بعد بیرون آمدن از گفتگو و برگشتن به صفحه‌ی «یک گفتگو را انتخاب کنید»
+                if (!this._esc) {
+                    this._esc = e => {
+                        if (e.key !== 'Escape' || e.defaultPrevented || !this.el || !this.el.offsetParent) return;
+                        if (document.querySelector('.cx-menu, .cx-emoji, .cx-lb, .cx-dlg-ov, .modal-overlay.active')) return;
+                        if (this._prof) { e.preventDefault(); this.closeProfile(); return; }
+                        if (!this.key || this.selecting || this.$('.cx-modal')) return;
+                        const h = this.$('.cx-head'); if (h && h.classList.contains('cx-finding')) return;
+                        e.preventDefault(); this.back();
+                    };
+                    document.addEventListener('keydown', this._esc);
+                }
                 this.$('.cx-mute-all').onclick = () => { MUTE.toggle(null); this.paintMute(); this.toast(MUTE.all() ? 'صدای همه‌ی گفتگوها قطع شد.' : 'صدای گفتگوها وصل شد.', 'info'); };
                 let t; this.$('.cx-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { this.q = e.target.value.trim(); this.loadThreads(); }, 300); };
             }
@@ -760,7 +804,82 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
         back(fromPop) {
             // دکمه‌ی «بازگشت» گوشی و دکمه‌ی بازگشتِ گفتگو یکی‌اند
             if (!fromPop && this._hist) { this._hist = false; try { history.back(); } catch (e) {} }
+            this.stopRec(true); this.closeProfile();
             this.key = null; this.root.classList.remove('cx-conv-open'); this.mobFull(false); this.renderThreads();
+            const main = this.$('.cx-main');
+            if (main && this.o.mode === 'full') main.innerHTML = this.emptyHtml();
+        }
+        emptyHtml() {
+            return `<div class="cx-empty"><div class="cx-big"><i class="fas fa-comments"></i></div>
+                <b style="font-size:15px;color:var(--text)">یک گفتگو را انتخاب کنید</b><span>یا با «گفتگوی تازه» با هر کسی شروع کنید.</span>
+                <span style="font-size:11px;opacity:.75;margin-top:4px"><i class="fas fa-keyboard"></i> در هر گفتگو با Esc یا فلشِ بالای گفتگو به این صفحه برمی‌گردید.</span></div>`;
+        }
+
+        // ---------------- پروفایل (کلیک روی نام/عکسِ سرِ گفتگو، یا «پروفایلِ من»)
+        async profile(key) {
+            this.closeProfile();
+            const host = this.root;
+            const pane = document.createElement('div');
+            pane.className = 'cx-prof';
+            pane.innerHTML = `<div class="cx-prof-top"><button class="cx-ib cx-prof-x" title="بازگشت (Esc)"><i class="fas fa-arrow-right"></i></button><b>پروفایل</b></div><div class="cx-prof-sc"><div class="cx-skel" style="margin:20px;height:160px"></div></div>`;
+            // موبایل: روی همان گفتگوی تمام‌صفحه؛ دسکتاپ: روی کلِ پیام‌رسان
+            // موبایل: تمام‌صفحه روی همه‌چیز (کلاسِ cx برای رنگ‌ها)؛ دسکتاپ: روی کلِ پیام‌رسان
+            if (window.innerWidth <= 640) { pane.classList.add('cx'); if (host.classList.contains('cx-dark')) pane.classList.add('cx-dark'); document.body.appendChild(pane); }
+            else host.appendChild(pane);
+            this._prof = pane;
+            pane.querySelector('.cx-prof-x').onclick = () => this.closeProfile();
+            const d = await this.call('chat_profile', { key: key === 'me' ? '' : key });
+            if (this._prof !== pane) return;
+            if (!d.ok) { pane.querySelector('.cx-prof-sc').innerHTML = `<div class="cx-empty"><b>${esc(d.error || 'خطا')}</b></div>`; return; }
+            this.drawProfile(pane, d, false);
+        }
+        closeProfile() { if (this._prof) { this._prof.remove(); this._prof = null; } }
+        drawProfile(pane, d, editing) {
+            const p = d.profile || {}, L = d.labels || {};
+            const pr = d.presence ? (d.presence.online ? '<span style="display:inline-flex;align-items:center;gap:4px"><i class="fas fa-circle" style="color:#4ade80;font-size:8px"></i>آنلاین</span>' : (d.presence.ago !== null && d.presence.ago !== undefined ? seenBase(d.presence, null) : '')) : '';
+            const st = d.presence && d.presence.status ? `${d.presence.status.icon} ${esc(d.presence.status.text)}` : '';
+            const row = (ic, label, val, extra) => val ? `<div class="cx-prof-row"><i class="fas ${ic} ic"></i><div><small>${esc(label)}</small><b>${extra || esc(fa(val))}</b></div>
+                <button class="cx-ib" data-copy="${esc(val)}" title="کپی"><i class="far fa-copy"></i></button></div>` : '';
+            const sc = pane.querySelector('.cx-prof-sc');
+            if (editing) {
+                const inp = (k, w, ta) => `<label class="${w ? 'w' : ''}">${esc(L[k] || k)}${ta ? `<textarea data-k="${k}" rows="4" maxlength="500">${esc(p[k] || '')}</textarea>` : `<input data-k="${k}" value="${esc(fa(p[k] || ''))}" ${k === 'ext' || k === 'phone' ? 'dir="ltr" inputmode="tel"' : ''}>`}</label>`;
+                sc.innerHTML = `<div class="cx-prof-cards"><div class="cx-prof-c"><h4><i class="fas fa-pen"></i>ویرایشِ پروفایل${d.me ? '' : ' · ' + esc(d.name)}</h4>
+                    <div class="cx-prof-f">${inp('title')}${inp('specialty')}${inp('ext')}${inp('phone')}${inp('hours', true)}${inp('bio', true, true)}</div>
+                    <p style="font-size:10.5px;color:var(--muted);margin:8px 0 0">تخصص‌ها را با «،» جدا کنید (مثلاً بدنه، ثالث، عمر). نام و عکس از «عکسِ پروفایل» و مدیر کل عوض می‌شود.</p></div>
+                    <div class="cx-prof-act"><button class="p" data-a="save"><i class="fas fa-check"></i>ذخیره</button><button class="s" data-a="cancel">انصراف</button></div></div>`;
+                sc.querySelector('[data-a=cancel]').onclick = () => this.drawProfile(pane, d, false);
+                sc.querySelector('[data-a=save]').onclick = async () => {
+                    const prof = {}; sc.querySelectorAll('[data-k]').forEach(i => { prof[i.dataset.k] = en(i.value); });
+                    const r = await this.call('chat_profile_save', { user_id: (d.key || '').split(':')[1], profile: prof });
+                    if (!r.ok) return this.toast(r.error || 'خطا', 'error');
+                    this.toast('پروفایل ذخیره شد.', 'success');
+                    this.drawProfile(pane, r, false);
+                };
+                return;
+            }
+            const spec = (d.specialties || []).length ? `<div class="cx-prof-c"><h4><i class="fas fa-shield-heart"></i>${esc(L.specialty || 'تخصص')}</h4><div class="cx-prof-chips">${d.specialties.map(x => `<span>${esc(x)}</span>`).join('')}</div></div>` : '';
+            const contact = d.kind === 'STAFF'
+                ? row('fa-phone-volume', L.ext || 'داخلی', p.ext) + row('fa-mobile-screen', L.phone || 'تماس', p.phone, p.phone ? `<a href="tel:${esc(en(p.phone).replace(/[^\d+]/g, ''))}" style="color:inherit">${esc(fa(p.phone))}</a>` : '') + row('fa-clock', L.hours || 'ساعت', p.hours)
+                : (d.rows || []).map(r => row('fa-circle-info', r[0], r[1])).join('');
+            const empty = d.kind === 'STAFF' && !p.title && !p.bio && !p.ext && !p.phone && !p.hours && !(d.specialties || []).length;
+            sc.innerHTML = `<div class="cx-prof-hero">${avatarHtml(d.avatar, d.name, { type: d.kind === 'STAFF' ? 'STAFF' : d.kind })}
+                    <h3>${esc(d.name)}</h3>${p.title ? `<div style="font-size:12.5px;opacity:.92">${esc(p.title)}</div>` : (d.sub ? `<div style="font-size:12px;opacity:.85">${esc(d.sub)}</div>` : '')}
+                    ${d.role_fa ? `<span class="cx-prof-role"><i class="fas fa-user-shield"></i>${esc(d.role_fa)}</span>` : ''}
+                    <div class="cx-prof-pr">${pr}${pr && st ? ' · ' : ''}${st}</div></div>
+                <div class="cx-prof-cards">
+                    ${p.bio ? `<div class="cx-prof-c"><h4><i class="fas fa-quote-right"></i>${esc(L.bio || 'درباره')}</h4><div class="cx-prof-bio">${esc(p.bio)}</div></div>` : ''}
+                    ${spec}
+                    ${contact ? `<div class="cx-prof-c"><h4><i class="fas fa-address-card"></i>راه‌های ارتباط</h4>${contact}</div>` : ''}
+                    ${empty ? `<div class="cx-prof-c" style="text-align:center;color:var(--muted);font-size:12px"><i class="fas fa-seedling" style="font-size:22px;opacity:.6"></i><p>${d.me ? 'هنوز پروفایلتان را کامل نکرده‌اید؛ «ویرایشِ پروفایل» را بزنید تا همکاران سمت، تخصص و داخلی‌تان را ببینند.' : 'هنوز اطلاعاتی برای این پروفایل ثبت نشده است.'}</p></div>` : ''}
+                    ${d.since ? `<div style="text-align:center;font-size:10.5px;color:var(--muted)"><i class="fas fa-calendar-check"></i> عضو از ${esc(fa(d.since))}</div>` : ''}
+                    <div class="cx-prof-act">${d.editable ? `<button class="p" data-a="edit"><i class="fas fa-pen"></i>${d.me ? 'ویرایشِ پروفایلِ من' : 'ویرایشِ پروفایل'}</button>` : ''}
+                        ${d.can_chat && d.key && d.key !== this.key && this.o.mode === 'full' ? `<button class="s" data-a="chat"><i class="fas fa-comment"></i>گفتگو</button>` : ''}
+                        <button class="s" data-a="back"><i class="fas fa-arrow-right"></i>${this.key ? 'بازگشت به گفتگو' : 'بازگشت'}</button></div>
+                </div>`;
+            sc.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => { try { navigator.clipboard.writeText(en(b.dataset.copy)); this.toast('کپی شد.', 'success'); } catch (e) {} });
+            const ed = sc.querySelector('[data-a=edit]'); if (ed) ed.onclick = () => this.drawProfile(pane, d, true);
+            const ch = sc.querySelector('[data-a=chat]'); if (ch) ch.onclick = () => { this.closeProfile(); this.open(d.key); };
+            sc.querySelector('[data-a=back]').onclick = () => this.closeProfile();
         }
         // موبایل: گفتگوی باز تمام‌صفحه می‌شود (مثلِ پیام‌رسان‌ها) و با «بازگشت» به فهرست برمی‌گردد
         mobFull(on) {
@@ -828,12 +947,13 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                 <div class="cx-drop"><i class="fas fa-cloud-arrow-up" style="margin-left:8px"></i> فایل را اینجا رها کنید</div>
                 ${this.refs.length ? this.refsDrawerHtml() : ''}`;
             const back = main.querySelector('.cx-back'); if (back) back.onclick = () => this.back();
+            main.querySelectorAll('.cx-head > .cx-av, .cx-head-b b').forEach(x => { x.title = 'نمایشِ پروفایل'; x.onclick = () => this.profile(this.key); });
             const body = this.$('.cx-body');
             body.onscroll = () => { this.stick = this.nearBottom(); if (this.stick) { this.newBelow = 0; this.fab(); } else this.fab(true); };
             this.$('.cx-fab').onclick = () => { this.scrollBottom(true); };
             const ta = this.$('.cx-ta');
             ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; this.typingPing(); };
-            ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.send(); } if (e.key === 'Escape') { this.replyTo = null; this.editing = null; this.renderBar(); } };
+            ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.send(); } if (e.key === 'Escape' && (this.replyTo || this.editing)) { e.stopPropagation(); e.preventDefault(); this.replyTo = null; this.editing = null; this.renderBar(); } };
             ta.onpaste = e => { const f = [...(e.clipboardData || {}).files || []][0]; if (f) { e.preventDefault(); this.attach(f); } };
             this.$('.cx-send').onclick = () => this.send();
             const mic = this.$('.cx-mic'); if (mic) mic.onclick = () => (this.rec ? this.stopRec(false) : this.startRec());

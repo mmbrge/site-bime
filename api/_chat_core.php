@@ -15,6 +15,7 @@ require_once __DIR__ . '/_profile_core.php';
 require_once __DIR__ . '/_import_schema.php';
 require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_chat_access.php';
+require_once __DIR__ . '/_chat_profile.php';
 
 function chat_ready($pdo) {
     static $ok = null;
@@ -797,6 +798,15 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
             $value = $saved['path'];
         }
         return prof_set_avatar($pdo, $actor['kind'], $actor['id'], $value);
+    }
+    // پروفایل: کارتِ یک نفر (از روی کلیدِ گفتگو) و ویرایشِ پروفایلِ خودم (یا هر همکار، برای مدیر کل)
+    if ($action === 'chat_profile') return cprof_card($pdo, $actor, (string)($data['key'] ?? ''));
+    if ($action === 'chat_profile_save') {
+        if ($actor['kind'] !== 'STAFF') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
+        $uid = intval($data['user_id'] ?? 0) ?: intval($actor['id']);
+        if ($uid !== intval($actor['id']) && ($actor['role'] ?? '') !== 'ADMIN') return ['ok' => false, 'error' => 'فقط پروفایلِ خودتان را می‌توانید ویرایش کنید.'];
+        $r = cprof_save($pdo, $uid, (array)($data['profile'] ?? []));
+        return empty($r['ok']) ? $r : cprof_card($pdo, $actor, 'S:' . $uid);
     }
     if ($action === 'chat_avatar_upload') { // فقط مدیر: عکس برای فرمِ ساخت/ویرایشِ کاربر (مسیرش در همان فرم ذخیره می‌شود)
         if ($actor['kind'] !== 'STAFF' || ($actor['role'] ?? '') !== 'ADMIN') return ['ok' => false, 'error' => 'دسترسی ندارید.'];
