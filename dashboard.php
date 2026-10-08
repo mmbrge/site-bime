@@ -4069,6 +4069,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="endorse.js?v=1"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>
+    <script src="table-ctx.js?v=1"></script>
     <script src="recon.js?v=1"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=4"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
@@ -4890,7 +4891,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const tbody = document.getElementById('records-body');
             if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400">موردی یافت نشد.</td></tr>'; return; }
             tbody.innerHTML = list.map((row, index) => `
-                    <tr data-id="${row.id}" class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
+                    <tr data-id="${row.id}" data-national="${row.national_code || ''}" class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
                         <td class="p-4 font-mono text-slate-400">${e2p(index + 1)}</td>
                         <td class="p-4 text-slate-700">${row.full_name || '-'}${row.company_name ? `<span class="block text-[10px] text-slate-400 font-normal">${row.company_name}</span>` : ''}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
@@ -11760,28 +11761,36 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         const ctxMenu = document.getElementById('contextMenu');
         
+        // گزینه‌های عمومی که ته منوی جدول‌ها هم هست (table-ctx.js)
+        window.TABLE_CTX_GENERAL = [{icon: 'fa-sync-alt', label: 'بارگذاری مجدد صفحه', cls: 'muted', run: () => location.reload()},
+                                    {icon: 'fa-power-off', label: 'خروج امن', cls: 'red', run: () => { window.location.href = 'logout.php'; }}];
+        // جدولِ «سوابق» (معرفی‌نامه‌ها): گزینه‌های اختصاصیِ همین جدول
+        if (window.TableCtx) TableCtx.register('table', (row) => {
+            if (!row.parentElement || row.parentElement.id !== 'records-body' || !row.dataset.id) return [];
+            activeRowId = row.dataset.id; activeRowNational = row.dataset.national || '';
+            const it = [];
+            if (IS_ADMIN) it.push({icon: 'fa-edit', label: 'بررسی و ویرایش پرونده', cls: 'blue', run: () => openEditModal()});
+            if (row.dataset.national) it.push({icon: 'fa-id-card', label: 'کپی کد ملی', run: () => ctxExecuteRow('copy-national')});
+            if (IS_ADMIN) it.push({icon: 'fa-check-circle', label: 'علامت‌گذاری «صادر شده»', cls: 'green', run: () => ctxExecuteRow('mark-issued')},
+                                  {icon: 'fa-hourglass-half', label: 'علامت‌گذاری «منتظر مدارک»', cls: 'amber', run: () => ctxExecuteRow('mark-waiting')},
+                                  {icon: 'fa-trash-alt', label: 'حذف پرونده از سیستم', cls: 'red', run: () => confirmDeleteRow()});
+            return it;
+        });
+
         document.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
+            if (e.defaultPrevented) { ctxMenu.classList.remove('active'); return; }   // بخشی که منوی خودش را دارد (مدیرِ فایل و ...)
             // پیام‌رسان منوی کلیک‌راستِ خودش را دارد
-            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu, .cx-th, .cx-body, .cx-head, .cx-selbar')) { ctxMenu.classList.remove('active'); return; }
+            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu, .cx-th, .cx-body, .cx-head, .cx-selbar')) { e.preventDefault(); ctxMenu.classList.remove('active'); return; }
+            // روی هر جدول: منوی جدول (گزینه‌های ثابت + کارهای همان ردیف + گزینه‌های اختصاصیِ همان جدول)
+            if (window.TableCtx && TableCtx.handle(e)) { ctxMenu.classList.remove('active'); return; }
+            e.preventDefault();
             
             // ذخیره متن انتخاب شده و فیلدی که فوکوس دارد قبل از اینکه منو باز شود
             ctxSelectedText = window.getSelection().toString();
             ctxActiveElement = document.activeElement;
 
-            const row = e.target.closest('tr[data-id]');
-            document.getElementById('ctx-general').classList.add('hidden');
             document.getElementById('ctx-row-actions').classList.add('hidden');
-
-            if(row) {
-                activeRowId = row.dataset.id;
-                activeRowNational = row.dataset.national || '';
-                document.getElementById('ctx-row-actions').classList.remove('hidden');
-                row.classList.add('bg-blue-100/50'); 
-                setTimeout(()=>row.classList.remove('bg-blue-100/50'), 800);
-            } else {
-                document.getElementById('ctx-general').classList.remove('hidden');
-            }
+            document.getElementById('ctx-general').classList.remove('hidden');
             
             ctxMenu.classList.add('active');
             // اندازه‌ی واقعیِ منو (بسته به گزینه‌ها) تا هیچ‌وقت از پایین/کنارِ صفحه بیرون نزند

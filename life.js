@@ -1337,4 +1337,21 @@
     };
 
     window.Life = {open, openDetail: id => Det.open(id), closeDetail: () => Det.close()};
+
+    // منوی کلیک‌راستِ جدولِ بیمه‌نامه‌ها (table-ctx.js): گزینه‌های مخصوصِ بیمه عمر کنارِ گزینه‌های ثابتِ همه‌ی جدول‌ها
+    if (window.TableCtx) TableCtx.register('.lf-tbl', row => {
+        const id = +(row.dataset.id || 0);
+        const r = id && L.list && L.list.data ? (L.list.data.rows || []).find(x => x.id === id) : null;
+        if (!r) return [];
+        const it = [{icon: 'fa-list-ol', label: 'اقساط و پرداخت‌ها', cls: 'blue', run: () => Det.open(id, 'inst')}];
+        if (can('life-calls', 'create')) it.push({icon: 'fa-phone', label: 'ثبتِ تماس / یادداشت', run: () => Det.open(id, 'notes')});
+        if (r.holder_mobile) it.push({icon: 'fa-phone-volume', label: 'تماس با ' + fa(r.holder_mobile), cls: 'green', run: () => { location.href = 'tel:' + r.holder_mobile; }});
+        it.push({icon: 'fa-hashtag', label: 'کپیِ شماره‌ی بیمه‌نامه', run: () => copy(r.policy_no)});
+        if (r.holder_nid) it.push({icon: 'fa-id-card', label: 'کپیِ کد ملیِ بیمه‌گذار', run: () => copy(r.holder_nid)});
+        if (r.holder_mobile) it.push({icon: 'fa-mobile-screen', label: 'کپیِ موبایل', run: () => copy(r.holder_mobile)});
+        if (can('life-calls', 'create') || can('life-pay', 'create')) it.push({icon: 'fa-user-check', label: 'پیگیری می‌کنم / دیگر نه', run: async () => {
+            try { const x = await api('follow_toggle', {id}); toast(x.following ? 'به پیگیری‌کنندگان اضافه شدید.' : 'از پیگیری‌کنندگان خارج شدید.', 'success'); const root = document.getElementById('life-policies-root'); if (root) Pol.load(root); } catch (e) { toast(e.message, 'error'); }
+        }});
+        return it;
+    });
 })();

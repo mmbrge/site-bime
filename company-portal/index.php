@@ -48,6 +48,8 @@ if (!$companies) {
 <script src="../cursor-pref.js?v=1"></script>
 <script>window.MAINT_BASE = '../';</script>
 <script src="../maint-watch.js?v=1"></script>
+<script>window.TABLE_CTX_STANDALONE = true;</script>
+<script src="../table-ctx.js?v=1"></script>
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
