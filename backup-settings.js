@@ -85,8 +85,8 @@
                 const t = TAGS[b.tag] || [b.tag || 'آپلودی', 'bg-slate-100 text-slate-600'];
                 return `<tr class="border-t hover:bg-indigo-50/40">
                 <td class="p-3 font-bold text-slate-700 whitespace-nowrap">${fa(String(b.created_jalali || b.day).split(' ')[0].replace(/\./g, '/'))}<div class="text-[10px] text-slate-400">ساعت ${fa(String(b.created_jalali || '').split(' ')[1] || '-')} · پوشه‌ی <span dir="ltr">${esc(b.day)}</span></div></td>
-                <td class="p-3"><span class="px-2 py-1 rounded-lg font-bold ${t[1]}">${esc(t[0])}</span></td>
-                <td class="p-3 text-slate-600">${b.valid ? (b.mode === 'db' ? 'فقط دیتابیس' : 'دیتابیس + فایل‌ها') + `<div class="text-[10px] text-slate-400">${fa(b.rows ?? 0)} ردیف · ${fa(b.files ?? 0)} فایل</div>` : '<span class="text-rose-500">نامعتبر</span>'}</td>
+                <td class="p-3"><span class="inline-block whitespace-nowrap px-2 py-1 rounded-lg font-bold ${t[1]}">${esc(t[0])}</span></td>
+                <td class="p-3 text-slate-600 whitespace-nowrap">${b.valid ? (b.mode === 'db' ? 'فقط دیتابیس' : 'دیتابیس + فایل‌ها') + `<div class="text-[10px] text-slate-400">${fa(b.rows ?? 0)} ردیف · ${fa(b.files ?? 0)} فایل</div>` : '<span class="text-rose-500">نامعتبر</span>'}</td>
                 <td class="p-3 font-bold text-slate-600 whitespace-nowrap">${size(b.size)}</td>
                 <td class="p-3 text-slate-500">${esc(b.note)}${b.created_by ? `<div class="text-[10px] text-slate-400">${esc(b.created_by)}</div>` : ''}</td>
                 <td class="p-3"><div class="flex gap-1 justify-center">

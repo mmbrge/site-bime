@@ -450,6 +450,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .iss-nav button.on .iss-n { background: #ccfbf1; color: #0f766e; }
         .fin-hub { background: linear-gradient(120deg, #1e1b4b, #4338ca 50%, #be185d); box-shadow: 0 10px 30px -12px rgba(67,56,202,.55); }
         .fin-hub .iss-nav button.on { color: #4338ca; }
+        /* موبایل: زبانه‌های مرکز صدور/مالی در یک ردیفِ کشیدنی (به‌جای چند ردیف که نصفِ صفحه را می‌گرفت) */
+        @media (max-width: 640px) {
+            .iss-hub { padding: 12px; gap: 10px; border-radius: 18px; }
+            .iss-hub-title b { font-size: 16px; }
+            .iss-hub-title small { font-size: 10.5px; }
+            .iss-hub-ic { width: 38px; height: 38px; font-size: 16px; border-radius: 12px; }
+            .iss-nav { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
+            .iss-nav::-webkit-scrollbar { display: none; }
+            .iss-nav button { white-space: nowrap; flex-shrink: 0; padding: 8px 12px; font-size: 12px; scroll-snap-align: center; }
+        }
         .fh-stages button { font-size: 12px; font-weight: 800; padding: 8px 14px; border-radius: 12px; background: #f1f5f9; color: #475569; transition: .15s; }
         .fh-stages button:hover { background: #e2e8f0; }
         .fh-stages button.on { background: #1e1b4b; color: #fff; box-shadow: 0 4px 12px -4px rgba(30,27,75,.5); }
@@ -784,6 +794,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             .hdr-edit-btn { display: none !important; }
             .hdr-user-name { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .hdr-clock { font-size: 9px; padding: 1px 5px; }
+            /* سربرگ هیچ‌وقت از عرضِ گوشی بیرون نزند: دکمه‌ی منو همیشه دیده و لمس‌شدنی است */
+            header.glass-header { padding-top: 8px !important; padding-bottom: 8px !important; gap: 8px; }
+            header.glass-header > div:first-child { min-width: 0; flex-shrink: 1; gap: 8px !important; }
+            header.glass-header > div:last-child { flex-shrink: 0; gap: 6px !important; }
+            #mobile-menu-btn { width: 40px; height: 40px; flex-shrink: 0; border-radius: 13px; background: #f1f5f9; color: #334155; font-size: 17px;
+                               display: inline-flex; align-items: center; justify-content: center; }
+            #mobile-menu-btn:active { transform: scale(.94); }
+            #hdr-brand { min-width: 0; flex-shrink: 1; }
+            .brand-logo { max-width: 92px !important; height: 30px; }
+            #me-avatar, #me-avatar > span { width: 38px !important; height: 38px !important; }
+        }
+        #m-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; margin-bottom: 10px; }
+        #m-quick button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 6px; border-radius: 16px; border: 0; color: #fff; font: 800 11.5px inherit;
+                          font-family: inherit; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: 0 10px 20px -12px var(--c1); }
+        #m-quick button i { font-size: 17px; }
+        #m-quick button:active { transform: scale(.96); }
+        @media (min-width: 1024px) { #m-quick { display: none !important; } }
+        /* موبایل: سرِ صفحه‌ها (عنوان + دکمه‌ها) اگر جا نشد دکمه‌ها به خطِ بعد بروند، نه روی عنوان */
+        @media (max-width: 640px) {
+            .tab-content > .flex.justify-between { flex-wrap: wrap; gap: 10px; }
+            .tab-content > .flex.justify-between > div:last-child:not(:first-child) { flex-wrap: wrap; }
+            .tab-content > .flex.justify-between h1 { font-size: 20px; line-height: 1.6; }
+            /* کارت‌ها و فیلدهای داخلِ گرید از عرضِ صفحه بیرون نزنند (مثلاً منوی کشوییِ با گزینه‌ی بلند) */
+            .tab-content .grid > * { min-width: 0; }
+            /* فیلترهای داشبوردِ مالی: دو ستونِ مرتب به‌جای ردیف‌های نامنظم */
+            .fd-bar { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px !important; }
+            .fd-bar > div { min-width: 0; }
+            .fd-bar select, .fd-bar input { width: 100% !important; min-width: 0 !important; }
+            .fd-bar > div:nth-last-child(-n+2) { grid-column: span 2; }
+            .fd-bar > div:last-child { margin-right: 0 !important; justify-content: flex-start; }
+            .tab-content select, .tab-content input:not([type="checkbox"]):not([type="radio"]), .tab-content textarea { max-width: 100%; }
+        }
+        /* گوشی‌های معمولی (تا ۴۳۰ پیکسل): نام/نقش/ساعت جا نمی‌شود؛ فقط عکسِ پروفایل (که پروفایل را باز می‌کند) */
+        @media (max-width: 430px) {
+            header.glass-header > div:last-child > div:last-child { border-right: 0 !important; padding-right: 0 !important; }
+            header.glass-header > div:last-child > div:last-child > .flex-col { display: none !important; }
         }
     .ancr-cnt{display:flex;flex-direction:column;gap:4px;background:#fff;border:2px solid #e0e7ff;border-radius:14px;padding:8px 10px}
     .ancr-cnt span{font-size:11px;font-weight:800;color:#4338ca}
@@ -837,7 +883,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="plate.css?v=2">
-<link rel="stylesheet" href="ui-scroll.css?v=1">
+<link rel="stylesheet" href="ui-scroll.css?v=3">
 </head>
 <body class="h-screen flex flex-col">
 <?php require_once __DIR__ . '/api/_loader.php'; site_loader($pdo); ?>
@@ -887,7 +933,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <?php if ($brandLogo = brand_url($pdo, 'logo')): ?>
                 <img src="<?php echo htmlspecialchars($brandLogo); ?>" alt="بیمه با ما" class="brand-logo">
                 <?php else: ?>
-                <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>
+                <span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-halved"></i></span>
                 <span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>
                 <?php endif; ?>
             </div>
@@ -4061,12 +4107,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }});
     </script>
     <script src="money-input.js?v=1"></script>
-    <script src="finance-ui.js?v=4"></script>
+    <script src="finance-ui.js?v=5"></script>
     <script src="finance-hub.js?v=3"></script>
-    <script src="work-log.js?v=9"></script>
+    <script src="work-log.js?v=10"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
-    <script src="endorse.js?v=1"></script>
+    <script src="endorse.js?v=3"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
@@ -4076,12 +4122,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=2"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
-    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=2"></script><?php endif; ?>
+    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=13"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=1"></script><script src="company-manual-request.js?v=4"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=4"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -5386,7 +5432,30 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         function toggleMobileMenu() {
-            document.getElementById('main-nav').classList.toggle('hidden');
+            const nav = document.getElementById('main-nav');
+            nav.classList.toggle('hidden');
+            if (!nav.classList.contains('hidden')) mobileQuickBar(nav);
+        }
+        // موبایل: بالای منو دکمه‌های «موسیقی»، «جعبه‌ابزار» و «ابزارها» (اگر برای کاربر روشن باشد) تا همیشه در دسترس باشند
+        function mobileQuickBar(nav) {
+            let bar = document.getElementById('m-quick');
+            const CF = window.CF, ok = CF && CF.state && CF.state.boot;
+            const items = [];
+            if (ok && CF.has('music')) items.push(['fa-music', 'موسیقی', '#7c3aed', '#db2777', () => CF.openPlayer()]);
+            if (ok && Object.values(CF.state.F || {}).some(Boolean)) items.push(['fa-wand-magic-sparkles', 'جعبه‌ابزار', '#2563eb', '#06b6d4', () => CF.openHub()]);
+            const nt = document.getElementById('nav-tools');
+            if (nt && nt.style.display !== 'none') items.push(['fa-toolbox', 'ابزارها', '#059669', '#0e7490', () => switchTab('tools')]);
+            if (!items.length) { if (bar) bar.remove(); return; }
+            if (!bar) { bar = document.createElement('div'); bar.id = 'm-quick'; bar.className = 'lg:hidden'; nav.insertBefore(bar, nav.firstChild); }
+            bar.innerHTML = '';
+            items.forEach(([ic, label, c1, c2, fn]) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.style.cssText = `--c1:${c1};--c2:${c2}`;
+                b.innerHTML = `<i class="fas ${ic}"></i><span>${label}</span>`;
+                b.onclick = e => { e.preventDefault(); nav.classList.add('hidden'); fn(); };
+                bar.appendChild(b);
+            });
         }
 
         // باز/بسته‌کردن گروه‌های منوی درختی (هر بار فقط یکی باز می‌ماند)
@@ -9040,6 +9109,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             // در موبایل، بعد از انتخاب یک تب، منو خودکار بسته شود
             if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
+            // زبانه‌ی فعالِ مرکز صدور/مالی در موبایل دیده شود (نوار کشیدنی است)
+            setTimeout(() => { const on = document.querySelector('#tab-' + tabId + ' .iss-nav button.on'); if (on && on.parentElement.scrollWidth > on.parentElement.clientWidth) on.parentElement.scrollLeft += on.getBoundingClientRect().left - on.parentElement.getBoundingClientRect().left - (on.parentElement.clientWidth - on.offsetWidth) / 2; }, 30);
             tabLoad(tabId, tabKey);
             permSchedule();
         }
@@ -10991,7 +11062,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // ---------------- لوگو و فاوآیکن ----------------
         const BRAND_CAN_EDIT = <?php echo perm_real_role() === 'ADMIN' ? 'true' : 'false'; ?>;
         function brandHeaderDefault() {
-            return '<span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-check"></i></span>'
+            return '<span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-halved"></i></span>'
                 + '<span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>';
         }
         // سربرگ و آیکونِ تب بدونِ بارگذاریِ دوباره‌ی صفحه عوض می‌شوند

@@ -181,7 +181,7 @@
         const yearOpts = [...new Set([...years.map(v => v.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))), String(y), String(y - 1)])].sort().reverse();
         const sel = (id, opts, label) => `<div><label class="text-[10px] font-bold text-slate-500 block mb-1">${label}</label><select id="${id}" class="fd-f border-2 border-slate-100 focus:border-indigo-400 rounded-xl px-3 py-2 text-xs font-bold bg-white min-w-[110px]">${opts}</select></div>`;
         return `<div class="card p-4 bg-white/80 backdrop-blur">
-            <div class="flex flex-wrap gap-3 items-end">
+            <div class="fd-bar flex flex-wrap gap-3 items-end">
                 ${sel('fd-source', '<option value="">پرسنلی + شرکتی</option><option value="P">فقط پرسنلی (کسر از حقوق)</option><option value="C">فقط شرکتی</option>', 'منبع')}
                 ${sel('fd-year', '<option value="">همه سال‌ها</option>' + yearOpts.map(v => `<option value="${v}">${fa(v)}</option>`).join(''), 'سال')}
                 ${sel('fd-period', '<option value="">همه دوره‌ها</option>' + (b.periods || []).map(p => `<option value="${p.id}">${fa(p.title)}</option>`).join(''), 'دوره مالی')}

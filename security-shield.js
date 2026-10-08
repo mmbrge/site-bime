@@ -157,11 +157,12 @@
     }
 
     function bodyOverview(el) {
-        const d = ov, groups = {};
+        // گروه‌ها همیشه به یک ترتیبِ ثابت («سرور» اول) تا هر بررسی جای همیشگیِ خودش را داشته باشد
+        const d = ov, groups = {'سرور': [], 'نشست': [], 'ورود': [], 'ربات‌ها': [], 'فایل‌ها': [], 'کاربران': [], 'رخدادها': []};
         const order = {bad: 0, warn: 1, ok: 2};
         d.checks.slice().sort((a, b) => order[a.status] - order[b.status]).forEach(c => (groups[c.group] = groups[c.group] || []).push(c));
         const ic = {ok: 'fa-check', warn: 'fa-exclamation', bad: 'fa-xmark'};
-        const checks = Object.entries(groups).map(([g, items]) => `<div class="sec-grp">${esc(g)}</div>` + items.map(c => `
+        const checks = Object.entries(groups).filter(([, items]) => items.length).map(([g, items]) => `<div class="sec-grp">${esc(g)}</div>` + items.map(c => `
             <div class="sec-check ${c.status}"><div class="ic"><i class="fas ${ic[c.status]}"></i></div><div class="min-w-0 flex-1">
                 <div class="t">${esc(c.title)}</div><div class="d">${esc(c.detail)}</div>
                 ${c.status !== 'ok' && c.fix ? `<div class="f"><i class="fas fa-screwdriver-wrench ml-1"></i>راهِ رفع: ${esc(c.fix)}</div>` : ''}</div></div>`).join('')).join('');

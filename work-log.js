@@ -120,7 +120,9 @@
     .wk-kpi i.ic{position:absolute;left:12px;top:12px;width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px}
     .wk-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:16px;box-shadow:0 10px 30px -22px rgba(15,23,42,.25)}
     .wk-card h3{font-size:13px;font-weight:900;color:#1e293b;display:flex;align-items:center;gap:8px}
-    .wk-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+    .wk-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+    .wk-day{min-width:0;overflow:hidden} .wk-day .tg{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media(max-width:640px){.wk-cal{gap:3px}.wk-day{padding:4px 3px;min-height:64px;border-radius:10px}.wk-day .n{font-size:12px}.wk-day .mo{font-size:13px;left:3px}.wk-day .h{font-size:9px}.wk-day .tg{font-size:8px;padding:1px 3px}}
     .wk-cal .wh{font-size:10.5px;font-weight:900;color:#94a3b8;text-align:center;padding:4px 0}
     .wk-day{position:relative;min-height:74px;border-radius:14px;border:1px solid #eef2f7;background:#fbfdff;padding:6px 7px;text-align:right;cursor:pointer;transition:.15s;display:flex;flex-direction:column;justify-content:space-between}
     .wk-day:hover{border-color:#a5b4fc;transform:translateY(-1px);box-shadow:0 8px 18px -12px rgba(79,70,229,.5)}

@@ -349,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         @media (max-width: 380px) { .gate2-btn small { display: none; } }
 
     </style>
-<link rel="stylesheet" href="ui-scroll.css?v=1">
+<link rel="stylesheet" href="ui-scroll.css?v=3">
 </head>
 <body class="scroll-dark font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
 <?php require_once __DIR__ . '/api/_loader.php'; site_loader($pdo, '', 'در حالِ بارگذاری'); ?>

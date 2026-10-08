@@ -47,3 +47,16 @@
     .modal-content, .modal-content *, .modal-overlay > div, .mi-body, .cx-modal > div { scrollbar-color: rgba(99, 102, 241, .4) transparent; }
     .scroll-dark, .scroll-dark * { scrollbar-color: rgba(165, 180, 252, .35) transparent; }
 }
+
+/* برچسب‌های رنگی داخلِ جدول (وضعیت، نوع، ...) وقتی دو خط می‌شوند بریده نشوند */
+td span[class*="rounded"][class*="px-"], td a[class*="rounded"][class*="px-"] { display: inline-block; line-height: 1.5; }
+
+/* موبایل: جدول‌های کشیدنی ستون‌ها را له نکنند (نام‌ها کلمه‌به‌کلمه زیرِ هم نروند)؛ جدول کمی پهن‌تر و با کشیدن دیده می‌شود */
+@media (max-width: 640px) {
+    .overflow-x-auto > table th, .overflow-auto > table th, .card > table th { white-space: nowrap; }
+    .overflow-x-auto > table td:not(:first-child):not(:has(input[type="checkbox"])),
+    .overflow-auto > table td:not(:first-child):not(:has(input[type="checkbox"])) { min-width: 92px; }
+}
+
+/* دکمه‌ی بستنِ پنجره‌ها (✕) در سرِ پنجره‌های باریک (موبایل) کنارِ متنِ بلند له نشود */
+button[class$="-x"], button[class*="-x "], button[data-x], .modal-close { flex-shrink: 0; }

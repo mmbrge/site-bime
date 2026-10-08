@@ -165,7 +165,7 @@ if (!$companies) {
     .pt-prog { height:6px; border-radius:99px; background:#f1f5f9; overflow:hidden; margin-top:6px; } .pt-prog i { display:block; height:100%; background:linear-gradient(90deg,#10b981,#22c55e); border-radius:99px; }
     @media (max-width: 767px) { .pt-req-grid { grid-template-columns:minmax(0,1fr); } .pt-hero { border-radius:22px; padding:15px; } .pt-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
-<link rel="stylesheet" href="../ui-scroll.css?v=1">
+<link rel="stylesheet" href="../ui-scroll.css?v=3">
 </head>
 <body class="min-h-screen">
 <?php require_once __DIR__ . '/../api/_loader.php'; site_loader($pdo, '../', 'در حالِ آماده‌سازیِ پنلِ شرکت'); ?>
