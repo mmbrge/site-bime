@@ -255,7 +255,7 @@ function lt_next_number($pdo, $dir, $categoryId, $letterG = null) {
     throw new RuntimeException('ساختِ شماره‌ی یکتا ممکن نشد؛ الگوی شماره را بررسی کنید.');
 }
 // پیش‌نمایشِ شماره‌ی بعدی (بدونِ مصرفِ شمارنده)
-function lt_preview_number($pdo, $dir, $categoryId, array $s = null) {
+function lt_preview_number($pdo, $dir, $categoryId, ?array $s = null) {
     $s = $s ?: lt_settings($pdo);
     $cat = $categoryId ? lt_category($pdo, $categoryId) : null;
     $code = $cat ? $cat['code'] : '0';

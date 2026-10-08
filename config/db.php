@@ -38,6 +38,9 @@ try {
     // تنظیمات خطاگیری و امنیت
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    // از PHP 8.1 به بعد اعدادِ دیتابیس (INT/FLOAT) به‌صورتِ عدد برمی‌گردند ولی در PHP 7.4 متن بودند؛
+    // این تنظیم رفتار را در همه‌ی نسخه‌ها یکسان (مثلِ 7.4) نگه می‌دارد تا بعد از ارتقای PHP هیچ مقایسه/خروجی‌ای عوض نشود
+    $pdo->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
     // NOW() و CURRENT_TIMESTAMPِ دیتابیس هم مثلِ date()ِ PHP به وقتِ ایران
     try { $pdo->exec("SET time_zone = '" . date('P') . "'"); } catch (Throwable $e) {}
 
