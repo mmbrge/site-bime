@@ -117,7 +117,8 @@ function life_ensure($pdo) {
             is_default TINYINT NOT NULL DEFAULT 0, created_at DATETIME NULL, created_by INT NULL) $o",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[life_ensure] ' . $e->getMessage()); } }
     // پرداختِ «نهایی» (وقتی مرحله‌ی پرداخت به بیمه‌گر خاموش است) و جمعِ آن روی قسط
-    foreach ([['life_payments', 'is_final', "TINYINT NOT NULL DEFAULT 0"], ['life_installments', 'paid_final', "BIGINT NOT NULL DEFAULT 0"]] as [$t, $c, $def]) {
+    // kind: 'receipt' = قالبِ رسیدِ پرداخت، 'slip' = قالبِ Wordِ «فیشِ پرداخت» (پیش از پرداخت)
+    foreach ([['life_payments', 'is_final', "TINYINT NOT NULL DEFAULT 0"], ['life_installments', 'paid_final', "BIGINT NOT NULL DEFAULT 0"], ['life_templates', 'kind', "VARCHAR(10) NOT NULL DEFAULT 'receipt'"]] as [$t, $c, $def]) {
         try {
             $has = $pdo->query("SHOW COLUMNS FROM $t LIKE '$c'")->fetch();
             if (!$has) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $def");
@@ -125,7 +126,7 @@ function life_ensure($pdo) {
     }
     // قالبِ پیش‌فرضِ داخلیِ رسید (بدونِ فایل) همیشه هست
     try {
-        if (!intval($pdo->query("SELECT COUNT(*) FROM life_templates WHERE file_path IS NULL")->fetchColumn())) {
+        if (!intval($pdo->query("SELECT COUNT(*) FROM life_templates WHERE file_path IS NULL AND kind = 'receipt'")->fetchColumn())) {
             $pdo->prepare("INSERT INTO life_templates (name, file_path, footer_text, is_default, created_at) VALUES (?, NULL, ?, 1, NOW())")
                 ->execute(['قالبِ پیش‌فرضِ سامانه', 'بدین‌وسیله دریافتِ مبلغِ فوق بابتِ قسطِ بیمه‌نامه‌ی عمرِ یادشده تأیید می‌گردد. این رسید صرفاً پس از تأییدِ واریز در حسابِ بیمه‌گر معتبر است.']);
         }
@@ -436,3 +437,4 @@ function life_sql_await($a = 'i') { return "($a.cleared = 0 AND $a.amount > 0 AN
 require_once __DIR__ . '/_life_import.php';
 require_once __DIR__ . '/_life_query.php';
 require_once __DIR__ . '/_life_receipt.php';
+require_once __DIR__ . '/_life_payslip.php';

@@ -81,6 +81,13 @@
     .lf-f>label span{font-size:10.5px;font-weight:800;color:#64748b}
     .lf-chk{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;user-select:none}
     .lf-chk input{width:16px;height:16px;accent-color:#2563eb}
+    .lf-sub{border:1px solid #eef2f7;border-radius:16px;padding:12px;background:#fbfcfe}.lf-sub > b{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:900;color:#1e293b;margin-bottom:8px}
+    .lf-rows{display:flex;flex-direction:column;gap:6px}.lf-row{display:grid;grid-template-columns:118px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.2fr) 34px;gap:6px;align-items:center}
+    .lf-row.ch{grid-template-columns:118px minmax(0,1fr) 34px}
+    .lf-sw{display:flex;gap:8px;flex-wrap:wrap}.lf-sw button{width:38px;height:38px;border-radius:12px;border:3px solid #fff;box-shadow:0 0 0 1px #e2e8f0;cursor:pointer}.lf-sw button.on{box-shadow:0 0 0 2px #0f172a}
+    .lf-logo{width:64px;height:64px;border-radius:16px;border:1px dashed #cbd5e1;background:#fff;display:flex;align-items:center;justify-content:center;padding:6px;flex-shrink:0}.lf-logo img{max-width:100%;max-height:100%;object-fit:contain}
+    .lf-code{font-size:11px;font-weight:700;border-radius:8px;padding:2px 7px;background:#eef2ff;color:#3730a3;cursor:pointer;direction:ltr}
+    @media(max-width:640px){.lf-row{grid-template-columns:1fr 1fr}.lf-row > :nth-child(2){grid-column:1/-1;order:-1}.lf-row.ch{grid-template-columns:110px 1fr 34px}.lf-row.ch > :nth-child(2){grid-column:auto;order:0}}
     .lf-st{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:900;border-radius:999px;padding:2px 9px;white-space:nowrap}
     .lf-st.ok{background:#dcfce7;color:#166534}.lf-st.part{background:#fef3c7;color:#92400e}.lf-st.bad{background:#fee2e2;color:#991b1b}.lf-st.due{background:#eef2ff;color:#3730a3}.lf-st.wait{background:#e0f2fe;color:#075985}
     .lf-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;border-radius:9px;padding:2px 8px;background:#f1f5f9;color:#475569;white-space:nowrap}
@@ -621,6 +628,7 @@
                     <div class="lf-ia">${stChip(i.status)}
                         ${can('life-pay', 'create') && i.rem > 0 ? `<button class="lf-btn g sm" data-a="pay"><i class="fas fa-money-bill-wave"></i>ثبتِ پرداخت</button>` : ''}
                         ${can('life-pay', 'edit') && i.status === 'PAID_US' ? `<button class="lf-btn o sm" data-a="clear" title="پول به بیمه‌گر پرداخت شد"><i class="fas fa-building-columns text-sky-600"></i>پرداخت به بیمه‌گر شد</button>` : ''}
+                        ${can('life-pay') && i.rem > 0 ? `<button class="lf-btn o sm" data-a="slip" title="فیشِ پرداخت برای بیمه‌گذار (پیش از پرداخت)"><i class="fas fa-file-invoice-dollar text-violet-600"></i>فیش پرداخت</button>` : ''}
                         ${can('life-pay') ? `<button class="lf-btn o sm" data-a="rcpt"><i class="fas fa-receipt text-blue-600"></i>رسید</button>` : ''}
                         <button class="lf-btn s sm" data-a="tog"><i class="fas fa-chevron-${openB ? 'up' : 'down'}"></i>${fa(pays)} پرداخت · ${fa(files)} فایل</button></div></div>
                     ${openB ? this.instBody(i) : ''}</div>`;
@@ -634,6 +642,7 @@
                     if (a === 'tog') { L.det.open.has(i.id) ? L.det.open.delete(i.id) : L.det.open.add(i.id); this.drawInsts(box); }
                     else if (a === 'pay') Pay.open(i);
                     else if (a === 'rcpt') Rcpt.open(i);
+                    else if (a === 'slip') Slip.open(i);
                     else if (a === 'iedit') this.instForm(i);
                     else if (a === 'clear') this.clearToggle(i);
                     else if (a === 'idel') this.instDelete(i);
@@ -884,6 +893,58 @@
             });
         },
     };
+
+    // فیشِ پرداخت (پیش از پرداخت): مبلغ، مهلت، قالب و توضیح => نمایش/چاپ/عکس، Word/PDF، متن برای پیامک، ارسال در ربات بله
+    const Slip = {
+        async conf() {
+            if (!L.slip) { const r = await api('slip_settings'); L.slip = {templates: r.templates, def: r.settings.default_template, pdf_ok: r.pdf_ok}; }
+            return L.slip;
+        },
+        async open(i) {
+            let c;
+            try { c = await this.conf(); } catch (e) { toast(e.message, 'error'); return; }
+            const d = L.det.d;
+            const over = d.insts.filter(x => x.id !== i.id && x.rem > 0 && x.inst_no < i.inst_no && x.days > 0);
+            const overSum = over.reduce((s, x) => s + x.rem, 0);
+            const base = i.rem > 0 ? i.rem : i.amount;
+            const tpls = [{id: 'builtin', name: 'قالبِ پیش‌فرضِ سامانه (طراحی‌شده)'}].concat(c.templates.map(t => ({id: String(t.id), name: t.name + ' (Word)'})));
+            const m = modal(`فیشِ پرداختِ قسطِ ${fa(i.inst_no)} — ${esc(d.policy.holder_name || '')}`, `<div class="lf-grid lf-g2">
+                <label><span class="lf-lbl">قالب</span><select class="lf-sel" data-f="template">${tpls.map(t => `<option value="${t.id}" ${t.id === String(c.def) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
+                <label><span class="lf-lbl">مهلتِ پرداخت <small class="text-slate-400">(خالی = سررسید یا چند روزِ دیگر)</small></span><input class="lf-in" data-f="deadline" data-jdate dir="ltr" placeholder="خودکار"></label>
+                <label><span class="lf-lbl">مبلغِ قابلِ پرداخت (ریال)</span><input class="lf-in money-input" data-f="amount" inputmode="numeric" value="${money(base)}"></label>
+                ${over.length ? `<label class="lf-chk" style="align-self:end;padding-bottom:10px"><input type="checkbox" data-f="with_overdue">همراه با ${fa(over.length)} قسطِ معوقِ قبلی (${money(overSum)} ریال)</label>` : '<div></div>'}
+                <label style="grid-column:1/-1"><span class="lf-lbl">توضیحِ همین فیش (اختیاری)</span><textarea class="lf-ta" rows="2" data-f="note" placeholder="مثلاً: لطفاً تا پایانِ هفته پرداخت کنید تا پوشش‌ها قطع نشود."></textarea></label></div>
+                <p class="text-[11px] text-slate-500 mt-2 leading-6"><i class="fas fa-circle-info ml-1"></i>اطلاعاتِ حساب، کارشناس، لوگو و متن‌ها از «تنظیماتِ بیمه عمر ← فیشِ پرداخت» می‌آیند. در صفحه‌ی نمایش، «ذخیره‌ی عکس» و «کپیِ متن» برای فرستادن در واتساپ/بله هم هست.</p>`,
+                `<button class="lf-btn s" data-x2>بستن</button><button class="lf-btn o" data-k="copy"><i class="fas fa-copy"></i>کپیِ متن</button><button class="lf-btn o" data-k="send"><i class="fas fa-paper-plane text-cyan-600"></i>ارسال در بله</button>
+                 <button class="lf-btn o" data-k="slip_docx"><i class="fas fa-file-word text-blue-600"></i>Word</button>${c.pdf_ok ? '<button class="lf-btn o" data-k="slip_pdf"><i class="fas fa-file-pdf text-red-500"></i>PDF</button>' : ''}<button class="lf-btn p" data-k="slip_html"><i class="fas fa-eye"></i>نمایش، چاپ و عکس</button>`, {icon: 'fa-file-invoice-dollar', wide: true});
+            const amt = m.querySelector('[data-f=amount]'), wo = m.querySelector('[data-f=with_overdue]');
+            if (wo) wo.onchange = () => { amt.value = money(base + (wo.checked ? overSum : 0)); };
+            m.querySelector('[data-x2]').onclick = () => m.close();
+            const params = () => {
+                const o = {installment_id: i.id, template: m.querySelector('[data-f=template]').value, amount: en(amt.value).replace(/\D/g, ''), deadline: en(m.querySelector('[data-f=deadline]').value.trim())};
+                if (wo && wo.checked) o.with_overdue = 1;
+                const note = m.querySelector('[data-f=note]').value.trim(); if (note) o.note = note;
+                return o;
+            };
+            m.querySelectorAll('[data-k]').forEach(b => b.onclick = async () => {
+                const k = b.dataset.k, o = params();
+                if (k === 'copy') {
+                    try { const r = await api('slip_text', o); await copyText(r.text); toast('متنِ فیش کپی شد؛ در پیامک یا واتساپ بچسبانید.', 'success'); } catch (e) { toast(e.message, 'error'); }
+                } else if (k === 'send') {
+                    if (!(await confirmUi('ارسال در ربات بله', 'فیشِ پرداخت برای بیمه‌گذار در ربات بله فرستاده شود؟'))) return;
+                    busy(b, true);
+                    try { await api('slip_send', o); toast('فیش در ربات بله برای بیمه‌گذار فرستاده شد.', 'success'); Det.refresh(); } catch (e) { toast(e.message, 'error'); }
+                    busy(b, false);
+                } else if (k === 'slip_html') window.open(url(k, o), '_blank', 'noopener');
+                else { download(url(k, o)); setTimeout(() => Det.refresh(), 1500); }
+            });
+        },
+    };
+    async function copyText(t) {
+        try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); return; } } catch (e) {}
+        const a = document.createElement('textarea'); a.value = t; a.style.cssText = 'position:fixed;top:0;right:0;opacity:0'; document.body.appendChild(a); a.select();
+        try { document.execCommand('copy'); } catch (e) {} a.remove();
+    }
 
     // خروجیِ اکسل
     const Exp = {
@@ -1206,8 +1267,9 @@
                         <textarea class="lf-ta" rows="2" data-tt placeholder="متنِ زیرِ جدول برای این قالب"></textarea><div class="flex gap-2 flex-wrap"><button class="lf-btn p" data-tup><i class="fas fa-upload"></i>بارگذاریِ قالب</button><a class="lf-btn s" href="${url('tpl_sample')}"><i class="fas fa-download"></i>دریافتِ قالبِ نمونه (Word)</a></div></div>` : ''}</div>
                     <div class="lf-card" data-flow><h3><i class="fas fa-route text-sky-600"></i>روندِ پرداخت</h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
                     <div class="lf-card" data-bot><h3><i class="fas fa-robot text-cyan-600"></i>ربات بله‌ی بیمه عمر <small>یادآوریِ اقساط به مشتری و کارِ همکاران از ربات</small></h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div>
-                    <div class="lf-card"><h3><i class="fas fa-code text-violet-600"></i>کدهای قالب <small>روی هر کد بزنید تا کپی شود</small></h3><div data-codes class="flex flex-col gap-1"></div></div></div></div>`);
-            this.cols(root); this.tpls(root); this.bot(root); this.flow(root);
+                    <div class="lf-card"><h3><i class="fas fa-code text-violet-600"></i>کدهای قالب <small>روی هر کد بزنید تا کپی شود</small></h3><div data-codes class="flex flex-col gap-1"></div></div></div>
+                <div class="lf-card" data-slip style="grid-column:1/-1"><h3><i class="fas fa-file-invoice-dollar text-violet-600"></i>فیشِ پرداخت (پیش از پرداخت)</h3><div class="lf-empty"><i class="fas fa-spinner fa-spin"></i></div></div></div>`);
+            this.cols(root); this.tpls(root); this.bot(root); this.flow(root); this.slip(root);
             const hdr = root.querySelector('[data-hdr]');
             if (hdr) hdr.onchange = async () => {
                 if (!hdr.files[0]) return;
@@ -1249,6 +1311,109 @@
                     this.render(root);
                 } catch (e) { toast(e.message, 'error'); busy(tu, false); }
             };
+        },
+        async slip(root) {
+            const box = root.querySelector('[data-slip]'), ed = can('life-settings', 'edit');
+            if (!box) return;
+            let r;
+            try { r = await api('slip_settings'); } catch (e) { box.innerHTML = `<div class="lf-empty">${esc(e.message)}</div>`; return; }
+            L.slip = {templates: r.templates, def: r.settings.default_template, pdf_ok: r.pdf_ok};
+            const s = r.settings, dis = ed ? '' : 'disabled';
+            const inp = (k, ph, o = {}) => `<label ${o.full ? 'style="grid-column:1/-1"' : ''}><span class="lf-lbl">${o.label}</span><input class="lf-in" data-s="${k}" ${o.ltr ? 'dir="ltr"' : ''} placeholder="${esc(ph)}" value="${esc(s[k] ?? '')}" ${dis}></label>`;
+            const ta = (k, ph, rows) => `<textarea class="lf-ta" rows="${rows}" data-s="${k}" placeholder="${esc(ph)}" ${dis}>${esc(s[k] ?? '')}</textarea>`;
+            const accRow = a => `<div class="lf-row" data-acc><select class="lf-sel" data-k="type" ${dis}>${Object.entries(r.acc_types).map(([k, v]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+                <input class="lf-in" data-k="number" dir="ltr" placeholder="شماره / شبا / لینک" value="${esc(a.number || '')}" ${dis}><input class="lf-in" data-k="bank" placeholder="بانک" value="${esc(a.bank || '')}" ${dis}>
+                <input class="lf-in" data-k="owner" placeholder="به نامِ" value="${esc(a.owner || '')}" ${dis}>${ed ? '<button type="button" class="lf-btn r sm" data-rm title="حذف"><i class="fas fa-xmark"></i></button>' : '<span></span>'}</div>`;
+            const chRow = c => `<div class="lf-row ch" data-ch><select class="lf-sel" data-k="type" ${dis}>${Object.entries(r.ch_types).map(([k, v]) => `<option value="${k}" ${c.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+                <input class="lf-in" data-k="value" dir="ltr" placeholder="شماره، آیدی یا لینک" value="${esc(fa(c.value || ''))}" ${dis}>${ed ? '<button type="button" class="lf-btn r sm" data-rm title="حذف"><i class="fas fa-xmark"></i></button>' : '<span></span>'}</div>`;
+            const logoPrev = () => r.logo ? `<img src="${r.logo}" alt="">` : '<i class="fas fa-image text-slate-300 text-xl"></i>';
+            box.innerHTML = `<h3><i class="fas fa-file-invoice-dollar text-violet-600"></i>فیشِ پرداخت (پیش از پرداخت) <small>از دکمه‌ی «فیش پرداخت» روی هر قسط ساخته می‌شود؛ برای بیمه‌گذار بفرستید تا بداند چقدر، تا کی و به کجا واریز کند</small></h3>
+                <div class="lf-grid lf-g2" style="align-items:start">
+                  <div class="space-y-3">
+                    <div class="lf-sub"><b><i class="fas fa-heading text-indigo-500"></i>سربرگ و ظاهر</b>
+                      <div class="lf-grid lf-g2">${inp('title', 'فیشِ پرداختِ قسطِ بیمه‌نامه‌ی عمر', {label: 'عنوانِ فیش', full: true})}${inp('company', 'بیمه با ما', {label: 'نامِ مجموعه'})}${inp('subtitle', 'مثلاً: نمایندگیِ بیمه عمر کدِ ۱۲۳۴', {label: 'زیرعنوان'})}</div>
+                      <span class="lf-lbl mt-3">لوگو</span>
+                      <div class="flex items-center gap-3 flex-wrap"><div class="lf-logo" data-lprev>${logoPrev()}</div>
+                        <div class="flex flex-col gap-1">${[['brand', 'لوگوی سایت (سربرگِ پنل)' + (r.brand_logo ? '' : ' — تنظیم نشده')], ['custom', 'لوگوی دلخواه برای فیش'], ['none', 'بدونِ لوگو']].map(([k, l]) => `<label class="lf-chk"><input type="radio" name="lf-slogo" value="${k}" ${s.logo === k ? 'checked' : ''} ${dis} ${k === 'custom' && !r.custom_logo ? 'data-needs' : ''}>${l}</label>`).join('')}</div>
+                        ${ed ? `<div class="flex flex-col gap-1"><label class="lf-btn o sm" style="cursor:pointer"><i class="fas fa-upload"></i>بارگذاریِ لوگو<input type="file" class="hidden" accept="image/png,image/jpeg,image/webp" data-lup></label>${r.custom_logo ? '<button type="button" class="lf-btn s sm" data-lrm><i class="fas fa-trash"></i>حذفِ لوگوی دلخواه</button>' : ''}</div>` : ''}</div>
+                      <small class="text-[10.5px] text-slate-400 block mt-1">PNG یا JPG (تا ۲ مگابایت)؛ PNGِ با پس‌زمینه‌ی شفاف بهتر است. در Word فقط PNG/JPG نشان داده می‌شود.</small>
+                      <span class="lf-lbl mt-3">رنگِ فیش</span>
+                      <div class="lf-sw">${Object.entries(r.accents).map(([k, a]) => `<button type="button" data-acc-c="${k}" class="${s.accent === k ? 'on' : ''}" title="${esc(a.label)}" style="background:linear-gradient(135deg,${a.c1},${a.c2})" ${dis}></button>`).join('')}</div></div>
+                    <div class="lf-sub"><b><i class="fas fa-user-tie text-sky-600"></i>کارشناسِ پیگیری</b><div class="lf-grid lf-g3">${inp('expert_name', 'نام و نام خانوادگی', {label: 'نامِ کارشناس'})}${inp('expert_title', 'کارشناسِ بیمه عمر', {label: 'سمت'})}${inp('expert_mobile', '۰۹۱۲...', {label: 'موبایل', ltr: true})}</div></div>
+                    <div class="lf-sub"><b><i class="fas fa-sliders text-slate-500"></i>گزینه‌ها</b><div class="flex flex-col gap-2">
+                      <label class="lf-chk"><input type="checkbox" data-s="show_schedule" ${s.show_schedule ? 'checked' : ''} ${dis}>جدولِ اقساطِ پرداخت‌نشده در فیش</label>
+                      <label class="lf-chk"><input type="checkbox" data-s="show_overdue" ${s.show_overdue ? 'checked' : ''} ${dis}>هشدارِ اقساطِ معوقِ قبلی</label>
+                      <label class="lf-chk">اگر سررسید گذشته بود، مهلت = امروز + <input class="lf-in" style="width:64px;padding:4px 8px;text-align:center" data-s="deadline_days" inputmode="numeric" value="${fa(s.deadline_days)}" ${dis}> روز</label></div></div>
+                  </div>
+                  <div class="space-y-3">
+                    <div class="lf-sub"><b><i class="fas fa-credit-card text-violet-600"></i>نحوه‌ی پرداخت و حساب‌ها</b>${ta('pay_text', 'متنِ راهنمای پرداخت', 3)}
+                      <div class="lf-rows mt-2" data-accs>${s.accounts.map(accRow).join('')}</div>${ed ? '<button type="button" class="lf-btn o sm mt-2" data-addacc><i class="fas fa-plus"></i>افزودنِ کارت / شبا / حساب / لینکِ پرداخت</button>' : ''}</div>
+                    <div class="lf-sub"><b><i class="fas fa-bullhorn text-emerald-600"></i>نحوه‌ی اطلاع‌رسانی بعد از پرداخت</b>${ta('notify_text', 'مثلاً: تصویرِ رسید را در واتساپ برای کارشناس بفرستید.', 3)}
+                      <div class="lf-rows mt-2" data-chs>${s.channels.map(chRow).join('')}</div>${ed ? '<button type="button" class="lf-btn o sm mt-2" data-addch><i class="fas fa-plus"></i>افزودنِ راهِ ارتباط (بله، واتساپ، تلگرام، پیامک، ...)</button>' : ''}</div>
+                    <div class="lf-sub"><b><i class="fas fa-quote-right text-amber-500"></i>متنِ پایانِ فیش</b>${ta('note', 'یک جمله‌ی کوتاه در پایینِ فیش', 2)}</div>
+                  </div>
+                </div>
+                <div class="lf-sub mt-3"><b><i class="fas fa-file-word text-blue-600"></i>قالب</b>
+                  <div class="flex flex-wrap items-end gap-2"><label style="min-width:240px;flex:1"><span class="lf-lbl">قالبِ پیش‌فرضِ فیش</span><select class="lf-sel" data-s="default_template" ${dis}><option value="builtin">قالبِ پیش‌فرضِ سامانه (طراحی‌شده)</option>${r.templates.map(t => `<option value="${t.id}" ${String(s.default_template) === String(t.id) ? 'selected' : ''}>${esc(t.name)} (Word)</option>`).join('')}</select></label>
+                    <a class="lf-btn s" href="${url('slip_tpl_sample')}"><i class="fas fa-download"></i>دریافتِ قالبِ نمونه (Word)</a></div>
+                  <div class="flex flex-col gap-1 mt-2">${r.templates.map(t => `<div class="flex items-center gap-2 text-[12px] border border-slate-100 rounded-xl px-3 py-2 bg-white" data-tid="${t.id}"><i class="fas fa-file-word text-blue-600"></i><b class="flex-1 truncate">${esc(t.name)}</b><a class="lf-btn s sm" href="${url('slip_tpl_file', {id: t.id})}"><i class="fas fa-download"></i></a>${ed ? '<button type="button" class="lf-btn r sm" data-tdel><i class="fas fa-trash"></i></button>' : ''}</div>`).join('') || '<small class="text-slate-400 text-[11.5px]">قالبِ Wordِ دلخواهی بارگذاری نشده است؛ فیش با قالبِ طراحی‌شده‌ی سامانه ساخته می‌شود.</small>'}</div>
+                  ${ed ? `<div class="flex flex-wrap gap-2 mt-2"><input class="lf-in" style="flex:1;min-width:160px" data-stn placeholder="نامِ قالبِ دلخواه"><label class="lf-btn o" style="cursor:pointer"><i class="fas fa-file-word text-blue-600"></i><span data-stfn>انتخابِ فایلِ docx</span><input type="file" class="hidden" accept=".docx" data-stf></label><button type="button" class="lf-btn p" data-stup><i class="fas fa-upload"></i>بارگذاری</button></div>` : ''}
+                  <details class="mt-2"><summary class="text-[11.5px] font-bold text-indigo-700 cursor-pointer">کدهای قابلِ استفاده در قالبِ Word (روی هر کد بزنید تا کپی شود)</summary><div class="flex flex-wrap gap-1 mt-2">${Object.entries(r.codes).map(([k, v]) => `<span class="lf-code" data-code="{{${esc(k)}}}" title="${esc(v)}">{{${esc(k)}}}</span>`).join('')}</div></details></div>
+                <div class="flex gap-2 mt-3 flex-wrap">${ed ? '<button class="lf-btn p" data-ssave><i class="fas fa-floppy-disk"></i>ذخیره‌ی تنظیماتِ فیش</button>' : ''}<button class="lf-btn o" data-sprev><i class="fas fa-eye"></i>پیش‌نمایش با یک قسطِ واقعی</button></div>`;
+            const q = sel => box.querySelector(sel);
+            box.querySelectorAll('[data-code]').forEach(el => el.onclick = async () => { await copyText(el.dataset.code); toast('کپی شد: ' + el.dataset.code, 'success'); });
+            const bindRm = scope => scope.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => b.closest('.lf-row').remove());
+            bindRm(box);
+            const aa = q('[data-addacc]'); if (aa) aa.onclick = () => { q('[data-accs]').insertAdjacentHTML('beforeend', accRow({type: 'card'})); bindRm(q('[data-accs]')); };
+            const ac = q('[data-addch]'); if (ac) ac.onclick = () => { q('[data-chs]').insertAdjacentHTML('beforeend', chRow({type: 'whatsapp'})); bindRm(q('[data-chs]')); };
+            let accent = s.accent;
+            box.querySelectorAll('[data-acc-c]').forEach(b => b.onclick = () => { accent = b.dataset.accC; box.querySelectorAll('[data-acc-c]').forEach(x => x.classList.toggle('on', x === b)); });
+            const collect = () => {
+                const o = {accent, logo: (box.querySelector('[name=lf-slogo]:checked') || {}).value || 'brand', accounts: [], channels: []};
+                box.querySelectorAll('[data-s]').forEach(el => { o[el.dataset.s] = el.type === 'checkbox' ? (el.checked ? 1 : 0) : (el.dataset.s === 'deadline_days' ? en(el.value) : el.value); });
+                box.querySelectorAll('[data-acc]').forEach(rw => { const a = {}; rw.querySelectorAll('[data-k]').forEach(el => a[el.dataset.k] = el.dataset.k === 'number' ? en(el.value) : el.value); if (a.number.trim()) o.accounts.push(a); });
+                box.querySelectorAll('[data-ch]').forEach(rw => { const c = {}; rw.querySelectorAll('[data-k]').forEach(el => c[el.dataset.k] = el.dataset.k === 'value' ? en(el.value) : el.value); if (c.value.trim()) o.channels.push(c); });
+                return o;
+            };
+            const save = async (quiet) => {
+                const o = collect();
+                if (o.logo === 'custom' && !r.custom_logo) { toast('اول لوگوی دلخواه را بارگذاری کنید.', 'warning'); return false; }
+                const x = await api('slip_settings_save', {settings: o});
+                L.slip = null;
+                if (!quiet) toast('تنظیماتِ فیش ذخیره شد.', 'success');
+                return x;
+            };
+            const sv = q('[data-ssave]'); if (sv) sv.onclick = async () => { busy(sv, true); try { if (await save()) this.slip(root); } catch (e) { toast(e.message, 'error'); } busy(sv, false); };
+            q('[data-sprev]').onclick = async () => {
+                const w = window.open('about:blank', '_blank');
+                try { if (ed && !(await save(true))) { if (w) w.close(); return; } if (w) w.location = url('slip_html', {preview: 1}); }
+                catch (e) { if (w) w.close(); toast(e.message, 'error'); }
+            };
+            const lu = q('[data-lup]');
+            if (lu) lu.onchange = async () => {
+                if (!lu.files[0]) return;
+                const fd = new FormData(); fd.append('file', lu.files[0]);
+                try { await save(true); await api('slip_logo', {}, fd); toast('لوگو بارگذاری شد.', 'success'); this.slip(root); } catch (e) { toast(e.message, 'error'); }
+            };
+            const lr = q('[data-lrm]');
+            if (lr) lr.onclick = async () => { if (!(await confirmUi('حذفِ لوگو', 'لوگوی دلخواهِ فیش حذف شود؟', {danger: true, ok: 'حذف'}))) return; try { await api('slip_logo', {remove: 1}); this.slip(root); } catch (e) { toast(e.message, 'error'); } };
+            const stf = q('[data-stf]'); if (stf) stf.onchange = () => { q('[data-stfn]').textContent = stf.files[0] ? stf.files[0].name : 'انتخابِ فایلِ docx'; };
+            const stu = q('[data-stup]');
+            if (stu) stu.onclick = async () => {
+                if (!stf.files[0]) { toast('فایلِ Word را انتخاب کنید.', 'warning'); return; }
+                const fd = new FormData(); fd.append('file', stf.files[0]); fd.append('name', q('[data-stn]').value);
+                busy(stu, true);
+                try {
+                    const x = await api('slip_tpl_upload', {}, fd);
+                    if (x.unknown.length && window.showAlert) showAlert('قالب ذخیره شد', 'این کدها شناخته نشدند و خالی می‌مانند: ' + x.unknown.map(k => '{{' + k + '}}').join('، '), 'warning');
+                    else toast('قالب ذخیره شد؛ می‌توانید آن را «قالبِ پیش‌فرض» کنید.', 'success');
+                    this.slip(root);
+                } catch (e) { toast(e.message, 'error'); busy(stu, false); }
+            };
+            box.querySelectorAll('[data-tdel]').forEach(b => b.onclick = async () => {
+                if (!(await confirmUi('حذفِ قالب', 'این قالبِ فیش حذف شود؟', {danger: true, ok: 'حذف'}))) return;
+                try { await api('slip_tpl_delete', {id: +b.closest('[data-tid]').dataset.tid}); this.slip(root); } catch (e) { toast(e.message, 'error'); }
+            });
         },
         async flow(root) {
             const box = root.querySelector('[data-flow]'), ed = can('life-settings', 'edit');

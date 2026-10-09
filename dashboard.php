@@ -4117,7 +4117,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
     <script src="recon.js?v=1"></script>
-    <?php if ($lifeAccess): ?><script src="life.js?v=4"></script><?php endif; ?>
+    <?php if ($lifeAccess): ?><script src="life.js?v=5"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=2"></script><?php endif; ?>

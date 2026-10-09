@@ -20,15 +20,15 @@ function life_receipt_codes() {
 
 function life_templates($pdo) {
     $out = [];
-    foreach ($pdo->query("SELECT * FROM life_templates ORDER BY is_default DESC, id") as $t) {
+    foreach ($pdo->query("SELECT * FROM life_templates WHERE kind = 'receipt' ORDER BY is_default DESC, id") as $t) {
         $out[] = ['id' => intval($t['id']), 'name' => $t['name'], 'builtin' => $t['file_path'] === null, 'footer_text' => (string)$t['footer_text'], 'is_default' => intval($t['is_default']),
                   'file' => $t['file_path'] ? basename($t['file_path']) : null];
     }
     return $out;
 }
 function life_template_row($pdo, $id) {
-    if (intval($id) > 0) { $st = $pdo->prepare("SELECT * FROM life_templates WHERE id = ?"); $st->execute([intval($id)]); $t = $st->fetch(); if ($t) return $t; }
-    return $pdo->query("SELECT * FROM life_templates ORDER BY is_default DESC, file_path IS NULL DESC, id LIMIT 1")->fetch() ?: null;
+    if (intval($id) > 0) { $st = $pdo->prepare("SELECT * FROM life_templates WHERE id = ? AND kind = 'receipt'"); $st->execute([intval($id)]); $t = $st->fetch(); if ($t) return $t; }
+    return $pdo->query("SELECT * FROM life_templates WHERE kind = 'receipt' ORDER BY is_default DESC, file_path IS NULL DESC, id LIMIT 1")->fetch() ?: null;
 }
 
 // داده‌ی رسید: بیمه‌نامه، قسطِ انتخابی، پرداخت (یا همه‌ی پرداخت‌های آن قسط) و همه‌ی اقساط

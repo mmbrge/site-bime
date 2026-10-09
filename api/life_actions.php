@@ -62,6 +62,10 @@ $need = [
     'bot_get' => 'life-settings:view', 'bot_save_token' => 'life-settings:edit', 'bot_save_settings' => 'life-settings:edit', 'bot_run' => 'life-settings:edit',
     'bot_remind' => 'life-calls:create', 'flow_get' => 'life-settings:view|life-pay:view', 'flow_save' => 'life-settings:edit',
     'archive_list' => 'life-archive:view', 'archive_file' => 'life-archive:view', 'archive_zip' => 'life-archive:export',
+    // فیشِ پرداخت (پیش از پرداخت)
+    'slip_settings' => 'life-settings:view|life-pay:view', 'slip_settings_save' => 'life-settings:edit', 'slip_logo' => 'life-settings:edit',
+    'slip_tpl_upload' => 'life-settings:edit', 'slip_tpl_delete' => 'life-settings:edit', 'slip_tpl_sample' => 'life-settings:view', 'slip_tpl_file' => 'life-settings:view',
+    'slip_html' => 'life-pay:view', 'slip_docx' => 'life-pay:view', 'slip_pdf' => 'life-pay:view', 'slip_text' => 'life-pay:view', 'slip_send' => 'life-calls:create|life-pay:create',
 ];
 if (!isset($need[$action])) $fail('درخواست نامعتبر است.');
 if (!life_can($pdo, $need[$action])) {
@@ -535,7 +539,7 @@ case 'tpl_save':
     $t = life_template_row($pdo, $id);
     if (!$t || intval($t['id']) !== $id) $fail('قالب پیدا نشد.');
     $pdo->prepare("UPDATE life_templates SET name = ?, footer_text = ? WHERE id = ?")->execute([mb_substr(trim((string)($data['name'] ?? $t['name'])) ?: $t['name'], 0, 190), (string)($data['footer_text'] ?? $t['footer_text']), $id]);
-    if (!empty($data['is_default'])) { $pdo->exec("UPDATE life_templates SET is_default = 0"); $pdo->prepare("UPDATE life_templates SET is_default = 1 WHERE id = ?")->execute([$id]); }
+    if (!empty($data['is_default'])) { $pdo->exec("UPDATE life_templates SET is_default = 0 WHERE kind = 'receipt'"); $pdo->prepare("UPDATE life_templates SET is_default = 1 WHERE id = ?")->execute([$id]); }
     $out(['ok' => true, 'templates' => life_templates($pdo)]);
 
 case 'tpl_delete':
@@ -546,7 +550,7 @@ case 'tpl_delete':
     $abs = life_root() . '/' . $t['file_path'];
     if (is_file($abs) && strpos(realpath($abs), realpath(life_tpl_dir())) === 0) @unlink($abs);
     $pdo->prepare("DELETE FROM life_templates WHERE id = ?")->execute([$id]);
-    if ($t['is_default']) $pdo->exec("UPDATE life_templates SET is_default = 1 WHERE file_path IS NULL");
+    if ($t['is_default']) $pdo->exec("UPDATE life_templates SET is_default = 1 WHERE file_path IS NULL AND kind = 'receipt'");
     $out(['ok' => true, 'templates' => life_templates($pdo)]);
 
 case 'tpl_sample':
@@ -665,6 +669,124 @@ case 'bot_remind':
     if (!$n) $fail('بیمه‌گذار هنوز به ربات وصل نشده است؛ لینکِ ربات را برایش بفرستید تا با شماره و کد ملی وارد شود.');
     life_follow($pdo, intval($p['id']), $uid);
     $out(['ok' => true, 'sent' => $n]);
+
+// ---------------------------------------------------------------------
+//  فیشِ پرداخت (پیش از پرداخت): تنظیمات، لوگو، قالب‌ها و ساخت
+// ---------------------------------------------------------------------
+case 'slip_settings':
+    $s = life_slip_settings($pdo);
+    $out(['ok' => true, 'settings' => $s, 'templates' => life_slip_templates($pdo), 'codes' => life_slip_codes(), 'logo' => life_slip_logo_data($pdo, $s),
+          'brand_logo' => (bool)life_slip_logo_path($pdo, ['logo' => 'brand', 'logo_file' => '']), 'custom_logo' => $s['logo_file'] !== '' && is_file(life_root() . '/' . $s['logo_file']),
+          'accents' => array_map(function ($a) { return ['label' => $a[0], 'c1' => $a[1], 'c2' => $a[2]]; }, LIFE_SLIP_ACCENTS),
+          'acc_types' => LIFE_SLIP_ACC_TYPES, 'ch_types' => array_map(function ($c) { return $c[0]; }, LIFE_SLIP_CH_TYPES), 'pdf_ok' => fin_pdf_converter_available()]);
+
+case 'slip_settings_save':
+    $s = life_slip_settings_save($pdo, is_array($data['settings'] ?? null) ? $data['settings'] : []);
+    $out(['ok' => true, 'settings' => $s, 'logo' => life_slip_logo_data($pdo, $s)]);
+
+case 'slip_logo':
+    $s = life_slip_settings($pdo);
+    if (!empty($data['remove'])) {
+        if ($s['logo_file'] !== '') { $abs = life_root() . '/' . $s['logo_file']; if (is_file($abs) && strpos(realpath($abs), realpath(life_tpl_dir())) === 0) @unlink($abs); }
+        $s['logo_file'] = ''; if ($s['logo'] === 'custom') $s['logo'] = 'brand';
+    } else {
+        $u = life_upload('file', ['png', 'jpg', 'jpeg', 'webp'], 2);
+        if (isset($u['error'])) $fail($u['error']);
+        if (!@getimagesize($u['tmp'])) $fail('فایلِ تصویر خوانده نشد.');
+        $dest = life_tpl_dir() . '/slip_logo_' . date('YmdHis') . '.' . ($u['ext'] === 'jpeg' ? 'jpg' : $u['ext']);
+        if (!move_uploaded_file($u['tmp'], $dest)) $fail('ذخیره‌ی لوگو ممکن نشد.');
+        if ($s['logo_file'] !== '') { $old = life_root() . '/' . $s['logo_file']; if (is_file($old) && strpos(realpath($old), realpath(life_tpl_dir())) === 0) @unlink($old); }
+        $s['logo_file'] = life_rel($dest); $s['logo'] = 'custom';
+    }
+    life_setting_set($pdo, 'life_payslip', json_encode($s, JSON_UNESCAPED_UNICODE));
+    $out(['ok' => true, 'settings' => $s, 'logo' => life_slip_logo_data($pdo, $s), 'custom_logo' => $s['logo_file'] !== '']);
+
+case 'slip_tpl_upload':
+    $u = life_upload('file', ['docx'], 10);
+    if (isset($u['error'])) $fail($u['error']);
+    $dest = life_tpl_dir() . '/slip_' . date('YmdHis') . '_' . bin2hex(random_bytes(3)) . '.docx';
+    if (!move_uploaded_file($u['tmp'], $dest)) $fail('ذخیره‌ی قالب ممکن نشد.');
+    $codes = [];
+    $zip = new ZipArchive();
+    if ($zip->open($dest) !== true) { @unlink($dest); $fail('فایلِ Word خوانده نشد.'); }
+    foreach (fin_docx_parts($zip) as $part) {
+        $txt = strip_tags(fin_docx_heal_codes((string)$zip->getFromName($part)));
+        if (preg_match_all('/\{\{([^{}]{1,60})\}\}/u', $txt, $m)) $codes = array_merge($codes, $m[1]);
+    }
+    $zip->close();
+    $codes = array_values(array_unique($codes));
+    $name = trim((string)($data['name'] ?? '')) ?: pathinfo($u['name'], PATHINFO_FILENAME);
+    $pdo->prepare("INSERT INTO life_templates (name, file_path, footer_text, is_default, kind, created_at, created_by) VALUES (?, ?, '', 0, 'slip', NOW(), ?)")->execute([mb_substr($name, 0, 190), life_rel($dest), $uid]);
+    $out(['ok' => true, 'codes' => $codes, 'unknown' => array_values(array_diff($codes, array_keys(life_slip_codes()))), 'templates' => life_slip_templates($pdo)]);
+
+case 'slip_tpl_delete':
+    $t = life_slip_template_row($pdo, intval($data['id'] ?? 0));
+    if (!$t) $fail('قالب پیدا نشد.');
+    $abs = life_root() . '/' . $t['file_path'];
+    if (is_file($abs) && strpos(realpath($abs), realpath(life_tpl_dir())) === 0) @unlink($abs);
+    $pdo->prepare("DELETE FROM life_templates WHERE id = ? AND kind = 'slip'")->execute([$t['id']]);
+    $s = life_slip_settings($pdo);
+    if ($s['default_template'] === (string)$t['id']) life_slip_settings_save($pdo, ['default_template' => 'builtin']);
+    $out(['ok' => true, 'templates' => life_slip_templates($pdo)]);
+
+case 'slip_tpl_sample':
+    $p = life_tpl_dir() . '/_slip_sample.docx';
+    if (!life_slip_builtin_docx($pdo, $p, true)) $fail('ساختِ فایلِ نمونه ممکن نشد.');
+    life_send_file($p, 'قالب فیش پرداخت قسط بیمه عمر (نمونه).docx');
+
+case 'slip_tpl_file':
+    $t = life_slip_template_row($pdo, intval($data['id'] ?? 0));
+    if (!$t || !is_file(life_root() . '/' . $t['file_path'])) $fail('فایلِ قالب پیدا نشد.');
+    life_send_file(life_root() . '/' . $t['file_path'], $t['name'] . '.docx');
+
+case 'slip_html':
+case 'slip_docx':
+case 'slip_pdf':
+case 'slip_text':
+case 'slip_send':
+    // پیش‌نمایش از تنظیمات: اولین قسطِ پرداخت‌نشده
+    if (empty($data['installment_id']) && !empty($data['preview'])) $data['installment_id'] = intval($pdo->query("SELECT id FROM life_installments WHERE amount > paid_amount AND cleared = 0 ORDER BY due_g DESC LIMIT 1")->fetchColumn());
+    if (empty($data['installment_id'])) $fail('برای پیش‌نمایش دست‌کم یک قسطِ پرداخت‌نشده لازم است.');
+    $r = life_slip_data($pdo, intval($data['installment_id'] ?? 0), $data, $uid);
+    if (!$r) { http_response_code(404); $fail('قسط پیدا نشد.'); }
+    $tid = (string)($data['template'] ?? $r['s']['default_template']);
+    $tpl = $tid !== '' && $tid !== 'builtin' ? life_slip_template_row($pdo, intval($tid)) : null;
+    if ($action === 'slip_text') $out(['ok' => true, 'text' => life_slip_text($r), 'amount' => $r['amount'], 'deadline' => $r['deadline']]);
+    if ($action === 'slip_send') {
+        if (lbot_token($pdo) === '') $fail('ربات بله‌ی بیمه عمر هنوز راه‌اندازی نشده است (تنظیمات ← ربات بله).');
+        $st = $pdo->prepare("SELECT * FROM life_bot_links WHERE kind = 'CUSTOMER' AND nid = ?");
+        $st->execute([$r['p']['holder_nid']]);
+        $phones = array_column(life_phone_list($r['p']), 'phone');
+        $n = 0;
+        foreach ($st->fetchAll() as $l) if (in_array($l['phone'], $phones, true) && lbot_send($pdo, $l['chat_id'], life_slip_text($r), ['inline_keyboard' => [[['text' => '📋 مشاهده‌ی اقساط', 'callback_data' => 'cp:' . $r['p']['id']]]]])) $n++;
+        if (!$n) $fail('بیمه‌گذار هنوز به ربات وصل نشده است؛ متن را کپی کنید و با پیامک یا واتساپ بفرستید.');
+        life_sys_note($pdo, intval($r['p']['id']), 'فیشِ پرداختِ قسطِ ' . $r['inst']['inst_no'] . ' (' . life_money($r['amount']) . ' ریال، مهلت ' . life_fa($r['deadline']) . ') در ربات بله برای بیمه‌گذار فرستاده شد.', $uid, intval($r['inst']['id']));
+        life_follow($pdo, intval($r['p']['id']), $uid);
+        $out(['ok' => true, 'sent' => $n]);
+    }
+    if ($action === 'slip_html') {
+        header('Content-Type: text/html; charset=utf-8');
+        header('X-Frame-Options: SAMEORIGIN');
+        if ($tpl) {
+            // قالبِ Word: همان فایلِ پرشده به‌شکلِ HTML
+            $docx = life_slip_docx($pdo, $r, $tpl);
+            $html = $docx ? fin_docx_to_html($docx) : '';
+            if ($docx) @unlink($docx);
+            echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>فیش پرداخت</title><style>body{font-family:Vazir,Tahoma;background:#eef2f7;padding:16px}.pg{max-width:820px;margin:auto;background:#fff;padding:28px;border-radius:16px}@media print{body{background:#fff;padding:0}.pg{padding:0}button{display:none}}</style></head><body><div style="text-align:left;max-width:820px;margin:0 auto 10px"><button onclick="print()">چاپ</button></div><div class="pg">' . $html . '</div></body></html>';
+            exit;
+        }
+        echo life_slip_html($pdo, $r);
+        exit;
+    }
+    $docx = life_slip_docx($pdo, $r, $tpl);
+    if (!$docx) $fail('ساختِ فیش ممکن نشد.');
+    life_sys_note($pdo, intval($r['p']['id']), 'فیشِ پرداختِ قسطِ ' . $r['inst']['inst_no'] . ' صادر شد (' . life_money($r['amount']) . ' ریال، مهلت ' . life_fa($r['deadline']) . ').', $uid, intval($r['inst']['id']));
+    if ($action === 'slip_pdf') {
+        $pdf = preg_replace('/\.docx$/', '.pdf', $docx);
+        $ok = fin_docx_to_pdf($docx, dirname($docx), $pdf, life_root());
+        if ($ok && is_file($pdf)) life_send_file($pdf);
+    }
+    life_send_file($docx);
 
 // ---------------------------------------------------------------------
 case 'archive_list':
