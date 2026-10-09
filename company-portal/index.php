@@ -59,7 +59,7 @@ if (!$companies) {
 <script src="../net-watch.js?v=4"></script>
 <script src="../cursor-fx.js?v=2" defer></script>
 <script src="../tools.js?v=2"></script>
-<script src="../comfort.js?v=13"></script>
+<script src="../comfort.js?v=14"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
@@ -180,7 +180,7 @@ if (!$companies) {
             <button type="button" id="me-avatar" onclick="changeMyAvatar()" title="عکسِ پروفایل" class="relative hover:scale-105 transition-transform shrink-0"></button>
             <div class="min-w-0">
                 <h1 class="font-black text-lg truncate"><?php echo count($companies) === 1 ? htmlspecialchars($companies[0]['name']) : 'پنلِ شرکت‌ها (' . count($companies) . ' شرکت)'; ?></h1>
-                <p class="text-xs opacity-80 truncate"><?php echo htmlspecialchars($_SESSION['company_user_full_name']); ?> · پنلِ همکارانِ «بیمه با ما»</p>
+                <p class="text-xs opacity-80 truncate"><?php require_once __DIR__ . '/../api/_name_honor.php'; echo htmlspecialchars(name_with_honor($_SESSION['company_user_full_name'], $cuRow['honor'] ?? null)); ?> · پنلِ همکارانِ «بیمه با ما»</p>
             </div>
         </div>
         <div class="flex items-center gap-2" style="z-index:1">

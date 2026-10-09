@@ -21,6 +21,9 @@ require_once __DIR__ . '/api/_perm.php';
 require_once __DIR__ . '/api/_brand.php';   // لوگو و فاوآیکنِ تنظیم‌شده
 $permBoot = perm_page_boot($pdo);
 $realRole = perm_real_role();
+// نامِ کاربر با عنوانِ «آقای / خانم» (تنظیم در «کاربران»)
+require_once __DIR__ . '/api/_name_honor.php';
+$hdrName = honor_name($pdo, 'S', intval($_SESSION['user_id'] ?? 0), (string)($_SESSION['full_name'] ?? ''));
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
@@ -1107,7 +1110,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="flex items-center gap-3 border-r border-slate-300 pr-5">
                 <button onclick="document.getElementById('profile-modal').classList.add('active')" class="hdr-edit-btn w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
-                    <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
+                    <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($hdrName); ?></p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($realRole)); ?><?php if (!empty($permBoot['custom'])): ?> <span class="text-[9px] bg-violet-100 text-violet-700 rounded-full px-1.5 py-px mr-0.5" title="مدیر کل دسترسیِ صفحه‌به‌صفحه برای شما تعیین کرده است">دسترسی سفارشی</span><?php endif; ?></p>
                     <p id="hdr-clock" class="hdr-clock" title="تاریخ و ساعتِ ایران (ساعتِ سرور)"><i class="far fa-clock"></i><span class="hc-d"></span><span class="hc-sep">-</span><span class="hc-t"></span></p>
                 </div>
@@ -3533,7 +3536,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <section class="uf-sec">
                         <h4><span class="uf-step">۲</span>مشخصات و ورود</h4>
                         <div class="uf-grid">
-                            <label class="uf-f"><span>نام و نام‌خانوادگی *</span><input id="uf-fullname" oninput="paintUserAvatar('uf')" placeholder="مثلاً علی رضایی"></label>
+                            <label class="uf-f"><span>نام و نام‌خانوادگی *</span><div class="uf-inline"><select id="uf-honor" title="عنوان: پیش از نام در پیامِ صبح‌بخیر، سربرگ و گفتگوها نوشته می‌شود" style="max-width:96px;flex:none"><option value="">عنوان…</option><option value="M">آقای</option><option value="F">خانم</option></select><input id="uf-fullname" oninput="paintUserAvatar('uf')" placeholder="مثلاً علی رضایی"></div></label>
                             <label class="uf-f"><span>نام کاربری * <em id="uf-user-lock" class="hidden">(ثابت)</em></span><input id="uf-username" dir="ltr" placeholder="ali.rezaei" autocomplete="off"></label>
                             <label class="uf-f"><span id="uf-pass-lbl">رمز عبور * (حداقل ۶)</span>
                                 <div class="uf-inline"><input id="uf-password" dir="ltr" autocomplete="new-password" placeholder="••••••"><button type="button" onclick="ufGenPass()" title="ساختِ رمزِ تصادفی"><i class="fas fa-dice"></i></button></div></label>
@@ -4154,7 +4157,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="net-watch.js?v=4"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=13"></script>
+    <script src="comfort.js?v=14"></script>
     <script src="settings-nav.js?v=3"></script>
     <script src="announce.js?v=3"></script>
     <script src="announce-admin.js?v=2"></script>
@@ -8482,6 +8485,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const STAFF_API = 'api/staff_users_actions.php';
         const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)', LIFE: 'کاربر بیمه عمر'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
+        // «آقای / خانم» پیش از نام (اگر خودِ نام با عنوان شروع نشده باشد)
+        function honorName(u) { const n = String(u.full_name || ''); return !u.honor || /^(آقا|آقای|خانم|سرکار|جناب|دکتر|مهندس)(\s|$)/.test(n.trim()) ? n : (u.honor === 'F' ? 'خانم ' : 'آقای ') + n; }
         function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
         let staffUsersCache = [];
 
@@ -8642,7 +8647,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const permChip = !co && u.perm_custom ? ' <span class="su-chip pc" title="دسترسیِ صفحه‌به‌صفحه تعیین شده"><i class="fas fa-user-lock ml-1"></i>سفارشی</span>' : '';
                 const isMe = !co && Number(u.id) === staffMeId;
                 return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
-                    <td class="p-3 font-bold"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name, {size: 34, online: !del && u.presence && u.presence.online}) : ''}<span>${del ? '' : botDot(u.bot_linked)} ${u.full_name}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</span></span></td>
+                    <td class="p-3 font-bold"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name, {size: 34, online: !del && u.presence && u.presence.online}) : ''}<span>${del ? '' : botDot(u.bot_linked)} ${iiEsc(honorName(u))}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</span></span></td>
                     <td class="p-3 font-mono">${u.username}</td>
                     <td class="p-3">${roleChip}${permChip}</td>
                     <td class="p-3 text-slate-500">${co ? (u.company_names || '—') : `<span class="font-mono">${faDigits(u.personnel_code || '') || '—'}</span>`}</td>
@@ -8799,6 +8804,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ufG('uf-mode').value = mode; ufG('uf-id').value = u ? u.id : ''; ufG('uf-type').value = u ? u.type : '';
             ufG('uf-role').value = ''; ufG('uf-avatar').value = u ? (u.avatar || '') : ''; ufG('uf-avatar-changed').value = '';
             ufG('uf-fullname').value = u ? (u.full_name || '') : ''; ufG('uf-username').value = u ? u.username : '';
+            ufG('uf-honor').value = u ? (u.honor || '') : '';
             ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
             ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
             ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
@@ -8857,7 +8863,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const mode = ufG('uf-mode').value, role = ufG('uf-role').value, edit = mode === 'edit';
             if (!role) { showToast('اول نقشِ کاربر را انتخاب کنید.', 'warning'); return; }
             const co = role === 'COMPANY';
-            const body = {full_name: ufG('uf-fullname').value.trim(), mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value};
+            const body = {full_name: ufG('uf-fullname').value.trim(), honor: ufG('uf-honor').value, mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value};
             if (!body.full_name) { showToast('نامِ کاربر را وارد کنید.', 'error'); ufG('uf-fullname').focus(); return; }
             if (co) {
                 body.company_ids = msdValue('uf-companies');

@@ -77,7 +77,8 @@ function cprof_card($pdo, array $actor, $key) {
         if (!$u) return ['ok' => false, 'error' => 'کاربر پیدا نشد.'];
         $p = cprof_get($pdo, $id);
         $spec = array_values(array_filter(array_map('trim', preg_split('/[،,\n]+/u', $p['specialty'])), 'strlen'));
-        return ['ok' => true, 'kind' => 'STAFF', 'key' => 'S:' . $id, 'name' => $u['full_name'], 'avatar' => $u['avatar'] ?? null,
+        require_once __DIR__ . '/_name_honor.php';
+        return ['ok' => true, 'kind' => 'STAFF', 'key' => 'S:' . $id, 'name' => honor_name($pdo, 'S', $id, $u['full_name']), 'avatar' => $u['avatar'] ?? null,
                 'role_fa' => function_exists('chat_role_fa') ? chat_role_fa($u['role']) : $u['role'], 'presence' => prof_presence($u),
                 'since' => $u['created_at'] ? str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($u['created_at']))) : '',
                 'deleted' => !empty($u['is_deleted']), 'profile' => $p, 'specialties' => $spec,

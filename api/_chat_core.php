@@ -16,6 +16,7 @@ require_once __DIR__ . '/_import_schema.php';
 require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_chat_access.php';
 require_once __DIR__ . '/_chat_profile.php';
+require_once __DIR__ . '/_name_honor.php';   // «آقای / خانم» پیش از نامِ همکاران
 
 function chat_ready($pdo) {
     static $ok = null;
@@ -142,7 +143,7 @@ function chat_threads($pdo, $actor, $q = '') {
     $blocked = array_flip(chat_staff_blocked_ids($pdo, $me));
     foreach ($st->fetchAll() as $u) {
         if (isset($blocked[intval($u['id'])]) || !$match([$u['full_name'], $u['message']])) continue;
-        $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
+        $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_role_fa($u['role']),
                   'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: chat_file_preview($u['file_name']), 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
     }
     // تاریخچه‌ای که (برای من یا برای همه) پاک شده، پیش‌نمایشِ آخرین پیام را هم نشان نمی‌دهد؛ و گفتگوی قطع‌شده قفل دارد
@@ -194,7 +195,7 @@ function chat_contacts($pdo, $actor, $q) {
     $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND COALESCE(x.is_deleted, 0) = 0 AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20");
     try { $st->execute([intval($actor['id']), $like, $like]); } catch (Throwable $e) { $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20"); $st->execute([intval($actor['id']), $like, $like]); }
     $blocked = array_flip(chat_staff_blocked_ids($pdo, $actor['id']));
-    foreach ($st->fetchAll() as $u) if (!isset($blocked[intval($u['id'])])) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
+    foreach ($st->fetchAll() as $u) if (!isset($blocked[intval($u['id'])])) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_role_fa($u['role']),
                                               'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u)];
     return $out;
 }
@@ -264,7 +265,7 @@ function chat_head_base($pdo, $actor, $type, $id) {
     $st = $pdo->prepare("SELECT full_name, role FROM users WHERE id = ?");
     $st->execute([$id]);
     $u = $st->fetch();
-    return ['title' => $u['full_name'] ?? 'همکار', 'sub' => chat_role_fa($u['role'] ?? ''), 'type' => 'STAFF', 'channel' => 'گفتگوی داخلیِ پنل'];
+    return ['title' => $u ? honor_name($pdo, 'S', $id, $u['full_name']) : 'همکار', 'sub' => chat_role_fa($u['role'] ?? ''), 'type' => 'STAFF', 'channel' => 'گفتگوی داخلیِ پنل'];
 }
 
 // درخواست‌های طرفِ گفتگو: درخواست‌های کارکنان، درخواست‌های شرکت، یا گزارش‌های بازدیدِ همکار
@@ -348,9 +349,9 @@ function chat_raw_rows($pdo, $actor, $type, $id) {
     $st = $pdo->prepare("SELECT m.*, u.full_name AS from_name, " . chat_av_cols($pdo, 'u', 'u') . " FROM staff_chat_messages m LEFT JOIN users u ON u.id = m.from_user_id
                           WHERE (m.from_user_id = ? AND m.to_user_id = ?) OR (m.from_user_id = ? AND m.to_user_id = ?) ORDER BY m.id");
     $st->execute([$me, $id, $id, $me]);
-    return array_map(function ($r) use ($me) {
+    return array_map(function ($r) use ($me, $pdo) {
         $ours = intval($r['from_user_id']) === $me;
-        return ['id' => intval($r['id']), 'ours' => $ours, 'author' => 'STAFF:' . intval($r['from_user_id']), 'sender' => $r['from_name'] ?: 'همکار', 'avatar' => $r['staff_av'] ?: null,
+        return ['id' => intval($r['id']), 'ours' => $ours, 'author' => 'STAFF:' . intval($r['from_user_id']), 'sender' => $r['from_name'] ? honor_name($pdo, 'S', $r['from_user_id'], $r['from_name']) : 'همکار', 'avatar' => $r['staff_av'] ?: null,
                 'text' => $r['message'], 'file' => $r['file_path'], 'file_name' => $r['file_name'], 'reply_to' => $r['reply_to_id'],
                 'ref' => $r['ref_type'] ? ['type' => $r['ref_type'], 'id' => intval($r['ref_id']), 'label' => $r['ref_label']] : null,
                 'edited' => !empty($r['edited_at']), 'deleted' => !empty($r['deleted_at']), 'at' => chat_ts($r['created_at']), 'read' => !empty($r['is_read'])];

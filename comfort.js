@@ -1679,7 +1679,7 @@
         m.className = 'cf-modal';
         m.innerHTML = `<div class="cf-morning"><div class="hd" style="background:${hh < 11 ? 'linear-gradient(120deg,#f59e0b,#ec4899 60%,#6366f1)' : 'linear-gradient(120deg,#0ea5e9,#6366f1)'}">
                 <p style="font-size:12px;opacity:.9;font-weight:800">${DOW[new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay()]} ${fa(jd)} ${MONTHS[jm - 1]} ${fa(jy)}</p>
-                <h2 style="font-size:24px;font-weight:900;margin-top:4px">${greet} ${esc((d.name || '').split(' ')[0])} ${hh < 11 ? '☀️' : '🌤️'}</h2>
+                <h2 style="font-size:24px;font-weight:900;margin-top:4px">${greet} ${esc(d.name || '')} ${hh < 11 ? '☀️' : '🌤️'}</h2>
                 <p style="font-size:12px;opacity:.9;margin-top:4px">یک روزِ خوب و پرانرژی برایتان آرزو می‌کنیم.</p></div>
             <div class="bd">${rows.length ? rows.map(([ic, c, t]) => `<div class="cf-mi"><i class="fas ${ic} ic" style="background:${c}1a;color:${c}"></i><div>${t}</div></div>`).join('') : '<div class="cf-empty" style="opacity:1;color:#64748b">امروز چیزِ فوری‌ای ندارید؛ روزِ آرامی باشد 🌿</div>'}
                 <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">

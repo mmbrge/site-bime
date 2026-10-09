@@ -18,6 +18,7 @@ require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_chat_access.php';
 require_once __DIR__ . '/_profile_core.php';
 require_once __DIR__ . '/_chat_profile.php';
+require_once __DIR__ . '/_name_honor.php';   // عنوانِ «آقا / خانم»
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'این بخش فقط برای مدیر کل است.'], JSON_UNESCAPED_UNICODE);
@@ -215,6 +216,8 @@ try {
         $cols .= ', perm_json IS NOT NULL AS perm_custom';
         sec_ensure($pdo);   // ستونِ سقفِ دستگاه و جدولِ دستگاه‌ها
         $cols .= ', max_devices';
+        honor_ensure($pdo);
+        $cols .= ', honor';
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         $devN = su_devices_alive_counts($pdo);
         foreach ($users as &$u) {
@@ -238,7 +241,7 @@ try {
         // کاربرانِ شرکت‌ها
         $cWhere = $ready ? (empty($data['include_deleted']) ? 'WHERE COALESCE(cpu.is_deleted, 0) = 0' : '') : 'WHERE cpu.is_active = 1';
         $cCols = $ready ? ', (cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked, cpu.is_deleted, cpu.deleted_at' : '';
-        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at, cpu.max_devices $cCols, " . prof_cols($pdo, 'cpu') . ",
+        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.honor, cpu.mobile_number, cpu.is_active, cpu.created_at, cpu.max_devices $cCols, " . prof_cols($pdo, 'cpu') . ",
                                       GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR '، ') AS company_names, GROUP_CONCAT(c.id) AS company_ids
                                  FROM company_portal_users cpu
                                  LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
@@ -301,6 +304,7 @@ try {
         foreach ($companyIds as $cid) $ins->execute([$newId, $cid]);
         $pdo->commit();
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'COMPANY', $newId, $data['avatar']);
+        if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE company_portal_users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $newId]); }
         out(['ok' => true, 'user_id' => $newId]);
     }
 
@@ -328,6 +332,7 @@ try {
         $newId = intval($pdo->lastInsertId());
         if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $newId]); } catch (Throwable $e) {} }
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
+        if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $newId]); }
         if (!empty($data['profile']) && is_array($data['profile'])) cprof_save($pdo, $newId, $data['profile']);
         $rpw = (string)($data['report_edit_password'] ?? '');
         $warn = null;
@@ -364,6 +369,7 @@ try {
         foreach ($companyIds as $cid) $ins->execute([$id, $cid]);
         $pdo->commit();
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'COMPANY', $id, (string)$data['avatar']);
+        if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE company_portal_users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $id]); }
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
             auth_unlink_bot($pdo, 'COMPANY', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");
         }
@@ -400,6 +406,7 @@ try {
         if (array_key_exists('chat_companies', $data)) { chat_access_ensure($pdo); try { $pdo->prepare("UPDATE users SET chat_companies = ? WHERE id = ?")->execute([chat_companies_value($data['chat_companies']), $id]); } catch (Throwable $e) {} }
         if ($rpw !== '' || $rpwClear) staff_set_report_pw($pdo, $id, $rpw, $rpwClear);
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
+        if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $id]); }
         if (!empty($data['profile']) && is_array($data['profile'])) { $pr = cprof_save($pdo, $id, $data['profile']); if (empty($pr['ok'])) out($pr); }
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
         if ($phoneChanged && !empty($u['bale_chat_id'])) {

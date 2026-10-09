@@ -513,7 +513,9 @@ try {
     if ($action === 'morning') {
         $need('morning');
         [$jy, $md] = cf_today_md();
-        $out = ['ok' => true, 'name' => $A[2], 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => CF_OCCASIONS[$md] ?? null];
+        require_once __DIR__ . '/_name_honor.php';
+        // نامِ کامل با عنوانِ «آقای / خانم» (نه فقط کلمه‌ی اول - «خانم عزیزی» نباید «خانم» بشود)
+        $out = ['ok' => true, 'name' => honor_name($pdo, $AT, $AID, cf_actor_name($pdo, $AT, $AID) ?: $A[2]), 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => CF_OCCASIONS[$md] ?? null];
         $all = !empty($F['todo']) ? $todos() : [];
         $today = date('Y-m-d');
         $out['todos'] = array_values(array_filter($all, function ($t) use ($today) { return !$t['done'] && (!$t['due_g'] || $t['due_g'] <= $today); }));
