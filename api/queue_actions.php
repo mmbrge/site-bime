@@ -79,17 +79,19 @@ function bale_replace_message($chat_id, $old_message_id, $reply_to_message_id, $
             'message_id' => $old_message_id,
             'text' => $new_text,
         ], $token);
-        if (!empty($editResult['ok'])) return; // موفق بود، کار تمام است
+        if (!empty($editResult['ok'])) return $old_message_id; // موفق بود، کار تمام است
     }
     // نتوانستیم ویرایش کنیم (یا اصلاً پیامی برای ویرایش نداشتیم) -> حذف + ارسال دوباره
     if ($old_message_id) {
         bale_api_call('deleteMessage', ['chat_id' => $chat_id, 'message_id' => $old_message_id], $token);
     }
-    bale_api_call('sendMessage', [
+    $sent = bale_api_call('sendMessage', [
         'chat_id' => $chat_id,
         'text' => $new_text,
         'reply_to_message_id' => $reply_to_message_id,
     ], $token);
+    // شناسه‌ی پیامِ تازه برگردانده می‌شود تا ویرایش‌های بعدی (تعدادِ صادره و ...) روی همین پیام انجام شود
+    return $sent['result']['message_id'] ?? null;
 }
 
 
@@ -122,9 +124,15 @@ try {
     // ۲. رد کردن فایل (حذف فیزیکی و حذف از صف)
     if ($action === 'reject') {
         $qid = intval($data['queue_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT file_path FROM processing_queue WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT file_path, uploaded_by, tg_notify_message_id FROM processing_queue WHERE id = ?");
         $stmt->execute([$qid]);
-        $filePath = $stmt->fetchColumn();
+        $qrow = $stmt->fetch() ?: [];
+        $filePath = $qrow['file_path'] ?? null;
+        // پیامِ «دریافت شد / در حالِ بررسی» که ربات زیرِ فایل فرستاده بود از گروه/چت پاک می‌شود
+        if (!empty($qrow['uploaded_by']) && !empty($qrow['tg_notify_message_id'])) {
+            try { bale_api_call('deleteMessage', ['chat_id' => $qrow['uploaded_by'], 'message_id' => intval($qrow['tg_notify_message_id'])], get_bot_token($pdo)); }
+            catch (Throwable $e) { bale_log('reject_delete_exception', $e->getMessage()); }
+        }
 
         if ($filePath && file_exists("../" . $filePath)) {
             unlink("../" . $filePath); // حذف فایل فیزیکی
@@ -307,9 +315,23 @@ try {
                 $policyNumForName = str_replace('/', '∕', $extraFields['policy_num']);
 
                 $ext = pathinfo($currentFilePath, PATHINFO_EXTENSION);
+                // مثلِ صدور از پنل (و شرکت‌ها): اگر فایل صفحه‌های فیشِ پرداخت یا اعلامیه‌ی اقساط هم داشت، فقط صفحه‌های
+                // خودِ بیمه‌نامه فایلِ بیمه‌نامه می‌شود و هر فیش جدا (با سررسیدش) در «فیش‌های پرداختی» می‌نشیند
+                $single = null;
+                if (strtolower($ext) === 'pdf') {
+                    try {
+                        require_once __DIR__ . '/finance_core.php';
+                        require_once __DIR__ . '/_company_helpers.php';
+                        require_once __DIR__ . '/_company_issue.php';
+                        $lay = policy_layout_extract($pdo, "../" . $currentFilePath);
+                        if (!empty($lay['single']['dir']) && (!empty($lay['single']['receipts']) || !empty($lay['single']['statement'])) && is_file($lay['single']['dir'] . '/' . $lay['single']['pol'])) $single = $lay['single'];
+                        elseif (!empty($lay['single']['dir'])) cbundle_rrmdir($lay['single']['dir']);
+                    } catch (Throwable $e) { error_log('[queue split] ' . $e->getMessage()); $single = null; }
+                }
                 $finalFileName = build_final_policy_filename($plate ?: $matchedCase['plate'], $matchedCase['insured_name'] ?: $full_name, $policyNumForName, $extraFields['vin'], $ext);
                 $finalDiskPath = unique_dest_path($caseFolder . '/' . $finalFileName);
-                rename("../" . $currentFilePath, $finalDiskPath);
+                if ($single && @copy($single['dir'] . '/' . $single['pol'], $finalDiskPath)) @unlink("../" . $currentFilePath);
+                else rename("../" . $currentFilePath, $finalDiskPath);
 
                 // پوشه‌ی پرونده را هم به همین نام کامل تغییر می‌دهیم (طبق فرمت مصوب)
                 $renamedFolderName = build_case_folder_name_issued($plate ?: $matchedCase['plate'], $matchedCase['insured_name'] ?: $full_name, $policyNumForName, $extraFields['vin']);
@@ -335,6 +357,16 @@ try {
                     ->execute([$extraFields['policy_num'], $extraFields['vin'], $extraFields['chassis_num'], $extraFields['engine_num'], $extraFields['total_premium'],
                                $extraFields['unique_code'], $extraFields['car_system'], $extraFields['car_type'], $extraFields['model_year'], $extraFields['car_color'],
                                $issueJ, $extraFields['car_value'], $matchedCase['id']]);
+                // فیش‌ها و اعلامیه‌ی اقساطِ جداشده کنارِ بیمه‌نامه؛ اقساط بعد از این با همین فیش‌ها ساخته می‌شوند
+                if ($single) {
+                    try {
+                        fin_ensure_receipt_cols($pdo);
+                        $rc = policy_store_receipts($siteRoot, $caseFolder, $single['dir'], $single['receipts'] ?? [], $single['statement'] ?? null);
+                        $pdo->prepare("UPDATE policy_cases SET receipts_json = ?, statement_file = ? WHERE id = ?")
+                            ->execute([$rc['receipts'] ? json_encode($rc['receipts'], JSON_UNESCAPED_UNICODE) : null, $rc['statement'], $matchedCase['id']]);
+                    } catch (Throwable $e) { error_log('[queue receipts] ' . $e->getMessage()); }
+                    cbundle_rrmdir($single['dir']);
+                }
                 // اقساط (مثل صدور از پنل؛ پرداختِ نقدیِ مستقیم قسط ندارد)
                 if (empty($matchedCase['is_direct_payment'])) {
                     try { require_once __DIR__ . '/finance_core.php'; fin_generate_installments($pdo, $matchedCase['id']); } catch (Throwable $e) { error_log('[queue installments] ' . $e->getMessage()); }
@@ -381,14 +413,29 @@ try {
                 $text = render_intro_status_message($pdo, $intro_id);
                 // اولین‌بار: پیام «دریافت شد» قبلی را با این پیام کامل جایگزین می‌کنیم و شناسه‌اش را ذخیره می‌کنیم
                 // تا مراحل بعدی (مراجعه پرسنل و ...) همین پیام را ویرایش کنند، نه پیام جدید بفرستند
-                bale_replace_message($senderChatId, $tgNotifyMessageId, $tgMessageId, $text, $bot_token);
-                // شناسه‌ی پیامِ نهایی را برای ویرایش‌های بعدی ذخیره می‌کنیم؛ اگر ویرایش موفق بود همان
-                // $tgNotifyMessageId معتبر است، وگرنه پیام تازه‌ای فرستاده شده که شناسه‌اش را نمی‌دانیم
-                // (در آن حالت نادر، دفعه‌ی بعد دوباره پیام تازه می‌فرستد که قابل قبول است)
-                if ($tgNotifyMessageId) {
-                    $pdo->prepare("UPDATE introductions SET status_message_id = ? WHERE id = ?")->execute([$tgNotifyMessageId, $intro_id]);
+                $finalId = bale_replace_message($senderChatId, $tgNotifyMessageId, $tgMessageId, $text, $bot_token);
+                // شناسه‌ی پیامِ نهایی (ویرایش‌شده یا تازه) برای همه‌ی ویرایش‌های بعدی: تعدادِ صادره، وضعیتِ هر بیمه‌نامه، ...
+                if ($finalId) {
+                    $pdo->prepare("UPDATE introductions SET status_message_id = ? WHERE id = ?")->execute([$finalId, $intro_id]);
                 }
             } catch (Exception $notifyErr) {
+                bale_log('notify_exception', $notifyErr->getMessage());
+            }
+        }
+
+        if ($ins_type !== 'معرفی‌نامه' && $senderChatId) {
+            try {
+                $bot_token = get_bot_token($pdo);
+                // پیامِ «دریافت شد / منتظرِ تایید» زیرِ فایل، به نتیجه‌ی نهایی تبدیل می‌شود (دیگر «در حالِ بررسی» نمی‌ماند)
+                if ($tgNotifyMessageId) {
+                    $done = !empty($matchedCase) && empty($archivedOnlyNote)
+                        ? '✅ بیمه‌نامه‌ی ' . ($matchedCase['insured_name'] ?: $full_name) . ' (' . ($plate ?: $matchedCase['plate'] ?: '-') . ') ثبت و صادر شد.'
+                        : '✅ مدرک تایید و بایگانی شد.' . ($archivedOnlyNote ? "\n" . $archivedOnlyNote : '');
+                    bale_replace_message($senderChatId, $tgNotifyMessageId, $tgMessageId, $done, $bot_token);
+                }
+                // صدور از گروه هم مثلِ صدور از پنل: پیامِ معرفی‌نامه (تعدادِ صادره و وضعیتِ هر بیمه‌نامه) به‌روز می‌شود
+                if (!empty($matchedCase['introduction_id']) && empty($archivedOnlyNote)) sync_intro_group_message($pdo, intval($matchedCase['introduction_id']), $bot_token);
+            } catch (Throwable $notifyErr) {
                 bale_log('notify_exception', $notifyErr->getMessage());
             }
         }

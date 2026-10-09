@@ -251,6 +251,7 @@ try {
 
         $labelsList = array_map(fn($f) => $fieldLabels[$f], $fields);
         $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_PENDING', last_status_note = ? WHERE id = ?")->execute([implode('، ', $labelsList) . ($note ? ": {$note}" : ''), $caseId]);
+        intro_msg_refresh($pdo, $caseId);
         $pdo->prepare("UPDATE persons SET conversation_state = 'FIXING_FIELD', active_case_id = ?, flow_temp = ? WHERE id = ?")
             ->execute([$caseId, json_encode(['fix_fields' => $fields, 'fix_labels' => $labelsList, 'fix_index' => 0], JSON_UNESCAPED_UNICODE), $case['person_id']]);
 

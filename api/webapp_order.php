@@ -324,6 +324,7 @@ try {
         // مدارک و بازدید سلامت دیگر اینجا گرفته نمی‌شوند؛ کاربر برایشان به «هاب بازدید»
         // (که در مرورگر داخلی بله باز می‌شود و دوربین واقعی دارد) هدایت می‌شود
         $pdo->prepare("UPDATE policy_cases SET status = 'AWAITING_DOCS' WHERE id = ?")->execute([$caseId]);
+        if (function_exists('intro_msg_refresh')) intro_msg_refresh($pdo, $caseId);
         notify_customer_app($pdo, $person['id'], $person['bale_chat_id'], 'درخواست ثبت شد',
             "📝 اطلاعات اولیه‌ی درخواست بیمه {$case['unique_code']} ثبت شد.\nبرای بارگذاری مدارک و ثبت نهایی، لطفاً به بخش «بازدید مدارک و سلامت خودرو» مراجعه کنید.",
             'success', $caseId);

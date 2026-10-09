@@ -472,12 +472,12 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
         $notifyText = "📋 معرفی‌نامه آقای / خانم *" . ($extractedArr['insured_name'] ?: 'نامشخص') . "* با موفقیت دریافت شد ✅\nبه محض تایید نهایی توسط کارشناس، ثبت خواهد شد.";
         $sent = bale_api('sendMessage', ['chat_id' => $chat_id, 'text' => $notifyText, 'reply_to_message_id' => $incoming_message_id, 'parse_mode' => 'Markdown'], $bot_token);
         $notify_message_id = $sent['message_id'] ?? null;
-    } elseif ($status === 'DONE') {
-        send_msg($chat_id, "✅ مدرک شما خوانده شد و در «صف پردازش هوشمند» منتظر تایید نهایی کارشناس است.", $bot_token, null, $incoming_message_id);
-    } elseif ($status === 'FAILED') {
-        send_msg($chat_id, "⚠️ مدرک شما دریافت شد اما هوش مصنوعی نتوانست اطلاعات را به‌طور خودکار بخواند. کارشناس به‌صورت دستی آن را بررسی می‌کند.", $bot_token, null, $incoming_message_id);
     } else {
-        send_msg($chat_id, "✅ مدرک شما دریافت شد و در صف بررسی دستی قرار گرفت.", $bot_token, null, $incoming_message_id);
+        // شناسه‌ی پیامِ «دریافت شد» برای همه‌ی مدارک نگه داشته می‌شود تا با «رد» حذف و با «تایید» به‌روز شود
+        if ($status === 'DONE') $sent = send_msg($chat_id, "✅ مدرک شما خوانده شد و در «صف پردازش هوشمند» منتظر تایید نهایی کارشناس است.", $bot_token, null, $incoming_message_id);
+        elseif ($status === 'FAILED') $sent = send_msg($chat_id, "⚠️ مدرک شما دریافت شد اما هوش مصنوعی نتوانست اطلاعات را به‌طور خودکار بخواند. کارشناس به‌صورت دستی آن را بررسی می‌کند.", $bot_token, null, $incoming_message_id);
+        else $sent = send_msg($chat_id, "✅ مدرک شما دریافت شد و در صف بررسی دستی قرار گرفت.", $bot_token, null, $incoming_message_id);
+        $notify_message_id = is_array($sent) ? ($sent['message_id'] ?? null) : null;
     }
 
     $stmt = $pdo->prepare("
@@ -1336,7 +1336,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
             $pdo->prepare("UPDATE persons SET flow_temp = ? WHERE id = ?")->execute([json_encode($ft, JSON_UNESCAPED_UNICODE), $person['id']]);
             send_msg($chat_id, "✅ {$label} ثبت شد.\nحالا مقدار «{$fixLabels[$nextIdx]}» را ارسال کنید:", $bot_token);
         } else {
-            $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_REVIEW' WHERE id = ?")->execute([$person['active_case_id']]);
+            $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_REVIEW' WHERE id = ?")->execute([$person['active_case_id']]); intro_msg_refresh($pdo, $person['active_case_id']);
             $pdo->prepare("UPDATE persons SET conversation_state = 'MAIN_MENU', flow_temp = NULL WHERE id = ?")->execute([$person['id']]);
             send_msg($chat_id, "✅ همه‌ی موارد با موفقیت اصلاح شد و دوباره در انتظار بررسی کارشناس قرار گرفت.", $bot_token, main_menu_kb($pdo, $chat_id));
         }
@@ -1709,7 +1709,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
 
             case 'AWAITING_FINAL_CONFIRM':
                 if ($text === '✅ بله، ثبت نهایی شود') {
-                    $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_REVIEW' WHERE id = ?")->execute([$person['active_case_id']]);
+                    $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_REVIEW' WHERE id = ?")->execute([$person['active_case_id']]); intro_msg_refresh($pdo, $person['active_case_id']);
                     $case = get_case_row($pdo, $person['active_case_id']);
                     $pdo->prepare("UPDATE persons SET conversation_state = 'MAIN_MENU', active_case_id = NULL, flow_temp = NULL WHERE id = ?")->execute([$person['id']]);
                     send_msg($chat_id, "🎉 درخواست شما با شناسه‌ی {$case['unique_code']} ثبت نهایی شد و به کارشناسان ارجاع شد.\nطی ساعات آینده نتیجه‌ی بررسی درخواست شما از طریق همین ربات به اطلاعتان می‌رسد.\nاز طریق «بیمه‌نامه‌های من» می‌توانید وضعیت آن را پیگیری کنید.", $bot_token, main_menu_kb($pdo, $chat_id));

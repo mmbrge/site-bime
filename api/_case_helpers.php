@@ -285,7 +285,7 @@ function render_intro_status_message($pdo, $introId) {
     $stmt->execute([$introId]);
     $cases = $stmt->fetchAll();
     if ($cases) {
-        $caseLabels = ['REGISTERED' => 'در حال تکمیل اطلاعات', 'DOCS_PENDING' => 'در انتظار اصلاح',
+        $caseLabels = ['NEW' => 'ثبتِ اولیه', 'REGISTERED' => 'در حال تکمیل اطلاعات', 'AWAITING_DOCS' => 'در انتظار مدارک', 'DOCS_PENDING' => 'در انتظار اصلاح',
                        'DOCS_REVIEW' => 'در انتظار تایید مدارک', 'ISSUING' => 'در حال صدور',
                        'ISSUED' => 'صادر شده ✅', 'REJECTED' => 'رد شده'];
         $msg .= "\n\n📋 بیمه‌نامه‌های ثبت‌شده:";
@@ -311,6 +311,17 @@ function sync_intro_group_message($pdo, $introId, $bot_token = null) {
 
     $newMsgId = send_or_edit_group_status($row['group_chat_id'], $row['status_message_id'], $text, $bot_token);
     $pdo->prepare("UPDATE introductions SET status_message_id = ? WHERE id = ?")->execute([$newMsgId, $introId]);
+}
+
+// بعد از هر تغییرِ وضعیتِ یک بیمه‌نامه‌ی کارکنان: همان یک پیامِ معرفی‌نامه در گروه (تعدادِ صادره و وضعیتِ هر بیمه‌نامه) به‌روز شود.
+// خطای بله نباید جلوی کارِ اصلی را بگیرد.
+function intro_msg_refresh($pdo, $caseId) {
+    try {
+        $st = $pdo->prepare("SELECT introduction_id FROM policy_cases WHERE id = ?");
+        $st->execute([intval($caseId)]);
+        $iid = intval($st->fetchColumn());
+        if ($iid) sync_intro_group_message($pdo, $iid);
+    } catch (Throwable $e) { error_log('[intro_msg_refresh] ' . $e->getMessage()); }
 }
 
 function get_site_url($pdo) {
@@ -706,6 +717,7 @@ function maybe_advance_case_status($pdo, $caseId, $bot_token = null) {
     $healthOk = in_array($healthStatus, ['not_applicable', 'submitted', 'approved'], true);
     if ($docsOk && $healthOk) {
         $pdo->prepare("UPDATE policy_cases SET status = 'DOCS_REVIEW' WHERE id = ?")->execute([$caseId]);
+        intro_msg_refresh($pdo, $caseId);
         $stmt = $pdo->prepare("SELECT pc.*, p.bale_chat_id FROM policy_cases pc JOIN persons p ON pc.person_id = p.id WHERE pc.id = ?");
         $stmt->execute([$caseId]);
         $full = $stmt->fetch();
@@ -1371,6 +1383,7 @@ function delete_policy_case($pdo, $siteRoot, $caseId, $userId = null) {
         foreach ($it as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); }
         @rmdir($abs);
     }
+    if (!empty($case['introduction_id'])) { try { sync_intro_group_message($pdo, intval($case['introduction_id'])); } catch (Throwable $e) {} }
     return ['ok' => true, 'mode' => 'deleted'];
 }
 
@@ -1439,6 +1452,7 @@ function withdraw_policy_case($pdo, $case, $userId = null) {
         error_log('[withdraw_policy_case] ' . $e->getMessage());
         return ['ok' => false, 'error' => 'خطا در خارج‌کردنِ درخواست از فاز عملیاتی.'];
     }
+    if (!empty($case['introduction_id'])) { try { sync_intro_group_message($pdo, intval($case['introduction_id'])); } catch (Throwable $e) {} }
     return ['ok' => true, 'mode' => 'withdrawn',
             'message' => 'چون برای این درخواست مدرکِ تاییدشده وجود داشت، حذف نشد و فقط از فاز عملیاتی خارج شد (مدارکِ بایگانی‌شده سر جایشان ماندند).'];
 }
@@ -1558,6 +1572,7 @@ function case_try_advance_to_issuing($pdo, $siteRoot, $caseId) {
         return 'docs_done';
     }
     $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
+    intro_msg_refresh($pdo, $caseId);
     notify_customer_app($pdo, $case['person_id'], $case['bale_chat_id'], 'پرونده در حال صدور',
         "✅ مدارک" . ($case['insurance_type'] === 'BODY' ? ' و بازدید سلامتِ' : ' ') . " مربوط به {$ctx} تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.", 'success', $caseId);
     return 'issuing';
