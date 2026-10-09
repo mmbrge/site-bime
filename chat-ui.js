@@ -1511,6 +1511,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             items.push([MUTE.own(key) ? 'fa-bell' : 'fa-bell-slash', MUTE.own(key) ? 'وصلِ صدای این گفتگو' : 'قطعِ صدای این گفتگو', () => { MUTE.toggle(key); this.paintMute(); }]);
             items.push(null);
             items.push(['fa-broom', 'پاک کردنِ تاریخچه‌ی گفتگو', () => this.clearHistory(key), 'danger']);
+            if (this.o.mode === 'full') items.push(['fa-trash-can', 'حذفِ گفتگو', () => this.removeConv(key), 'danger']);
             if (c.canClose) {
                 if (c.closed) items.push(['fa-link', 'وصل کردنِ دوباره‌ی گفتگو', () => this.reopen(key), c.canReopen ? '' : 'disabled', 'فقط کسی که قطع کرده (یا مدیر کل)']);
                 else items.push(['fa-ban', 'قطعِ گفتگو', () => this.closeConv(key), 'danger']);
@@ -1528,6 +1529,29 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             this.toast('تاریخچه پاک شد.', 'success');
             if (key === this.key) { this.sig = ''; this.stopSelect(); await this.poll(); }
             if (this.o.mode === 'full') this.loadThreads(true);
+        }
+        // حذفِ گفتگو: تاریخچه پاک و گفتگو از فهرستِ سمتِ راست برداشته می‌شود (با پیامِ تازه دوباره می‌آید).
+        // مدیر کل برای هر دو طرف (یا فقط خودش)؛ بقیه فقط برای خودشان
+        async removeConv(key) {
+            const c = this.convInfo(key), who = c.title ? ' با «' + c.title + '»' : '';
+            let v = 'me';
+            if (this.caps && this.caps.admin) {
+                v = await dialog({ title: 'حذفِ گفتگو', message: `گفتگو${who} حذف شود؟ تاریخچه پاک می‌شود و گفتگو از فهرست هم برداشته می‌شود.`, icon: 'fa-trash-can', danger: true, theme: this.o.theme,
+                    choices: [{ value: 'both', danger: true, label: 'برای هر دو طرف', note: 'تاریخچه و خودِ گفتگو برای هر دو طرف حذف می‌شود.' },
+                              { value: 'me', label: 'فقط برای من', note: 'فقط از فهرست و صفحه‌ی شما حذف می‌شود؛ طرفِ مقابل همه‌چیز را دارد.' }] });
+                if (!v) return;
+            } else {
+                const ok = await dialog({ title: 'حذفِ گفتگو', message: `گفتگو${who} فقط برای شما حذف شود؟ تاریخچه از صفحه‌ی شما پاک و گفتگو از فهرستتان برداشته می‌شود؛ طرفِ مقابل همه‌چیز را دارد. با پیامِ تازه، گفتگو دوباره در فهرست می‌آید.`,
+                    icon: 'fa-trash-can', danger: true, theme: this.o.theme, choices: [{ value: 'me', danger: true, label: 'حذف کن' }] });
+                if (!ok) return;
+            }
+            const d = await this.call('chat_remove', { key, scope: v });
+            if (!d.ok) return this.toast(d.error || 'انجام نشد.', 'error');
+            this.toast(v === 'both' ? 'گفتگو برای هر دو طرف حذف شد.' : 'گفتگو حذف شد.', 'success');
+            this.threads = this.threads.filter(x => x.key !== key);
+            if (key === this.key) this.back(); else this.renderThreads();
+            this.renderChips && this.renderChips();
+            this.loadThreads(true);
         }
         async closeConv(key) {
             const c = this.convInfo(key);

@@ -67,7 +67,7 @@ if (!$companies) {
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=2">
-<script src="../chat-ui.js?v=9"></script>
+<script src="../chat-ui.js?v=10"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">

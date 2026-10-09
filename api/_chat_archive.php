@@ -90,7 +90,7 @@ function chat_archive_messages($pdo, $key) {
         foreach ($st->fetchAll() as $h) {
             $who = chat_archive_viewer_name($pdo, $h['viewer']);
             if ($h['msg_id']) $hidden[(int)$h['msg_id']][] = $who;
-            if ($h['upto_id']) $clears[] = ['who' => $who, 'upto' => (int)$h['upto_id'], 'date' => chat_jdate(chat_ts($h['created_at'])), 'time' => $h['created_at'] ? date('H:i', strtotime($h['created_at'])) : ''];
+            if ($h['upto_id']) $clears[] = ['who' => $who . ($h['msg_id'] !== null && (int)$h['msg_id'] === 0 ? ' - حذفِ گفتگو' : ''), 'upto' => (int)$h['upto_id'], 'date' => chat_jdate(chat_ts($h['created_at'])), 'time' => $h['created_at'] ? date('H:i', strtotime($h['created_at'])) : ''];
         }
     }
     $out = [];

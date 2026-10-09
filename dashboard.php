@@ -4163,7 +4163,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=2"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
-    <script src="chat-ui.js?v=9"></script>
+    <script src="chat-ui.js?v=10"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
