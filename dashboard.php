@@ -391,9 +391,51 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .su-seg { display: inline-flex; background: #f1f5f9; border-radius: 12px; padding: 3px; gap: 2px; }
         .su-seg button { font-size: 11px; font-weight: 700; color: #64748b; padding: 6px 12px; border-radius: 9px; transition: all .2s; }
         .su-seg button.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+        @media (max-width: 640px) { .su-seg { width: 100%; overflow-x: auto; } .su-seg button { white-space: nowrap; flex: 1 0 auto; padding: 6px 10px; } }
         .su-chip { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; margin-block: 2px; border-radius: 999px; background: #f1f5f9; color: #475569; }
         .su-chip.ad { background: #eef2ff; color: #4338ca; }
         .su-chip.co { background: #ecfdf5; color: #047857; }
+        /* کاربران › کارکنانِ ربات بله */
+        .sb-hero { display: flex; align-items: center; gap: 14px; color: #fff; border-radius: 18px; padding: 16px 18px; position: relative; overflow: hidden;
+                   background: radial-gradient(circle at 12% 120%, rgba(56,189,248,.35), transparent 45%), linear-gradient(120deg, #0f172a, #1e3a8a 55%, #0e7490); box-shadow: 0 10px 30px -12px rgba(30,58,138,.55); }
+        .sb-hero-ic { width: 48px; height: 48px; border-radius: 15px; background: rgba(255,255,255,.14); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+        .sb-rules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .sb-rules span { font-size: 10.5px; font-weight: 700; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 3px 10px; }
+        .sb-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+        @media (max-width: 900px) { .sb-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sb-stats .sb-stat:first-child { grid-column: span 2; } }
+        .sb-stat { --c: #2563eb; position: relative; text-align: right; background: #fff; border: 1px solid #e2e8f0; border-radius: 15px; padding: 10px 14px; transition: all .18s; overflow: hidden; }
+        .sb-stat::before { content: ''; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 4px; background: var(--c); opacity: .85; }
+        .sb-stat i { position: absolute; left: 12px; top: 12px; color: var(--c); opacity: .22; font-size: 22px; }
+        .sb-stat b { display: block; font-size: 21px; font-weight: 900; color: #0f172a; line-height: 1.3; }
+        .sb-stat small { font-size: 11px; font-weight: 700; color: #64748b; }
+        .sb-stat:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -10px rgba(15,23,42,.35); }
+        .sb-stat.on { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+        .sb-stat.g { --c: #16a34a; } .sb-stat.s { --c: #64748b; } .sb-stat.i { --c: #4f46e5; } .sb-stat.a { --c: #d97706; }
+        .sb-adm { display: flex; align-items: center; gap: 10px; background: linear-gradient(90deg, #fffbeb, #fff); border: 1px solid #fde68a; border-radius: 14px; padding: 10px 12px; font-size: 12px; }
+        .sb-adm-ic { width: 36px; height: 36px; border-radius: 11px; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .sb-st { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+        .sb-st.in { background: #dcfce7; color: #15803d; } .sb-st.out { background: #f1f5f9; color: #64748b; } .sb-st.ad { background: #fef3c7; color: #b45309; }
+        .sb-lock { display: inline-flex; align-items: center; gap: 5px; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; background: #eef2ff; color: #4338ca; border-radius: 8px; padding: 2px 8px; }
+        .sb-lock.off { font-family: inherit; background: #f8fafc; color: #94a3b8; font-weight: 700; }
+        .sb-cnt { display: inline-flex; gap: 4px; }
+        .sb-cnt span { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 800; border-radius: 8px; padding: 2px 7px; background: #f1f5f9; color: #475569; }
+        .sb-cnt span.ok { background: #ecfdf5; color: #047857; }
+        .sb-act button { font-size: 11px; font-weight: 800; border-radius: 9px; padding: 5px 9px; margin-inline-start: 4px; transition: background .15s; }
+        .sb-act .c { background: #eff6ff; color: #1d4ed8; } .sb-act .c:hover { background: #dbeafe; }
+        .sb-act .o { background: #fff7ed; color: #c2410c; } .sb-act .o:hover { background: #ffedd5; }
+        .sb-act .u { background: #f5f3ff; color: #6d28d9; } .sb-act .u:hover { background: #ede9fe; }
+        @media (max-width: 640px) {   /* موبایل: هر کارمند یک کارت */
+            .sb-table thead { display: none; }
+            .sb-table, .sb-table tbody, .sb-table tr, .sb-table td { display: block; }
+            .sb-table tr { border: 1px solid #e2e8f0 !important; border-radius: 14px; margin: 10px; padding: 4px 2px; background: #fff; }
+            .sb-table td { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 12px !important; text-align: left; }
+            .sb-table td[data-l]::before { content: attr(data-l); font-size: 10.5px; font-weight: 700; color: #94a3b8; text-align: right; flex-shrink: 0; }
+            .sb-table td:first-child { justify-content: flex-start; text-align: right; border-bottom: 1px dashed #e2e8f0; padding-bottom: 10px !important; }
+            .sb-table td.sb-act { justify-content: flex-start; flex-wrap: wrap; gap: 6px; padding-top: 10px !important; }
+            .sb-table td.sb-act:empty { display: none; }
+            .sb-table td.sb-act button { margin: 0; }
+            .sb-table td[colspan] { display: block; text-align: center; }
+        }
         .su-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .su-role-grid button { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 700; color: #475569;
             border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 8px; background: #fff; transition: all .2s; }
@@ -1028,11 +1070,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <a href="#" onclick="switchTab('filemanager')" id="nav-filemanager" class="nav-item menu-link"><i class="fas fa-folder-tree ml-2"></i> بایگانی فایل‌ها</a>
                         <?php if (!$isLiaison): ?>
                         <div class="menu-sub">
-                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-users ml-2"></i><span class="ms-t">کاربران<small>ربات بله، کاربران پنل، لاگ ورود</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
+                            <button type="button" class="menu-sub-trigger" aria-expanded="false" onclick="toggleMenuSub(this, event)"><i class="fas fa-users ml-2"></i><span class="ms-t">کاربران<small>کارکنانِ ربات بله، پنل و شرکت‌ها، لاگ ورود</small></span><i class="fas fa-chevron-left ms-arrow"></i></button>
                             <div class="menu-subpanel">
                                 <div class="ms-head">کاربران</div>
-                                <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item menu-link"><i class="fas fa-robot ml-2"></i> کاربران ربات بله</a>
-                                <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران (داخلی و شرکتی)</a><a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a><?php endif; ?>
+                                <a href="#" onclick="switchTab('staff-users')" id="nav-staff-users" class="nav-item menu-link"><i class="fas fa-user-shield ml-2"></i> کاربران <small class="text-[10px] text-slate-400 font-bold mr-1">کارکنانِ ربات بله<?php if($_SESSION['role'] === 'ADMIN'): ?>، داخلی و شرکتی<?php endif; ?></small></a>
+                                <?php if($_SESSION['role'] === 'ADMIN'): ?><a href="#" onclick="switchTab('login-logs')" id="nav-login-logs" class="nav-item menu-link"><i class="fas fa-right-to-bracket ml-2"></i> لاگ ورود و خروج</a><?php endif; ?>
                             </div>
                         </div>
                         <?php if($_SESSION['role'] === 'ADMIN'): ?>
@@ -1325,42 +1367,103 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
 
         <!-- ======================= تب صف پردازش OCR ======================= -->
-        <!-- ======================= تب کاربران ======================= -->
-        <div id="tab-users" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+        <!-- ======================= کاربران: کارکنانِ ربات بله (همه‌ی نقش‌های دارای دسترسی) + کاربرانِ داخلی و شرکتی (مدیر کل) ======================= -->
+        <?php if (!$isLiaison): $suAdmin = ($_SESSION['role'] ?? '') === 'ADMIN'; ?>
+        <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
+            <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-users text-blue-500 ml-2"></i>کاربران ربات بله</h1>
-                    <p class="text-xs text-slate-400 mt-1">کاربرانی که با ربات تعامل داشته یا پرونده دارند.</p>
+                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران</h1>
+                    <p class="text-xs text-slate-400 mt-1">کارکنانِ ربات بله<?php if ($suAdmin): ?>، کاربرانِ داخلیِ پنل (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما) و کاربرانِ شرکت‌ها - همه یک‌جا. ویرایش و حذف با رمزِ خودتان تایید می‌شود<?php else: ?>: وضعیتِ ورود به ربات، شماره‌ی قفل‌شده و پرونده‌ها<?php endif; ?>.</p>
                 </div>
-                <div class="flex items-center gap-2 w-full md:w-auto">
-                    <input type="text" id="user-search-input" placeholder="جستجو با نام، کد ملی، کد پرسنلی یا شماره تماس..." class="border rounded-lg px-3 py-2 text-xs font-bold flex-1 md:w-72 outline-none focus:border-blue-500">
-                    <button onclick="searchUsers()" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-700"><i class="fas fa-search"></i></button>
-                    <button onclick="loadUsers()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg font-bold text-xs transition-colors hover-target"><i class="fas fa-sync-alt"></i></button>
+                <div class="flex gap-2 flex-wrap">
+                    <?php if ($suAdmin): ?><button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود و خروج</button><?php endif; ?>
+                    <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
+                    <?php if ($suAdmin): ?><button onclick="openAddUserModal()" class="su-staff-only bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن کاربر</button><?php endif; ?>
                 </div>
             </div>
+            <p id="su-schema-note" class="su-staff-only hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">برای ویرایش، حذف، لاگ ورود و ورود با ربات، مایگریشن migrations/016_users_bot_login.sql را اجرا کنید.</p>
 
-            <div class="card overflow-hidden border-blue-100">
-                <div class="overflow-x-auto max-h-[600px]">
-                    <table class="w-full text-right">
-                        <thead class="bg-blue-50 text-blue-700 text-xs font-bold sticky top-0">
-                            <tr>
-                                <th class="p-4">نام</th>
-                                <th class="p-4">کد ملی</th>
-                                <th class="p-4">کد پرسنلی</th>
-                                <th class="p-4">شرکت</th>
-                                <th class="p-4">شماره تماس</th>
-                                <th class="p-4">تاریخ عضویت</th>
-                                <th class="p-4">وضعیت مکالمه</th>
-                                <th class="p-4">عملیات</th>
-                            </tr>
-                        </thead>
-                        <tbody id="users-body" class="text-sm font-bold divide-y divide-slate-100">
-                            <tr><td colspan="8" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr>
-                        </tbody>
+            <!-- جستجو و فیلتر -->
+            <div class="card p-3 flex flex-wrap items-center gap-2">
+                <div class="relative flex-1 min-w-[220px]">
+                    <i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                    <input type="search" id="su-q" oninput="renderStaffUsers()" placeholder="جستجو: نام، کد ملی، کد پرسنلی، موبایل، شرکت، نقش..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs">
+                </div>
+                <div class="su-seg" id="su-type-seg">
+                    <button type="button" data-v="BOT" <?php if (!$suAdmin): ?>class="active"<?php endif; ?> onclick="setUserTypeFilter('BOT')"><i class="fas fa-robot ml-1"></i>کارکنان (ربات بله) <span id="su-n-bot"></span></button>
+                    <?php if ($suAdmin): ?>
+                    <button type="button" data-v="" class="active" onclick="setUserTypeFilter('')">همه <span id="su-n-all"></span></button>
+                    <button type="button" data-v="STAFF" onclick="setUserTypeFilter('STAFF')"><i class="fas fa-user-tie ml-1"></i>داخلی <span id="su-n-staff"></span></button>
+                    <button type="button" data-v="COMPANY" onclick="setUserTypeFilter('COMPANY')"><i class="fas fa-building ml-1"></i>شرکتی <span id="su-n-company"></span></button>
+                    <?php endif; ?>
+                </div>
+                <?php if ($suAdmin): ?>
+                <select id="su-role-filter" onchange="renderStaffUsers()" class="su-staff-only border rounded-xl px-2 py-2 text-xs font-bold">
+                    <option value="">همه‌ی نقش‌ها</option>
+                    <optgroup label="کارکنانِ بیمه با ما"><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option>
+                    <option value="LIAISON_ALL">کارمند بیمه با ما (عادی و پارسیان)</option><option value="COMPANY_LIAISON">کارمند بیمه با ما (عادی)</option><option value="PARSIAN">کارمند بیمه با ما (پارسیان)</option><option value="LIFE">کاربر بیمه عمر</option></optgroup>
+                    <optgroup label="بیرون از مجموعه"><option value="COMPANY">کاربر شرکت</option></optgroup>
+                </select>
+                <?php endif; ?>
+                <select id="sb-sort" onchange="renderBotUsers()" class="su-bot-only hidden border rounded-xl px-2 py-2 text-xs font-bold">
+                    <option value="">مرتب‌سازی: آخرین ورود</option><option value="name">نام</option><option value="cases">بیشترین پرونده</option><option value="seen">آخرین بازدید</option>
+                </select>
+            </div>
+
+            <?php if ($suAdmin): ?>
+            <div id="su-staff-wrap" class="space-y-4">
+            <div class="card overflow-x-auto">
+                <div class="flex items-center justify-between px-3 pt-3 text-[11px] text-slate-500 flex-wrap gap-2">
+                    <span><span class="bot-dot on"></span> وصل به ربات بله &nbsp;&nbsp; <span class="bot-dot"></span> هنوز وارد ربات نشده</span>
+                    <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="su-show-deleted" onchange="loadStaffUsers()"> نمایش حذف‌شده‌ها</label>
+                </div>
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr>
+                        <th class="p-3 text-right">نام</th><th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نقش</th>
+                        <th class="p-3 text-right">شرکت / کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین بازدید</th><th class="p-3 text-right"></th>
+                    </tr></thead>
+                    <tbody id="su-body"><tr><td colspan="7" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+
+            <!-- درخواست‌های بازیابی رمز (از ربات بله‌ی شرکت‌ها) - تاییدشده/ردشده‌ها ۳۰ روز بعد خودکار پاک می‌شوند -->
+            <div id="su-resets-card" class="card p-4 border-amber-100 hidden">
+                <h2 class="font-bold text-amber-700 text-sm mb-1"><i class="fas fa-key ml-1"></i>درخواست‌های بازیابی رمز <span id="su-resets-count" class="text-[11px] bg-amber-100 rounded-full px-2 py-0.5"></span></h2>
+                <p class="text-[10px] text-slate-400 mb-2">درخواست‌های تاییدشده یا ردشده، ۳۰ روز بعد از بررسی خودکار پاک می‌شوند.</p>
+                <div id="su-resets" class="space-y-2"></div>
+            </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- کارکنانِ ربات بله: قفلِ شماره ↔ کد ملی، ورود/خروج، سوییچِ مدیر کل (api/_bot_identity.php) -->
+            <div id="su-bot-wrap" data-perm-skip class="<?php echo $suAdmin ? 'hidden ' : ''; ?>space-y-3">
+                <div class="sb-hero">
+                    <span class="sb-hero-ic"><i class="fas fa-robot"></i></span>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-black text-[15px]">کارکنانِ ربات بله</h3>
+                        <div class="sb-rules">
+                            <span><i class="fas fa-lock ml-1"></i>هر شماره فقط به یک کد ملی قفل می‌شود</span>
+                            <span><i class="fas fa-id-card ml-1"></i>هر کد ملی فقط با همان شماره وارد می‌شود</span>
+                            <span><i class="fas fa-right-from-bracket ml-1"></i>کاربر می‌تواند از حسابش خارج و دوباره وارد شود</span>
+                            <span><i class="fas fa-crown ml-1"></i>فقط شماره‌ی مدیر کل روی همه سوییچ می‌کند</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sb-stats" id="sb-stats"></div>
+                <div id="sb-admins" class="space-y-2"></div>
+                <div class="card overflow-x-auto">
+                    <table class="w-full text-xs sb-table">
+                        <thead class="bg-slate-50 text-slate-500"><tr>
+                            <th class="p-3 text-right">کارمند</th><th class="p-3 text-right">کد ملی / پرسنلی</th><th class="p-3 text-right">شرکت</th>
+                            <th class="p-3 text-right">شماره‌ی قفل‌شده</th><th class="p-3 text-right">وضعیت ربات</th><th class="p-3 text-right">ورود / خروج</th>
+                            <th class="p-3 text-right">پرونده‌ها</th><th class="p-3 text-right"></th>
+                        </tr></thead>
+                        <tbody id="sb-body"><tr><td colspan="8" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                     </table>
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- ======================= مودال چت مستقیم با کاربر ======================= -->
         <div id="user-chat-modal" class="fixed inset-0 bg-black/50 z-[1200] hidden items-start justify-center pt-24 px-4 pb-4 overflow-y-auto">
@@ -2356,62 +2459,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button onclick="saveFinanceSettings()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg text-sm">
                 <i class="fas fa-save ml-2"></i> ذخیره تنظیمات مالی
             </button>
-        </div>
-
-        <!-- ======================= کاربران داخلیِ پنل (ADMIN/OPERATOR/FINANCE/COMPANY_LIAISON) ======================= -->
-        <div id="tab-staff-users" class="tab-content max-w-7xl mx-auto w-full space-y-4 flex-1 hidden">
-            <div class="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                    <h1 class="text-2xl font-black text-slate-800"><i class="fas fa-user-shield text-blue-500 ml-2"></i>کاربران</h1>
-                    <p class="text-xs text-slate-400 mt-1">کاربرانِ داخلیِ پنل (مدیر کل، کارشناس صدور، کارشناس مالی، کارمند بیمه با ما) و کاربرانِ شرکت‌ها. ویرایش و حذف با رمزِ خودتان تایید می‌شود.</p>
-                </div>
-                <div class="flex gap-2 flex-wrap">
-                    <button onclick="switchTab('login-logs')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-right-to-bracket ml-1"></i>لاگ ورود و خروج</button>
-                    <button onclick="loadStaffUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i> بروزرسانی</button>
-                    <button onclick="openAddUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>افزودن کاربر</button>
-                </div>
-            </div>
-            <p id="su-schema-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">برای ویرایش، حذف، لاگ ورود و ورود با ربات، مایگریشن migrations/016_users_bot_login.sql را اجرا کنید.</p>
-
-            <!-- جستجو و فیلتر -->
-            <div class="card p-3 flex flex-wrap items-center gap-2">
-                <div class="relative flex-1 min-w-[220px]">
-                    <i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-                    <input type="search" id="su-q" oninput="renderStaffUsers()" placeholder="جستجو: نام، نام کاربری، موبایل، شرکت، نقش..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs">
-                </div>
-                <div class="su-seg" id="su-type-seg">
-                    <button type="button" data-v="" class="active" onclick="setUserTypeFilter('')">همه <span id="su-n-all"></span></button>
-                    <button type="button" data-v="STAFF" onclick="setUserTypeFilter('STAFF')"><i class="fas fa-user-tie ml-1"></i>داخلی <span id="su-n-staff"></span></button>
-                    <button type="button" data-v="COMPANY" onclick="setUserTypeFilter('COMPANY')"><i class="fas fa-building ml-1"></i>شرکتی <span id="su-n-company"></span></button>
-                </div>
-                <select id="su-role-filter" onchange="renderStaffUsers()" class="border rounded-xl px-2 py-2 text-xs font-bold">
-                    <option value="">همه‌ی نقش‌ها</option>
-                    <optgroup label="کارکنانِ بیمه با ما"><option value="ADMIN">مدیر کل</option><option value="OPERATOR">کارشناس صدور</option><option value="FINANCE">کارشناس مالی</option>
-                    <option value="LIAISON_ALL">کارمند بیمه با ما (عادی و پارسیان)</option><option value="COMPANY_LIAISON">کارمند بیمه با ما (عادی)</option><option value="PARSIAN">کارمند بیمه با ما (پارسیان)</option><option value="LIFE">کاربر بیمه عمر</option></optgroup>
-                    <optgroup label="بیرون از مجموعه"><option value="COMPANY">کاربر شرکت</option></optgroup>
-                </select>
-            </div>
-
-            <div class="card overflow-x-auto">
-                <div class="flex items-center justify-between px-3 pt-3 text-[11px] text-slate-500 flex-wrap gap-2">
-                    <span><span class="bot-dot on"></span> وصل به ربات بله &nbsp;&nbsp; <span class="bot-dot"></span> هنوز وارد ربات نشده</span>
-                    <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="su-show-deleted" onchange="loadStaffUsers()"> نمایش حذف‌شده‌ها</label>
-                </div>
-                <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-3 text-right">نام</th><th class="p-3 text-right">نام کاربری</th><th class="p-3 text-right">نقش</th>
-                        <th class="p-3 text-right">شرکت / کد پرسنلی</th><th class="p-3 text-right">موبایل</th><th class="p-3 text-right">آخرین بازدید</th><th class="p-3 text-right"></th>
-                    </tr></thead>
-                    <tbody id="su-body"><tr><td colspan="7" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
-                </table>
-            </div>
-
-            <!-- درخواست‌های بازیابی رمز (از ربات بله‌ی شرکت‌ها) - تاییدشده/ردشده‌ها ۳۰ روز بعد خودکار پاک می‌شوند -->
-            <div id="su-resets-card" class="card p-4 border-amber-100 hidden">
-                <h2 class="font-bold text-amber-700 text-sm mb-1"><i class="fas fa-key ml-1"></i>درخواست‌های بازیابی رمز <span id="su-resets-count" class="text-[11px] bg-amber-100 rounded-full px-2 py-0.5"></span></h2>
-                <p class="text-[10px] text-slate-400 mb-2">درخواست‌های تاییدشده یا ردشده، ۳۰ روز بعد از بررسی خودکار پاک می‌شوند.</p>
-                <div id="su-resets" class="space-y-2"></div>
-            </div>
         </div>
 
         <!-- ======================= لاگ ورود ======================= -->
@@ -4148,7 +4195,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
-        function permCan(page, op = 'view') { return !PERM.custom || ((PERM.p || {})[page] || []).includes(op); }
+        function permCan(page, op = 'view') {
+            if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
+            return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
+        }
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
         window.permCan = permCan;
@@ -8420,11 +8470,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         let staffCompanies = [];      // فهرست شرکت‌ها برای انتخابگرِ کاربرانِ شرکتی
         let staffMeId = 0;
-        let userTypeFilter = '';
+        let userTypeFilter = IS_ADMIN ? '' : 'BOT';
         const userKey = u => u.type + ':' + u.id;
         const findUser = (type, id) => staffUsersCache.find(x => x.type === type && Number(x.id) === Number(id));
 
         async function loadStaffUsers() {
+            if (permCan('users')) loadBotUsers();
+            if (!IS_ADMIN || !document.getElementById('su-staff-wrap')) return;
             const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({action: 'list', include_deleted: document.getElementById('su-show-deleted').checked})});
             const data = await res.json();
@@ -8467,16 +8519,102 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         setInterval(refreshStaffPresence, 5000);
         function setUserTypeFilter(v) {
             userTypeFilter = v;
+            const bot = v === 'BOT';
             document.querySelectorAll('#su-type-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            document.getElementById('su-staff-wrap')?.classList.toggle('hidden', bot);
+            document.getElementById('su-bot-wrap')?.classList.toggle('hidden', !bot);
+            document.querySelectorAll('#tab-staff-users .su-staff-only:not(#su-schema-note)').forEach(e => e.classList.toggle('hidden', bot));
+            document.querySelectorAll('#tab-staff-users .su-bot-only').forEach(e => e.classList.toggle('hidden', !bot));
+            if (bot) { document.getElementById('su-schema-note')?.classList.add('hidden'); renderBotUsers(); return; }
             if (staffUsersCache.length) renderStaffUsers();
         }
+
+        // ---------- کارکنانِ ربات بله (همان صفحه‌ی «کاربران»): قفلِ شماره ↔ کد ملی، ورود/خروج، سوییچِ مدیر کل ----------
+        let botUsersCache = [], botAdmins = [], botStateFilter = '';
+        async function loadBotUsers() {
+            try {
+                const r = await fetch('api/user_actions.php?action=bot_list');
+                const d = await r.json();
+                if (!d.ok) { showToast(d.error || 'خطا در دریافتِ کارکنانِ ربات', 'error'); return; }
+                botUsersCache = d.data || []; botAdmins = d.admins || [];
+                const n = document.getElementById('su-n-bot'); if (n) n.textContent = '(' + faDigits(String(botUsersCache.length)) + ')';
+                if (userTypeFilter === 'BOT') renderBotUsers();
+            } catch (e) {
+                const b = document.getElementById('sb-body'); if (b) b.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
+            }
+        }
+        const BOT_STATE = {IN: ['in', 'fa-circle-check', 'وارد است'], OUT: ['out', 'fa-right-from-bracket', 'خارج شده'], ADMIN: ['ad', 'fa-crown', 'مدیر کل رویش است']};
+        function setBotStateFilter(v) { botStateFilter = botStateFilter === v ? '' : v; renderBotUsers(); }
+        function renderBotUsers() {
+            const body = document.getElementById('sb-body');
+            if (!body) return;
+            const q = p2e(document.getElementById('su-q').value.trim()).toLowerCase();
+            const all = botUsersCache, by = f => all.filter(f).length;
+            const tiles = [['', 'fa-users', 'همه‌ی کارکنانِ ربات', all.length, 'b'], ['IN', 'fa-signal', 'الان وارد', by(u => u.state === 'IN'), 'g'],
+                           ['OUT', 'fa-right-from-bracket', 'خارج‌شده', by(u => u.state === 'OUT'), 's'], ['LOCK', 'fa-lock', 'شماره‌ی قفل‌شده', by(u => u.bot_phone), 'i'],
+                           ['ADMIN', 'fa-crown', 'مدیر کل رویش', by(u => u.state === 'ADMIN'), 'a']];
+            document.getElementById('sb-stats').innerHTML = tiles.map(([k, ic, t, n, c]) =>
+                `<button type="button" class="sb-stat ${c} ${botStateFilter === k ? 'on' : ''}" onclick="setBotStateFilter('${k}')"><i class="fas ${ic}"></i><b>${faDigits(String(n))}</b><small>${t}</small></button>`).join('');
+            document.getElementById('sb-admins').innerHTML = botAdmins.map(a => `<div class="sb-adm">
+                    <span class="sb-adm-ic"><i class="fas fa-crown"></i></span>
+                    <div class="flex-1 min-w-0"><p class="font-black text-slate-800">${iiEsc(a.admin_name || a.sender_name || 'مدیر کل')} <span class="font-mono text-[11px] text-amber-700" dir="ltr">${faDigits(a.phone || '')}</span>
+                        <span class="font-bold text-slate-600">— ${a.person_id ? `الان روی <b class="text-slate-900">${iiEsc(a.full_name || 'بی‌نام')}</b> <span class="font-mono">(${faDigits(a.national_code || '')})</span>` : 'الان روی هیچ حسابی نیست'}</span></p>
+                      <p class="text-[10.5px] text-slate-500">${a.displaced_chat ? '<i class="fas fa-rotate-left ml-1"></i>خودِ این شخص هم در ربات وارد بود؛ با خروج/سوییچِ مدیر، اتصالش برمی‌گردد · ' : ''}آخرین سوییچ: ${a.updated_at ? faDigits(toJalali(a.updated_at)) : '—'}</p></div>
+                    <span class="su-chip ad"><i class="fas fa-shuffle ml-1"></i>سوییچ آزاد</span></div>`).join('');
+            const sort = document.getElementById('sb-sort').value;
+            let list = all.filter(u => (!botStateFilter || (botStateFilter === 'LOCK' ? !!u.bot_phone : u.state === botStateFilter))
+                && (!q || [u.full_name, u.national_code, u.personnel_code, u.mobile_number, u.bot_phone, u.company_name].join(' ').toLowerCase().includes(q)));
+            if (sort === 'name') list = list.slice().sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'));
+            if (sort === 'cases') list = list.slice().sort((a, b) => Number(b.case_count) - Number(a.case_count));
+            if (sort === 'seen') list = list.slice().sort((a, b) => String(b.last_seen_at || '').localeCompare(String(a.last_seen_at || '')));
+            const canEdit = permCan('users', 'edit');
+            body.innerHTML = list.map(u => {
+                const [cls, ic, lab] = BOT_STATE[u.state] || BOT_STATE.OUT;
+                const pres = u.presence && window.ChatUI ? `<span class="block text-[10px] ${u.presence.online ? 'text-emerald-600 font-bold' : 'text-slate-400'}">${ChatUI.seenLabel(u.presence, Date.now())}</span>` : '';
+                const nm = iiEsc(u.full_name || 'بی‌نام');
+                return `<tr class="border-t border-slate-100 hover:bg-slate-50/70">
+                    <td class="p-3"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name || '؟', {size: 36, online: u.presence && u.presence.online}) : ''}<span><b class="font-black text-slate-800">${nm}</b>${pres}</span></span></td>
+                    <td class="p-3 font-mono" data-l="کد ملی / پرسنلی"><span class="block font-bold text-slate-700">${faDigits(u.national_code || '') || '—'}</span><span class="text-slate-400 text-[10.5px]">پرسنلی: ${faDigits(u.personnel_code || '') || '—'}</span></td>
+                    <td class="p-3 text-slate-600" data-l="شرکت">${iiEsc(u.company_name || '') || '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3" data-l="شماره‌ی قفل‌شده">${u.bot_phone ? `<span class="sb-lock" dir="ltr"><i class="fas fa-lock"></i>${faDigits(u.bot_phone)}</span>` : '<span class="sb-lock off"><i class="fas fa-lock-open"></i>قفل نشده</span>'}
+                        ${u.mobile_number && u.mobile_number !== u.bot_phone ? `<span class="block text-[10px] text-slate-400 mt-0.5">موبایلِ پرونده: <span dir="ltr" class="font-mono">${faDigits(u.mobile_number)}</span></span>` : ''}</td>
+                    <td class="p-3" data-l="وضعیت ربات"><span class="sb-st ${cls}"><i class="fas ${ic}"></i>${lab}</span></td>
+                    <td class="p-3 text-[10.5px] text-slate-500 leading-5 whitespace-nowrap" data-l="ورود / خروج"><span class="block" title="آخرین ورود به ربات"><i class="fas fa-right-to-bracket text-emerald-500 ml-1"></i>${u.bot_linked_at ? faDigits(toJalali(u.bot_linked_at)) : '—'}</span>
+                        <span class="block" title="آخرین خروج از حساب"><i class="fas fa-right-from-bracket text-rose-400 ml-1"></i>${u.bot_logout_at ? faDigits(toJalali(u.bot_logout_at)) : '—'}</span></td>
+                    <td class="p-3" data-l="پرونده‌ها"><span class="sb-cnt"><span title="معرفی‌نامه‌ها"><i class="fas fa-file-signature"></i>${faDigits(String(u.intro_count || 0))}</span><span title="درخواست‌ها"><i class="fas fa-folder-open"></i>${faDigits(String(u.case_count || 0))}</span><span class="ok" title="صادرشده"><i class="fas fa-circle-check"></i>${faDigits(String(u.issued_count || 0))}</span></span></td>
+                    <td class="p-3 whitespace-nowrap sb-act">
+                        ${u.bale_chat_id ? `<button type="button" class="c" onclick="openUserChat(${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})"><i class="fas fa-comment-dots ml-1"></i>گفتگو</button>` : ''}
+                        ${canEdit && u.state !== 'OUT' ? `<button type="button" class="o" onclick="botUserLogout(${u.id})"><i class="fas fa-right-from-bracket ml-1"></i>خروج از ربات</button>` : ''}
+                        ${canEdit && u.bot_phone ? `<button type="button" class="u" onclick="botUserUnbind(${u.id})"><i class="fas fa-lock-open ml-1"></i>آزادکردن شماره</button>` : ''}</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="8" class="text-center p-8 text-slate-400">${all.length ? 'کسی با این جستجو/فیلتر پیدا نشد.' : 'هنوز هیچ کارمندی وارد ربات بله نشده.'}</td></tr>`;
+        }
+        async function botUserCall(body) {
+            try {
+                const r = await fetch('api/user_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const d = await r.json();
+                if (!d.ok) return showToast(d.error || 'خطا', 'error');
+                showToast(d.msg || 'انجام شد.', 'success');
+                loadBotUsers();
+            } catch (e) { showToast('خطا در اتصال به سرور', 'error'); }
+        }
+        function botUserLogout(id) {
+            const u = botUsersCache.find(x => Number(x.id) === Number(id)); if (!u) return;
+            showConfirm('خروج از ربات', `«${u.full_name || 'این کارمند'}» از حسابش در ربات بله خارج شود؟\nاتصالِ شماره‌اش به کد ملی می‌ماند و هر وقت بخواهد با همان شماره دوباره وارد می‌شود.`,
+                () => botUserCall({action: 'bot_logout', person_id: id}), {ok: 'بله، خارج شود', danger: true});
+        }
+        function botUserUnbind(id) {
+            const u = botUsersCache.find(x => Number(x.id) === Number(id)); if (!u) return;
+            showConfirm('آزادکردنِ شماره', `شماره‌ی ${faDigits(u.bot_phone)} از کد ملیِ «${u.full_name || ''}» آزاد شود؟\nبعد از آن، اولین شماره‌ای که با این کد ملی وارد ربات شود دوباره رویش قفل می‌شود (مثلاً وقتی شماره‌اش عوض شده).`,
+                () => botUserCall({action: 'bot_unbind', person_id: id}), {ok: 'آزاد شود', danger: true});
+        }
         function renderStaffUsers() {
+            const alive = staffUsersCache.filter(u => Number(u.is_deleted) !== 1);
+            const cnt = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = '(' + faDigits(String(n)) + ')'; };
+            cnt('su-n-all', alive.length); cnt('su-n-staff', alive.filter(u => u.type === 'STAFF').length); cnt('su-n-company', alive.filter(u => u.type === 'COMPANY').length);
+            if (userTypeFilter === 'BOT' || !document.getElementById('su-body')) return renderBotUsers();
             const q = p2e(document.getElementById('su-q').value.trim()).toLowerCase();
             const role = document.getElementById('su-role-filter').value;
-            const alive = staffUsersCache.filter(u => Number(u.is_deleted) !== 1);
-            document.getElementById('su-n-all').textContent = '(' + e2p(alive.length) + ')';
-            document.getElementById('su-n-staff').textContent = '(' + e2p(alive.filter(u => u.type === 'STAFF').length) + ')';
-            document.getElementById('su-n-company').textContent = '(' + e2p(alive.filter(u => u.type === 'COMPANY').length) + ')';
             const list = staffUsersCache.filter(u => (!userTypeFilter || u.type === userTypeFilter) && (!role || u.role === role || (role === 'LIAISON_ALL' && ['COMPANY_LIAISON', 'PARSIAN'].includes(u.role)))
                 && (!q || [u.full_name, u.username, u.mobile_number, u.personnel_code, u.company_names, ROLE_FA[u.role]].join(' ').toLowerCase().includes(q)));
             document.getElementById('su-body').innerHTML = list.map(u => {
@@ -9097,6 +9235,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function switchTab(tabId, tabKey) {
             // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
+            if (tabId === 'users') { tabId = 'staff-users'; setUserTypeFilter('BOT'); }   // صفحه‌ی قدیمیِ «کاربران ربات بله» => «کاربران» › کارکنان
             if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
             permTab = tabId;
             if (window.SettingsNav && SettingsNav.release) SettingsNav.release();   // تنظیماتِ بخشی که داخلِ «تنظیماتِ سامانه» باز بود به زبانه‌ی خودش برمی‌گردد
@@ -9156,7 +9295,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'dashboard') { loadStats(); loadDashCharts(); loadDashAlerts(); }
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
             if (tabId === 'queue') loadQueue();
-            if (tabId === 'users') loadUsers();
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
@@ -11210,61 +11348,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch(e) { showToast('خطا در اتصال به سرور', 'error'); }
         }
 
-        document.getElementById('user-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') searchUsers(); });
-
         // شمارنده‌ی پیام‌های نخوانده‌ی منوی «گفتگوها»: pollChatBadge (بخشِ پیام‌رسان)
-
-        // ======================= کاربران =======================
-        function renderUsers(users) {
-            const tbody = document.getElementById('users-body');
-            if (users.length > 0) {
-                tbody.innerHTML = '';
-                users.forEach(u => {
-                    const chatBtn = u.bale_chat_id
-                        ? `<button onclick="openUserChat(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-200">مشاهده / ارسال پیام</button>`
-                        : `<span class="text-xs text-slate-400">بدون چت بله</span>`;
-                    tbody.innerHTML += `
-                        <tr class="hover:bg-blue-50/30">
-                            <td class="p-4"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name || '؟', {size: 34, online: u.presence && u.presence.online}) : ''}<span>${u.full_name || '-'}${u.presence ? `<span class="block text-[10px] font-normal ${u.presence.online ? 'text-emerald-600 font-bold' : 'text-slate-400'}">${ChatUI.seenLabel(u.presence, Date.now())}</span>` : ''}</span></span></td>
-                            <td class="p-4 font-mono" dir="ltr">${e2p(u.national_code) || '-'}</td>
-                            <td class="p-4 font-mono" dir="ltr">${e2p(u.personnel_code) || '-'}</td>
-                            <td class="p-4">${u.company_name || '-'}</td>
-                            <td class="p-4 font-mono" dir="ltr">${e2p(u.mobile_number) || '-'}</td>
-                            <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(u.created_at, false)}</td>
-                            <td class="p-4 text-xs text-slate-500">${u.conversation_state || '-'}</td>
-                            <td class="p-4">${chatBtn}</td>
-                        </tr>`;
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">کاربری یافت نشد.</td></tr>';
-            }
-        }
-
-        async function loadUsers() {
-            document.getElementById('user-search-input').value = '';
-            const tbody = document.getElementById('users-body');
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i> در حال بارگذاری...</td></tr>';
-            try {
-                const res = await fetch('api/user_actions.php?action=list');
-                const data = await res.json();
-                if (data.ok) renderUsers(data.data);
-            } catch(e) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
-            }
-        }
-
-        async function searchUsers() {
-            const q = document.getElementById('user-search-input').value.trim();
-            const tbody = document.getElementById('users-body');
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i> در حال جستجو...</td></tr>';
-            try {
-                const res = await fetch('api/user_actions.php?action=search&q=' + encodeURIComponent(q));
-                const data = await res.json();
-                if (data.ok) renderUsers(data.data);
-            } catch(e) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
-            }
-        }
 
         // ---- ایموجی‌های پرکاربرد ----
         const EMOJI_LIST = ['😀','😁','😂','🙂','😉','😍','🤔','😢','😡','👍','👎','🙏','👌','✅','❌','🔥','🎉','📌','📄','📷','⏳','💬','📞','🚗','🛡️','⭐','❤️','😴','🤝','👋'];

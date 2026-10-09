@@ -44,6 +44,39 @@ def alias(s):
     return s
 
 
+END = r'(?:\s*ب\s*ل\s*ا\s*مانع|\s+(?:می\s*باشد|می\s*باشند|است|هستند|که|و\s+(?:کد|شماره))(?=\s|$|[.،])|\s*[.،])'
+
+
+def body_company(t):
+    """نامِ شرکت از خودِ متنِ نامه؛ «این شرکت/همین مجموعه» => خالی (یعنی برو سراغِ امضا)"""
+    for pat in (r'شاغل\s*در\s*(.{2,80}?)' + END,
+                r'(?:کارمند|پرسنل|کارکنان|همکار)\s*(?:محترم\s*)?(?:شرکت|مجموعه|گروه)\s+(.{2,60}?)' + END):
+        for m in re.finditer(pat, t):
+            raw = m.group(1).strip()
+            c = clean_company(raw)
+            if not c or GENERIC_COMPANY.match(raw) or GENERIC_COMPANY.match(c) or re.match(r'^(?:این|همین|آن)\b', c):
+                continue
+            if len(c) > 50 or re.search(r'\d', c):
+                continue
+            return alias(c)
+    return ''
+
+
+def sign_company(t):
+    """نامِ شرکت از امضای پایینِ نامه (بعد از «با تشکر» / «سرمایه انسانی»)"""
+    tail = t[t.find('با تشکر'):] if 'با تشکر' in t else t[-250:]
+    m2 = re.search(r'((?:گروه|شرکت|هلدینگ|موسسه)\s+[\u0600-\u06FF ]{2,50})', tail)
+    comp = clean_company(m2.group(1)) if m2 else ''
+    comp = re.sub(r'\s+(?:مدیر|سرمایه|انسانی|معاونت|امور|واحد|منابع)(?:\s.*)?$', '', comp).strip()
+    if GENERIC_COMPANY.match(comp) or comp in ('شرکت', 'گروه'):
+        comp = ''
+    if not comp or not any(k in comp for k, _ in ALIASES):
+        for k, v in ALIASES:   # نامِ شناخته‌شده‌ای که هرجای امضای نامه آمده باشد
+            if k in tail:
+                return v
+    return alias(comp) if comp else ''
+
+
 def extract(text):
     t = norm(text)
     score = sum(1 for k in ['پرسنلی', 'شاغل', 'لامانع', 'خانم', 'کد ملی', 'سرمایه انسانی', 'صدور بیمه', 'ثالث/بدنه', 'کارگزاری'] if k in t)
@@ -59,23 +92,15 @@ def extract(text):
     m = re.search(r'(?:کد|شماره)\s*ملی\s*[:]?\s*(\d{8,10})', t)
     if m:
         d['national_id'] = m.group(1).zfill(10)
-    # شرکت: «شاغل در (شرکت) X بلامانع»
-    comp = ''
-    m = re.search(r'شاغل\s*در\s*(.{2,80}?)\s*ب\s*ل\s*امانع', t)
-    if m:
-        comp = clean_company(m.group(1))
-    if not comp or GENERIC_COMPANY.match(comp) or GENERIC_COMPANY.match(m.group(1).strip() if m else ''):
-        # «این شرکت»: نامِ شرکت از امضای پایینِ نامه (بعد از «با تشکر» / «سرمایه انسانی»)
-        tail = t[t.find('با تشکر'):] if 'با تشکر' in t else t[-250:]
-        m2 = re.search(r'((?:گروه|شرکت|هلدینگ|موسسه)\s+[؀-ۿ ]{2,50})', tail)
-        comp = clean_company(m2.group(1)) if m2 else ''
-        comp = re.sub(r'\s+(?:مدیر|سرمایه|انسانی|معاونت|امور)(?:\s.*)?$', '', comp).strip()
-        if not comp or not any(k in comp for k, _ in ALIASES):
-            for k, v in ALIASES:   # نامِ شناخته‌شده‌ای که هرجای امضای نامه آمده باشد
-                if k in tail:
-                    comp = v
-                    break
-    d['company_name'] = alias(comp) if comp else ''
+    # شرکت - اولویت با متنِ نامه («شاغل در شرکت پیلسان بلامانع ...»)؛ فقط اگر متن نامِ شرکت را نگفته بود
+    # (یا نوشته بود «این شرکت») از امضای پایینِ نامه برداشته می‌شود
+    comp = body_company(t)
+    src = 'text' if comp else ''
+    if not comp:
+        comp = sign_company(t)
+        src = 'signature' if comp else ''
+    d['company_src'] = src
+    d['company_name'] = comp
     # تاریخ: «تاریخ: 14 / 07 / 1405» یا «1405/07/14»
     m = re.search(r'تاریخ\s*[:]?\s*(\d{1,4})\s*/\s*(\d{1,2})\s*/\s*(\d{1,4})', t) or re.search(r'(\d{1,4})\s*/\s*(\d{1,2})\s*/\s*(\d{1,4})\s*[:]?\s*تاریخ', t)
     if m:
@@ -83,9 +108,9 @@ def extract(text):
         y, md, dd = (c, b, a) if len(c) == 4 else (a, b, c)
         if len(y) == 4:
             d['letter_date'] = '%s/%02d/%02d' % (y, int(md), int(dd))
-    m = re.search(r'شماره\s*[:]?\s*(\d{1,4}\s*-\s*\d{3,10}\s*-\s*\d{1,4})', t) or re.search(r'(\d{1,4}\s*-\s*\d{3,10}\s*-\s*\d{1,4})\s*[:]?\s*شماره', t)
+    m = re.search(r'شماره\s*[:]?\s*(\d{1,4}\s*[-–—]\s*\d{3,10}\s*[-–—]\s*\d{1,4})', t) or re.search(r'(\d{1,4}\s*[-–—]\s*\d{3,10}\s*[-–—]\s*\d{1,4})\s*[:]?\s*شماره', t)
     if m:
-        d['letter_no'] = re.sub(r'\s+', '', m.group(1))
+        d['letter_no'] = re.sub(r'[–—]', '-', re.sub(r'\s+', '', m.group(1)))
     if is_intro:
         d['ins_type'] = 'معرفی‌نامه'
     return is_intro, score, d

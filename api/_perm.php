@@ -86,7 +86,7 @@ function perm_catalog() {
         ]],
         ['بایگانی و مدیریت', [
             'filemanager' => ['بایگانی فایل‌ها', ['view', 'export']],
-            'users' => ['کاربران ربات بله', ['view', 'create', 'edit', 'delete']],
+            'users' => ['کاربران › کارکنان (ربات بله)', ['view', 'create', 'edit', 'delete']],
             'staff-users' => ['کاربران پنل و شرکت‌ها', ['view', 'create', 'edit', 'delete']],
             'login-logs' => ['لاگ ورود و خروج', ['view', 'export']],
             'queue' => ['صف پردازش OCR', ['view', 'edit']],
@@ -301,7 +301,7 @@ function perm_api_map() {
         ]],
         'queue_actions' => ['pages' => ['queue'], 'elevate' => true, 'actions' => ['list' => 'queue:view', 'reject' => 'queue:edit', 'approve' => 'queue:edit']],
         'user_actions' => ['pages' => ['users'], 'elevate' => true, 'actions' => [
-            'list' => 'users:view', 'search' => 'users:view|any', 'history' => 'users:view', 'file' => 'users:view',
+            'list' => 'users:view', 'search' => 'users:view|any', 'history' => 'users:view', 'file' => 'users:view', 'bot_list' => 'users:view', 'bot_logout' => 'users:edit', 'bot_unbind' => 'users:edit',
             'send_message' => 'users:create', 'send_file' => 'users:create', 'edit_message' => 'users:edit', 'delete_message' => 'users:delete',
         ]],
         'ticket_actions' => ['pages' => ['tickets'], 'elevate' => true, 'actions' => [

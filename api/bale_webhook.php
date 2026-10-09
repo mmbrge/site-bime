@@ -2,6 +2,7 @@
 // فایل: api/bale_webhook.php
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_bot_identity.php';   // قفلِ شماره ↔ کد ملی، خروج از حساب، سوییچِ مدیر کل
 require_once __DIR__ . '/_chat_state.php';
 
 $content = file_get_contents("php://input");
@@ -326,6 +327,8 @@ function handle_callback_query($pdo, $callback, $bot_token) {
         }
         return;
     }
+    if ($data === 'menu:logout') { bot_do_logout($pdo, $chatId, $bot_token); return; }
+    if ($data === 'menu:switch') { bot_start_switch($pdo, $chatId, $bot_token); return; }
     if ($data === 'menu:help') {
         send_msg($chatId, "ℹ️ راهنما:\nهمه‌ی امکانات (ثبت درخواست بیمه، بازدید سلامت، بیمه‌نامه‌های من، پلاک‌های من، استعلام حق بیمه و ارتباط با کارشناس) از طریق دکمه‌ی «🚀 ورود به پنل کاربری» در دسترس است.", $bot_token, main_menu_kb($pdo, $chatId));
         return;
@@ -342,6 +345,7 @@ define('BTN_SUPPORT',  '💬 ارتباط با کارشناس');
 define('BTN_HELP',     'ℹ️ راهنما');
 define('BTN_RECHECK',  '🔄 بررسی مجدد وضعیت');
 define('BTN_END_CHAT', '🔚 پایان گفتگو با کارشناس');
+define('BTN_LOGOUT',   '🚪 خروج از حساب');
 define('BTN_THIRDPARTY','ثالث');
 define('BTN_BODY',     'بدنه');
 define('BTN_BACK',     '↩️ بازگشت');
@@ -373,10 +377,15 @@ function main_menu_kb($pdo, $chat_id) {
         // محدودِ مینی‌اپ - چون دوربین واقعی آنجا کار می‌کند (تایید شده)
         $rows[] = [['text' => '📎 بازدید مدارک و سلامت خودرو', 'url' => $siteUrl . '/webapp/visit/index_visit.html?t=' . $token]];
     }
+    if ($personId) {
+        $acc = [['text' => '🚪 خروج از حساب', 'callback_data' => 'menu:logout']];
+        if (botid_chat_admin_phone($pdo, $chat_id)) $acc[] = ['text' => '🔁 سوییچ به کد ملیِ دیگر', 'callback_data' => 'menu:switch'];
+        $rows[] = $acc;
+    }
     return ['inline_keyboard' => $rows];
 }
 function limited_menu_kb() {
-    return kb(kb_grid([BTN_SUPPORT, BTN_RECHECK, BTN_HELP], 2));
+    return kb(kb_grid([BTN_SUPPORT, BTN_RECHECK, BTN_HELP, BTN_LOGOUT], 2));
 }
 function insurance_choice_kb() {
     return kb([[BTN_THIRDPARTY, BTN_BODY], [BTN_BACK]]);
@@ -526,18 +535,24 @@ function log_ticket_message($pdo, $ticket_id, $message_text, $file_path, $tg_mes
 
 // ---- شناسایی مشتری بر اساس کد ملی + اشتراک شماره، و مسیردهی نهایی ----
 function identify_and_route($pdo, $chat_id, $national_code, $mobile, $bot_token) {
+    // هر شماره فقط یک کد ملی؛ هر کد ملی فقط با شماره‌ی خودش؛ شماره‌ی مدیر کل روی همه (api/_bot_identity.php)
+    $chk = botid_check($pdo, $national_code, $mobile);
+    if (!$chk['ok']) {
+        send_msg($chat_id, $chk['error'] . "\n\nبرای ورود با کد ملیِ خودتان /start را بزنید.", $bot_token, kb_remove());
+        return;
+    }
     $stmt = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
     $stmt->execute([$national_code]);
     $person_id = $stmt->fetchColumn();
 
-    if ($person_id) {
-        $pdo->prepare("UPDATE persons SET bale_chat_id = ?, mobile_number = COALESCE(?, mobile_number) WHERE id = ?")
-            ->execute([$chat_id, $mobile, $person_id]);
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO persons (national_code, full_name, bale_chat_id, mobile_number, conversation_state) VALUES (?, '', ?, ?, 'START')");
-        $stmt->execute([$national_code, $chat_id, $mobile]);
+    if (!$person_id) {
+        $stmt = $pdo->prepare("INSERT INTO persons (national_code, full_name, conversation_state) VALUES (?, '', 'START')");
+        $stmt->execute([$national_code]);
         $person_id = $pdo->lastInsertId();
     }
+    $displaced = botid_link($pdo, $chat_id, $person_id, $mobile, $chk['admin'], $GLOBALS['sender_name'] ?? null);
+    if ($chk['admin']) send_msg($chat_id, "🛡 شما با شماره‌ی مدیر کل وارد شده‌اید و الان روی کد ملیِ {$national_code} هستید.\nبرای رفتن روی کد ملیِ دیگر: /switch"
+        . ($displaced ? "\n⚠️ این شخص خودش هم در ربات وارد بود؛ تا وقتی شما رویش هستید پیام‌های ربات به شما می‌رسد و با خروج/سوییچِ شما، اتصالِ خودش برمی‌گردد." : ""), $bot_token);
 
     $stmt = $pdo->prepare("SELECT full_name FROM persons WHERE id = ?");
     $stmt->execute([$person_id]);
@@ -1229,6 +1244,22 @@ function go_back_to_relationship_and_check($pdo, $chat_id, $person, $bot_token, 
     return false;
 }
 
+// خروج از حساب: چت از شخص جدا می‌شود (اتصالِ شماره ↔ کد ملی می‌ماند)
+function bot_do_logout($pdo, $chat_id, $bot_token) {
+    botid_logout($pdo, $chat_id);
+    send_msg($chat_id, "🚪 از حسابتان خارج شدید.\nبرای ورودِ دوباره /start را بزنید و کد ملی‌تان را وارد کنید.", $bot_token, kb_remove());
+}
+// سوییچ (فقط شماره‌ی مدیر کل): کد ملیِ تازه را می‌پرسد و بدونِ اشتراکِ دوباره‌ی شماره وارد می‌شود
+function bot_start_switch($pdo, $chat_id, $bot_token) {
+    if (!botid_chat_admin_phone($pdo, $chat_id)) {
+        send_msg($chat_id, "⛔ سوییچ روی کد ملیِ دیگر فقط برای شماره‌ی مدیر کل است. برای خروج از حساب از «🚪 خروج از حساب» استفاده کنید.", $bot_token);
+        return;
+    }
+    botid_logout($pdo, $chat_id);
+    $pdo->prepare("INSERT INTO bot_sessions (chat_id, conversation_state) VALUES (?, 'AWAITING_NATIONAL_CODE') ON DUPLICATE KEY UPDATE conversation_state = 'AWAITING_NATIONAL_CODE'")->execute([$chat_id]);
+    send_msg($chat_id, "🔁 کد ملیِ کسی که می‌خواهید رویش بروید را وارد کنید:", $bot_token, kb_remove());
+}
+
 function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, $text,
                                   $sender_user_id, $sender_name, $sender_username, $bot_token) {
 
@@ -1238,6 +1269,14 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
     $stmt = $pdo->prepare("SELECT * FROM persons WHERE bale_chat_id = ?");
     $stmt->execute([$chat_id]);
     $person = $stmt->fetch();
+
+    // ---- خروج از حساب / سوییچِ مدیر کل: از هر حالتی ----
+    if ($text === BTN_LOGOUT || $text === '/logout') {
+        if ($person) bot_do_logout($pdo, $chat_id, $bot_token);
+        else send_msg($chat_id, "الان وارد هیچ حسابی نیستید. برای ورود /start را بزنید.", $bot_token, kb_remove());
+        return;
+    }
+    if ($text === '/switch') { bot_start_switch($pdo, $chat_id, $bot_token); return; }
 
     // ---- /start برای کاربر شناسایی‌شده: همیشه و از هر حالتی، به منوی اصلی برمی‌گردد و پیام تازه
     // (با دکمه‌های به‌روز) می‌فرستد - چون تا پیام جدیدی نیاید، دکمه‌های پیام‌های قبلی همان قبلی می‌مانند ----
@@ -1813,7 +1852,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
             case 'LIMITED_MENU':
             default:
                 if ($text === BTN_RECHECK) {
-                    identify_and_route($pdo, $chat_id, $person['national_code'], $person['mobile_number'], $bot_token);
+                    identify_and_route($pdo, $chat_id, $person['national_code'], botid_chat_phone($pdo, $chat_id) ?: $person['mobile_number'], $bot_token);
                 } elseif ($text === BTN_HELP) {
                     send_msg($chat_id, "ℹ️ برای استفاده از امکانات ربات، ابتدا باید معرفی‌نامه‌ی شما توسط کارشناسان تایید شود.\nبرای پیگیری از «ارتباط با کارشناس» استفاده کنید.", $bot_token, limited_menu_kb());
                 } else {
@@ -1851,6 +1890,12 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
     if ($session['conversation_state'] === 'AWAITING_NATIONAL_CODE') {
         if (preg_match('/^\d{8,10}$/', $text)) {
             $normalized = str_pad($text, 10, '0', STR_PAD_LEFT);
+            // چتی که با شماره‌ی مدیر کل تأیید شده: سوییچِ مستقیم، بدونِ اشتراکِ دوباره‌ی شماره
+            if ($adminPhone = botid_chat_admin_phone($pdo, $chat_id)) {
+                $pdo->prepare("DELETE FROM bot_sessions WHERE chat_id = ?")->execute([$chat_id]);
+                identify_and_route($pdo, $chat_id, $normalized, $adminPhone, $bot_token);
+                return;
+            }
             $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_CONTACT_SHARE', temp_national_code = ? WHERE chat_id = ?")
                 ->execute([$normalized, $chat_id]);
             send_msg($chat_id, "لطفاً برای تایید هویت، شماره تماس خود را با دکمه‌ی زیر به اشتراک بگذارید:", $bot_token, kb_request_contact());

@@ -119,28 +119,37 @@ function plate_core($plate) {
 // ---- معرفی‌نامه‌ی پرسنلی (api/py/intro_reader.py): خواندنِ PDFِ متنی بدونِ OCR ----
 // حروفِ نمایشی، کشیده‌ها (عــــلی) و «شاغل در این شرکت» (نامِ شرکت از امضای نامه) را درست می‌خواند.
 const INTRO_COMPANY_ALIASES = ['ویانا' => 'گروه ویانا'];   // باید با ALIASES در intro_reader.py یکی باشد
-function intro_python_path() {
-    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
+function intro_python_path() { $l = intro_python_paths(); return $l[0]; }
+// پایتون‌های قابلِ امتحان: تنظیمِ «مسیر پایتون» (گزارش بازدید)، محیطِ موتورِ OCR، python3ِ سیستم
+function intro_python_paths() {
+    $list = [];
     try {
         if (!empty($GLOBALS['pdo'])) {
             $v = trim((string)$GLOBALS['pdo']->query("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'")->fetchColumn());
-            if ($v !== '') return $v;
+            if ($v !== '') $list[] = $v;
         }
     } catch (Throwable $e) {}
-    return is_file($def) ? $def : 'python3';
+    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
+    if (is_file($def)) $list[] = $def;
+    $list[] = 'python3';
+    return array_values(array_unique($list));
 }
 // خروجی: ['has_text' => bool, 'is_intro' => bool, 'score' => int, 'data' => [...]] یا null (پایتون/فایل در دسترس نبود)
+// اگر پایتونِ اول PyMuPDF نداشت، بعدی امتحان می‌شود (تا معرفی‌نامه بی‌دلیل به موتورِ OCR نرود)
 function intro_read_pdf($absFilePath) {
     if (strtolower(pathinfo($absFilePath, PATHINFO_EXTENSION)) !== 'pdf' || !is_file($absFilePath) || !function_exists('proc_open')) return null;
     $home = getenv('HOME');
     if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $proc = @proc_open([intro_python_path(), __DIR__ . '/py/intro_reader.py', $absFilePath], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
-                       ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
-    if (!is_resource($proc)) return null;
-    $out = (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    $j = preg_match('/\{.*\}/s', $out, $m) ? json_decode($m[0], true) : null;
-    return is_array($j) && !empty($j['ok']) ? $j : null;
+    foreach (intro_python_paths() as $py) {
+        $proc = @proc_open([$py, __DIR__ . '/py/intro_reader.py', $absFilePath], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
+                           ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
+        if (!is_resource($proc)) continue;
+        $out = (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
+        $j = preg_match('/\{.*\}/s', $out, $m) ? json_decode($m[0], true) : null;
+        if (is_array($j) && !empty($j['ok'])) return $j;
+    }
+    return null;
 }
 // پاک‌سازیِ نام و شرکتِ معرفی‌نامه (برای خروجیِ موتورِ OCR هم): کشیده، نیم‌فاصله‌ی اضافه، «شرکت»ِ اول، نام‌های شناخته‌شده
 function intro_clean_fields(array $d) {

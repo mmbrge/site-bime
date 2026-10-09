@@ -91,6 +91,58 @@ try {
         exit;
     }
 
+    // ۰.۵ کارکنانِ ربات بله (صفحه‌ی «کاربران» › کارکنان): وضعیتِ اتصال، شماره‌ی قفل‌شده، ورود/خروج، سوییچِ مدیر کل
+    if ($action === 'bot_list') {
+        require_once __DIR__ . '/_bot_identity.php';
+        botid_ensure($pdo);
+        $rows = $pdo->query("
+            SELECT p.id, p.full_name, p.national_code, p.personnel_code, p.mobile_number, p.bale_chat_id, p.bot_phone, p.bot_linked_at, p.bot_logout_at,
+                   p.conversation_state, p.created_at, c.name AS company_name, m.is_admin AS chat_is_admin, m.sender_name AS chat_sender, m.displaced_chat,
+                   (SELECT COUNT(*) FROM introductions i WHERE i.person_id = p.id) AS intro_count,
+                   (SELECT COUNT(*) FROM policy_cases pc WHERE pc.person_id = p.id) AS case_count,
+                   (SELECT COUNT(*) FROM policy_cases pc WHERE pc.person_id = p.id AND pc.status = 'ISSUED') AS issued_count, " . prof_cols($pdo, 'p') . "
+            FROM persons p
+            LEFT JOIN companies c ON c.id = p.company_id
+            LEFT JOIN bot_chat_meta m ON m.chat_id = p.bale_chat_id
+            WHERE (p.bale_chat_id IS NOT NULL AND p.bale_chat_id <> '') OR (p.bot_phone IS NOT NULL AND p.bot_phone <> '') OR p.bot_linked_at IS NOT NULL
+            ORDER BY (p.bale_chat_id IS NULL OR p.bale_chat_id = ''), COALESCE(p.bot_linked_at, p.created_at) DESC
+            LIMIT 2000")->fetchAll();
+        foreach ($rows as &$r) {
+            $r['presence'] = prof_presence($r); unset($r['seen_ago'], $r['is_online']);
+            $r['state'] = ($r['bale_chat_id'] ?? '') === '' ? 'OUT' : (!empty($r['chat_is_admin']) ? 'ADMIN' : 'IN');
+        }
+        unset($r);
+        // نشست‌های ربات با شماره‌ی مدیر کل: الان روی چه کسی هستند
+        $admins = $pdo->query("SELECT m.chat_id, m.phone, m.sender_name, m.updated_at, m.displaced_chat, p.id AS person_id, p.full_name, p.national_code,
+                                      (SELECT u.full_name FROM users u WHERE u.role = 'ADMIN' AND u.mobile_number IS NOT NULL AND u.mobile_number <> '' AND RIGHT(REPLACE(u.mobile_number, ' ', ''), 10) = RIGHT(m.phone, 10) LIMIT 1) AS admin_name
+                               FROM bot_chat_meta m LEFT JOIN persons p ON p.bale_chat_id = m.chat_id
+                               WHERE m.is_admin = 1 ORDER BY m.updated_at DESC")->fetchAll();
+        echo json_encode(['ok' => true, 'data' => $rows, 'admins' => $admins, 'admin_phones' => count(botid_admin_phones($pdo))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // خروجِ اجباری از ربات (اتصالِ شماره ↔ کد ملی می‌ماند) / آزادکردنِ شماره‌ی قفل‌شده
+    if ($action === 'bot_logout' || $action === 'bot_unbind') {
+        require_once __DIR__ . '/_bot_identity.php';
+        botid_ensure($pdo);
+        $personId = intval($data['person_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, full_name, bale_chat_id, bot_phone FROM persons WHERE id = ?");
+        $st->execute([$personId]);
+        $p = $st->fetch();
+        if (!$p) { echo json_encode(['ok' => false, 'error' => 'شخص پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $chat = (string)($p['bale_chat_id'] ?? '');
+        if ($action === 'bot_unbind') {
+            $pdo->prepare("UPDATE persons SET bot_phone = NULL WHERE id = ?")->execute([$personId]);
+            if (!empty($data['logout']) && $chat !== '') { botid_logout($pdo, $chat); bale_send($chat, "🔓 اتصالِ شماره‌ی شما به این حساب توسط کارشناس آزاد شد و از حساب خارج شدید.\nبرای ورودِ دوباره /start را بزنید.", get_bot_token($pdo)); }
+            echo json_encode(['ok' => true, 'msg' => 'شماره‌ی قفل‌شده آزاد شد؛ اولین شماره‌ای که با این کد ملی وارد شود، دوباره قفل می‌شود.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($chat === '') { echo json_encode(['ok' => false, 'error' => 'این شخص الان در ربات وارد نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        botid_logout($pdo, $chat);
+        bale_send($chat, "🚪 کارشناس شما را از حساب خارج کرد.\nبرای ورودِ دوباره /start را بزنید و کد ملی‌تان را وارد کنید.", get_bot_token($pdo));
+        echo json_encode(['ok' => true, 'msg' => 'از ربات خارج شد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ۱. لیست کاربران (فقط کسانی که واقعاً با ربات چت کرده‌اند - یعنی bale_chat_id دارند)
     if ($action === 'list' || $action === 'search') {
         $q = trim($_GET['q'] ?? ($data['q'] ?? ''));

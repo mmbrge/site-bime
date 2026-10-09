@@ -355,7 +355,7 @@ function bk_reset_sections() {
     return [
         'personnel' => ['label' => 'درخواست‌های کارکنان و بازدید سلامت',
             'desc' => 'اشخاص، معرفی‌نامه‌ها، پرونده‌ها و مدارک، بازدیدهای سلامت، تاریخچه‌ی بررسی‌ها و بایگانیِ صادره/کسر از حقوق/سایر مدارک',
-            'tables' => ['persons', 'person_vehicles', 'introductions', 'policy_cases', 'case_documents', 'health_inspections', 'health_attempts', 'insurance_requests', 'review_log']],
+            'tables' => ['persons', 'person_vehicles', 'introductions', 'policy_cases', 'case_documents', 'health_inspections', 'health_attempts', 'insurance_requests', 'review_log', 'bot_chat_meta']],
         'companies' => ['label' => 'شرکت‌ها و درخواست‌های شرکتی',
             'desc' => 'شرکت‌ها، درخواست‌ها و ردیف‌ها، مدارک، کاربرانِ شرکت‌ها، چت و ربات شرکت‌ها، بایگانیِ شرکتی و بایگانیِ وارداتی',
             'tables' => ['companies', 'company_requests', 'company_request_plates', 'company_documents', 'company_portal_users', 'company_portal_user_companies',
