@@ -52,7 +52,7 @@ function rec_rows($pdo) {
 
     // صادره‌ها و حق بیمه‌ی هر معرفی‌نامه یک‌جا (به‌جای چند کوئری برای هر ردیف)
     $cases = [];
-    foreach ($pdo->query("SELECT introduction_id, insurance_type, insured_relationship, status, total_premium, issued_at, updated_at FROM policy_cases WHERE COALESCE(status, '') <> 'WITHDRAWN'")->fetchAll() as $c)
+    foreach ($pdo->query("SELECT introduction_id, insurance_type, insured_relationship, status, total_premium, issued_at, updated_at, policy_issue_date FROM policy_cases WHERE COALESCE(status, '') <> 'WITHDRAWN'")->fetchAll() as $c)
         $cases[intval($c['introduction_id'])][] = $c;
 
     foreach ($records as &$row) {

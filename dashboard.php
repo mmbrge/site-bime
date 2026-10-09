@@ -2355,11 +2355,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="card p-6">
                     <h3 class="font-bold text-slate-700 mb-4 border-b pb-3"><i class="fas fa-calendar-days text-indigo-500 ml-2"></i>دوره مالی و اقساط</h3>
                     <div class="space-y-3">
-                        <div class="float-input">
-                            <input type="number" id="fs-cutoff" placeholder=" " dir="ltr" min="1" max="31">
-                            <label>روز شروع دوره مالی (پیش‌فرض ۲۵)</label>
+                        <div>
+                            <label class="text-xs font-bold text-slate-600 block mb-2">نوع دوره‌ی مالی</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="border rounded-xl p-3 cursor-pointer hover:bg-indigo-50 flex gap-2 items-start">
+                                    <input type="radio" name="fs-pmode" value="cutoff" class="mt-1" onchange="fsPeriodHint()">
+                                    <span><b class="text-xs">دوره‌ای</b><br><span class="text-[10px] text-slate-500">از روزِ مشخصِ ماهِ قبل تا همان روزِ این ماه (مثلِ ماموت)</span></span>
+                                </label>
+                                <label class="border rounded-xl p-3 cursor-pointer hover:bg-indigo-50 flex gap-2 items-start">
+                                    <input type="radio" name="fs-pmode" value="calendar" class="mt-1" onchange="fsPeriodHint()">
+                                    <span><b class="text-xs">ماه به ماه</b><br><span class="text-[10px] text-slate-500">از ۱ تا آخرِ همان ماه (۳۱، ۳۰ یا ۲۹ روزه)</span></span>
+                                </label>
+                            </div>
                         </div>
-                        <p class="text-[10px] text-slate-400 -mt-1">هم‌شکل با برنامه‌ی ماموت: از روزِ بعد از این روز در ماه قبل تا همین روز در این ماه، دوره‌ی همین ماه است (مثلاً ۲۶ مهر تا ۲۵ آبان = دوره‌ی آبان).</p>
+                        <div class="float-input" id="fs-cutoff-wrap">
+                            <input type="number" id="fs-cutoff" placeholder=" " dir="ltr" min="1" max="31" oninput="fsPeriodHint()">
+                            <label>روزِ پایانِ دوره در هر ماه (پیش‌فرض ۲۵)</label>
+                        </div>
+                        <p id="fs-period-hint" class="text-[11px] leading-6 text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 -mt-1"></p>
+                        <p class="text-[10px] text-slate-400 -mt-1">همین دوره مبنای «ماهِ معرفی‌نامه»، بایگانیِ کسر از حقوق (ماهِ معرفی‌نامه و ماهِ صدور) و دوره‌های مالی/اقساط است. با تغییرش، دوره‌های باز و پوشه‌های بایگانیِ کسر از حقوق خودکار دوباره مرتب می‌شوند.</p>
                         <div class="float-input">
                             <input type="number" id="fs-inst-count" placeholder=" " dir="ltr" min="1" max="36">
                             <label>تعداد اقساط پیش‌فرض</label>
@@ -9429,6 +9443,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!d.ok) return;
                 const s = d.settings;
                 document.getElementById('fs-cutoff').value = s.period_cutoff_day;
+                document.querySelectorAll('input[name="fs-pmode"]').forEach(r => r.checked = (r.value === (s.period_mode || 'cutoff')));
+                fsPeriodHint();
                 document.getElementById('fs-inst-count').value = s.default_installments;
                 document.querySelectorAll('input[name="fs-method"]').forEach(r => r.checked = (r.value === s.installment_method));
                 document.getElementById('fs-rule-seq').checked = s.rule_sequential_payment === '1';
@@ -9449,6 +9465,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch(e) {}
         }
 
+        // راهنمای زنده‌ی دوره‌ی مالی: «۲۶ مهر تا ۲۵ آبان = آبان» یا «۱ تا ۳۰ آبان = آبان»
+        function fsPeriodHint() {
+            const cal = (document.querySelector('input[name="fs-pmode"]:checked') || {}).value === 'calendar';
+            document.getElementById('fs-cutoff-wrap').classList.toggle('hidden', cal);
+            const el = document.getElementById('fs-period-hint');
+            if (cal) { el.innerHTML = '<i class="fas fa-circle-info ml-1"></i>هر ماه یک دوره: ۱ تا ۳۰ آبان = <b>آبان</b> · ۱ تا ۳۱ مهر = <b>مهر</b> · معرفی‌نامه‌ی ۱۴۰۵/۰۷/۲۶ یعنی <b>مهر</b>'; return; }
+            const c = Math.max(1, Math.min(31, parseInt(document.getElementById('fs-cutoff').value, 10) || 25));
+            if (c >= 31) { el.innerHTML = '<i class="fas fa-circle-info ml-1"></i>روزِ ۳۱ یعنی تا آخرِ هر ماه؛ مثلِ «ماه به ماه».'; return; }
+            el.innerHTML = `<i class="fas fa-circle-info ml-1"></i>${faDigits(String(c + 1))} مهر تا ${faDigits(String(c))} آبان = دوره‌ی <b>آبان</b> · معرفی‌نامه‌ی ۱۴۰۵/۰۷/${faDigits(String(c + 1).padStart(2, '0'))} یعنی <b>آبان</b> · ۱۴۰۵/۰۷/${faDigits(String(c).padStart(2, '0'))} یعنی <b>مهر</b>`;
+        }
+
         async function saveFinanceSettings() {
             try {
                 const res = await fetch(FIN_API, {
@@ -9456,6 +9483,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     body: JSON.stringify({
                         action: 'save_settings',
                         cutoff: document.getElementById('fs-cutoff').value,
+                        period_mode: (document.querySelector('input[name="fs-pmode"]:checked') || {}).value || 'cutoff',
                         inst_count: document.getElementById('fs-inst-count').value,
                         method: (document.querySelector('input[name="fs-method"]:checked') || {}).value || 'mamut',
                         rule_seq: document.getElementById('fs-rule-seq').checked,
@@ -9472,7 +9500,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const d = await res.json();
                 if (!d.ok) { showToast(d.error || 'خطا در ذخیره', 'error'); return; }
                 finBoot = null;   // تنظیمات عوض شد، بارگذاری مجدد لازم است
-                showToast('تنظیمات مالی ذخیره شد.', 'success');
+                showToast(d.period_changed ? `تنظیمات مالی ذخیره شد؛ دوره‌ی مالی عوض شد و ${faDigits(String(d.resorted || 0))} پوشه‌ی معرفی‌نامه در بایگانیِ کسر از حقوق دوباره مرتب شد.` : 'تنظیمات مالی ذخیره شد.', 'success');
             } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
         }
 

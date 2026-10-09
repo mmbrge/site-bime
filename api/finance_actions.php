@@ -432,6 +432,7 @@ try {
         if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر می‌تواند تنظیمات را تغییر دهد.']); exit; }
         $map = [
             'period_cutoff_day'       => max(1, min(31, intval($data['cutoff'] ?? 25))),
+            'period_mode'             => ($data['period_mode'] ?? 'cutoff') === 'calendar' ? 'calendar' : 'cutoff',
             'default_installments'    => max(1, min(36, intval($data['inst_count'] ?? 9))),
             'installment_method'      => in_array($data['method'] ?? '', ['easy','mamut'], true) ? $data['method'] : 'mamut',
             'rule_sequential_payment' => !empty($data['rule_seq']) ? '1' : '0',
@@ -446,8 +447,22 @@ try {
         foreach (['SUMMARY', 'DETAILED', 'PERSONNEL'] as $kd) {
             if (isset($data['inv_cols'][$kd])) $map['inv_cols_' . $kd] = json_encode(fin_invoice_columns($kd, $data['inv_cols'][$kd]));
         }
+        $before = fin_settings($pdo);
+        $periodChanged = ($before['period_mode'] ?? 'cutoff') !== $map['period_mode'] || intval($before['period_cutoff_day']) !== $map['period_cutoff_day'];
         foreach ($map as $k => $v) fin_set($pdo, $k, (string)$v);
-        echo json_encode(['ok' => true]);
+        $resorted = null;
+        if ($periodChanged) {
+            // دوره‌ی مالی عوض شد: بازه‌ی دوره‌های باز (و آینده) دوباره حساب می‌شود و بایگانیِ کسر از حقوق
+            // (ماهِ معرفی‌نامه‌ها و صادره‌ها) طبقِ دوره‌ی تازه مرتب می‌شود. دوره‌های بسته و قسط‌های ثبت‌شده دست نمی‌خورند.
+            period_cfg_reset();
+            $up = $pdo->prepare("UPDATE billing_periods SET starts_at = ?, ends_at = ? WHERE id = ?");
+            foreach ($pdo->query("SELECT id, jalali_year, jalali_month FROM billing_periods WHERE status = 'OPEN'")->fetchAll() as $bp) {
+                [$st, $en] = fin_period_range($pdo, intval($bp['jalali_year']), intval($bp['jalali_month']));
+                $up->execute([$st, $en, $bp['id']]);
+            }
+            $resorted = kasr_resync_all($pdo, dirname(__DIR__));
+        }
+        echo json_encode(['ok' => true, 'period_changed' => $periodChanged, 'resorted' => $resorted], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -66,7 +66,8 @@ function build_intro_folder_name_with_count($fullName, $nationalCode, $personnel
 
 // مسیر کامل پوشه‌ی معرفی‌نامه در «بایگانی کسر از حقوق»: .../{سال}/{ماه}/{پوشه شخص - تعداد صادره}
 function build_kasr_base_path($siteRoot, $createdTimestamp, $fullName, $nationalCode, $personnelCode, $companyName, $issuedCount) {
-    [$jy, $jm, ] = jalali_from_gregorian_ts($createdTimestamp);
+    [$jy, $jm, $jd] = jalali_from_gregorian_ts($createdTimestamp);
+    [$jy, $jm] = period_month_of($jy, $jm, $jd);   // طبقِ دوره‌ی مالی
     $monthName = jalali_month_name($jm);
     $folderName = build_intro_folder_name_with_count($fullName, $nationalCode, $personnelCode, $companyName, $issuedCount);
     return archive_root($siteRoot) . '/بایگانی کسر از حقوق/' . $jy . '/' . $monthName . '/' . $folderName;
@@ -960,6 +961,7 @@ function get_issued_count_for_intro($pdo, $introId) {
 //  «بایگانی کسر از حقوق» (کارکنان): هر معرفی‌نامه بر اساس ماه‌ها
 //   - نامِ پوشه‌ی معرفی‌نامه با ماهِ صدورِ خودِ معرفی‌نامه شروع می‌شود:
 //       «(مهر) نام - کدملی - کدپرسنلی - شرکت - تعداد»
+//   - «ماه» همه‌جا طبقِ دوره‌ی مالی است (تنظیمات مالی: «دوره‌ای» از روزِ X ماهِ قبل تا روزِ X، یا «ماه به ماه»)
 //   - پوشه‌ی اصلی همیشه در ماهِ معرفی‌نامه است (تاریخِ نامه؛ اگر نبود تاریخِ ثبت) و معرفی‌نامه،
 //     پرونده‌های در جریان و بیمه‌نامه‌های صادرشده در همان ماه را دارد.
 //   - اگر بیمه‌نامه‌ی بعدی در ماهِ دیگری صادر شود، «آخرین وضعیتِ» پوشه‌ی معرفی‌نامه (کلِ محتوا،
@@ -970,18 +972,47 @@ function get_issued_count_for_intro($pdo, $introId) {
 //   - بایگانی صادره مثلِ قبل بر اساس ماهِ صدور است.
 // =====================================================================
 
-// ماهِ معرفی‌نامه: تاریخِ خودِ نامه (letter_date که شمسی ذخیره می‌شود)، وگرنه تاریخِ ثبت
-function intro_letter_month($intro) {
-    if (!empty($intro['letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', (string)$intro['letter_date'], $m)
-        && intval($m[2]) >= 1 && intval($m[2]) <= 12) return [intval($m[1]), intval($m[2])];
-    [$jy, $jm, ] = jalali_from_gregorian_ts(strtotime((string)$intro['created_at']) ?: time());
+// ---- دوره‌ی مالی (تنظیمات مالی › دوره مالی) - مبنای ماهِ معرفی‌نامه، بایگانیِ کسر از حقوق و دوره‌های مالی ----
+//  «دوره‌ای» (period_mode = cutoff): از روزِ (cutoff+1) ماهِ قبل تا روزِ cutoff همین ماه = همین ماه
+//      مثلاً cutoff = 25: ۲۶ مهر تا ۲۵ آبان = آبان؛ پس ۱۴۰۵/۰۷/۲۶ => آبان
+//  «ماه به ماه» (period_mode = calendar): از ۱ تا آخرِ همان ماه (۲۹، ۳۰ یا ۳۱ روزه)
+function period_cfg($pdo = null) {
+    if (isset($GLOBALS['__period_cfg'])) return $GLOBALS['__period_cfg'];
+    $pdo = $pdo ?: ($GLOBALS['pdo'] ?? null);
+    $c = ['mode' => 'cutoff', 'cutoff' => 25];
+    try {
+        if ($pdo) {
+            $rows = $pdo->query("SELECT setting_key, setting_value FROM finance_settings WHERE setting_key IN ('period_mode', 'period_cutoff_day')")->fetchAll(PDO::FETCH_KEY_PAIR);
+            if (($rows['period_mode'] ?? '') === 'calendar') $c['mode'] = 'calendar';
+            if (isset($rows['period_cutoff_day']) && intval($rows['period_cutoff_day']) > 0) $c['cutoff'] = max(1, min(31, intval($rows['period_cutoff_day'])));
+        }
+    } catch (Throwable $e) { /* جدولِ تنظیماتِ مالی هنوز ساخته نشده: پیش‌فرض */ }
+    return $GLOBALS['__period_cfg'] = $c;
+}
+function period_cfg_reset() { unset($GLOBALS['__period_cfg']); }
+// روزِ پایانِ دوره در هر ماه (ماه به ماه = ۳۱، یعنی همیشه آخرِ همان ماه)
+function period_cutoff_eff($pdo = null) { $c = period_cfg($pdo); return $c['mode'] === 'calendar' ? 31 : $c['cutoff']; }
+// یک تاریخِ شمسی متعلق به دوره‌ی کدام ماه است
+function period_month_of($jy, $jm, $jd, $pdo = null) {
+    $jy = intval($jy); $jm = intval($jm);
+    if (intval($jd) > period_cutoff_eff($pdo)) { $jm++; if ($jm > 12) { $jm = 1; $jy++; } }
     return [$jy, $jm];
 }
-// ماهِ صدورِ یک پرونده (issued_at؛ پرونده‌های قدیمی که ثبت نشده: آخرین تغییر)
+
+// ماهِ معرفی‌نامه: تاریخِ خودِ نامه (letter_date که شمسی ذخیره می‌شود)، وگرنه تاریخِ ثبت - طبقِ دوره‌ی مالی
+function intro_letter_month($intro) {
+    if (!empty($intro['letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', (string)$intro['letter_date'], $m)
+        && intval($m[2]) >= 1 && intval($m[2]) <= 12) return period_month_of($m[1], $m[2], $m[3]);
+    [$jy, $jm, $jd] = jalali_from_gregorian_ts(strtotime((string)$intro['created_at']) ?: time());
+    return period_month_of($jy, $jm, $jd);
+}
+// ماهِ صدورِ یک پرونده - طبقِ دوره‌ی مالی (مثلِ اقساط): تاریخِ صدورِ روی بیمه‌نامه، وگرنه زمانِ صدور در پنل
+// (پرونده‌های قدیمی که ثبت نشده: آخرین تغییر)
 function case_issue_month($case) {
     $ts = strtotime((string)($case['issued_at'] ?? '')) ?: (strtotime((string)($case['updated_at'] ?? '')) ?: time());
-    [$jy, $jm, ] = jalali_from_gregorian_ts($ts);
-    return [$jy, $jm];
+    if (!empty($case['policy_issue_date'])) $ts = policy_issue_ts($case['policy_issue_date'], $ts);
+    [$jy, $jm, $jd] = jalali_from_gregorian_ts($ts);
+    return period_month_of($jy, $jm, $jd);
 }
 function kasr_month_dir($siteRoot, $jy, $jm) {
     return archive_root($siteRoot) . '/بایگانی کسر از حقوق/' . $jy . '/' . jalali_month_name($jm);
@@ -1064,11 +1095,14 @@ function sync_intro_folder($pdo, $siteRoot, $introId) {
 
     [$ly, $lm] = intro_letter_month($intro);
     $base = intro_folder_base($intro, $lm);
-    $bases = [$base, build_intro_folder_name($intro['full_name'], $intro['national_code'], $intro['personnel_code'], $intro['company_name'])]; // نامِ قدیمی (بدونِ ماه)
+    $plain = build_intro_folder_name($intro['full_name'], $intro['national_code'], $intro['personnel_code'], $intro['company_name']);
+    $bases = [$base, $plain]; // نامِ قدیمی (بدونِ ماه)
+    // نامِ پوشه با ماهِ دیگری شروع شده باشد (مثلاً بعد از تغییرِ دوره‌ی مالی «(مهر) …» حالا «(آبان) …» است)
+    for ($mm = 1; $mm <= 12; $mm++) if ($mm !== $lm) $bases[] = sanitize_folder_name('(' . jalali_month_name($mm) . ') ' . $plain);
     $homeKey = $ly * 100 + $lm;
 
     // بیمه‌نامه‌های صادرشده، به تفکیکِ ماهِ صدور
-    $cs = $pdo->prepare("SELECT id, plate, insured_name, folder_path, issued_at, updated_at FROM policy_cases WHERE introduction_id = ? AND status = 'ISSUED'");
+    $cs = $pdo->prepare("SELECT id, plate, insured_name, folder_path, issued_at, updated_at, policy_issue_date FROM policy_cases WHERE introduction_id = ? AND status = 'ISSUED'");
     $cs->execute([$introId]);
     $byMonth = [];
     foreach ($cs->fetchAll() as $c) { [$y, $m] = case_issue_month($c); $byMonth[$y * 100 + $m][] = $c; }
@@ -1123,7 +1157,41 @@ function sync_intro_folder($pdo, $siteRoot, $introId) {
         foreach ($cases as $c) $placeCase($c, $want);   // درخواستِ تازه‌ی همین ماه داخلِ همین پوشه
         $latest = $want;
     }
+
+    // ---- ۳) کپی‌های جامانده در ماه‌های همسایه (مثلاً بعد از تغییرِ دوره‌ی مالی) ----
+    // فقط پوشه‌ای پاک می‌شود که هیچ مسیرِ ثبت‌شده‌ای (پرونده، مدرک، معرفی‌نامه) داخلش نباشد
+    $keep = [$homeKey => true] + array_fill_keys(array_keys($byMonth), true);
+    $near = [];
+    foreach (array_keys($keep) as $k) foreach ([-1, 1] as $d) {
+        $t = intdiv($k, 100) * 12 + ($k % 100) - 1 + $d;
+        $nk = intdiv($t, 12) * 100 + ($t % 12) + 1;
+        if (!isset($keep[$nk])) $near[$nk] = true;
+    }
+    foreach (array_keys($near) as $k) {
+        $old = intro_find_month_folder(kasr_month_dir($siteRoot, intdiv($k, 100), $k % 100), $bases);
+        if (!$old) continue;
+        $used = false;
+        foreach ([['policy_cases', 'folder_path'], ['policy_cases', 'issued_file_path'], ['case_documents', 'file_path'], ['introductions', 'folder_path'], ['introductions', 'file_path']] as [$t, $c]) {
+            try {
+                $q = $pdo->prepare("SELECT 1 FROM `$t` WHERE `$c` = ? OR LEFT(`$c`, CHAR_LENGTH(?)) = ? LIMIT 1");
+                $q->execute([$old, $old . '/', $old . '/']);
+                if ($q->fetchColumn()) { $used = true; break; }
+            } catch (Throwable $e) {}
+        }
+        if (!$used) archive_rrmdir($old);
+    }
     return $homePath;
+}
+
+// بعد از تغییرِ دوره‌ی مالی: همه‌ی پوشه‌های «بایگانی کسر از حقوق» دوباره در ماهِ درست قرار می‌گیرند
+function kasr_resync_all($pdo, $siteRoot) {
+    period_cfg_reset();
+    @set_time_limit(0);
+    $n = 0;
+    foreach ($pdo->query("SELECT id FROM introductions ORDER BY id")->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        try { if (sync_intro_folder($pdo, $siteRoot, $id)) $n++; } catch (Throwable $e) { error_log('[kasr_resync_all] ' . $id . ': ' . $e->getMessage()); }
+    }
+    return $n;
 }
 
 // مسیر پوشه‌ی یک پرونده (پلاک) را برمی‌گرداند؛ اگر هنوز ثبت نشده، بر اساس اطلاعات فعلی می‌سازد

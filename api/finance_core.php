@@ -12,6 +12,7 @@ function fin_settings($pdo) {
     $rows = $pdo->query("SELECT setting_key, setting_value FROM finance_settings")->fetchAll(PDO::FETCH_KEY_PAIR);
     $cache = array_merge([
         'period_cutoff_day' => '25',
+        'period_mode' => 'cutoff',   // cutoff: از روزِ X ماهِ قبل تا روزِ X | calendar: ماه به ماه (۱ تا آخرِ ماه)
         'default_installments' => '9',
         'installment_method' => 'mamut',
         'rule_sequential_payment' => '1',
@@ -56,16 +57,13 @@ function fin_month_name($jm) {
 //  یعنی اگر بیمه‌نامه بعد از روز cutoff (مثلاً ۲۶ام به بعد) صادر شده باشد، به دوره‌ی ماه بعد می‌رود.
 // =====================================================================
 function fin_resolve_period_for_date($pdo, $jy, $jm, $jd) {
-    $cutoff = intval(fin_settings($pdo)['period_cutoff_day']);
-    if ($jd > $cutoff) {
-        [$jy, $jm] = fin_next_month($jy, $jm);
-    }
+    [$jy, $jm] = period_month_of($jy, $jm, $jd, $pdo);   // «دوره‌ای» یا «ماه به ماه» (_case_helpers.php)
     return fin_ensure_period($pdo, $jy, $jm);
 }
 
 // بازه‌ی میلادیِ یک دوره
 function fin_period_range($pdo, $jy, $jm) {
-    $cutoff = intval(fin_settings($pdo)['period_cutoff_day']);
+    $cutoff = period_cutoff_eff($pdo);   // ماه به ماه = ۳۱ => از ۱ تا آخرِ همان ماه
     [$py, $pm] = fin_next_month($jy, $jm, -1);
     $startTs = jalali_to_gregorian_ts($py, $pm, min($cutoff, fin_jalali_month_len($py, $pm))) + 86400;
     $endTs   = jalali_to_gregorian_ts($jy, $jm, min($cutoff, fin_jalali_month_len($jy, $jm)));
@@ -1489,7 +1487,7 @@ function fin_unified_installments($pdo, array $f = []) {
     fin_ensure_schema($pdo);
     fin_ensure_receipt_cols($pdo);
     $receiptsOf = ['P' => [], 'C' => []];   // فیش‌های فایلِ بیمه‌نامه (برای دکمه‌ی «فیش پرداختی» روی هر قسط)
-    $cutoff = intval(fin_settings($pdo)['period_cutoff_day']);
+    $cutoff = period_cutoff_eff($pdo);
     $today = date('Y-m-d');
     $near = date('Y-m-d', strtotime('+30 days'));
     $src = $f['source'] ?? '';
