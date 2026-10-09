@@ -451,12 +451,18 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
     $extractedJson = null;
     $ext = pathinfo($safe_filename, PATHINFO_EXTENSION);
 
-    // معرفی‌نامه/بیمه‌نامه‌ای که به‌صورت عکس (JPG/PNG) فرستاده شود هم با همان موتور خوانده می‌شود
-    if (in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png'], true)) {
+    // ۱) معرفی‌نامه‌ی متنی (PDF): خواننده‌ی اختصاصی؛ ۲) بقیه (عکس/اسکن/مدرک دیگر): همان موتورِ OCR
+    $ir = intro_read_pdf($physical_path);
+    if ($ir && !empty($ir['is_intro'])) {
+        $status = 'DONE';
+        $extractedJson = json_encode(intro_clean_fields($ir['data']), JSON_UNESCAPED_UNICODE);
+    } elseif (in_array(strtolower($ext), ['pdf', 'jpg', 'jpeg', 'png'], true)) {
         $pipelineResult = runExtractionPipeline($physical_path);
         if (!empty($pipelineResult['ok'])) {
             $status = 'DONE';
-            $extractedJson = json_encode($pipelineResult['extracted'] ?? [], JSON_UNESCAPED_UNICODE);
+            $ex = $pipelineResult['extracted'] ?? [];
+            if (is_array($ex) && ($ex['ins_type'] ?? '') === 'معرفی‌نامه') $ex = intro_clean_fields($ex);
+            $extractedJson = json_encode($ex, JSON_UNESCAPED_UNICODE);
         } else {
             $extractedJson = json_encode(['error' => $pipelineResult['error'] ?? 'خطای نامشخص پردازش'], JSON_UNESCAPED_UNICODE);
         }
@@ -467,31 +473,29 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
     $notify_message_id = null;
     $extractedArr = $status === 'DONE' ? (json_decode($extractedJson, true) ?: []) : [];
     $isIntroduction = ($status === 'DONE' && ($extractedArr['ins_type'] ?? '') === 'معرفی‌نامه');
+    // فقط معرفی‌نامه پیامِ «دریافت شد» می‌گیرد؛ هر فایلِ دیگری بی‌صدا به صفِ پردازش می‌رود تا کارشناس
+    // اول بگوید «معرفی‌نامه است یا نه» (اگر نبود هیچ اتفاقی نمی‌افتد)
+    $needConfirm = $isIntroduction ? 0 : 1;
+    queue_ensure_cols($pdo);
 
     if ($isIntroduction) {
         $notifyText = "📋 معرفی‌نامه آقای / خانم *" . ($extractedArr['insured_name'] ?: 'نامشخص') . "* با موفقیت دریافت شد ✅\nبه محض تایید نهایی توسط کارشناس، ثبت خواهد شد.";
         $sent = bale_api('sendMessage', ['chat_id' => $chat_id, 'text' => $notifyText, 'reply_to_message_id' => $incoming_message_id, 'parse_mode' => 'Markdown'], $bot_token);
         $notify_message_id = $sent['message_id'] ?? null;
-    } else {
-        // شناسه‌ی پیامِ «دریافت شد» برای همه‌ی مدارک نگه داشته می‌شود تا با «رد» حذف و با «تایید» به‌روز شود
-        if ($status === 'DONE') $sent = send_msg($chat_id, "✅ مدرک شما خوانده شد و در «صف پردازش هوشمند» منتظر تایید نهایی کارشناس است.", $bot_token, null, $incoming_message_id);
-        elseif ($status === 'FAILED') $sent = send_msg($chat_id, "⚠️ مدرک شما دریافت شد اما هوش مصنوعی نتوانست اطلاعات را به‌طور خودکار بخواند. کارشناس به‌صورت دستی آن را بررسی می‌کند.", $bot_token, null, $incoming_message_id);
-        else $sent = send_msg($chat_id, "✅ مدرک شما دریافت شد و در صف بررسی دستی قرار گرفت.", $bot_token, null, $incoming_message_id);
-        $notify_message_id = is_array($sent) ? ($sent['message_id'] ?? null) : null;
     }
 
     $stmt = $pdo->prepare("
         INSERT INTO processing_queue
             (file_name, file_path, file_type, status, extracted_data,
              uploaded_by, sender_user_id, sender_name, sender_username, chat_type, chat_title,
-             tg_message_id, tg_notify_message_id, processed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             tg_message_id, tg_notify_message_id, processed_at, need_intro_confirm)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $file_name, $db_path, $ext, $status, $extractedJson,
         $chat_id, $sender_user_id, $sender_name !== '' ? $sender_name : null, $sender_username,
         $chat_type, $chat_title, $incoming_message_id, $notify_message_id,
-        ($status === 'PENDING') ? null : date('Y-m-d H:i:s'),
+        ($status === 'PENDING') ? null : date('Y-m-d H:i:s'), $needConfirm,
     ]);
 }
 

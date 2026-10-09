@@ -5250,6 +5250,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             list.forEach((row) => {
                 let statusColor = row.status === 'PENDING' ? 'text-amber-500' : (row.status === 'PROCESSING' ? 'text-blue-500' : (row.status === 'DONE' ? 'text-emerald-500' : 'text-red-500'));
                 let btnHtml = (row.status === 'DONE' || row.status === 'FAILED') ? `<button onclick="openOcrReview(${row.id})" class="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-200 transition-colors hover-target">بررسی و تایید</button>` : `<span class="text-xs text-slate-400">صبر کنید...</span>`;
+                // فایلی که ربات معرفی‌نامه تشخیص نداد: اول کارشناس می‌گوید معرفی‌نامه است یا نه (ربات هنوز هیچ پیامی نفرستاده)
+                const needConfirm = +row.need_intro_confirm === 1;
+                if (needConfirm) {
+                    btnHtml = `<div class="flex flex-wrap gap-1.5 items-center"><a href="/${row.file_path}" target="_blank" rel="noopener" class="bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200"><i class="fas fa-eye ml-1"></i>فایل</a>
+                        <button onclick="queueIntroConfirm(${row.id}, true)" class="bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700"><i class="fas fa-check ml-1"></i>معرفی‌نامه است</button>
+                        <button onclick="queueIntroConfirm(${row.id}, false)" class="bg-rose-50 text-rose-600 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-rose-100"><i class="fas fa-xmark ml-1"></i>نیست</button></div>`;
+                }
 
                 let senderLabel = row.sender_name || row.sender_username || '—';
                 if (row.chat_type && row.chat_type !== 'private' && row.chat_title) {
@@ -5270,11 +5277,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="p-4 text-slate-600 text-xs">${senderLabel}</td>
                         <td class="p-4 text-xs">${identifiedHtml}</td>
                         <td class="p-4 text-slate-500" dir="ltr">${toJalali(row.uploaded_at)}</td>
-                        <td class="p-4 font-bold ${statusColor}">${row.status}</td>
+                        <td class="p-4 font-bold ${needConfirm ? 'text-amber-600' : statusColor}">${needConfirm ? '<span class="inline-block whitespace-nowrap text-[11px] bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">آیا معرفی‌نامه است؟</span>' : row.status}</td>
                         <td class="p-4">${btnHtml}</td>
                     </tr>
                 `;
             });
+        }
+
+        // «معرفی‌نامه است؟»  بله: دوباره خوانده و پنجره‌ی بررسی باز می‌شود (بعد از تایید، مراحل و پیامِ معرفی‌نامه انجام می‌شود)؛
+        // خیر: فایل از صف برداشته می‌شود و هیچ پیامی به گروه نمی‌رود
+        async function queueIntroConfirm(qid, yes) {
+            if (!yes && !(await (window.uiConfirm ? uiConfirm('معرفی‌نامه نیست', 'این فایل از صف برداشته شود؟ هیچ پیامی به گروه فرستاده نمی‌شود.', {danger: true, ok: 'برداشتن'}) : confirm('این فایل از صف برداشته شود؟')))) return;
+            try {
+                const res = await fetch('api/queue_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_confirm', queue_id: qid, yes: yes ? 1 : 0})});
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+                if (!yes) { showToast('فایل از صف برداشته شد.', 'success'); loadQueue(); return; }
+                showToast('به‌عنوانِ معرفی‌نامه خوانده شد؛ اطلاعات را بررسی و تایید کنید.', 'success');
+                await loadQueue();
+                openOcrReview(qid);
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
         }
 
         document.getElementById('queue-search-input').addEventListener('input', e => {

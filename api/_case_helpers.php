@@ -116,9 +116,64 @@ function plate_core($plate) {
 // خروجی: آرایه‌ی ['data' => آرایه‌ی استخراج‌شده یا null, 'debug' => توضیح خطا برای عیب‌یابی]
 // نکته: به‌جای برگرداندنِ خالیِ null، دلیل شکست هم برگردانده می‌شود تا وقتی چیزی شناسایی نشد
 // بتوان فهمید مشکل از کجاست (نبودِ محیط پایتون؟ PDF اسکن‌شده؟ خطای اسکریپت؟)
+// ---- معرفی‌نامه‌ی پرسنلی (api/py/intro_reader.py): خواندنِ PDFِ متنی بدونِ OCR ----
+// حروفِ نمایشی، کشیده‌ها (عــــلی) و «شاغل در این شرکت» (نامِ شرکت از امضای نامه) را درست می‌خواند.
+const INTRO_COMPANY_ALIASES = ['ویانا' => 'گروه ویانا'];   // باید با ALIASES در intro_reader.py یکی باشد
+function intro_python_path() {
+    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
+    try {
+        if (!empty($GLOBALS['pdo'])) {
+            $v = trim((string)$GLOBALS['pdo']->query("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'")->fetchColumn());
+            if ($v !== '') return $v;
+        }
+    } catch (Throwable $e) {}
+    return is_file($def) ? $def : 'python3';
+}
+// خروجی: ['has_text' => bool, 'is_intro' => bool, 'score' => int, 'data' => [...]] یا null (پایتون/فایل در دسترس نبود)
+function intro_read_pdf($absFilePath) {
+    if (strtolower(pathinfo($absFilePath, PATHINFO_EXTENSION)) !== 'pdf' || !is_file($absFilePath) || !function_exists('proc_open')) return null;
+    $home = getenv('HOME');
+    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
+    $proc = @proc_open([intro_python_path(), __DIR__ . '/py/intro_reader.py', $absFilePath], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
+                       ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
+    if (!is_resource($proc)) return null;
+    $out = (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
+    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
+    $j = preg_match('/\{.*\}/s', $out, $m) ? json_decode($m[0], true) : null;
+    return is_array($j) && !empty($j['ok']) ? $j : null;
+}
+// پاک‌سازیِ نام و شرکتِ معرفی‌نامه (برای خروجیِ موتورِ OCR هم): کشیده، نیم‌فاصله‌ی اضافه، «شرکت»ِ اول، نام‌های شناخته‌شده
+function intro_clean_fields(array $d) {
+    $fix = function ($s) {
+        $s = str_replace(['ـ', "\u{200C}", "\u{200F}", "\u{200E}", 'ي', 'ك'], ['', ' ', ' ', ' ', 'ی', 'ک'], (string)$s);
+        return trim(preg_replace('/\s+/u', ' ', $s));
+    };
+    if (isset($d['insured_name'])) $d['insured_name'] = preg_replace('/^(?:آقای|آقا|خانم)\s+/u', '', $fix($d['insured_name']));
+    if (isset($d['company_name'])) {
+        $c = preg_replace('/^(?:شرکت|موسسه|مؤسسه)\s+/u', '', $fix($d['company_name']));
+        foreach (INTRO_COMPANY_ALIASES as $k => $v) if ($k !== '' && mb_strpos($c, $k) !== false) { $c = $v; break; }
+        if (preg_match('/^(?:این|همین)\s*(?:شرکت|مجموعه)$/u', $c)) $c = '';
+        $d['company_name'] = $c;
+    }
+    return $d;
+}
+
+// ستونِ need_intro_confirm در صفِ پردازش: فایلی که معرفی‌نامه تشخیص داده نشد، اول کارشناس می‌گوید معرفی‌نامه است یا نه
+function queue_ensure_cols($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM processing_queue LIKE 'need_intro_confirm'")->fetch()) $pdo->exec("ALTER TABLE processing_queue ADD COLUMN need_intro_confirm TINYINT NOT NULL DEFAULT 0"); }
+    catch (Throwable $e) { error_log('[queue_ensure_cols] ' . $e->getMessage()); }
+}
+
 function run_document_ocr_verbose($absFilePath) {
     $pythonEnv = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
     $scriptPath = '/home/besiteir/ocr-paddle/test_pipeline.py';
+
+    // معرفی‌نامه‌ی متنی: خواننده‌ی اختصاصی (دقیق‌تر و سریع‌تر از موتورِ OCR)
+    $ir = intro_read_pdf($absFilePath);
+    if ($ir && !empty($ir['is_intro'])) return ['data' => intro_clean_fields($ir['data']), 'debug' => null];
 
     if (!function_exists('shell_exec') || in_array('shell_exec', array_map('trim', explode(',', (string)ini_get('disable_functions'))), true)) {
         return ['data' => null, 'debug' => 'تابع shell_exec روی این سرور غیرفعال است.'];
@@ -163,6 +218,7 @@ function run_document_ocr_verbose($absFilePath) {
     if (is_array($extracted) && isset($extracted['error'])) {
         return ['data' => null, 'debug' => $extracted['error']];
     }
+    if (is_array($extracted) && ($extracted['ins_type'] ?? '') === 'معرفی‌نامه') $extracted = intro_clean_fields($extracted);
     return ['data' => $extracted, 'debug' => null];
 }
 

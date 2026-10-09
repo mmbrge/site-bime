@@ -112,7 +112,34 @@ function find_open_request($pdo, $person_id, $enum_type = null) {
     return $id ?: null;
 }
 
+queue_ensure_cols($pdo);
+
 try {
+    // «آیا این فایل معرفی‌نامه است؟» برای فایل‌هایی که ربات معرفی‌نامه تشخیص نداد (و پیامی هم نفرستاد)
+    //  خیر: فایل و ردیف بی‌صدا حذف می‌شود (هیچ پیامی به گروه نمی‌رود)
+    //  بله: با خواننده‌ی معرفی‌نامه دوباره خوانده می‌شود و مثلِ یک معرفی‌نامه‌ی عادی برای بررسی و تایید آماده می‌شود
+    if ($action === 'intro_confirm') {
+        $qid = intval($data['queue_id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM processing_queue WHERE id = ?");
+        $st->execute([$qid]);
+        $row = $st->fetch();
+        if (!$row) { echo json_encode(['ok' => false, 'error' => 'این مورد در صف نیست (شاید قبلاً بررسی شده).'], JSON_UNESCAPED_UNICODE); exit; }
+        if (empty($data['yes'])) {
+            if ($row['file_path'] && is_file('../' . $row['file_path'])) @unlink('../' . $row['file_path']);
+            $pdo->prepare("DELETE FROM processing_queue WHERE id = ?")->execute([$qid]);
+            echo json_encode(['ok' => true, 'removed' => true], JSON_UNESCAPED_UNICODE); exit;
+        }
+        $ex = json_decode((string)$row['extracted_data'], true);
+        if (!is_array($ex) || isset($ex['error'])) $ex = [];
+        $ir = $row['file_path'] ? intro_read_pdf(dirname(__DIR__) . '/' . $row['file_path']) : null;
+        if ($ir && !empty($ir['data'])) foreach ($ir['data'] as $k => $v) if ((string)$v !== '' || !isset($ex[$k])) $ex[$k] = $v;
+        $ex['ins_type'] = 'معرفی‌نامه';
+        $ex = intro_clean_fields($ex);
+        $pdo->prepare("UPDATE processing_queue SET need_intro_confirm = 0, status = 'DONE', extracted_data = ?, processed_at = COALESCE(processed_at, NOW()) WHERE id = ?")
+            ->execute([json_encode($ex, JSON_UNESCAPED_UNICODE), $qid]);
+        echo json_encode(['ok' => true, 'extracted' => $ex], JSON_UNESCAPED_UNICODE); exit;
+    }
+
     // ۱. لیست کردن فایل‌های صف برای نمایش در پنل
     if ($action === 'list') {
         $stmt = $pdo->query("SELECT * FROM processing_queue ORDER BY uploaded_at DESC");
@@ -179,6 +206,10 @@ try {
             echo json_encode(['ok' => false, 'error' => 'کد ملی برای تایید و بایگانی الزامی است.']);
             exit;
         }
+
+        $chk = $pdo->prepare("SELECT need_intro_confirm FROM processing_queue WHERE id = ?");
+        $chk->execute([$qid]);
+        if (intval($chk->fetchColumn())) { echo json_encode(['ok' => false, 'error' => 'اول مشخص کنید این فایل معرفی‌نامه است یا نه.'], JSON_UNESCAPED_UNICODE); exit; }
 
         $pdo->beginTransaction();
 
