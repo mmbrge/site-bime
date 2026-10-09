@@ -16,14 +16,16 @@
     const ICONS = ['ℹ️', '📢', '⚠️', '🚨', '📜', '🎉', '🎂', '🌴', '🛠️', '✅', '⭐', '💡', '📌', '🔔', '🕌', '🏆', '❤️', '☕', '📅', '🚗'];
     const STATE = {live: ['در حالِ نمایش', 'bg-emerald-100 text-emerald-700'], scheduled: ['زمان‌بندی‌شده', 'bg-sky-100 text-sky-700'], ended: ['پایان‌یافته', 'bg-slate-100 text-slate-500'], off: ['غیرفعال', 'bg-rose-100 text-rose-600']};
     const S = {data: null, form: null, touched: false};
-    const blank = () => ({id: 0, template: 'info', title: '', body: '', icon: '', button: '', require_ack: false, audience: {type: 'all', roles: [], users: []}, start: '', end: ''});
+    const blank = () => ({id: 0, template: 'info', title: '', body: '', icon: '', button: '', require_ack: false, audience: {type: 'all', roles: [], users: []}, start: '', end: '', release: {version: '', items: [], view: ''}});
+    const REL_TYPES = {feature: ['✨', 'امکانِ تازه', 'bg-violet-100 text-violet-700'], improve: ['⚡', 'بهبود', 'bg-sky-100 text-sky-700'], fix: ['🛠️', 'رفعِ اشکال', 'bg-amber-100 text-amber-700']};
 
     async function render(root) {
         if (!root) return;
         S.root = root;
-        const d = await api('list');
+        const [d, cl] = await Promise.all([api('list'), api('changelog')]);
         if (!d.ok) { root.innerHTML = `<p class="text-center text-sm text-rose-600 py-10">${esc(d.error || 'خطا')}</p>`; return; }
         S.data = d;
+        S.cl = cl.ok ? cl : {versions: [], sent: {}, current: ''};
         if (!S.form) { S.form = blank(); applyTpl('info', true); }
         root.innerHTML = `
           <div class="space-y-5">
@@ -54,6 +56,45 @@
         const isDefault = !S.touched || force;
         f.template = k;
         if (isDefault) { f.title = t.title; f.body = t.body; f.button = ''; f.icon = ''; f.require_ack = !!t.ack; S.touched = false; }
+        if (k === 'release' && S.cl) {
+            f.release = f.release || {version: '', items: [], view: ''};
+            if (!f.release.version) f.release.version = S.cl.current || '';
+            if (!f.release.view) f.release.view = S.cl.current || '';
+        }
+    }
+    // ---------------- «تغییراتِ نسخه»: انتخابِ امکانات و رفعِ اشکال‌ها با تیک ----------------
+    function clIndex() { const m = {}; (S.cl.versions || []).forEach(v => v.items.forEach(i => { m[i.id] = Object.assign({version: v.version}, i); })); return m; }
+    function releasePicker() {
+        const f = S.form, r = f.release, cl = S.cl, sel = new Set(r.items);
+        const vers = (cl.versions || []).filter(v => !r.view || v.version === r.view);
+        const sentChip = id => { const x = (cl.sent || {})[id]; return x && x.length ? `<span class="text-[9.5px] font-black rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700" title="${esc(x.map(y => 'نسخه‌ی ' + y.version + ' · ' + y.at).join('\n'))}">✓ اعلام‌شده${x.length > 1 ? ' ' + fa(x.length) + ' بار' : ''}</span>` : ''; };
+        return `<div class="rounded-2xl border border-indigo-100 p-4 mt-4" style="background:linear-gradient(135deg,#eef2ff,#ecfeff)" data-rel>
+            <div class="flex flex-wrap items-end gap-2 mb-3">
+              <div><p class="text-[11px] font-black text-indigo-700 mb-1"><i class="fas fa-rocket ml-1"></i>امکانات و رفعِ اشکال‌ها</p>
+                <p class="text-[10.5px] text-slate-500">هرچه تیک بزنید با طرحِ «تغییراتِ نسخه» برای گیرندگان نشان داده می‌شود.</p></div>
+              <label class="mr-auto"><span class="block text-[10px] font-bold text-slate-500 mb-0.5">شماره‌ی نسخه در اعلان</span><input class="w-28 border border-indigo-200 rounded-xl px-2 py-1.5 text-xs text-center font-black" dir="ltr" data-rv value="${esc(r.version)}" placeholder="${esc(cl.current || '1.0.0')}"></label>
+              <label><span class="block text-[10px] font-bold text-slate-500 mb-0.5">نمایشِ فهرست</span><select class="border border-indigo-200 rounded-xl px-2 py-1.5 text-xs font-bold" data-rview>
+                <option value="">همه‌ی نسخه‌ها</option>${(cl.versions || []).map(v => `<option value="${esc(v.version)}" ${r.view === v.version ? 'selected' : ''}>نسخه‌ی ${esc(v.version)} · ${fa(v.items.length)} مورد</option>`).join('')}</select></label>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mb-3">
+              <button type="button" class="text-[11px] font-black bg-indigo-600 text-white rounded-lg px-3 py-1.5" data-rsel="all"><i class="fas fa-check-double ml-1"></i>همه‌ی موارد فهرست</button>
+              <button type="button" class="text-[11px] font-black bg-white text-indigo-700 border border-indigo-200 rounded-lg px-3 py-1.5" data-rsel="new">فقط اعلام‌نشده‌ها</button>
+              ${Object.entries(REL_TYPES).map(([k, t]) => `<button type="button" class="text-[11px] font-black bg-white text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5" data-rsel="t:${k}">${t[0]} همه‌ی ${t[1]}‌ها</button>`).join('')}
+              <button type="button" class="text-[11px] font-black bg-white text-rose-600 border border-rose-200 rounded-lg px-3 py-1.5" data-rsel="none">هیچ</button>
+              <span class="mr-auto text-[11px] font-black text-indigo-700 bg-white rounded-lg px-3 py-1.5" data-rcount>${fa(sel.size)} مورد انتخاب شد</span>
+            </div>
+            <div class="space-y-3 max-h-[420px] overflow-y-auto pl-1">${vers.map(v => `<div>
+                <p class="text-[11px] font-black text-slate-600 mb-1.5">نسخه‌ی <span dir="ltr">${esc(v.version)}</span> <small class="text-slate-400 font-bold">${fa(v.date)} · ${esc(v.title || '')}</small></p>
+                <div class="grid md:grid-cols-2 gap-1.5">${v.items.map(i => { const t = REL_TYPES[i.type] || REL_TYPES.feature; return `<label class="flex gap-2 items-start rounded-xl border ${sel.has(i.id) ? 'border-indigo-400 bg-white shadow-sm' : 'border-slate-200 bg-white/70'} px-3 py-2 cursor-pointer" data-ritem>
+                    <input type="checkbox" class="accent-indigo-600 w-4 h-4 mt-1" value="${esc(i.id)}" ${sel.has(i.id) ? 'checked' : ''}>
+                    <span class="min-w-0"><span class="flex flex-wrap items-center gap-1"><span class="text-[9.5px] font-black rounded-full px-2 py-0.5 ${t[2]}">${t[0]} ${t[1]}</span><b class="text-[12px] text-slate-800">${esc(i.title)}</b>${i.area ? `<span class="text-[9.5px] text-slate-500 bg-slate-100 rounded-full px-2">${esc(i.area)}</span>` : ''}${sentChip(i.id)}</span>
+                      <span class="block text-[10.5px] text-slate-500 leading-5 mt-0.5">${esc(i.desc || '')}</span></span></label>`; }).join('')}</div></div>`).join('') || '<p class="text-xs text-slate-400">فهرستی نیست.</p>'}</div>
+          </div>`;
+    }
+    function releaseExtra(f) {
+        const m = clIndex(), order = ['feature', 'improve', 'fix'];
+        const items = f.release.items.map(id => m[id]).filter(Boolean).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+        return {version: f.release.version || S.cl.current, date: '', items};
     }
     function composer() {
         const f = S.form, T = window.Announce.TEMPLATES, d = S.data;
@@ -63,15 +104,15 @@
             <div class="flex items-center gap-2 mb-3"><h3 class="font-black text-slate-700 text-sm"><i class="fas fa-pen-to-square text-violet-500 ml-1"></i>${f.id ? 'ویرایشِ اعلان' : 'اعلانِ تازه'}</h3>
               ${f.id ? '<button type="button" class="mr-auto text-[11px] font-bold text-slate-500 bg-slate-100 rounded-lg px-3 py-1" data-a="new">اعلانِ تازه</button>' : ''}</div>
             <p class="text-[11px] font-black text-slate-500 mb-2">۱. طرح را انتخاب کنید</p>
-            <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">${Object.entries(T).map(([k, t]) => `<button type="button" data-tpl="${k}" class="rounded-2xl overflow-hidden border-2 ${f.template === k ? 'border-violet-500 shadow-lg' : 'border-transparent'} text-right transition hover:-translate-y-0.5" style="background:#fff">
+            <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-2 mb-4">${Object.entries(T).map(([k, t]) => `<button type="button" data-tpl="${k}" class="rounded-2xl overflow-hidden border-2 ${f.template === k ? 'border-violet-500 shadow-lg' : 'border-transparent'} text-right transition hover:-translate-y-0.5" style="background:#fff">
                 <div style="height:46px;background:${t.bg};display:flex;align-items:center;justify-content:center;font-size:24px">${t.icon}</div><div class="px-2 py-1.5 text-[10.5px] font-black text-slate-700 text-center">${t.name}</div></button>`).join('')}</div>
             <div class="grid lg:grid-cols-2 gap-4">
               <div class="space-y-3">
                 <p class="text-[11px] font-black text-slate-500">۲. متن</p>
                 <div class="flex gap-2"><input class="w-16 border border-slate-200 rounded-xl px-2 py-2 text-xl text-center" data-f="icon" value="${esc(f.icon)}" placeholder="${T[f.template].icon}" title="نماد (اختیاری)">
-                  <input class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" data-f="title" value="${esc(f.title)}" placeholder="عنوانِ اعلان"></div>
+                  <input class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" data-f="title" value="${esc(f.title)}" placeholder="${f.template === 'release' ? 'عنوان (خالی = «تازه‌های نسخه‌ی …»)' : 'عنوانِ اعلان'}"></div>
                 <div class="flex flex-wrap gap-1">${ICONS.map(i => `<button type="button" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-lg" data-icon="${i}">${i}</button>`).join('')}</div>
-                <textarea class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm leading-7" rows="7" data-f="body" placeholder="متنِ اعلان…">${esc(f.body)}</textarea>
+                <textarea class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm leading-7" rows="${f.template === 'release' ? 3 : 7}" data-f="body" placeholder="${f.template === 'release' ? 'متنِ کوتاهِ ابتدای اعلان (اختیاری)، مثلاً: همکارانِ عزیز، نسخه‌ی تازه‌ی سامانه آماده است…' : 'متنِ اعلان…'}">${esc(f.body)}</textarea>
                 <p class="text-[10.5px] text-slate-400 leading-5">«**متن**» پررنگ می‌شود؛ خطی که با «- » شروع شود فهرست می‌شود${f.template === 'rules' ? '؛ در «قوانین» هر خط یک بندِ شماره‌دار است' : ''}.</p>
                 <div class="flex flex-wrap gap-3 items-center"><input class="flex-1 min-w-[160px] border border-slate-200 rounded-xl px-3 py-2 text-xs" data-f="button" value="${esc(f.button)}" placeholder="متنِ دکمه: ${esc(T[f.template].btn)}">
                   <label class="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" class="accent-violet-600 w-4 h-4" data-f="require_ack" ${f.require_ack ? 'checked' : ''}>باید تیکِ «خواندم» بزنند</label></div>
@@ -91,6 +132,7 @@
                 <p class="text-[10.5px] text-slate-400">بعد از پایان دیگر به کسی نشان داده نمی‌شود؛ هر نفر اعلان را یک بار می‌بیند (اگر «خواندم» لازم باشد، تا تیک نزند دوباره می‌آید).</p>
               </div>
             </div>
+            ${f.template === 'release' ? releasePicker() : ''}
             <div class="flex flex-wrap gap-2 mt-4">
               <button type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-5 py-2.5 rounded-xl" data-a="preview"><i class="fas fa-eye ml-1"></i>پیش‌نمایش</button>
               <button type="button" class="text-white text-xs font-black px-6 py-2.5 rounded-xl" style="background:linear-gradient(120deg,#7c3aed,#db2777)" data-a="send"><i class="fas fa-paper-plane ml-1"></i>${f.id ? 'ذخیره‌ی تغییرات' : 'ارسالِ اعلان'}</button>
@@ -106,6 +148,8 @@
         f.audience.type = (c.querySelector('input[name="an-aud"]:checked') || {}).value || 'all';
         f.audience.roles = [...c.querySelectorAll('[data-roles] input:checked')].map(i => i.value);
         f.audience.users = [...c.querySelectorAll('[data-ulist] input:checked')].map(i => i.value);
+        const rv = c.querySelector('[data-rv]');
+        if (rv) f.release.version = en(rv.value.trim());
         return f;
     }
     function bindComposer() {
@@ -124,9 +168,37 @@
         c.querySelectorAll('input[name="an-aud"]').forEach(r => r.onchange = () => { collect(); redrawComposer(); });
         const q = c.querySelector('[data-usq]');
         if (q) q.oninput = () => c.querySelectorAll('[data-un]').forEach(l => l.classList.toggle('hidden', !!q.value.trim() && !l.dataset.un.includes(q.value.trim())));
+        // انتخابِ امکانات و رفعِ اشکال‌ها
+        const rel = c.querySelector('[data-rel]');
+        if (rel) {
+            const f = S.form, cnt = () => { rel.querySelector('[data-rcount]').textContent = fa(f.release.items.length) + ' مورد انتخاب شد'; };
+            rel.querySelectorAll('[data-ritem] input').forEach(i => i.onchange = () => {
+                const set = new Set(f.release.items); i.checked ? set.add(i.value) : set.delete(i.value); f.release.items = [...set];
+                const lb = i.closest('[data-ritem]'); lb.classList.toggle('border-indigo-400', i.checked); lb.classList.toggle('shadow-sm', i.checked); lb.classList.toggle('border-slate-200', !i.checked); cnt();
+            });
+            rel.querySelector('[data-rview]').onchange = e => {
+                collect(); f.release.view = e.target.value;
+                if (e.target.value) f.release.version = e.target.value;   // نسخه‌ی اعلان همان نسخه‌ی انتخابی
+                redrawComposer();
+            };
+            rel.querySelectorAll('[data-rsel]').forEach(b => b.onclick = () => {
+                collect();
+                const k = b.dataset.rsel, vis = (S.cl.versions || []).filter(v => !f.release.view || v.version === f.release.view).flatMap(v => v.items);
+                const set = new Set(f.release.items);
+                if (k === 'none') vis.forEach(i => set.delete(i.id));
+                else vis.filter(i => k === 'all' || (k === 'new' && !((S.cl.sent || {})[i.id] || []).length) || k === 't:' + i.type).forEach(i => set.add(i.id));
+                f.release.items = [...set];
+                redrawComposer();
+            });
+        }
         const on = (a, fn) => { const b = c.querySelector(`[data-a="${a}"]`); if (b) b.onclick = fn; };
         on('new', () => { S.form = blank(); applyTpl('info', true); redrawComposer(); });
-        on('preview', () => { const f = collect(); window.Announce.preview({template: f.template, title: f.title || '(بی‌عنوان)', body: f.body, icon: f.icon, button: f.button, require_ack: f.require_ack, from: 'پیش‌نمایش', at: ''}); });
+        on('preview', () => {
+            const f = collect(), rel = f.template === 'release';
+            if (rel && !f.release.items.length) return toast('دست‌کم یک امکان یا رفعِ اشکال را تیک بزنید.', 'error');
+            const ex = rel ? releaseExtra(f) : null;
+            window.Announce.preview({template: f.template, title: f.title || (rel ? 'تازه‌های نسخه‌ی ' + ex.version : '(بی‌عنوان)'), body: f.body, icon: f.icon, button: f.button, require_ack: f.require_ack, from: 'پیش‌نمایش', at: '', extra: ex});
+        });
         on('send', async () => {
             const f = collect();
             const r = await api('save', f);
@@ -159,7 +231,7 @@
             return `<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-100 p-3 hover:border-violet-200 bg-white">
                 <div style="width:46px;height:46px;border-radius:15px;background:${t.bg};display:flex;align-items:center;justify-content:center;font-size:22px;flex:none">${esc(x.icon || t.icon)}</div>
                 <div class="flex-1 min-w-[200px]"><b class="text-[13px] text-slate-800">${esc(x.title)}</b> <span class="text-[10px] font-black rounded-full px-2 py-0.5 ${st[1]}">${st[0]}</span>${x.auto ? ' <span class="text-[10px] font-black rounded-full px-2 py-0.5 bg-fuchsia-100 text-fuchsia-700">خودکار</span>' : ''}${x.require_ack ? ' <span class="text-[10px] font-black rounded-full px-2 py-0.5 bg-indigo-100 text-indigo-700">نیازِ به «خواندم»</span>' : ''}
-                  <p class="text-[10.5px] text-slate-500 mt-0.5">${esc(t.name)} · ${esc(audText(x.audience))} · ${fa(x.start || x.created)}${x.end ? ' تا ' + fa(x.end) : ''}${x.from ? ' · ' + esc(x.from) : ''}</p></div>
+                  <p class="text-[10.5px] text-slate-500 mt-0.5">${esc(t.name)}${x.extra && x.extra.version ? ' <span dir="ltr">' + esc(x.extra.version) + '</span> · ' + fa((x.extra.items || []).length) + ' مورد' : ''} · ${esc(audText(x.audience))} · ${fa(x.start || x.created)}${x.end ? ' تا ' + fa(x.end) : ''}${x.from ? ' · ' + esc(x.from) : ''}</p></div>
                 <div class="w-40"><div class="h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-gradient-to-l from-violet-500 to-fuchsia-500" style="width:${pct}%"></div></div>
                   <small class="text-[10px] text-slate-500">دیده: ${fa(x.seen)} از ${fa(x.targets)}${x.require_ack ? ' · پذیرفته: ' + fa(x.acked) : ''}</small></div>
                 <div class="flex flex-wrap gap-1">
@@ -176,7 +248,8 @@
         box.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {
             const x = find(b.dataset.ed);
             S.form = {id: x.id, template: x.template, title: x.title, body: x.body, icon: x.icon, button: x.button, require_ack: x.require_ack,
-                      audience: Object.assign({roles: [], users: []}, x.audience), start: x.start, end: x.end};
+                      audience: Object.assign({roles: [], users: []}, x.audience), start: x.start, end: x.end,
+                      release: x.extra ? {version: x.extra.version || '', items: (x.extra.items || []).map(i => i.id), view: ''} : {version: '', items: [], view: ''}};
             S.touched = true; redrawComposer();
             S.root.querySelector('[data-comp]').scrollIntoView({behavior: 'smooth', block: 'start'});
         });

@@ -525,7 +525,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </span>
             <span class="text-gray-300 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
         </div>
-        <p class="copyright-text">تمامی حقوق مادی و معنوی محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.3.0</span></p>
+        <p class="copyright-text">تمامی حقوق مادی و معنوی محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.4.0</span></p>
     </div>
 
     <!-- بارگذاری ذرات -->

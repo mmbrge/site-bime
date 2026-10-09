@@ -61,7 +61,7 @@ if (!$companies) {
 <script src="../tools.js?v=2"></script>
 <script src="../comfort.js?v=13"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
-<script src="../announce.js?v=2"></script>
+<script src="../announce.js?v=3"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>

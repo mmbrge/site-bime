@@ -34,6 +34,9 @@
                   title: 'اطلاعیه‌ی تعطیلی', body: 'دفتر روزِ … تعطیل است.\nتعطیلاتِ خوبی داشته باشید. 🌿'},
         birthday: {name: 'تولد', icon: '🎂', bg: 'linear-gradient(135deg,#a855f7,#ec4899)', acc: '#c026d3', soft: '#fdf4ff', btn: 'ممنونم 🥳', confetti: true, balloons: true,
                    title: 'تولدت مبارک! 🎂', body: 'سالی پر از شادی و موفقیت برایت آرزو می‌کنیم.'},
+        // امکانات و رفعِ اشکال‌های یک نسخه (فهرستِ api/_changelog.php) - متن از item.extra
+        release: {name: 'تغییراتِ نسخه', icon: '🚀', bg: 'linear-gradient(135deg,#0f172a,#4338ca 52%,#0891b2)', acc: '#4f46e5', soft: '#eef2ff', btn: 'عالی، ممنون! 🙌',
+                  title: '', body: ''},
     };
 
     const CSS = `
@@ -41,7 +44,7 @@
     @keyframes anFade{from{opacity:0}to{opacity:1}}
     .an-card{position:relative;width:min(470px,100%);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:30px;overflow:hidden;box-shadow:0 40px 90px -25px rgba(2,6,23,.7);animation:anPop .45s cubic-bezier(.2,1.2,.3,1)}
     @keyframes anPop{from{opacity:0;transform:translateY(30px) scale(.9)}to{opacity:1;transform:none}}
-    .an-hd{position:relative;padding:30px 24px 22px;color:#fff;text-align:center;overflow:hidden}
+    .an-hd{position:relative;flex-shrink:0;padding:30px 24px 22px;color:#fff;text-align:center;overflow:hidden}
     .an-hd::before{content:'';pointer-events:none;position:absolute;width:260px;height:260px;border-radius:50%;left:-80px;top:-140px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 70%)}
     .an-hd::after{content:'';pointer-events:none;position:absolute;width:200px;height:200px;border-radius:50%;right:-70px;bottom:-120px;background:radial-gradient(circle,rgba(255,255,255,.25),transparent 70%)}
     .an-ic{position:relative;z-index:1;width:84px;height:84px;margin:0 auto 10px;border-radius:28px;display:flex;align-items:center;justify-content:center;font-size:44px;background:rgba(255,255,255,.22);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 12px 26px -10px rgba(0,0,0,.35)}
@@ -53,7 +56,7 @@
     .an-bd ol{margin:4px 0 8px;padding:0;list-style:none;counter-reset:an}
     .an-bd ol li{position:relative;padding:8px 44px 8px 10px;margin-bottom:6px;border-radius:14px;background:var(--an-soft);counter-increment:an}
     .an-bd ol li::before{content:counter(an,persian);position:absolute;right:10px;top:8px;width:24px;height:24px;border-radius:9px;background:var(--an-acc);color:#fff;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center}
-    .an-ft{padding:12px 24px 20px;display:flex;flex-direction:column;gap:10px}
+    .an-ft{flex-shrink:0;padding:12px 24px 20px;display:flex;flex-direction:column;gap:10px}
     .an-ackl{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#334155;background:var(--an-soft);border-radius:14px;padding:10px 12px;cursor:pointer}
     .an-ackl input{width:18px;height:18px;accent-color:var(--an-acc)}
     .an-btn{border:0;border-radius:16px;padding:13px 18px;font-size:14px;font-weight:900;color:#fff;cursor:pointer;font-family:inherit;background:var(--an-bg);box-shadow:0 12px 24px -12px var(--an-acc);transition:.2s}
@@ -82,6 +85,31 @@
     @keyframes anRise{to{transform:translateY(-760px) rotate(-8deg)}}
     .an-hist .it{display:flex;gap:10px;padding:10px 12px;border-radius:14px;cursor:pointer;align-items:center}
     .an-hist .it:hover{background:#f8fafc}
+    /* ---- تغییراتِ نسخه ---- */
+    .an-card.an-rel{width:min(560px,100%)}
+    .an-rel .an-hd{padding:24px 24px 18px}
+    .an-rel .an-ic{width:70px;height:70px;font-size:36px;border-radius:24px}
+    .an-rel .an-hd .an-stars{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(2px 2px at 12% 30%,#fff,transparent),radial-gradient(1.5px 1.5px at 30% 70%,#e0e7ff,transparent),radial-gradient(2px 2px at 78% 22%,#fff,transparent),radial-gradient(1.5px 1.5px at 88% 64%,#a5f3fc,transparent),radial-gradient(1px 1px at 55% 15%,#fff,transparent),radial-gradient(1.5px 1.5px at 64% 82%,#fff,transparent);opacity:.8;animation:anTw 3s ease-in-out infinite}
+    @keyframes anTw{50%{opacity:.35}}
+    .an-rel .an-ic{animation:anRocket 2.6s ease-in-out infinite}
+    @keyframes anRocket{0%,100%{transform:translate(0,0) rotate(0)}50%{transform:translate(4px,-7px) rotate(-6deg)}}
+    .an-ver{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;margin-bottom:6px;padding:5px 14px 5px 6px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);font-size:12px;font-weight:900}
+    .an-ver b{direction:ltr;font-family:ui-monospace,Menlo,monospace;background:#fff;color:#4338ca;border-radius:999px;padding:2px 10px;font-size:13px}
+    .an-chips{position:relative;z-index:1;display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .an-chips span{font-size:10.5px;font-weight:900;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22)}
+    .an-rel .an-bd{padding:16px 18px 6px;background:linear-gradient(#f8fafc,#fff 120px)}
+    .an-rs{margin:0 0 14px}
+    .an-rs-h{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:900;color:#0f172a;margin:0 4px 8px}
+    .an-rs-h i{font-style:normal;width:28px;height:28px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--c-soft);font-size:15px}
+    .an-rs-h b{margin-right:auto;font-size:10.5px;color:var(--c);background:var(--c-soft);border-radius:999px;padding:2px 9px}
+    .an-ri{position:relative;display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:10px 12px;margin-bottom:7px;box-shadow:0 6px 16px -14px rgba(15,23,42,.5);opacity:0;transform:translateY(8px);animation:anIn .45s ease forwards}
+    @keyframes anIn{to{opacity:1;transform:none}}
+    .an-ri::before{content:'';position:absolute;inset-inline-start:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--c)}
+    .an-ri-ic{flex:none;width:26px;height:26px;border-radius:9px;background:var(--c-soft);color:var(--c);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
+    .an-ri-t{font-size:12.8px;font-weight:900;color:#0f172a;line-height:1.8}
+    .an-ri-a{display:inline-block;font-size:9.5px;font-weight:800;color:#64748b;background:#f1f5f9;border-radius:999px;padding:1px 8px;margin-inline-start:4px;vertical-align:middle}
+    .an-ri p{margin:2px 0 0;font-size:11.8px;line-height:1.95;color:#475569}
+    .an-rs.feature{--c:#7c3aed;--c-soft:#f3e8ff}.an-rs.improve{--c:#0284c7;--c-soft:#e0f2fe}.an-rs.fix{--c:#d97706;--c-soft:#fef3c7}
     @media (max-width:480px){.an-card{border-radius:24px}.an-hd{padding:24px 18px 18px}.an-bd,.an-ft{padding-left:18px;padding-right:18px}}
     `;
     function css() { if (!document.getElementById('an-css')) { const s = document.createElement('style'); s.id = 'an-css'; s.textContent = CSS; document.head.appendChild(s); } }
@@ -120,6 +148,23 @@
         card.appendChild(box);
         setTimeout(() => box.remove(), 7500);
     }
+    // «تغییراتِ نسخه»: بخش‌های امکاناتِ تازه / بهبودها / رفعِ اشکال‌ها
+    const REL = [['feature', '✨', 'امکاناتِ تازه', '＋'], ['improve', '⚡', 'بهبودها', '↑'], ['fix', '🛠️', 'رفعِ اشکال‌ها', '✓']];
+    function releaseHtml(x) {
+        const items = (x && x.items) || [];
+        let k = 0;
+        return REL.map(([type, ic, name, mark]) => {
+            const list = items.filter(i => i.type === type);
+            if (!list.length) return '';
+            return `<div class="an-rs ${type}"><div class="an-rs-h"><i>${ic}</i>${name}<b>${fa(list.length)}</b></div>${list.map(i => `<div class="an-ri" style="animation-delay:${(k++) * 70 + 200}ms">
+                <span class="an-ri-ic">${mark}</span><div style="min-width:0"><div class="an-ri-t">${esc(i.title)}${i.area ? `<span class="an-ri-a">${esc(i.area)}</span>` : ''}</div>${i.desc ? `<p>${esc(i.desc)}</p>` : ''}</div></div>`).join('')}</div>`;
+        }).join('');
+    }
+    function releaseChips(x) {
+        const items = (x && x.items) || [];
+        const one = {feature: 'امکانِ تازه', improve: 'بهبود', fix: 'رفعِ اشکال'};
+        return REL.map(([type, ic]) => { const n = items.filter(i => i.type === type).length; return n ? `<span>${ic} ${fa(n)} ${one[type]}</span>` : ''; }).join('');
+    }
     // نمایشِ یک اعلان. opts: {preview, index, total, onDone(acked)}
     function show(item, opts = {}) {
         css();
@@ -127,11 +172,14 @@
         const ov = document.createElement('div');
         ov.className = 'an-ov';
         const ack = !!item.require_ack;
-        ov.innerHTML = `<div class="an-card an-t-${esc(item.template)}" style="--an-bg:${t.bg};--an-acc:${t.acc};--an-soft:${t.soft}">
+        const rel = item.template === 'release' && item.extra;
+        ov.innerHTML = `<div class="an-card an-t-${esc(item.template)}${rel ? ' an-rel' : ''}" style="--an-bg:${t.bg};--an-acc:${t.acc};--an-soft:${t.soft}">
             ${opts.total > 1 ? `<span class="an-count">${fa(opts.index + 1)} از ${fa(opts.total)}</span>` : ''}
             ${!ack || opts.preview ? '<button class="an-x" data-x title="بستن">✕</button>' : ''}
-            <div class="an-hd" style="background:${t.bg}"><span class="an-tag">${esc(t.name)}${opts.preview ? ' · پیش‌نمایش' : ''}</span><div class="an-ic">${esc(item.icon || t.icon)}</div><h2>${esc(item.title)}</h2></div>
-            <div class="an-bd">${bodyHtml(item.body, item.template)}</div>
+            <div class="an-hd" style="background:${t.bg}">${rel ? '<div class="an-stars"></div>' : ''}<span class="an-tag">${esc(t.name)}${opts.preview ? ' · پیش‌نمایش' : ''}</span><div class="an-ic">${esc(item.icon || t.icon)}</div>
+                ${rel ? `<div class="an-ver">نسخه‌ی <b>${esc(item.extra.version || '')}</b>${item.extra.date ? `<span style="opacity:.85">${fa(item.extra.date)}</span>` : ''}</div>` : ''}
+                <h2>${esc(item.title)}</h2>${rel ? `<div class="an-chips">${releaseChips(item.extra)}</div>` : ''}</div>
+            <div class="an-bd">${bodyHtml(item.body, item.template)}${rel ? releaseHtml(item.extra) : ''}</div>
             <div class="an-ft">
                 ${ack ? `<label class="an-ackl"><input type="checkbox" data-ack> ${item.template === 'rules' ? 'قوانین را خواندم و رعایت می‌کنم' : 'این اعلان را خواندم و متوجه شدم'}</label>` : ''}
                 <button class="an-btn" data-ok ${ack ? 'disabled' : ''}>${esc(item.button || t.btn)}</button>
@@ -139,7 +187,7 @@
             </div></div>`;
         document.body.appendChild(ov);
         const card = ov.querySelector('.an-card');
-        if (t.confetti) setTimeout(() => confetti(card, t.balloons), 250);
+        if (t.confetti || rel) setTimeout(() => confetti(card, t.balloons), 250);
         const done = (how) => { ov.style.transition = 'opacity .2s'; ov.style.opacity = '0'; setTimeout(() => ov.remove(), 200); if (opts.onDone) opts.onDone(how); };
         const cb = ov.querySelector('[data-ack]');
         if (cb) cb.onchange = () => { ov.querySelector('[data-ok]').disabled = !cb.checked; };
@@ -191,6 +239,6 @@
         Q.timer = setInterval(poll, 60000);
         document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(poll, 800); });
     }
-    window.Announce = {TEMPLATES: T, show, preview: item => show(item, {preview: true}), poll, history, bodyHtml};
+    window.Announce = {TEMPLATES: T, show, preview: item => show(item, {preview: true}), poll, history, bodyHtml, releaseHtml};
     if (!window.ANN_CONFIG || ANN_CONFIG.auto !== false) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start(); }
 })();

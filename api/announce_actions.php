@@ -9,6 +9,7 @@ session_start();
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php';
 require_once __DIR__ . '/_comfort.php';
+require_once __DIR__ . '/_changelog.php';   // «تغییراتِ نسخه»: فهرستِ امکانات و رفعِ اشکال‌ها
 
 function ano($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 $A = cf_actor();
@@ -19,7 +20,7 @@ $action = (string)($data['action'] ?? '');
 [$AT, $AID] = [$A[0], $A[1]];
 $role = $A[3];
 
-const ANN_TEMPLATES = ['info', 'warning', 'danger', 'rules', 'celebrate', 'news', 'maintenance', 'holiday', 'birthday'];
+const ANN_TEMPLATES = ['info', 'warning', 'danger', 'rules', 'celebrate', 'news', 'maintenance', 'holiday', 'birthday', 'release'];
 const ANN_ROLES = ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند پارسیان', 'LIFE' => 'کاربر بیمه عمر'];
 const ANN_BDAY_DEFAULTS = ['ann_bday_self' => '1', 'ann_bday_all' => '1',
     'ann_bday_self_title' => 'تولدت مبارک {name}! 🎂', 'ann_bday_self_body' => "امروز روزِ توست!\nاز طرفِ همه‌ی ما در «بیمه با ما» صمیمانه تولدت را تبریک می‌گوییم.\nسالی پر از سلامتی، شادی و موفقیت برایت آرزو می‌کنیم. 🎉",
@@ -38,6 +39,8 @@ function ann_ensure($pdo) {
         UNIQUE KEY uq_auto (auto_key), KEY idx_active (active, start_at))$T");
     $pdo->exec("CREATE TABLE IF NOT EXISTS ann_reads (ann_id INT NOT NULL, actor_type CHAR(1) NOT NULL, actor_id INT NOT NULL, seen_at DATETIME NULL, ack_at DATETIME NULL,
         PRIMARY KEY (ann_id, actor_type, actor_id))$T");
+    // «تغییراتِ نسخه»: نسخه و ردیف‌های انتخاب‌شده (کپیِ متنِ همان لحظه) به‌صورتِ JSON
+    if (!$pdo->query("SHOW COLUMNS FROM ann_items LIKE 'extra'")->fetch()) $pdo->exec("ALTER TABLE ann_items ADD COLUMN extra MEDIUMTEXT NULL");
 }
 function ann_setting($pdo, $k) { $v = cf_setting($pdo, $k, null); return $v === null ? (ANN_BDAY_DEFAULTS[$k] ?? '') : $v; }
 // «۱۴۰۵/۰۷/۱۴ ۰۹:۳۰» → «2026-10-06 09:30:00»
@@ -85,7 +88,8 @@ function ann_people($pdo) {
 }
 function ann_out($r, $withAud = false) {
     $o = ['id' => intval($r['id']), 'template' => $r['template'], 'title' => $r['title'], 'body' => (string)$r['body'], 'icon' => (string)$r['icon'],
-          'button' => (string)$r['button_text'], 'require_ack' => (bool)$r['require_ack'], 'from' => (string)$r['created_by_name'], 'at' => ann_jdt($r['start_at'] ?: $r['created_at'])];
+          'button' => (string)$r['button_text'], 'require_ack' => (bool)$r['require_ack'], 'from' => (string)$r['created_by_name'], 'at' => ann_jdt($r['start_at'] ?: $r['created_at']),
+          'extra' => !empty($r['extra']) ? (json_decode((string)$r['extra'], true) ?: null) : null];
     if ($withAud) $o += ['audience' => json_decode((string)$r['audience'], true) ?: ['type' => 'all'], 'start' => $r['start_at'] ? ann_jdt($r['start_at']) : '', 'end' => $r['end_at'] ? ann_jdt($r['end_at']) : '',
                          'active' => (bool)$r['active'], 'auto' => $r['auto_key'] !== null, 'created' => ann_jdt($r['created_at'])];
     return $o;
@@ -169,6 +173,15 @@ try {
         }
         ano(['ok' => true, 'items' => $out, 'roles' => ANN_ROLES, 'people' => $people, 'can' => ['create' => $can('create'), 'edit' => $can('edit'), 'delete' => $can('delete')]]);
     }
+    // فهرستِ امکانات و رفعِ اشکال‌ها برای اعلانِ «تغییراتِ نسخه» + این‌که هر ردیف قبلاً در کدام اعلان آمده
+    if ($action === 'changelog') {
+        $sent = [];
+        foreach ($pdo->query("SELECT id, extra, created_at FROM ann_items WHERE template = 'release' AND extra IS NOT NULL")->fetchAll() as $r) {
+            $x = json_decode((string)$r['extra'], true) ?: [];
+            foreach ((array)($x['items'] ?? []) as $it) if (!empty($it['id'])) $sent[$it['id']][] = ['ann' => intval($r['id']), 'version' => (string)($x['version'] ?? ''), 'at' => ann_jdt($r['created_at'])];
+        }
+        ano(['ok' => true, 'versions' => CHANGELOG, 'types' => CHANGELOG_TYPES, 'current' => changelog_current(), 'sent' => (object)$sent]);
+    }
     if ($action === 'reads') {
         $id = intval($data['id'] ?? 0);
         $st = $pdo->prepare("SELECT * FROM ann_items WHERE id = ?");
@@ -193,6 +206,21 @@ try {
         if (!$can($id ? 'edit' : 'create')) ano(['ok' => false, 'error' => 'اجازه‌ی این کار را ندارید.']);
         $tpl = in_array($data['template'] ?? '', ANN_TEMPLATES, true) ? $data['template'] : 'info';
         $title = trim(mb_substr((string)($data['title'] ?? ''), 0, 200));
+        $extra = null;
+        if ($tpl === 'release') {
+            // ردیف‌های انتخاب‌شده از فهرستِ api/_changelog.php؛ متنِ همان لحظه ذخیره می‌شود
+            $rel = (array)($data['release'] ?? []);
+            $idx = changelog_index();
+            $pick = array_values(array_unique(array_filter((array)($rel['items'] ?? []), function ($id) use ($idx) { return isset($idx[(string)$id]); })));
+            if (!$pick) ano(['ok' => false, 'error' => 'دست‌کم یک امکان یا رفعِ اشکال را تیک بزنید.']);
+            $order = array_flip(array_keys(CHANGELOG_TYPES));
+            usort($pick, function ($a, $b) use ($idx, $order) { return ($order[$idx[$a]['type']] ?? 9) <=> ($order[$idx[$b]['type']] ?? 9); });
+            $ver = trim(mb_substr(p2e_digits((string)($rel['version'] ?? '')), 0, 30)) ?: changelog_current();
+            [$jy, $jm, $jd] = jalali_from_gregorian_ts(time());
+            $extra = ['version' => $ver, 'date' => sprintf('%04d/%02d/%02d', $jy, $jm, $jd),
+                      'items' => array_map(function ($id) use ($idx) { $x = $idx[$id]; return ['id' => $id, 'type' => $x['type'], 'area' => $x['area'] ?? '', 'title' => $x['title'], 'desc' => $x['desc'] ?? '']; }, $pick)];
+            if ($title === '') $title = 'تازه‌های نسخه‌ی ' . $ver;
+        }
         if ($title === '') ano(['ok' => false, 'error' => 'عنوانِ اعلان را بنویسید.']);
         $body = trim(mb_substr((string)($data['body'] ?? ''), 0, 6000));
         $aud = (array)($data['audience'] ?? []);
@@ -204,14 +232,15 @@ try {
         if ($start === false || $end === false) ano(['ok' => false, 'error' => 'تاریخ را مثلِ «۱۴۰۵/۰۷/۱۴ ۰۹:۳۰» وارد کنید.']);
         if ($start && $end && $end <= $start) ano(['ok' => false, 'error' => 'پایانِ نمایش باید بعد از شروع باشد.']);
         $vals = [$tpl, $title, $body, mb_substr(trim((string)($data['icon'] ?? '')), 0, 16) ?: null, mb_substr(trim((string)($data['button'] ?? '')), 0, 60) ?: null,
-                 !empty($data['require_ack']) ? 1 : 0, json_encode($audJ, JSON_UNESCAPED_UNICODE), $start ?: date('Y-m-d H:i:s'), $end ?: null];
+                 !empty($data['require_ack']) ? 1 : 0, json_encode($audJ, JSON_UNESCAPED_UNICODE), $start ?: date('Y-m-d H:i:s'), $end ?: null,
+                 $extra ? json_encode($extra, JSON_UNESCAPED_UNICODE) : null];
         if ($id) {
-            $pdo->prepare("UPDATE ann_items SET template=?, title=?, body=?, icon=?, button_text=?, require_ack=?, audience=?, start_at=?, end_at=?, updated_at=NOW() WHERE id=?")->execute([...$vals, $id]);
+            $pdo->prepare("UPDATE ann_items SET template=?, title=?, body=?, icon=?, button_text=?, require_ack=?, audience=?, start_at=?, end_at=?, extra=?, updated_at=NOW() WHERE id=?")->execute(array_merge($vals, [$id]));
             // «ارسالِ دوباره»: همه دوباره می‌بینند
             if (!empty($data['resend'])) $pdo->prepare("DELETE FROM ann_reads WHERE ann_id = ?")->execute([$id]);
         } else {
-            $pdo->prepare("INSERT INTO ann_items (template, title, body, icon, button_text, require_ack, audience, start_at, end_at, active, created_by, created_by_name, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NOW())")->execute([...$vals, $AID, $A[2] ?: 'مدیر']);
+            $pdo->prepare("INSERT INTO ann_items (template, title, body, icon, button_text, require_ack, audience, start_at, end_at, extra, active, created_by, created_by_name, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NOW())")->execute(array_merge($vals, [$AID, $A[2] ?: 'مدیر']));
             $id = intval($pdo->lastInsertId());
         }
         ano(['ok' => true, 'id' => $id]);

@@ -10,7 +10,7 @@ function chat_access_ensure($pdo) {
     static $done = false;
     if ($done || $pdo->inTransaction()) return;
     $done = true;
-    foreach ([['users', 'chat_companies', 'TEXT NULL'], ['ticket_messages', 'deleted_by', 'VARCHAR(160) NULL'],
+    foreach ([['users', 'chat_companies', 'TEXT NULL'], ['users', 'chat_staff', 'TEXT NULL'], ['ticket_messages', 'deleted_by', 'VARCHAR(160) NULL'],
               ['company_chat_messages', 'deleted_by', 'VARCHAR(160) NULL'], ['staff_chat_messages', 'deleted_by', 'VARCHAR(160) NULL']] as [$t, $c, $def]) {
         try {
             if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE " . $pdo->quote($c))->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def");
@@ -86,3 +86,55 @@ function chat_actor_label($actor) {
     $k = ['STAFF' => 'همکار', 'PERSON' => 'کارمند', 'COMPANY' => 'کاربر شرکت'][$actor['kind'] ?? ''] ?? '';
     return mb_substr(trim(($actor['name'] ?? '') . ($k ? ' (' . $k . ')' : '')), 0, 160);
 }
+
+// =====================================================================
+//  دسترسیِ گفتگو بینِ همکاران (users.chat_staff)
+//   NULL = با همه | {"mode":"ONLY","ids":[…]} = فقط با این‌ها | {"mode":"EXCEPT","ids":[…]} = با همه به‌جز این‌ها
+//   گفتگو بینِ دو نفر فقط وقتی باز است که قانونِ هر دو طرف اجازه بدهد؛ مدیر کل همیشه با همه گفتگو می‌کند.
+// =====================================================================
+function chat_staff_rule_decode($v) {
+    $j = ($v === null || $v === '') ? null : json_decode((string)$v, true);
+    if (!is_array($j) || !in_array($j['mode'] ?? '', ['ONLY', 'EXCEPT'], true)) return ['mode' => 'ALL', 'ids' => []];
+    return ['mode' => $j['mode'], 'ids' => array_values(array_unique(array_map('intval', (array)($j['ids'] ?? []))))];
+}
+function chat_staff_rule_value($mode, $ids) {
+    if (!in_array($mode, ['ONLY', 'EXCEPT'], true)) return null;
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array)$ids))));
+    if ($mode === 'EXCEPT' && !$ids) return null;   // «همه به‌جز هیچ‌کس» = همه
+    return json_encode(['mode' => $mode, 'ids' => $ids]);
+}
+// همه‌ی همکاران با نقش و قانونشان (یک بار در هر درخواست)
+function chat_staff_rules($pdo, $reset = false) {
+    static $cache = null;
+    if ($reset) $cache = null;
+    if ($cache !== null) return $cache;
+    chat_access_ensure($pdo);
+    $cache = [];
+    try {
+        foreach ($pdo->query("SELECT id, role, chat_staff FROM users")->fetchAll() as $u)
+            $cache[intval($u['id'])] = ['role' => $u['role'], 'rule' => chat_staff_rule_decode($u['chat_staff'] ?? null)];
+    } catch (Throwable $e) {}
+    return $cache;
+}
+function chat_staff_rule_allows($rule, $otherId) {
+    if ($rule['mode'] === 'ONLY') return in_array(intval($otherId), $rule['ids'], true);
+    if ($rule['mode'] === 'EXCEPT') return !in_array(intval($otherId), $rule['ids'], true);
+    return true;
+}
+// آیا این دو همکار می‌توانند با هم گفتگو کنند؟
+function chat_staff_pair_ok($pdo, $a, $b) {
+    $a = intval($a); $b = intval($b);
+    if (!$a || !$b || $a === $b) return false;
+    $R = chat_staff_rules($pdo);
+    $ra = $R[$a] ?? null; $rb = $R[$b] ?? null;
+    if (!$ra || !$rb) return true;
+    if ($ra['role'] === 'ADMIN' || $rb['role'] === 'ADMIN') return true;
+    return chat_staff_rule_allows($ra['rule'], $b) && chat_staff_rule_allows($rb['rule'], $a);
+}
+// همکارانی که این کاربر با آن‌ها گفتگو ندارد (برای فیلترِ فهرست‌ها)
+function chat_staff_blocked_ids($pdo, $uid) {
+    $out = [];
+    foreach (array_keys(chat_staff_rules($pdo)) as $id) if ($id !== intval($uid) && !chat_staff_pair_ok($pdo, $uid, $id)) $out[] = $id;
+    return $out;
+}
+

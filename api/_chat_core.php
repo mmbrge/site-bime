@@ -49,7 +49,7 @@ function chat_can($pdo, $actor, $type, $id) {
     $caps = chat_staff_caps($actor['role']);
     if ($type === 'P' || $type === 'T') return $caps['person'];
     if ($type === 'C') return chat_scope_allows(chat_company_scope($pdo, $actor), $id);   // نقش‌ها و افرادی که مدیر برای گفتگو با شرکت‌ها تعیین کرده
-    if ($type === 'S') return $id !== intval($actor['id']);
+    if ($type === 'S') return $id !== intval($actor['id']) && chat_staff_pair_ok($pdo, $actor['id'], $id);   // دسترسیِ گفتگو بینِ همکاران (مدیر کل تعیین می‌کند)
     return false;
 }
 
@@ -139,8 +139,9 @@ function chat_threads($pdo, $actor, $q = '') {
                 WHERE deleted_at IS NULL AND ((from_user_id = u.id AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = u.id)))
           WHERE u.id <> ?");
     $st->execute([$me, $me, $me, $me]);
+    $blocked = array_flip(chat_staff_blocked_ids($pdo, $me));
     foreach ($st->fetchAll() as $u) {
-        if (!$match([$u['full_name'], $u['message']])) continue;
+        if (isset($blocked[intval($u['id'])]) || !$match([$u['full_name'], $u['message']])) continue;
         $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
                   'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: chat_file_preview($u['file_name']), 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
     }
@@ -192,7 +193,8 @@ function chat_contacts($pdo, $actor, $q) {
     $pc = prof_cols($pdo, 'x');
     $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND COALESCE(x.is_deleted, 0) = 0 AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20");
     try { $st->execute([intval($actor['id']), $like, $like]); } catch (Throwable $e) { $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20"); $st->execute([intval($actor['id']), $like, $like]); }
-    foreach ($st->fetchAll() as $u) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
+    $blocked = array_flip(chat_staff_blocked_ids($pdo, $actor['id']));
+    foreach ($st->fetchAll() as $u) if (!isset($blocked[intval($u['id'])])) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => $u['full_name'], 'sub' => chat_role_fa($u['role']),
                                               'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u)];
     return $out;
 }
@@ -762,7 +764,8 @@ function chat_unread_total($pdo, $actor) {
         if ($caps['person']) $n += intval($pdo->query("SELECT COUNT(*) FROM ticket_messages WHERE sender_type = 'CUSTOMER' AND COALESCE(is_read, '0') IN ('0', '') AND deleted_at IS NULL")->fetchColumn());
         $cScope = chat_company_scope($pdo, $actor);
         if ($cScope) $n += intval($pdo->query("SELECT COUNT(*) FROM company_chat_messages WHERE sender_type = 'COMPANY' AND is_read = 0 AND deleted_at IS NULL AND " . chat_scope_sql($cScope, 'company_id'))->fetchColumn());
-        $st = $pdo->prepare("SELECT COUNT(*) FROM staff_chat_messages WHERE to_user_id = ? AND is_read = 0 AND deleted_at IS NULL");
+        $bl = chat_staff_blocked_ids($pdo, $actor['id']);
+        $st = $pdo->prepare("SELECT COUNT(*) FROM staff_chat_messages WHERE to_user_id = ? AND is_read = 0 AND deleted_at IS NULL" . ($bl ? " AND from_user_id NOT IN (" . implode(',', array_map('intval', $bl)) . ")" : ''));
         $st->execute([intval($actor['id'])]);
         $n += intval($st->fetchColumn());
     } elseif ($actor['kind'] === 'PERSON') {

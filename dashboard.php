@@ -1508,12 +1508,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="switchGoftegoSub('messenger')" id="goftego-sub-messenger" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white">💬 پیام‌رسان</button>
                     <button onclick="switchGoftegoSub('botchats')" id="goftego-sub-botchats" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🤖 آرشیو کاملِ چت‌های ربات</button>
                     <button onclick="switchGoftegoSub('archive')" id="goftego-sub-archive" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🗄 بایگانیِ همه‌ی گفتگوها</button>
+                    <button onclick="switchGoftegoSub('access')" id="goftego-sub-access" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-500">🔐 دسترسیِ گفتگو</button>
                 </div>
                 <?php endif; ?>
             </div>
 
             <div id="goftego-panel-messenger"><div id="chat-root" style="height: calc(100vh - 200px); min-height: 520px;"></div></div>
-            <?php if ($chatArchiveOk): ?><div id="goftego-panel-archive" class="hidden"><div id="chat-archive-root"></div></div><?php endif; ?>
+            <?php if ($chatArchiveOk): ?><div id="goftego-panel-archive" class="hidden"><div id="chat-archive-root"></div></div>
+            <div id="goftego-panel-access" class="hidden"><div id="chat-access-root"></div></div><?php endif; ?>
 
             <?php if ($chatArchiveOk): ?>
             <div id="goftego-panel-botchats" class="hidden">
@@ -2899,7 +2901,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <span class="text-blue-600 font-black mr-1 relative inline-block cursor-none">گروه توسعه بهیکس</span>
                 <span class="text-slate-400 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
             </div>
-            <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.3.0</span></p>
+            <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.4.0</span></p>
         </div>
     </main>
     <script>
@@ -4154,8 +4156,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=13"></script>
     <script src="settings-nav.js?v=3"></script>
-    <script src="announce.js?v=2"></script>
-    <script src="announce-admin.js?v=1"></script>
+    <script src="announce.js?v=3"></script>
+    <script src="announce-admin.js?v=2"></script>
+    <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=5"></script><?php endif; ?>
     <script src="chat-ui.js?v=9"></script>
     <script src="table-count.js?v=4"></script>
@@ -11648,7 +11651,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         loadMyAvatar();
 
         function switchGoftegoSub(which) {
-            ['messenger','tickets','botchats','staffchat','companychat','archive'].forEach(k => {
+            ['messenger','tickets','botchats','staffchat','companychat','archive','access'].forEach(k => {
                 const panel = document.getElementById('goftego-panel-' + k);
                 if (panel) panel.classList.toggle('hidden', which !== k);
                 const btn = document.getElementById('goftego-sub-' + k);
@@ -11656,6 +11659,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             });
             if (which === 'botchats') loadBotChats();
             if (which === 'archive' && window.ChatArchive) ChatArchive.init();
+            if (which === 'access' && window.ChatAccess) ChatAccess.render(document.getElementById('chat-access-root'));
             if (which !== 'messenger') return;
             if (which === 'staffchat') loadStaffChatList();
             if (which === 'companychat') loadCompanyChatList();

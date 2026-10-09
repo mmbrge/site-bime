@@ -55,6 +55,8 @@ try {
         $toUserId = intval($data['to_user_id'] ?? 0);
         $message = trim($data['message'] ?? '');
         if (!$toUserId) { echo json_encode(['ok' => false, 'error' => 'مخاطب مشخص نیست.']); exit; }
+        require_once __DIR__ . '/_chat_access.php';
+        if (!chat_staff_pair_ok($pdo, $myId, $toUserId)) { echo json_encode(['ok' => false, 'error' => 'گفتگو با این همکار برای شما باز نیست (دسترسیِ گفتگو را مدیر کل تعیین می‌کند).'], JSON_UNESCAPED_UNICODE); exit; }
 
         $filePath = null;
         if (!empty($_FILES['file'])) {
