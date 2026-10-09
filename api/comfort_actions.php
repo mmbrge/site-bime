@@ -73,7 +73,7 @@ try {
     if ($action === 'boot') {
         [$jy, $md] = cf_today_md();
         $out = ['ok' => true, 'kind' => $AT, 'name' => $A[2], 'is_admin' => $isAdmin, 'features' => $F, 'catalog' => array_map(function ($f) { return $f[0]; }, CF_FEATURES),
-                'prefs' => cf_prefs($pdo, $AT, $AID), 'genres' => cf_genres($pdo), 'focus_genres' => CF_FOCUS_GENRES, 'today' => date('Y-m-d'), 'now' => time(),
+                'prefs' => cf_prefs($pdo, $AT, $AID), 'genres' => cf_genres($pdo), 'focus_genres' => cf_focus_genres($pdo), 'today' => date('Y-m-d'), 'now' => time(),
                 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => CF_OCCASIONS[$md] ?? null, 'statuses' => array_map(function ($s) { return ['label' => $s[0], 'icon' => $s[1]]; }, CF_STATUS)];
         if (!empty($F['status']) || !empty($F['dnd'])) $out['status'] = $myStatus();
         if (!empty($F['todo']) || !empty($F['morning'])) $out['todos'] = $todos();
@@ -96,6 +96,8 @@ try {
     // ================= موسیقی =================
     if ($action === 'music_list') {
         $need('music');
+        // یک بار: آهنگ‌هایی که قبلاً به‌اشتباه در «سایر» رفته‌اند (بی‌کلام، آرامش، ملایم، …) دوباره تشخیص داده می‌شوند
+        if (cf_setting($pdo, 'cf_regenre_v1', '') !== '1') { cf_setting_set($pdo, 'cf_regenre_v1', '1'); try { cf_regenre($pdo); } catch (Throwable $e) { error_log('[cf_regenre] ' . $e->getMessage()); } }
         $st = $pdo->prepare("SELECT * FROM cf_tracks WHERE owner_type = 'P' OR (owner_type = ? AND owner_id = ?) ORDER BY owner_type = 'P' DESC, genre, artist, title");
         $st->execute([$AT, $AID]);
         $tracks = array_map(function ($r) use ($pdo) { return cf_track_out($pdo, $r); }, $st->fetchAll());
@@ -112,7 +114,7 @@ try {
         $st = $pdo->prepare("SELECT * FROM cf_playlists WHERE actor_type = ? AND actor_id = ? ORDER BY name");
         $st->execute([$AT, $AID]);
         $pls = array_map(function ($r) { return ['id' => intval($r['id']), 'name' => $r['name'], 'tracks' => array_values(array_filter(array_map('intval', explode(',', (string)$r['track_ids']))))]; }, $st->fetchAll());
-        cfo(['ok' => true, 'tracks' => $tracks, 'likes' => $likes, 'playlists' => $pls, 'genres' => cf_genres($pdo),
+        cfo(['ok' => true, 'tracks' => $tracks, 'likes' => $likes, 'playlists' => $pls, 'genres' => cf_genres($pdo), 'focus_genres' => cf_focus_genres($pdo),
              'quota' => !empty($F['music_upload']) ? cf_quota_state($pdo, $AT, $AID) : null, 'can_upload' => !empty($F['music_upload']),
              'is_admin' => $isAdmin, 'pending' => $pending]);
     }
@@ -587,6 +589,7 @@ try {
             $pdo->prepare("DELETE FROM cf_blocked WHERE sha1 = ?")->execute([(string)($data['sha1'] ?? '')]);
             cfo(['ok' => true]);
         }
+        if ($action === 'lib_regenre') cfo(['ok' => true, 'count' => cf_regenre($pdo)]);
         if ($action === 'lib_settings') {
             $g = array_values(array_unique(array_filter(array_map(function ($x) { return mb_substr(trim((string)$x), 0, 40); }, (array)($data['genres'] ?? [])))));
             if (!$g) cfo(['ok' => false, 'error' => 'دست‌کم یک ژانر لازم است.']);

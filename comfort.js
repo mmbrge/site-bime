@@ -1080,6 +1080,7 @@
         const r = await api('music_list');
         if (!r.ok) return;
         S.tracks = r.tracks; S.likes = new Set(r.likes); S.playlists = r.playlists; S.genres = r.genres; S.quota = r.quota; S.canUpload = r.can_upload; S.isAdmin = !!r.is_admin;
+        if (r.focus_genres && S.boot) S.boot.focus_genres = r.focus_genres;   // ژانرهای آرام/بی‌کلام/کلاسیک/طبیعت (هر املایی)
         if (refresh) { rebuildOrder(true); if (P.panel && S.open === 'player') { renderGenres(); renderLib(); } return; }
         rebuildOrder();
         const sv = LS.get('player:' + S.boot.kind, null);

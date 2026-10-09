@@ -177,10 +177,16 @@
     function paneSettings(p) {
         p.innerHTML = `<div class="grid md:grid-cols-2 gap-4">
             <div><label class="block text-[11px] font-bold text-slate-500 mb-1">ژانرها (هر خط یکی)</label><textarea class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" rows="9" data-f="genres">${esc(L.data.genres.join('\n'))}</textarea>
-                <p class="text-[10.5px] text-slate-400 mt-1">«حالتِ تمرکز» آهنگ‌های ژانرهای «بی‌کلام»، «کلاسیک» و «طبیعت و آرامش» را پخش می‌کند.</p></div>
+                <p class="text-[10.5px] text-slate-400 mt-1">«حالتِ تمرکز» آهنگ‌های ژانرهای بی‌کلام، کلاسیک، طبیعت و آرامش و ملایم را پخش می‌کند (با هر املایی، مثلاً «بیکلام» یا «آرامش»).</p></div>
             <div><label class="block text-[11px] font-bold text-slate-500 mb-1">سقفِ آپلودِ هر کاربر (مگابایت)</label><input class="w-40 border border-slate-200 rounded-xl px-3 py-2 text-sm" data-f="quota" value="${fa(L.data.quota_mb)}" inputmode="numeric">
                 <p class="text-[10.5px] text-slate-400 mt-2 leading-6">آهنگ‌ها روی همین هاست در <span dir="ltr">uploads/music</span> ذخیره می‌شوند و فقط از داخلِ پنل (با بررسیِ دسترسی) پخش می‌شوند؛ لینکِ مستقیم ندارند. آهنگ‌های شخصیِ هر کاربر را فقط خودش (و مدیر) می‌بیند.</p></div></div>
-            <button type="button" class="mt-3 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-5 py-2.5 rounded-xl" data-a="save"><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button>`;
+            <div class="flex flex-wrap gap-2 mt-3"><button type="button" class="bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-5 py-2.5 rounded-xl" data-a="save"><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button>
+              <button type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-4 py-2.5 rounded-xl" data-a="regenre" title="آهنگ‌های «سایر» از روی برچسبِ فایل، عنوان، خواننده و نامِ فایل دوباره دسته‌بندی می‌شوند"><i class="fas fa-wand-magic-sparkles ml-1"></i>تشخیصِ دوباره‌ی ژانرِ آهنگ‌های «سایر»</button></div>`;
+        p.querySelector('[data-a="regenre"]').onclick = async () => {
+            const r = await api('lib_regenre');
+            toast(r.ok ? (r.count ? fa(r.count) + ' آهنگ از «سایر» به ژانرِ درست رفت.' : 'آهنگِ دیگری برای جابه‌جایی پیدا نشد؛ ژانرِ بقیه را از «ویرایش» تعیین کنید.') : r.error, r.ok ? 'success' : 'error');
+            if (r.ok && r.count) renderLibrary(L.el);
+        };
         p.querySelector('[data-a="save"]').onclick = async () => {
             const r = await api('lib_settings', {genres: p.querySelector('[data-f="genres"]').value.split('\n').map(s => s.trim()).filter(Boolean), quota_mb: +en(p.querySelector('[data-f="quota"]').value) || 250});
             toast(r.ok ? 'ذخیره شد.' : r.error, r.ok ? 'success' : 'error');

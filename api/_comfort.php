@@ -349,7 +349,7 @@ function cf_add_track($pdo, $srcPath, $origName, array $owner, array $uploader, 
     if ($artist === '' && $fa !== '') $artist = $fa;
     if ($title === $artist && $ft !== '') $title = $ft;
     $genre = trim((string)$genre);
-    if ($genre === '' || $genre === 'auto') $genre = cf_match_genre($pdo, $tag['genre'] ?? '');
+    if ($genre === '' || $genre === 'auto') $genre = cf_match_genre($pdo, $tag['genre'] ?? '', implode(' ', [$title, $artist, $tag['album'] ?? '', $origName]));
     $file = $sha . '.' . $ext;
     $dest = cf_music_path($file);
     if (!is_file($dest) && !@copy($srcPath, $dest)) return ['ok' => false, 'error' => 'فایل ذخیره نشد (دسترسیِ نوشتن در uploads/music).'];
@@ -360,16 +360,70 @@ function cf_add_track($pdo, $srcPath, $origName, array $owner, array $uploader, 
     return ['ok' => true, 'track' => cf_track_out($pdo, ['id' => $pdo->lastInsertId(), 'owner_type' => $owner[0], 'owner_id' => $owner[1], 'title' => $title, 'artist' => $artist,
                                                         'genre' => $genre, 'size' => $size, 'mime' => CF_AUDIO[$ext], 'duration' => null, 'uploader_type' => $uploader[0], 'uploader_id' => $uploader[1], 'created_at' => date('Y-m-d H:i:s')])];
 }
-// ژانرِ برچسب را به یکی از ژانرهای پنل نزدیک می‌کند
-function cf_match_genre($pdo, $g) {
-    $g = mb_strtolower(trim((string)$g));
+// نامِ ژانر برای مقایسه: بدونِ فاصله و نیم‌فاصله، ی/ک عربی => فارسی، حروفِ کوچک («بی‌کلام» = «بیکلام» = «بی کلام»)
+function cf_genre_norm($s) {
+    $s = mb_strtolower(trim((string)$s));
+    $s = str_replace(['ي', 'ى', 'ك', 'ة', "\u{200C}", "\u{200F}", "\u{200E}", '-', '_', '.', ' '], ['ی', 'ی', 'ک', 'ه', '', '', '', '', '', '', ''], $s);
+    return $s;
+}
+// کلیدواژه‌های هر ژانر (اولی‌ها اولویت دارند) - هم روی برچسبِ ژانر، هم روی عنوان/خواننده/نامِ فایل
+const CF_GENRE_KEYS = [
+    'کلاسیک' => ['classical', 'classic', 'کلاسیک', 'mozart', 'beethoven', 'bach', 'chopin', 'vivaldi', 'tchaikovsky', 'debussy', 'موتسارت', 'بتهوون', 'شوپن', 'ویوالدی', 'symphony', 'سمفونی', 'concerto', 'sonata', 'سونات'],
+    'طبیعت و آرامش' => ['ambient', 'nature', 'طبیعت', 'آرامش', 'relax', 'meditation', 'مدیتیشن', 'مراقبه', 'sleep', 'خواب', 'rain', 'باران', 'ocean', 'دریا', 'bird', 'پرنده', 'calm', 'spa', 'yoga', 'یوگا', 'newage', 'healing', 'whitenoise', 'forest', 'جنگل'],
+    'بی‌کلام' => ['instrumental', 'بیکلام', 'بدونکلام', 'piano', 'پیانو', 'violin', 'ویولن', 'santur', 'سنتور', 'سهتار', 'setar', 'guitar', 'گیتار', 'soundtrack', 'ost', 'موسیقیفیلم', 'lofi', 'beats', 'نیلبک', 'ney', 'flute', 'فلوت', 'cello', 'ویولنسل'],
+    'ملایم' => ['ملایم', 'آرام', 'soft', 'slow', 'acoustic', 'chill', 'mellow', 'lounge', 'easylistening'],
+    'سنتی' => ['سنتی', 'traditional', 'dastgah', 'دستگاه', 'آواز', 'avaz', 'شجریان', 'shajarian', 'ناظری', 'nazeri', 'افتخاری', 'eftekhari'],
+    'شاد' => ['شاد', 'happy', 'dance', 'رقص', 'party', 'جشن', 'عروسی', 'bandari', 'بندری'],
+    'پاپ ایرانی' => ['persian', 'iranian', 'farsi', 'فارسی', 'ایرانی', 'پاپ'],
+    'خارجی' => ['pop', 'rock', 'jazz', 'hiphop', 'rap', 'rnb', 'edm', 'electronic', 'metal', 'blues', 'country', 'reggae', 'latin', 'house', 'trance'],
+];
+// ژانرِ استاندارد => ژانرِ همنامِ فهرستِ پنل (اگر مدیر نامش را کمی فرق نوشته باشد)
+function cf_genre_in_list($target, $list) {
+    $t = cf_genre_norm($target);
+    foreach ($list as $x) if (cf_genre_norm($x) === $t) return $x;
+    foreach (CF_GENRE_KEYS[$target] ?? [] as $k) foreach ($list as $x) if (mb_strpos(cf_genre_norm($x), cf_genre_norm($k)) !== false) return $x;
+    return null;
+}
+// ژانرِ آهنگ: برچسبِ ژانر، و اگر چیزی نگفت عنوان/خواننده/آلبوم/نامِ فایل ($hint)
+function cf_match_genre($pdo, $g, $hint = '') {
     $list = cf_genres($pdo);
-    if ($g === '') return in_array('سایر', $list, true) ? 'سایر' : end($list);
-    foreach ($list as $x) if (mb_strtolower($x) === $g) return $x;
-    $map = ['pop' => 'خارجی', 'rock' => 'خارجی', 'jazz' => 'خارجی', 'classical' => 'کلاسیک', 'instrumental' => 'بی‌کلام', 'ambient' => 'طبیعت و آرامش',
-            'new age' => 'طبیعت و آرامش', 'soundtrack' => 'بی‌کلام', 'persian' => 'پاپ ایرانی', 'iranian' => 'پاپ ایرانی', 'traditional' => 'سنتی', 'سنتی' => 'سنتی', 'پاپ' => 'پاپ ایرانی'];
-    foreach ($map as $k => $v) if (mb_strpos($g, $k) !== false && in_array($v, $list, true)) return $v;
-    return in_array('سایر', $list, true) ? 'سایر' : end($list);
+    $other = in_array('سایر', $list, true) ? 'سایر' : end($list);
+    $gn = cf_genre_norm($g);
+    if ($gn !== '') foreach ($list as $x) if (cf_genre_norm($x) === $gn && $x !== $other) return $x;
+    foreach ([$gn, cf_genre_norm($hint)] as $hay) {
+        if ($hay === '') continue;
+        foreach (CF_GENRE_KEYS as $target => $keys) {
+            // «pop» در عنوانِ فارسی کم‌اعتبار است؛ از روی عنوان فقط ژانرهای آرام/بی‌کلام/کلاسیک/سنتی/شاد تشخیص داده می‌شوند
+            if ($hay !== $gn && in_array($target, ['پاپ ایرانی', 'خارجی'], true)) continue;
+            foreach ($keys as $k) if (mb_strpos($hay, cf_genre_norm($k)) !== false && ($hit = cf_genre_in_list($target, $list))) return $hit;
+        }
+    }
+    return $other;
+}
+// ژانرهای «حالتِ تمرکز»: هر ژانری (در فهرست یا روی آهنگ‌ها) که بی‌کلام، کلاسیک، طبیعت/آرامش یا ملایم باشد
+function cf_focus_genres($pdo) {
+    $all = cf_genres($pdo);
+    try { foreach ($pdo->query("SELECT DISTINCT genre FROM cf_tracks WHERE genre IS NOT NULL AND genre <> ''")->fetchAll(PDO::FETCH_COLUMN) as $g) if (!in_array($g, $all, true)) $all[] = $g; } catch (Throwable $e) {}
+    $keys = array_merge(CF_GENRE_KEYS['کلاسیک'], CF_GENRE_KEYS['طبیعت و آرامش'], CF_GENRE_KEYS['بی‌کلام'], CF_GENRE_KEYS['ملایم'], ['focus', 'تمرکز', 'study', 'مطالعه']);
+    $out = [];
+    foreach ($all as $g) { $n = cf_genre_norm($g); foreach ($keys as $k) if (mb_strpos($n, cf_genre_norm($k)) !== false) { $out[] = $g; break; } }
+    return $out ?: CF_FOCUS_GENRES;
+}
+// آهنگ‌هایی که در «سایر» (یا بی‌ژانر) مانده‌اند دوباره تشخیص داده می‌شوند (برچسبِ فایل + عنوان/خواننده/نامِ فایل)
+function cf_regenre($pdo) {
+    $list = cf_genres($pdo);
+    $other = in_array('سایر', $list, true) ? 'سایر' : end($list);
+    $st = $pdo->prepare("SELECT id, title, artist, album, orig_name, file FROM cf_tracks WHERE genre IS NULL OR genre = '' OR genre = ?");
+    $st->execute([$other]);
+    $up = $pdo->prepare("UPDATE cf_tracks SET genre = ? WHERE id = ?");
+    $n = 0;
+    foreach ($st->fetchAll() as $r) {
+        $path = cf_music_path((string)$r['file']);
+        $tag = (strtolower(pathinfo((string)$r['file'], PATHINFO_EXTENSION)) === 'mp3' && is_file($path)) ? cf_id3($path) : [];
+        $g = cf_match_genre($pdo, $tag['genre'] ?? '', implode(' ', [$r['title'], $r['artist'], $r['album'], $r['orig_name']]));
+        if ($g !== $other) { $up->execute([$g, $r['id']]); $n++; }
+    }
+    return $n;
 }
 function cf_track_out($pdo, $r) {
     return ['id' => intval($r['id']), 'title' => (string)$r['title'], 'artist' => (string)($r['artist'] ?? ''), 'genre' => (string)($r['genre'] ?? ''),
