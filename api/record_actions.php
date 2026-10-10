@@ -25,9 +25,10 @@ $action = $data['action'] ?? ($_GET['action'] ?? '');
 if (!$data && !empty($_POST)) { $data = $_POST; $action = $_POST['action'] ?? $action; }
 $userId = $_SESSION['user_id'];
 
-// ثبت دستی و ویرایشِ درخواست‌ها فقط کارِ مدیر کل است؛ بقیه‌ی نقش‌ها فقط می‌بینند
+// ثبت دستی و ویرایشِ درخواست‌ها: مدیر کل، یا کاربری که مدیر برایش دسترسیِ سفارشی تعیین کرده (perm_gate در بالای همین فایل
+// ثبت/ویرایش را بر اساسِ همان دسترسی‌ها بررسی کرده: «صدورِ بیمه‌نامه‌ی کارکنان: ویرایش»، «پرونده‌ها: ثبت» یا «در حال صدور: ویرایش»)
 if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro'], true)
-    && ($_SESSION['role'] ?? '') !== 'ADMIN') {
+    && ($_SESSION['role'] ?? '') !== 'ADMIN' && perm_user_custom($pdo, $userId) === null) {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
     exit;
 }

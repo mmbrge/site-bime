@@ -21,6 +21,11 @@ require_once __DIR__ . '/api/_perm.php';
 require_once __DIR__ . '/api/_brand.php';   // لوگو و فاوآیکنِ تنظیم‌شده
 $permBoot = perm_page_boot($pdo);
 $realRole = perm_real_role();
+// ثبت دستیِ معرفی‌نامه و درخواستِ کارکنان: مدیر کل، یا کاربری که در دسترسی‌های سفارشی «صدورِ بیمه‌نامه‌ی کارکنان: ویرایش»،
+// «پرونده‌ها و معرفی‌نامه‌ها: ثبت» یا «در حال صدور: ویرایش» دارد (سرور هم همین را بررسی می‌کند - api/record_actions.php)
+$canManualPersonnel = ($_SESSION['role'] ?? '') === 'ADMIN'
+    || (!empty($permBoot['custom']) && (in_array('edit', (array)($permBoot['p']['cases'] ?? []), true) || in_array('create', (array)($permBoot['p']['records'] ?? []), true)
+        || in_array('edit', (array)($permBoot['p']['issue-queue'] ?? []), true)));
 // نامِ کاربر با عنوانِ «آقای / خانم» (تنظیم در «کاربران»)
 require_once __DIR__ . '/api/_name_honor.php';
 $hdrName = honor_name($pdo, 'S', intval($_SESSION['user_id'] ?? 0), (string)($_SESSION['full_name'] ?? ''));
@@ -1304,7 +1309,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-xs text-slate-400 mt-1">با کلیک راست روی هر ردیف می‌توانید آن را مدیریت کنید.</p>
                 </div>
                 <div class="flex gap-2">
-                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
+                    <?php if ($canManualPersonnel): // مدیر کل یا دسترسیِ ثبت/ویرایشِ صدورِ کارکنان ?>
                     <button onclick="openManualIntroModal()" class="bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/30 transition-all hover-target"><i class="fas fa-envelope-open-text ml-1"></i> ثبت دستی معرفی‌نامه</button>
                     <?php endif; ?>
                     <button onclick="loadRecords()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold text-sm hover-target transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی جدول</button>
@@ -2525,7 +2530,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <div class="flex gap-2 flex-wrap">
                     <button onclick="exportIssueQueueExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-file-excel ml-1"></i> خروجی اکسل</button>
-                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+                    <?php if ($canManualPersonnel): ?>
                     <button onclick="openIntroPicker()" class="bg-gradient-to-l from-teal-600 to-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-teal-500/30 hover:brightness-110 transition-all"><i class="fas fa-plus ml-1"></i> درخواست جدید کارکنان</button>
                     <?php endif; ?>
                     <button onclick="loadIssueQueue()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors"><i class="fas fa-sync-alt ml-1"></i> بروزرسانی</button>
@@ -4207,6 +4212,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let currentRecordsData = [];
         let activeRowId = null;
         const IS_ADMIN = <?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? 'true' : 'false'; ?>;
+        // ثبت دستی و ویرایشِ درخواست‌های کارکنان: مدیر کل یا دسترسیِ سفارشیِ ثبت/ویرایشِ صدورِ کارکنان
+        const CAN_MANUAL = <?php echo $canManualPersonnel ? 'true' : 'false'; ?>;
         // ---------- دسترسیِ سفارشیِ صفحه به صفحه ----------
         // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
@@ -4222,9 +4229,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
         window.permCan = permCan;
-        const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal';
+        const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal, #intro-picker-modal, #manual-intro-modal, #manual-create-modal';
         const PERM_DOM_FN = /^(getElementById|querySelector|querySelectorAll|remove|add|toggle|contains|stopPropagation|preventDefault|closeModal|openModal|showToast|focus|click|blur|scrollIntoView|setTimeout|encodeURIComponent|Number|String|parseInt|faDigits|e2p|p2e|if|function|return|switchTab|toggleMenuGroup|toggleMenuSub|window|open|print)$/;
         const PERM_FN_RULES = [
+            [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
             [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
             [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
             [/openCompanyVisitReport|openCaseVisitReport|buildHealthReport/, ['vr-build:create']],
@@ -10075,7 +10083,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="text-slate-400">تفکیک:</span> <b class="text-[11px]">${introRow.relationship_summary || ''}</b></div>
                     </div>`;
 
-                const addCaseHtml = !IS_ADMIN ? '' : `
+                const addCaseHtml = !CAN_MANUAL ? '' : `
                     <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center justify-between gap-2">
                         <span class="text-[11px] text-blue-800">درخواستِ تازه برای همین معرفی‌نامه، با همه‌ی اطلاعات و مدارکش:</span>
                         <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
@@ -10358,7 +10366,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button onclick="openCaseVisitReport(${caseId})" class="text-[11px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>
                     </div>` : ''}
 
-                    ${!isIssueMode && IS_ADMIN ? `
+                    ${!isIssueMode && CAN_MANUAL ? `
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
                         <p class="text-xs font-bold text-indigo-700 mb-3"><i class="fas fa-user-pen ml-1"></i>تکمیل/ویرایش دستیِ اطلاعات (برای پرونده‌های ثبتِ دستی - چون خودمان وارد می‌کنیم)</p>
                         <div class="grid grid-cols-2 gap-2">
@@ -11984,7 +11992,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!row.parentElement || row.parentElement.id !== 'records-body' || !row.dataset.id) return [];
             activeRowId = row.dataset.id; activeRowNational = row.dataset.national || '';
             const it = [];
-            if (IS_ADMIN) it.push({icon: 'fa-edit', label: 'بررسی و ویرایش پرونده', cls: 'blue', run: () => openEditModal()});
+            if (CAN_MANUAL) it.push({icon: 'fa-edit', label: 'بررسی و ویرایش پرونده', cls: 'blue', run: () => openEditModal()});
             if (row.dataset.national) it.push({icon: 'fa-id-card', label: 'کپی کد ملی', run: () => ctxExecuteRow('copy-national')});
             if (IS_ADMIN) it.push({icon: 'fa-check-circle', label: 'علامت‌گذاری «صادر شده»', cls: 'green', run: () => ctxExecuteRow('mark-issued')},
                                   {icon: 'fa-hourglass-half', label: 'علامت‌گذاری «منتظر مدارک»', cls: 'amber', run: () => ctxExecuteRow('mark-waiting')},

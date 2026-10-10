@@ -291,13 +291,14 @@ function perm_api_map() {
             'ocr_preview_policy' => 'cases:edit', 'confirm_issue_policy' => 'cases:edit',
         ]],
         'record_actions' => ['pages' => ['records'], 'elevate' => true, 'actions' => [
-            'intro_detect' => 'records:create|records:edit', 'create_intro' => 'records:create', 'create_manual' => 'records:create', 'create_manual_request' => 'records:create|issue-queue:edit',
-            'manual_form_options' => 'records:view|records:create', 'stats' => 'records:view|dashboard:view', 'delete' => 'records:delete',
-            'edit' => 'records:edit', 'change_status' => 'records:edit', 'create_case_for_intro' => 'records:edit|cases:edit',
+            'intro_detect' => 'records:create|records:edit|cases:edit|issue-queue:edit', 'create_intro' => 'records:create|cases:edit|issue-queue:edit',
+            'create_manual' => 'records:create|cases:edit|issue-queue:edit', 'create_manual_request' => 'records:create|issue-queue:edit|cases:edit',
+            'manual_form_options' => 'records:view|records:create|cases:edit|issue-queue:edit', 'stats' => 'records:view|dashboard:view', 'delete' => 'records:delete',
+            'edit' => 'records:edit|cases:edit', 'change_status' => 'records:edit|cases:edit', 'create_case_for_intro' => 'records:edit|cases:edit|issue-queue:edit',
             'reset_all' => 'settings:edit', 'reset_sections' => 'settings:edit',
         ]],
         'records' => ['pages' => ['records'], 'elevate' => true, 'actions' => [
-            'download_intro' => 'records:view|cases:view|health:view', 'stats' => 'records:view|dashboard:view', 'export' => 'records:export|issued-list:export',
+            '' => 'records:view|cases:edit|issue-queue:edit', 'download_intro' => 'records:view|cases:view|health:view', 'stats' => 'records:view|dashboard:view', 'export' => 'records:export|issued-list:export',
         ]],
         'queue_actions' => ['pages' => ['queue'], 'elevate' => true, 'actions' => ['list' => 'queue:view', 'reject' => 'queue:edit', 'approve' => 'queue:edit']],
         'user_actions' => ['pages' => ['users'], 'elevate' => true, 'actions' => [
