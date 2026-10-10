@@ -84,6 +84,46 @@ try {
         echo json_encode(['ok' => true, 'summary' => fin_ledger_summary($rows), 'total_rows' => count($rows), 'rows' => array_slice($rows, 0, $lim)], JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // کارکنان به تفکیکِ شرکت: ردیفِ قسطِ هر شرکت در هر دوره‌ی مالی
+    if ($action === 'ledger_groups') {
+        fin_ledger_ensure($pdo);
+        $src = $data + $_GET;
+        $f = fin_request_filters($pdo, $src);
+        foreach (['stage', 'insurer', 'insurer_status', 'min_delay'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
+        $res = fin_ledger_groups($pdo, $f);
+        if (!empty($src['export'])) {
+            require_once __DIR__ . '/_xlsx_writer.php';
+            $headers = ['ردیف', 'شرکت', 'دوره‌ی مالی', 'قسط', 'سررسید', 'تعداد بیمه‌نامه', 'ثالث', 'بدنه', 'جمعِ قسط', 'دریافت از شرکت', 'مانده‌ی دریافت',
+                        'پرداخت به بیمه‌گر', 'مانده‌ی بیمه‌گر', 'تأخیر (روز)', 'بدهکار به ما', 'بدهکار به بیمه‌گر', 'تسویه'];
+            $x = [];
+            foreach ($res['groups'] as $i => $g) {
+                $x[] = [$i + 1, $g['company_name'], $g['period_title'], $g['inst_number'], fa_digits($g['due_jalali']), $g['count'], $g['third_count'], $g['body_count'],
+                        $g['amount'], $g['paid'], $g['remaining'], $g['paid_insurer'], $g['insurer_remaining'], $g['delay_days'],
+                        $g['stage_count']['US'], $g['stage_count']['INSURER'], $g['stage_count']['SETTLED']];
+            }
+            $path = xlsx_build($headers, $x, 'اقساط شرکتی کارکنان', [0, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+            xlsx_send($path, 'اقساط کارکنان به تفکیک شرکت ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
+            exit;
+        }
+        $lim = max(50, min(3000, intval($src['limit'] ?? 800)));
+        echo json_encode(['ok' => true, 'summary' => fin_ledger_summary($res['rows']), 'stage_groups' => $res['stage_groups'], 'total_groups' => count($res['groups']),
+                          'groups' => array_slice($res['groups'], 0, $lim), 'due_cfg' => fin_pgroup_cfg($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // همه‌ی اقساطِ چند بیمه‌نامه‌ی کارکنان (برای پنجره‌ی ردیفِ قسطِ شرکت)
+    if ($action === 'ledger_policy_insts') {
+        fin_ledger_ensure($pdo);
+        $src = $data + $_GET;
+        $refs = array_flip(array_filter(array_map('intval', is_array($src['refs'] ?? null) ? $src['refs'] : explode(',', (string)($src['refs'] ?? '')))));
+        $f = ['source' => 'P'];
+        if (!empty($src['company_id'])) $f['company_id'] = intval($src['company_id']);
+        $out = [];
+        if ($refs) foreach (fin_ledger_rows($pdo, $f) as $r) if (isset($refs[$r['ref_id']])) $out[$r['ref_id']][] = $r;
+        foreach ($out as &$list) usort($list, fn($a, $b) => $a['inst_number'] <=> $b['inst_number']);
+        unset($list);
+        echo json_encode(['ok' => true, 'policies' => (object)$out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (($_POST['action'] ?? '') === 'ledger_register') {
         $items = json_decode((string)($_POST['items'] ?? '[]'), true);
         $res = fin_ledger_register($pdo, $_POST, is_array($items) ? $items : [], intval($_SESSION['user_id']));
@@ -440,6 +480,8 @@ try {
             'rule_collect_before_pay' => !empty($data['rule_collect']) ? '1' : '0',
             'invoice_prefix'          => trim($data['inv_prefix'] ?? 'SM49357'),
             'due_mode'                => ($data['due_mode'] ?? 'issue') === 'period15' ? 'period15' : 'issue',
+            'pgroup_due_day'          => max(1, min(31, intval($data['pgroup_day'] ?? 15) ?: 15)),
+            'pgroup_first_offset'     => max(0, min(12, intval($data['pgroup_offset'] ?? 1))),
             'allow_multiple_invoices' => !empty($data['allow_multi']) ? '1' : '0',
             'inv_full_policy'         => !empty($data['inv_full_policy']) ? '1' : '0',
             'inv_company_subtotal'    => !empty($data['inv_subtotal']) ? '1' : '0',

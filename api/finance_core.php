@@ -21,6 +21,8 @@ function fin_settings($pdo) {
         'invoice_prefix' => 'SM49357',
         'invoice_counter' => '0',
         'invoice_counter_year' => '',
+        'pgroup_due_day' => '15',        // ردیف‌های «کارکنان به تفکیکِ شرکت»: روزِ سررسید
+        'pgroup_first_offset' => '1',    // ... و چند ماه بعد از دوره‌ی مالی
     ], $rows ?: []);
     return $cache;
 }

@@ -519,6 +519,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .fh-prog { height: 4px; border-radius: 999px; background: #f1f5f9; overflow: hidden; margin-top: 3px; }
         .fh-prog span { display: block; height: 100%; border-radius: 999px; }
         .fh-overdue td:first-child { box-shadow: inset -3px 0 0 #ef4444; }
+        .fh-views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .fh-views button { display: flex; align-items: center; gap: 10px; text-align: right; padding: 10px 14px; border-radius: 16px; border: 2px solid #e2e8f0; background: #fff; transition: .15s; }
+        .fh-views button:hover { border-color: #c7d2fe; }
+        .fh-views button.on { border-color: #4f46e5; background: linear-gradient(120deg, #eef2ff, #f0f9ff); box-shadow: 0 8px 20px -14px #4f46e5; }
+        .fh-views .v-ic { width: 36px; height: 36px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: #475569; }
+        .fh-views button.on .v-ic { background: #4f46e5; color: #fff; }
+        .fh-views b { display: block; font-size: 12.5px; color: #1e1b4b; }
+        .fh-views small { display: block; font-size: 10.5px; color: #64748b; }
+        .fh-grp-row { cursor: pointer; }
+        .fh-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 2px 7px; }
+        @media (max-width: 640px) { .fh-views { grid-template-columns: 1fr; } }
         .iss-chips button { font-size: 11px; font-weight: 800; padding: 5px 11px; border-radius: 999px; background: #f1f5f9; color: #475569; border: 1px solid transparent; }
         .iss-chips button.on { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
         /* کارت «اطلاعات صدور» در پاپ‌آپ‌ها */
@@ -2413,6 +2424,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                     <span><b class="text-xs">پانزدهم ماه</b><br><span class="text-[10px] text-slate-500">قسط n = ۱۵امِ n امین ماه بعد از دوره</span></span>
                                 </label>
                             </div>
+                            <div class="mt-3 border rounded-xl p-3 bg-sky-50/60 border-sky-200">
+                                <label class="text-xs font-bold text-sky-800 block mb-2"><i class="fas fa-building-user ml-1"></i>سررسیدِ ردیف‌های «کارکنان به تفکیکِ شرکت» (مرکز اقساط)</label>
+                                <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                                    قسطِ ۱ = روزِ <input type="number" id="fs-pg-day" min="1" max="31" class="border rounded-lg px-2 py-1 w-16 text-center text-xs font-bold">
+                                    از <input type="number" id="fs-pg-offset" min="0" max="12" class="border rounded-lg px-2 py-1 w-16 text-center text-xs font-bold"> ماه بعد از دوره‌ی مالی؛ قسط‌های بعدی هر ماه همان روز
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1">مثلاً «۱۵» و «۱»: بیمه‌نامه‌های دوره‌ی آبانِ شرکتِ فلان => قسطِ ۱ در ۱۵ آذر، قسطِ ۲ در ۱۵ دی، ...</p>
+                            </div>
                             <p class="text-[10px] text-slate-400 mt-2">اقساط هر بیمه‌نامه‌ی صادرشده خودکار ساخته می‌شود؛ اگر حق بیمه بعداً اصلاح شود و هنوز پرداختی ثبت نشده باشد، اقساط هوشمند دوباره ساخته می‌شوند. اقساط شرکتی طبق تعداد اقساط و فاصله‌ی اولین سررسیدِ هر شرکت ساخته می‌شوند.</p>
                         </div>
                     </div>
@@ -4180,7 +4199,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=3"></script>
+    <script src="finance-hub.js?v=4"></script>
     <script src="work-log.js?v=10"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
@@ -9468,6 +9487,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('fs-rule-collect').checked = s.rule_collect_before_pay === '1';
                 document.getElementById('fs-inv-prefix').value = s.invoice_prefix;
                 document.querySelectorAll('input[name="fs-due"]').forEach(r => r.checked = (r.value === (s.due_mode || 'issue')));
+                document.getElementById('fs-pg-day').value = s.pgroup_due_day || 15;
+                document.getElementById('fs-pg-offset').value = s.pgroup_first_offset ?? 1;
                 document.getElementById('fs-allow-multi').checked = s.allow_multiple_invoices === '1';
                 document.getElementById('fs-inv-full').checked = (s.inv_full_policy ?? '1') === '1';
                 document.getElementById('fs-inv-subtotal').checked = s.inv_company_subtotal === '1';
@@ -9507,6 +9528,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         rule_collect: document.getElementById('fs-rule-collect').checked,
                         inv_prefix: document.getElementById('fs-inv-prefix').value,
                         due_mode: (document.querySelector('input[name="fs-due"]:checked') || {}).value || 'issue',
+                        pgroup_day: document.getElementById('fs-pg-day').value,
+                        pgroup_offset: document.getElementById('fs-pg-offset').value,
                         allow_multi: document.getElementById('fs-allow-multi').checked,
                         inv_full_policy: document.getElementById('fs-inv-full').checked,
                         inv_subtotal: document.getElementById('fs-inv-subtotal').checked,

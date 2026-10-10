@@ -44,7 +44,8 @@
     }
     function modal(id, inner, wide) {
         let el = document.getElementById(id);
-        if (!el) { el = document.createElement('div'); el.id = id; el.className = 'modal-overlay'; el.style.zIndex = '1000001'; document.body.appendChild(el); }
+        if (!el) { el = document.createElement('div'); el.id = id; el.className = 'modal-overlay'; el.style.zIndex = '1000001'; }
+        document.body.appendChild(el);   // آخرین پنجره همیشه رو (مثلاً ثبتِ دریافت روی پنجره‌ی ردیفِ قسط)
         el.innerHTML = `<div class="modal-content ${wide ? 'creq-wide-modal' : 'w-full max-w-3xl'} p-0 relative max-h-[92vh] overflow-y-auto">${inner}</div>`;
         el.classList.add('active');
         el.onclick = e => { if (e.target === el) el.classList.remove('active'); };
@@ -55,7 +56,9 @@
     // =================================================================
     //  مرکز اقساط
     // =================================================================
-    const H = {stage: 'US', rows: [], sel: new Map(), summary: null, total: 0};
+    const H = {stage: 'US', rows: [], sel: new Map(), summary: null, total: 0, view: 'rows', groups: [], gsel: new Set(), stageGroups: null};
+    try { if (localStorage.getItem('fh:view') === 'groups') H.view = 'groups'; } catch (e) {}
+    const isGroups = () => H.view === 'groups';
     function fhFilters() {
         const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
         return {
@@ -72,6 +75,10 @@
             root.dataset.built = '1';
             root.innerHTML = `
             <div id="fh-kpis" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"></div>
+            <div class="fh-views" id="fh-views">
+                <button type="button" data-v="rows"><span class="v-ic"><i class="fas fa-list"></i></span><span><b>ردیف به ردیف</b><small>هر قسطِ هر بیمه‌نامه (کارکنان و شرکتی) جدا</small></span></button>
+                <button type="button" data-v="groups"><span class="v-ic"><i class="fas fa-building-user"></i></span><span><b>کارکنان به تفکیکِ شرکت</b><small>هر شرکت در هر دوره‌ی مالی: یک ردیف برای هر قسط (جمعِ ثالث و بدنه‌ها)</small></span></button>
+            </div>
             <div class="card p-3 flex flex-wrap items-center gap-2 fh-stages" id="fh-stages"></div>
             <div class="card p-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
                 <input type="search" id="fh-q" placeholder="جستجو: نام، پلاک، بیمه‌نامه، کد رهگیری، کد ملی/پرسنلی..." class="border rounded-lg px-3 py-2 text-xs col-span-2">
@@ -105,21 +112,33 @@
             root.querySelectorAll('select').forEach(el => el.addEventListener('change', loadInstallments));
             ['fh-q', 'fh-from', 'fh-to'].forEach(id => document.getElementById(id).addEventListener('input', reload));
             document.getElementById('fh-reset').onclick = () => { root.querySelectorAll('input').forEach(i => { i.value = ''; }); root.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; }); loadInstallments(); };
+            root.querySelectorAll('#fh-views button').forEach(b => b.onclick = () => {
+                if (H.view === b.dataset.v) return;
+                H.view = b.dataset.v;
+                try { localStorage.setItem('fh:view', H.view); } catch (e) {}
+                H.sel.clear(); H.gsel.clear();
+                loadInstallments();
+            });
             document.getElementById('fh-export').onclick = () => {
                 const p = fhFilters(); p.export = '1';
+                if (isGroups()) { p.action = 'ledger_groups'; delete p.source; }
                 Object.keys(p).forEach(k => { if (p[k] === '') delete p[k]; });
                 window.location.href = API + '?' + new URLSearchParams(p).toString();
             };
-            document.getElementById('fh-clear').onclick = () => { H.sel.clear(); renderTable(); };
-            document.getElementById('fh-info-sel').onclick = () => openMultiDetail([...H.sel.values()]);
-            document.getElementById('fh-pay-in').onclick = () => openPayDialog('IN', [...H.sel.values()]);
-            document.getElementById('fh-pay-out').onclick = () => openPayDialog('OUT', [...H.sel.values()]);
+            document.getElementById('fh-clear').onclick = () => { H.sel.clear(); H.gsel.clear(); isGroups() ? renderGroupTable() : renderTable(); };
+            document.getElementById('fh-info-sel').onclick = () => isGroups() ? openMultiDetail(selMembers()) : openMultiDetail([...H.sel.values()]);
+            document.getElementById('fh-pay-in').onclick = () => openPayDialog('IN', isGroups() ? selMembers() : [...H.sel.values()]);
+            document.getElementById('fh-pay-out').onclick = () => openPayDialog('OUT', isGroups() ? selMembers() : [...H.sel.values()]);
         }
         loadInstallments();
     }
     async function loadInstallments() {
         const box = document.getElementById('fh-table');
         if (!box) return;
+        document.querySelectorAll('#fh-views button').forEach(b => b.classList.toggle('on', b.dataset.v === H.view));
+        const srcSel = document.getElementById('fh-source');
+        if (srcSel) srcSel.classList.toggle('hidden', isGroups());
+        if (isGroups()) return loadGroups();
         box.innerHTML = '<p class="p-10 text-center text-slate-400 text-xs">در حال بارگذاری...</p>';
         const p = fhFilters();
         const d = await api(p);
@@ -143,13 +162,15 @@
             card('قابلِ پرداخت به بیمه‌گر', num(s.insurer_payable), (META && META.rule_collect_before_pay) ? 'طبقِ قانونِ «اول دریافت، بعد پرداخت»' : 'ریال', 'linear-gradient(135deg,#b45309,#f59e0b)', 'fa-building-columns');
     }
     function renderStages() {
-        const st = (H.summary && H.summary.stage) || {};
+        const st = (isGroups() ? H.stageGroups : (H.summary && H.summary.stage)) || {};
         const items = [['US', 'بدهکار به ما (دریافت از بیمه‌گذار)', 'fa-hand-holding-dollar'], ['INSURER', 'بدهکار به بیمه‌گر (پرداخت به بیمه‌گر)', 'fa-building-columns'],
                        ['SETTLED', 'تسویه‌ی نهایی', 'fa-circle-check'], ['ALL', 'همه‌ی اقساط', 'fa-layer-group']];
         document.getElementById('fh-stages').innerHTML = items.map(([k, label, ic]) => {
             const n = k === 'ALL' ? '' : (H.stage === 'ALL' || H.stage === k ? fa(st[k] || 0) : '');
             return `<button type="button" data-st="${k}" class="${H.stage === k ? 'on' : ''}"><i class="fas ${ic} ml-1"></i>${label}${n ? ` <span class="fh-n">${n}</span>` : ''}</button>`;
-        }).join('') + `<span class="mr-auto text-[11px] text-slate-400">${fa(H.total)} ردیف${H.total > H.rows.length ? ` (نمایشِ ${fa(H.rows.length)} ردیفِ اول؛ با فیلتر محدود کنید)` : ''}</span>`;
+        }).join('') + (isGroups()
+            ? `<span class="mr-auto text-[11px] text-slate-400">${fa(H.total)} ردیفِ قسطِ شرکت${H.total > H.groups.length ? ` (نمایشِ ${fa(H.groups.length)} ردیفِ اول)` : ''}</span>`
+            : `<span class="mr-auto text-[11px] text-slate-400">${fa(H.total)} ردیف${H.total > H.rows.length ? ` (نمایشِ ${fa(H.rows.length)} ردیفِ اول؛ با فیلتر محدود کنید)` : ''}</span>`);
         document.querySelectorAll('#fh-stages button[data-st]').forEach(b => b.onclick = () => { H.stage = b.dataset.st; loadInstallments(); });
     }
     function rowKey(r) { return r.source + ':' + r.id; }
@@ -211,6 +232,7 @@
         updateBar();
     }
     function updateBar() {
+        if (isGroups()) return updateGroupBar();
         const sel = [...H.sel.values()];
         const rem = sel.reduce((a, r) => a + (r.remaining || 0), 0), pay = sel.reduce((a, r) => a + (r.insurer_payable || 0), 0);
         document.getElementById('fh-selinfo').innerHTML = sel.length
@@ -220,6 +242,178 @@
         document.getElementById('fh-pay-in').disabled = !sel.some(r => r.remaining > 0);
         document.getElementById('fh-pay-out').disabled = !sel.some(r => r.insurer_payable > 0);
     }
+
+    // =================================================================
+    //  کارکنان به تفکیکِ شرکت: «ردیفِ قسط» = شرکت + دوره‌ی مالی + شماره‌ی قسط
+    // =================================================================
+    const selMembers = () => H.groups.filter(g => H.gsel.has(g.key)).flatMap(g => g.members);
+    const typeChips = g => `${g.third_count ? `<span class="fh-chip bg-sky-100 text-sky-700">${fa(g.third_count)} ثالث</span>` : ''}${g.body_count ? `<span class="fh-chip bg-violet-100 text-violet-700">${fa(g.body_count)} بدنه</span>` : ''}`;
+    const stageChips = sc => [['US', 'bg-rose-100 text-rose-700', 'بدهکار به ما'], ['INSURER', 'bg-amber-100 text-amber-800', 'آماده‌ی پرداخت به بیمه‌گر'], ['SETTLED', 'bg-emerald-100 text-emerald-700', 'تسویه']]
+        .filter(([k]) => sc[k]).map(([k, c, l]) => `<span class="fh-chip ${c}">${fa(sc[k])} ${l}</span>`).join(' ');
+    async function loadGroups() {
+        const box = document.getElementById('fh-table');
+        box.innerHTML = '<p class="p-10 text-center text-slate-400 text-xs">در حال بارگذاری...</p>';
+        const p = fhFilters(); p.action = 'ledger_groups'; delete p.source;
+        const d = await api(p);
+        if (!isGroups()) return;
+        if (!d.ok) { box.innerHTML = `<p class="p-10 text-center text-red-500 text-xs">${esc(d.error || 'خطا')}</p>`; return; }
+        H.groups = d.groups || []; H.summary = d.summary; H.total = d.total_groups; H.stageGroups = d.stage_groups; H.dueCfg = d.due_cfg;
+        const keys = new Set(H.groups.map(g => g.key));
+        [...H.gsel].forEach(k => { if (!keys.has(k)) H.gsel.delete(k); });
+        renderKpis(); renderStages(); renderGroupTable();
+    }
+    function renderGroupTable() {
+        const box = document.getElementById('fh-table');
+        if (!H.groups.length) {
+            box.innerHTML = '<div class="p-12 text-center text-slate-400"><i class="fas fa-building-user text-3xl mb-2 block"></i><p class="text-sm">با این فیلترها ردیفِ قسطی برای شرکت‌ها پیدا نشد.</p><p class="text-[11px] mt-1">فقط اقساطِ کارکنان (کسر از حقوق) در این نما جمع می‌شوند.</p></div>';
+            updateBar(); return;
+        }
+        const allSel = H.groups.every(g => H.gsel.has(g.key));
+        const cfg = H.dueCfg || {day: 15, offset: 1};
+        box.innerHTML = `<div class="px-3 py-2 text-[10.5px] text-slate-500 bg-sky-50 border-b border-sky-100"><i class="fas fa-circle-info ml-1 text-sky-600"></i>
+                هر ردیف = اقساطِ همه‌ی بیمه‌نامه‌های کارکنانِ یک شرکت که در یک دوره‌ی مالی صادر شده‌اند. سررسیدِ قسطِ ۱: روزِ ${fa(cfg.day)} از ${!cfg.offset ? 'همان ماهِ دوره' : (cfg.offset === 1 ? 'ماهِ بعد از دوره' : fa(cfg.offset) + ' ماه بعد از دوره')} و قسط‌های بعدی هر ماه همان روز (قابلِ تغییر در تنظیماتِ مالی). روی هر ردیف بزنید تا بیمه‌نامه‌ها و اقساطش را ببینید.</div>
+            <table class="w-full text-right text-[11.5px] whitespace-nowrap fh-table no-count">
+            <thead class="sticky top-0 z-10"><tr>
+                <th class="p-2.5"><input type="checkbox" id="fhg-all" ${allSel ? 'checked' : ''} class="accent-indigo-600 w-4 h-4"></th>
+                <th class="p-2.5">شرکت</th><th class="p-2.5">دوره‌ی مالی</th><th class="p-2.5 text-center">قسط</th><th class="p-2.5">سررسید</th><th class="p-2.5">بیمه‌نامه‌ها</th>
+                <th class="p-2.5">جمعِ قسط</th><th class="p-2.5">دریافت از شرکت</th><th class="p-2.5">پرداخت به بیمه‌گر</th><th class="p-2.5">وضعیت</th><th class="p-2.5"></th>
+            </tr></thead><tbody>${H.groups.map(g => {
+                const sel = H.gsel.has(g.key);
+                const pctIn = g.amount ? Math.min(100, Math.round(g.paid * 100 / g.amount)) : 0;
+                const pctOut = g.amount ? Math.min(100, Math.round(g.paid_insurer * 100 / g.amount)) : 0;
+                return `<tr class="fh-grp-row border-t border-slate-100 ${sel ? 'bg-indigo-50/70' : 'hover:bg-slate-50'} ${g.overdue ? 'fh-overdue' : ''}" data-k="${esc(g.key)}">
+                    <td class="p-2.5"><input type="checkbox" class="fhg-chk accent-indigo-600 w-4 h-4" data-k="${esc(g.key)}" ${sel ? 'checked' : ''}></td>
+                    <td class="p-2.5"><p class="font-black text-slate-800">${esc(g.company_name)}</p><span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">کارکنان</span></td>
+                    <td class="p-2.5 font-bold text-slate-600">${fa(g.period_title)}</td>
+                    <td class="p-2.5 text-center"><span class="inline-flex w-8 h-8 items-center justify-center rounded-xl bg-indigo-600 text-white font-black">${fa(g.inst_number)}</span></td>
+                    <td class="p-2.5"><p class="${g.overdue ? 'text-red-600 font-black' : (g.upcoming ? 'text-amber-600 font-bold' : '')}">${fa(g.due_jalali)}</p>${g.delay_days ? `<p class="text-[10px] text-red-500">${fa(g.delay_days)} روز تأخیر</p>` : ''}</td>
+                    <td class="p-2.5"><b>${fa(g.count)}</b> بیمه‌نامه <div class="mt-0.5 flex gap-1">${typeChips(g)}</div></td>
+                    <td class="p-2.5 font-black">${num(g.amount)}</td>
+                    <td class="p-2.5 min-w-[160px]"><div class="flex justify-between text-[10.5px]"><span class="text-emerald-700 font-bold">${num(g.paid)}</span><span class="${g.remaining ? 'text-rose-600 font-bold' : 'text-slate-300'}">${g.remaining ? 'مانده ' + num(g.remaining) : 'کامل'}</span></div>
+                        <div class="fh-prog"><span style="width:${pctIn}%;background:#10b981"></span></div></td>
+                    <td class="p-2.5 min-w-[160px]"><div class="flex justify-between text-[10.5px]"><span class="text-indigo-700 font-bold">${num(g.paid_insurer)}</span><span class="${g.insurer_remaining ? 'text-amber-700 font-bold' : 'text-slate-300'}">${g.insurer_remaining ? 'مانده ' + num(g.insurer_remaining) : 'کامل'}</span></div>
+                        <div class="fh-prog"><span style="width:${pctOut}%;background:#6366f1"></span></div></td>
+                    <td class="p-2.5 whitespace-normal min-w-[150px]">${stageChips(g.stage_count)}</td>
+                    <td class="p-2.5"><div class="flex gap-1">
+                        <button class="fhg-act w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-a="info" data-k="${esc(g.key)}" title="بیمه‌نامه‌ها و اقساط"><i class="fas fa-circle-info"></i></button>
+                        ${g.remaining > 0 ? `<button class="fhg-act w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600" data-a="in" data-k="${esc(g.key)}" title="ثبت دریافت از شرکت"><i class="fas fa-hand-holding-dollar"></i></button>` : ''}
+                        ${g.insurer_payable > 0 ? `<button class="fhg-act w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700" data-a="out" data-k="${esc(g.key)}" title="پرداخت به بیمه‌گر"><i class="fas fa-building-columns"></i></button>` : ''}
+                    </div></td></tr>`;
+            }).join('')}</tbody></table>`;
+        const byKey = k => H.groups.find(g => g.key === k);
+        box.querySelectorAll('.fhg-chk').forEach(c => {
+            c.onclick = e => e.stopPropagation();
+            c.onchange = () => { if (c.checked) H.gsel.add(c.dataset.k); else H.gsel.delete(c.dataset.k); c.closest('tr').classList.toggle('bg-indigo-50/70', c.checked); updateBar(); };
+        });
+        const all = document.getElementById('fhg-all');
+        if (all) all.onchange = () => { H.groups.forEach(g => { if (all.checked) H.gsel.add(g.key); else H.gsel.delete(g.key); }); renderGroupTable(); };
+        box.querySelectorAll('.fhg-act').forEach(b => b.onclick = e => {
+            e.stopPropagation();
+            const g = byKey(b.dataset.k);
+            if (b.dataset.a === 'info') openGroupDetail(g);
+            if (b.dataset.a === 'in') openPayDialog('IN', g.members);
+            if (b.dataset.a === 'out') openPayDialog('OUT', g.members);
+        });
+        box.querySelectorAll('.fh-grp-row').forEach(tr => tr.onclick = () => openGroupDetail(byKey(tr.dataset.k)));
+        updateBar();
+    }
+    function updateGroupBar() {
+        const groups = H.groups.filter(g => H.gsel.has(g.key)), mem = groups.flatMap(g => g.members);
+        const rem = mem.reduce((a, r) => a + (r.remaining || 0), 0), pay = mem.reduce((a, r) => a + (r.insurer_payable || 0), 0);
+        document.getElementById('fh-selinfo').innerHTML = groups.length
+            ? `<i class="fas fa-check-square text-indigo-600 ml-1"></i><b>${fa(groups.length)}</b> ردیفِ قسط (${fa(mem.length)} قسطِ بیمه‌نامه) · مانده‌ی دریافت: <b class="text-rose-600">${num(rem)}</b> · قابلِ پرداخت به بیمه‌گر: <b class="text-amber-700">${num(pay)}</b> ریال`
+            : 'ردیف‌های قسطِ شرکت‌ها را تیک بزنید تا دریافت از شرکت یا پرداخت به بیمه‌گر را یک‌جا ثبت کنید؛ یا روی هر ردیف بزنید تا بیمه‌نامه‌هایش را ببینید.';
+        document.getElementById('fh-info-sel').disabled = !mem.length;
+        document.getElementById('fh-pay-in').disabled = !mem.some(r => r.remaining > 0);
+        document.getElementById('fh-pay-out').disabled = !mem.some(r => r.insurer_payable > 0);
+    }
+    // پنجره‌ی یک ردیفِ قسط: همه‌ی بیمه‌نامه‌هایش (در همه‌ی مرحله‌ها) + اقساطِ کاملِ هر بیمه‌نامه
+    async function openGroupDetail(g0) {
+        if (!g0) return;
+        const el = modal('fh-gdetail', '<p class="p-10 text-center text-slate-400 text-xs">در حال بارگذاری...</p>', true);
+        const reload = () => openGroupDetail(g0);
+        const d = await api({action: 'ledger_groups', stage: 'ALL', company_id: g0.company_id || '', period: g0.period, limit: 3000});
+        const g = (d.groups || []).find(x => x.key === g0.key);
+        if (!d.ok || !g) { el.querySelector('.modal-content').innerHTML = `<p class="p-10 text-center text-slate-400 text-xs">${esc(d.error || 'این ردیف دیگر قسطی ندارد.')}</p>`; return; }
+        const mem = g.members;
+        const pol = await api(null, {action: 'ledger_policy_insts', company_id: g.company_id || '', refs: mem.map(m => m.ref_id)});
+        const insts = (pol && pol.policies) || {};
+        const pctIn = g.amount ? Math.round(g.paid * 100 / g.amount) : 0;
+        el.querySelector('.modal-content').innerHTML = `
+            <div class="p-5 text-white rounded-t-[inherit]" style="background:linear-gradient(120deg,#0c4a6e,#4338ca)">
+                <button type="button" onclick="document.getElementById('fh-gdetail').classList.remove('active')" class="absolute top-4 left-4 text-white/70 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+                <p class="text-[11px] opacity-80">کارکنانِ شرکت · دوره‌ی مالیِ ${fa(g.period_title)}</p>
+                <h3 class="text-lg font-black">قسطِ ${fa(g.inst_number)} — ${esc(g.company_name)}</h3>
+                <div class="flex flex-wrap gap-2 mt-2 text-[11px] font-bold">
+                    <span class="bg-white/20 rounded-full px-2.5 py-1"><i class="fas fa-calendar-day ml-1"></i>سررسید ${fa(g.due_jalali)}${g.delay_days ? ` · ${fa(g.delay_days)} روز تأخیر` : ''}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">${fa(g.count)} بیمه‌نامه${g.third_count ? ` · ${fa(g.third_count)} ثالث` : ''}${g.body_count ? ` · ${fa(g.body_count)} بدنه` : ''}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">جمعِ قسط: ${num(g.amount)} ریال</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">دریافت‌شده: ${num(g.paid)} (${fa(pctIn)}٪)</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">مانده: ${num(g.remaining)}</span>
+                    <span class="bg-white/20 rounded-full px-2.5 py-1">پرداخت به بیمه‌گر: ${num(g.paid_insurer)}</span>
+                </div>
+            </div>
+            <div class="p-4 space-y-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    ${stageChips(g.stage_count)}
+                    <div class="mr-auto flex flex-wrap gap-2">
+                        ${g.remaining > 0 ? `<button type="button" id="fhg-in" class="text-[12px] font-black text-white px-4 py-2 rounded-xl" style="background:linear-gradient(120deg,#e11d48,#f43f5e)"><i class="fas fa-hand-holding-dollar ml-1"></i>ثبت دریافت از شرکت</button>` : ''}
+                        ${g.insurer_payable > 0 ? `<button type="button" id="fhg-out" class="text-[12px] font-black text-white px-4 py-2 rounded-xl" style="background:linear-gradient(120deg,#b45309,#f59e0b)"><i class="fas fa-building-columns ml-1"></i>پرداخت به بیمه‌گر (${num(g.insurer_payable)})</button>` : ''}
+                    </div>
+                </div>
+                <p class="text-[10.5px] text-slate-500"><i class="fas fa-circle-info ml-1"></i>در «ثبت دریافت از شرکت» مبلغِ هر بیمه‌نامه جدا قابلِ تغییر است؛ اگر شرکت کمتر پرداخت کرد، همان بیمه‌نامه با مانده‌اش در «بدهکار به ما» می‌ماند و بقیه در همین ردیف به «بدهکار به بیمه‌گر» می‌روند.</p>
+                <div class="space-y-2">${mem.map((m, i) => {
+                    const st = STAGE[m.stage] || STAGE.US;
+                    const all = insts[m.ref_id] || [];
+                    return `<details class="border-2 ${m.stage === 'US' ? 'border-rose-100' : (m.stage === 'INSURER' ? 'border-amber-100' : 'border-emerald-100')} rounded-2xl overflow-hidden">
+                        <summary class="cursor-pointer flex flex-wrap items-center gap-2 px-4 py-2.5 bg-slate-50 text-[12px]">
+                            <b class="text-slate-400">${fa(i + 1)}</b>
+                            <span><b class="text-slate-800">${esc(m.holder_name || m.insured)}</b>${m.personnel_code ? ` <span class="text-[10px] text-slate-400">کد پرسنلی ${fa(m.personnel_code)}</span>` : ''}${m.insured && m.insured !== m.holder_name ? `<span class="text-[10px] text-slate-500"> · بیمه‌گذار: ${esc(m.insured)}</span>` : ''}</span>
+                            <span>${plate(m.plate)}</span>
+                            <span class="fh-chip ${fin_body(m) ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${fin_body(m) ? 'بدنه' : 'ثالث'}</span>
+                            <span dir="ltr" class="font-mono text-[10.5px] text-slate-500">${esc(m.policy_number || '')}</span>
+                            <span class="mr-auto flex flex-wrap items-center gap-2">
+                                <span>قسطِ ${fa(m.inst_number)}: <b>${num(m.amount)}</b></span>
+                                <span class="text-emerald-700 font-bold">دریافت ${num(m.paid)}</span>
+                                ${m.remaining ? `<span class="text-rose-600 font-bold">مانده ${num(m.remaining)}</span>` : ''}
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${st[1]}">${st[0]}</span>
+                            </span>
+                        </summary>
+                        <div class="p-3 space-y-2">
+                            <div class="flex flex-wrap gap-2 text-[10.5px] text-slate-500">
+                                <span>صدور ${fa(m.issue_jalali)}</span><span>حق بیمه‌ی کل ${num(m.premium)}</span><span>سررسیدِ خودِ این قسط ${fa(m.due_jalali)}</span>
+                                <span class="font-mono" dir="ltr">${esc(m.tracking_code || '')}</span>
+                                <span class="mr-auto flex gap-1">
+                                    <button type="button" class="fhg-m text-[10.5px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg px-2 py-1" data-a="hist" data-i="${i}"><i class="fas fa-clock-rotate-left ml-1"></i>سابقه</button>
+                                    ${m.remaining > 0 ? `<button type="button" class="fhg-m text-[10.5px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg px-2 py-1" data-a="in" data-i="${i}">دریافتِ همین</button>` : ''}
+                                    ${m.insurer_payable > 0 ? `<button type="button" class="fhg-m text-[10.5px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg px-2 py-1" data-a="out" data-i="${i}">پرداختِ همین به بیمه‌گر</button>` : ''}
+                                </span>
+                            </div>
+                            <p class="text-[11px] font-black text-slate-600"><i class="fas fa-list-ol ml-1"></i>همه‌ی اقساطِ این بیمه‌نامه</p>
+                            ${all.length ? `<div class="overflow-x-auto"><table class="w-full text-[11px] text-right whitespace-nowrap no-count"><thead class="bg-slate-50 text-slate-500"><tr>
+                                <th class="p-1.5 text-center">قسط</th><th class="p-1.5">سررسید</th><th class="p-1.5">مبلغ</th><th class="p-1.5">دریافت</th><th class="p-1.5">مانده</th><th class="p-1.5">پرداخت به بیمه‌گر</th><th class="p-1.5">مرحله</th></tr></thead><tbody>
+                                ${all.map(x => { const s2 = STAGE[x.stage] || STAGE.US; return `<tr class="border-t border-slate-100 ${x.inst_number === m.inst_number ? 'bg-indigo-50/70 font-bold' : ''}">
+                                    <td class="p-1.5 text-center">${fa(x.inst_number)}</td><td class="p-1.5 ${x.overdue ? 'text-red-600' : ''}">${fa(x.due_jalali)}</td><td class="p-1.5">${num(x.amount)}</td>
+                                    <td class="p-1.5 text-emerald-700">${num(x.paid)}</td><td class="p-1.5 ${x.remaining ? 'text-rose-600' : 'text-slate-300'}">${x.remaining ? num(x.remaining) : 'کامل'}</td>
+                                    <td class="p-1.5 text-indigo-700">${num(x.paid_insurer)}</td><td class="p-1.5"><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${s2[1]}">${s2[0]}</span></td></tr>`; }).join('')}
+                            </tbody></table></div>` : '<p class="text-[11px] text-slate-400">اقساطِ دیگری پیدا نشد.</p>'}
+                        </div>
+                    </details>`;
+                }).join('')}</div>
+            </div>`;
+        const after = () => { reload(); };
+        const bi = document.getElementById('fhg-in'), bo = document.getElementById('fhg-out');
+        if (bi) bi.onclick = () => openPayDialog('IN', mem, after);
+        if (bo) bo.onclick = () => openPayDialog('OUT', mem, after);
+        el.querySelectorAll('.fhg-m').forEach(b => b.onclick = e => {
+            e.preventDefault();
+            const m = mem[Number(b.dataset.i)];
+            if (b.dataset.a === 'hist') openInstDetail(m);
+            if (b.dataset.a === 'in') openPayDialog('IN', [m], after);
+            if (b.dataset.a === 'out') openPayDialog('OUT', [m], after);
+        });
+    }
+    const fin_body = m => /BODY|بدنه/i.test(String(m.insurance_type || ''));
 
     // ---------- جزئیات و سابقه‌ی یک قسط (و چند قسطِ انتخاب‌شده) ----------
     function histHtml(hist) {
@@ -429,7 +623,7 @@
             closeModal('fh-pay');
             toast(`${fa(d.applied)} قسط ثبت شد · ${num(d.total)} ریال${(d.rejected || []).length ? ` · ${fa(d.rejected.length)} ردیف رد شد` : ''}`, (d.rejected || []).length ? 'warning' : 'success');
             if ((d.rejected || []).length) info('ردیف‌های ردشده', d.rejected.map(x => `• ${x.label}: ${x.reason}`).join('\n'), 'warning');
-            H.sel.clear();
+            H.sel.clear(); H.gsel.clear();
             if (typeof onDone === 'function') onDone(d);
             if (document.getElementById('fh-root') && !document.getElementById('tab-fin-installments').classList.contains('hidden')) loadInstallments();
             if (document.getElementById('fl-root') && !document.getElementById('tab-fin-payments').classList.contains('hidden')) loadLedger();

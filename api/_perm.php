@@ -266,7 +266,7 @@ function perm_api_map() {
             'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
         ]],
         'finance_actions' => ['pages' => ['fin-installments'], 'elevate' => true, 'actions' => [
-            'ledger_meta' => $fin . '|' . $req . ':view', 'ledger_installments' => $fin . '|' . $req . ':view', 'ledger_register' => 'fin-installments:create|fin-payments:create',
+            'ledger_meta' => $fin . '|' . $req . ':view', 'ledger_installments' => $fin . '|' . $req . ':view', 'ledger_groups' => $fin . '|' . $req . ':view', 'ledger_policy_insts' => $fin . '|' . $req . ':view', 'ledger_register' => 'fin-installments:create|fin-payments:create',
             'track' => 'fin-tracking:view|fin-installments:view|fin-payments:view', 'ledger_history' => $fin . '|' . $req . ':view', 'ledger_list' => 'fin-payments:view|fin-installments:view|fin-tracking:view',
             'ledger_receipt' => $fin . '|' . $req . ':view', 'ledger_void' => 'fin-payments:delete|fin-installments:delete', 'ledger_cheque_status' => 'fin-payments:edit|fin-installments:edit',
             'bootstrap' => $fin, 'analytics' => 'fin-dashboard:view|companies-finance:view', 'dashboard' => 'fin-dashboard:view',

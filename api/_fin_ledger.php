@@ -537,3 +537,67 @@ function fin_ledger_list($pdo, array $f) {
     usort($out, fn($a, $b) => [$b['sort'], $b['key']] <=> [$a['sort'], $a['key']]);
     return $out;
 }
+
+// =====================================================================
+//  «کارکنان به تفکیکِ شرکت»: اقساطِ کارکنانِ هر شرکت در هر دوره‌ی مالی یک «ردیفِ قسط» می‌شوند
+//   - کلید: شرکت + دوره‌ی صدور + شماره‌ی قسط (مثلاً دو ثالث و یک بدنه‌ی دوره‌ی آبان => «قسطِ ۱ شرکتِ فلان، آبان»)
+//   - سررسیدِ ردیف: روزِ pgroup_due_day (پیش‌فرض ۱۵) از ماهِ (دوره + pgroup_first_offset + n - 1)
+//   - هر ردیف بیمه‌نامه‌هایش را دارد؛ دریافت/پرداخت روی همان اقساطِ تکی ثبت می‌شود (پرداختِ جزئیِ هرکدام آزاد است).
+//     با فیلترِ مرحله، بیمه‌نامه‌ای که کامل دریافت نشده در «بدهکار به ما» می‌ماند و بقیه در همان ردیف به «بدهکار به بیمه‌گر» می‌روند.
+// =====================================================================
+function fin_pgroup_cfg($pdo) {
+    $s = fin_settings($pdo);
+    return ['day' => max(1, min(31, intval($s['pgroup_due_day'] ?? 15) ?: 15)), 'offset' => max(0, min(12, intval($s['pgroup_first_offset'] ?? 1)))];
+}
+function fin_pgroup_due($pdo, $period, $n) {
+    $cfg = fin_pgroup_cfg($pdo);
+    if (!preg_match('/^(\d{4})-(\d{2})$/', (string)$period, $m)) return ['', ''];
+    [$y, $mo] = fin_next_month(intval($m[1]), intval($m[2]), $cfg['offset'] + max(1, $n) - 1);
+    $d = min($cfg['day'], fin_jalali_month_len($y, $mo));
+    return [sprintf('%04d/%02d/%02d', $y, $mo, $d), date('Y-m-d', jalali_to_gregorian_ts($y, $mo, $d))];
+}
+function fin_ledger_groups($pdo, array $f) {
+    $f['source'] = 'P';
+    $stageF = $f['stage'] ?? '';
+    $grpStatus = $f['status'] ?? '';   // OVERDUE / UPCOMING روی سررسیدِ ردیف، نه قسطِ تکی
+    unset($f['stage']);
+    if (in_array($grpStatus, ['OVERDUE', 'UPCOMING'], true)) unset($f['status']);
+    $all = fin_ledger_rows($pdo, $f);
+    $today = date('Y-m-d'); $near = date('Y-m-d', strtotime('+30 days'));
+    $groups = [];
+    foreach ($all as $r) {
+        $k = intval($r['company_id']) . '|' . $r['period'] . '|' . intval($r['inst_number']);
+        if (!isset($groups[$k])) {
+            [$dj, $dg] = fin_pgroup_due($pdo, $r['period'], intval($r['inst_number']));
+            [$py, $pm] = array_map('intval', explode('-', $r['period']));
+            $groups[$k] = ['key' => $k, 'company_id' => $r['company_id'], 'company_name' => $r['company_name'], 'period' => $r['period'],
+                           'period_title' => fin_month_name($pm) . ' ' . $py, 'inst_number' => intval($r['inst_number']), 'due_jalali' => $dj, 'due_date' => $dg,
+                           'stage_count' => ['US' => 0, 'INSURER' => 0, 'SETTLED' => 0], 'all_ids' => [], 'members' => []];
+        }
+        $g = &$groups[$k];
+        $g['stage_count'][$r['stage']]++;
+        $g['all_ids'][] = $r['id'];
+        if ($stageF === '' || $stageF === 'ALL' || $r['stage'] === $stageF) $g['members'][] = $r;
+        unset($g);
+    }
+    $out = [];
+    foreach ($groups as $g) {
+        if (!$g['members']) continue;
+        $sum = fn($key) => array_sum(array_column($g['members'], $key));
+        $g['count'] = count($g['members']);
+        $g['body_count'] = count(array_filter($g['members'], fn($m) => fin_is_body($m['insurance_type'])));
+        $g['third_count'] = $g['count'] - $g['body_count'];
+        foreach (['amount', 'paid', 'remaining', 'paid_insurer', 'insurer_remaining', 'insurer_payable'] as $key) $g[$key] = $sum($key);
+        $g['overdue'] = $g['remaining'] > 0 && $g['due_date'] !== '' && $g['due_date'] < $today;
+        $g['upcoming'] = $g['remaining'] > 0 && $g['due_date'] >= $today && $g['due_date'] <= $near;
+        $g['delay_days'] = $g['overdue'] ? (int)floor((strtotime('today') - strtotime($g['due_date'])) / 86400) : 0;
+        if ($grpStatus === 'OVERDUE' && !$g['overdue']) continue;
+        if ($grpStatus === 'UPCOMING' && !$g['upcoming']) continue;
+        $out[] = $g;
+    }
+    usort($out, fn($a, $b) => [$a['due_date'], $a['company_name'], $a['inst_number']] <=> [$b['due_date'], $b['company_name'], $b['inst_number']]);
+    // شمارِ ردیف‌ها در هر مرحله (برای دکمه‌های مرحله)
+    $stageGroups = ['US' => 0, 'INSURER' => 0, 'SETTLED' => 0];
+    foreach ($groups as $g) foreach ($g['stage_count'] as $st => $n) if ($n) $stageGroups[$st]++;
+    return ['groups' => $out, 'stage_groups' => $stageGroups, 'rows' => array_merge(...array_map(fn($g) => $g['members'], $out ?: [['members' => []]]))];
+}
