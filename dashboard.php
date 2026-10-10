@@ -4199,7 +4199,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=4"></script>
+    <script src="finance-hub.js?v=5"></script>
     <script src="work-log.js?v=10"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
@@ -7635,7 +7635,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="text-emerald-700">${money(r.paid)}</td><td class="${r.remaining ? 'text-rose-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
                         <td class="text-indigo-700">${money(r.paid_insurer)}</td><td><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${st[1]}">${st[0] || ''}</span></td>
                         <td><div class="flex gap-1"><button onclick="FinHub.openInstDetail(CREQ_FIN[${i}])" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
-                            ${r.receipt ? `<a href="/${encodeFilePath(r.receipt.file)}" target="_blank" class="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 font-bold"><i class="fas fa-receipt ml-1"></i>فیش</a>` : ''}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+                            ${r.receipt && r.receipt.file ? `<button type="button" onclick="FinHub.previewFile(CREQ_FIN[${i}].receipt.file, 'فیشِ قسطِ ' + faDigits(String(CREQ_FIN[${i}].inst_number)))" class="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 font-bold"><i class="fas fa-receipt ml-1"></i>فیش</button>` : ''}</div></td></tr>`; }).join('')}</tbody></table></div>`;
         }
         function creqPay(dir) {
             if (!window.FinHub) return;

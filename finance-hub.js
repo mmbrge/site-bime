@@ -53,6 +53,62 @@
     }
     const closeModal = id => { const el = document.getElementById(id); if (el) el.classList.remove('active'); };
 
+    // ---------- کپی و پیش‌نمایشِ فیش ----------
+    async function copyText(t) {
+        t = String(t ?? '');
+        try { await navigator.clipboard.writeText(t); }
+        catch (e) { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (x) {} ta.remove(); }
+        toast('کپی شد.', 'success');
+    }
+    function previewFile(path, title) {
+        if (!path) return;
+        const url = filePath(path);
+        const isImg = /\.(jpe?g|png|webp|gif)$/i.test(path);
+        modal('fh-preview', `
+            <div class="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
+                <b class="text-sm text-slate-800"><i class="fas fa-receipt ml-1 text-sky-600"></i>${esc(title || 'فیش')}</b>
+                <span class="text-[10.5px] text-slate-400 truncate max-w-[50%]" dir="ltr">${esc(String(path).split('/').pop())}</span>
+                <span class="mr-auto flex gap-2">
+                    <a href="${url}" target="_blank" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg px-3 py-1.5"><i class="fas fa-up-right-from-square ml-1"></i>برگه‌ی جدید</a>
+                    <a href="${url}" download class="text-[11px] font-bold text-white rounded-lg px-3 py-1.5" style="background:#0284c7"><i class="fas fa-download ml-1"></i>دانلود</a>
+                    <button type="button" onclick="document.getElementById('fh-preview').classList.remove('active')" class="text-slate-400 hover:text-slate-700 text-lg px-1"><i class="fas fa-times"></i></button>
+                </span>
+            </div>
+            <div class="bg-slate-100 p-2" style="height:72vh">${isImg ? `<img src="${url}" alt="" class="max-w-full max-h-full mx-auto object-contain block">` : `<iframe src="${url}" class="w-full h-full rounded-lg bg-white" title="فیش"></iframe>`}</div>`, true);
+    }
+    // اطلاعاتِ فیشِ هر قسط (از فایلِ بیمه‌نامه): هر فیلد با دکمه‌ی کپی، «کپیِ همه» و «مشاهده‌ی فیش»
+    const SLIP_F = [['fish', 'شماره فیش'], ['shenase', 'شناسه پرداخت'], ['amount', 'مبلغ (ریال)'], ['date', 'تاریخ'], ['account', 'شماره حساب'],
+                    ['bank', 'بانک'], ['payer', 'پرداخت‌کننده'], ['payer_nid', 'کد ملیِ پرداخت‌کننده'], ['kind', 'نوع']];
+    const slipText = rc => SLIP_F.filter(([k]) => rc[k] !== undefined && rc[k] !== null && rc[k] !== '').map(([k, l]) => `${l}: ${k === 'amount' ? Number(rc[k]).toLocaleString('en-US') : rc[k]}`).join('\n');
+    function slipCardHtml(rc, title) {
+        if (!rc) return '';
+        const f = SLIP_F.filter(([k]) => rc[k] !== undefined && rc[k] !== null && rc[k] !== '');
+        return `<div class="rounded-xl border-2 border-sky-200 bg-sky-50/70 p-3 space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+                <b class="text-[12px] text-sky-900"><i class="fas fa-receipt ml-1"></i>${esc(title || 'فیش پرداختیِ این قسط')}</b>
+                <span class="mr-auto flex flex-wrap gap-1.5">
+                    ${f.length ? `<button type="button" class="text-[10.5px] font-bold bg-white hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-lg px-2 py-1" data-copy="${esc(slipText(rc))}"><i class="fas fa-copy ml-1"></i>کپیِ همه</button>` : ''}
+                    ${rc.file ? `<button type="button" class="text-[10.5px] font-bold text-white rounded-lg px-2 py-1" style="background:#0284c7" data-preview="${esc(rc.file)}" data-ptitle="${esc(title || 'فیش پرداختی')}"><i class="fas fa-eye ml-1"></i>مشاهده‌ی فیش</button>` : ''}
+                </span>
+            </div>
+            ${f.length ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-1.5">${f.map(([k, l]) => `<div class="bg-white border border-sky-100 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+                <div class="min-w-0 flex-1"><p class="text-[9.5px] text-slate-400">${l}</p><p class="text-[11.5px] font-bold text-slate-700 truncate" ${/^(fish|shenase|account|payer_nid)$/.test(k) ? 'dir="ltr" style="text-align:right"' : ''}>${k === 'amount' ? num(rc[k]) : esc(fa(rc[k]))}</p></div>
+                <button type="button" class="w-6 h-6 rounded-md bg-slate-50 hover:bg-sky-100 text-slate-400 hover:text-sky-700 text-[11px] flex-none" title="کپی" data-copy="${esc(String(rc[k]))}"><i class="fas fa-copy"></i></button></div>`).join('')}</div>`
+                : '<p class="text-[11px] text-slate-500">اطلاعاتی از این فیش خوانده نشده؛ فقط خودِ فایل موجود است.</p>'}
+        </div>`;
+    }
+    function bindCopyPreview(root) {
+        root.querySelectorAll('[data-copy]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); copyText(b.dataset.copy); });
+        root.querySelectorAll('[data-preview]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); previewFile(b.dataset.preview, b.dataset.ptitle); });
+    }
+    const instText = r => [`بیمه‌گذار: ${r.insured || ''}`, r.holder_name && r.holder_name !== r.insured ? `پرسنل: ${r.holder_name}` : '', r.personnel_code ? `کد پرسنلی: ${r.personnel_code}` : '',
+        `شرکت: ${r.company_name || ''}`, `پلاک: ${r.plate || ''}`, `شماره بیمه‌نامه: ${r.policy_number || ''}`, `قسط: ${r.inst_number}`, `سررسید: ${r.due_jalali || ''}`,
+        `مبلغ قسط: ${Number(r.amount || 0).toLocaleString('en-US')}`, `دریافت‌شده: ${Number(r.paid || 0).toLocaleString('en-US')}`, `مانده: ${Number(r.remaining || 0).toLocaleString('en-US')}`,
+        `پرداخت به بیمه‌گر: ${Number(r.paid_insurer || 0).toLocaleString('en-US')}`, r.tracking_code ? `کد رهگیری: ${r.tracking_code}` : ''].filter(Boolean).join('\n');
+    const histText = h => [h.direction === 'IN' ? 'دریافت از بیمه‌گذار' : 'پرداخت به بیمه‌گر', `مبلغ: ${Number(h.amount || 0).toLocaleString('en-US')} ریال`, `تاریخ: ${h.paid_jalali || ''}`,
+        `روش: ${h.method_fa || ''}`, h.reference_no ? `شماره پیگیری: ${h.reference_no}` : '', h.cheque_no ? `شماره چک: ${h.cheque_no}` : '',
+        h.receipt_id ? `سند: ${h.receipt_id}` : '', `ثبت: ${h.created_by_name || ''}`, h.note ? `توضیح: ${h.note}` : ''].filter(Boolean).join('\n');
+
     // =================================================================
     //  مرکز اقساط
     // =================================================================
@@ -208,7 +264,7 @@
                     <td class="p-2.5"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${st[1]}"><i class="fas ${st[2]} ml-0.5"></i>${st[0]}</span>${r.is_invoiced ? '<p class="text-[9.5px] text-blue-600 mt-0.5">دارای صورتحساب</p>' : ''}</td>
                     <td class="p-2.5"><div class="flex gap-1">
                         <button class="fh-act w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-a="info" data-k="${k}" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
-                        ${r.receipt ? `<a href="${filePath(r.receipt.file)}" target="_blank" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold" title="فیش پرداختیِ این قسط (از فایلِ بیمه‌نامه)"><i class="fas fa-receipt"></i>فیش</a>` : ''}
+                        ${r.receipt && r.receipt.file ? `<button type="button" data-preview="${esc(r.receipt.file)}" data-ptitle="فیشِ قسطِ ${fa(r.inst_number)} — ${esc(r.insured)}" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold" title="فیش پرداختیِ این قسط (از فایلِ بیمه‌نامه)"><i class="fas fa-receipt"></i>فیش</button>` : ''}
                         ${r.remaining > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600" data-a="in" data-k="${k}" title="ثبت دریافت"><i class="fas fa-hand-holding-dollar"></i></button>` : ''}
                         ${r.insurer_payable > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700" data-a="out" data-k="${k}" title="پرداخت به بیمه‌گر"><i class="fas fa-building-columns"></i></button>` : ''}
                     </div></td>
@@ -222,6 +278,7 @@
         });
         const all = document.getElementById('fh-all');
         if (all) all.onchange = () => { H.rows.forEach(r => { if (all.checked) H.sel.set(rowKey(r), r); else H.sel.delete(rowKey(r)); }); renderTable(); };
+        bindCopyPreview(box);
         box.querySelectorAll('.fh-act').forEach(b => b.onclick = e => {
             e.stopPropagation();
             const r = H.rows.find(x => rowKey(x) === b.dataset.k);
@@ -389,6 +446,7 @@
                                     ${m.insurer_payable > 0 ? `<button type="button" class="fhg-m text-[10.5px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg px-2 py-1" data-a="out" data-i="${i}">پرداختِ همین به بیمه‌گر</button>` : ''}
                                 </span>
                             </div>
+                            ${m.receipt ? slipCardHtml(m.receipt, 'فیشِ قسطِ ' + fa(m.inst_number) + ' این بیمه‌نامه') : ''}
                             <p class="text-[11px] font-black text-slate-600"><i class="fas fa-list-ol ml-1"></i>همه‌ی اقساطِ این بیمه‌نامه</p>
                             ${all.length ? `<div class="overflow-x-auto"><table class="w-full text-[11px] text-right whitespace-nowrap no-count"><thead class="bg-slate-50 text-slate-500"><tr>
                                 <th class="p-1.5 text-center">قسط</th><th class="p-1.5">سررسید</th><th class="p-1.5">مبلغ</th><th class="p-1.5">دریافت</th><th class="p-1.5">مانده</th><th class="p-1.5">پرداخت به بیمه‌گر</th><th class="p-1.5">مرحله</th></tr></thead><tbody>
@@ -402,6 +460,7 @@
                 }).join('')}</div>
             </div>`;
         const after = () => { reload(); };
+        bindCopyPreview(el);
         const bi = document.getElementById('fhg-in'), bo = document.getElementById('fhg-out');
         if (bi) bi.onclick = () => openPayDialog('IN', mem, after);
         if (bo) bo.onclick = () => openPayDialog('OUT', mem, after);
@@ -424,7 +483,8 @@
             <b>${num(h.amount)}</b> ریال <span class="text-slate-300">|</span> ${fa(h.paid_jalali) || '—'} <span class="text-slate-300">|</span> ${esc(h.method_fa)}
             ${h.reference_no ? `<span class="text-slate-500">پیگیری: <span dir="ltr">${esc(h.reference_no)}</span></span>` : ''}
             ${h.cheque_no ? `<span class="text-slate-500">چک ${fa(h.cheque_no)} ${h.cheque_status ? `<span class="text-[10px] px-1.5 rounded ${(CHQ[h.cheque_status] || ['', ''])[1]}">${(CHQ[h.cheque_status] || [''])[0]}</span>` : ''}</span>` : ''}
-            ${(h.files || []).map((f, i) => `<a href="${filePath(f)}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-paperclip"></i> فیش ${fa(i + 1)}</a>`).join(' ')}
+            ${(h.files || []).map((f, i) => `<button type="button" class="text-[10.5px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg px-2 py-1" data-preview="${esc(f)}" data-ptitle="${esc((h.direction === 'IN' ? 'فیشِ دریافت' : 'فیشِ پرداخت به بیمه‌گر') + ' ' + fa(i + 1))}"><i class="fas fa-eye ml-1"></i>فیش ${fa(i + 1)}</button>`).join(' ')}
+            <button type="button" class="text-[10.5px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1" data-copy="${esc(histText(h))}" title="کپیِ اطلاعاتِ این ثبت"><i class="fas fa-copy ml-1"></i>کپی</button>
             <span class="text-[10.5px] text-slate-500 bg-slate-100 rounded-full px-2 py-0.5"><i class="fas fa-user-pen ml-1"></i>ثبت: ${esc(h.created_by_name || 'نامشخص')}</span>
             ${isAdmin ? `<button type="button" class="fh-hvoid mr-auto text-[10.5px] font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg px-2 py-1" data-kind="${h.receipt_id ? 'R' : esc(h.legacy_kind || '')}" data-id="${h.receipt_id || h.legacy_id || ''}" data-dir="${h.direction}"><i class="fas fa-ban ml-1"></i>ابطال</button>` : ''}
             ${h.note ? `<span class="text-slate-400 text-[10.5px] w-full">${esc(h.note)}</span>` : ''}
@@ -437,8 +497,8 @@
                     ${row('منبع', r.source === 'C' ? 'شرکتی' : 'کارکنان')}${row('پلاک', plate(r.plate))}${row('شماره بیمه‌نامه', `<span dir="ltr">${esc(r.policy_number || '')}</span>`)}${row('بیمه‌گر', esc(r.insurer_fa))}
                     ${row('تاریخ صدور', fa(r.issue_jalali))}${row('سررسید', fa(r.due_jalali) + (r.delay_days ? ` <span class="text-red-500">(${fa(r.delay_days)} روز تأخیر)</span>` : ''))}${row('حق بیمه‌ی کل', num(r.premium))}${row('مبلغ قسط', num(r.amount))}
                 </div>
-                ${r.receipt ? `<a href="${filePath(r.receipt.file)}" target="_blank" class="flex flex-wrap items-center gap-2 rounded-xl border-2 border-sky-200 bg-sky-50 hover:bg-sky-100 px-3 py-2 text-[11.5px] text-sky-800">
-                    <i class="fas fa-receipt"></i><b>فیش پرداختیِ این قسط</b><span>تاریخ ${fa(r.receipt.date || '—')}</span>${r.receipt.amount ? `<span>مبلغ ${num(r.receipt.amount)} ریال</span>` : ''}${r.receipt.fish ? `<span dir="ltr" class="font-mono text-[10.5px]">${esc(r.receipt.fish)}</span>` : ''}<span class="mr-auto text-[10.5px] font-bold">بازکردن ←</span></a>` : ''}
+                <div class="flex justify-end -mt-1"><button type="button" class="text-[10.5px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg px-2.5 py-1" data-copy="${esc(instText(r))}"><i class="fas fa-copy ml-1"></i>کپیِ اطلاعاتِ این قسط</button></div>
+                ${r.receipt ? slipCardHtml(r.receipt) : '<p class="text-[10.5px] text-slate-400"><i class="fas fa-receipt ml-1"></i>فیشی برای این قسط در فایلِ بیمه‌نامه پیدا نشده.</p>'}
                 <div class="grid md:grid-cols-2 gap-3">
                     <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"><p class="text-[11px] font-black text-emerald-800 mb-1"><i class="fas fa-arrow-down ml-1"></i>دریافت از بیمه‌گذار</p>
                         <p class="text-sm"><b>${num(r.paid)}</b> از ${num(r.amount)} ریال${r.remaining ? ` | <span class="text-rose-600 font-bold">مانده ${num(r.remaining)}</span>` : ' | <span class="text-emerald-700 font-bold">کامل</span>'}</p></div>
@@ -451,6 +511,7 @@
                 </div>`;
     }
     function bindHistVoid(root, after) {
+        bindCopyPreview(root);
         root.querySelectorAll('.fh-hvoid').forEach(b => b.onclick = () => voidDoc(b.dataset.kind, b.dataset.id, b.dataset.dir, after));
     }
     async function voidDoc(kind, id, dir, after) {
@@ -543,16 +604,23 @@
             <div class="p-5 space-y-4">
                 <div class="overflow-x-auto border border-slate-100 rounded-xl max-h-[38vh]">
                     <table class="w-full text-[11.5px] text-right whitespace-nowrap no-count">
-                        <thead class="bg-slate-50 text-slate-500 sticky top-0"><tr><th class="p-2"><input type="checkbox" id="fp-all" checked class="accent-indigo-600"></th><th class="p-2">بیمه‌گذار / شرکت</th><th class="p-2">بیمه‌نامه</th><th class="p-2 text-center">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ قسط</th><th class="p-2">${isIn ? 'مانده‌ی دریافت' : 'قابلِ پرداخت'}</th><th class="p-2">مبلغِ این ثبت (ریال)</th></tr></thead>
+                        <thead class="bg-slate-50 text-slate-500 sticky top-0"><tr><th class="p-2"><input type="checkbox" id="fp-all" checked class="accent-indigo-600"></th><th class="p-2">بیمه‌گذار / شرکت</th><th class="p-2">بیمه‌نامه</th><th class="p-2 text-center">قسط</th><th class="p-2">سررسید</th><th class="p-2">مبلغ قسط</th><th class="p-2">${isIn ? 'مانده‌ی دریافت' : 'قابلِ پرداخت'}</th><th class="p-2">مبلغِ این ثبت (ریال)</th><th class="p-2">بعد از این ثبت</th></tr></thead>
                         <tbody>${list.map((r, i) => {
                             const max = isIn ? r.remaining : r.insurer_payable;
                             return `<tr class="border-t border-slate-100"><td class="p-2"><input type="checkbox" class="fp-chk accent-indigo-600" data-i="${i}" checked></td>
                                 <td class="p-2"><b>${esc(r.insured)}</b><p class="text-[10px] text-slate-400">${esc(r.company_name)} · ${r.source === 'C' ? 'شرکتی' : 'کارکنان'}</p></td>
                                 <td class="p-2" dir="ltr">${esc(r.policy_number || '')}</td><td class="p-2 text-center font-black">${fa(r.inst_number)}</td><td class="p-2">${fa(r.due_jalali)}</td>
                                 <td class="p-2">${num(r.amount)}</td><td class="p-2 font-bold ${isIn ? 'text-rose-600' : 'text-amber-700'}">${num(max)}</td>
-                                <td class="p-2"><input type="text" inputmode="numeric" dir="ltr" class="fp-amt money-input border rounded-lg px-2 py-1 w-36 text-[12px] font-bold" data-i="${i}" data-max="${max}" value="${num(max)}"></td></tr>`;
+                                <td class="p-2"><div class="flex items-center gap-1"><input type="text" inputmode="numeric" dir="ltr" class="fp-amt money-input border rounded-lg px-2 py-1 w-36 text-[12px] font-bold" data-i="${i}" data-max="${max}" value="${num(max)}">
+                                    <button type="button" class="fp-q text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md px-1.5 py-1" data-i="${i}" data-v="full" title="کلِ مانده">کامل</button>
+                                    <button type="button" class="fp-q text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md px-1.5 py-1" data-i="${i}" data-v="zero" title="${isIn ? 'برای این بیمه‌نامه پرداخت نشده' : 'فعلاً پرداخت نمی‌شود'}">${isIn ? 'نداده' : 'نه'}</button></div></td>
+                                <td class="p-2"><span class="fp-after text-[10.5px] font-bold" data-i="${i}"></span></td></tr>`;
                         }).join('')}</tbody>
                     </table>
+                </div>
+                <div class="flex flex-wrap gap-2 items-center text-[11px]">
+                    <button type="button" id="fp-allfull" class="font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg px-3 py-1.5"><i class="fas fa-check-double ml-1"></i>همه کامل</button>
+                    <span id="fp-plan" class="text-slate-500"></span>
                 </div>
                 <div class="flex items-center justify-between rounded-xl bg-slate-900 text-white px-4 py-3"><span class="text-[12px] font-bold">جمعِ این ثبت</span><span class="text-lg font-black" id="fp-total">۰</span></div>
                 <div class="grid md:grid-cols-3 gap-3">
@@ -579,12 +647,27 @@
             </div>`, true);
         const total = () => {
             let t = 0;
-            el.querySelectorAll('.fp-amt').forEach(inp => { const on = el.querySelector(`.fp-chk[data-i="${inp.dataset.i}"]`).checked; inp.disabled = !on; if (on) t += Number(digits(inp.value) || 0); });
+            let full = 0, part = 0, none = 0;
+            el.querySelectorAll('.fp-amt').forEach(inp => {
+                const on = el.querySelector(`.fp-chk[data-i="${inp.dataset.i}"]`).checked; inp.disabled = !on;
+                const a = on ? Number(digits(inp.value) || 0) : 0, max = Number(inp.dataset.max);
+                t += a;
+                // وضعیتِ هر ردیف بعد از این ثبت: کامل => مرحله‌ی بعد؛ کمتر => مانده‌دار در همین مرحله می‌ماند
+                const after = el.querySelector(`.fp-after[data-i="${inp.dataset.i}"]`);
+                if (a > max) { after.innerHTML = '<span class="text-red-600">بیشتر از مانده!</span>'; part++; }
+                else if (a >= max) { after.innerHTML = `<span class="text-emerald-700"><i class="fas fa-arrow-left ml-1"></i>${isIn ? 'کامل؛ می‌رود به «بدهکار به بیمه‌گر»' : 'کامل؛ تسویه'}</span>`; full++; }
+                else if (a > 0) { after.innerHTML = `<span class="text-amber-700">مانده ${num(max - a)} — در همین مرحله می‌ماند</span>`; part++; }
+                else { after.innerHTML = `<span class="text-slate-400">بدونِ ${isIn ? 'دریافت' : 'پرداخت'} — با کلِ مانده می‌ماند</span>`; none++; }
+            });
             document.getElementById('fp-total').textContent = num(t) + ' ریال';
+            document.getElementById('fp-plan').innerHTML = `<b class="text-emerald-700">${fa(full)}</b> کامل · <b class="text-amber-700">${fa(part)}</b> ناقص (مانده‌دار) · <b class="text-slate-600">${fa(none)}</b> ${isIn ? 'نداده' : 'بدونِ پرداخت'}`;
         };
         el.querySelectorAll('.fp-amt').forEach(inp => inp.addEventListener('input', total));
         el.querySelectorAll('.fp-chk').forEach(c => c.addEventListener('change', total));
         document.getElementById('fp-all').onchange = e => { el.querySelectorAll('.fp-chk').forEach(c => { c.checked = e.target.checked; }); total(); };
+        const setAmt = (i, v) => { const inp = el.querySelector(`.fp-amt[data-i="${i}"]`); el.querySelector(`.fp-chk[data-i="${i}"]`).checked = true; inp.value = v === 'full' ? num(inp.dataset.max) : '۰'; };
+        el.querySelectorAll('.fp-q').forEach(b => b.onclick = () => { setAmt(b.dataset.i, b.dataset.v); total(); });
+        document.getElementById('fp-allfull').onclick = () => { el.querySelectorAll('.fp-amt').forEach(inp => setAmt(inp.dataset.i, 'full')); total(); };
         const mth = document.getElementById('fp-method');
         const chq = () => document.getElementById('fp-cheque').classList.toggle('hidden', mth.value !== 'CHEQUE');
         mth.onchange = chq; chq();
@@ -851,5 +934,5 @@
         bindHistVoid(out, runTracking);
     }
 
-    window.FinHub = {initInstallments, initLedger, initTracking, reloadInstallments: loadInstallments, openPayDialog, openInstDetail, STAGE};
+    window.FinHub = {initInstallments, initLedger, initTracking, reloadInstallments: loadInstallments, openPayDialog, openInstDetail, previewFile, copyText, STAGE};
 })();
