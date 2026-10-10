@@ -1,7 +1,8 @@
 # بایگانی: فایل‌ها فقط برای کاربرِ واردشده (پنل یا پنلِ شرکت‌ها) از طریقِ _guard.php فرستاده می‌شوند؛ هیچ اسکریپتی اجرا نمی‌شود (سپرِ امنیتی)
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteCond %{REQUEST_FILENAME} -f
+    # فایل‌های موجود، و آدرسِ «نامِ تمیز» (بدونِ LRM) که فایلش با نامِ اصلی روی دیسک است
+    RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !_guard\.php$
     RewriteRule ^ _guard.php [L]
 </IfModule>

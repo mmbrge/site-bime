@@ -11,6 +11,29 @@ if ($pos === false) { http_response_code(404); exit; }
 $rel = substr($uri, $pos + 1);
 $root = realpath(__DIR__);
 $abs = realpath($siteRoot . '/' . $rel);
+// نامِ فایل در آدرس بدونِ نویسه‌ی نامرئیِ LRM: نمایشگرِ PDFِ کروم/اج نامِ «ذخیره» را از خودِ آدرس برمی‌دارد (نه از سربرگِ دانلود)
+// و LRM را «_» می‌کند («58 _- عباس»). پس فایلی که LRM در نامش دارد به همان آدرس با نامِ تمیز فرستاده می‌شود و
+// آدرسِ تمیز این‌جا دوباره به همان فایل وصل می‌شود. «∕» و پوشه‌ها دست نمی‌خورند.
+$bidiRe = '/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{061C}]/u';
+if (!$abs && $root) {
+    $want = basename($rel);
+    $dir = realpath(dirname($siteRoot . '/' . $rel));
+    if ($want !== '' && $want[0] !== '.' && !preg_match($bidiRe, $want) && $dir && is_dir($dir) && strpos($dir . DIRECTORY_SEPARATOR, $root . DIRECTORY_SEPARATOR) === 0) {
+        foreach (scandir($dir) ?: [] as $fn) {
+            if ($fn === '' || $fn[0] === '.' || !preg_match($bidiRe, $fn)) continue;
+            if (preg_replace($bidiRe, '', $fn) === $want && is_file($dir . '/' . $fn)) { $abs = realpath($dir . '/' . $fn); break; }
+        }
+    }
+} elseif ($abs && preg_match($bidiRe, basename($abs)) && in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true)) {
+    $rawPath = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    $qs = parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_QUERY);
+    $cut = strrpos($rawPath, '/');
+    if ($cut !== false) {
+        header('Location: ' . substr($rawPath, 0, $cut + 1) . rawurlencode(preg_replace($bidiRe, '', basename($abs))) . ($qs ? '?' . $qs : ''), true, 302);
+        header('Cache-Control: no-store');
+        exit;
+    }
+}
 if (!$abs || !$root || strpos($abs, $root . DIRECTORY_SEPARATOR) !== 0 || !is_file($abs) || basename($abs) === '_guard.php' || basename($abs)[0] === '.') {
     http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'فایل پیدا نشد.'; exit;
 }
