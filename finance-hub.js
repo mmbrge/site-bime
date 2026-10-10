@@ -71,6 +71,7 @@
                 <span class="mr-auto flex gap-2">
                     <a href="${url}" target="_blank" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg px-3 py-1.5"><i class="fas fa-up-right-from-square ml-1"></i>برگه‌ی جدید</a>
                     <a href="${url}" download class="text-[11px] font-bold text-white rounded-lg px-3 py-1.5" style="background:#0284c7"><i class="fas fa-download ml-1"></i>دانلود</a>
+                    <a href="${url}${url.includes('?') ? '&' : '?'}exact=1" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg px-3 py-1.5" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی"><i class="fas fa-file-zipper ml-1"></i>نامِ دقیق (ZIP)</a>
                     <button type="button" onclick="document.getElementById('fh-preview').classList.remove('active')" class="text-slate-400 hover:text-slate-700 text-lg px-1"><i class="fas fa-times"></i></button>
                 </span>
             </div>

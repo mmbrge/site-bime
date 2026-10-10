@@ -114,6 +114,7 @@ try {
         $inline = !empty($_GET['inline']);
         // «فقط دیدن»: باز کردن در مرورگر بله، دانلود نه
         if (!$inline && fm_level($archiveRoot, $target) !== 'download') { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo 'شما فقط اجازه‌ی دیدنِ این پوشه را دارید (دانلود ممکن نیست).'; exit; }
+        if (!empty($_GET['exact']) && !$inline) dl_send_exact_zip($target);   // دانلود با نامِ دقیق (ZIP)
         $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
         $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'txt' => 'text/plain; charset=utf-8'][$ext] ?? 'application/octet-stream';
         header('Content-Type: ' . ($inline ? $mime : 'application/octet-stream'));

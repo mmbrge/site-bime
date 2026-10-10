@@ -4199,7 +4199,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=5"></script>
+    <script src="finance-hub.js?v=6"></script>
     <script src="work-log.js?v=10"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
@@ -5247,7 +5247,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-[10px] text-slate-400">${item.size}</p>
                             <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
                             <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
-                            ${item.can_dl === false ? `<a href="${item.download_url}&inline=1" target="_blank" class="mt-2 block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>باز کردن</a>` : `<a href="${item.download_url}" class="mt-2 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a>`}
+                            ${item.can_dl === false ? `<a href="${item.download_url}&inline=1" target="_blank" class="mt-2 block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>باز کردن</a>` : `<div class="mt-2 flex gap-1"><a href="${item.download_url}" class="flex-1 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a><a href="${item.download_url}&exact=1" class="block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 px-2 text-[11px] font-bold" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی (برای نمایشِ درستِ «∕» در ویندوز)"><i class="fas fa-file-zipper ml-1"></i>نامِ دقیق</a></div>`}
                         </div>`;
                     }
                 }).join('');
@@ -5272,6 +5272,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 : [
                     ['<i class="fas fa-eye ml-2 text-slate-500"></i>باز کردن', () => window.open('api/file_manager.php?action=download&inline=1&path=' + encodeURIComponent(path), '_blank')],
                     ['<i class="fas fa-download ml-2 text-blue-500"></i>دانلود', () => window.open('api/file_manager.php?action=download&path=' + encodeURIComponent(path), '_blank')],
+                    ['<i class="fas fa-file-zipper ml-2 text-slate-500"></i>دانلود با نامِ دقیق (ZIP)', () => window.open('api/file_manager.php?action=download&exact=1&path=' + encodeURIComponent(path), '_blank')],
                   ];
             menu.innerHTML = items.map((it, i) => `<div class="px-4 py-2 hover:bg-slate-50 cursor-pointer" data-i="${i}">${it[0]}</div>`).join('');
             menu.style.left = ev.pageX + 'px';
@@ -6225,7 +6226,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-2 whitespace-nowrap text-[11px]">
                         ${p.status === 'ISSUED'
                             ? `<p class="text-[10px] text-slate-500">${p.policy_number || ''}</p>
-                               ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a>` : ''}`
+                               ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a> <a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">(نامِ دقیق)</a>` : ''}`
                             : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>')}
                         ${isAdmin ? `<div class="flex gap-2 mt-1">
                             <button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px]">ویرایش</button>
@@ -7504,7 +7505,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
-                    <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
                 </tr>`).join('');
         }
 
@@ -7575,7 +7576,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ${r.request_text ? `<p class="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mb-2">${r.request_text}</p>` : ''}
 
                 <div class="flex flex-wrap gap-2 mt-3">
-                    ${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-pdf ml-1"></i>مشاهده‌ی فایل بیمه‌نامه</a>` : ''}
+                    ${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-pdf ml-1"></i>مشاهده‌ی فایل بیمه‌نامه</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی (برای نمایشِ درستِ «∕» در ویندوز)"><i class="fas fa-file-zipper ml-1"></i>دانلود با نامِ دقیق</a>` : ''}
                     ${r.source === 'COMPANY' ? `<button onclick="openCompanyRequestDetail(${r.request_id}); document.getElementById('il-detail-modal').classList.remove('active');" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن درخواست و مدارکش</button>` : ''}
                     ${r.source === 'COMPANY' ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.request_id}" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-zipper ml-1"></i>دانلود صادره‌های این درخواست</a>` : ''}
                 </div>`;
@@ -10342,7 +10343,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 ${c.car_value ? `<div>ارزش خودرو: <b dir="ltr">${money(c.car_value)} ریال</b></div>` : ''}
                                 ${c.policy_issue_date ? `<div>تاریخ صدور: <b dir="ltr">${e2p(c.policy_issue_date)}</b></div>` : ''}
                             </div>
-                            ${c.issued_file_path ? `<a href="/${encodeFilePath(c.issued_file_path)}" target="_blank" class="inline-block mt-2 text-blue-600 underline text-xs">مشاهده فایل بیمه‌نامه‌ی صادرشده</a>` : ''}
+                            ${c.issued_file_path ? `<a href="/${encodeFilePath(c.issued_file_path)}" target="_blank" class="inline-block mt-2 text-blue-600 underline text-xs">مشاهده فایل بیمه‌نامه‌ی صادرشده</a> <a href="/${encodeFilePath(c.issued_file_path)}?exact=1" class="inline-block mt-2 mr-2 text-slate-500 underline text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">دانلود با نامِ دقیق</a>` : ''}
                         ` : `
                             <label class="block border-2 border-dashed border-emerald-300 rounded-lg text-center p-3 text-xs text-emerald-700 cursor-pointer hover:bg-emerald-100" id="policy-upload-label">
                                 <i class="fas fa-cloud-arrow-up ml-1"></i> انتخاب فایل بیمه‌نامه (PDF) برای شناسایی خودکار

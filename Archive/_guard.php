@@ -98,6 +98,11 @@ if (!$allowed) {
     exit;
 }
 
+// «دانلود با نامِ دقیق»: همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی (همراهِ LRM)
+if (!empty($_GET['exact'])) {
+    require_once $siteRoot . '/api/_dl_name.php';
+    dl_send_exact_zip($abs);
+}
 $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
 $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif',
           'zip' => 'application/zip', 'doc' => 'application/msword', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

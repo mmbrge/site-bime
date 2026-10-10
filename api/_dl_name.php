@@ -29,6 +29,26 @@ if (!function_exists('dl_name')) {
         }
         return $p;
     }
+    // «دانلود با نامِ دقیق»: مرورگرها نویسه‌ی نامرئیِ LRM را در نامِ فایلِ دانلودی «_» می‌کنند (و بدونِ آن ویندوز «∕» را مربع
+    // نشان می‌دهد)؛ داخلِ ZIP نام دست نمی‌خورد. پس همان یک فایل داخلِ یک ZIP با نامِ دقیقِ بایگانی فرستاده می‌شود.
+    function dl_send_exact_zip($abs) {
+        if (!is_file($abs) || !class_exists('ZipArchive')) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'فایل پیدا نشد.'; exit; }
+        $tmp = tempnam(sys_get_temp_dir(), 'exz');
+        $z = new ZipArchive();
+        if ($z->open($tmp, ZipArchive::OVERWRITE) !== true) { http_response_code(500); exit; }
+        $entry = dl_zip_path(basename($abs));
+        $z->addFile($abs, $entry);
+        $z->close();
+        while (ob_get_level()) ob_end_clean();
+        header('Content-Type: application/zip');
+        header('X-Content-Type-Options: nosniff');
+        header(dl_disposition('attachment', pathinfo(basename($abs), PATHINFO_FILENAME) . '.zip', 'file.zip'));
+        header('Content-Length: ' . filesize($tmp));
+        header('Cache-Control: private, no-store');
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
     // سربرگِ دانلود با نامِ فارسیِ درست (نامِ لاتینِ جایگزین برای مرورگرهای قدیمی)
     function dl_disposition($type, $name, $fallback = 'file') {
         $name = dl_name($name);
