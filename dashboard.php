@@ -569,7 +569,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .bdl-bar { position: sticky; bottom: -20px; margin: 14px -20px -20px; padding: 12px 20px; background: rgba(255,255,255,.96); border-top: 1px solid #e2e8f0; backdrop-filter: blur(4px);
                    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
-        /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راستِ سایت، روی هم انباشته، هرکدام بعد از ۵ ثانیه خودش می‌رود */
+        /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راستِ سایت، روی هم انباشته، هرکدام با ضربدر یا بعد از ۱۰ ثانیه می‌رود */
         #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9999990; display: flex; flex-direction: column; gap: 10px;
                        width: min(400px, calc(100vw - 32px)); pointer-events: none; }
         .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 5px solid #3b82f6; border-radius: 18px; display: flex; align-items: flex-start; gap: 12px;
@@ -4159,7 +4159,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <script src="notif-bell.js?v=2"></script>
-    <script src="net-watch.js?v=4"></script>
+    <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=16"></script>
@@ -5618,7 +5618,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
             box.appendChild(el);
             requestAnimationFrame(() => el.classList.add('show'));
-            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 6500);
+            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 10000);
         }
 
         async function pollNotifications() {
@@ -12624,15 +12624,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
+        // همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
+        const TOAST_MS = 10000;
         function showToast(msg, type='info') {
             const container = document.getElementById('toast-container');
+            if (!container) return;
             const toast = document.createElement('div');
             let icon = type==='error' ? 'fa-times-circle text-red-500' : (type==='warning' ? 'fa-exclamation-triangle text-amber-500' : 'fa-check-circle text-emerald-500');
-            toast.className = `bg-slate-800 text-white px-5 py-3 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-3 transform translate-y-[-20px] opacity-0 transition-all z-[9999]`;
-            toast.innerHTML = `<i class="fas ${icon} text-lg"></i> ${msg}`;
+            toast.className = `bg-slate-800 text-white ps-5 pe-2 py-3 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-3 transform translate-y-[-20px] opacity-0 transition-all z-[9999]`;
+            toast.style.pointerEvents = 'auto';
+            toast.innerHTML = `<i class="fas ${icon} text-lg"></i><span class="flex-1 min-w-0">${msg}</span><button type="button" class="toast-x" aria-label="بستن" title="بستن"
+                style="border:0;background:rgba(255,255,255,.1);color:#cbd5e1;width:26px;height:26px;border-radius:8px;flex:none;cursor:pointer"><i class="fas fa-xmark"></i></button>`;
+            const close = () => { if (toast._gone) return; toast._gone = true; toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); };
+            toast.querySelector('.toast-x').onclick = close;
             container.appendChild(toast);
             requestAnimationFrame(() => toast.classList.remove('translate-y-[-20px]', 'opacity-0'));
-            setTimeout(() => { toast.classList.add('opacity-0'); setTimeout(()=>toast.remove(), 300); }, 3000);
+            setTimeout(close, TOAST_MS);
         }
 
         window.addEventListener('load', () => {

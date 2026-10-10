@@ -182,7 +182,7 @@ try {
 
         // فیلدهای تکمیلی بیمه‌نامه (بدنه/ثالث پاسارگاد) - هرکدام نبود خالی می‌ماند
         $extraFields = [
-            'policy_num'      => trim($data['policy_num'] ?? ''),
+            'policy_num'      => policy_number_clean($data['policy_num'] ?? ''),
             'unique_code'     => trim($data['unique_code'] ?? ''),
             'phone'           => trim($data['phone'] ?? ''),
             'plate'           => trim($data['plate'] ?? ''),

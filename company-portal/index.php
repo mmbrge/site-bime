@@ -56,7 +56,7 @@ if (!$companies) {
 <script src="../notif-bell.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
-<script src="../net-watch.js?v=4"></script>
+<script src="../net-watch.js?v=5"></script>
 <script src="../cursor-fx.js?v=2" defer></script>
 <script src="../tools.js?v=2"></script>
 <script src="../comfort.js?v=16"></script>
@@ -125,8 +125,14 @@ if (!$companies) {
     .status-badge { font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; }
     .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px); background:#1e293b; color:#fff; padding: 12px 22px; border-radius: 12px; font-size: 13px; font-weight: bold; z-index: 9999; transition:.3s; opacity:0; }
     .toast.show { transform: translateX(-50%) translateY(0); opacity:1; }
+    .toast { display:flex; align-items:center; gap:10px; padding-inline-end:10px; pointer-events:none; }
+    .toast.show { pointer-events:auto; }
+    .toast-x { border:0; background:rgba(255,255,255,.12); color:#cbd5e1; width:26px; height:26px; border-radius:8px; flex:none; cursor:pointer; }
+    .notif-card { position: relative; padding-left: 40px; }
+    .notif-card .nc-x { position:absolute; top:10px; left:10px; border:0; background:transparent; color:#94a3b8; width:24px; height:24px; border-radius:8px; cursor:pointer; }
+    .notif-card .nc-x:hover { background:#f1f5f9; color:#475569; }
 
-    /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راست، روی هم انباشته، و هرکدام بعد از ۵ ثانیه خودش می‌رود */
+    /* اعلان‌ها: گوشه‌ی پایینِ سمتِ راست، روی هم انباشته، هرکدام با ضربدر یا بعد از ۱۰ ثانیه می‌رود */
     #notif-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: flex; flex-direction: column; gap: 10px;
                    width: min(390px, calc(100vw - 32px)); pointer-events: none; }
     .notif-card { background: #fff; border: 1px solid #e2e8f0; border-right: 5px solid #3b82f6; border-radius: 18px;
@@ -367,10 +373,16 @@ let activeRequestId = null;
 const STATUS_FA = {NEW:'جدید', DOCS_PENDING:'در انتظار مدارک', DOCS_REVIEW:'در حال بررسی', READY_FOR_ISSUE:'آماده‌ی صدور', ISSUED:'صادر شده', CANCELLED:'لغو شده'};
 const STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
 
+// همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
 function showToast(msg) {
     const t = document.getElementById('toast');
-    t.textContent = msg; t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2500);
+    if (!t) return;
+    t.innerHTML = '';
+    const s = document.createElement('span'); s.textContent = msg;
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'toast-x'; x.setAttribute('aria-label', 'بستن'); x.innerHTML = '<i class="fas fa-xmark"></i>';
+    x.onclick = () => { clearTimeout(t._h); t.classList.remove('show'); };
+    t.append(s, x); t.classList.add('show');
+    clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 10000);
 }
 
 // ---- ارقام فارسی: همه‌ی عددهای نمایشیِ پنل باید فارسی باشند ----
@@ -428,12 +440,13 @@ function pushNotification(title, body, type, id) {
     if (!box) return;
     const el = document.createElement('div');
     el.className = 'notif-card';
-    el.innerHTML = `<p class="font-bold text-[13.5px] mb-0.5">${title}</p>
+    el.innerHTML = `<button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button><p class="font-bold text-[13.5px] mb-0.5">${title}</p>
                     <p class="text-[12.5px] text-slate-500 leading-relaxed">${body || ''}</p>`;
-    el.onclick = () => el.remove();
+    const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
+    el.onclick = close;
     box.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 5000);
+    setTimeout(close, 10000);
 }
 
 async function pollNotifications() {

@@ -2093,7 +2093,7 @@ try {
                     $it['data'][$fk] = trim((string)$fv);
                 }
             }
-            $policyNumber = trim((string)($pk['policy_number'] ?? ($it['data']['policy_num'] ?? '')));
+            $policyNumber = policy_number_clean((string)($pk['policy_number'] ?? ($it['data']['policy_num'] ?? '')));
             if ($policyNumber === '') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'شماره‌ی بیمه‌نامه خالی است.']; continue; }
             $vin = trim((string)($pk['vin'] ?? ($it['data']['vin'] ?? '')));
             $premium = money_to_int($pk['total_premium'] ?? ($it['data']['premium'] ?? ''));
@@ -2130,7 +2130,7 @@ try {
     if ($action === 'mark_issued') {
         require_admin_only();
         $plateId = intval($data['plate_id'] ?? 0);
-        $policyNumber = trim($data['policy_number'] ?? '');
+        $policyNumber = policy_number_clean($data['policy_number'] ?? '');
         $vin = trim($data['vin'] ?? '');
         $totalPremium = money_to_int($data['total_premium'] ?? '');
         if (!$plateId || $policyNumber === '') { echo json_encode(['ok' => false, 'error' => 'شماره‌ی بیمه‌نامه الزامی است.']); exit; }

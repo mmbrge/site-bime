@@ -307,8 +307,8 @@ function send_policy_file($chat, $p) {
     $abs = dirname(__DIR__) . '/' . $p['issued_file_path'];
     if (!is_file($abs)) return false;
     $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
-    $name = sanitize_folder_name(insurance_type_fa($p['insurance_type']) . ' - ' . company_row_label($p)
-            . ($p['policy_number'] ? ' - ' . policy_number_for_filename($p['policy_number']) : '')) . '.' . $ext;
+    $name = sanitize_folder_name(name_join([insurance_type_fa($p['insurance_type']), plate_for_filename(company_row_label($p)),
+            policy_number_for_filename($p['policy_number'])])) . '.' . $ext;
     return (bool)cbot_send_file($pdo, $chat, $abs, 'بیمه‌نامه‌ی ' . insurance_type_fa($p['insurance_type']) . ' - ' . fa(company_row_label($p)), $name);
 }
 

@@ -184,6 +184,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             animation: toastEnter 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
         }
         .toast-exit { animation: toastExit 0.4s ease-in forwards !important; }
+        .toast { pointer-events: auto; padding-inline-end: 10px; }
+        .toast-x { border: 0; background: rgba(0,0,0,.12); color: inherit; width: 24px; height: 24px; border-radius: 8px; flex: none; cursor: pointer; margin-inline-start: 4px; }
+        .toast-x:hover { background: rgba(0,0,0,.22); }
         @keyframes toastEnter { from { opacity: 0; transform: translateY(-20px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes toastExit { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-10px) scale(0.9); } }
 
@@ -587,13 +590,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if(type === 'warning') icon = 'fa-exclamation-triangle';
 
             toast.className = `toast toast-${type}`;
-            toast.innerHTML = `<i class="fas ${icon} text-lg"></i> <span>${message}</span>`;
+            toast.innerHTML = `<i class="fas ${icon} text-lg"></i> <span>${message}</span><button type="button" class="toast-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
             container.appendChild(toast);
 
-            setTimeout(() => {
-                toast.classList.add('toast-exit');
-                setTimeout(() => toast.remove(), 400); 
-            }, 3500);
+            // دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
+            const close = () => { if (toast._gone) return; toast._gone = true; toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 400); };
+            toast.querySelector('.toast-x').onclick = close;
+            setTimeout(close, 10000);
         }
 
         // ۳. موس گرافیکی

@@ -810,7 +810,7 @@ try {
     // می‌کند؛ اگر هر دو مطابقت داشت، آرشیو/نام‌گذاری/صدور نهایی انجام می‌شود
     if ($action === 'confirm_issue_policy') {
         $caseId = intval($data['case_id'] ?? 0);
-        $policyNumber = trim($data['policy_number'] ?? '');
+        $policyNumber = policy_number_clean($data['policy_number'] ?? '');
         $vin = trim($data['vin'] ?? '');
         $chassisNum = trim($data['chassis_num'] ?? '');
         $engineNum = trim($data['engine_num'] ?? '');

@@ -59,7 +59,8 @@ if (!$allowed && !empty($_COOKIE['bime_company_portal']) && mb_strpos($rel, 'Arc
                 if ($name === '') continue;
                 $clean = trim(preg_replace('/[\\\\\/:*?"<>|]+/u', ' ', $name));
                 $folder = sanitize_folder_name($name);
-                foreach ($segs as $sg) if ($sg === $name || $sg === $folder || ($clean !== '' && $sg === $clean)) { $allowed = true; break 2; }
+                $folderOld = preg_replace('/[<>:"\/\\\\|?*]/', '_', $name);   // پوشه‌های قدیمی («/» => «_»)
+                foreach ($segs as $sg) if ($sg === $name || $sg === $folder || $sg === $folderOld || ($clean !== '' && $sg === $clean)) { $allowed = true; break 2; }
             }
         } catch (Throwable $e) {}
     }
@@ -83,7 +84,9 @@ $inline = in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt', 'mp
 while (ob_get_level()) ob_end_clean();
 header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
 header('X-Content-Type-Options: nosniff');
-header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.{$ext}\"; filename*=UTF-8''" . rawurlencode(basename($abs)));
+// نامِ دانلود: بدونِ نویسه‌ی نامرئیِ LRM که مرورگر آن را «_» می‌کند («58 _- عباس» => «58 - عباس»)؛ «∕» می‌ماند
+require_once $siteRoot . '/api/_dl_name.php';
+header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.{$ext}\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($abs))));
 header('Content-Length: ' . filesize($abs));
 header('Cache-Control: private, max-age=300');
 readfile($abs);

@@ -31,8 +31,9 @@ function jalali_month_name($jm) {
 }
 
 function sanitize_folder_name($str) {
-    $str = trim((string)$str);
-    return preg_replace('/[<>:"\/\\\\|?*]/', '_', $str);
+    // «/» (شماره‌ی بیمه‌نامه، تاریخ، …) در نامِ ویندوز مجاز نیست: همه‌جا «∕» (U+2215) که همان شکل را دارد، نه «_»
+    $str = str_replace('/', '∕', trim((string)$str));
+    return preg_replace('/[<>:"\\\\|?*]/', '_', $str);
 }
 
 // =====================================================================
@@ -90,6 +91,10 @@ function build_case_folder_name_issued($plate, $insuredName, $policyNum, $vin) {
 // یک کاراکتر یونیکدِ کاملاً متفاوت، نه یک اسلش معمولی) جایگزین شود. نکته‌ی مهم: این تبدیل باید
 // حتماً *قبل* از عبور از sanitize_folder_name انجام شود، چون آن تابع اسلش معمولی را با _ (زیرخط)
 // جایگزین می‌کند که باعث از دست رفتن ساختار خوانای شماره‌ی بیمه‌نامه می‌شود.
+// برعکسِ بالا: در دیتابیس و پنل همیشه همان «/» معمولی (اگر از نامِ فایل یا OCR «∕» آمده باشد)
+function policy_number_clean($policyNum) {
+    return trim(str_replace(['∕', '⁄', '／'], '/', (string)$policyNum));
+}
 function policy_number_for_filename($policyNum) {
     if (!$policyNum) return $policyNum;
     return str_replace('/', '∕', trim($policyNum));

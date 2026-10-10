@@ -212,7 +212,7 @@ case 'policy_save':
         life_sys_note($pdo, $id, 'ویرایشِ اطلاعات: ' . implode('، ', $changed), $uid);
         // اگر نام/کد ملی/تاریخِ صدور عوض شد پوشه‌ی بایگانی هم جابه‌جا می‌شود
         $newDir = life_policy_dir(life_policy_row($pdo, $id));
-        if ($newDir !== $oldDir && is_dir($oldDir) && !file_exists($newDir)) { life_mkdir(dirname($newDir)); @rename($oldDir, $newDir); }
+        if ($newDir !== $oldDir && is_dir($oldDir) && !file_exists($newDir)) life_move_dir($oldDir, $newDir);
         life_write_archive($pdo, $id);
     }
     $out(['ok' => true]);

@@ -288,8 +288,8 @@ try {
 
         $plateDisplay = company_row_label($row);
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
-        $name = sanitize_folder_name(insurance_type_fa($row['insurance_type']) . ' - ' . ($plateDisplay ?: 'بدون پلاک')
-                 . ($row['policy_number'] ? ' - ' . policy_number_for_filename($row['policy_number']) : '')) . '.' . $ext;
+        $name = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename($plateDisplay) ?: 'بدون پلاک',
+                 policy_number_for_filename($row['policy_number'])])) . '.' . $ext;
         header('Content-Type: ' . ($ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
         header(dl_disposition('attachment', $name, 'policy'));
         header('Content-Length: ' . filesize($abs));
@@ -319,8 +319,8 @@ try {
             $abs = $siteRoot . '/' . $row['issued_file_path'];
             if (!is_file($abs)) continue;
             $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
-            $base = sanitize_folder_name(insurance_type_fa($row['insurance_type']) . ' - ' . company_row_label($row)
-                     . ($row['policy_number'] ? ' - ' . policy_number_for_filename($row['policy_number']) : ''));
+            $base = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename(company_row_label($row)),
+                     policy_number_for_filename($row['policy_number'])]));
             $name = $base . '.' . $ext;
             for ($n = 2; isset($files[$name]); $n++) $name = $base . " ($n)." . $ext;
             $files[$name] = $abs;

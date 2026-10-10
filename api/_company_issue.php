@@ -7,6 +7,7 @@
 //    شناسایی با همان منطقِ موتورِ تشخیص، پیدا کردنِ ردیفِ هر بیمه‌نامه و بررسیِ آمادگیِ صدور
 
 function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $srcFile = null, $srcOrigName = null, $policyIssueDate = null) {
+    $policyNumber = policy_number_clean($policyNumber);   // دیتابیس: «/» معمولی؛ نامِ فایل: «∕»
     $siteRoot = dirname(__DIR__);
     $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
     if (!$baseDir) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];

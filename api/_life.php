@@ -335,8 +335,28 @@ function life_policy_dir(array $p) {
     $jy = $jm = null;
     if (!empty($p['issue_j']) && preg_match('/^(1[34]\d{2})\/(\d{2})/', $p['issue_j'], $m)) { $jy = intval($m[1]); $jm = intval($m[2]); }
     $month = $jy ? $jy . '/' . sprintf('%02d', $jm) . ' ' . jalali_month_name($jm) : 'بدون تاریخ صدور';
-    $name = sanitize_folder_name(str_replace('/', '-', (string)$p['policy_no']) . ' - ' . ($p['holder_name'] ?: 'نامشخص') . ($p['holder_nid'] ? ' - ' . $p['holder_nid'] : ''));
-    return life_archive_root() . '/' . ($jy ? $jy . '/' . sprintf('%02d', $jm) . ' ' . jalali_month_name($jm) : $month) . '/' . $name;
+    // همان قاعده‌ی بقیه‌ی بایگانی: «/» شماره‌ی بیمه‌نامه => «∕» و جداکننده‌ی « ‎- » (با LRM)
+    $name = sanitize_folder_name(name_join([policy_number_for_filename((string)$p['policy_no']), $p['holder_name'] ?: 'نامشخص', $p['holder_nid'] ?: null]));
+    $dir = life_archive_root() . '/' . ($jy ? $jy . '/' . sprintf('%02d', $jm) . ' ' . jalali_month_name($jm) : $month) . '/' . $name;
+    // پوشه‌ای که با نام‌گذاریِ قدیم («1-49357-…  - نام - کدملی») ساخته شده، یک بار به نامِ تازه می‌رود
+    if (!is_dir($dir)) {
+        $old = dirname($dir) . '/' . preg_replace('/[<>:"\/\\\\|?*]/', '_', trim(str_replace('/', '-', (string)$p['policy_no']) . ' - ' . ($p['holder_name'] ?: 'نامشخص') . ($p['holder_nid'] ? ' - ' . $p['holder_nid'] : '')));
+        if ($old !== $dir && is_dir($old)) life_move_dir($old, $dir);
+    }
+    return $dir;
+}
+// جابه‌جاییِ پوشه‌ی یک بیمه‌نامه + اصلاحِ مسیرِ فایل‌های ثبت‌شده‌ی پرداخت‌ها
+function life_move_dir($old, $new) {
+    if (!is_dir(dirname($new))) @mkdir(dirname($new), 0775, true);
+    if (!@rename($old, $new)) return false;
+    try {
+        if (!empty($GLOBALS['pdo'])) {
+            $o = life_rel($old) . '/'; $n = life_rel($new) . '/';
+            $GLOBALS['pdo']->prepare("UPDATE life_payments SET file_path = CONCAT(?, SUBSTRING(file_path, ?)) WHERE file_path LIKE ?")
+                ->execute([$n, mb_strlen($o) + 1, str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $o) . '%']);
+        }
+    } catch (Throwable $e) { error_log('[life_move_dir] ' . $e->getMessage()); }
+    return true;
 }
 function life_inst_dir(array $p, array $i) {
     return life_policy_dir($p) . '/' . sanitize_folder_name('قسط ' . intval($i['inst_no']) . ($i['due_j'] ? ' - ' . str_replace('/', '.', $i['due_j']) : ''));

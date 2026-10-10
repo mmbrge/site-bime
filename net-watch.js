@@ -1,6 +1,7 @@
 // فایل: net-watch.js
 // هشدارِ اینترنت: قطع‌شدن و ضعیف‌بودنِ اتصال، به‌شکلِ یک کارتِ اعلان در گوشه‌ی پایینِ سمتِ راستِ صفحه
 // (کنارِ بقیه‌ی اعلان‌ها). با برگشتنِ اتصال چند ثانیه «اتصال برقرار شد» نشان داده می‌شود.
+// همه‌ی حالت‌ها دکمه‌ی ضربدر دارند؛ «اتصال برقرار شد» و «ضعیف» بعد از ۱۰ ثانیه خودشان می‌روند، «قطع» تا وصل‌شدن می‌ماند.
 // دقت: آزمون با یک فایلِ ایستا (بدونِ PHP و قفلِ نشست) انجام می‌شود، هر درخواستِ موفقِ خودِ صفحه
 // هم «اتصال سالم است» حساب می‌شود، و فقط بعد از چند خطای پشتِ‌سرِ‌هم پیام داده می‌شود.
 // پنلِ شرکت‌ها: window.NET_WATCH_PING = '../net-watch.js'
@@ -33,6 +34,8 @@
     #net-watch .nw-b{font-size:12.5px;color:#475569;line-height:1.8;margin:0}
     #net-watch button{border:0;background:#f1f5f9;color:#334155;border-radius:10px;padding:6px 10px;font-weight:800;font-size:11px;font-family:inherit;cursor:pointer;flex:none}
     #net-watch button:hover{background:#e2e8f0}
+    #net-watch .nw-x{background:transparent;color:#94a3b8;width:26px;height:26px;padding:0;font-size:13px;align-self:flex-start}
+    #net-watch .nw-x:hover{background:#f1f5f9;color:#475569}
     #net-watch-box{position:fixed;bottom:20px;right:20px;z-index:2147483000;display:flex;flex-direction:column;gap:10px;width:min(400px,calc(100vw - 32px));pointer-events:none}
     `;
     function ensure() {
@@ -56,10 +59,11 @@
         clearTimeout(st.hideT);
         const [ic, t, sub] = MSG[kind];
         el.className = (kind === 'noserver' ? 'off' : kind);
-        el.innerHTML = `<span class="nw-ic"><i class="fas ${ic}"></i></span><div style="flex:1;min-width:0"><p class="nw-t">${t}</p><p class="nw-b">${sub}</p></div>${kind !== 'back' ? '<button type="button">بررسیِ دوباره</button>' : ''}`;
-        const b = el.querySelector('button'); if (b) b.onclick = () => probe(true);
+        el.innerHTML = `<span class="nw-ic"><i class="fas ${ic}"></i></span><div style="flex:1;min-width:0"><p class="nw-t">${t}</p><p class="nw-b">${sub}</p></div>${kind !== 'back' ? '<button type="button" class="nw-re">بررسیِ دوباره</button>' : ''}<button type="button" class="nw-x" aria-label="بستن" title="بستن"><i class="fas fa-xmark"></i></button>`;
+        const b = el.querySelector('.nw-re'); if (b) b.onclick = () => probe(true);
+        el.querySelector('.nw-x').onclick = () => { clearTimeout(st.hideT); el.classList.remove('show'); };
         requestAnimationFrame(() => el.classList.add('show'));
-        if (kind === 'back') st.hideT = setTimeout(() => el.classList.remove('show'), 3500);
+        if (kind === 'back' || kind === 'weak') st.hideT = setTimeout(() => el.classList.remove('show'), 10000);
     }
     function set(state) {
         if (state === st.state) return;
