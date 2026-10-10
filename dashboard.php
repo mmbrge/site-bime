@@ -4157,10 +4157,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="net-watch.js?v=4"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=15"></script>
+    <script src="comfort.js?v=16"></script>
     <script src="settings-nav.js?v=3"></script>
     <script src="announce.js?v=3"></script>
-    <script src="announce-admin.js?v=2"></script>
+    <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
     <script src="chat-ui.js?v=10"></script>

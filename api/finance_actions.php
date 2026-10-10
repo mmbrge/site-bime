@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) { http_response_code(403); echo json_encode(['
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -481,7 +482,7 @@ try {
         $sendFile = function ($abs, $name, $type) {
             header_remove('Content-Type');
             header('Content-Type: ' . $type);
-            header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode($name));
+            header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode(dl_name($name)));
             header('Content-Length: ' . filesize($abs));
             readfile($abs);
             exit;

@@ -297,6 +297,33 @@ function cf_setting($pdo, $key, $def = null) {
 function cf_setting_set($pdo, $key, $val) {
     $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $val]);
 }
+// پیامِ «صبح‌بخیر» (اولین ورودِ هر روز) - تنظیم در «اعلان‌های پاپ‌آپ»: چه چیزهایی نوشته شود و کی/چطور نشان داده شود
+const CF_MORNING_DEFAULTS = [
+    'enabled' => 1, 'audience' => 'all', 'from' => 5, 'to' => 15, 'days' => 'all', 'delay' => 2, 'theme' => 'auto',
+    'g_morning' => 'صبح بخیر', 'g_noon' => 'ظهر بخیر', 'g_evening' => 'عصر بخیر', 'emoji' => 1,
+    'subtitle' => 'یک روزِ خوب و پرانرژی برایتان آرزو می‌کنیم.', 'note' => '', 'empty_text' => 'امروز چیزِ فوری‌ای ندارید؛ روزِ آرامی باشد 🌿',
+    'show_date' => 1, 'occasion' => 1, 'birthdays' => 1, 'todos' => 1, 'installments' => 1, 'unread' => 1, 'leave' => 1,
+    'btn_music' => 1, 'btn_todo' => 1, 'start_text' => 'شروعِ کار 🚀',
+];
+const CF_MORNING_THEMES = ['auto', 'sunrise', 'ocean', 'violet', 'emerald', 'night'];
+function cf_morning_clean(array $in) {
+    $d = CF_MORNING_DEFAULTS; $o = [];
+    foreach ($d as $k => $v) {
+        $x = array_key_exists($k, $in) ? $in[$k] : $v;
+        if (is_int($v) && in_array($k, ['from', 'to', 'delay'], true)) $o[$k] = max(0, min($k === 'delay' ? 60 : 24, intval(p2e_digits((string)$x))));
+        elseif (is_int($v)) $o[$k] = !empty($x) && $x !== '0' ? 1 : 0;
+        else $o[$k] = mb_substr(trim((string)$x), 0, $k === 'note' ? 600 : 160);
+    }
+    if (!in_array($o['audience'], ['all', 'staff', 'company'], true)) $o['audience'] = 'all';
+    if (!in_array($o['days'], ['all', 'work'], true)) $o['days'] = 'all';
+    if (!in_array($o['theme'], CF_MORNING_THEMES, true)) $o['theme'] = 'auto';
+    if ($o['to'] <= $o['from']) $o['to'] = min(24, $o['from'] + 1);
+    return $o;
+}
+function cf_morning_cfg($pdo) {
+    $j = json_decode((string)cf_setting($pdo, 'morning_cfg', ''), true);
+    return cf_morning_clean(is_array($j) ? $j : []);
+}
 function cf_genres($pdo) {
     $g = json_decode((string)cf_setting($pdo, 'cf_genres', ''), true);
     return is_array($g) && $g ? array_values($g) : CF_DEFAULT_GENRES;

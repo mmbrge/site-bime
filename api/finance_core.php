@@ -1,6 +1,7 @@
 <?php
 // فایل: api/finance_core.php
 // موتور مالی: دوره‌بندی، تولید اقساط، شماره‌گذاری صورتحساب و محاسبات مانده
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require_once __DIR__ . '/_case_helpers.php';
 
 // =====================================================================
@@ -496,7 +497,7 @@ function fin_send_excel($fileName, array $headers, array $rows, array $numericCo
     while (ob_get_level() > 0) { ob_end_clean(); }
     header_remove('Content-Type');
     header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
-    header('Content-Disposition: attachment; filename="report.xls"; filename*=UTF-8\'\'' . rawurlencode($fileName . '.xls'));
+    header('Content-Disposition: attachment; filename="report.xls"; filename*=UTF-8\'\'' . rawurlencode(dl_name($fileName . '.xls')));
     header('Cache-Control: max-age=0');
 
     echo "\xEF\xBB\xBF";

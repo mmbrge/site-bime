@@ -2,6 +2,7 @@
 // فایل: api/work_actions.php
 // «کارکرد من» (هر کاربر برای خودش) و «کارکرد پرسنل» (مدیر کل یا کسی که دسترسیِ «کارکرد پرسنل» دارد، برای همه)
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require_once __DIR__ . '/_work.php';
@@ -223,7 +224,7 @@ try {
         $fname = 'کارکرد ' . ($all ? 'همه پرسنل' : ($u['full_name'] ?? '')) . ' ' . str_replace('/', '-', wk_g2j($from)) . ' تا ' . str_replace('/', '-', wk_g2j($to)) . '.pdf';
         while (ob_get_level()) ob_end_clean();
         header('Content-Type: application/pdf');
-        header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"work-report.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+        header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"work-report.pdf\"; filename*=UTF-8''" . rawurlencode(dl_name($fname)));
         header('Content-Length: ' . strlen($bin));
         echo $bin;
         exit;
@@ -440,7 +441,7 @@ try {
             $fname = 'گزارش سرویس ' . $svc['name'] . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
             while (ob_get_level()) ob_end_clean();
             header('Content-Type: application/pdf');
-            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-report-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-report-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode(dl_name($fname)));
             header('Content-Length: ' . strlen($bin));
             echo $bin;
             exit;
@@ -455,7 +456,7 @@ try {
             $fname = 'رسید سرویس ' . $svc['name'] . ' - ' . ($u['full_name'] ?? '') . ' - ' . jalali_month_name($jm) . ' ' . $jy . '.pdf';
             while (ob_get_level()) ob_end_clean();
             header('Content-Type: application/pdf');
-            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-receipt-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode($fname));
+            header("Content-Disposition: " . (!empty($data['download']) ? 'attachment' : 'inline') . "; filename=\"service-receipt-$jy-$jm.pdf\"; filename*=UTF-8''" . rawurlencode(dl_name($fname)));
             header('Content-Length: ' . strlen($bin));
             echo $bin;
             exit;

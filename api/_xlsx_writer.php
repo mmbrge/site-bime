@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 // فایل: api/_xlsx_writer.php
 // نویسنده‌ی سبکِ فایل اکسل (xlsx) بدون هیچ کتابخانه‌ی بیرونی.
 // xlsx در واقع یک فایل zip از چند XML است؛ همان‌طور که fin_read_spreadsheet برای
@@ -180,7 +181,7 @@ function xlsx_send($path, $downloadName) {
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     // اسمِ فارسی: filename* (RFC 5987) تا همه‌ی مرورگرها درست نشانش بدهند، و یک اسمِ لاتینِ پشتیبان
     $name = str_replace(['"', '/', '\\'], ['', '-', '-'], $downloadName);
-    header("Content-Disposition: attachment; filename=\"report.xlsx\"; filename*=UTF-8''" . rawurlencode($name));
+    header("Content-Disposition: attachment; filename=\"report.xlsx\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
     header('Content-Length: ' . filesize($path));
     readfile($path);
     @unlink($path);

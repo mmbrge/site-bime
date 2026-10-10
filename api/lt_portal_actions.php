@@ -2,6 +2,7 @@
 // فایل: api/lt_portal_actions.php
 // «اتوماسیون نامه‌ها» در پنلِ شرکت: نامه‌هایی که برای شرکت(های) این کاربر فرستاده شده را می‌بیند (PDF، پیوست، نسخه‌ی امضاشده)
 // و فقط می‌تواند پاسخ بدهد: متن + فایل + دسته‌بندی. پاسخ در سامانه‌ی ما یک «نامه‌ی وارده» با شماره‌ی وارده می‌شود.
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_company_helpers.php';
@@ -40,7 +41,7 @@ function ltp_send($abs, $name, $inline) {
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
     header('X-Content-Type-Options: nosniff');
-    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
     header('Content-Length: ' . filesize($abs));
     readfile($abs);
     exit;
@@ -128,7 +129,7 @@ case 'pdf':
     $bin = lt_pdf($pdo, $L, 'S');
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: application/pdf');
-    header('Content-Disposition: ' . (!empty($data['inline']) ? 'inline' : 'attachment') . "; filename=\"letter.pdf\"; filename*=UTF-8''" . rawurlencode(lt_safe_name('نامه ' . $L['number'] . ' - ' . $L['subject']) . '.pdf'));
+    header('Content-Disposition: ' . (!empty($data['inline']) ? 'inline' : 'attachment') . "; filename=\"letter.pdf\"; filename*=UTF-8''" . rawurlencode(dl_name(lt_safe_name('نامه ' . $L['number'] . ' - ' . $L['subject']) . '.pdf')));
     header('Content-Length: ' . strlen($bin));
     echo $bin;
     exit;

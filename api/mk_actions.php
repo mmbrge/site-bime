@@ -2,6 +2,7 @@
 // فایل: api/mk_actions.php
 // API بخشِ «بازاریابی و فروش»: داشبورد، فروش‌ها، افراد، تنظیمات (انواعِ بیمه‌نامه، پاداش‌ها، سطح‌ها، حقوق)، درآمد، اکسل و PDF.
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_mk.php';
@@ -333,7 +334,7 @@ case 'pdf':
     @set_time_limit(120);
     $file = mk_pdf($pdo, intval($data['person_id'] ?? 0), $jy, $jm ?: null);
     header('Content-Type: application/pdf');
-    header("Content-Disposition: " . (!empty($data['inline']) ? 'inline' : 'attachment') . "; filename=\"report.pdf\"; filename*=UTF-8''" . rawurlencode(basename($file)));
+    header("Content-Disposition: " . (!empty($data['inline']) ? 'inline' : 'attachment') . "; filename=\"report.pdf\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($file))));
     header('Content-Length: ' . filesize($file));
     readfile($file);
     exit;

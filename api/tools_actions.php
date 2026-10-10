@@ -7,6 +7,7 @@
 // کارهای عکس، تاریخ، اقساط و متن کاملاً داخلِ مرورگر انجام می‌شوند.
 if (($_GET['portal'] ?? '') === '1') session_name('bime_company_portal');
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_comfort.php';
 
@@ -187,7 +188,7 @@ try {
         $name = str_replace("\u{200C}", ' ', (string)@file_get_contents($job . '/name.txt') ?: $m[2]);   // نیم‌فاصله در نامِ فایل «_» می‌شود
         $mime = ['pdf' => 'application/pdf', 'zip' => 'application/zip', 'jpg' => 'image/jpeg', 'png' => 'image/png'][$m[3]];
         header('Content-Type: ' . $mime);
-        header("Content-Disposition: attachment; filename=\"" . $m[2] . "\"; filename*=UTF-8''" . rawurlencode($name));
+        header("Content-Disposition: attachment; filename=\"" . $m[2] . "\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
         header('Content-Length: ' . filesize($path));
         readfile($path);
         // یک‌بار دانلود: پاک می‌شود

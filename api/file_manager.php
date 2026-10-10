@@ -1,6 +1,7 @@
 <?php
 // فایل: api/file_manager.php
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -117,7 +118,7 @@ try {
         $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'txt' => 'text/plain; charset=utf-8'][$ext] ?? 'application/octet-stream';
         header('Content-Type: ' . ($inline ? $mime : 'application/octet-stream'));
         header('X-Content-Type-Options: nosniff');
-        header('Content-Disposition: ' . ($inline && $mime !== 'application/octet-stream' ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(basename($target)));
+        header('Content-Disposition: ' . ($inline && $mime !== 'application/octet-stream' ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($target))));
         header('Content-Length: ' . filesize($target));
         readfile($target);
         exit;
@@ -133,18 +134,19 @@ try {
         $zipPath = $tmpDir . '/' . uniqid('archive_') . '.zip';
         $zip = new ZipArchive();
         $zip->open($zipPath, ZipArchive::CREATE);
+        $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS));
         foreach ($rii as $file) {
             if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && fm_level($archiveRoot, $file->getPathname()) === 'download') {
                 $localName = substr($file->getPathname(), strlen($target) + 1);
-                $zip->addFile($file->getPathname(), $localName);
+                $zip->addFile($file->getPathname(), dl_zip_path($localName, $used));
             }
         }
         $zip->close();
 
         $zipName = basename($target) . '.zip';
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . $zipName . '"');
+        header(dl_disposition('attachment', $zipName, 'archive.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);
@@ -162,13 +164,14 @@ try {
         $zipPath = $tmpDir . '/' . uniqid('archive_range_') . '.zip';
         $zip = new ZipArchive();
         $zip->open($zipPath, ZipArchive::CREATE);
+        $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
 
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($archiveRoot, FilesystemIterator::SKIP_DOTS));
         $count = 0;
         foreach ($rii as $file) {
             if ($file->isFile() && !fm_hidden($archiveRoot, $file->getPathname()) && fm_level($archiveRoot, $file->getPathname()) === 'download' && $file->getMTime() >= $fromTs && $file->getMTime() < $toTs) {
                 $localName = substr($file->getPathname(), strlen($archiveRoot) + 1);
-                $zip->addFile($file->getPathname(), $localName);
+                $zip->addFile($file->getPathname(), dl_zip_path($localName, $used));
                 $count++;
             }
         }
@@ -178,7 +181,7 @@ try {
 
         $zipName = 'بایگانی ' . ($fromStr ?: 'ابتدا') . ' تا ' . ($toStr ?: 'امروز') . '.zip';
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . $zipName . '"');
+        header(dl_disposition('attachment', $zipName, 'archive.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);

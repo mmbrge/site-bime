@@ -2,6 +2,7 @@
 // فایل: api/case_actions.php
 session_start();
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -284,7 +285,7 @@ try {
         if (!$zipPath) { http_response_code(500); exit; }
 
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . $zipName . '"');
+        header(dl_disposition('attachment', $zipName, 'archive.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath); // زیپ موقت است؛ در بایگانی نگه داشته نمی‌شود
@@ -323,7 +324,7 @@ try {
         if (!$zipPath) { http_response_code(500); exit; }
 
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . $zipName . '"');
+        header(dl_disposition('attachment', $zipName, 'archive.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);

@@ -44,11 +44,13 @@
               <div data-list></div>
             </div>
             <div class="card p-5" data-bday><p class="text-xs text-slate-400">…</p></div>
+            <div class="card p-5" data-morning><p class="text-xs text-slate-400">…</p></div>
           </div>`;
         bindComposer();
         drawList('');
         root.querySelector('[data-flt]').onchange = e => drawList(e.target.value);
         drawBday();
+        drawMorning();
     }
     function applyTpl(k, force) {
         const t = window.Announce.TEMPLATES[k];
@@ -309,6 +311,62 @@
             const rr = await api('bday_save', {settings, users});
             toast(rr.ok ? 'تنظیماتِ تولد ذخیره شد.' : rr.error, rr.ok ? 'success' : 'error');
             if (rr.ok) drawBday();
+        };
+    }
+    // ---------------- پیامِ صبح‌بخیر (اولین ورودِ هر روز) ----------------
+    const MTHEMES = {auto: ['خودکار (صبح/ظهر)', 'linear-gradient(120deg,#f59e0b,#ec4899 50%,#0ea5e9)'], sunrise: ['طلوع', 'linear-gradient(120deg,#f59e0b,#ec4899 60%,#6366f1)'], ocean: ['اقیانوس', 'linear-gradient(120deg,#0ea5e9,#6366f1)'],
+                     violet: ['بنفش', 'linear-gradient(120deg,#7c3aed,#db2777)'], emerald: ['زمردی', 'linear-gradient(120deg,#059669,#0e7490)'], night: ['شب', 'linear-gradient(120deg,#0f172a,#334155 60%,#4338ca)']};
+    const MITEMS = [['show_date', 'fa-calendar-day', 'تاریخ و روزِ هفته'], ['occasion', 'fa-star', 'مناسبتِ امروز'], ['birthdays', 'fa-cake-candles', 'تولدِ همکاران (تا ۳ روزِ دیگر)'],
+                    ['todos', 'fa-list-check', 'کارهای امروز و مانده'], ['installments', 'fa-sack-dollar', 'اقساطِ سررسید و گذشته (برای کسی که دسترسی دارد)'], ['unread', 'fa-comments', 'پیام‌های خوانده‌نشده'],
+                    ['leave', 'fa-umbrella-beach', 'مانده‌ی مرخصی'], ['emoji', 'fa-sun', 'شکلکِ ☀️ کنارِ سلام'], ['btn_music', 'fa-music', 'دکمه‌ی «یک آهنگِ آرام»'], ['btn_todo', 'fa-list', 'دکمه‌ی «کارهای امروز»']];
+    async function drawMorning() {
+        const box = S.root.querySelector('[data-morning]');
+        if (!box) return;
+        const r = await api('morning_get');
+        if (!r.ok) { box.innerHTML = ''; return; }
+        const c = r.cfg, ed = S.data.can.edit, dis = ed ? '' : 'disabled';
+        const inp = (k, ph, cls = '') => `<input class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs ${cls}" data-m="${k}" value="${esc(c[k])}" placeholder="${esc(ph || '')}" ${dis}>`;
+        const num = (k, max) => `<input class="w-16 border border-slate-200 rounded-xl px-2 py-1.5 text-xs text-center" data-m="${k}" value="${fa(c[k])}" inputmode="numeric" data-max="${max}" ${dis}>`;
+        box.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-3"><h3 class="font-black text-slate-700 text-sm"><i class="fas fa-sun text-amber-500 ml-1"></i>پیامِ صبح‌بخیر <small class="text-slate-400 font-bold">(اولین ورودِ هر روز)</small></h3>
+                <label class="flex items-center gap-2 text-xs font-black ${c.enabled ? 'text-emerald-700' : 'text-slate-500'} bg-slate-50 rounded-full px-3 py-1 mr-2"><input type="checkbox" class="accent-emerald-600 w-4 h-4" data-m="enabled" ${c.enabled ? 'checked' : ''} ${dis}>فعال</label>
+                <button type="button" class="mr-auto text-[11px] font-bold text-amber-700 bg-amber-50 rounded-lg px-3 py-1" data-a="pv"><i class="fas fa-eye ml-1"></i>پیش‌نمایش</button></div>
+            <div class="grid lg:grid-cols-3 gap-4">
+              <div class="space-y-2">
+                <p class="text-[11px] font-black text-slate-500">چه چیزهایی نوشته شود</p>
+                ${MITEMS.map(([k, ic, t]) => `<label class="flex items-center gap-2 rounded-xl border border-slate-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700"><input type="checkbox" class="accent-amber-500 w-4 h-4" data-m="${k}" ${c[k] ? 'checked' : ''} ${dis}><i class="fas ${ic} text-amber-500 w-4 text-center"></i>${t}</label>`).join('')}
+              </div>
+              <div class="space-y-2">
+                <p class="text-[11px] font-black text-slate-500">متن‌ها</p>
+                <div class="grid grid-cols-3 gap-1.5"><label class="text-[10px] font-bold text-slate-500">صبح (تا ۱۱)${inp('g_morning')}</label><label class="text-[10px] font-bold text-slate-500">ظهر (تا ۱۵)${inp('g_noon')}</label><label class="text-[10px] font-bold text-slate-500">بعدازظهر${inp('g_evening')}</label></div>
+                <label class="block text-[10px] font-bold text-slate-500">جمله‌ی زیرِ سلام${inp('subtitle', 'خالی = بدونِ جمله')}</label>
+                <label class="block text-[10px] font-bold text-slate-500">پیامِ روز (اختیاری؛ برای همه بالای فهرست)<textarea class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs leading-6" rows="3" data-m="note" placeholder="مثلاً: جلسه‌ی ساعت ۱۰ در اتاقِ مدیریت" ${dis}>${esc(c.note)}</textarea></label>
+                <label class="block text-[10px] font-bold text-slate-500">وقتی چیزی برای گفتن نیست${inp('empty_text')}</label>
+                <label class="block text-[10px] font-bold text-slate-500">متنِ دکمه‌ی اصلی${inp('start_text')}</label>
+              </div>
+              <div class="space-y-3">
+                <p class="text-[11px] font-black text-slate-500">کی و چطور نشان داده شود</p>
+                <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">از ساعت ${num('from', 23)} تا ساعت ${num('to', 24)}</div>
+                <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">با ${num('delay', 60)} ثانیه تأخیر بعد از ورود</div>
+                <select class="w-full border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold" data-m="days" ${dis}><option value="all" ${c.days === 'all' ? 'selected' : ''}>همه‌ی روزها</option><option value="work" ${c.days === 'work' ? 'selected' : ''}>فقط روزهای کاری (نه تعطیلات)</option></select>
+                <select class="w-full border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold" data-m="audience" ${dis}><option value="all" ${c.audience === 'all' ? 'selected' : ''}>برای همه (پنل و شرکت‌ها)</option><option value="staff" ${c.audience === 'staff' ? 'selected' : ''}>فقط کاربرانِ پنل</option><option value="company" ${c.audience === 'company' ? 'selected' : ''}>فقط کاربرانِ شرکت‌ها</option></select>
+                <div><p class="text-[10.5px] font-bold text-slate-500 mb-1">رنگِ سربرگ</p><div class="grid grid-cols-3 gap-1.5" data-themes>${Object.entries(MTHEMES).map(([k, [t, g]]) => `<button type="button" data-th="${k}" class="rounded-xl overflow-hidden border-2 ${c.theme === k ? 'border-amber-500' : 'border-transparent'}" ${dis}><div style="height:26px;background:${g}"></div><div class="text-[10px] font-black text-slate-600 py-0.5 bg-white">${t}</div></button>`).join('')}</div></div>
+                <p class="text-[10.5px] text-slate-400 leading-5">هر کاربر روزی یک بار، در اولین ورود داخلِ این بازه، این پیام را می‌بیند. خاموش/روشن بودنش برای هر نفر هم در «امکاناتِ رفاهی» است.</p>
+              </div>
+            </div>
+            ${ed ? '<button type="button" class="mt-3 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black px-5 py-2.5 rounded-xl" data-a="save"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی پیامِ صبح‌بخیر</button>' : ''}`;
+        let theme = c.theme;
+        box.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { theme = b.dataset.th; box.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('border-amber-500', x === b)); box.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('border-transparent', x !== b)); });
+        const read = () => {
+            const o = {theme};
+            box.querySelectorAll('[data-m]').forEach(i => { o[i.dataset.m] = i.type === 'checkbox' ? (i.checked ? 1 : 0) : (i.dataset.max ? +en(i.value) || 0 : i.value); });
+            return o;
+        };
+        box.querySelector('[data-a="pv"]').onclick = () => { if (window.CF && CF.morningPreview) CF.morningPreview(read()); else toast('پیش‌نمایش وقتی «امکاناتِ رفاهی» برایتان فعال است کار می‌کند.', 'info'); };
+        const sv = box.querySelector('[data-a="save"]');
+        if (sv) sv.onclick = async () => {
+            const rr = await api('morning_save', {cfg: read()});
+            toast(rr.ok ? 'پیامِ صبح‌بخیر ذخیره شد؛ از ورودِ بعدی با همین تنظیم نشان داده می‌شود.' : rr.error, rr.ok ? 'success' : 'error');
+            if (rr.ok) drawMorning();
         };
     }
     window.AnnounceAdmin = {render};

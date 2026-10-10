@@ -3,6 +3,7 @@
 // API بخشِ «بیمه عمر»: داشبورد، بیمه‌نامه‌ها و اقساط، پرداخت و رسید، تماس و یادداشت، ورودِ اکسل، خروجی، بایگانی و تنظیمات.
 // دسترسی: مدیر کل همه‌چیز؛ بقیه طبقِ دسترسیِ سفارشی (اگر دارند) یا پیش‌فرضِ نقش («کاربر بیمه عمر»).
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_life.php';
@@ -94,7 +95,7 @@ function life_send_file($abs, $name = null, $inline = false) {
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'zip' => 'application/zip'];
     $name = $name ?: basename($abs);
     header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
-    header('Content-Disposition: ' . ($inline && in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'], true) ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Content-Disposition: ' . ($inline && in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'txt'], true) ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
     header('Content-Length: ' . filesize($abs));
     header('X-Content-Type-Options: nosniff');
     readfile($abs);
@@ -830,15 +831,16 @@ case 'archive_zip':
     $zipPath = life_tmp_dir() . '/zip_' . bin2hex(random_bytes(6)) . '.zip';
     $zip = new ZipArchive();
     if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) $fail('ساختِ فایلِ زیپ ممکن نشد.');
+    $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
     $base = dirname($abs);
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $f) {
         $local = ltrim(substr($f->getPathname(), strlen($base)), '/');
-        if ($f->isDir()) $zip->addEmptyDir($local); else $zip->addFile($f->getPathname(), $local);
+        if ($f->isDir()) $zip->addEmptyDir(dl_zip_path($local)); else $zip->addFile($f->getPathname(), dl_zip_path($local, $used));
     }
     $zip->close();
     header('Content-Type: application/zip');
-    header("Content-Disposition: attachment; filename=\"archive.zip\"; filename*=UTF-8''" . rawurlencode(basename($abs) . '.zip'));
+    header("Content-Disposition: attachment; filename=\"archive.zip\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($abs) . '.zip')));
     header('Content-Length: ' . filesize($zipPath));
     readfile($zipPath);
     @unlink($zipPath);

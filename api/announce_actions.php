@@ -259,6 +259,14 @@ try {
         $pdo->prepare("DELETE FROM ann_items WHERE id = ?")->execute([$id]);
         ano(['ok' => true]);
     }
+    // ---- پیامِ صبح‌بخیر (اولین ورودِ هر روز): محتوا و زمان/ظاهرِ نمایش ----
+    if ($action === 'morning_get') ano(['ok' => true, 'cfg' => cf_morning_cfg($pdo), 'defaults' => cf_morning_clean([]), 'themes' => CF_MORNING_THEMES]);
+    if ($action === 'morning_save') {
+        if (!$can('edit')) ano(['ok' => false, 'error' => 'اجازه‌ی این کار را ندارید.']);
+        $c = cf_morning_clean((array)($data['cfg'] ?? []));
+        cf_setting_set($pdo, 'morning_cfg', json_encode($c, JSON_UNESCAPED_UNICODE));
+        ano(['ok' => true, 'cfg' => $c]);
+    }
     // ---- تولدها: تنظیماتِ اعلانِ خودکار و تاریخِ تولدِ همکاران ----
     if ($action === 'bday_get') {
         $s = [];

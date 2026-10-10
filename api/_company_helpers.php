@@ -1339,12 +1339,13 @@ function company_zip_folder($folderPath) {
     $zipPath = sys_get_temp_dir() . '/' . uniqid('folderzip_') . '.zip';
     $zip = new ZipArchive();
     if ($zip->open($zipPath, ZipArchive::CREATE) !== true) return null;
+    $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
     $base = realpath($folderPath);
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS));
     foreach ($it as $file) {
         $localName = ltrim(str_replace($base, '', $file->getPathname()), '/');
-        if ($file->isDir()) $zip->addEmptyDir($localName);
-        else $zip->addFile($file->getPathname(), $localName);
+        if ($file->isDir()) $zip->addEmptyDir(dl_zip_path($localName));
+        else $zip->addFile($file->getPathname(), dl_zip_path($localName, $used));
     }
     $zip->close();
     return $zipPath;
@@ -1670,6 +1671,7 @@ function company_import_commit($pdo, array $rows, $update) {
 //  فهرست‌های شرکت‌ها، پنل/ربات، مالی و اقساط دیده نمی‌شود. بعد از صدور مثلِ بقیه به «بایگانی صادره» کپی می‌شود.
 //  ستون‌ها و جدولِ لازم خودکار ساخته می‌شوند.
 // =====================================================================
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require_once __DIR__ . '/_import_schema.php';   // imp_ensure()
 // ستون‌ها همان ابتدای درخواست ساخته شوند (پیش از هر تراکنشی)
 if (isset($pdo) && $pdo instanceof PDO) imp_ensure($pdo);

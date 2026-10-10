@@ -1655,38 +1655,51 @@
     }
 
     // ================= صبح‌بخیر و تولد =================
-    async function morning(force) {
-        if (!has('morning')) return;
+    // تنظیمات در «اعلان‌های پاپ‌آپ ← پیامِ صبح‌بخیر» (api: morning_cfg)؛ preview = پیش‌نمایشِ مدیر با تنظیمِ ذخیره‌نشده
+    const MORNING_THEMES = {sunrise: 'linear-gradient(120deg,#f59e0b,#ec4899 60%,#6366f1)', ocean: 'linear-gradient(120deg,#0ea5e9,#6366f1)', violet: 'linear-gradient(120deg,#7c3aed,#db2777)',
+                            emerald: 'linear-gradient(120deg,#059669,#0e7490)', night: 'linear-gradient(120deg,#0f172a,#334155 60%,#4338ca)'};
+    async function morning(force, preview) {
+        if (!preview && !has('morning')) return;
+        const C0 = preview || (S.boot && S.boot.morning_cfg) || {};
         const today = S.boot.today;
-        if (!force && (S.prefs.morning_seen === today || LS.get('morning', '') === today)) return;
         const [, , , hh] = irDate();
-        if (!force && (hh < 5 || hh >= 15)) return;   // فقط تا ساعتِ ۱۵
-        const d = await api('morning');
+        if (!force && !preview) {
+            if (C0.enabled === 0) return;
+            if (S.prefs.morning_seen === today || LS.get('morning', '') === today) return;
+            const from = C0.from ?? 5, to = C0.to ?? 15;
+            if (hh < from || hh >= to) return;
+        }
+        const d = await api('morning', preview ? {cfg: preview} : (force ? {force: 1} : {}));
         if (!d.ok) return;
-        LS.set('morning', today);
-        savePrefs({morning_seen: today});
-        const greet = hh < 11 ? 'صبح بخیر' : hh < 15 ? 'ظهر بخیر' : 'عصر بخیر';
+        if (!preview) { LS.set('morning', today); savePrefs({morning_seen: today}); }
+        if (d.skip) return;
+        const C = Object.assign({show_date: 1, occasion: 1, birthdays: 1, todos: 1, installments: 1, unread: 1, leave: 1, btn_music: 1, btn_todo: 1, emoji: 1, theme: 'auto',
+                                 g_morning: 'صبح بخیر', g_noon: 'ظهر بخیر', g_evening: 'عصر بخیر', subtitle: '', note: '', empty_text: 'امروز چیزِ فوری‌ای ندارید؛ روزِ آرامی باشد 🌿', start_text: 'شروعِ کار 🚀'}, d.cfg || C0);
+        const greet = hh < 11 ? C.g_morning : hh < 15 ? C.g_noon : C.g_evening;
         const [jy, jm, jd] = todayJ();
         const [gy, gm, gd] = j2g(jy, jm, jd);
         const unread = +en((document.getElementById('chat-nav-badge') || {}).textContent || '0') || 0;
         const rows = [];
-        if (d.occasion) rows.push(['fa-star', '#f59e0b', `مناسبتِ امروز: <b>${esc(d.occasion)}</b>`]);
-        (d.birthdays || []).forEach(b => rows.push(['fa-cake-candles', '#db2777', b.in_days === 0 ? `امروز تولدِ <b>${esc(b.name)}</b> است 🎉` : `<b>${esc(b.name)}</b> · ${fa(b.in_days)} روزِ دیگر تولد است`]));
-        if (d.todos && d.todos.length) rows.push(['fa-list-check', '#6366f1', `<b>${fa(d.todos.length)}</b> کارِ امروز / مانده: ${d.todos.slice(0, 3).map(t => esc(t.text)).join('، ')}${d.todos.length > 3 ? '…' : ''}`]);
-        if (d.installments && (d.installments.today || d.installments.overdue)) rows.push(['fa-sack-dollar', '#10b981', `اقساط: <b>${fa(d.installments.today)}</b> سررسیدِ امروز${d.installments.today_amount ? ' (' + money(d.installments.today_amount) + ' ریال)' : ''} · <b>${fa(d.installments.overdue)}</b> گذشته و پرداخت‌نشده`]);
-        if (unread) rows.push(['fa-comments', '#0ea5e9', `<b>${fa(unread)}</b> پیامِ خوانده‌نشده در گفتگوها`]);
-        if (d.leave) rows.push(['fa-umbrella-beach', '#0d9488', `مانده‌ی مرخصی: <b>${esc(d.leave)}</b>`]);
+        if (C.note) rows.push(['fa-bullhorn', '#7c3aed', esc(C.note).replace(/\n/g, '<br>')]);
+        if (C.occasion && d.occasion) rows.push(['fa-star', '#f59e0b', `مناسبتِ امروز: <b>${esc(d.occasion)}</b>`]);
+        if (C.birthdays) (d.birthdays || []).forEach(b => rows.push(['fa-cake-candles', '#db2777', b.in_days === 0 ? `امروز تولدِ <b>${esc(b.name)}</b> است 🎉` : `<b>${esc(b.name)}</b> · ${fa(b.in_days)} روزِ دیگر تولد است`]));
+        if (C.todos && d.todos && d.todos.length) rows.push(['fa-list-check', '#6366f1', `<b>${fa(d.todos.length)}</b> کارِ امروز / مانده: ${d.todos.slice(0, 3).map(t => esc(t.text)).join('، ')}${d.todos.length > 3 ? '…' : ''}`]);
+        if (C.installments && d.installments && (d.installments.today || d.installments.overdue)) rows.push(['fa-sack-dollar', '#10b981', `اقساط: <b>${fa(d.installments.today)}</b> سررسیدِ امروز${d.installments.today_amount ? ' (' + money(d.installments.today_amount) + ' ریال)' : ''} · <b>${fa(d.installments.overdue)}</b> گذشته و پرداخت‌نشده`]);
+        if (C.unread && unread) rows.push(['fa-comments', '#0ea5e9', `<b>${fa(unread)}</b> پیامِ خوانده‌نشده در گفتگوها`]);
+        if (C.leave && d.leave) rows.push(['fa-umbrella-beach', '#0d9488', `مانده‌ی مرخصی: <b>${esc(d.leave)}</b>`]);
+        const bg = MORNING_THEMES[C.theme] || (hh < 11 ? MORNING_THEMES.sunrise : MORNING_THEMES.ocean);
         const m = document.createElement('div');
         m.className = 'cf-modal';
-        m.innerHTML = `<div class="cf-morning"><div class="hd" style="background:${hh < 11 ? 'linear-gradient(120deg,#f59e0b,#ec4899 60%,#6366f1)' : 'linear-gradient(120deg,#0ea5e9,#6366f1)'}">
-                <p style="font-size:12px;opacity:.9;font-weight:800">${DOW[new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay()]} ${fa(jd)} ${MONTHS[jm - 1]} ${fa(jy)}</p>
-                <h2 style="font-size:24px;font-weight:900;margin-top:4px">${greet} ${esc(d.name || '')} ${hh < 11 ? '☀️' : '🌤️'}</h2>
-                <p style="font-size:12px;opacity:.9;margin-top:4px">یک روزِ خوب و پرانرژی برایتان آرزو می‌کنیم.</p></div>
-            <div class="bd">${rows.length ? rows.map(([ic, c, t]) => `<div class="cf-mi"><i class="fas ${ic} ic" style="background:${c}1a;color:${c}"></i><div>${t}</div></div>`).join('') : '<div class="cf-empty" style="opacity:1;color:#64748b">امروز چیزِ فوری‌ای ندارید؛ روزِ آرامی باشد 🌿</div>'}
+        m.innerHTML = `<div class="cf-morning"><div class="hd" style="background:${bg}">
+                ${preview ? '<p style="font-size:10.5px;font-weight:900;background:rgba(255,255,255,.2);display:inline-block;padding:2px 10px;border-radius:999px;margin-bottom:4px">پیش‌نمایش</p>' : ''}
+                ${C.show_date ? `<p style="font-size:12px;opacity:.9;font-weight:800">${DOW[new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay()]} ${fa(jd)} ${MONTHS[jm - 1]} ${fa(jy)}</p>` : ''}
+                <h2 style="font-size:24px;font-weight:900;margin-top:4px">${esc(greet)} ${esc(d.name || '')} ${C.emoji ? (hh < 11 ? '☀️' : '🌤️') : ''}</h2>
+                ${C.subtitle ? `<p style="font-size:12px;opacity:.9;margin-top:4px">${esc(C.subtitle)}</p>` : ''}</div>
+            <div class="bd">${rows.length ? rows.map(([ic, c, t]) => `<div class="cf-mi"><i class="fas ${ic} ic" style="background:${c}1a;color:${c}"></i><div>${t}</div></div>`).join('') : `<div class="cf-empty" style="opacity:1;color:#64748b">${esc(C.empty_text)}</div>`}
                 <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-                    <button class="cf-btn" data-a="go" style="padding:10px 18px">شروعِ کار 🚀</button>
-                    ${has('music') && S.tracks.length ? '<button class="cf-btn s" style="background:#f1f5f9;color:#334155" data-a="music"><i class="fas fa-music ml-1"></i>یک آهنگِ آرام</button>' : ''}
-                    ${has('todo') ? '<button class="cf-btn s" style="background:#f1f5f9;color:#334155" data-a="todo"><i class="fas fa-list-check ml-1"></i>کارهای امروز</button>' : ''}</div></div></div>`;
+                    <button class="cf-btn" data-a="go" style="padding:10px 18px">${esc(C.start_text || 'شروعِ کار')}</button>
+                    ${C.btn_music && has('music') && S.tracks.length ? '<button class="cf-btn s" style="background:#f1f5f9;color:#334155" data-a="music"><i class="fas fa-music ml-1"></i>یک آهنگِ آرام</button>' : ''}
+                    ${C.btn_todo && has('todo') ? '<button class="cf-btn s" style="background:#f1f5f9;color:#334155" data-a="todo"><i class="fas fa-list-check ml-1"></i>کارهای امروز</button>' : ''}</div></div></div>`;
         document.body.appendChild(m);
         const close = () => m.remove();
         m.addEventListener('mousedown', e => { if (e.target === m) close(); });
@@ -1779,9 +1792,9 @@
         setInterval(() => { pomoBadge(); }, 1000);
         setInterval(() => { todoTick(); healthTick(); statusDot(); }, 20000);
         setTimeout(() => { todoTick(); healthTick(); }, 4000);
-        setTimeout(() => { birthdayBanner(); morning(false); }, 1500);
+        setTimeout(() => { birthdayBanner(); morning(false); }, Math.max(0, ((S.boot.morning_cfg || {}).delay ?? 2)) * 1000 || 1500);
         window.addEventListener('beforeunload', saveResume);
     }
-    window.CF = {boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, upAdd, upMount, upActive, has, morning: () => morning(true), state: S, api};
+    window.CF = {boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, upAdd, upMount, upActive, has, morning: () => morning(true), morningPreview: cfg => morning(true, cfg), state: S, api};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

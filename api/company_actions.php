@@ -4,6 +4,7 @@
 // درخواست‌ها، صندوق ورودی مدارک (تگ‌گذاری دستی)، و ثبت صدور نهایی.
 session_start();
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -2058,7 +2059,7 @@ try {
         $path = cbundle_root() . '/b_' . $token . '/pages/' . $file;
         if (!$token || !preg_match('/^(?:(?:pol|seg|stm)_\d{3}|rcp_\d{3}_\d{2})\.pdf$/', $file) || !is_file($path)) { http_response_code(404); exit; }
         header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="' . $file . '"');
+        header(dl_disposition('inline', $file, 'file'));
         header('Content-Length: ' . filesize($path));
         readfile($path);
         exit;
@@ -2382,7 +2383,7 @@ try {
         $zipPath = build_zip_from_files($files, "درخواست-{$requestId}.zip");
         if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="درخواست-' . $requestId . '.zip"');
+        header(dl_disposition('attachment', 'درخواست-' . $requestId . '.zip', 'request-' . $requestId . '.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);
@@ -2403,7 +2404,7 @@ try {
         if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
         $downloadName = sanitize_folder_name(pathinfo($doc['orig_name'] ?: 'گزارش', PATHINFO_FILENAME)) . '.zip';
         header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+        header(dl_disposition('attachment', $downloadName, 'folder.zip'));
         header('Content-Length: ' . filesize($zipPath));
         readfile($zipPath);
         @unlink($zipPath);

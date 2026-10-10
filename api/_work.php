@@ -10,6 +10,15 @@ require_once __DIR__ . '/_work_track.php';   // ساختِ جدول‌ها و ث
 // ---------------- تنظیمات ----------------
 const WK_DEFAULTS = ['work_leave_days_month' => '2.5', 'work_leave_day_hours' => '8', 'work_day_hours' => '8', 'work_offdays' => '5',
                      'work_leave_approval' => '0', 'work_holidays' => '', 'work_start' => '08:00', 'work_end' => '16:00'];
+// ساعت‌های ورود و خروجِ کارکرد از «لاگ ورود و خروج» خوانده می‌شوند؛ بعد از «حذف اطلاعات › کارکرد» لاگ‌های قبل از آن
+// دیگر در کارکرد حساب نمی‌شوند (خودِ صفحه‌ی لاگ ورود و خروج دست نمی‌خورد)
+function wk_since($pdo) {
+    static $v = null;
+    if ($v !== null) return $v;
+    try { $v = (string)$pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'work_reset_at'")->fetchColumn(); } catch (Throwable $e) { $v = ''; }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $v)) $v = '1970-01-01 00:00:00';
+    return $v;
+}
 function wk_settings($pdo) {
     static $s = null;
     if ($s !== null) return $s;
@@ -129,9 +138,9 @@ function wk_days($pdo, $uid, $from, $to) {
                      'tasks' => [], 'acts' => 0, 'leaves' => [], 'leave_min' => 0, 'worked' => 0];
     }
     $q = function ($sql, $args) use ($pdo) { try { $st = $pdo->prepare($sql); $st->execute($args); return $st->fetchAll(); } catch (Throwable $e) { return []; } };
-    foreach ($q("SELECT DATE(created_at) d, MIN(TIME(created_at)) t FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method <> 'LOGOUT' AND created_at BETWEEN ? AND ? GROUP BY DATE(created_at)", [$uid, "$from 00:00:00", "$to 23:59:59"]) as $r)
+    foreach ($q("SELECT DATE(created_at) d, MIN(TIME(created_at)) t FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method <> 'LOGOUT' AND created_at BETWEEN ? AND ? AND created_at >= ? GROUP BY DATE(created_at)", [$uid, "$from 00:00:00", "$to 23:59:59", wk_since($pdo)]) as $r)
         if (isset($days[$r['d']])) $days[$r['d']]['auto_in'] = substr($r['t'], 0, 5);
-    foreach ($q("SELECT DATE(created_at) d, MAX(TIME(created_at)) t FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method = 'LOGOUT' AND created_at BETWEEN ? AND ? GROUP BY DATE(created_at)", [$uid, "$from 00:00:00", "$to 23:59:59"]) as $r)
+    foreach ($q("SELECT DATE(created_at) d, MAX(TIME(created_at)) t FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND method = 'LOGOUT' AND created_at BETWEEN ? AND ? AND created_at >= ? GROUP BY DATE(created_at)", [$uid, "$from 00:00:00", "$to 23:59:59", wk_since($pdo)]) as $r)
         if (isset($days[$r['d']])) $days[$r['d']]['auto_out'] = substr($r['t'], 0, 5);
     foreach ($q("SELECT wdate, TIME(first_seen) f, TIME(last_seen) l FROM work_presence WHERE user_id = ? AND wdate BETWEEN ? AND ?", [$uid, $from, $to]) as $r) {
         if (!isset($days[$r['wdate']])) continue;
@@ -250,8 +259,8 @@ function wk_timeline($pdo, $uid, $g) {
     wk_ensure($pdo);
     $out = [];
     try {
-        $st = $pdo->prepare("SELECT method, TIME(created_at) t, device, browser FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND DATE(created_at) = ? ORDER BY created_at");
-        $st->execute([$uid, $g]);
+        $st = $pdo->prepare("SELECT method, TIME(created_at) t, device, browser FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND DATE(created_at) = ? AND created_at >= ? ORDER BY created_at");
+        $st->execute([$uid, $g, wk_since($pdo)]);
         foreach ($st->fetchAll() as $r) $out[] = ['t' => substr($r['t'], 0, 5), 'kind' => $r['method'] === 'LOGOUT' ? 'logout' : 'login',
             'label' => $r['method'] === 'LOGOUT' ? 'خروج از پنل' : ('ورود به پنل' . ($r['method'] === 'OTP' ? ' (کد بله)' : '')), 'ref' => trim(($r['device'] ?? '') . ' ' . ($r['browser'] ?? ''))];
     } catch (Throwable $e) {}
@@ -302,8 +311,8 @@ function wk_auto_tasks($pdo, $uid, $from, $to) {
     $in = []; $outT = [];
     foreach ($q("SELECT DATE(created_at) d, MIN(TIME(created_at)) f, MAX(TIME(created_at)) l, SUM(method <> 'LOGOUT') ni, SUM(method = 'LOGOUT') no,
                         MIN(CASE WHEN method <> 'LOGOUT' THEN TIME(created_at) END) fi, MAX(CASE WHEN method = 'LOGOUT' THEN TIME(created_at) END) lo
-                   FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND created_at BETWEEN ? AND ? GROUP BY DATE(created_at)",
-                [$uid, "$from 00:00:00", "$to 23:59:59"]) as $r) {
+                   FROM login_logs WHERE user_type = 'STAFF' AND user_id = ? AND success = 1 AND created_at BETWEEN ? AND ? AND created_at >= ? GROUP BY DATE(created_at)",
+                [$uid, "$from 00:00:00", "$to 23:59:59", wk_since($pdo)]) as $r) {
         if ($r['fi']) $in[$r['d']] = substr($r['fi'], 0, 5);
         if ($r['lo']) $outT[$r['d']] = substr($r['lo'], 0, 5);
     }

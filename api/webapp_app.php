@@ -4,6 +4,7 @@
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 
@@ -181,7 +182,7 @@ try {
 
         $mime = strtolower($ext) === 'pdf' ? 'application/pdf' : 'application/octet-stream';
         header('Content-Type: ' . $mime);
-        header("Content-Disposition: attachment; filename=\"{$asciiName}\"; filename*=UTF-8''" . rawurlencode($realName));
+        header("Content-Disposition: attachment; filename=\"{$asciiName}\"; filename*=UTF-8''" . rawurlencode(dl_name($realName)));
         header('Content-Length: ' . filesize($abs));
         header('Cache-Control: private, max-age=0, must-revalidate');
         header('X-Content-Type-Options: nosniff');

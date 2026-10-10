@@ -3,6 +3,7 @@
 // API «اتوماسیونِ نامه‌ها» در پنل: کارتابل و دفترِ نامه‌ها، نوشتن/ویرایش، صدور با شماره‌ی خودکار، ارسال به کارتابلِ شرکت،
 // ارجاع، پیوست، PDF و Word (و بارگذاریِ نسخه‌ی Word/امضاشده)، قالب‌ها، امضاها، دسته‌ها و تنظیماتِ شماره و سربرگ.
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_lt.php';
@@ -67,7 +68,7 @@ function lt_send_file($abs, $name, $inline = false) {
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
     header('X-Content-Type-Options: nosniff');
-    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
     header('Content-Length: ' . filesize($abs));
     header('Cache-Control: private, max-age=60');
     readfile($abs);
@@ -76,7 +77,7 @@ function lt_send_file($abs, $name, $inline = false) {
 function lt_send_bin($bin, $name, $mime, $inline = false) {
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: ' . $mime);
-    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"letter\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"letter\"; filename*=UTF-8''" . rawurlencode(dl_name($name)));
     header('Content-Length: ' . strlen($bin));
     header('Cache-Control: private, no-store');
     echo $bin;

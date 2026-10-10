@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 // فایل: api/_case_helpers.php
 // قوانین نام‌گذاری پوشه‌ها و فایل‌ها برای سیستم «صدور بیمه‌نامه».
 // این فایل فقط تابع دارد و DB باز نمی‌کند؛ در هر اسکریپتی که لازم شود include می‌شود.
@@ -1375,8 +1376,9 @@ function build_zip_from_files($files, $zipDisplayName) {
     $zipPath = $tmpDir . '/' . uniqid('zip_') . '.zip';
     $zip = new ZipArchive();
     if ($zip->open($zipPath, ZipArchive::CREATE) !== true) return null;
+    $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
     foreach ($files as $f) {
-        if (file_exists($f['path'])) $zip->addFile($f['path'], $f['name']);
+        if (file_exists($f['path'])) $zip->addFile($f['path'], dl_zip_path($f['name'], $used));
     }
     $zip->close();
     return $zipPath;

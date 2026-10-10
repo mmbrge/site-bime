@@ -389,7 +389,7 @@ function bk_reset_sections() {
                          'notification_cursors', 'audit_logs', 'login_logs', 'login_otps', 'phone_otps', 'password_reset_requests', 'bot_sessions', 'webapp_sessions',
                          'chat_messages', 'chat_hidden', 'chat_reactions', 'chat_state', 'chat_typing', 'ann_items', 'ann_reads', 'security_events', 'edit_locks']],
         'worklog' => ['label' => 'کارکرد، مرخصی و سرویس',
-            'desc' => 'حضور و شرحِ کارِ روزانه، فعالیت‌های خودکار، مرخصی‌ها، رفت‌وآمد با سرویس و پرداخت‌های سرویس (تعریفِ سرویس‌ها و تنظیمِ هر نفر می‌ماند)',
+            'desc' => 'حضور و شرحِ کارِ روزانه، ساعت‌های ورود و خروجِ کارکرد، فعالیت‌های خودکار، مرخصی‌ها، رفت‌وآمد با سرویس و پرداخت‌های سرویس - همه با هم (تعریفِ سرویس‌ها و تنظیمِ هر نفر می‌ماند؛ صفحه‌ی «لاگ ورود و خروج» جزوِ «پیام‌ها و لاگ‌ها» است)',
             'tables' => ['work_days', 'work_presence', 'work_activity', 'work_leaves', 'work_service_days', 'work_service_pays']],
         'comfort' => ['label' => 'امکاناتِ رفاهی',
             'desc' => 'آهنگ‌ها (کتابخانه و شخصی) با فایل‌هایشان، فهرست‌های پخش و پسندها، کارهای امروز، پاسخ‌های آماده و ترجیحاتِ کاربران (دسترسی‌ها می‌ماند)',
@@ -451,6 +451,8 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         foreach (['company_installments', 'policy_installments'] as $t) $try("UPDATE `$t` SET `endorsement_id` = NULL");
     }
     if ($has('comfort')) $try("UPDATE `users` SET `cf_status` = NULL");
+    // کارکرد: ساعت‌های ورود و خروجِ قبل از این لحظه (که از لاگ ورود و خروج می‌آیند) دیگر در کارکرد حساب نمی‌شوند
+    if ($has('worklog')) $try("INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES ('work_reset_at', '" . date('Y-m-d H:i:s') . "') ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`)");
     if ($has('visit_reports')) $try("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%'");
     if ($has('users')) {
         $try("DELETE FROM `users` WHERE `role` <> 'ADMIN'");

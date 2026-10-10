@@ -28,6 +28,7 @@ register_shutdown_function(function () {
     if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
     echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
 });
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -469,7 +470,7 @@ function vr_send_file($abs, $downloadName, $inline = false) {
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               'py' => 'text/x-python; charset=utf-8'];
     header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
-    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"report.{$ext}\"; filename*=UTF-8''" . rawurlencode($downloadName));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"report.{$ext}\"; filename*=UTF-8''" . rawurlencode(dl_name($downloadName)));
     header('Content-Length: ' . filesize($abs));
     header('Cache-Control: private, max-age=60');
     readfile($abs);
@@ -890,6 +891,7 @@ try {
         $tmp = sys_get_temp_dir() . '/vr_zip_' . bin2hex(random_bytes(6)) . '.zip';
         $z = new ZipArchive();
         $z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
         $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
         foreach ($rii as $file) {
             if (!$file->isFile() || (!$isAdmin && strpos($file->getFilename(), '(old') !== false)) continue;
@@ -897,12 +899,12 @@ try {
             $relIn = substr($file->getPathname(), strlen($dir) + 1);
             // بدونِ Word: فقط Wordِ خودِ گزارش (در ریشه‌ی پوشه) کنار می‌رود؛ Wordهایی که به‌عنوانِ مدرک پیوست شده‌اند می‌مانند
             if ($noWord && strpos($relIn, '/') === false && strtolower($file->getExtension()) === 'docx') continue;
-            $z->addFile($file->getPathname(), basename($dir) . '/' . $relIn);
+            $z->addFile($file->getPathname(), dl_zip_path(basename($dir) . '/' . $relIn, $used));
         }
         $z->close();
         vr_audit($pdo, $user['id'], 'VR_DOWNLOAD', $r['id'], ($noWord ? 'zip (بدون Word)' : 'folder') . ' · ' . $r['report_no']);
         header('Content-Type: application/zip');
-        header("Content-Disposition: attachment; filename=\"report.zip\"; filename*=UTF-8''" . rawurlencode(basename($dir) . ($noWord ? ' (بدون Word)' : '') . '.zip'));
+        header("Content-Disposition: attachment; filename=\"report.zip\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($dir) . ($noWord ? ' (بدون Word)' : '') . '.zip')));
         header('Content-Length: ' . filesize($tmp));
         readfile($tmp);
         @unlink($tmp);

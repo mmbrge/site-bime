@@ -4,6 +4,7 @@
 // یک کاربر می‌تواند به چند شرکت دسترسی داشته باشد؛ اگر فقط یکی دارد، همه‌جا قفل
 // روی همان می‌ماند، وگرنه هر عملیات باید company_id معتبر (از میان شرکت‌های خودش) بدهد.
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
@@ -290,7 +291,7 @@ try {
         $name = sanitize_folder_name(insurance_type_fa($row['insurance_type']) . ' - ' . ($plateDisplay ?: 'بدون پلاک')
                  . ($row['policy_number'] ? ' - ' . policy_number_for_filename($row['policy_number']) : '')) . '.' . $ext;
         header('Content-Type: ' . ($ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
-        header('Content-Disposition: attachment; filename="' . $name . '"');
+        header(dl_disposition('attachment', $name, 'policy'));
         header('Content-Length: ' . filesize($abs));
         readfile($abs);
         exit;
@@ -331,14 +332,15 @@ try {
         register_shutdown_function(function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); }); // حتی اگر دانلود نیمه‌کاره قطع شد
         $zip = new ZipArchive();
         $zip->open($tmp, ZipArchive::OVERWRITE);
-        foreach ($files as $name => $abs) $zip->addFile($abs, $name);
+        $used = [];   // نام‌های داخلِ ZIP (برای جلوگیری از نامِ تکراری)
+        foreach ($files as $name => $abs) $zip->addFile($abs, dl_zip_path($name, $used));
         $zip->close();
 
         $zipName = 'بیمه‌نامه‌های صادره - ' . $req['company_name'] . ' - درخواست ' . $req['id'] . ' - '
                  . jalali_from_gregorian_ts_dotted(time()) . '.zip';
         $zipName = str_replace(['"', '/', '\\'], ['', '-', '-'], $zipName);
         header('Content-Type: application/zip');
-        header("Content-Disposition: attachment; filename=\"policies.zip\"; filename*=UTF-8''" . rawurlencode($zipName));
+        header("Content-Disposition: attachment; filename=\"policies.zip\"; filename*=UTF-8''" . rawurlencode(dl_name($zipName)));
         header('Content-Length: ' . filesize($tmp));
         readfile($tmp);
         @unlink($tmp);

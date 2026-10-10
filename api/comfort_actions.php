@@ -73,7 +73,7 @@ try {
     if ($action === 'boot') {
         [$jy, $md] = cf_today_md();
         $out = ['ok' => true, 'kind' => $AT, 'name' => $A[2], 'is_admin' => $isAdmin, 'features' => $F, 'catalog' => array_map(function ($f) { return $f[0]; }, CF_FEATURES),
-                'prefs' => cf_prefs($pdo, $AT, $AID), 'genres' => cf_genres($pdo), 'focus_genres' => cf_focus_genres($pdo), 'today' => date('Y-m-d'), 'now' => time(),
+                'prefs' => cf_prefs($pdo, $AT, $AID), 'genres' => cf_genres($pdo), 'focus_genres' => cf_focus_genres($pdo), 'morning_cfg' => cf_morning_cfg($pdo), 'today' => date('Y-m-d'), 'now' => time(),
                 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => CF_OCCASIONS[$md] ?? null, 'statuses' => array_map(function ($s) { return ['label' => $s[0], 'icon' => $s[1]]; }, CF_STATUS)];
         if (!empty($F['status']) || !empty($F['dnd'])) $out['status'] = $myStatus();
         if (!empty($F['todo']) || !empty($F['morning'])) $out['todos'] = $todos();
@@ -515,20 +515,27 @@ try {
     if ($action === 'morning') {
         $need('morning');
         [$jy, $md] = cf_today_md();
+        // تنظیماتِ پیام (پیش‌نمایشِ مدیر: تنظیمِ ذخیره‌نشده)
+        $MC = ($isAdmin && !empty($data['cfg']) && is_array($data['cfg'])) ? cf_morning_clean($data['cfg']) : cf_morning_cfg($pdo);
+        if (empty($data['cfg']) && empty($data['force'])) {
+            $skip = !$MC['enabled'] || ($MC['audience'] === 'staff' && $AT !== 'S') || ($MC['audience'] === 'company' && $AT !== 'C');
+            if (!$skip && $MC['days'] === 'work') { try { require_once __DIR__ . '/_work.php'; $skip = wk_is_off($pdo, date('Y-m-d')); } catch (Throwable $e) {} }
+            if ($skip) cfo(['ok' => true, 'skip' => true]);
+        }
         require_once __DIR__ . '/_name_honor.php';
         // نامِ کامل با عنوانِ «آقای / خانم» (نه فقط کلمه‌ی اول - «خانم عزیزی» نباید «خانم» بشود)
-        $out = ['ok' => true, 'name' => honor_name($pdo, $AT, $AID, cf_actor_name($pdo, $AT, $AID) ?: $A[2]), 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => CF_OCCASIONS[$md] ?? null];
-        $all = !empty($F['todo']) ? $todos() : [];
+        $out = ['ok' => true, 'cfg' => $MC, 'name' => honor_name($pdo, $AT, $AID, cf_actor_name($pdo, $AT, $AID) ?: $A[2]), 'today_j' => sprintf('%04d/%s', $jy, $md), 'occasion' => $MC['occasion'] ? (CF_OCCASIONS[$md] ?? null) : null];
+        $all = (!empty($F['todo']) && $MC['todos']) ? $todos() : [];
         $today = date('Y-m-d');
         $out['todos'] = array_values(array_filter($all, function ($t) use ($today) { return !$t['done'] && (!$t['due_g'] || $t['due_g'] <= $today); }));
         if ($AT === 'S') {
-            if (!empty($F['birthdays'])) $out['birthdays'] = array_values(array_filter(cf_birthdays($pdo), function ($b) { return $b['in_days'] <= 3; }));
-            try {
+            if (!empty($F['birthdays']) && $MC['birthdays']) $out['birthdays'] = array_values(array_filter(cf_birthdays($pdo), function ($b) { return $b['in_days'] <= 3; }));
+            if ($MC['leave']) try {
                 require_once __DIR__ . '/_work.php';
                 $b = wk_balance($pdo, $AID);
                 $out['leave'] = $b['balance_fa'];
             } catch (Throwable $e) {}
-            if ($canPage('fin-installments')) {
+            if ($MC['installments'] && $canPage('fin-installments')) {
                 try {
                     $due = function ($tbl, $alloc, $fk) use ($pdo) {
                         $st = $pdo->query("SELECT SUM(i.due_date = CURDATE()) today, SUM(i.due_date < CURDATE()) overdue, SUM(IF(i.due_date = CURDATE(), i.amount, 0)) today_amount

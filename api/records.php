@@ -6,6 +6,7 @@
 //   POST action=export      => خروجی اکسلِ همان ردیف‌هایی که در جدول (با فیلتر/جستجو) دیده می‌شوند، با جزئیاتِ هر بیمه‌نامه
 session_start();
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
@@ -100,7 +101,7 @@ try {
         if (!$rel || !$abs || !$root || strpos($abs, $root) !== 0 || !is_file($abs)) { echo json_encode(['ok' => false, 'error' => 'فایلِ معرفی‌نامه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
         header('Content-Type: ' . (['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream'));
-        header("Content-Disposition: attachment; filename=\"intro.$ext\"; filename*=UTF-8''" . rawurlencode(basename($abs)));
+        header("Content-Disposition: attachment; filename=\"intro.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($abs))));
         header('Content-Length: ' . filesize($abs));
         readfile($abs);
         exit;

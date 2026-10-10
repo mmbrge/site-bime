@@ -2,6 +2,7 @@
 // فایل: api/hl_actions.php
 // API «مالیِ درمان تکمیلی»: داشبورد، قراردادها و اقساط، دریافت‌ها (به ما / مستقیم به بیمه‌گر)، پرداخت به پاسارگاد، معوقات، اکسل و تنظیمات.
 session_start();
+require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_hl.php';
@@ -111,7 +112,7 @@ function hl_send_file($abs, $name) {
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: ' . (['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream'));
     header('X-Content-Type-Options: nosniff');
-    header("Content-Disposition: inline; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode($name . '.' . $ext));
+    header("Content-Disposition: inline; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name($name . '.' . $ext)));
     header('Content-Length: ' . filesize($abs));
     readfile($abs);
     exit;
