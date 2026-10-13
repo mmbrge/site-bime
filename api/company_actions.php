@@ -536,6 +536,24 @@ try {
         exit;
     }
 
+    // ---- «درخواست تغییر کرده»: ارزشِ خودرو / تعهدِ مالیِ ردیف با مقدارِ بیمه‌نامه به‌روز می‌شود (از پنجره‌ی صدور) ----
+    if ($action === 'update_row_values') {
+        require_admin_only();
+        $plateId = intval($data['plate_id'] ?? 0);
+        $set = []; $args = [];
+        foreach (['car_value', 'liability_limit'] as $col) {
+            if (!isset($data[$col])) continue;
+            $v = preg_replace('/\D/', '', p2e_digits((string)$data[$col]));
+            if ($v === '' || strlen($v) > 18) continue;
+            $set[] = "`$col` = ?"; $args[] = $v;
+        }
+        if (!$plateId || !$set) { echo json_encode(['ok' => false, 'error' => 'مقداری برای به‌روزرسانی نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        $args[] = $plateId;
+        $pdo->prepare("UPDATE company_request_plates SET " . implode(', ', $set) . " WHERE id = ?")->execute($args);
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- «شرایط عمومی و خصوصی»ِ بیمه‌نامه‌ی بدنه: اگر هنوز ساخته نشده (بیمه‌نامه‌های قبلی) همین الان از فایلِ بیمه‌نامه جدا
     //      و کنارش (و در کپیِ «بایگانی صادره») ذخیره می‌شود؛ بعد خودِ فایل باز می‌شود ----
     if ($action === 'policy_conditions') {

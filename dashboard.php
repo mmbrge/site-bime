@@ -8212,6 +8212,39 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.querySelectorAll('[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
             if (window.MoneyInput && MoneyInput.apply) try { MoneyInput.apply(box); } catch (e) {}
         }
+        // اطلاعاتِ درخواستِ کارکنان (پیشنهاد) برای پیش‌پر کردنِ فرمِ صدور
+        function casePrefill(c) {
+            return {ins_type: c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', insured_name: c.insured_name || '', national_id: c.insured_national_id || '',
+                phone: c.insured_phone || '', address: c.insured_address || '', postal_code: c.insured_postal_code || '', plate: c.plate || '',
+                car_value: c.insurance_type === 'BODY' ? (c.estimated_car_value || c.car_value || '') : '', liability: c.insurance_type !== 'BODY' ? (c.liability_limit || '') : '',
+                vin: c.vin || c.chassis_num || '', engine_no: c.engine_num || '', car_system: c.car_system || '', car_tip: c.car_type || '',
+                model_year: c.car_model_year || '', color: c.car_color || '', usage: c.car_usage || ''};
+        }
+        // «درخواست تغییر کرده؟»: ارزشِ خودرو (بدنه) یا تعهدِ مالی (ثالث) در بیمه‌نامه با درخواست فرق دارد => پیشنهادِ به‌روزرسانیِ درخواست
+        // req: {car_value, liability_limit} درخواست؛ o: داده‌ی فرم/فایل؛ apply(vals) => Promise<{ok}>
+        function pfDiffNotice(holder, req, o, apply) {
+            if (!holder) return;
+            const num = v => Number(String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '')) || 0;
+            const items = [];
+            const cv = num(pfVal(o, 'car_value')), rcv = num(req.car_value);
+            if (cv && cv !== rcv) items.push({k: 'car_value', label: 'ارزش خودرو', from: rcv, to: cv});
+            const lv = num(pfVal(o, 'liability')), rlv = num(req.liability_limit);
+            if (lv && lv !== rlv) items.push({k: 'liability_limit', label: 'تعهد مالی', from: rlv, to: lv});
+            if (!items.length) { holder.className = 'hidden'; holder.innerHTML = ''; return; }
+            holder.className = 'text-[11px] rounded-xl p-3 mb-2 bg-amber-50 border border-amber-200 text-amber-900 leading-6';
+            holder.innerHTML = `<b><i class="fas fa-code-compare ml-1"></i>درخواست تغییر کرده؟</b> ${items.map(i => `${i.label}: در درخواست <b>${i.from ? money(i.from) : 'ثبت نشده'}</b> ← در بیمه‌نامه <b>${money(i.to)}</b> ریال`).join(' · ')}
+                <div class="mt-1.5 flex flex-wrap gap-2"><button type="button" data-apply class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1 rounded-lg">به‌روزرسانیِ درخواست با مقدارِ بیمه‌نامه</button>
+                <button type="button" data-keep class="bg-white border border-amber-200 text-amber-800 font-bold px-3 py-1 rounded-lg">درخواست همان بماند</button></div>`;
+            holder.querySelector('[data-keep]').onclick = () => { holder.className = 'hidden'; holder.innerHTML = ''; };
+            holder.querySelector('[data-apply]').onclick = async () => {
+                const vals = {}; items.forEach(i => { vals[i.k] = String(i.to); });
+                let r; try { r = await apply(vals); } catch (e) { r = {ok: false}; }
+                if (!r || !r.ok) { showToast((r && r.error) || 'به‌روزرسانی نشد.', 'error'); return; }
+                showToast('درخواست با مقدارِ بیمه‌نامه به‌روز شد.', 'success');
+                holder.className = 'text-[11px] rounded-xl p-2 mb-2 bg-emerald-50 border border-emerald-200 text-emerald-700';
+                holder.innerHTML = '<i class="fas fa-check ml-1"></i>درخواست به‌روز شد.';
+            };
+        }
         function pfCollect(box) {
             const out = {};
             box.querySelectorAll('[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
@@ -8238,6 +8271,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return;
             }
             window.CIS_PRE = pre || null;
+            const cisCh = document.getElementById('cis-change'); if (cisCh) cisCh.remove();
             document.getElementById('cis-plate-id').value = plateId;
             document.getElementById('cis-file').value = '';
             document.getElementById('cis-file-name').textContent = 'انتخابِ فایلِ بیمه‌نامه‌ی صادرشده (PDF یا عکس)';
@@ -8274,8 +8308,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return;
             }
             let o = data.ocr || {};
-            // ردیفِ وارداتی: هر چه از فایل خوانده نشد از اکسلِ بیمه‌گر می‌آید
-            if (window.CIS_PRE && CIS_PRE.pf) { const base = Object.assign({}, CIS_PRE.pf); Object.keys(o).forEach(k => { if (o[k] !== '' && o[k] !== null && o[k] !== undefined) base[k] = o[k]; }); o = base; }
+            // ردیفِ وارداتی: هر چه از فایل خوانده نشد از اکسلِ بیمه‌گر می‌آید؛ ردیفِ معمولی: از اطلاعاتِ خودِ ردیف (درخواست)
+            const cisRow = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(document.getElementById('cis-plate-id').value));
+            const cisBase = window.CIS_PRE && CIS_PRE.pf ? CIS_PRE.pf : (cisRow ? {vin: cisRow.chassis_no || '', engine_no: cisRow.engine_no || '', car_name: cisRow.car_name || '', car_value: cisRow.car_value || '', liability: cisRow.liability_limit || ''} : null);
+            if (cisBase) { const base = Object.assign({}, cisBase); Object.keys(o).forEach(k => { if (o[k] !== '' && o[k] !== null && o[k] !== undefined) base[k] = o[k]; }); o = base; }
+            if (cisRow && !(window.CIS_PRE && CIS_PRE.pf)) {
+                let ch = document.getElementById('cis-change');
+                if (!ch) { ch = document.createElement('div'); ch.id = 'cis-change'; document.getElementById('cis-form').before(ch); }
+                pfDiffNotice(ch, {car_value: cisRow.insurance_type === 'BODY' ? cisRow.car_value : 0, liability_limit: cisRow.insurance_type !== 'BODY' ? cisRow.liability_limit : 0},
+                    cisRow.insurance_type === 'BODY' ? Object.assign({}, o, {liability: ''}) : Object.assign({}, o, {car_value: ''}),
+                    vals => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_row_values', plate_id: cisRow.id}, vals))}).then(r => r.json())
+                        .then(d => { if (d.ok) Object.assign(cisRow, vals); return d; }));
+            }
             pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: (data.missing || []).filter(m => !(window.CIS_PRE && CIS_PRE.pf)), source: data.source, layout_debug: data.layout_debug});
             note.className = 'text-[11px] rounded-lg p-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
@@ -10528,15 +10572,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>` : ''}
 
                     ${isIssueMode ? `
-                    <div class="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                        <p class="text-xs font-bold text-amber-700 mb-3"><i class="fas fa-pen ml-1"></i> فیلدهای نام‌گذاری (اختیاری، دستی) - اگر خالی بماند بعد از دریافت فایل بیمه‌نامه به‌صورت خودکار تکمیل می‌شود</p>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div class="col-span-2">${plateSplitHtml('naming-plate', c.plate || '')}</div>
-                            <input type="text" id="naming-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
-                        </div>
-                        <button onclick="saveNaming()" class="mt-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره</button>
-                    </div>
-
                     <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4" id="final-policy-section">
                         <p class="text-xs font-bold text-emerald-700 mb-3"><i class="fas fa-file-circle-check ml-1"></i> صدور نهایی بیمه‌نامه</p>
                         ${c.status === 'ISSUED' ? `
@@ -10563,10 +10598,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </label>
                             <div id="policy-ocr-status" class="text-[11px] text-slate-400 mt-2"></div>
 
-                            <div id="policy-fields-wrap" class="mt-3" style="display:none;">
+                            <div id="policy-fields-wrap" class="mt-3">
+                                <p class="text-[10.5px] text-slate-500 mb-2"><i class="fas fa-circle-info text-emerald-500 ml-1"></i>فرم از اطلاعاتِ همین درخواست پر شده؛ با انتخابِ فایل، اطلاعاتِ بیمه‌نامه خوانده و با درخواست مقایسه می‌شود. بعد از بررسی «صدور» را بزنید.</p>
+                                <div id="pf-change" class="hidden"></div>
                                 <div id="final-pf" class="mb-2"></div>
                                 <div id="policy-mismatch-warning" class="hidden text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2"></div>
-                                <button onclick="confirmIssuePolicy(${caseId})" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg"><i class="fas fa-check-circle ml-1"></i>تایید نهایی و صدور</button>
+                                <div id="naming-box" class="hidden bg-amber-50 border border-amber-100 rounded-xl p-3 mb-2">
+                                    <p class="text-[11px] font-bold text-amber-700 mb-2"><i class="fas fa-pen ml-1"></i>نام‌گذاریِ پوشه و فایل (اختیاری) - اگر خالی بماند از فایلِ بیمه‌نامه تکمیل می‌شود</p>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div class="col-span-2">${plateSplitHtml('naming-plate', c.plate || '')}</div>
+                                        <input type="text" id="naming-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
+                                        <button onclick="saveNaming()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره‌ی نام‌گذاری</button>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="confirmIssuePolicy(${caseId})" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg"><i class="fas fa-check-circle ml-1"></i>صدور</button>
+                                    <button onclick="document.getElementById('naming-box').classList.toggle('hidden')" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-3 py-2.5 rounded-lg" title="پلاک و نامِ بیمه‌گذار برای نام‌گذاریِ پوشه/فایل"><i class="fas fa-pen ml-1"></i>ویرایش نام‌گذاری</button>
+                                </div>
                             </div>
                             <p class="text-[10px] text-slate-400 mt-2">پیش‌نیاز: همه‌ی مدارک باید تایید شده باشند؛ برای بیمه‌ی بدنه، گزارش کارشناسِ بازدید سلامت هم باید قبلاً بارگذاری شده باشد.</p>
 
@@ -10642,6 +10690,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                     </div>` : ''}
                 `;
+                // صفحه‌ی صدور: فرمِ بیمه‌نامه از همان اول با اطلاعاتِ درخواست (پیشنهاد) پر است
+                if (isIssueMode && c.status !== 'ISSUED' && document.getElementById('final-pf')) {
+                    window._issueCase = c;
+                    window._issuePrefill = casePrefill(c);
+                    pfRender(document.getElementById('final-pf'), window._issuePrefill, {});
+                }
                 // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
                 if (c.status === 'WITHDRAWN') {
                     body.querySelectorAll('button[onclick], input[type="file"], select, textarea').forEach(el => {
@@ -10671,7 +10725,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!data.ok) { statusEl.textContent = ''; showToast(data.error || 'خطا در پردازش فایل.', 'error'); return; }
 
                 document.getElementById('policy-fields-wrap').style.display = 'block';
-                const o = data.ocr || {};
+                // هر چه از فایل خوانده شد جای مقدارِ درخواست را می‌گیرد؛ بقیه همان مقدارِ درخواست می‌ماند
+                const o = Object.assign({}, window._issuePrefill || {});
+                Object.entries(data.ocr || {}).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) o[k] = v; });
+                const cc = window._issueCase || {};
+                pfDiffNotice(document.getElementById('pf-change'), {car_value: cc.estimated_car_value, liability_limit: cc.liability_limit}, o,
+                    vals => fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_request_values', case_id: caseId}, vals))}).then(r => r.json())
+                        .then(d => { if (d.ok) { if (vals.car_value) cc.estimated_car_value = vals.car_value; if (vals.liability_limit) cc.liability_limit = vals.liability_limit; } return d; }));
                 if (data.ocr_used) {
                     statusEl.innerHTML = '✅ اطلاعات فایل شناسایی شد - لطفاً بررسی/ویرایش کنید، سپس تایید نهایی بزنید.'
                         + ((data.receipts || []).length ? `<br><span class="text-[11px] text-indigo-700 font-bold">${e2pNum(data.receipts.length)} فیشِ قسط داخلِ فایل پیدا شد؛ صفحه‌های بیمه‌نامه جدا ذخیره و هر فیش روی ردیفِ قسطِ خودش گذاشته می‌شود.</span>` : '')
@@ -10679,7 +10739,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     pfRender(document.getElementById('final-pf'), o, {receipts: data.receipts || [], missing: data.missing || [], source: data.source, layout_debug: data.layout_debug});
                 } else {
                     statusEl.innerHTML = `⚠️ فایل شناسایی نشد - فیلدها را دستی پر کنید.<br><span class="text-[10px] text-slate-400">علت: ${data.ocr_debug || 'نامشخص'}</span>`;
-                    pfRender(document.getElementById('final-pf'), {}, {});
+                    pfRender(document.getElementById('final-pf'), o, {});
                 }
             } catch(e) {
                 document.getElementById('policy-upload-label').style.pointerEvents = '';

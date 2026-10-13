@@ -88,6 +88,29 @@ try {
         }
     }
 
+    // ---- «درخواست تغییر کرده»: ارزشِ خودرو / تعهدِ مالیِ درخواست با مقدارِ بیمه‌نامه‌ی صادرشده به‌روز می‌شود (پیش از صدور، از پنجره‌ی صدور) ----
+    if ($action === 'update_request_values') {
+        $caseId = intval($data['case_id'] ?? 0);
+        $set = []; $args = [];
+        foreach (['car_value' => 'estimated_car_value', 'liability_limit' => 'liability_limit'] as $in => $col) {
+            if (!isset($data[$in])) continue;
+            $v = preg_replace('/\D/', '', p2e_digits((string)$data[$in]));
+            if ($v === '' || strlen($v) > 18) continue;
+            $set[] = "`$col` = ?"; $args[] = $v;
+        }
+        if (!$caseId || !$set) { echo json_encode(['ok' => false, 'error' => 'مقداری برای به‌روزرسانی نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        $old = $pdo->prepare("SELECT estimated_car_value, liability_limit FROM policy_cases WHERE id = ?");
+        $old->execute([$caseId]);
+        $o = $old->fetch();
+        if (!$o) { echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $args[] = $caseId;
+        $pdo->prepare("UPDATE policy_cases SET " . implode(', ', $set) . " WHERE id = ?")->execute($args);
+        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'UPDATE', 'policy_cases', ?, ?)")
+                  ->execute([$_SESSION['user_id'] ?? null, $caseId, json_encode(['request_values' => ['old' => $o, 'new' => array_intersect_key($data, ['car_value' => 1, 'liability_limit' => 1])]], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) {}
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ۱. لیست پرونده‌های صدور
     if ($action === 'list') {
         $introFilter = intval($_GET['introduction_id'] ?? 0);
