@@ -4258,6 +4258,56 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let currentRecordsData = [];
         let activeRowId = null;
         const IS_ADMIN = <?php echo ($_SESSION['role'] ?? '') === 'ADMIN' ? 'true' : 'false'; ?>;
+        // «حذفِ کامل» فقط برای مدیر کلِ واقعی (نه کاربری که با دسترسیِ سفارشی چیدمانِ مدیر را می‌بیند)
+        const IS_REAL_ADMIN = <?php echo perm_real_role() === 'ADMIN' ? 'true' : 'false'; ?>;
+        const purgeBtn = (kind, id, after, cls) => IS_REAL_ADMIN ? `<button onclick="event.stopPropagation(); fullPurge('${kind}', ${id}, ${after})" title="حذفِ کامل (همه‌چیز: بایگانی، مدارک، اقساط، شمارش‌ها)" class="${cls || 'mr-1 bg-rose-600 text-white hover:bg-rose-700 px-2.5 py-1.5 rounded-lg text-xs'}"><i class="fas fa-dumpster-fire"></i></button>` : '';
+        // پنجره‌ی «حذفِ کامل»: اول فهرستِ چیزهایی که حذف می‌شود، بعد رمزِ خودِ مدیر
+        async function fullPurge(kind, id, after) {
+            const API = 'api/purge_actions.php';
+            let pv;
+            try { pv = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview', kind, id})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!pv.ok) { showToast(pv.error || 'خطا', 'error'); return; }
+            const KIND = {case: 'درخواستِ کارکنان', intro: 'معرفی‌نامه و همه‌ی درخواست‌هایش', creq: 'درخواستِ شرکتی'}[kind];
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const li = (icon, t) => `<li class="flex items-center gap-2"><i class="fas ${icon} text-rose-500 w-4 text-center"></i>${t}</li>`;
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <div class="flex items-center gap-3 mb-3"><span class="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-lg"><i class="fas fa-dumpster-fire"></i></span>
+                  <div><h3 class="font-black text-base text-slate-800">حذفِ کامل</h3><p class="text-[11px] text-slate-500">${KIND}: <b>${esc(pv.title || '')}</b></p></div></div>
+                <ul class="text-xs text-slate-600 space-y-1.5 bg-rose-50/60 border border-rose-100 rounded-xl p-3 mb-3">
+                  ${kind !== 'case' ? li('fa-layer-group', (kind === 'creq' ? 'ردیف‌ها: ' : 'درخواست‌ها: ') + e2pNum(pv.cases) + (pv.issued ? ' (' + e2pNum(pv.issued) + ' صادرشده)' : '')) : (pv.issued ? li('fa-certificate', 'بیمه‌نامه‌ی صادرشده') : '')}
+                  ${li('fa-file-lines', 'مدارک: ' + e2pNum(pv.documents))}
+                  ${li('fa-calendar-days', 'اقساط: ' + e2pNum(pv.installments) + (pv.paid ? ' - تخصیصِ ' + e2pNum(Number(pv.paid).toLocaleString('en-US')) + ' ریال دریافتی برداشته می‌شود (خودِ دریافت می‌ماند)' : ''))}
+                  ${li('fa-box-archive', 'پوشه‌ها و فایل‌ها در بایگانی (کسر از حقوق، صادره، موقت) و شمارِ معرفی‌نامه')}
+                  ${pv.invoiced ? li('fa-file-invoice', 'صورتحساب‌های صادرشده دست نمی‌خورند') : ''}
+                </ul>
+                <p class="text-[11px] text-slate-500 leading-6 mb-3"><i class="fas fa-life-ring text-emerald-500 ml-1"></i>هیچ چیز واقعاً پاک نمی‌شود: فایل‌ها و یک نسخه از اطلاعات در پوشه‌ی بسته‌ی <b dir="ltr">_trash</b> روی هاست نگه داشته می‌شود تا اگر اشتباه شد برگردانده شود.</p>
+                <label class="text-[11px] font-bold text-slate-500 block mb-1">برای تأیید، رمزِ ورودِ خودتان را وارد کنید</label>
+                <input type="password" data-pw class="w-full border rounded-xl px-3 py-2.5 text-sm mb-3" autocomplete="current-password">
+                <button type="button" data-ok class="w-full bg-rose-600 hover:bg-rose-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-dumpster-fire ml-1"></i>حذفِ کامل</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            const pw = box.querySelector('[data-pw]'); setTimeout(() => pw.focus(), 50);
+            const go = async () => {
+                if (!pw.value) { showToast('رمز را وارد کنید.', 'error'); return; }
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ حذف...';
+                let r;
+                try { r = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'purge', kind, id, password: pw.value})})).json(); }
+                catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-dumpster-fire ml-1"></i>حذفِ کامل'; return; }
+                close(); showToast(r.message || 'حذف شد.', 'success');
+                const cm = document.getElementById('case-detail-modal');
+                if (cm && !cm.classList.contains('hidden') && kind !== 'creq') { cm.classList.add('hidden'); cm.classList.remove('flex'); }
+                try { if (typeof after === 'function') after(); } catch (e) {}
+            };
+            box.querySelector('[data-ok]').onclick = go;
+            pw.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        }
         // ثبت دستی و ویرایشِ درخواست‌های کارکنان: مدیر کل یا دسترسیِ سفارشیِ ثبت/ویرایشِ صدورِ کارکنان
         const CAN_MANUAL = <?php echo $canManualPersonnel ? 'true' : 'false'; ?>;
         // ---------- دسترسیِ سفارشیِ صفحه به صفحه ----------
@@ -5076,7 +5126,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="p-4 text-xs whitespace-nowrap text-emerald-700">${row.premium_total ? recMoney(Math.round(row.premium_total / 10)) + ' <span class="text-[10px] text-slate-400">تومان</span>' : '<span class="text-slate-300">—</span>'}</td>
                         <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(String(row.total_cases))} بیمه‌نامه)</button>
                             ${row.has_intro_file ? `<a href="api/records.php?action=download_intro&intro_id=${row.introduction_id}" onclick="event.stopPropagation()" title="دانلودِ فایلِ معرفی‌نامه" class="mr-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"><i class="fas fa-file-arrow-down"></i>معرفی‌نامه</a>` : ''}
-                            ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
+                            ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('intro', row.introduction_id, 'loadRecords')}</td>
                     </tr>`).join('');
         }
 
@@ -5907,7 +5957,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
                         </button>
                         ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
-                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}
+                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests')}
                     </td>
                 </tr>`).join('');
         }
@@ -10109,7 +10159,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-4 text-xs font-bold ${CASE_STATUS_COLOR[c.status] || ''}">${CASE_STATUS_FA[c.status] || c.status}</td>
                             <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(c.created_at, false)}</td>
                             <td class="p-4 whitespace-nowrap"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button>
-                                ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}</td>
+                                ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('case', c.id, 'loadCases')}</td>
                         </tr>`;
                 });
             } else {
@@ -10190,7 +10240,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         <span class="flex items-center gap-1.5">
                             <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-arrow-left ml-1"></i>جزئیات و عملیات</button>
-                            ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}
+                            ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('case', c.id, `() => { openIntroDetail(${introId}, document.getElementById('intro-detail-name').textContent); loadRecords(); }`, 'bg-rose-600 text-white hover:bg-rose-700 text-xs px-2.5 py-2 rounded-lg')}
                         </span>
                     </div>`;
                 }).join('');
