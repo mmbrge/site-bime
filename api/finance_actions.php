@@ -51,7 +51,18 @@ try {
     // =================================================================
     if ($action === 'ledger_meta') {
         fin_ledger_ensure($pdo);
-        echo json_encode(['ok' => true, 'methods' => FIN_METHODS, 'insurers' => FIN_INSURERS, 'is_admin' => $isAdmin,
+        // گزینه‌های فیلترِ اقساط فقط از مقدارهایی که در اقساط هست (شرکت، دوره، بیمه‌گر)
+        $facet = null;
+        try {
+            $fc = []; $fp = []; $fi = [];
+            foreach (fin_unified_installments($pdo, []) as $r) {
+                if (!empty($r['company_id'])) $fc[(int)$r['company_id']] = true;
+                if (!empty($r['period'])) $fp[$r['period']] = true;
+                if (!empty($r['insurer'])) $fi[$r['insurer']] = true;
+            }
+            $facet = ['companies' => array_keys($fc), 'periods' => array_keys($fp), 'insurers' => array_keys($fi)];
+        } catch (Throwable $e) { error_log('[ledger_meta facet] ' . $e->getMessage()); }
+        echo json_encode(['ok' => true, 'methods' => FIN_METHODS, 'insurers' => FIN_INSURERS, 'is_admin' => $isAdmin, 'facet' => $facet,
                           'rule_collect_before_pay' => (fin_settings($pdo)['rule_collect_before_pay'] ?? '0') === '1',
                           'companies' => $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;

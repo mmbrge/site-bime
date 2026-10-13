@@ -36,12 +36,17 @@
         if (d.ok) META = d;
         return META || {methods: {}, insurers: {}, companies: []};
     }
-    function monthOpts() {
+    // only: فهرستِ دوره‌هایی که در داده‌ها هست (null = همه‌ی ۲۴ ماهِ اخیر)
+    function monthOpts(only) {
         const now = window.IrTime ? IrTime.parts() : {jy: 1405, jm: 1};
+        const set = Array.isArray(only) ? new Set(only) : null;
         let y = now.jy, m = now.jm, h = '<option value="">همه‌ی دوره‌ها</option>';
-        for (let i = 0; i < 24; i++) { h += `<option value="${y}-${String(m).padStart(2, '0')}">دوره‌ی ${J_MONTHS[m - 1]} ${fa(y)}</option>`; if (--m < 1) { m = 12; y--; } }
+        for (let i = 0; i < 24; i++) { const v = `${y}-${String(m).padStart(2, '0')}`; if (!set || set.has(v)) h += `<option value="${v}">دوره‌ی ${J_MONTHS[m - 1]} ${fa(y)}</option>`; if (--m < 1) { m = 12; y--; } }
         return h;
     }
+    // گزینه‌های فیلتر فقط از مقدارهایی که در اقساط هست
+    const facetCos = m => (m.companies || []).filter(c => !m.facet || m.facet.companies.includes(+c.id));
+    const facetIns = m => Object.entries(m.insurers || {}).filter(([k]) => !m.facet || m.facet.insurers.includes(k));
     function modal(id, inner, wide) {
         let el = document.getElementById(id);
         if (!el) { el = document.createElement('div'); el.id = id; el.className = 'modal-overlay'; el.style.zIndex = '1000001'; }
@@ -140,12 +145,12 @@
             <div class="card p-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
                 <input type="search" id="fh-q" placeholder="جستجو: نام، پلاک، بیمه‌نامه، کد رهگیری، کد ملی/پرسنلی..." class="border rounded-lg px-3 py-2 text-xs col-span-2">
                 <select id="fh-source" class="border rounded-lg px-3 py-2 text-xs font-bold"><option value="">کارکنان و شرکتی</option><option value="P">کارکنان (کسر از حقوق)</option><option value="C">شرکتی</option></select>
-                <select id="fh-company" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option>${(m.companies || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
-                <select id="fh-insurer" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option>${Object.entries(m.insurers || {}).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
+                <select id="fh-company" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option>${facetCos(m).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+                <select id="fh-insurer" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option>${facetIns(m).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
                 <select id="fh-type" class="border rounded-lg px-3 py-2 text-xs"><option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option></select>
                 <select id="fh-status" class="border rounded-lg px-3 py-2 text-xs"><option value="">وضعیتِ دریافت: همه</option><option value="UNPAID">دریافت‌نشده</option><option value="PARTIAL">مانده‌دار (ناقص)</option><option value="PAID">کامل دریافت‌شده</option><option value="OVERDUE">معوق</option><option value="UPCOMING">سررسیدِ ۳۰ روزِ آینده</option></select>
                 <select id="fh-insst" class="border rounded-lg px-3 py-2 text-xs"><option value="">وضعیتِ بیمه‌گر: همه</option><option value="unpaid">پرداخت‌نشده به بیمه‌گر</option><option value="partial">پرداختِ ناقص به بیمه‌گر</option><option value="paid">کامل پرداخت‌شده به بیمه‌گر</option></select>
-                <select id="fh-period" class="border rounded-lg px-3 py-2 text-xs">${monthOpts()}</select>
+                <select id="fh-period" class="border rounded-lg px-3 py-2 text-xs">${monthOpts(m.facet && m.facet.periods)}</select>
                 <select id="fh-inv" class="border rounded-lg px-3 py-2 text-xs"><option value="">صورتحساب: همه</option><option value="0">بدون صورتحساب</option><option value="1">دارای صورتحساب</option></select>
                 <select id="fh-datef" class="border rounded-lg px-3 py-2 text-xs"><option value="due">بازه روی سررسید</option><option value="issue">بازه روی تاریخ صدور</option></select>
                 <input type="text" id="fh-from" placeholder="از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">

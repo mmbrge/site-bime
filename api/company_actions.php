@@ -780,6 +780,35 @@ try {
     }
 
     // ---- لیست شرکت‌های درخواست‌کننده (با پروفایل کامل + نام شرکت مادر) ----
+    // گزینه‌های فیلترِ هر جدول فقط از مقدارهایی که واقعاً در آن جدول هست (شرکت، ماه، وضعیت، نوع، بیمه‌گر)
+    if ($action === 'filter_facets') {
+        $scope = (string)($data['scope'] ?? '');
+        $out = ['companies' => [], 'months' => [], 'statuses' => [], 'kinds' => [], 'insurers' => [], 'types' => []];
+        $jm = function ($d) { if (!$d) return null; [$y, $m] = jalali_from_gregorian_ts(strtotime($d . ' 12:00:00')); return sprintf('%04d/%02d', $y, $m); };
+        $col = function ($sql, $args = []) use ($pdo) { $st = $pdo->prepare($sql); $st->execute($args); return $st->fetchAll(PDO::FETCH_COLUMN); };
+        try {
+            if ($scope === 'requests') {
+                $base = "FROM company_requests cr";
+                $out['companies'] = $col("SELECT DISTINCT cr.company_id $base");
+                $out['statuses'] = $col("SELECT DISTINCT cr.status $base");
+                $out['kinds'] = $col("SELECT DISTINCT cr.request_kind $base");
+                $out['insurers'] = $col("SELECT DISTINCT cr.insurer $base");
+                $out['months'] = array_map($jm, $col("SELECT DISTINCT DATE(cr.created_at) $base"));
+            } elseif ($scope === 'queue') {
+                $base = "FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.status NOT IN ('ISSUED','CANCELLED') AND cr.is_import = 0";
+                $out['companies'] = $col("SELECT DISTINCT cr.company_id $base");
+            } elseif ($scope === 'issued') {
+                $out['companies'] = $col("SELECT DISTINCT cr.company_id FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.status = 'ISSUED'");
+                $out['months'] = array_map($jm, array_merge(
+                    $col("SELECT DISTINCT DATE(issued_at) FROM company_request_plates WHERE status = 'ISSUED' AND issued_at IS NOT NULL"),
+                    $col("SELECT DISTINCT DATE(issued_at) FROM policy_cases WHERE status = 'ISSUED' AND issued_at IS NOT NULL")));
+            } elseif ($scope === 'group') {
+                $out['companies'] = $col("SELECT DISTINCT cr.company_id FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.status NOT IN ('CANCELLED')");
+            }
+        } catch (Throwable $e) { error_log('[filter_facets] ' . $e->getMessage()); echo json_encode(['ok' => false]); exit; }
+        foreach ($out as $k => $v) $out[$k] = array_values(array_unique(array_filter(array_map('strval', $v), 'strlen')));
+        echo json_encode(['ok' => true] + $out, JSON_UNESCAPED_UNICODE); exit;
+    }
     if ($action === 'list_companies') {
         if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
         fin_contracts_ensure($pdo);

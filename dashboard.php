@@ -4214,7 +4214,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
     <script src="chat-ui.js?v=11"></script>
-    <script src="table-count.js?v=4"></script>
+    <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
+    <script src="table-count.js?v=5"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
         if (window.IrTime) IrTime.mountClock(document.getElementById('hdr-clock'), {render: (el, p, date, time) => {
@@ -4225,7 +4226,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=6"></script>
+    <script src="finance-hub.js?v=7"></script>
     <script src="work-log.js?v=11"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
@@ -5831,6 +5832,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
             sel.innerHTML = html; sel.dataset.filled = '1';
         }
+        // ---- گزینه‌های فیلتر فقط از مقدارهایی که در همان جدول هست ----
+        // گزینه‌ای که در داده‌ها نیست پنهان می‌شود (گزینه‌ی «همه» و گزینه‌ی انتخاب‌شده‌ی فعلی همیشه می‌مانند)؛ اگر فهرستِ گزینه‌ها
+        // بعداً پر شود (مثلاً فهرستِ شرکت‌ها دیرتر می‌رسد) دوباره اعمال می‌شود
+        function pruneSelect(sel, values) {
+            if (!sel || !Array.isArray(values)) return;
+            sel._allow = new Set(values.map(String));
+            const apply = () => { [...sel.options].forEach(o => { const hide = o.value !== '' && o.value !== sel.value && !sel._allow.has(o.value); if (o.hidden !== hide) o.hidden = hide; }); };
+            apply();
+            if (!sel._pruneObs) { sel._pruneObs = new MutationObserver(apply); sel._pruneObs.observe(sel, {childList: true}); sel.addEventListener('change', () => setTimeout(apply, 0)); }
+        }
+        const _facetAt = {};
+        async function applyFacets(scope, map) {
+            if (_facetAt[scope] && Date.now() - _facetAt[scope] < 30000) return;   // هر ۳۰ ثانیه حداکثر یک بار
+            _facetAt[scope] = Date.now();
+            try {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'filter_facets', scope})})).json();
+                if (!d.ok) return;
+                Object.entries(map).forEach(([id, k]) => pruneSelect(document.getElementById(id), d[k]));
+            } catch (e) { _facetAt[scope] = 0; }
+        }
         // ماهِ انتخاب‌شده => دو خانه‌ی «از / تا» (برای فیلترهایی که بازه‌ی تاریخ دارند)
         function jMonthToRange(v, fromId, toId) {
             const f = document.getElementById(fromId), t = document.getElementById(toId);
@@ -5847,6 +5868,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function loadCompanyRequests() {
             const status = document.getElementById('creq-status-filter').value;
             jMonthOptions(document.getElementById('creq-month'));
+            applyFacets('requests', {'creq-company': 'companies', 'creq-month': 'months', 'creq-status-filter': 'statuses', 'creq-kind': 'kinds', 'creq-insurer': 'insurers'});
             const g = id => (document.getElementById(id) || {}).value || '';
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status,
                 company_id: g('creq-company'), month: g('creq-month'), request_kind: g('creq-kind'), insurer: g('creq-insurer'), q: g('creq-q').trim()})});
@@ -6992,6 +7014,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         async function loadIssueQueue() {
             const tbody = document.getElementById('iq-body');
+            applyFacets('queue', {'iq-company': 'companies'});
             tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
             const payload = {
                 action: 'issue_queue',
@@ -7090,6 +7113,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function loadIssueGroup() {
             const body = document.getElementById('ig-body');
             if (!body) return;
+            applyFacets('group', {'ig-company': 'companies'});
             if (!igCompaniesLoaded) {
                 igCompaniesLoaded = true;
                 fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
@@ -7497,6 +7521,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         let ilCompaniesLoaded = false;
         async function loadIssuedList() {
             jMonthOptions(document.getElementById('il-month'), 'همه‌ی ماه‌ها (صدور)');
+            applyFacets('issued', {'il-company': 'companies', 'il-month': 'months'});
             if (!ilCompaniesLoaded) {
                 ilCompaniesLoaded = true;
                 fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
@@ -10063,7 +10088,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             try {
                 const res = await fetch('api/case_actions.php?action=list');
                 const data = await res.json();
-                if (data.ok) { allCasesData = data.data; renderCasesTable(allCasesData); }
+                if (data.ok) { allCasesData = data.data; renderCasesTable(allCasesData); pruneSelect(document.getElementById('case-search-status'), allCasesData.map(c => c.status)); }
             } catch(e) {
                 tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
             }
