@@ -27,7 +27,7 @@ $userId = $_SESSION['user_id'];
 
 // ثبت دستی و ویرایشِ درخواست‌ها: مدیر کل، یا کاربری که مدیر برایش دسترسیِ سفارشی تعیین کرده (perm_gate در بالای همین فایل
 // ثبت/ویرایش را بر اساسِ همان دسترسی‌ها بررسی کرده: «صدورِ بیمه‌نامه‌ی کارکنان: ویرایش»، «پرونده‌ها: ثبت» یا «در حال صدور: ویرایش»)
-if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro'], true)
+if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro', 'intro_edit'], true)
     && ($_SESSION['role'] ?? '') !== 'ADMIN' && perm_user_custom($pdo, $userId) === null) {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -146,6 +146,117 @@ try {
         exit;
     }
 
+    // ---- ویرایشِ معرفی‌نامه بعد از ثبت (حتی بعد از صدور): نام، شرکت، موبایل، تاریخ و سهمیه؛ کد ملی و کد پرسنلی ثابت می‌مانند ----
+    // تغییرِ نام/شرکت در همه‌ی پوشه‌ها و فایل‌های بایگانی (کسر از حقوق در همه‌ی ماه‌ها، صادره، موقت) و مسیرهای پایگاه داده
+    // اعمال می‌شود؛ بیمه‌نامه‌هایی که بیمه‌گذارشان خودِ همین شخص است نامِ بیمه‌گذارِ تازه را می‌گیرند.
+    if ($action === 'intro_get' || $action === 'intro_edit') {
+        $siteRoot = dirname(__DIR__);
+        $introId = intval($data['intro_id'] ?? 0);
+        $st = $pdo->prepare("SELECT i.*, p.full_name, p.national_code, p.personnel_code, p.mobile_number, p.company_id, c.name AS company_name,
+                                    (SELECT COUNT(*) FROM policy_cases pc WHERE pc.introduction_id = i.id AND pc.status = 'ISSUED') AS issued_n
+                               FROM introductions i JOIN persons p ON p.id = i.person_id LEFT JOIN companies c ON c.id = p.company_id WHERE i.id = ?");
+        $st->execute([$introId]);
+        $I = $st->fetch();
+        if (!$I) { echo json_encode(['ok' => false, 'error' => 'معرفی‌نامه یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($action === 'intro_get') {
+            $hasFile = $I['file_path'] && !in_array($I['file_path'], ['ثبت_دستی', 'بایگانی_قبلی'], true);
+            echo json_encode(['ok' => true, 'intro' => ['id' => intval($I['id']), 'full_name' => $I['full_name'], 'national_code' => $I['national_code'], 'personnel_code' => $I['personnel_code'],
+                'company_name' => (string)$I['company_name'], 'mobile' => (string)$I['mobile_number'], 'letter_date' => $I['letter_date'] ? str_replace('-', '/', $I['letter_date']) : '',
+                'max_quota' => intval($I['max_quota']), 'used_quota' => intval($I['used_quota']), 'issued' => intval($I['issued_n']), 'has_file' => $hasFile]], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        require_once __DIR__ . '/_arch_rename.php';
+        require_once __DIR__ . '/_purge.php';   // purge_intro_month_folders: همه‌ی پوشه‌های ماهانه‌ی یک معرفی‌نامه
+        $fullName = trim(preg_replace('/\s+/u', ' ', (string)($data['full_name'] ?? '')));
+        $companyName = trim(preg_replace('/\s+/u', ' ', (string)($data['company_name'] ?? '')));
+        $mobile = preg_replace('/\D/', '', p2e_digits((string)($data['mobile'] ?? '')));
+        $ld = p2e_digits(trim((string)($data['letter_date'] ?? '')));
+        $letterDate = preg_match('/^(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+        $quota = intval(p2e_digits((string)($data['max_quota'] ?? $I['max_quota'])));
+        if (mb_strlen($fullName) < 3) { echo json_encode(['ok' => false, 'error' => 'نام و نام خانوادگی را وارد کنید.', 'field' => 'full_name'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($ld !== '' && !$letterDate) { echo json_encode(['ok' => false, 'error' => 'تاریخ معرفی‌نامه را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.', 'field' => 'letter_date'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($mobile !== '' && !preg_match('/^09\d{9}$/', $mobile)) { echo json_encode(['ok' => false, 'error' => 'موبایل باید ۱۱ رقم و با ۰۹ شروع شود.', 'field' => 'mobile'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($quota < intval($I['used_quota'])) { echo json_encode(['ok' => false, 'error' => 'سهمیه از تعدادِ درخواست‌های ثبت‌شده (' . fa_digits($I['used_quota']) . ') کمتر نمی‌شود.', 'field' => 'max_quota'], JSON_UNESCAPED_UNICODE); exit; }
+        $personId = intval($I['person_id']);
+        $oldName = (string)$I['full_name']; $oldCompany = (string)$I['company_name'];
+
+        // پیش از تغییر: پوشه‌های همه‌ی معرفی‌نامه‌های این شخص (با نامِ قدیمی) و بیمه‌نامه‌هایی که بیمه‌گذارشان خودِ اوست
+        $introIds = $pdo->prepare("SELECT id FROM introductions WHERE person_id = ?");
+        $introIds->execute([$personId]);
+        $introIds = array_map('intval', $introIds->fetchAll(PDO::FETCH_COLUMN));
+        $folders = [];
+        foreach ($introIds as $iid) foreach (purge_intro_month_folders($pdo, $siteRoot, $iid) as $f) $folders[$f] = true;
+        $sc = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND insured_name = ? AND (insured_national_id IS NULL OR insured_national_id = '' OR insured_national_id = ?)");
+        $sc->execute([$personId, $oldName, $I['national_code']]);
+        $selfCases = $fullName !== $oldName ? $sc->fetchAll() : [];
+
+        $pdo->beginTransaction();
+        try {
+            $companyId = $I['company_id'] ?: null;
+            if ($companyName !== '' && $companyName !== $oldCompany) {
+                $st = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
+                $st->execute([$companyName]);
+                $companyId = $st->fetchColumn() ?: null;
+                if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+            }
+            // خانه‌ی خالی = همان مقدارِ قبلی (هیچ اطلاعاتی با خالی گذاشتن پاک نمی‌شود)
+            $pdo->prepare("UPDATE persons SET full_name = ?, company_id = ?, mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")->execute([$fullName, $companyId, $mobile, $personId]);
+            $pdo->prepare("UPDATE introductions SET letter_date = COALESCE(?, letter_date), max_quota = ? WHERE id = ?")->execute([$letterDate, max(1, $quota), $introId]);
+            foreach ($selfCases as $c) $pdo->prepare("UPDATE policy_cases SET insured_name = ? WHERE id = ?")->execute([$fullName, $c['id']]);
+            try {
+                $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'UPDATE', 'introductions', ?, ?)")
+                    ->execute([$userId, $introId, mb_substr(json_encode(['name' => [$oldName, $fullName], 'company' => [$oldCompany, $companyName], 'letter_date' => [$I['letter_date'], $letterDate], 'quota' => [$I['max_quota'], $quota]], JSON_UNESCAPED_UNICODE), 0, 900)]);
+            } catch (Throwable $e) {}
+            $pdo->commit();
+        } catch (Throwable $e) { $pdo->rollBack(); echo json_encode(['ok' => false, 'error' => 'ذخیره نشد: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE); exit; }
+
+        // بایگانی: نام (پوشه‌ها و فایل‌های داخلشان) و شرکت (نامِ پوشه‌ی معرفی‌نامه و فایلِ معرفی‌نامه)
+        $renamed = 0;
+        $nameMap = arch_name_map([[$oldName, $fullName]]);
+        $roots = array_keys($folders);
+        foreach ($selfCases as $c) {
+            if (empty($c['folder_path'])) continue;
+            $roots[] = $c['folder_path'];
+            if ($c['status'] === 'ISSUED') {
+                $ts = policy_issue_ts($c['policy_issue_date'] ?? '', strtotime((string)$c['issued_at']) ?: time());
+                $roots[] = build_sadere_base_path($siteRoot, $ts, $c['insurance_type']) . '/' . basename($c['folder_path']);
+            }
+        }
+        if ($nameMap) $renamed += count(arch_token_rename($pdo, $siteRoot, $roots, $nameMap));
+        $coMap = arch_name_map([[$oldCompany, $companyName]]);
+        if ($coMap) {
+            $now = array_map(function ($f) use ($nameMap) { return dirname($f) . '/' . arch_apply_map(basename($f), $nameMap); }, array_keys($folders));
+            foreach ($now as $f) {
+                if (!is_dir($f)) continue;
+                $renamed += count(arch_token_rename($pdo, $siteRoot, [$f], $coMap, true));
+            }
+        }
+        // فایلِ تازه‌ی معرفی‌نامه (اختیاری؛ همان فایلی که در پنجره بارگذاری و خوانده شد). فایلِ قبلی با «(قبلی)» کنارش می‌ماند.
+        $filed = false;
+        $token = basename((string)($data['file_token'] ?? ''));
+        foreach ($introIds as $iid) {
+            try { sync_intro_folder($pdo, $siteRoot, $iid); if (intro_dedupe_month_folders($pdo, $siteRoot, $iid)) sync_intro_folder($pdo, $siteRoot, $iid); }
+            catch (Throwable $e) { error_log('[intro_edit sync] ' . $e->getMessage()); }
+        }
+        if ($token !== '' && preg_match('/^[a-f0-9]{24}\.(pdf|jpg|jpeg|png|webp)$/', $token)) {
+            $tmp = temp_archive_root($siteRoot) . '/معرفی‌نامه‌های دستی/' . $token;
+            $st = $pdo->prepare("SELECT folder_path, file_path FROM introductions WHERE id = ?");
+            $st->execute([$introId]);
+            $cur = $st->fetch();
+            if (is_file($tmp) && $cur && $cur['folder_path']) {
+                $dir = $cur['folder_path'] . '/معرفی‌نامه';
+                if (!is_dir($dir)) @mkdir($dir, 0777, true);
+                $oldAbs = $cur['file_path'] && !in_array($cur['file_path'], ['ثبت_دستی', 'بایگانی_قبلی'], true) ? ($cur['file_path'][0] === '/' ? $cur['file_path'] : $siteRoot . '/' . $cur['file_path']) : '';
+                if ($oldAbs && is_file($oldAbs)) @rename($oldAbs, unique_dest_path(dirname($oldAbs) . '/(قبلی) ' . basename($oldAbs)));
+                $dest = unique_dest_path($dir . '/' . build_intro_folder_name($fullName, $I['national_code'], $I['personnel_code'], $companyName ?: $oldCompany) . '.' . pathinfo($tmp, PATHINFO_EXTENSION));
+                if (@rename($tmp, $dest)) { $pdo->prepare("UPDATE introductions SET file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $dest), '/'), $introId]); $filed = true; }
+            }
+        }
+        foreach ($introIds as $iid) { try { sync_intro_group_message($pdo, $iid); } catch (Throwable $e) {} }
+        echo json_encode(['ok' => true, 'message' => 'معرفی‌نامه ویرایش شد' . ($renamed ? '؛ ' . fa_digits($renamed) . ' پوشه/فایل در بایگانی هم‌نام شد' : '') . ($selfCases ? '؛ نامِ بیمه‌گذارِ ' . fa_digits(count($selfCases)) . ' درخواست هم عوض شد' : '') . ($filed ? '؛ فایلِ تازه‌ی معرفی‌نامه بایگانی شد' : '') . '.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- ۱. آمار داشبورد ----
     if ($action === 'stats') {
         $total = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status != 'DELETED'")->fetchColumn();
@@ -224,8 +335,9 @@ try {
         $personId = $stmt->fetchColumn();
 
         if ($personId) {
-            $stmtPerson = $pdo->prepare("UPDATE persons SET full_name = ?, national_code = ?, personnel_code = ? WHERE id = ?");
-            $stmtPerson->execute([$fullName, $nationalCode, $personnelCode, $personId]);
+            // کد ملی و کد پرسنلی بعد از ثبت عوض نمی‌شوند (پوشه‌ها، بایگانی و ربات به آن‌ها وابسته‌اند)؛ نام از «ویرایش معرفی‌نامه» عوض می‌شود
+            $stmtPerson = $pdo->prepare("UPDATE persons SET full_name = ? WHERE id = ? AND full_name = full_name");
+            $stmtPerson->execute([$fullName, $personId]);
         }
 
         $stmtReq = $pdo->prepare("UPDATE insurance_requests SET insurance_type = ?, status = ? WHERE id = ?");

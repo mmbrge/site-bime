@@ -1876,7 +1876,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
                 <div class="p-4 border-b flex justify-between items-center bg-amber-50">
                     <h3 class="font-bold text-amber-700"><i class="fas fa-id-card ml-1"></i> پرونده <span id="intro-detail-name"></span></h3>
-                    <button onclick="document.getElementById('intro-detail-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
+                    <span class="flex items-center gap-2">
+                        <?php if ($canManualPersonnel ?? false): ?><button id="intro-edit-btn" onclick="openIntroEdit(window._introDetailId)" class="bg-white border border-amber-200 text-amber-700 hover:bg-amber-100 text-xs font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-pen ml-1"></i>ویرایش معرفی‌نامه</button><?php endif; ?>
+                        <button onclick="document.getElementById('intro-detail-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
+                    </span>
                 </div>
                 <div id="intro-detail-body" class="flex-1 overflow-y-auto p-5 space-y-3"></div>
             </div>
@@ -10193,6 +10196,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= جزئیات تجمیعیِ یک معرفی‌نامه (همه‌ی بیمه‌نامه‌هایش با هم) =======================
         async function openIntroDetail(introId, name) {
+            window._introDetailId = introId;
             document.getElementById('intro-detail-name').textContent = name || '';
             document.getElementById('intro-detail-modal').classList.remove('hidden');
             document.getElementById('intro-detail-modal').classList.add('flex');
@@ -12570,6 +12574,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ctxMenu.classList.remove('active');
             if(!activeRowId) return;
             const record = currentRecordsData.find(r => r.id == activeRowId);
+            // ویرایشِ معرفی‌نامه (نام، شرکت، تاریخ، سهمیه؛ کد ملی و کد پرسنلی ثابت) با هماهنگ‌سازیِ بایگانی
+            if (record && record.introduction_id) { openIntroEdit(record.introduction_id); return; }
             if(record) {
                 document.getElementById('edit-full-name').value = record.full_name || '';
                 document.getElementById('edit-national-code').value = record.national_code || '';
@@ -12578,6 +12584,68 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('edit-status').value = record.status || 'NEW';
                 document.getElementById('edit-modal').classList.add('active');
             }
+        }
+
+        // ---- ویرایشِ معرفی‌نامه بعد از ثبت/صدور (api/record_actions.php: intro_get / intro_edit) ----
+        async function openIntroEdit(introId) {
+            if (!introId) return;
+            const R = 'api/record_actions.php';
+            let d;
+            try { d = await (await fetch(R, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_get', intro_id: introId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            const I = d.intro, esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const fld = (k, label, v, extra = '') => `<label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">${label}</span><input data-f="${k}" value="${esc(v)}" class="w-full border rounded-xl px-3 py-2 text-sm" ${extra}></label>`;
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-lg p-6 relative">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <h3 class="font-black text-base mb-1"><i class="fas fa-id-card text-amber-600 ml-1"></i>ویرایش معرفی‌نامه</h3>
+                <p class="text-[11px] text-slate-500 mb-4 leading-6">تغییرِ نام و شرکت در همه‌ی پوشه‌ها و فایل‌های بایگانی (همه‌ی ماه‌ها، صادره) و پایگاه داده اعمال می‌شود${I.issued ? ' - این معرفی‌نامه ' + e2pNum(I.issued) + ' بیمه‌نامه‌ی صادرشده دارد و نامِ بیمه‌گذارِ آن‌هایی که خودِ همین شخص است هم عوض می‌شود' : ''}. کد ملی و کد پرسنلی قابلِ تغییر نیستند.</p>
+                <div class="grid grid-cols-2 gap-3">
+                  ${fld('full_name', 'نام و نام خانوادگی', I.full_name)}
+                  ${fld('company_name', 'شرکت (محلِ کار)', I.company_name)}
+                  ${fld('nc', 'کد ملی', e2p(I.national_code), 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('pc', 'کد پرسنلی', e2p(I.personnel_code || ''), 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('letter_date', 'تاریخ معرفی‌نامه', e2p(I.letter_date), 'dir="ltr" placeholder="1405/07/01"')}
+                  ${fld('max_quota', 'سهمیه (حداقل ' + e2pNum(I.used_quota) + ')', e2p(String(I.max_quota)), 'inputmode="numeric"')}
+                  ${fld('mobile', 'موبایل', e2p(I.mobile || ''), 'dir="ltr" inputmode="numeric"')}
+                  <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایلِ تازه‌ی معرفی‌نامه (اختیاری)</span>
+                    <input type="file" data-file accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full text-[11px]"><span data-fs class="text-[10.5px] text-slate-400 block mt-1">${I.has_file ? 'فایلِ فعلی با «(قبلی)» کنارِ فایلِ تازه می‌ماند.' : 'فایلی ثبت نشده است.'}</span></label>
+                </div>
+                <button type="button" data-ok class="w-full mt-5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            const q = k => box.querySelector(`[data-f="${k}"]`);
+            let token = '';
+            // فایلِ تازه: مثلِ ثبتِ دستی خوانده می‌شود و اگر چیزی تشخیص داد، فیلدها (به‌جز کد ملی و کد پرسنلی) پیشنهاد می‌شوند
+            box.querySelector('[data-file]').onchange = async ev => {
+                const f = ev.target.files[0]; if (!f) return;
+                const fs = box.querySelector('[data-fs]'); fs.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندن...';
+                const fd = new FormData(); fd.append('action', 'intro_detect'); fd.append('file', f);
+                let r; try { r = await (await fetch(R, {method: 'POST', body: fd})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارسال فایل.'}; }
+                if (!r.ok) { fs.textContent = r.error || 'خطا'; fs.className = 'text-[10.5px] text-red-500 block mt-1'; ev.target.value = ''; return; }
+                token = r.token;
+                const x = r.fields || {};
+                if (x.national_code && x.national_code !== I.national_code) { fs.textContent = 'هشدار: کد ملیِ این فایل (' + e2p(x.national_code) + ') با این معرفی‌نامه یکی نیست.'; fs.className = 'text-[10.5px] text-red-500 block mt-1'; }
+                else { fs.textContent = r.detected ? 'فایل خوانده شد؛ اطلاعاتِ پیشنهادی را بررسی کنید.' : (r.warning || 'فایل پیوست شد.'); fs.className = 'text-[10.5px] text-emerald-600 block mt-1'; }
+                if (x.full_name) q('full_name').value = x.full_name;
+                if (x.company_name) q('company_name').value = x.company_name;
+                if (x.letter_date) q('letter_date').value = e2p(x.letter_date);
+            };
+            box.querySelector('[data-ok]').onclick = async () => {
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره...';
+                const payload = {action: 'intro_edit', intro_id: introId, full_name: q('full_name').value, company_name: q('company_name').value,
+                    letter_date: p2e(q('letter_date').value), max_quota: p2e(q('max_quota').value), mobile: p2e(q('mobile').value), file_token: token};
+                let r; try { r = await (await fetch(R, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی'; if (r.field && q(r.field)) q(r.field).focus(); return; }
+                close(); showToast(r.message || 'ذخیره شد.', 'success');
+                if (typeof loadRecords === 'function') loadRecords();
+                const im = document.getElementById('intro-detail-modal');
+                if (im && !im.classList.contains('hidden') && window._introDetailId === introId) openIntroDetail(introId, q('full_name').value);
+            };
         }
 
         async function saveRecordEdit() {
