@@ -314,7 +314,10 @@
 .cx-filterbar{display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(99,102,241,.1);color:var(--acc);font-size:11px;font-weight:700;position:relative;z-index:1;animation:cxSlide .3s both}
 .cx-filterbar button{margin-right:auto;border:0;background:transparent;color:var(--acc);font-weight:900}
 .cx-body{flex:1;overflow-y:auto;padding:14px 16px 8px;position:relative;scroll-behavior:smooth}
-.cx-day{text-align:center;margin:12px 0 8px;position:sticky;top:0;z-index:1}
+.cx-day{text-align:center;margin:12px 0 8px}
+.cx-fday{position:absolute;top:8px;left:50%;transform:translate(-50%,-6px);z-index:3;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s}
+.cx-fday.on{opacity:1;transform:translate(-50%,0)}
+.cx-fday span{display:inline-block;background:var(--panel);color:var(--muted);font-size:10.5px;font-weight:800;padding:4px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(15,23,42,.14)}
 .cx-day span{display:inline-block;background:var(--panel);color:var(--muted);font-size:10.5px;font-weight:800;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(15,23,42,.08)}
 .cx-row{display:flex;margin:2px 0;position:relative}
 .cx-row.me{justify-content:flex-start}
@@ -657,11 +660,31 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             this.seen = new Set(); this.newBelow = 0; this.caps = {}; this.rseen = new Set(); this.unreadMap = null;
             LIVE.add(this);
             this.render();
-            if (this.o.mode === 'full') { this.loadThreads(); this.listTimer = setInterval(() => !document.hidden && this.el.offsetParent && this.loadThreads(true), this.o.listMs); if (this.o.openKey) this.open(this.o.openKey); }
+            // فهرستِ گفتگوها: وقتی دیده می‌شود هر چند ثانیه، و وقتی کاربر در صفحه‌های دیگر است هم بی‌صدا هر ۳۰ ثانیه همگام می‌شود
+            // (تا با برگشتن به گفتگوها همه‌چیز تازه باشد)؛ با برگشتنِ دید به این بخش همان لحظه همگام می‌شود
+            if (this.o.mode === 'full') {
+                this.loadThreads();
+                this._bgN = 0;
+                this.listTimer = setInterval(() => {
+                    if (document.hidden) return;
+                    if (this.el.offsetParent) { if (!this._wasVisible) { this._wasVisible = true; this.sync(); return; } this.loadThreads(true); }
+                    else { this._wasVisible = false; if (++this._bgN * this.o.listMs >= 30000) { this._bgN = 0; this.loadThreads(true); } }
+                }, this.o.listMs);
+                if (this.o.openKey) this.open(this.o.openKey);
+            }
             else this.open(this.key);
             // فقط وقتی گفتگو روی صفحه دیده می‌شود (تب/صفحه‌ی پنهان = offsetParent تهی)
             this.pollTimer = setInterval(() => { if (this.key && !document.hidden && this.el.offsetParent) this.poll(); }, this.o.pollMs);
             document.addEventListener('click', this._docClick = e => { if (!e.target.closest('.cx-emoji,.cx-emo-btn')) this.$('.cx-emoji') && this.$('.cx-emoji').remove(); });
+        }
+        // همگام‌سازیِ دستی/خودکار: فهرستِ گفتگوها + پیام‌های گفتگوی باز
+        async sync(manual) {
+            const btn = this.$('.cx-sync i');
+            if (btn) btn.classList.add('fa-spin');
+            try { await Promise.all([this.o.mode === 'full' ? this.loadThreads(true) : null, this.key ? this.poll() : null]); }
+            catch (e) {}
+            if (btn) setTimeout(() => btn.classList.remove('fa-spin'), 300);
+            if (manual) this.toast('همگام شد.', 'success');
         }
         destroy() { clearInterval(this.pollTimer); clearInterval(this.listTimer); document.removeEventListener('click', this._docClick); this.stopRec(true); LIVE.delete(this); this.el.innerHTML = ''; }
         // همین گفتگو همین الان روی صفحه دیده می‌شود؟
@@ -679,6 +702,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                 ${full ? `<aside class="cx-side">
                     <div class="cx-side-h"><h3><i class="fas fa-comments" style="color:var(--acc)"></i> گفتگوها</h3>
                         <button class="cx-ib cx-mute-all ${MUTE.all() ? 'cx-muted' : ''}" title="${MUTE.all() ? 'وصلِ صدای همه‌ی گفتگوها' : 'قطعِ صدای همه‌ی گفتگوها'}"><i class="fas ${MUTE.all() ? 'fa-volume-xmark' : 'fa-volume-high'}"></i></button>
+                        <button class="cx-ib cx-sync" title="همگام‌سازی (دریافتِ همه‌ی پیام‌ها و گفتگوهای تازه)"><i class="fas fa-rotate"></i></button>
                         <button class="cx-ib cx-myprof" title="پروفایلِ من"><i class="fas fa-id-badge"></i></button>
                         <button class="cx-ib cx-prim cx-new" title="گفتگوی تازه"><i class="fas fa-pen-to-square"></i></button></div>
                     <label class="cx-search"><i class="fas fa-magnifying-glass"></i><input class="cx-q" placeholder="جستجوی نام، کد ملی یا متن پیام..."></label>
@@ -692,6 +716,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             if (full) {
                 this.$('.cx-new').onclick = () => this.newChat();
                 this.$('.cx-myprof').onclick = () => this.profile('me');
+                this.$('.cx-sync').onclick = () => this.sync(true);
                 // Esc: اول پنجره‌ی پروفایل، بعد بیرون آمدن از گفتگو و برگشتن به صفحه‌ی «یک گفتگو را انتخاب کنید»
                 if (!this._esc) {
                     this._esc = e => {
@@ -931,7 +956,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                     <span class="cx-fn"></span></div></div>
                 ${h.channel ? `<div class="cx-chan"><i class="fas fa-circle-info"></i> ${esc(h.channel)}</div>` : ''}
                 <div class="cx-filterslot"></div>
-                <div class="cx-body"></div>
+                <div class="cx-bodywrap" style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column"><div class="cx-fday"><span></span></div><div class="cx-body"></div></div>
                 <button class="cx-fab" title="پیام‌های تازه"><i class="fas fa-chevron-down"></i></button>
                 <div class="cx-compose">
                     <div class="cx-stateslot"></div>
@@ -949,7 +974,20 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             const back = main.querySelector('.cx-back'); if (back) back.onclick = () => this.back();
             main.querySelectorAll('.cx-head > .cx-av, .cx-head-b b').forEach(x => { x.title = 'نمایشِ پروفایل'; x.onclick = () => this.profile(this.key); });
             const body = this.$('.cx-body');
-            body.onscroll = () => { this.stick = this.nearBottom(); if (this.stick) { this.newBelow = 0; this.fab(); } else this.fab(true); };
+            // تاریخِ شناور: برچسب‌های روز دیگر «چسبان» نیستند (چند روز که می‌گذشت همه روی هم می‌افتادند)؛ موقعِ اسکرول
+            // تاریخِ پیام‌های بالای صفحه یک‌جا بالای گفتگو نشان داده می‌شود و کمی بعد از ایستادن محو می‌شود
+            const fday = this.$('.cx-fday');
+            const showDay = () => {
+                if (!fday) return;
+                let cur = null;
+                for (const d of body.querySelectorAll('.cx-day')) { if (d.offsetTop <= body.scrollTop + 6) cur = d; else break; }
+                const first = body.querySelector('.cx-day');
+                if (!cur || (first && body.scrollTop < 4)) { fday.classList.remove('on'); return; }
+                fday.firstChild.textContent = cur.textContent;
+                fday.classList.add('on');
+                clearTimeout(this._fdayT); this._fdayT = setTimeout(() => fday.classList.remove('on'), 1400);
+            };
+            body.onscroll = () => { this.stick = this.nearBottom(); if (this.stick) { this.newBelow = 0; this.fab(); } else this.fab(true); showDay(); };
             this.$('.cx-fab').onclick = () => { this.scrollBottom(true); };
             const ta = this.$('.cx-ta');
             ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; this.typingPing(); };

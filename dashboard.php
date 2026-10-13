@@ -4210,7 +4210,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=10"></script>
+    <script src="chat-ui.js?v=11"></script>
     <script src="table-count.js?v=4"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
@@ -11686,7 +11686,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             switchGoftegoSub('messenger');
             if (!window.ChatUI) return;
             if (!chatUI) chatUI = ChatUI.mount(document.getElementById('chat-root'), {mode: 'full', theme: 'light', call: chatCall, upload: chatUpload, openKey: key || null, onUnread: setChatBadge});
-            else if (key) chatUI.open(key);
+            else if (key) chatUI.open(key);   // همگام‌سازیِ فوری را switchGoftegoSub('messenger') انجام می‌دهد
         }
         // «آنلاین / آخرین بازدید»: هر ۱۰ ثانیه حضور را ثبت می‌کند (همان پاسخ شمارِ پیام‌های نخوانده را هم می‌آورد)
         // و با بستنِ صفحه فوراً «آفلاین» می‌شود
@@ -11729,6 +11729,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (which === 'botchats') loadBotChats();
             if (which === 'archive' && window.ChatArchive) ChatArchive.init();
             if (which === 'access' && window.ChatAccess) ChatAccess.render(document.getElementById('chat-access-root'));
+            if (which === 'messenger' && chatUI && chatUI.sync) chatUI.sync();   // ورود به پیام‌رسان = همگام‌سازیِ فوری
             if (which !== 'messenger') return;
             if (which === 'staffchat') loadStaffChatList();
             if (which === 'companychat') loadCompanyChatList();
