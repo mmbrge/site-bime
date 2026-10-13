@@ -79,7 +79,8 @@ function cprof_card($pdo, array $actor, $key) {
         $spec = array_values(array_filter(array_map('trim', preg_split('/[،,\n]+/u', $p['specialty'])), 'strlen'));
         require_once __DIR__ . '/_name_honor.php';
         return ['ok' => true, 'kind' => 'STAFF', 'key' => 'S:' . $id, 'name' => honor_name($pdo, 'S', $id, $u['full_name']), 'avatar' => $u['avatar'] ?? null,
-                'role_fa' => function_exists('chat_role_fa') ? chat_role_fa($u['role']) : $u['role'], 'presence' => prof_presence($u),
+                // نقشِ سیستمیِ سایت (مدیر کل، کارشناس صدور...) در پروفایل نشان داده نمی‌شود؛ فقط «سمتی» که برای همکار نوشته شده
+                'role_fa' => '', 'sub' => $p['title'] !== '' ? '' : 'همکار', 'presence' => prof_presence($u),
                 'since' => $u['created_at'] ? str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($u['created_at']))) : '',
                 'deleted' => !empty($u['is_deleted']), 'profile' => $p, 'specialties' => $spec,
                 'me' => $id === $me, 'editable' => $id === $me || $isAdmin, 'labels' => array_map(function ($f) { return $f[2]; }, CPROF_FIELDS),

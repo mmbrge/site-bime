@@ -143,7 +143,7 @@ function chat_threads($pdo, $actor, $q = '') {
     $blocked = array_flip(chat_staff_blocked_ids($pdo, $me));
     foreach ($st->fetchAll() as $u) {
         if (isset($blocked[intval($u['id'])]) || !$match([$u['full_name'], $u['message']])) continue;
-        $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_role_fa($u['role']),
+        $out[] = ['key' => 'S:' . intval($u['id']), 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_staff_sub($pdo, $u['id']),
                   'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u), 'last_msg_id' => intval($u['last_msg_id']), 'last' => $u['message'] ?: chat_file_preview($u['file_name']), 'last_mine' => intval($u['from_user_id']) === $me, 'last_at' => chat_ts($u['created_at']), 'unread' => intval($u['unread'])];
     }
     // تاریخچه‌ای که (برای من یا برای همه) پاک شده، پیش‌نمایشِ آخرین پیام را هم نشان نمی‌دهد؛ و گفتگوی قطع‌شده قفل دارد
@@ -178,6 +178,17 @@ function chat_threads($pdo, $actor, $q = '') {
     return $out;
 }
 
+// زیرنویسِ همکار در پیام‌رسان (فهرست، گفتگوی تازه، سرِ گفتگو): فقط «سمتی» که برایش نوشته شده (پروفایل)، نه نقشِ سیستمیِ سایت
+function chat_staff_sub($pdo, $userId) {
+    static $titles = null;
+    if ($titles === null) {
+        $titles = [];
+        try { foreach ($pdo->query("SELECT id, prof_title FROM users WHERE prof_title IS NOT NULL AND prof_title <> ''") as $r) $titles[(int)$r['id']] = $r['prof_title']; }
+        catch (Throwable $e) {}   // ستونِ پروفایل هنوز ساخته نشده
+    }
+    return $titles[(int)$userId] ?? 'همکار';
+}
+
 function chat_role_fa($role) {
     return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما',
             'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? 'همکار';
@@ -206,7 +217,7 @@ function chat_contacts($pdo, $actor, $q) {
     $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND COALESCE(x.is_deleted, 0) = 0 AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20");
     try { $st->execute([intval($actor['id']), $like, $like]); } catch (Throwable $e) { $st = $pdo->prepare("SELECT x.id, x.full_name, x.role, $pc FROM users x WHERE x.id <> ? AND (x.full_name LIKE ? OR x.username LIKE ?) ORDER BY x.full_name LIMIT 20"); $st->execute([intval($actor['id']), $like, $like]); }
     $blocked = array_flip(chat_staff_blocked_ids($pdo, $actor['id']));
-    foreach ($st->fetchAll() as $u) if (!isset($blocked[intval($u['id'])])) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_role_fa($u['role']),
+    foreach ($st->fetchAll() as $u) if (!isset($blocked[intval($u['id'])])) $out[] = ['key' => 'S:' . $u['id'], 'type' => 'STAFF', 'title' => honor_name($pdo, 'S', $u['id'], $u['full_name']), 'sub' => chat_staff_sub($pdo, $u['id']),
                                               'avatar' => $u['avatar'] ?: null, 'presence' => prof_presence($u)];
     return $out;
 }
@@ -276,7 +287,7 @@ function chat_head_base($pdo, $actor, $type, $id) {
     $st = $pdo->prepare("SELECT full_name, role FROM users WHERE id = ?");
     $st->execute([$id]);
     $u = $st->fetch();
-    return ['title' => $u ? honor_name($pdo, 'S', $id, $u['full_name']) : 'همکار', 'sub' => chat_role_fa($u['role'] ?? ''), 'type' => 'STAFF', 'channel' => 'گفتگوی داخلیِ پنل'];
+    return ['title' => $u ? honor_name($pdo, 'S', $id, $u['full_name']) : 'همکار', 'sub' => chat_staff_sub($pdo, $id), 'type' => 'STAFF', 'channel' => 'گفتگوی داخلیِ پنل'];
 }
 
 // درخواست‌های طرفِ گفتگو: درخواست‌های کارکنان، درخواست‌های شرکت، یا گزارش‌های بازدیدِ همکار

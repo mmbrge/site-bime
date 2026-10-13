@@ -31,6 +31,9 @@ $canManualPersonnel = ($_SESSION['role'] ?? '') === 'ADMIN'
 // نامِ کاربر با عنوانِ «آقای / خانم» (تنظیم در «کاربران»)
 require_once __DIR__ . '/api/_name_honor.php';
 $hdrName = honor_name($pdo, 'S', intval($_SESSION['user_id'] ?? 0), (string)($_SESSION['full_name'] ?? ''));
+// زیرِ نام در هدر: فقط «سمتی» که برای کاربر نوشته شده (پروفایل)، نه نقشِ سیستمیِ سایت
+$hdrTitle = '';
+try { $hdrSt = $pdo->prepare("SELECT prof_title FROM users WHERE id = ?"); $hdrSt->execute([intval($_SESSION['user_id'] ?? 0)]); $hdrTitle = trim((string)$hdrSt->fetchColumn()); } catch (Throwable $e) {}
 // نقش «همکار شرکت‌ها»: فقط بخش شرکت‌ها و گزارش مالی مربوطه را می‌بیند
 $isLiaison = ($_SESSION['role'] ?? '') === 'COMPANY_LIAISON';
 $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
@@ -1150,7 +1153,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <button onclick="document.getElementById('profile-modal').classList.add('active')" class="hdr-edit-btn w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition-all hover-target shadow-sm" title="ویرایش پروفایل"><i class="fas fa-pen text-xs"></i></button>
                 <div class="flex flex-col text-right justify-center">
                     <p class="hdr-user-name text-sm font-black text-slate-700 leading-tight"><?php echo htmlspecialchars($hdrName); ?></p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars(role_fa($realRole)); ?><?php if (!empty($permBoot['custom'])): ?> <span class="text-[9px] bg-violet-100 text-violet-700 rounded-full px-1.5 py-px mr-0.5" title="مدیر کل دسترسیِ صفحه‌به‌صفحه برای شما تعیین کرده است">دسترسی سفارشی</span><?php endif; ?></p>
+                    <p class="hdr-user-title text-[10px] font-bold text-slate-400 mt-0.5"><?php echo htmlspecialchars($hdrTitle); ?><?php if (!empty($permBoot['custom'])): ?> <span class="text-[9px] bg-violet-100 text-violet-700 rounded-full px-1.5 py-px mr-0.5" title="مدیر کل دسترسیِ صفحه‌به‌صفحه برای شما تعیین کرده است">دسترسی سفارشی</span><?php endif; ?></p>
                     <p id="hdr-clock" class="hdr-clock" title="تاریخ و ساعتِ ایران (ساعتِ سرور)"><i class="far fa-clock"></i><span class="hc-d"></span><span class="hc-sep">-</span><span class="hc-t"></span></p>
                 </div>
                 <button type="button" id="me-avatar" onclick="document.getElementById('profile-modal').classList.add('active')" title="عکس و پروفایل" class="w-11 h-11 rounded-2xl overflow-visible flex items-center justify-center hover:scale-105 transition-transform"><span class="w-11 h-11 bg-gradient-to-tr from-blue-500 to-cyan-400 text-white rounded-full flex items-center justify-center text-xl shadow-md shadow-blue-500/30"><i class="fas fa-user"></i></span></button>
@@ -3991,7 +3994,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <label>رمز عبور جدید (اختیاری)</label>
                 </div>
                 <div class="text-[11px] text-slate-500 mb-5 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <i class="fas fa-info-circle text-blue-500"></i> سطح دسترسی شما (<strong class="text-blue-600"><?php echo htmlspecialchars(role_fa($realRole)) . (!empty($permBoot['custom']) ? ' - سفارشی' : ''); ?></strong>) غیرقابل تغییر است.
+                    <i class="fas fa-info-circle text-blue-500"></i> <?php if ($hdrTitle !== ''): ?>سمتِ شما: <strong class="text-blue-600"><?php echo htmlspecialchars($hdrTitle); ?></strong> - <?php endif; ?>دسترسی‌ها را فقط مدیر کل تغییر می‌دهد.
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-colors hover-target">ذخیره تغییرات</button>
             </form>
