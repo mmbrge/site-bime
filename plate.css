@@ -14,6 +14,14 @@
 .ir-plate.sm > span { padding: 3px 4px; }
 .ir-plate.sm > .ir { border-left-width: 1.5px; font-size: 10px; }
 .ir-plate.sm > .flag { width: 6px; }
+/* همه‌ی پلاک‌ها یک‌اندازه (عرضِ هر خانه ثابت؛ ارقام و حروفِ پهن‌تر پلاک را بزرگ‌تر نمی‌کنند) - نسبت به اندازه‌ی قلم، پس .sm هم یکدست است */
+.ir-plate > span { box-sizing: border-box; }
+.ir-plate > span:nth-child(2) { width: 2.3em; }
+.ir-plate > span:nth-child(3) { width: 2.45em; white-space: nowrap; }   /* «الف» هم جا می‌شود */
+.ir-plate > span:nth-child(4) { width: 3em; }
+.ir-plate > .ir { width: 2.6em; }
+td .ir-plate, th .ir-plate { font-size: 12px; }
+td .ir-plate.sm { font-size: 12px; border-width: 2px; border-radius: 7px; }
 
 /* ---- فیلدِ ورود (چهار خانه داخلِ قابِ پلاک) ---- */
 .ir-pin { display: flex !important; align-items: stretch; direction: ltr; unicode-bidi: isolate; height: 46px; width: 100%;

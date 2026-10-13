@@ -966,7 +966,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <script src="iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
-<link rel="stylesheet" href="plate.css?v=2">
+<link rel="stylesheet" href="plate.css?v=3">
 <link rel="stylesheet" href="ui-scroll.css?v=3">
 </head>
 <body class="h-screen flex flex-col">

@@ -66,7 +66,7 @@ if (!$companies) {
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
-<link rel="stylesheet" href="../plate.css?v=2">
+<link rel="stylesheet" href="../plate.css?v=3">
 <script src="../chat-ui.js?v=10"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=1" defer></script>
