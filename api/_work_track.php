@@ -28,6 +28,11 @@ function wk_ensure($pdo) {
         if (!$pdo->query("SHOW COLUMNS FROM work_activity LIKE 'qty'")->fetch())
             $pdo->exec("ALTER TABLE work_activity ADD COLUMN qty INT NOT NULL DEFAULT 1");
     } catch (Throwable $e) { error_log('[wk_ensure qty] ' . $e->getMessage()); }
+    // لحظه‌ی ثبتِ «مانده‌ی مرخصیِ فعلی»: مرخصی‌هایی که قبل از آن ثبت شده‌اند از مانده کم نمی‌شوند (ردیف‌ها پاک نمی‌شوند)
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM work_profiles LIKE 'opening_at'")->fetch())
+            $pdo->exec("ALTER TABLE work_profiles ADD COLUMN opening_at DATETIME NULL");
+    } catch (Throwable $e) { error_log('[wk_ensure opening_at] ' . $e->getMessage()); }
 }
 
 // ---------------- ثبتِ خودکار: حضور در پنل و کارهای انجام‌شده (از perm_gate) ----------------

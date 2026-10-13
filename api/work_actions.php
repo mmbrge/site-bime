@@ -194,7 +194,8 @@ try {
         wout(['ok' => true, 'rows' => array_map(function ($L) use ($pdo) { return wk_leave_row($pdo, $L) + ['user_id' => intval($L['user_id']), 'name' => $L['full_name']]; }, $rows)]);
     }
 
-    // ---- مانده‌ی مرخصیِ اولِ کار (کاربر یک بار وارد می‌کند؛ محاسبه از اولِ همین ماه ادامه پیدا می‌کند) ----
+    // ---- مانده‌ی مرخصیِ فعلی: هر بار که ثبت شود، مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند و همین عدد مانده می‌شود؛
+    //      سهمِ ماهانه از آخرِ همین ماه اضافه می‌شود (ردیف‌های مرخصی پاک نمی‌شوند، فقط در مانده حساب نمی‌شوند) ----
     if ($action === 'profile_save') {
         $s = wk_settings($pdo);
         $daysIn = floatval(p2e_digits((string)($data['days'] ?? '0')));
@@ -203,10 +204,9 @@ try {
         $hourMin = $hm ? wk_minutes_between('00:00', $hm) : intval(round(floatval(p2e_digits($hoursIn)) * 60));
         $min = intval(round($daysIn * floatval($s['work_leave_day_hours']) * 60)) + $hourMin;
         if (!empty($data['negative'])) $min = -$min;
-        [$cy, $cm] = jalali_from_gregorian_ts(time());
-        $jy = intval($data['jy'] ?? 0) ?: $cy; $jm = intval($data['jm'] ?? 0) ?: $cm;
-        $pdo->prepare("INSERT INTO work_profiles (user_id, opening_minutes, opening_jy, opening_jm, set_at, set_by) VALUES (?, ?, ?, ?, NOW(), ?)
-                       ON DUPLICATE KEY UPDATE opening_minutes = VALUES(opening_minutes), opening_jy = VALUES(opening_jy), opening_jm = VALUES(opening_jm), set_at = NOW(), set_by = VALUES(set_by)")
+        [$jy, $jm] = jalali_from_gregorian_ts(time());
+        $pdo->prepare("INSERT INTO work_profiles (user_id, opening_minutes, opening_jy, opening_jm, set_at, set_by, opening_at) VALUES (?, ?, ?, ?, NOW(), ?, NOW())
+                       ON DUPLICATE KEY UPDATE opening_minutes = VALUES(opening_minutes), opening_jy = VALUES(opening_jy), opening_jm = VALUES(opening_jm), set_at = NOW(), set_by = VALUES(set_by), opening_at = NOW()")
             ->execute([$uid, $min, $jy, $jm, $me]);
         wout(['ok' => true, 'balance' => wk_balance($pdo, $uid)]);
     }

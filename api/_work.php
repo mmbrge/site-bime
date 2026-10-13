@@ -218,6 +218,9 @@ function wk_summary($pdo, array $days) {
 
 // ---------------- مانده‌ی مرخصی ----------------
 // مانده = مانده‌ی اولِ ماهِ شروع (اگر کاربر وارد کرده) + سهمِ ماهانه برای هر ماه از آن ماه تا ماهِ مورد نظر − مرخصی‌های ثبت‌شده (به‌جز ردشده‌ها)
+// «مانده‌ی فعلی» (opening_at، از نسخه‌ی ۱.۴.۰): عددی که کاربر وارد می‌کند همان لحظه مانده‌ی اوست؛ همه‌ی مرخصی‌هایی که قبل از
+// آن ثبت شده بودند دیگر از مانده کم نمی‌شوند (در کارکرد باقی می‌مانند) و سهمِ ماهانه از آخرِ همان ماه دوباره اضافه می‌شود.
+// ردیف‌های قدیمی (بدونِ opening_at) با همان روشِ قبلی حساب می‌شوند.
 function wk_balance($pdo, $uid, $uptoJy = null, $uptoJm = null) {
     wk_ensure($pdo);
     $s = wk_settings($pdo);
@@ -226,7 +229,9 @@ function wk_balance($pdo, $uid, $uptoJy = null, $uptoJm = null) {
     $st = $pdo->prepare("SELECT * FROM work_profiles WHERE user_id = ?");
     $st->execute([$uid]);
     $p = $st->fetch() ?: null;
-    if ($p && $p['opening_jy']) { $sy = intval($p['opening_jy']); $sm = intval($p['opening_jm']); $open = intval($p['opening_minutes']); }
+    $openAt = ($p && !empty($p['opening_at'])) ? $p['opening_at'] : null;
+    if ($openAt) { [$sy, $sm] = jalali_from_gregorian_ts(strtotime($openAt)); $open = intval($p['opening_minutes']); }
+    elseif ($p && $p['opening_jy']) { $sy = intval($p['opening_jy']); $sm = intval($p['opening_jm']); $open = intval($p['opening_minutes']); }
     else {
         $first = null;
         try {
@@ -238,18 +243,26 @@ function wk_balance($pdo, $uid, $uptoJy = null, $uptoJm = null) {
         $open = 0;
     }
     $months = ($uy - $sy) * 12 + ($um - $sm) + 1;
+    // روشِ «مانده‌ی فعلی»: سهمِ ماهِ جاری آخرِ همان ماه اضافه می‌شود (مانده‌ی «الان» هنوز آن را ندارد؛ مانده‌ی آخرِ هر ماه دارد)
+    if ($openAt && !$uptoJy && $uy === $cy && $um === $cm) $months--;
     if ($months < 0) $months = 0;
     $accrual = intval(round(floatval($s['work_leave_days_month']) * floatval($s['work_leave_day_hours']) * 60));
     $startG = wk_j2g(sprintf('%04d/%02d/01', $sy, $sm));
     $endG = wk_month_range($uy, $um)[1];
     $used = 0; $pending = 0;
     try {
-        $q = $pdo->prepare("SELECT status, SUM(minutes) m FROM work_leaves WHERE user_id = ? AND status <> 'REJECTED' AND date_from >= ? AND date_from <= ? GROUP BY status");
-        $q->execute([$uid, $startG, $endG]);
+        if ($openAt) {   // فقط مرخصی‌هایی که بعد از ثبتِ مانده‌ی فعلی ثبت شده‌اند
+            $q = $pdo->prepare("SELECT status, SUM(minutes) m FROM work_leaves WHERE user_id = ? AND status <> 'REJECTED' AND created_at >= ? AND date_from <= ? GROUP BY status");
+            $q->execute([$uid, $openAt, $endG]);
+        } else {
+            $q = $pdo->prepare("SELECT status, SUM(minutes) m FROM work_leaves WHERE user_id = ? AND status <> 'REJECTED' AND date_from >= ? AND date_from <= ? GROUP BY status");
+            $q->execute([$uid, $startG, $endG]);
+        }
         foreach ($q->fetchAll() as $r) { $used += intval($r['m']); if ($r['status'] === 'PENDING') $pending += intval($r['m']); }
     } catch (Throwable $e) {}
     $bal = $open + $months * $accrual - $used;
-    return ['opening_set' => (bool)($p && $p['opening_jy']), 'opening_minutes' => $open, 'start' => sprintf('%04d/%02d', $sy, $sm), 'months' => $months,
+    return ['opening_set' => (bool)($p && ($p['opening_jy'] || $openAt)), 'opening_minutes' => $open,
+            'opening_at' => $openAt ? wk_g2j(substr($openAt, 0, 10)) : '', 'start' => sprintf('%04d/%02d', $sy, $sm), 'months' => $months,
             'accrual' => $accrual, 'used' => $used, 'pending' => $pending, 'balance' => $bal,
             'balance_fa' => wk_leave_fa($pdo, $bal), 'used_fa' => wk_leave_fa($pdo, $used), 'accrual_fa' => wk_leave_fa($pdo, $accrual)];
 }

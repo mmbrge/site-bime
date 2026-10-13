@@ -206,7 +206,7 @@
               <div class="wk-card border-indigo-200" style="background:linear-gradient(120deg,#eef2ff,#f0fdfa)" data-box="opening">
                 <div class="flex flex-wrap items-end gap-3">
                   <div class="flex-1 min-w-[220px]"><h3><i class="fas fa-flag-checkered text-indigo-600"></i>شروعِ محاسبه‌ی مرخصی</h3>
-                    <p class="text-[11px] text-slate-600 mt-1 leading-6">اگر تا ابتدای <b>${MONTHS[t[1] - 1]} ${fa(t[0])}</b> از مرخصیِ سالانه‌تان مانده‌ای داشته‌اید وارد کنید؛ از این ماه به بعد خودکار حساب می‌شود (هر ماه ${leaveFa(b.accrual)} اضافه و هر مرخصی کم می‌شود؛ هر ${fa(d.settings.work_leave_day_hours)} ساعت مرخصیِ ساعتی = یک روز).</p></div>
+                    <p class="text-[11px] text-slate-600 mt-1 leading-6">مانده‌ی مرخصیِ <b>همین الانِ</b> خودتان را وارد کنید؛ مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند و از آخرِ ${MONTHS[t[1] - 1]} به بعد خودکار حساب می‌شود (هر ماه ${leaveFa(b.accrual)} اضافه و هر مرخصیِ تازه کم می‌شود؛ هر ${fa(d.settings.work_leave_day_hours)} ساعت مرخصیِ ساعتی = یک روز).</p></div>
                   <label><span class="wk-lbl">روز</span><input class="wk-in w-24" data-f="op-days" inputmode="decimal" placeholder="مثلاً ۵"></label>
                   <label><span class="wk-lbl">ساعت (مثل ۳:۳۰)</span><input class="wk-in w-28" data-f="op-hours" dir="ltr" placeholder="0:00"></label>
                   <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2.5 rounded-xl" data-a="op-save">ثبت</button>
@@ -218,7 +218,7 @@
                 ${kpi('ساعتِ کارکرد', dur(sm.worked), 'در ' + MONTHS[S.jm - 1], 'fa-clock', '#4f46e5')}
                 ${kpi(sm.over >= 0 ? 'اضافه‌کار' : 'کسرِ کار', dur(Math.abs(sm.over)), `نسبت به ${fa(d.settings.work_day_hours)} ساعت در روز`, sm.over >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down', sm.over >= 0 ? '#059669' : '#e11d48')}
                 ${kpi('مرخصیِ این ماه', leaveFa(sm.leave_min), sm.leave_days ? fa(sm.leave_days) + ' روزِ کامل' : 'روزانه و ساعتی', 'fa-umbrella-beach', '#0d9488')}
-                ${kpi('مانده‌ی مرخصی', esc(b.balance_fa), b.opening_set ? 'از ' + fa(b.start) : 'محاسبه از ' + fa(b.start), 'fa-piggy-bank', '#d97706')}
+                ${kpi('مانده‌ی مرخصی', esc(b.balance_fa), b.opening_at ? 'از ثبتِ ' + fa(b.opening_at) : (b.opening_set ? 'از ' + fa(b.start) : 'محاسبه از ' + fa(b.start)), 'fa-piggy-bank', '#d97706')}
                 ${kpi('حال‌وهوای ماه', `<span style="font-size:24px">${moodAvg}</span>`, sm.mood_n ? `میانگین از ${fa(sm.mood_n)} روز` : 'هنوز امتیازی نداده‌اید', 'fa-face-smile', '#db2777')}
               </div>
               <div class="wk-main">
@@ -289,13 +289,13 @@
             const d = S.data, b = d.balance_now, ed = canEdit();
             return `
                 <div class="flex flex-wrap items-center gap-2"><h3><i class="fas fa-umbrella-beach text-emerald-600"></i>مرخصی</h3>
-                  ${ed ? `<button type="button" class="mr-auto text-[11px] font-bold text-indigo-700 hover:underline" data-a="op-edit"><i class="fas fa-sliders ml-1"></i>مانده‌ی اولیه</button>` : ''}</div>
+                  ${ed ? `<button type="button" class="mr-auto text-[11px] font-bold text-indigo-700 hover:underline" data-a="op-edit"><i class="fas fa-sliders ml-1"></i>ثبتِ مانده‌ی فعلی</button>` : ''}</div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-center">
                   <div class="rounded-2xl p-3" style="background:linear-gradient(140deg,#ecfdf5,#d1fae5)"><p class="text-[10px] font-bold text-emerald-700">مانده تا امروز</p><b class="text-sm text-emerald-900">${esc(b.balance_fa)}</b></div>
                   <div class="rounded-2xl p-3 bg-slate-50"><p class="text-[10px] font-bold text-slate-500">سهمِ هر ماه</p><b class="text-sm">${esc(b.accrual_fa)}</b></div>
                   <div class="rounded-2xl p-3 bg-slate-50"><p class="text-[10px] font-bold text-slate-500">استفاده از ${fa(b.start)}</p><b class="text-sm">${esc(b.used_fa)}</b></div>
                 </div>
-                <p class="text-[10.5px] text-slate-500 mt-2">مانده‌ی آخرِ ${MONTHS[S.jm - 1]} ${fa(S.jy)}: <b>${esc(d.balance.balance_fa)}</b>${b.opening_set ? ` · مانده‌ی اولیه ${leaveFa(b.opening_minutes)} از ${fa(b.start)}` : ''}</p>
+                <p class="text-[10.5px] text-slate-500 mt-2">مانده‌ی آخرِ ${MONTHS[S.jm - 1]} ${fa(S.jy)}: <b>${esc(d.balance.balance_fa)}</b>${b.opening_set ? ` · مانده‌ی ثبت‌شده ${leaveFa(b.opening_minutes)} ${b.opening_at ? 'در ' + fa(b.opening_at) : 'از ' + fa(b.start)}` : ''}</p>
                 ${ed ? `<div class="mt-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/40" data-box="leave-form">
                   <div class="flex flex-wrap items-center gap-2 mb-2"><b class="text-[12px] text-emerald-800">ثبتِ مرخصیِ تازه</b>
                     <div class="wk-seg mr-auto"><button type="button" data-lk="DAY" class="on">روزانه</button><button type="button" data-lk="HOUR">ساعتی</button></div></div>
@@ -406,7 +406,7 @@
         async function saveOpening(days, hours) {
             const r = await api('profile_save', {days: en(days || '0'), hours: en(hours || '0'), user_id: S.uid || undefined});
             if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
-            toast('مانده‌ی اولیه ثبت شد؛ از این ماه به بعد خودکار حساب می‌شود.', 'success');
+            toast('مانده‌ی مرخصی ثبت شد؛ از آخرِ همین ماه خودکار اضافه می‌شود.', 'success');
             load(true);
         }
         function openOpeningDialog() {
@@ -415,11 +415,9 @@
             box.className = 'modal-overlay active';
             box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
                 <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
-                <h3 class="font-black text-base mb-1"><i class="fas fa-flag-checkered text-indigo-600 ml-1"></i>مانده‌ی مرخصیِ اولیه</h3>
-                <p class="text-[11px] text-slate-500 mb-3 leading-6">مانده‌ی مرخصی تا ابتدای ماهی که انتخاب می‌کنید؛ از همان ماه به بعد سهمِ ماهانه اضافه و مرخصی‌ها کم می‌شوند.${b.opening_set ? ` (فعلاً: ${esc(fa(b.start))})` : ''}</p>
+                <h3 class="font-black text-base mb-1"><i class="fas fa-flag-checkered text-indigo-600 ml-1"></i>مانده‌ی مرخصیِ فعلی</h3>
+                <p class="text-[11px] text-slate-500 mb-3 leading-6">مانده‌ی مرخصیِ <b>همین الان</b> را وارد کنید. همه‌ی مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند (در کارکرد می‌مانند)، مانده همین عدد می‌شود و از آخرِ ${MONTHS[t[1] - 1]} ${fa(t[0])} هر ماه ${leaveFa(b.accrual)} اضافه می‌شود.${b.opening_set ? ` (مانده‌ی فعلی: ${esc(b.balance_fa)})` : ''}</p>
                 <div class="grid grid-cols-2 gap-2">
-                  <label><span class="wk-lbl">ماه</span><select class="wk-in" data-f="m">${MONTHS.map((n, i) => `<option value="${i + 1}" ${i + 1 === t[1] ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-                  <label><span class="wk-lbl">سال</span><input class="wk-in" data-f="y" dir="ltr" value="${fa(t[0])}"></label>
                   <label><span class="wk-lbl">روز</span><input class="wk-in" data-f="d" inputmode="decimal" placeholder="۰"></label>
                   <label><span class="wk-lbl">ساعت (مثل ۳:۳۰)</span><input class="wk-in" data-f="h" dir="ltr" placeholder="0:00"></label>
                 </div>
@@ -430,9 +428,9 @@
             box.addEventListener('click', e => { if (e.target === box) close(); });
             box.querySelector('[data-ok]').onclick = async () => {
                 const q = f => box.querySelector(`[data-f="${f}"]`).value;
-                const r = await api('profile_save', {days: en(q('d') || '0'), hours: en(q('h') || '0'), jy: +en(q('y')), jm: +q('m'), user_id: S.uid || undefined});
+                const r = await api('profile_save', {days: en(q('d') || '0'), hours: en(q('h') || '0'), user_id: S.uid || undefined});
                 if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
-                toast('مانده‌ی اولیه ثبت شد.', 'success'); close(); load(true);
+                toast('مانده‌ی مرخصی ثبت شد؛ از آخرِ همین ماه خودکار اضافه می‌شود.', 'success'); close(); load(true);
             };
         }
 
