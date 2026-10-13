@@ -771,6 +771,7 @@ try {
     //  فهرست، جزئیات، فایل‌ها
     // =================================================================
     if ($action === 'list') {
+        vr_repair_case_links($pdo, $siteRoot);   // یک‌بار: اتصال‌های قبلی به درخواستِ کارکنان
         [$where, $params] = vr_list_where($pdo, $data + $_GET, $user);
         $page = max(1, intval($data['page'] ?? ($_GET['page'] ?? 1)));
         $per = min(200, max(10, intval($data['per_page'] ?? 30)));

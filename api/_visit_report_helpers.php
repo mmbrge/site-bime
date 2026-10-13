@@ -728,6 +728,32 @@ function vr_link_case($pdo, $siteRoot, $report, $caseId, $userId) {
     $h = $pdo->prepare("SELECT id FROM health_inspections WHERE case_id = ? AND status IN ('PHOTOS_APPROVED', 'APPROVED') ORDER BY id DESC LIMIT 1");
     $h->execute([$caseId]);
     if ($hid = $h->fetchColumn()) return vr_link_health($pdo, $siteRoot, $report, $hid, $userId);
+    // بدنه بدونِ بازدیدِ تاییدشده: خودِ گزارشِ کارشناس یعنی بازدید انجام و تایید شده. آخرین بازدیدِ این درخواست
+    // (در انتظار/ردشده) یا یک بازدیدِ تازه «تاییدِ عکس‌ها» می‌گیرد و گزارش رویش می‌نشیند؛ پس درخواست دیگر «نیاز به بازدید» نمی‌ماند
+    // و اگر مدارکش کامل باشد به مرحله‌ی صدور می‌رود.
+    if (($case['insurance_type'] ?? '') === 'BODY') {
+        $stage = health_supports_photos_approved($pdo) ? 'PHOTOS_APPROVED' : 'APPROVED';
+        $last = $pdo->prepare("SELECT id FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+        $last->execute([$caseId]);
+        $hid = (int)$last->fetchColumn();
+        $ph = $pdo->prepare("SELECT file_path FROM visit_report_photos WHERE report_id = ? LIMIT 1");
+        $ph->execute([$report['id']]);
+        $photoRel = $ph->fetchColumn();
+        $photosDir = $photoRel ? vr_rel($siteRoot, dirname(vr_abs($siteRoot, $photoRel))) : null;
+        if ($hid) {
+            $pdo->prepare("UPDATE health_inspections SET status = ?, reject_reason = NULL, photos_folder_path = COALESCE(photos_folder_path, ?) WHERE id = ?")->execute([$stage, $photosDir, $hid]);
+        } else {
+            $pdo->prepare("INSERT INTO health_inspections (case_id, person_id, status, photos_folder_path, created_at) VALUES (?, ?, ?, ?, NOW())")
+                ->execute([$caseId, $case['person_id'] ?: null, $stage, $photosDir]);
+            $hid = (int)$pdo->lastInsertId();
+        }
+        $res = vr_link_health($pdo, $siteRoot, $report, $hid, $userId);
+        // ستونِ قدیمی که «تاییدِ عکس‌ها» ندارد: بازدید مستقیم «تایید» شد؛ رفتن به مرحله‌ی صدور همین‌جا بررسی می‌شود
+        if (!empty($res['ok']) && $stage === 'APPROVED' && function_exists('case_try_advance_to_issuing')) {
+            try { case_try_advance_to_issuing($pdo, $siteRoot, intval($caseId)); } catch (Throwable $e) {}
+        }
+        return $res;
+    }
     $dir = resolve_case_folder($pdo, $siteRoot, $case);
     if (!$dir || strpos($dir, $siteRoot . '/') !== 0) return ['ok' => false, 'error' => 'پوشه‌ی بایگانیِ این درخواست پیدا نشد.'];
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
@@ -738,6 +764,43 @@ function vr_link_case($pdo, $siteRoot, $report, $caseId, $userId) {
     if ($zip && is_file($zip)) @copy($zip, $dir . '/' . basename($zip));
     $pdo->prepare("UPDATE visit_reports SET case_id = ?, linked_at = NOW(), linked_by = ? WHERE id = ?")->execute([$caseId, $userId, $report['id']]);
     return ['ok' => true, 'target' => 'case', 'report' => vr_rel($siteRoot, $target)];
+}
+
+// یک‌بار: گزارش‌هایی که قبلاً به درخواستِ بدنه‌ی کارکنان وصل شده‌اند ولی بازدیدِ آن درخواست «تایید» نشده بود
+// (درخواست همچنان «نیاز به بازدید» نشان می‌داد). بازدیدِ تاییدشده با همان گزارش ثبت می‌شود؛ بدونِ پیام به بیمه‌گذار.
+function vr_repair_case_links($pdo, $siteRoot) {
+    if (vr_setting($pdo, 'vr_case_link_fix_v1') === '1') return 0;
+    vr_set_setting($pdo, 'vr_case_link_fix_v1', '1');
+    $n = 0;
+    try {
+        $rows = $pdo->query("SELECT vr.id, vr.case_id, vr.pdf_path, vr.report_date FROM visit_reports vr JOIN policy_cases pc ON pc.id = vr.case_id
+                              WHERE vr.status = 'ACTIVE' AND vr.health_inspection_id IS NULL AND pc.insurance_type = 'BODY'
+                                AND NOT EXISTS (SELECT 1 FROM health_inspections hi WHERE hi.case_id = vr.case_id AND hi.status = 'APPROVED')")->fetchAll();
+        foreach ($rows as $r) {
+            $c = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+            $c->execute([$r['case_id']]);
+            $case = $c->fetch();
+            if (!$case) continue;
+            $date = $r['report_date'] ?: jalali_from_gregorian_ts_dotted(time());
+            $last = $pdo->prepare("SELECT id FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
+            $last->execute([$r['case_id']]);
+            $hid = (int)$last->fetchColumn();
+            if ($hid) {
+                $pdo->prepare("UPDATE health_inspections SET status = 'APPROVED', reject_reason = NULL, report_file_path = COALESCE(report_file_path, ?), approved_jalali_date = COALESCE(approved_jalali_date, ?), reviewed_at = COALESCE(reviewed_at, NOW()) WHERE id = ?")
+                    ->execute([$r['pdf_path'], $date, $hid]);
+            } else {
+                $pdo->prepare("INSERT INTO health_inspections (case_id, person_id, status, report_file_path, approved_jalali_date, reviewed_at, created_at) VALUES (?, ?, 'APPROVED', ?, ?, NOW(), NOW())")
+                    ->execute([$r['case_id'], $case['person_id'] ?: null, $r['pdf_path'], $date]);
+                $hid = (int)$pdo->lastInsertId();
+            }
+            $pdo->prepare("UPDATE visit_reports SET health_inspection_id = ? WHERE id = ?")->execute([$hid, $r['id']]);
+            if (!in_array($case['status'], ['ISSUED', 'WITHDRAWN'], true) && function_exists('case_try_advance_to_issuing')) {
+                try { case_try_advance_to_issuing($pdo, $siteRoot, intval($r['case_id'])); } catch (Throwable $e) {}
+            }
+            $n++;
+        }
+    } catch (Throwable $e) { error_log('[vr_repair_case_links] ' . $e->getMessage()); }
+    return $n;
 }
 
 function vr_link_company_plate($pdo, $siteRoot, $report, $plateId, $userId) {
