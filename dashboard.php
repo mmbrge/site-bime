@@ -2723,7 +2723,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <table class="w-full text-right text-xs whitespace-nowrap">
                         <thead class="bg-emerald-50 text-emerald-800 font-bold sticky top-0 z-10"><tr>
                             <th class="p-3">#</th><th class="p-3">منبع</th><th class="p-3">نوع درخواست</th>
-                            <th class="p-3">بیمه‌گذار</th><th class="p-3">شرکت</th><th class="p-3">پلاک / شاسی</th>
+                            <th class="p-3">بیمه‌گذار</th><th class="p-3">پرسنل / شرکت و درخواست</th><th class="p-3">پلاک / شاسی</th>
                             <th class="p-3">نوع</th><th class="p-3">شماره بیمه‌نامه</th><th class="p-3">خودرو</th>
                             <th class="p-3">حق بیمه</th><th class="p-3">تاریخ درخواست</th><th class="p-3">انقضا</th>
                             <th class="p-3">تاریخ صدور</th><th class="p-3">وضعیت</th><th class="p-3">فایل</th>
@@ -7606,8 +7606,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
                     <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700')}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span></td>
                     <td class="p-3">${r.request_kind_fa}</td>
-                    <td class="p-3 font-bold">${r.insured_name || '—'}</td>
-                    <td class="p-3">${r.company_name || '—'}</td>
+                    <td class="p-3 font-bold">${fmEsc(r.insured_name || '—')}${r.source === 'PERSONNEL' && issuedRel(r) !== 'خودش' ? `<small class="block text-[10px] font-normal text-slate-400">${fmEsc(issuedRel(r))}ِ پرسنل</small>` : ''}</td>
+                    <td class="p-3">${r.source === 'PERSONNEL'
+                        ? `<b class="text-slate-700">${fmEsc(r.holder || '—')}</b><small class="block text-[10px] text-slate-400">${r.personnel_code ? 'کد پرسنلی ' + e2p(r.personnel_code) + ' · ' : ''}${fmEsc(r.company_name || '')}${r.intro_month_fa ? ' · معرفی‌نامه‌ی ' + fmEsc(r.intro_month_fa) : ''}</small>`
+                        : `<b class="text-slate-700">${fmEsc(r.company_name || '—')}</b><small class="block text-[10px] text-slate-400">درخواست ${e2p(String(r.request_ref || ('#' + r.request_id)))}${r.request_date_jalali ? ' · ' + faDigits(r.request_date_jalali) : ''}</small>`}</td>
                     <td class="p-3">${r.plate ? formatPlateHtml(r.plate) : `<span dir="ltr">${r.chassis_no || '—'}</span>`}</td>
                     <td class="p-3">${r.insurance_type_fa}</td>
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
@@ -7621,6 +7623,78 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </tr>`).join('');
         }
 
+        // برچسبِ اطلاعاتِ صدور (همان issue_info_fields در api/_company_helpers.php)
+        const ISSUE_INFO_FA = {owner_name: 'نام مالک', owner_national_id: 'کد/شناسه ملی مالک', owner_phone: 'تلفن مالک', owner_address: 'نشانی مالک',
+            insured_birth_date: 'تاریخ تولد بیمه‌گذار', car_kind: 'نوع خودرو', car_capacity: 'ظرفیت', car_cylinders: 'تعداد سیلندر',
+            prev_insurer: 'بیمه‌گر قبلی', prev_policy_number: 'شماره بیمه‌نامه‌ی قبلی', no_claim_years: 'سال‌های عدم خسارت', note: 'یادداشت صدور'};
+        const REL_FA = {'خودم': 'خود', SELF: 'خودش', SPOUSE: 'همسر', CHILD: 'فرزند', FATHER: 'پدر', MOTHER: 'مادر', PARENT: 'والدین', SIBLING: 'خواهر/برادر', OTHER: 'سایر'};
+        const relFa = v => v ? (REL_FA[v] || v) : '';
+        // نسبتِ بیمه‌گذار با پرسنل: نسبتِ ثبت‌شده، وگرنه از کد ملی (یکی = خودش)
+        const issuedRel = r => r.relationship && r.relationship !== 'خودم' ? relFa(r.relationship)
+            : ((!r.national_id || !r.holder_nid || r.national_id === r.holder_nid) && (r.relationship === 'خودم' || !r.relationship || r.national_id === r.holder_nid) ? 'خودش' : 'بستگان');
+
+        // ویرایشِ کاملِ بیمه‌نامه‌ی صادرشده (فقط مدیر کل): company_actions.php → issued_edit
+        function editIssued(idx) {
+            const r = issuedListCache[idx]; if (!r) return;
+            const P = r.source === 'PERSONNEL';
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const ii = r.issue_info || {};
+            const f = (k, label, v, o = {}) => `<label class="block"><span class="text-[10.5px] font-bold text-slate-500 block mb-1">${label}</span><input data-k="${k}" ${o.info ? 'data-info="1"' : ''} value="${esc(v)}" ${o.ltr ? 'dir="ltr"' : ''} ${o.money ? 'data-money="1" inputmode="numeric"' : ''} class="w-full border rounded-lg px-2.5 py-1.5 text-xs"></label>`;
+            const m = v => v ? Number(String(v).replace(/\D/g, '')).toLocaleString('en-US') : '';
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <h3 class="font-black text-base mb-1"><i class="fas fa-pen text-amber-600 ml-1"></i>ویرایشِ بیمه‌نامه‌ی صادرشده</h3>
+                <p class="text-[11px] text-slate-500 mb-4 leading-6">با ذخیره، پایگاه داده به‌روز می‌شود و اگر پلاک${P ? '، نامِ بیمه‌گذار' : ''}، شماره‌ی بیمه‌نامه یا VIN عوض شود، نامِ پوشه و فایل‌ها در بایگانی (و کپیِ «بایگانی صادره») هم عوض می‌شود. اقساطِ ثبت‌شده دست نمی‌خورند.</p>
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">بیمه‌نامه</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    ${f('policy_number', 'شماره بیمه‌نامه', r.policy_number, {ltr: true})}
+                    ${f('policy_issue_date', 'تاریخ صدور (روی بیمه‌نامه)', r.policy_issue_date ? e2p(r.policy_issue_date) : '', {ltr: true})}
+                    ${f('total_premium', 'حق بیمه (ریال)', m(r.total_premium), {money: true, ltr: true})}
+                    ${P ? f('central_unique_code', 'کد یکتای مرکزی', r.central_unique_code, {ltr: true}) : f('expiry_date', 'تاریخ انقضای قبلی', faDigits(r.expiry_date_jalali || ''), {ltr: true})}
+                </div>
+                ${P ? `<h4 class="text-[11px] font-black text-slate-600 mb-2">بیمه‌گذار</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    ${f('insured_name', 'نام بیمه‌گذار', r.insured_name)}
+                    ${f('insured_national_id', 'کد ملی بیمه‌گذار', r.national_id, {ltr: true})}
+                    ${f('insured_phone', 'تلفن', r.insured_phone || r.phone, {ltr: true})}
+                    ${f('insured_postal_code', 'کد پستی', r.insured_postal_code, {ltr: true})}
+                    <div class="col-span-2 md:col-span-4">${f('insured_address', 'نشانی', r.insured_address)}</div>
+                </div>` : ''}
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">خودرو</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    <label class="block col-span-2"><span class="text-[10.5px] font-bold text-slate-500 block mb-1">پلاک</span>${plateSplitHtml('ie-plate', P ? (r.plate || '') : (r.plate_raw || ''))}</label>
+                    ${f('chassis_no', 'شماره شاسی', r.chassis_no, {ltr: true})}
+                    ${f('engine_no', 'شماره موتور', r.engine_no, {ltr: true})}
+                    ${f('vin', 'VIN', r.vin, {ltr: true})}
+                    ${P ? f('car_system', 'سیستم', r.car_system) + f('car_type', 'تیپ', r.car_type) + f('car_model_year', 'مدل', r.car_model_year, {ltr: true}) + f('car_color', 'رنگ', r.car_color) + f('car_usage', 'کاربری', r.car_usage)
+                        : f('car_name', 'نامِ خودرو', r.car_name) + f('car_type', 'نوعِ خودرو', r.car_type) + f('liability_limit', 'تعهد مالی (ریال)', m(r.liability_limit), {money: true, ltr: true})}
+                    ${f('car_value', 'ارزش خودرو (ریال)', m(r.car_value), {money: true, ltr: true})}
+                </div>
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">مالک و سایر اطلاعاتِ صدور</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">${Object.entries(ISSUE_INFO_FA).map(([k, l]) => f(k, l, ii[k] || '', {info: true, ltr: /national_id|phone|policy_number/.test(k)})).join('')}</div>
+                <button type="button" data-ok class="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            box.querySelectorAll('[data-money]').forEach(i => i.addEventListener('input', () => { const d = p2e(i.value).replace(/\D/g, ''); i.value = d ? Number(d).toLocaleString('en-US') : ''; }));
+            box.querySelector('[data-ok]').onclick = async () => {
+                const fields = {}, info = {};
+                box.querySelectorAll('input[data-k]').forEach(i => { (i.dataset.info ? info : fields)[i.dataset.k] = p2e(i.value.trim()); });
+                fields.plate = document.getElementById('ie-plate').value;
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره و هماهنگ‌سازیِ بایگانی...';
+                let d;
+                try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'issued_edit', source: r.source, id: r.row_id, fields, info})})).json(); }
+                catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check ml-1"></i>ذخیره'; return; }
+                close(); showToast(d.message || 'ذخیره شد.', 'success');
+                document.getElementById('il-detail-modal').classList.remove('active');
+                loadIssuedList();
+            };
+        }
+
         function openIssuedDetail(idx) {
             const r = issuedListCache[idx];
             if (!r) return;
@@ -7631,13 +7705,37 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
                 </div>
 
-                <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌گذار و شرکت</h4>
+                ${IS_REAL_ADMIN && !r.is_import ? `<div class="flex justify-end -mt-1 mb-2"><button onclick="editIssued(${idx})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl"><i class="fas fa-pen ml-1"></i>ویرایش اطلاعات (پایگاه داده و نامِ بایگانی)</button></div>` : ''}
+                ${r.source === 'PERSONNEL' ? `
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-id-badge text-blue-400 ml-1"></i>پرسنل (دارنده‌ی معرفی‌نامه)</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
-                    ${infoCell('بیمه‌گذار', r.insured_name)}
-                    ${infoCell('شرکت / کارفرما', r.company_name)}
-                    ${infoCell('کد ملی / اقتصادی', r.national_id, {ltr: true})}
-                    ${infoCell('تلفن', r.phone, {ltr: true})}
+                    ${infoCell('نام پرسنل', r.holder)}
+                    ${infoCell('کد ملی پرسنل', r.holder_nid, {ltr: true})}
+                    ${infoCell('کد پرسنلی', r.personnel_code, {ltr: true})}
+                    ${infoCell('کارفرما', r.company_name)}
+                    ${infoCell('تاریخ معرفی‌نامه', r.intro_letter_j, {date: true})}
+                    ${infoCell('ماهِ معرفی‌نامه', r.intro_month_fa)}
+                    ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
                 </div>
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-user-shield text-blue-400 ml-1"></i>بیمه‌گذار</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('نام بیمه‌گذار', r.insured_name)}
+                    ${infoCell('نسبت با پرسنل', issuedRel(r))}
+                    ${infoCell('کد ملی بیمه‌گذار', r.national_id, {ltr: true})}
+                    ${infoCell('تلفن', r.phone, {ltr: true})}
+                    ${infoCell('کد پستی', r.insured_postal_code, {ltr: true})}
+                    ${infoCell('نشانی', r.insured_address)}
+                </div>` : `
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building text-indigo-400 ml-1"></i>شرکت و درخواست</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('شرکت (بیمه‌گذار)', r.company_name)}
+                    ${infoCell('کد درخواست', r.request_ref || ('#' + r.request_id), {ltr: true})}
+                    ${infoCell('تاریخ درخواست', r.request_date_jalali, {date: true})}
+                    ${infoCell('کد اقتصادی', r.national_id, {ltr: true})}
+                    ${infoCell('تلفن شرکت', r.phone, {ltr: true})}
+                </div>`}
+                ${(() => { const ii = r.issue_info || {}; const ks = Object.keys(ISSUE_INFO_FA).filter(k => ii[k]); return ks.length ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-clipboard-list text-slate-400 ml-1"></i>مالک و اطلاعاتِ ثبت‌شده‌ی صدور</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">${ks.map(k => infoCell(ISSUE_INFO_FA[k], ii[k], {ltr: /national_id|phone|chassis|engine|vin|postal|policy_number/.test(k)})).join('')}</div>` : ''; })()}
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌نامه</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
@@ -12605,11 +12703,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="grid grid-cols-2 gap-3">
                   ${fld('full_name', 'نام و نام خانوادگی', I.full_name)}
                   ${fld('company_name', 'شرکت (محلِ کار)', I.company_name)}
-                  ${fld('nc', 'کد ملی', e2p(I.national_code), 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
-                  ${fld('pc', 'کد پرسنلی', e2p(I.personnel_code || ''), 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
-                  ${fld('letter_date', 'تاریخ معرفی‌نامه', e2p(I.letter_date), 'dir="ltr" placeholder="1405/07/01"')}
+                  ${fld('nc', 'کد ملی', I.national_code ? e2p(I.national_code) : '', 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('pc', 'کد پرسنلی', I.personnel_code ? e2p(I.personnel_code) : '', 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('letter_date', 'تاریخ معرفی‌نامه', I.letter_date ? e2p(I.letter_date) : '', 'dir="ltr" placeholder="1405/07/01"')}
                   ${fld('max_quota', 'سهمیه (حداقل ' + e2pNum(I.used_quota) + ')', e2p(String(I.max_quota)), 'inputmode="numeric"')}
-                  ${fld('mobile', 'موبایل', e2p(I.mobile || ''), 'dir="ltr" inputmode="numeric"')}
+                  ${fld('mobile', 'موبایل', I.mobile ? e2p(I.mobile) : '', 'dir="ltr" inputmode="numeric"')}
                   <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایلِ تازه‌ی معرفی‌نامه (اختیاری)</span>
                     <input type="file" data-file accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full text-[11px]"><span data-fs class="text-[10.5px] text-slate-400 block mt-1">${I.has_file ? 'فایلِ فعلی با «(قبلی)» کنارِ فایلِ تازه می‌ماند.' : 'فایلی ثبت نشده است.'}</span></label>
                 </div>
@@ -12633,7 +12731,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 else { fs.textContent = r.detected ? 'فایل خوانده شد؛ اطلاعاتِ پیشنهادی را بررسی کنید.' : (r.warning || 'فایل پیوست شد.'); fs.className = 'text-[10.5px] text-emerald-600 block mt-1'; }
                 if (x.full_name) q('full_name').value = x.full_name;
                 if (x.company_name) q('company_name').value = x.company_name;
-                if (x.letter_date) q('letter_date').value = e2p(x.letter_date);
+                if (x.letter_date) q('letter_date').value = e2p(x.letter_date);  // e2p('') = «-»؛ اینجا همیشه مقدار دارد
             };
             box.querySelector('[data-ok]').onclick = async () => {
                 const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره...';

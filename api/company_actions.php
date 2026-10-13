@@ -536,6 +536,117 @@ try {
         exit;
     }
 
+    // ---- ویرایشِ کاملِ یک بیمه‌نامه‌ی صادرشده (فقط مدیر کل): پایگاه داده + نامِ پوشه‌ها و فایل‌ها در بایگانی ----
+    // پلاک، نامِ بیمه‌گذار، شماره‌ی بیمه‌نامه و VIN در نامِ پوشه/فایل‌ها هستند؛ با تغییرشان پوشه‌ی بیمه‌نامه، کپیِ «بایگانی صادره»
+    // و کپی‌های ماه‌های دیگرِ معرفی‌نامه هم‌نام می‌شوند. اقساطِ ثبت‌شده دست نمی‌خورند (از مرکزِ اقساط اصلاح می‌شوند).
+    if ($action === 'issued_edit') {
+        if (perm_real_role() !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل.'], JSON_UNESCAPED_UNICODE); exit; }
+        require_once __DIR__ . '/_arch_rename.php';
+        if (!function_exists('fin_jalali_to_date')) require_once __DIR__ . '/finance_core.php';
+        company_ensure_issue_info_cols($pdo);
+        $siteRoot = dirname(__DIR__);
+        $src = ($data['source'] ?? '') === 'PERSONNEL' ? 'P' : 'C';
+        $id = intval($data['id'] ?? 0);
+        $f = is_array($data['fields'] ?? null) ? $data['fields'] : [];
+        $t = function ($k, $len = 190) use ($f) { return array_key_exists($k, $f) ? trim(mb_substr(p2e_digits((string)$f[$k]), 0, $len)) : null; };
+        $money = function ($k) use ($f) { if (!array_key_exists($k, $f)) return null; $v = preg_replace('/\D/', '', p2e_digits((string)$f[$k])); return $v === '' ? '' : $v; };
+        $jdate = function ($v) { return ($v !== null && $v !== '' && preg_match('/^(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})$/', $v, $m)) ? sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]) : $v; };
+        $plateIn = $t('plate', 60);
+        if ($plateIn !== null && $plateIn !== '' && !preg_match('/^(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})$/u', $plateIn)) { echo json_encode(['ok' => false, 'error' => 'پلاک کامل نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        $pid = $t('policy_issue_date', 20); $pid = $jdate($pid);
+        if ($pid !== null && $pid !== '' && !preg_match('#^1[34]\d\d/\d\d/\d\d$#', $pid)) { echo json_encode(['ok' => false, 'error' => 'تاریخ صدور را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $info = is_array($data['info'] ?? null) ? $data['info'] : null;
+
+        if ($src === 'P') {
+            $st = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ? AND status = 'ISSUED'");
+            $st->execute([$id]);
+            $old = $st->fetch();
+            if (!$old) { echo json_encode(['ok' => false, 'error' => 'بیمه‌نامه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+            $cols = ['insured_name' => $t('insured_name'), 'insured_national_id' => $t('insured_national_id', 20), 'insured_phone' => $t('insured_phone', 30),
+                     'insured_address' => $t('insured_address', 500), 'insured_postal_code' => $t('insured_postal_code', 20),
+                     'plate' => $plateIn !== null ? preg_replace('/^(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})$/u', '$1ایران - $2 $3 $4', $plateIn) : null,
+                     'chassis_num' => $t('chassis_no', 60), 'engine_num' => $t('engine_no', 60), 'vin' => $t('vin', 60),
+                     'policy_number' => $t('policy_number', 80), 'policy_issue_date' => $pid, 'central_unique_code' => $t('central_unique_code', 80),
+                     'total_premium' => $money('total_premium'), 'car_value' => $money('car_value'),
+                     'car_system' => $t('car_system'), 'car_type' => $t('car_type'), 'car_model_year' => $t('car_model_year', 10),
+                     'car_color' => $t('car_color'), 'car_usage' => $t('car_usage')];
+            $table = 'policy_cases';
+        } else {
+            $st = $pdo->prepare("SELECT crp.*, cr.request_kind, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ? AND crp.status = 'ISSUED'");
+            $st->execute([$id]);
+            $old = $st->fetch();
+            if (!$old) { echo json_encode(['ok' => false, 'error' => 'بیمه‌نامه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+            $cols = ['chassis_no' => $t('chassis_no', 60), 'engine_no' => $t('engine_no', 60), 'vin' => $t('vin', 60),
+                     'policy_number' => $t('policy_number', 80), 'policy_issue_date' => $pid, 'total_premium' => $money('total_premium'),
+                     'car_value' => $money('car_value'), 'liability_limit' => $money('liability_limit'), 'car_name' => $t('car_name'), 'car_type' => $t('car_type', 120)];
+            if ($plateIn !== null) {
+                if ($plateIn === '') { $cols += ['plate_p1' => '', 'plate_p2' => '', 'plate_letter' => '', 'plate_p4' => '']; }
+                elseif (preg_match('/^(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})$/u', $plateIn, $pm)) { $cols += ['plate_p1' => $pm[1], 'plate_p2' => $pm[2], 'plate_letter' => $pm[3], 'plate_p4' => $pm[4]]; }
+            }
+            $exp = $t('expiry_date', 20);
+            if ($exp !== null) $cols['expiry_date'] = $exp === '' ? '' : (fin_jalali_to_date($jdate($exp)) ?: null);
+            $table = 'company_request_plates';
+        }
+        // فقط ستون‌هایی که فرستاده شده و واقعاً عوض شده‌اند؛ خالی = پاک کردنِ همان مقدار (به‌جز نام/پلاک/شماره که خالی نمی‌شوند)
+        $set = []; $args = []; $changed = [];
+        foreach ($cols as $c => $v) {
+            if ($v === null || !array_key_exists($c, $old)) continue;
+            if ((string)$v === (string)($old[$c] ?? '')) continue;
+            if ($v === '' && in_array($c, ['insured_name', 'policy_number'], true)) continue;
+            $set[] = "`$c` = ?"; $args[] = $v === '' ? null : $v; $changed[$c] = [$old[$c], $v];
+        }
+        if ($info !== null) {
+            $clean = issue_info_decode($old['issue_info'] ?? null);
+            foreach (issue_info_fields() as $k => $label) if (array_key_exists($k, $info)) { $v = trim(mb_substr((string)$info[$k], 0, 500)); if ($v === '') unset($clean[$k]); else $clean[$k] = $v; }
+            $json = $clean ? json_encode($clean, JSON_UNESCAPED_UNICODE) : null;
+            if ($json !== ($old['issue_info'] ?? null)) { $set[] = "issue_info = ?"; $args[] = $json; $changed['issue_info'] = true; }
+        }
+        if (!$set) { echo json_encode(['ok' => true, 'message' => 'تغییری نبود.'], JSON_UNESCAPED_UNICODE); exit; }
+        $args[] = $id;
+        $pdo->prepare("UPDATE `$table` SET " . implode(', ', $set) . " WHERE id = ?")->execute($args);
+        try {
+            $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'UPDATE', ?, ?, ?)")
+                ->execute([$_SESSION['user_id'] ?? null, $table, $id, mb_substr(json_encode($changed, JSON_UNESCAPED_UNICODE), 0, 900)]);
+        } catch (Throwable $e) {}
+
+        // ---- بایگانی ----
+        $st = $pdo->prepare($src === 'P' ? "SELECT * FROM policy_cases WHERE id = ?" : "SELECT crp.*, cr.request_kind FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
+        $st->execute([$id]);
+        $new = $st->fetch();
+        $plateOf = function ($r) use ($src) { return $src === 'P' ? (string)$r['plate'] : (string)company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']); };
+        $pairs = [[plate_for_filename($plateOf($old)), plate_for_filename($plateOf($new))],
+                  [policy_number_for_filename((string)$old['policy_number']), policy_number_for_filename((string)$new['policy_number'])],
+                  [(string)$old['vin'], (string)$new['vin']]];
+        if ($src === 'P') $pairs[] = [(string)$old['insured_name'], (string)$new['insured_name']];
+        $map = arch_name_map($pairs);
+        $renamed = 0;
+        $folder = (string)$old['folder_path'];
+        $oldTs = policy_issue_ts($old['policy_issue_date'] ?? '', strtotime((string)$old['issued_at']) ?: time());
+        $newTs = policy_issue_ts($new['policy_issue_date'] ?? '', strtotime((string)$new['issued_at']) ?: time());
+        $sadere = ($folder && ($src === 'P' || company_kind_goes_to_sadere($old['request_kind'] ?? 'NEW_POLICY'))) ? build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type']) . '/' . basename($folder) : '';
+        $roots = [$folder, $sadere];
+        if ($src === 'P' && $folder && !empty($old['introduction_id'])) {
+            require_once __DIR__ . '/_purge.php';
+            foreach (purge_intro_month_folders($pdo, $siteRoot, intval($old['introduction_id'])) as $mf) if (is_dir($mf . '/' . basename($folder)) && $mf . '/' . basename($folder) !== $folder) $roots[] = $mf . '/' . basename($folder);
+        }
+        if ($map) $renamed = count(arch_token_rename($pdo, $siteRoot, $roots, $map));
+        // ماهِ صدور عوض شد: کپیِ «بایگانی صادره» به ماهِ تازه می‌رود؛ پوشه‌ی کسر از حقوق را sync_intro_folder جابه‌جا می‌کند
+        if ($sadere && $oldTs && $newTs && date('Ym', $oldTs) !== date('Ym', $newTs)) {
+            $sNow = dirname($sadere) . '/' . arch_apply_map(basename($sadere), $map);
+            $sNew = build_sadere_base_path($siteRoot, $newTs, $new['insurance_type']) . '/' . basename($sNow);
+            if (is_dir($sNow) && build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type']) !== build_sadere_base_path($siteRoot, $newTs, $new['insurance_type'])) {
+                @mkdir(dirname($sNew), 0777, true);
+                archive_move_dir($sNow, $sNew); arch_repath($pdo, $siteRoot, $sNow, $sNew); $renamed++;
+            }
+        }
+        if ($src === 'P' && !empty($old['introduction_id'])) {
+            try { sync_intro_folder($pdo, $siteRoot, intval($old['introduction_id'])); } catch (Throwable $e) { error_log('[issued_edit sync] ' . $e->getMessage()); }
+        }
+        $finNote = (isset($changed['total_premium']) || isset($changed['policy_issue_date'])) ? ' اقساطِ ثبت‌شده عوض نشد؛ اگر لازم است از مرکزِ اقساط اصلاح کنید.' : '';
+        echo json_encode(['ok' => true, 'message' => 'ذخیره شد' . ($renamed ? '؛ ' . fa_digits($renamed) . ' پوشه/فایل در بایگانی هم‌نام شد' : '') . '.' . $finNote], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- درخواست‌هایی که ردیفِ صادرنشده دارند (برای بخش «صدور گروهی» در صفحه‌ی جامعِ صدور) ----
     if ($action === 'group_issue_requests') {
         require_admin_only();
@@ -607,7 +718,7 @@ try {
             $impF = (string)($data['import'] ?? '');
             if ($impF === '1') $w[] = "cr.is_import = 1"; elseif ($impF === '0') $w[] = "cr.is_import = 0";
             $stmt = $pdo->prepare("
-                SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import,
+                SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import, cr.ref_code AS request_ref,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -619,7 +730,9 @@ try {
                 $rows[] = [
                     'source' => 'COMPANY', 'source_fa' => !empty($r['is_import']) ? 'وارداتی' : 'شرکتی',
                     'is_import' => !empty($r['is_import']) ? 1 : 0, 'tag' => !empty($r['is_import']) ? 'بایگانی وارداتی' : null,
-                    'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']),
+                    'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'request_ref' => $r['request_ref'] ?? null,
+                    'plate_raw' => company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']),
+                    'expiry_date_raw' => $r['expiry_date'] ?? null,
                     'holder' => $r['company_name'], 'insured_name' => $r['company_name'],
                     'national_id' => $r['economic_code'], 'phone' => $r['company_phone'],
                     'company_name' => $r['company_name'],
@@ -673,7 +786,9 @@ try {
                     $rows[] = [
                         'source' => 'PERSONNEL', 'source_fa' => 'کارکنان',
                         'row_id' => intval($r['id']), 'request_id' => intval($r['introduction_id'] ?? 0),
-                        'holder' => $r['holder_name'], 'insured_name' => $r['insured_name'] ?: $r['holder_name'],
+                        'holder' => $r['holder_name'], 'holder_nid' => $r['holder_nid'], 'relationship' => $r['insured_relationship'] ?? null,
+                        'insured_phone' => $r['insured_phone'] ?? null, 'insured_address' => $r['insured_address'] ?? null, 'insured_postal_code' => $r['insured_postal_code'] ?? null,
+                        'insured_name' => $r['insured_name'] ?: $r['holder_name'],
                         'national_id' => $r['insured_national_id'] ?: $r['holder_nid'], 'phone' => $r['ocr_phone'] ?: $r['mobile_number'],
                         'company_name' => $r['employer_name'],
                         'plate' => $r['plate'], 'chassis_no' => $r['chassis_num'], 'engine_no' => $r['engine_num'],
