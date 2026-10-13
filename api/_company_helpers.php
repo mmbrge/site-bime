@@ -1237,7 +1237,7 @@ function require_company_portal_session($pdo) {
 
 // برای اکشن‌های پنل ادمین که مخصوص ماژول شرکت‌هاست: هم ADMIN و هم COMPANY_LIAISON مجازند
 function require_admin_or_liaison() {
-    if (session_status() === PHP_SESSION_NONE) session_start();
+    if (session_status() === PHP_SESSION_NONE && empty($GLOBALS['SESS_RELEASED'])) session_start();
     if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['ADMIN', 'COMPANY_LIAISON'], true)) {
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -1248,7 +1248,7 @@ function require_admin_or_liaison() {
 
 // اکشن‌های حساس (مثل ثبت صدور نهایی) فقط برای ADMIN
 function require_admin_only() {
-    if (session_status() === PHP_SESSION_NONE) session_start();
+    if (session_status() === PHP_SESSION_NONE && empty($GLOBALS['SESS_RELEASED'])) session_start();
     if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => false, 'error' => 'این عملیات فقط برای مدیر کل مجاز است.']);

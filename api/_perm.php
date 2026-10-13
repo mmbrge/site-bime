@@ -570,7 +570,25 @@ function perm_deny($msg) {
 }
 
 // در ابتدای هر API پنل صدا زده می‌شود (بعد از اتصالِ دیتابیس)؛ برای کاربرانِ بدونِ دسترسیِ سفارشی هیچ کاری نمی‌کند
+// نشستِ PHP تا پایانِ هر درخواست «قفل» می‌ماند و همه‌ی درخواست‌های هم‌زمانِ همان کاربر (اعلان‌ها، حضور، گفتگو، ...) پشتِ
+// یک درخواستِ کُند صف می‌کشیدند؛ با چند کاربرِ هم‌زمان صفحه‌ها دیر باز می‌شد. APIها بعد از بررسیِ ورود و دسترسی چیزی در
+// نشست نمی‌نویسند، پس همان‌جا نشست ذخیره و آزاد می‌شود ($_SESSION در حافظه می‌ماند). اگر دسترسیِ موقتِ مدیر (perm_elevate)
+// داده شده، نقشِ واقعی ذخیره می‌شود و نقشِ موقت فقط در همین درخواست می‌ماند.
+function sess_release() {
+    if (session_status() !== PHP_SESSION_ACTIVE || !empty($GLOBALS['SESS_NO_RELEASE'])) return;
+    $mem = $_SESSION;
+    if (perm_is_elevated()) $_SESSION['role'] = $GLOBALS['PERM_REAL_ROLE'];
+    session_write_close();
+    $_SESSION = $mem;
+    $GLOBALS['SESS_RELEASED'] = true;
+}
+function sess_active() { return session_status() === PHP_SESSION_ACTIVE || !empty($GLOBALS['SESS_RELEASED']); }
+
 function perm_gate($pdo, $file) {
+    perm_gate_check($pdo, $file);
+    sess_release();
+}
+function perm_gate_check($pdo, $file) {
     if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['user_id']) || perm_is_elevated()) return;
     if (session_name() === 'bime_company_portal') return;
     $key = basename($file, '.php');

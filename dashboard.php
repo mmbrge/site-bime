@@ -1,4 +1,6 @@
 <?php
+// صفحه‌ی پنل بیش از ۱ مگابایت است؛ فشرده (gzip) فرستاده می‌شود تا با چند کاربرِ هم‌زمان سریع‌تر باز شود
+if (extension_loaded('zlib') && !ini_get('zlib.output_compression') && !headers_sent()) @ini_set('zlib.output_compression', '1');
 session_start();
 require 'config/db.php';
 
@@ -4892,7 +4894,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if (!$isLiaison && !$isParsian && !$isLife): ?>
         // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» و «کاربر پارسیان» به این بخش دسترسی ندارند
-        setInterval(checkBotStatus, 5000);
+        // هر ۲۰ ثانیه (قبلاً ۵ ثانیه) و فقط وقتی صفحه دیده می‌شود: با چند کاربرِ هم‌زمان بارِ بی‌دلیل روی سرور نمی‌گذارد
+        setInterval(() => { if (!document.hidden) checkBotStatus(); }, 20000);
         checkBotStatus();
         if (permCan('dashboard')) { loadStats(); loadDashCharts(); loadDashAlerts(); }
         <?php endif; ?>

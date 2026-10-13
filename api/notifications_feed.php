@@ -23,6 +23,7 @@ if (empty($_SESSION['user_id'])) {
 }
 $userId = intval($_SESSION['user_id']);
 $role = $_SESSION['role'] ?? '';
+session_write_close();   // هر ۱۵ ثانیه صدا زده می‌شود؛ نباید بقیه‌ی درخواست‌های همین کاربر را پشتِ قفلِ نشست نگه دارد
 $seesCompanies = in_array($role, ['ADMIN', 'COMPANY_LIAISON'], true);
 $seesPersonnel = $role !== 'COMPANY_LIAISON';
 

@@ -89,7 +89,7 @@ function cf_ensure($pdo) {
 // ---------------- کاربر ----------------
 // [نوع (S پنل / C شرکت)، شناسه، نام، نقش]
 function cf_actor() {
-    if (session_status() !== PHP_SESSION_ACTIVE) return null;
+    if (session_status() !== PHP_SESSION_ACTIVE && empty($GLOBALS['SESS_RELEASED'])) return null;
     if (session_name() === 'bime_company_portal') {
         return !empty($_SESSION['company_user_id']) ? ['C', intval($_SESSION['company_user_id']), (string)($_SESSION['company_user_full_name'] ?? ''), 'COMPANY'] : null;
     }

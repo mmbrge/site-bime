@@ -144,7 +144,7 @@ function sec_device_check($pdo, $type, $uid) {
 
 // چه کسی درخواست را فرستاده (از روی نشست)
 function sec_actor() {
-    if (session_status() !== PHP_SESSION_ACTIVE) return [null, null, null];
+    if (session_status() !== PHP_SESSION_ACTIVE && empty($GLOBALS['SESS_RELEASED'])) return [null, null, null];
     if (session_name() === 'bime_company_portal') {
         return !empty($_SESSION['company_user_id']) ? ['COMPANY', intval($_SESSION['company_user_id']), (string)($_SESSION['company_user_full_name'] ?? '')] : [null, null, null];
     }
@@ -377,6 +377,8 @@ function sec_boot($pdo) {
         }
     } catch (Throwable $e) {}
     $s = sec_settings($pdo);
+    // یک‌بار: ایندکس‌های جدول‌های پرکاربرد (سرعت با داده‌ی زیاد و کاربرانِ هم‌زمان)
+    if (($s['sec_perf_idx'] ?? '') !== '1') { require_once __DIR__ . '/_perf_index.php'; perf_index_ensure($pdo); }
     // وب‌هوکِ ربات‌ها: اگر کلید تعیین شده، فقط درخواستِ دارای همان کلید پذیرفته می‌شود
     $hookKey = ['company_bot_webhook.php' => 'company_bot_hook_key', 'bale_webhook.php' => 'bot_hook_key', 'life_bot_webhook.php' => 'life_bot_hook_key'][$script] ?? null;
     if ($hookKey) {
