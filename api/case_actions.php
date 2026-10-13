@@ -934,6 +934,12 @@ try {
             cbundle_rrmdir($single['dir']);
         }
 
+        // بیمه‌نامه‌ی بدنه: «شرایط عمومی و خصوصی» (صفحه‌های بعد از جدولِ بیمه‌نامه) فایلی جدا کنارِ بیمه‌نامه (پیش از کپیِ صادره)
+        if ($case['insurance_type'] === 'BODY' && !empty($relPath)) {
+            try { require_once __DIR__ . '/_pdf_split.php'; policy_conditions_make($pdo, $siteRoot . '/' . $relPath); }
+            catch (Throwable $e) { error_log('[case conditions] ' . $e->getMessage()); }
+        }
+
         // مرحله ۳: کل پوشه‌ی همین درخواست (شامل مدارک، عکس‌های بازدید و فایل بیمه‌نامه)
         // به «بایگانی صادره» کپی می‌شود - نه کل پوشه‌ی معرفی‌نامه
         $sadereFolder = $sadereBase . '/' . $caseFolderName;

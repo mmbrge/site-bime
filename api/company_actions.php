@@ -536,6 +536,35 @@ try {
         exit;
     }
 
+    // ---- «شرایط عمومی و خصوصی»ِ بیمه‌نامه‌ی بدنه: اگر هنوز ساخته نشده (بیمه‌نامه‌های قبلی) همین الان از فایلِ بیمه‌نامه جدا
+    //      و کنارش (و در کپیِ «بایگانی صادره») ذخیره می‌شود؛ بعد خودِ فایل باز می‌شود ----
+    if ($action === 'policy_conditions') {
+        $src = (($data['source'] ?? $_GET['source'] ?? '') === 'PERSONNEL') ? 'P' : 'C';
+        $id = intval($data['id'] ?? $_GET['id'] ?? 0);
+        if ($src === 'P' && perm_real_role() !== 'ADMIN') { http_response_code(403); exit('دسترسی ندارید.'); }
+        $st = $pdo->prepare($src === 'P' ? "SELECT issued_file_path, insurance_type, folder_path, policy_issue_date, issued_at, 'NEW_POLICY' AS request_kind FROM policy_cases WHERE id = ? AND status = 'ISSUED'"
+                                         : "SELECT crp.issued_file_path, crp.insurance_type, crp.folder_path, crp.policy_issue_date, crp.issued_at, cr.request_kind FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ? AND crp.status = 'ISSUED'");
+        $st->execute([$id]);
+        $r = $st->fetch();
+        $siteRoot = dirname(__DIR__);
+        $fail = function ($msg) { header('Content-Type: text/html; charset=utf-8'); echo '<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:tahoma;padding:40px;color:#334155">' . htmlspecialchars($msg) . '</body>'; exit; };
+        if (!$r || !$r['issued_file_path']) $fail('فایلِ بیمه‌نامه پیدا نشد.');
+        if ($r['insurance_type'] !== 'BODY') $fail('شرایط عمومی و خصوصی فقط برای بیمه‌نامه‌ی بدنه است.');
+        require_once __DIR__ . '/_pdf_split.php';
+        $abs = $siteRoot . '/' . ltrim($r['issued_file_path'], '/');
+        $res = policy_conditions_make($pdo, $abs);
+        if (empty($res['ok'])) $fail($res['error'] ?? 'ساختِ فایل ممکن نشد.');
+        // کپی در «بایگانی صادره» (اگر آن‌جا نیست)
+        if (empty($res['existed']) && $r['folder_path'] && company_kind_goes_to_sadere($r['request_kind'])) {
+            $ts = policy_issue_ts($r['policy_issue_date'] ?? '', strtotime((string)$r['issued_at']) ?: time());
+            $sd = build_sadere_base_path($siteRoot, $ts, $r['insurance_type']) . '/' . basename($r['folder_path']);
+            if (is_dir($sd) && dirname($res['path']) === $r['folder_path'] && !is_file($sd . '/' . basename($res['path']))) @copy($res['path'], $sd . '/' . basename($res['path']));
+        }
+        $rel = ltrim(str_replace($siteRoot, '', $res['path']), '/');
+        header('Location: /' . implode('/', array_map('rawurlencode', explode('/', $rel))) . (!empty($_GET['dl']) ? '?dl=1' : ''));
+        exit;
+    }
+
     // ---- ویرایشِ کاملِ یک بیمه‌نامه‌ی صادرشده (فقط مدیر کل): پایگاه داده + نامِ پوشه‌ها و فایل‌ها در بایگانی ----
     // پلاک، نامِ بیمه‌گذار، شماره‌ی بیمه‌نامه و VIN در نامِ پوشه/فایل‌ها هستند؛ با تغییرشان پوشه‌ی بیمه‌نامه، کپیِ «بایگانی صادره»
     // و کپی‌های ماه‌های دیگرِ معرفی‌نامه هم‌نام می‌شوند. اقساطِ ثبت‌شده دست نمی‌خورند (از مرکزِ اقساط اصلاح می‌شوند).

@@ -50,6 +50,13 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         if ($moved) $issuedFilePath = ltrim(str_replace($siteRoot, '', $dest), '/');
     }
 
+    // بیمه‌نامه‌ی بدنه: «شرایط عمومی و خصوصی» (صفحه‌های بعد از جدولِ بیمه‌نامه) فایلی جدا کنارِ بیمه‌نامه؛ پیش از کپیِ صادره
+    // ساخته می‌شود تا آن‌جا هم باشد. خطا جلوی صدور را نمی‌گیرد.
+    if ($issuedFilePath && $plate['insurance_type'] === 'BODY' && $kind === 'NEW_POLICY') {
+        try { require_once __DIR__ . '/_pdf_split.php'; policy_conditions_make($pdo, $siteRoot . '/' . $issuedFilePath); }
+        catch (Throwable $e) { error_log('[company conditions] ' . $e->getMessage()); }
+    }
+
     $issuedAt = $isImport ? policy_issue_ts($policyIssueDate, time()) : time();
     // الحاقیه و فسخ فقط در بایگانی شرکتی می‌مانند (به «بایگانی صادره» نمی‌روند)
     $folderStatus = 'FAILED';

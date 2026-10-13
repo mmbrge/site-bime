@@ -182,6 +182,37 @@ def main():
                         pix = d.load_page(p).get_pixmap(matrix=mat, alpha=False)
                         z.writestr('%s - صفحه %d.%s' % (base, p + 1, fmt), pix.tobytes('png' if fmt == 'png' else 'jpeg'))
                 out({'ok': True, 'file': 'out.zip', 'name': base + ' (عکسِ صفحه‌ها).zip', 'pages': len(pages), 'size': os.path.getsize(path)})
+        elif op == 'conditions':
+            # «شرایط عمومی و خصوصی»ِ بیمه‌نامه‌ی بدنه: همه‌ی صفحه‌های بعد از جدولِ بیمه‌نامه (فرانشیز، کلوزها، شرایط) تا آخر.
+            # صفحه‌ی ۱ (جدولِ بیمه‌نامه) هرگز نمی‌آید.
+            import unicodedata
+            d = docs[0]
+            n = len(d)
+            if n < 2:
+                out({'ok': False, 'error': 'این بیمه‌نامه فقط یک صفحه است و صفحه‌ی شرایط ندارد.', 'pages': n})
+                return
+            def norm(t):
+                t = unicodedata.normalize('NFKC', t or '')
+                return t.replace('\u064a', '\u06cc').replace('\u0643', '\u06a9').replace('\u200c', ' ')
+            # صفحه‌های جدولِ بیمه‌نامه با همان سربرگِ صفحه‌ی ۱ شروع می‌شوند (بعضی بیمه‌نامه‌ها جدولِ دوصفحه‌ای دارند)؛
+            # شرایط از اولین صفحه‌ای است که سربرگش با صفحه‌ی ۱ فرق دارد. متنِ صفحه‌ی ۱ خوانده نشد (اسکن) => از صفحه‌ی ۲.
+            def head(p):
+                try:
+                    t = norm(d.load_page(p).get_text())
+                except Exception:
+                    t = ''
+                return ''.join(t.split())[:60]
+            h1 = head(0)
+            start = 1
+            if len(h1) >= 20:
+                while start < n - 1 and head(start) == h1:
+                    start += 1
+            found = start > 1
+            res = fitz.open()
+            res.insert_pdf(d, from_page=start, to_page=n - 1)
+            path = os.path.join(outdir, 'out.pdf')
+            save_pdf(res, path)
+            out({'ok': True, 'file': 'out.pdf', 'pages': len(res), 'from': start + 1, 'total': n, 'detected': bool(found)})
         elif op == 'pages':
             d = docs[0]
             n = len(d)

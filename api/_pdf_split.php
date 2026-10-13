@@ -84,6 +84,24 @@ function pdf_split_pages($pdo, $abs, $destDir, $baseName = '', $max = PDF_SPLIT_
     return ['ok' => true, 'pages' => $n, 'files' => $files];
 }
 
+// ---------------- «شرایط عمومی و خصوصی»ِ بیمه‌نامه‌ی بدنه ----------------
+// فایلی جدا کنارِ خودِ بیمه‌نامه (همان پوشه): «شرایط عمومی و خصوصی ‎- <نامِ فایلِ بیمه‌نامه>.pdf». خودِ بیمه‌نامه دست نمی‌خورد.
+function policy_conditions_path($policyAbs) {
+    $sep = defined('NAME_SEP') ? NAME_SEP : " \u{200E}- ";
+    return dirname($policyAbs) . '/شرایط عمومی و خصوصی' . $sep . pathinfo($policyAbs, PATHINFO_FILENAME) . '.pdf';
+}
+function policy_conditions_make($pdo, $policyAbs) {
+    if (!is_file($policyAbs) || strtolower(pathinfo($policyAbs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'error' => 'فایلِ PDFِ بیمه‌نامه پیدا نشد.'];
+    $dest = policy_conditions_path($policyAbs);
+    if (is_file($dest)) return ['ok' => true, 'path' => $dest, 'existed' => true];
+    $tmp = dirname($policyAbs) . '/.cond_' . uniqid();
+    $r = pdf_split_run($pdo, 'conditions', $tmp, [], [$policyAbs], 120);
+    if (empty($r['ok']) || !is_file($tmp . '/out.pdf')) { pdf_split_rrmdir($tmp); return ['ok' => false, 'error' => $r['error'] ?? 'جدا کردنِ صفحه‌های شرایط ممکن نشد.']; }
+    $ok = @rename($tmp . '/out.pdf', $dest);
+    pdf_split_rrmdir($tmp);
+    return $ok ? ['ok' => true, 'path' => $dest, 'pages' => $r['pages'] ?? null, 'from' => $r['from'] ?? null, 'detected' => !empty($r['detected'])] : ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.'];
+}
+
 function pdf_split_safe_name($s) {
     $s = preg_replace('/\.pdf$/i', '', trim((string)$s));
     $s = preg_replace('#[\\\\/:*?"<>|\x00-\x1F]+#u', ' ', $s);
