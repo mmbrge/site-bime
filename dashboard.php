@@ -368,6 +368,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .menu-trigger .fa-chevron-down { transition: transform .2s; }
         .menu-panel { display: none; }
         .menu-group.open .menu-panel { display: block; }
+        .menu-group.menu-hush .menu-panel, .menu-group.menu-hush .menu-subpanel { display: none !important; }
         /* جداکننده‌ی داخلِ منو (مثلاً بینِ کارهای روزمره‌ی مالی و «تنظیمات مالی») */
         .menu-sep { height: 1px; background: #e2e8f0; margin: 5px 8px; }
 
@@ -682,6 +683,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             .bm-mega > .bm-panel { position: fixed; top: 78px; left: 0; right: 0; margin: 0 auto; width: min(1120px, 94vw); padding: 12px; border-radius: 22px; max-height: calc(100vh - 100px); overflow: auto; }
             .bm-mega > .bm-panel::before { top: -14px; height: 14px; }
             .bm-mega > .bm-panel::after { display: none; }
+        }
+        /* دسکتاپ: همه‌ی بخش‌ها بدونِ اسکرول در یک نگاه (ستون‌های بیشتر، گزینه‌های کوتاه‌تر؛ توضیحِ کوچک هر گزینه در راهنمای موس) */
+        @media (min-width: 1024px) {
+            .bm-mega > .bm-panel { width: min(1320px, 97vw); top: 74px; padding: 10px 12px; max-height: calc(100vh - 86px); }
+            .bm-panel .bm-top { padding: 0 6px 8px; }
+            .bm-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+            .bm-set { display: flex; flex-wrap: wrap; gap: 2px 4px; }
+            .bm-set .menu-link { flex: 1 1 auto; }
+            .bm-sec { padding: 6px; border-radius: 16px; }
+            .bm-sec.bm-wide { grid-column: span 3; }
+            .bm-sec.bm-wide .bm-links { display: block; column-count: 3; column-gap: 8px; }
+            .bm-sec.bm-wide .bm-grp { break-inside: avoid; border-right: 0; padding-right: 0; }
+            .bm-head { padding: 2px 2px 6px; margin-bottom: 2px; gap: 8px; }
+            .bm-ic { width: 32px; height: 32px; font-size: 13px; border-radius: 11px; }
+            .bm-head b { font-size: 12.5px; } .bm-head small { font-size: 9.5px; }
+            .bm-sec .menu-link { padding: 4px 6px; gap: 8px; font-size: 12px; border-radius: 9px; }
+            .bm-sec .menu-link > i:first-child { width: 24px; height: 24px; font-size: 11px; border-radius: 8px; }
+            .bm-sec .menu-link .bm-l small { display: none; }
+            .bm-gh { padding: 2px 4px 1px; font-size: 10px; }
+            .bm-grp { padding: 1px 0 3px; }
         }
         @media (max-width: 1023px) {
             .bm-trigger { margin: 4px 0; }
@@ -1015,7 +1036,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <!-- ===== «بیمه با ما»: منوی درختیِ بزرگ به تفکیکِ رشته‌ی بیمه (هر بخش با کارها و تنظیماتِ خودش) ===== -->
                 <?php
                 $bmLink = function ($tab, $icon, $label, $hint = '', $id = true, $extra = '') {
-                    return '<a href="#" onclick="switchTab(\'' . $tab . '\')' . $extra . '" ' . ($id ? 'id="nav-' . $tab . '"' : 'data-bm="' . $tab . '"') . ' class="nav-item menu-link"><i class="fas ' . $icon . ' ml-2"></i><span class="bm-l">' . $label . ($hint !== '' ? '<small>' . $hint . '</small>' : '') . '</span></a>';
+                    return '<a href="#" onclick="switchTab(\'' . $tab . '\')' . $extra . '" ' . ($id ? 'id="nav-' . $tab . '"' : 'data-bm="' . $tab . '"') . ' class="nav-item menu-link"' . ($hint !== '' ? ' title="' . htmlspecialchars(strip_tags($hint)) . '"' : '') . '><i class="fas ' . $icon . ' ml-2"></i><span class="bm-l">' . $label . ($hint !== '' ? '<small>' . $hint . '</small>' : '') . '</span></a>';
                 };
                 // زیرگروهِ درختی داخلِ یک بخش (مثلاً «مرکز صدور» داخلِ «ثالث و بدنه»)
                 $bmGroup = function ($title, $icon, $links) { return $links === '' ? '' : '<div class="bm-grp"><div class="bm-gh"><i class="fas ' . $icon . '"></i>' . $title . '</div>' . $links . '</div>'; };
@@ -5747,9 +5768,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // انتخابِ یک گزینه باید منو را ببندد (قبلاً بعد از رفتن به تب، منو باز می‌ماند).
             // blur هم لازم است: وگرنه فوکوس روی همان لینک می‌ماند و قاعده‌ی
             // :focus-within (که برای کاربرِ صفحه‌کلید گذاشته شده) زیرمنو را باز نگه می‌دارد.
-            document.querySelectorAll('.menu-panel .menu-link').forEach(link => {
-                link.addEventListener('click', () => { closeAllMenuGroups(); link.blur(); });
+            // منو با هاورِ موس باز است؛ پس بعد از کلیک تا وقتی موس از روی منو نرفته «ساکت» می‌ماند (menu-hush) و همان لحظه بسته می‌شود
+            document.querySelectorAll('.menu-panel .menu-link, .menu-subpanel .menu-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    const g = link.closest('.menu-group');
+                    if (g) g.classList.add('menu-hush');
+                    closeAllMenuGroups(); link.blur();
+                    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.menu-group')) document.activeElement.blur();
+                });
             });
+            document.querySelectorAll('.menu-group').forEach(g => g.addEventListener('mouseleave', () => g.classList.remove('menu-hush')));
             // کلیک بیرون از منو، همه را می‌بندد (فقط دسکتاپ)
             document.addEventListener('click', (e) => {
                 if (window.innerWidth < 1024) return;
