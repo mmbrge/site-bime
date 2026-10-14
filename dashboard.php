@@ -41,6 +41,9 @@ $canSeeCompanies = $isLiaison || ($_SESSION['role'] ?? '') === 'ADMIN';
 $isParsian = ($_SESSION['role'] ?? '') === 'PARSIAN';
 // نقش «کاربر بیمه عمر»: فقط بخشِ بیمه عمر (داشبورد، بیمه‌نامه‌ها و اقساط، ورودِ اکسل، بایگانیِ عمر) و گفتگو
 $isLife = ($_SESSION['role'] ?? '') === 'LIFE';
+// «میز کار من» (داشبوردِ شخصی، home.js): صفحه‌ی شروعِ همه‌ی نقش‌ها؛ مدیر کل همچنان با «داشبوردِ سامانه» شروع می‌کند
+$homeFirst = (function_exists('perm_real_role') ? perm_real_role() : ($_SESSION['role'] ?? '')) !== 'ADMIN';   // نقشِ واقعی (دسترسیِ سفارشی موقتاً «مدیر» می‌شود)
+$homeNavHtml = '<a href="#" onclick="switchTab(\'home\')" id="nav-home" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0' . ($homeFirst ? ' text-blue-600' : '') . '"><i class="fas fa-mug-hot ml-1"></i> میز کار من</a>';
 // منوی «بیمه عمر»: مدیر کل، کاربر بیمه عمر و هر کسی که دسترسیِ سفارشی دارد (منوهای بی‌اجازه در مرورگر پنهان می‌شوند)
 $lifeAccess = $isLife || ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 // منوی «بازاریابی و فروش»: مدیر کل و دسترسی‌های سفارشی (منوهای بی‌اجازه در مرورگر پنهان می‌شوند)
@@ -1046,12 +1049,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <!-- منوی اصلی: پنج بخش؛ کارهای مرتبط داخلِ زیرمنوهای درختی (menu-sub) کنارِ هم آمده‌اند -->
             <nav id="main-nav" class="hidden lg:flex flex-col lg:flex-row gap-1 lg:gap-5 font-bold text-xs text-slate-500 absolute lg:static top-full right-0 left-0 lg:top-auto bg-white lg:bg-transparent shadow-xl lg:shadow-none p-4 lg:p-0 z-50 max-h-[75vh] overflow-y-auto lg:overflow-visible rounded-b-2xl lg:rounded-none">
 
-                <?php if ($isParsian) echo $vrMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
-                <?php if ($isLife) echo $lifeMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
+                <?php if ($isParsian) echo $homeNavHtml . $vrMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
+                <?php if ($isLife) echo $homeNavHtml . $lifeMenuHtml . $chatNavHtml . $personnelMenuHtml; ?>
                 <?php if (!$isParsian && !$isLife): ?>
 
+                <?php echo $homeNavHtml; ?>
                 <?php if (!$isLiaison): ?>
-                <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item text-blue-600 hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
+                <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item <?php echo $homeFirst ? '' : 'text-blue-600'; ?> hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
                 <?php endif; ?>
                 <?php echo $chatNavHtml; ?>
 
@@ -1211,7 +1215,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endif; ?>
         <?php endif; ?>
 
-        <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1">
+        <div id="tab-home" class="tab-content max-w-7xl mx-auto w-full flex-1 <?php echo $homeFirst ? '' : 'hidden'; ?>"><div id="home-root"></div></div>
+
+        <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 <?php echo $homeFirst ? 'hidden' : ''; ?>">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 class="text-2xl font-black text-slate-800">داشبورد و وضعیت هوشمند سیستم</h1>
@@ -4274,6 +4280,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="comfort.js?v=16"></script>
     <script src="settings-nav.js?v=3"></script>
     <script src="announce.js?v=3"></script>
+    <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
@@ -4383,6 +4390,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
         function permCan(page, op = 'view') {
+            if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }
@@ -5036,7 +5044,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // هر ۲۰ ثانیه (قبلاً ۵ ثانیه) و فقط وقتی صفحه دیده می‌شود: با چند کاربرِ هم‌زمان بارِ بی‌دلیل روی سرور نمی‌گذارد
         setInterval(() => { if (!document.hidden) checkBotStatus(); }, 20000);
         checkBotStatus();
+        <?php if (!$homeFirst): ?>
         if (permCan('dashboard')) { loadStats(); loadDashCharts(); loadDashAlerts(); }
+        <?php endif; ?>
         <?php endif; ?>
         <?php if ($canSeeCompanies): ?>
         if (permCan('companies-inbox')) { loadCompanyInbox(); setInterval(loadCompanyInbox, 30000); }
@@ -5049,22 +5059,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (visible('staff-users')) loadStaffUsers();
         }, 20000);
         <?php endif; ?>
-        <?php if ($isLiaison): ?>
-        switchTab('companies-requests');
+        // صفحه‌ی شروع: «میز کار من» برای همه‌ی نقش‌ها (مدیر کل: داشبوردِ سامانه)
+        <?php if ($homeFirst): ?>
+        setTimeout(() => switchTab('home'), 0);   // بعد از اجرای کاملِ اسکریپت (ثابت‌های پایین‌تر آماده باشند)
         <?php endif; ?>
-        <?php if ($isParsian): ?>
-        switchTab('vr-build');
-        <?php endif; ?>
-        <?php if ($isLife): ?>
-        setTimeout(() => switchTab('life-dash'), 0);
-        <?php endif; ?>
-        // دسترسیِ سفارشی بدونِ «داشبورد»: اولین صفحه‌ای که اجازه دارد
-        if (PERM.custom && !permCan('dashboard')) setTimeout(() => {   // بعد از اجرای کاملِ اسکریپت (ثابت‌های پایین‌تر آماده باشند)
-            const ft = permFirstTab();
-            if (ft) switchTab(ft);
-            else { document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-                   document.getElementById('tab-dashboard').insertAdjacentHTML('beforebegin', '<div class="max-w-xl mx-auto mt-16 text-center bg-white border border-slate-200 rounded-2xl p-8"><i class="fas fa-lock text-3xl text-slate-300 mb-3"></i><p class="font-black text-slate-700">هنوز به هیچ صفحه‌ای دسترسی ندارید.</p><p class="text-xs text-slate-500 mt-1">از مدیر کل بخواهید در «کاربران» دسترسی‌تان را تعیین کند.</p></div>'); }
-        }, 0);
 
         // ======================= کارتابل پرونده‌ها (معرفی‌نامه‌های کارکنان) =======================
         // بازه‌ی زمانی روی کارت‌ها و جدول با هم اثر دارد: جدول بر اساسِ تاریخِ صدورِ معرفی‌نامه (اگر نبود، تاریخِ ثبت)
@@ -9863,6 +9861,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // (که اول bootstrap را می‌گیرد و کشویی‌های دوره/شرکت را پر می‌کند)
             if (tabId === 'records') loadRecords();
             if (tabId === 'dashboard') { loadStats(); loadDashCharts(); loadDashAlerts(); }
+            if (tabId === 'home' && window.Home) Home.load(document.getElementById('home-root'));
             if (tabId === 'filemanager') fmOpen(fmCurrentPath);
             if (tabId === 'queue') loadQueue();
             if (tabId === 'tickets') openMessenger(tabKey);

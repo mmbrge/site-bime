@@ -59,7 +59,7 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
         $__vrScript = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
         // «کاربر بیمه عمر» (LIFE) همین محدودیت را دارد ولی به‌جای گزارشِ بازدید، فقط بخشِ بیمه عمر و بایگانیِ خودش
         $__isLife = ($_SESSION['role'] ?? '') === 'LIFE';
-        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', $__isLife ? '/api/life_actions.php' : '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php', '/api/work_actions.php',
+        $__vrAllowed = ['/dashboard.php', '/index.php', '/logout.php', $__isLife ? '/api/life_actions.php' : '/api/visit_reports.php', '/api/otp_login.php', '/api/chat_actions.php', '/api/work_actions.php', '/api/home_actions.php',
                         // امکاناتِ رفاهی (اگر مدیر برایش روشن کرده)، اعلان‌های پاپ‌آپ و بررسیِ نشست برای خروجِ خودکار
                         '/api/comfort_actions.php', '/api/announce_actions.php', '/api/alive.php', '/api/tools_actions.php'];
         if ($__isLife) $__vrAllowed[] = '/Archive/_guard.php';   // فقط پوشه‌ی «بایگانی بیمه عمر» (در خودِ _guard.php)
