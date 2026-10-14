@@ -245,6 +245,9 @@ try {
 
         if (!empty($data['company_id']))     { $where[] = "cr.company_id = ?";   $params[] = intval($data['company_id']); }
         if ($typeF)                          { $where[] = "crp.insurance_type = ?"; $params[] = $typeF; }
+        // خودرو / موتورسیکلت
+        $vehF = strtoupper(trim((string)($data['vehicle'] ?? '')));
+        if (in_array($vehF, ['CAR', 'MOTOR'], true)) { company_ensure_moto_cols($pdo); $where[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(crp.vehicle_kind, '') = 'MOTOR' OR COALESCE(crp.plate_letter, '') = 'موتور')"; }
         if (!empty($data['request_kind']))   { $where[] = "cr.request_kind = ?";  $params[] = $data['request_kind']; }
         if (!empty($data['insurer']))        { $where[] = "cr.insurer = ?";       $params[] = $data['insurer']; }
         // ماهِ ثبتِ درخواست (شمسی)
@@ -357,6 +360,7 @@ try {
         if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN') {
             $pw = ["pc.status <> 'ISSUED'", "pc.status <> 'CANCELLED'", "COALESCE(pc.status, '') <> 'WITHDRAWN'"]; $pp = [];
             if ($typeF) { $pw[] = "pc.insurance_type = ?"; $pp[] = $typeF; }
+            if (in_array($vehF, ['CAR', 'MOTOR'], true)) $pw[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(pc.plate, '') REGEXP '^[0-9]{3} *- *[0-9]{5}$' OR COALESCE(pc.car_type, '') LIKE '%موتور%')";
             // «نوع درخواست» برای کارکنان همیشه صدور جدید است؛ اگر فیلترِ دیگری خورده، چیزی نیاید
             if (!empty($data['request_kind']) && $data['request_kind'] !== 'NEW_POLICY') $pw[] = "1=0";
             if (!empty($data['company_id'])) { $pw[] = "per.company_id = ?"; $pp[] = intval($data['company_id']); }
@@ -766,6 +770,8 @@ try {
         $from = fin_jalali_to_date($data['issued_from'] ?? ($_GET['issued_from'] ?? ''));
         $to   = fin_jalali_to_date($data['issued_to'] ?? ($_GET['issued_to'] ?? ''));
         $typeF = $data['insurance_type'] ?? ($_GET['insurance_type'] ?? '');
+        $vehF = strtoupper(trim((string)($data['vehicle'] ?? ($_GET['vehicle'] ?? ''))));   // خودرو / موتورسیکلت
+        if (in_array($vehF, ['CAR', 'MOTOR'], true)) company_ensure_moto_cols($pdo);
         $kindF = $data['request_kind'] ?? ($_GET['request_kind'] ?? '');
         $isExport = !empty($data['export']) || !empty($_GET['export']);
 
@@ -777,6 +783,7 @@ try {
             if ($from)  { $w[] = "DATE(crp.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(crp.issued_at) <= ?"; $p[] = $to; }
             if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
+            if (in_array($vehF, ['CAR', 'MOTOR'], true)) $w[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(crp.vehicle_kind, '') = 'MOTOR' OR COALESCE(crp.plate_letter, '') = 'موتور')";
             if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
             if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
             if (!empty($data['request_id'])) { $w[] = "cr.id = ?"; $p[] = intval($data['request_id']); }   // «نامه / درخواست»
@@ -846,6 +853,7 @@ try {
             if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
             if ($typeF) { $w[] = "pc.insurance_type = ?";   $p[] = $typeF; }
+            if (in_array($vehF, ['CAR', 'MOTOR'], true)) $w[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(pc.plate, '') REGEXP '^[0-9]{3} *- *[0-9]{5}$' OR COALESCE(pc.car_type, '') LIKE '%موتور%')";
             if (!empty($data['company_id'])) { $w[] = "per.company_id = ?"; $p[] = intval($data['company_id']); }
             // نوع درخواست برای پرسنلی همیشه «صدور بیمه‌نامه‌ی جدید» است
             if ($kindF && $kindF !== 'NEW_POLICY') { $w[] = "1=0"; }

@@ -2716,6 +2716,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="iq-type" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
                 </select>
+                <select id="iq-veh" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs" title="خودرو یا موتورسیکلت">
+                    <option value="">خودرو و موتورسیکلت</option><option value="CAR">فقط خودرو</option><option value="MOTOR">فقط موتورسیکلت</option>
+                </select>
                 <select id="iq-kind" onchange="loadIssueQueue()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">همه‌ی انواع درخواست</option>
                     <option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option>
@@ -2800,6 +2803,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </select>
                 <select id="il-type" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
+                </select>
+                <select id="il-veh" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="خودرو یا موتورسیکلت">
+                    <option value="">خودرو و موتورسیکلت</option><option value="CAR">فقط خودرو</option><option value="MOTOR">فقط موتورسیکلت</option>
                 </select>
                 <select id="il-company" onchange="ilRequestOptions(); loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
                 <select id="il-request" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs max-w-[230px]" title="فقط بیمه‌نامه‌های یک نامه / درخواست"><option value="">همه‌ی نامه‌ها / درخواست‌ها</option></select>
@@ -7423,6 +7429,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 readiness: document.getElementById('iq-readiness').value,
                 missing_doc: document.getElementById('iq-missing').value,
                 insurance_type: document.getElementById('iq-type').value,
+                vehicle: (document.getElementById('iq-veh') || {}).value || '',
                 request_kind: document.getElementById('iq-kind').value,
                 stage: document.getElementById('iq-stage').value,
                 expiry_from: document.getElementById('iq-exp-from').value.trim(),
@@ -7493,7 +7500,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function resetIssueQueueFilters() {
             ['iq-q', 'iq-exp-from', 'iq-exp-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-            ['iq-company', 'iq-readiness', 'iq-missing', 'iq-type', 'iq-kind', 'iq-stage', 'iq-month', 'iq-insurer'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+            ['iq-company', 'iq-readiness', 'iq-missing', 'iq-type', 'iq-veh', 'iq-kind', 'iq-stage', 'iq-month', 'iq-insurer'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
             const all = document.querySelector('#iq-expq button[data-v=""]');
             iqExpQuick = '';
             document.querySelectorAll('#iq-expq button[data-v]').forEach(b => b.classList.toggle('on', b === all));
@@ -7949,6 +7956,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 q: document.getElementById('il-q').value.trim(),
                 source: document.getElementById('il-source').value,
                 insurance_type: document.getElementById('il-type').value,
+                vehicle: (document.getElementById('il-veh') || {}).value || '',
                 company_id: (document.getElementById('il-company') || {}).value || '',
                 request_id: (document.getElementById('il-request') || {}).value || '',
                 issued_from: document.getElementById('il-from').value.trim(),
