@@ -54,6 +54,7 @@ if (!$companies) {
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
+<script src="../party-ui.js?v=1"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=5"></script>
@@ -317,6 +318,11 @@ if (!$companies) {
             </div>
             <div id="zk-summary"></div>
         </div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-3 mb-3">
+            <b class="text-[12px] text-amber-800">مالک / بیمه‌گذار / ذینفع (برای همه‌ی خودروها)</b>
+            <p class="text-[10.5px] text-slate-500 mb-2">خودرو به نامِ خودِ شرکت است، یا به نامِ شخص/شرکتِ دیگری که «ذینفع» می‌شود و شرکت بیمه‌گذار است، یا به نامِ دیگری که خودش بیمه‌گذار می‌شود. برای خودروی متفاوت، در همان ردیف «مالک/بیمه‌گذارِ این خودرو فرق دارد» را بزنید.</p>
+            <div id="nr-party"></div>
+        </div>
         <label class="text-xs font-bold text-slate-500 block mb-2">پلاک‌های این درخواست (اختیاری - می‌توانید چند پلاک اضافه کنید)</label>
         <div id="nr-plates-list" class="space-y-2 mb-2"></div>
         <button type="button" onclick="addPlateRow('nr-plates-list')" class="text-xs font-bold text-blue-600 mb-4"><i class="fas fa-plus ml-1"></i>افزودن پلاک</button>
@@ -491,6 +497,7 @@ function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openNewRequestModal() {
     document.getElementById('nr-plates-list').innerHTML = '';
+    if (window.PartyUI) document.getElementById('nr-party').innerHTML = PartyUI.editor({mode: 'COMPANY'});
     if (window.ZeroKm) ZeroKm.clear();
     document.getElementById('nr-kind').value = 'NEW_POLICY';
     onNrKindChange();
@@ -650,6 +657,9 @@ function addPlateRow(containerId) {
         </select>
         <input class="plate-refpolicy border rounded-lg p-2 text-xs w-full mt-1.5" placeholder="شماره بیمه‌نامه (اختیاری)" dir="ltr">
         <input class="plate-endorse border rounded-lg p-2 text-xs w-full mt-1.5 hidden" placeholder="چه تغییری می‌خواهید؟ (خواسته‌ی الحاقیه)">
+        ${window.PartyUI ? `<label class="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 cursor-pointer mt-1.5">
+            <input type="checkbox" class="plate-party-on" onchange="this.closest('.plate-row').querySelector('.plate-party').classList.toggle('hidden', !this.checked)"> مالک/بیمه‌گذارِ این خودرو فرق دارد</label>
+        <div class="plate-party hidden mt-1">${PartyUI.editor({}, {allowInherit: true})}</div>` : ''}
         <select class="plate-cancelreason border rounded-lg p-2 text-xs w-full mt-1.5 hidden">
             <option value="">دلیل فسخ را انتخاب کنید</option>
             <?php foreach (company_cancellation_reasons() as $r): ?>
@@ -800,6 +810,7 @@ function collectPlateRows(containerId) {
         endorsement_request: !row.querySelector('.plate-endorse').classList.contains('hidden') ? (row.querySelector('.plate-endorse')?.value || '').trim() : '',
         cancellation_reason: !row.querySelector('.plate-cancelreason').classList.contains('hidden') ? (row.querySelector('.plate-cancelreason')?.value || '').trim() : '',
         insurance_type: row.querySelector('.plate-instype').value,
+        ...(row.querySelector('.plate-party-on')?.checked && window.PartyUI ? PartyUI.collect(row.querySelector('.plate-party')) : {}),
     // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
     })).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
     // اگر «هردو» انتخاب شده، همین پلاک به دو ردیفِ جدا (ثالث + بدنه) تبدیل می‌شود
@@ -821,6 +832,11 @@ async function submitNewRequest() {
     fd.append('request_kind', document.getElementById('nr-kind').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
     fd.append('requested_counts', JSON.stringify(collectNrCounts()));
+    if (window.PartyUI && document.querySelector('#nr-party .pty-ed')) {
+        const pv = PartyUI.collect(document.getElementById('nr-party'));
+        fd.append('party_mode', pv.party_mode || 'COMPANY');
+        if (pv.party) fd.append('party', JSON.stringify(pv.party));
+    }
     const zk = window.ZeroKm ? ZeroKm.payload() : null;   // خودروهای صفر کیلومتر با فاکتور (company-portal/zerokm.js)
     fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list').concat(zk ? zk.plates : [])));
     if (zk && zk.token) fd.append('zk_token', zk.token);
@@ -956,6 +972,7 @@ async function openRequestDetail(id) {
             ${p.dup ? `<div class="text-[11px] rounded-lg bg-rose-50 border border-rose-200 text-rose-800 px-2.5 py-1.5 mb-1.5">این خودرو برای همین نوعِ بیمه قبلاً بیمه‌نامه دارد و این ردیف صادر نمی‌شود.
                 ${p.dup.plate_id ? `<br>بیمه‌نامه‌ی قبلی${p.dup.policy_number ? ' شماره <b dir="ltr">' + escH(faNum(p.dup.policy_number)) + '</b>' : ''}${p.dup.issued_j ? ' (صادره ' + faNum(p.dup.issued_j) + ')' : ''}
                     <a class="font-bold text-blue-600 underline mr-1" href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${p.dup.plate_id}">دانلود</a>` : (p.dup.end_j ? '<br>بیمه‌نامه‌ی قبلی معتبر تا ' + faNum(p.dup.end_j) : '')}</div>` : ''}
+            ${window.PartyUI && p.party ? `<div class="mb-1.5">${PartyUI.chip(p.party, {onEdit: ['ISSUED', 'IN_ISSUANCE'].includes(p.status) ? '' : `portalEditParty(${p.id})`})}</div>` : ''}
             ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
             ${p.engine_no ? `<p class="text-[10px] text-slate-400 mb-1" dir="ltr">شماره موتور: ${p.engine_no}</p>` : ''}
             ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500 mb-1" dir="ltr">شماره بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
@@ -1012,15 +1029,41 @@ async function openRequestDetail(id) {
                    <i class="fas fa-file-zipper"></i>دانلود دسته‌جمعی بیمه‌نامه‌های صادرشده (${faNum((c.body_issued || 0) + (c.third_issued || 0))} صادرشده تا این لحظه، زیپ)</a>`
             : ''}
 
-        <h4 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>ریز درخواست و مدارک هر ردیف</h4>
+        <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <h4 class="text-xs font-bold text-slate-500 flex items-center gap-1.5"><i class="fas fa-car text-slate-300"></i>ریز درخواست و مدارک هر ردیف</h4>
+            ${window.PartyUI && data.plates.some(p => !['ISSUED', 'IN_ISSUANCE'].includes(p.status)) ? `<button onclick="portalEditAllParty()" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg">مالک / بیمه‌گذار برای همه‌ی ردیف‌ها</button>` : ''}
+        </div>
         ${rowsHtml}
 
         <h4 class="text-xs font-bold text-slate-500 mb-2 mt-4 flex items-center gap-1.5"><i class="fas fa-paperclip text-slate-300"></i>مدارکِ کلیِ درخواست (نامه و مدارکی که به ردیفِ خاصی وصل نیستند)</h4>
         ${docsHtml}
     `;
+    window.portalPartyDefault = r.party_default || null;
     document.getElementById('doc-upload-input').value = '';
     document.getElementById('doc-upload-rows').innerHTML = '';
     openModal('request-detail-modal');
+}
+
+// ---- مالک / بیمه‌گذار / ذینفع (party-ui.js): یک ردیف یا همه‌ی ردیف‌های درخواست ----
+async function portalPartySave(body) {
+    let d;
+    try { d = await (await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'set_party', request_id: activeRequestId}, body))})).json(); }
+    catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+    if (!d.ok) { showToast(d.error || 'خطا'); return false; }
+    showToast('ذخیره شد' + (d.locked ? ` (${faNum(d.locked)} ردیفِ صادرشده یا در حالِ صدور عوض نشد؛ برای آن‌ها به کارشناس پیام دهید)` : '') + '.');
+    if (activeRequestId) openRequestDetail(activeRequestId);
+    return true;
+}
+function portalEditParty(plateId) {
+    const p = (currentRequestPlates || []).find(x => String(x.id) === String(plateId));
+    if (!p) return;
+    PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفعِ این خودرو', value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other},
+                  onSave: v => portalPartySave(Object.assign({plate_ids: [plateId]}, v))});
+}
+function portalEditAllParty() {
+    const def = window.portalPartyDefault || {};
+    PartyUI.open({bulk: true, title: 'مالک / بیمه‌گذار برای همه‌ی ردیف‌ها', sub: 'برای همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند اعمال می‌شود؛ بعد می‌توانید هر ردیف را جدا عوض کنید.',
+                  value: {mode: def.mode || 'COMPANY', party: def.party}, onSave: v => portalPartySave(Object.assign({all: 1}, v))});
 }
 
 // آپلودِ هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست

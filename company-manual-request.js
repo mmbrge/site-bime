@@ -21,7 +21,8 @@
 
     const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
         carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
-        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false, docPages: [], docData: null });
+        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false, docPages: [], docData: null,
+        partyOpen: false, partyMode: '', party: null });
     // سواری/وانت یا سنگین: انتخابِ کاربر، وگرنه حدس از نام خودرو (مثل سرور)
     const HEAVY_RE = /کامیون|کشنده|تریلی|تریلر|اتوبوس|مینی\s*بوس|میدل\s*باس|بوس|سنگین|کمپرسی|تانکر|جرثقیل|لودر|بیل\s*مکانیکی|گریدر|بولدوزر|تراکتور|ماشین\s*آلات|یدک\s*کش/;
     const vclassOf = r => r.vclass || (HEAVY_RE.test(String(r.carName || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک')) ? 'HEAVY' : 'LIGHT');
@@ -32,6 +33,7 @@
     function blankState() {
         return { companyId: '', insurer: 'PASARGAD', kind: 'NEW_POLICY', mode: 'THIRDPARTY', text: '', letter: null, noVisitAll: false,
                  liabilityAll: '', liabilityPerRow: false, cov: null, covBaseOnly: false, defaults: null, rows: [newRow('THIRDPARTY')],
+                 partyMode: 'COMPANY', party: null,
                  detect: { busy: false, done: 0, total: 0, pages: [] } };
     }
 
@@ -95,6 +97,7 @@
             </div>
 
             ${isNew() ? detectBox() : ''}
+            ${partyBox()}
             ${hasThird ? thirdBox() : ''}
             ${hasBody ? bodyBox() : ''}
 
@@ -197,6 +200,28 @@
             if (!r.docPages.some(x => x.token === pg.token && x.n === pg.n)) r.docPages.push({ token: pg.token, n: pg.n, kind: pg.kind });
         });
         pg.row = true; pg.vehicle = rows[0].vehicleNo || 0;
+    }
+
+    // ---------------- مالک / بیمه‌گذار / ذینفع (party-ui.js): کلی برای همه‌ی خودروها + جدا برای هر خودرو ----------------
+    function partyBox() {
+        if (!window.PartyUI) return '';
+        return `<div class="bg-white rounded-2xl border-2 border-amber-100 p-4">
+            <h3 class="font-black text-sm text-amber-800 mb-1"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار / ذینفع (برای همه‌ی خودروها)</h3>
+            <p class="text-[10.5px] text-slate-500 mb-2 leading-6">خودرو به نامِ خودِ شرکت است، یا به نامِ شخص/شرکتِ دیگری که «ذینفع» می‌شود (بیمه‌گذار: شرکت)، یا به نامِ دیگری که خودش بیمه‌گذار می‌شود. برای خودروی متفاوت، در کارتِ همان خودرو «مالک/بیمه‌گذارِ این خودرو فرق دارد» را بزنید.</p>
+            <div data-pty-scope="all">${PartyUI.editor({ mode: st.partyMode, party: st.party })}</div></div>`;
+    }
+    const pnorm = v => String(v || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/شرکت|سهامی|خاص|عام|[\s\u200c()«»\-ـ.]/g, '');
+    function rowPartyHtml(r) {
+        if (!window.PartyUI) return '';
+        const company = (form.companies || []).find(c => String(c.id) === String(st.companyId));
+        const eff = r.partyOpen && r.partyMode ? r.partyMode : st.partyMode;
+        const own = r.docData && r.docData.owner_name;
+        const warn = own && eff === 'COMPANY' && company && pnorm(company.name) && !pnorm(own).includes(pnorm(company.name)) && !pnorm(company.name).includes(pnorm(own))
+            ? `<p class="text-[10.5px] text-amber-700 font-bold mt-1">⚠ مالکِ مدرکِ این خودرو «${esc(own)}» است، نه شرکت؛ اگر لازم است «ذینفع» یا «مالک = بیمه‌گذار» را انتخاب کنید.</p>` : '';
+        return `<div class="mt-3 border-t pt-3">
+            <label class="flex items-center gap-2 text-[11px] font-bold ${r.partyOpen ? 'text-amber-800' : 'text-slate-500'}"><input type="checkbox" data-r="partyOpen" ${r.partyOpen ? 'checked' : ''}> مالک/بیمه‌گذارِ این خودرو فرق دارد
+              ${r.partyOpen ? '' : `<span class="font-normal text-slate-400">(طبقِ انتخابِ کلی: ${esc(PartyUI.SHORT[st.partyMode] || '')})</span>`}</label>
+            ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${PartyUI.editor({ mode: r.partyMode, party: r.party }, { allowInherit: true })}</div>` : ''}${warn}</div>`;
     }
 
     function liabilityOptions(val, withEmpty) {
@@ -313,6 +338,7 @@
               <div class="md:col-span-4"><label class="lbl">توضیح این ردیف</label><input data-r="note" class="inp" value="${esc(r.note)}"></div>
             </div>
             ${covRow}
+            ${rowPartyHtml(r)}
             ${r.docPages.length ? `<div class="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 p-2 text-[10.5px] text-emerald-800">
               <b><i class="fas fa-wand-magic-sparkles ml-1"></i>${r.vehicleNo ? 'خودروی ' + fa(r.vehicleNo) + ' — ' : ''}از مدارکِ شناسایی‌شده:</b> ${r.docPages.map(p => esc(KIND_FA[p.kind] || 'مدرک') + ' (ص ' + fa(p.n) + ')').join('، ')}
               ${r.docData && r.docData.owner_name ? ` · مالک: <b>${esc(r.docData.owner_name)}</b>` : ''}${r.docData && r.docData.model_year ? ` · مدل ${esc(fa(r.docData.model_year))}` : ''}${r.docData && r.docData.color ? ` · ${esc(r.docData.color)}` : ''}
@@ -399,11 +425,20 @@
                 if (['p1', 'p2', 'p4', 'expiry'].includes(f)) { v = en(v); el.value = fa(v); }
                 r[f] = v;
                 // فیلدهایی که ظاهر کارت را عوض می‌کنند، کارت را دوباره می‌سازند
-                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit'].includes(f)) {
+                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit', 'partyOpen'].includes(f)) {
                     if (f === 'customCov' && v && !r.cov) r.cov = JSON.parse(JSON.stringify(st.covBaseOnly ? { __none: true } : (st.cov || {})));
                     render();
                 } else { const s = root.querySelector('#cmr-summary'); if (s) s.innerHTML = summary(); }
             });
+        });
+        // مالک / بیمه‌گذار: مقدارِ ویرایشگر همان لحظه در وضعیتِ فرم نگه داشته می‌شود
+        root.querySelectorAll('[data-pty-scope]').forEach(box => {
+            const h = () => {
+                const v = PartyUI.collect(box);
+                if (box.dataset.ptyScope === 'all') { st.partyMode = v.party_mode || 'COMPANY'; st.party = v.party; }
+                else { const r = rowOf(box); r.partyMode = v.party_mode; r.party = v.party; }
+            };
+            box.addEventListener('input', h); box.addEventListener('change', h);
         });
         root.querySelectorAll('[data-visit]').forEach(b => b.onclick = () => buildVisit(rowOf(b)));
         root.querySelectorAll('[data-visit-edit]').forEach(b => b.onclick = () => {
@@ -455,6 +490,7 @@
             request_text: st.text,
             default_liability: st.liabilityPerRow ? '' : st.liabilityAll,
             default_coverages: st.covBaseOnly ? 'none' : (st.cov && Object.keys(st.cov).length ? st.cov : null),
+            party_mode: st.partyMode || 'COMPANY', party: st.party,
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
                 // صفرکیلومترِ بی‌پلاک: خانه‌های عددیِ پلاک خالی‌اند، پس حرفِ پیش‌فرضِ «الف» هم فرستاده نمی‌شود (وگرنه «پلاک ناقص» می‌شد)
@@ -465,6 +501,7 @@
                 vehicle_class: r.type === 'BODY' ? vclassOf(r) : '',
                 coverages: r.type === 'BODY' && r.customCov ? covOut(r.cov || {}) : null,
                 ref_policy_number: r.refPolicy, endorsement_request: r.endorse, cancellation_reason: r.cancelReason, row_note: r.note,
+                party_mode: r.partyOpen ? r.partyMode : '', party: r.partyOpen ? r.party : null,
             })),
         };
         const btn = root.querySelector('[data-act="submit"]');

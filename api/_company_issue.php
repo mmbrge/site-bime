@@ -430,7 +430,8 @@ function policy_fields_to_issue_info(array $f) {
             'address' => 'insured_address', 'postal_code' => 'insured_postal_code', 'cargo' => 'car_cargo', 'central_no' => 'central_unique_code',
             'start_date' => 'start_date', 'end_date' => 'end_date', 'prev_expiry' => 'prev_expiry', 'prev_claims' => 'prev_claims', 'ncd' => 'no_claim_discount',
             'car_value' => 'car_value', 'total_value' => 'total_value', 'trailer_value' => 'trailer_value', 'extras_value' => 'extras_value',
-            'liability' => 'liability', 'diya' => 'diya_cover', 'driver_cover' => 'driver_cover', 'covers' => 'covers'];
+            'liability' => 'liability', 'diya' => 'diya_cover', 'driver_cover' => 'driver_cover', 'covers' => 'covers',
+            'owner_name' => 'owner_name', 'owner_national_id' => 'owner_national_id', 'beneficiary' => 'beneficiary', 'beneficiary_national_id' => 'beneficiary_national_id'];
     $out = [];
     foreach ($map as $from => $to) { $v = trim(mb_substr((string)($f[$from] ?? ''), 0, 600)); if ($v !== '') $out[$to] = $v; }
     return $out;

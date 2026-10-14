@@ -9,6 +9,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_case_doc_upload.php';   // عکس/گالری/PDF برای مدارک + «چند مدرک در یک PDF»
+require_once __DIR__ . '/_health_admin.php';      // حالتِ نوبتی: فقط بازدیدِ سلامت حضوری است
 
 $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
@@ -70,9 +71,12 @@ try {
                 'docs_status' => $docsStatus, 'docs_status_fa' => DOC_STATUS_FA[$docsStatus],
                 'health_status' => $healthStatus, 'health_status_fa' => DOC_STATUS_FA[$healthStatus],
                 'health_reject_reason' => $healthRejectReason,
+                // حالتِ نوبتی: بازدیدِ سلامتِ این درخواست حضوری است (مدارک مثلِ قبل از همین‌جا)
+                'appointment' => in_array($healthStatus, ['not_started', 'needs_fix'], true) ? hadm_case_appt_info($pdo, $c) : null,
             ];
         }
-        echo json_encode(['ok' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+        $apptMode = !hadm_self_enabled($pdo);
+        echo json_encode(['ok' => true, 'data' => $result, 'appt_mode' => $apptMode, 'appt_hint' => $apptMode ? HADM_DOCS_HINT : ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -243,9 +243,19 @@ try {
         $person = resolve_main_session($pdo, $token);
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
-        $stmt = $pdo->prepare("SELECT id, unique_code, plate FROM policy_cases WHERE person_id = ? AND insurance_type = 'BODY' AND status IN ('DOCS_REVIEW','ISSUING','ISSUED') ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT id, unique_code, plate, status, insurance_type FROM policy_cases WHERE person_id = ? AND insurance_type = 'BODY' AND status IN ('DOCS_REVIEW','ISSUING','ISSUED') ORDER BY created_at DESC");
         $stmt->execute([$person['id']]);
-        echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        // حالتِ نوبتی (بازدید توسط کاربر خاموش): فقط بازدیدِ سلامت حضوری است؛ نوبتِ هر درخواست نشان داده می‌شود
+        require_once __DIR__ . '/_health_admin.php';
+        $apptMode = !hadm_self_enabled($pdo);
+        $rows = [];
+        foreach ($stmt->fetchAll() as $c) {
+            $h = compute_health_status($pdo, $c);
+            $rows[] = ['id' => $c['id'], 'unique_code' => $c['unique_code'], 'plate' => $c['plate'],
+                'appointment' => ($apptMode && in_array($h, ['not_started', 'needs_fix'], true)) ? hadm_case_appt_info($pdo, $c) : null,
+                'health_status' => $h];
+        }
+        echo json_encode(['ok' => true, 'data' => $rows, 'appt_mode' => $apptMode, 'appt_hint' => $apptMode ? HADM_DOCS_HINT : ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -52,6 +52,7 @@ function self_inspection_blocked($pdo, $session) {
     if ($session['mode'] === 'case' && $session['case_id']) {
         $a = hadm_appt_assign($pdo, $session['case_id']);
         if ($a) $msg .= "\nنوبتِ بازدیدِ شما: " . hadm_appt_fa($pdo, $a);
+        $msg .= "\nمدارک را از «بازدید مدارک» (با عکس یا فایل) خودتان بارگذاری کنید؛ نوبت فقط برای بازدیدِ سلامتِ خودرو است.";
     }
     return $msg;
 }

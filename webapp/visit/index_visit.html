@@ -46,6 +46,8 @@
   .action-btn.pending { background: rgba(245,158,11,.15); color: #fbbf24; cursor: default; }
   .action-btn.approved { background: rgba(16,185,129,.15); color: #6ee7b7; cursor: default; }
   .action-btn.na { display: none; }
+  .action-btn.appt { background: rgba(56,189,248,.14); color: #7dd3fc; }
+  .appt-hint { font-size: 11px; line-height: 1.9; color: #bae6fd; background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.28); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
 
   .form-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 16px; }
   .field { margin-bottom: 12px; }
@@ -84,6 +86,7 @@
 <button class="btn btn-outline" style="margin-top:20px;" onclick="toggleInspections()">📋 بازدیدهای انجام‌شده</button>
 <div id="inspections-box" style="display:none; margin-top:10px;"></div>
 
+<div id="free-health-box">
 <h2 class="section-title" style="font-size:12px; margin-top:28px; opacity:.8;">🆕 بازدید آزاد (پلاک دیگر / بدون درخواست بیمه)</h2>
 <div class="form-card" style="padding:12px;">
   <div id="guest-name-field" class="field" style="display:none; margin-bottom:8px;">
@@ -99,6 +102,7 @@
     </div>
   </div>
   <button class="btn btn-outline" style="font-size:12px; padding:11px;" onclick="startFreeHealth()">🚗 شروع بازدید سلامت برای این پلاک</button>
+</div>
 </div>
 
 <div class="app-footer">
@@ -182,6 +186,7 @@ const TYPE_FA = { BODY: 'بدنه', THIRDPARTY: 'ثالث' };
 const STATUS_CLASS = { not_started: 'needs', partial: 'needs', needs_fix: 'fix', submitted: 'pending', approved: 'approved', not_applicable: 'na' };
 const STATUS_ICON = { not_started: '📤', partial: '📤', needs_fix: '⚠️', submitted: '⏳', approved: '✅' };
 const STATUS_LABEL = { not_started: 'در انتظار ارسال مدارک', partial: 'تکمیل ارسال مدارک', needs_fix: 'در انتظار اصلاح کاربر', submitted: 'در انتظار تایید کارشناس', approved: 'تایید شده' };
+let APPT_MODE = false;
 const HSTATUS_LABEL = { not_started: 'در انتظار ثبت بازدید', needs_fix: 'در انتظار اصلاح کاربر', submitted: 'در انتظار تایید کارشناس', approved: 'تایید شده' };
 
 async function loadRequests() {
@@ -193,7 +198,11 @@ async function loadRequests() {
         if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
         if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز درخواستی که نیاز به مدارک/بازدید داشته باشد ندارید.</div>'; return; }
 
-        box.innerHTML = data.data.map(r => {
+        APPT_MODE = !!data.appt_mode;
+        const freeBox = document.getElementById('free-health-box');
+        if (freeBox) freeBox.style.display = APPT_MODE ? 'none' : '';
+        const hint = data.appt_hint ? `<div class="appt-hint">🗓 ${data.appt_hint}</div>` : '';
+        box.innerHTML = hint + data.data.map(r => {
             const docsCls = STATUS_CLASS[r.docs_status] || 'na';
             const docsClickable = ['not_started','partial','needs_fix'].includes(r.docs_status);
             const docsDone = ['submitted','approved'].includes(r.docs_status);
@@ -209,7 +218,18 @@ async function loadRequests() {
             } else if (r.insurance_type === 'BODY' && r.estimated_car_value) {
                 detailLine += (detailLine ? ' — ' : '') + `ارزش خودرو: ${toFa(r.estimated_car_value.toLocaleString())} تومان`;
             }
-            const healthReasonLine = (r.health_status === 'needs_fix' && r.health_reject_reason)
+            // حالتِ نوبتی: دکمه‌ی سلامت فقط نوبتِ حضوری را نشان می‌دهد؛ «بازدید مدارک» مثلِ قبل فعال است
+            const appt = r.appointment;
+            const healthBtn = appt
+                ? `<button class="action-btn appt" onclick="showToast('نوبتِ بازدیدِ حضوری: ' + (this.dataset.slot || 'به‌زودی اعلام می‌شود'))" data-slot="${(appt.slot_fa || '').replace(/"/g, '&quot;')}">
+                        <span>🗓 بازدید سلامت (حضوری)</span>
+                        <span class="sub">${appt.slot_fa || 'نوبت به‌زودی اعلام می‌شود'}</span>
+                   </button>`
+                : `<button class="action-btn ${healthCls}" ${healthClickable ? `onclick="goHealth(${r.id})"` : ''}>
+                        <span>${STATUS_ICON[r.health_status]||''} بازدید سلامت خودرو</span>
+                        <span class="sub">${healthSub}</span>
+                   </button>`;
+            const healthReasonLine = (!appt && r.health_status === 'needs_fix' && r.health_reject_reason)
                 ? `<p style="font-size:10px;color:#fca5a5;margin:4px 0 0;">علت اصلاح بازدید: ${r.health_reject_reason}</p>` : '';
 
             return `
@@ -225,10 +245,7 @@ async function loadRequests() {
                         <span>${STATUS_ICON[r.docs_status]||''} بازدید مدارک</span>
                         <span class="sub">${STATUS_LABEL[r.docs_status]||''}</span>
                     </button>
-                    <button class="action-btn ${healthCls}" ${healthClickable ? `onclick="goHealth(${r.id})"` : ''}>
-                        <span>${STATUS_ICON[r.health_status]||''} بازدید سلامت خودرو</span>
-                        <span class="sub">${healthSub}</span>
-                    </button>
+                    ${healthBtn}
                 </div>
                 ${healthReasonLine}
             </div>`;

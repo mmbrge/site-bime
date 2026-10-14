@@ -125,6 +125,16 @@ function hadm_appt_fa($pdo, $appt) {
     return fa_digits(HADM_WEEKDAYS[hadm_weekday($ts)] . ' ' . sprintf('%04d/%02d/%02d', $jy, $jm, $jd) . ' ساعت ' . date('H:i', $ts)) . ($place !== '' ? ' - ' . $place : '');
 }
 
+// حالتِ نوبتی (بازدید توسط کاربر خاموش) فقط «بازدیدِ سلامتِ خودرو» را حضوری می‌کند؛ مدارک را خودِ کاربر
+// مثلِ قبل (عکس/فایل) بارگذاری می‌کند. خروجی: null یعنی حالتِ عادی، وگرنه نوبتِ این درخواستِ بدنه.
+function hadm_case_appt_info($pdo, $case) {
+    if (($case['insurance_type'] ?? '') !== 'BODY' || hadm_self_enabled($pdo)) return null;
+    if (in_array((string)($case['status'] ?? ''), ['ISSUED', 'WITHDRAWN', 'CANCELLED', 'REGISTERED'], true)) return null;
+    $a = hadm_appt_assign($pdo, $case['id']);
+    return ['slot_at' => $a['slot_at'] ?? null, 'slot_fa' => $a ? hadm_appt_fa($pdo, $a) : ''];
+}
+const HADM_DOCS_HINT = 'بازدیدِ سلامتِ خودرو حضوری و با نوبت است؛ مدارک را (با عکس یا فایل) از «بازدید مدارک» همین حالا بارگذاری کنید تا روزِ نوبت فقط خودرو بازدید شود و مدرکی جا نماند.';
+
 // ---------------- صفِ بازدیدِ مینی‌اپِ مدیر ----------------
 // درخواست‌های بدنه‌ی بازی که بازدیدِ تاییدشده ندارند، با اطلاعاتِ درخواست و معرفی‌نامه؛ مرتب به ترتیبِ نوبت
 function hadm_queue($pdo) {
@@ -146,6 +156,13 @@ function hadm_queue($pdo) {
     foreach ($rows as $r) {
         if (in_array($r['last_insp'], ['APPROVED', 'PHOTOS_APPROVED'], true)) continue;
         if (!$r['slot_at']) { $a = hadm_appt_assign($pdo, $r['id']); $r['slot_at'] = $a['slot_at'] ?? null; }
+        $r['_docs'] = null;
+        if (function_exists('compute_docs_status')) {
+            try {
+                $full = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?"); $full->execute([$r['id']]);
+                if ($fc = $full->fetch()) $r['_docs'] = compute_docs_status($pdo, $fc);
+            } catch (Throwable $e) {}
+        }
         $out[] = [
             'case_id' => intval($r['id']), 'code' => $r['unique_code'], 'status' => $r['status'], 'status_fa' => function_exists('case_status_fa') ? case_status_fa($r['status']) : $r['status'],
             'plate' => $r['plate'], 'insured' => $r['insured_name'] ?: $r['holder_name'], 'insured_nid' => $r['insured_national_id'],
@@ -153,6 +170,7 @@ function hadm_queue($pdo) {
             'company' => $r['company_name'], 'car_value' => $r['estimated_car_value'] ? (int)$r['estimated_car_value'] : null,
             'letter_date' => $r['letter_date'] ? str_replace('-', '/', $r['letter_date']) : null,
             'last_insp' => $r['last_insp'], 'slot_at' => $r['slot_at'],
+            'docs_status' => $r['_docs'],
             'slot_fa' => $r['slot_at'] ? hadm_appt_fa($pdo, ['slot_at' => $r['slot_at']]) : '',
         ];
     }

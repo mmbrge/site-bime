@@ -199,6 +199,8 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.
 // ---------------- صفِ بازدید ----------------
 let QUEUE = [];
 const INSP = {PENDING: ['در انتظارِ بررسی', 'warn'], REJECTED: ['ناقص - دوباره لازم است', 'bad']};
+// وضعیتِ مدارکی که خودِ کاربر بارگذاری کرده (نوبت فقط برای بازدیدِ سلامت است، مدارک جدا می‌آیند)
+const DOCS = {not_started: ['مدارک: ارسال نشده', 'bad'], partial: ['مدارک: ناقص', 'warn'], needs_fix: ['مدارک: نیاز به اصلاح', 'bad'], submitted: ['مدارک: ارسال شده', 'warn'], approved: ['مدارک: تایید شده', 'ok']};
 async function loadQueue() {
   const box = document.getElementById('queue');
   box.innerHTML = '<div class="empty"><b><span class="spin" style="width:30px;height:30px"></span></b></div>';
@@ -224,7 +226,7 @@ function renderQueue() {
         <div><span>ارزش خودرو</span><b>${r.car_value ? money(r.car_value) + ' ریال' : '—'}</b></div>
         <div><span>موبایل</span><b dir="ltr">${fa(r.mobile || '—')}</b></div>
       </div>
-      <div class="row" style="margin-bottom:10px"><span class="chip">${esc(r.status_fa || r.status)}</span>${r.last_insp && INSP[r.last_insp] ? `<span class="chip ${INSP[r.last_insp][1]}">بازدیدِ کاربر: ${INSP[r.last_insp][0]}</span>` : ''}</div>
+      <div class="row" style="margin-bottom:10px"><span class="chip">${esc(r.status_fa || r.status)}</span>${r.last_insp && INSP[r.last_insp] ? `<span class="chip ${INSP[r.last_insp][1]}">بازدیدِ کاربر: ${INSP[r.last_insp][0]}</span>` : ''}${r.docs_status && DOCS[r.docs_status] ? `<span class="chip ${DOCS[r.docs_status][1]}">${DOCS[r.docs_status][0]}</span>` : ''}</div>
       <div class="btns"><button class="btn" onclick="startCase(${r.case_id}, this)">📸 شروعِ بازدید</button><button class="btn ghost" style="flex:.6" onclick="this.closest('.card').querySelector('.slotf').style.display='grid'">🗓 تغییرِ نوبت</button></div>
       <div class="slotf grid2" style="display:none;margin-top:10px;grid-template-columns:1.3fr 1fr auto">
         <input class="in" data-d dir="ltr" placeholder="1405/07/20"><input class="in" data-t dir="ltr" placeholder="10:30">

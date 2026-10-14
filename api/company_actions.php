@@ -229,6 +229,7 @@ try {
         $data = $data + $_GET;   // خروجی اکسل با همان فیلترها از راهِ GET می‌آید
         $isExport = !empty($data['export']);
         company_ensure_issue_info_cols($pdo);
+        party_ensure($pdo);
         $src = $data['source'] ?? 'ALL';   // ALL | COMPANY | PERSONNEL
         $out = []; $ready = 0; $waiting = 0;
         $readyFilter = $data['readiness'] ?? '';   // '' | READY | WAITING
@@ -279,6 +280,7 @@ try {
         if ($src !== 'PERSONNEL') {
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS request_created_at,
+                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
                        cr.letter_file_path, c.name AS company_name, c.phone AS company_phone, c.economic_code, c.address AS company_address
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -325,6 +327,10 @@ try {
             if ($missingFilter !== '' && !array_key_exists($missingFilter, $r['missing_docs'])) continue;
 
             $r['is_ready'] ? $ready++ : $waiting++;
+            // مالک / بیمه‌گذار / ذینفع برای پنجره‌ی صدور
+            $r['party'] = party_resolve($r, ['name' => $r['company_name'], 'economic_code' => $r['economic_code'], 'phone' => $r['company_phone'], 'address' => $r['company_address']],
+                                        ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+            unset($r['req_party_json']);
             $r['source']              = 'COMPANY';
             $r['source_fa']           = 'شرکتی';
             $r['plate_display']       = company_row_label($r);
@@ -748,6 +754,7 @@ try {
     if ($action === 'issued_list' || ($_GET['action'] ?? '') === 'issued_list') {
         $data = $data + $_GET;   // خروجی اکسل (GET) هم همه‌ی فیلترها را داشته باشد، از جمله شرکت
         company_ensure_issue_info_cols($pdo);
+        party_ensure($pdo);
         require_once __DIR__ . '/_endorse.php';
         endo_ensure($pdo);   // ستون‌های «الحاقیه» (تعداد، حق بیمه‌ی نهایی، فسخ)
         $endoF = (string)($data['endo'] ?? '');   // '' | 'has' | 'cancelled' | 'none'
@@ -781,7 +788,8 @@ try {
             if ($impF === '1') $w[] = "cr.is_import = 1"; elseif ($impF === '0') $w[] = "cr.is_import = 0";
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import, cr.ref_code AS request_ref,
-                       c.name AS company_name, c.economic_code, c.phone AS company_phone
+                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+                       c.name AS company_name, c.economic_code, c.phone AS company_phone, c.address AS company_address
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
                   JOIN companies c ON c.id = cr.company_id
@@ -789,14 +797,21 @@ try {
             $stmt->execute($p);
             foreach ($stmt->fetchAll() as $r) {
                 $kind = $r['request_kind'] ?? 'NEW_POLICY';
+                // بیمه‌گذار / مالک / ذینفع: همان که در صدور ثبت شد، وگرنه طبقِ نوعِ مالکیتِ ردیف
+                $iiR = issue_info_decode($r['issue_info'] ?? null);
+                $pr = party_resolve($r, ['name' => $r['company_name'], 'economic_code' => $r['economic_code'], 'phone' => $r['company_phone'], 'address' => $r['company_address']],
+                                    ['party_mode' => $r['req_party_mode'] ?? null, 'party_json' => $r['req_party_json'] ?? null]);
                 $rows[] = [
+                    'party_mode' => $pr['mode'], 'party_mode_fa' => $pr['mode_short'],
+                    'owner_name' => ($iiR['owner_name'] ?? '') ?: ($pr['owner']['name'] ?? ''),
+                    'beneficiary_name' => ($iiR['beneficiary'] ?? '') ?: ($pr['beneficiary']['name'] ?? ''),
                     'source' => 'COMPANY', 'source_fa' => !empty($r['is_import']) ? 'وارداتی' : 'شرکتی',
                     'is_import' => !empty($r['is_import']) ? 1 : 0, 'tag' => !empty($r['is_import']) ? 'بایگانی وارداتی' : null,
                     'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'request_ref' => $r['request_ref'] ?? null,
                     'plate_raw' => company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']),
                     'expiry_date_raw' => $r['expiry_date'] ?? null,
-                    'holder' => $r['company_name'], 'insured_name' => $r['company_name'],
-                    'national_id' => $r['economic_code'], 'phone' => $r['company_phone'],
+                    'holder' => $r['company_name'], 'insured_name' => ($iiR['insured_name'] ?? '') ?: (($pr['insured']['name'] ?? '') ?: $r['company_name']),
+                    'national_id' => ($iiR['insured_national_id'] ?? '') ?: ($pr['mode'] === 'OWNER' ? ($pr['insured']['national_id'] ?? '') : $r['economic_code']), 'phone' => $r['company_phone'],
                     'company_name' => $r['company_name'],
                     'plate' => company_row_label($r), 'chassis_no' => $r['chassis_no'], 'engine_no' => $r['engine_no'],
                     'insurance_type' => $r['insurance_type'], 'insurance_type_fa' => insurance_type_fa($r['insurance_type']),
@@ -925,7 +940,7 @@ try {
                         'شماره بیمه‌نامه مرجع', 'خودرو', 'سیستم', 'تیپ', 'مدل', 'رنگ', 'کاربری', 'VIN',
                         'ارزش خودرو (ریال)', 'تعهد مالی (ریال)', 'حق بیمه (ریال)', 'تعداد الحاقیه', 'حق بیمه نهایی (ریال)', 'فسخ',
                         'تاریخ درخواست', 'تاریخ انقضا', 'تاریخ صدور', 'وضعیت', 'توضیح درخواست',
-                        'کد پرسنلی', 'تاریخ صدور معرفی‌نامه', 'ماه معرفی‌نامه'];
+                        'کد پرسنلی', 'تاریخ صدور معرفی‌نامه', 'ماه معرفی‌نامه', 'مالکیت', 'مالک', 'ذینفع'];
             $out = [];
             foreach ($rows as $i => $r) {
                 $out[] = [
@@ -939,6 +954,7 @@ try {
                     fa_digits($r['request_date_jalali']), fa_digits($r['expiry_date_jalali']), fa_digits(($r['policy_issue_date'] ?? '') ?: $r['issued_at_jalali']), $r['status_fa'],
                     $r['endorsement_request'] ?: ($r['cancellation_reason'] ?: $r['request_text']),
                     $r['personnel_code'] ?? '', fa_digits($r['intro_letter_j'] ?? ''), $r['intro_month_fa'] ?? '',
+                    $r['party_mode_fa'] ?? '', $r['owner_name'] ?? '', $r['beneficiary_name'] ?? '',
                 ];
             }
             $rangeFa = ($data['issued_from'] ?? ($_GET['issued_from'] ?? '')) ?: 'ابتدا';
@@ -1412,7 +1428,7 @@ try {
 
         $defaultLiability = company_parse_money($data['default_liability'] ?? '');
         $defaultCov = company_clean_coverages($data['default_coverages'] ?? null);
-        $clean = []; $errors = []; $classes = [];
+        $clean = []; $errors = []; $classes = []; $parties = [];
         $counts = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
         foreach ($rows as $i => $r) {
             $n = $i + 1;
@@ -1455,6 +1471,7 @@ try {
                         $type === 'BODY' && in_array($r['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $r['has_prev_body'] : null,
                         trim($r['row_note'] ?? '') ?: null, $cov];
             $classes[] = in_array($r['vehicle_class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $r['vehicle_class'] : null;
+            $parties[] = ['party_mode' => $r['party_mode'] ?? '', 'party' => $r['party'] ?? null];
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
 
@@ -1477,6 +1494,10 @@ try {
             if (empty($classes[$i])) continue;
             try { $pdo->prepare("UPDATE company_request_plates SET vehicle_class = ? WHERE id = ?")->execute([$classes[$i], $pid]); } catch (Throwable $e) { break; }
         }
+        // مالک / بیمه‌گذار / ذینفع: کلی (همه‌ی ردیف‌ها) و جدا برای هر ردیف
+        $defPartyMode = party_valid_mode($data['party_mode'] ?? '');
+        if ($defPartyMode) party_set_request_default($pdo, $requestId, $defPartyMode, $data['party'] ?? null);
+        foreach ($plateIds as $i => $pid) party_apply_from_input($pdo, $pid, $parties[$i] ?? [], $defPartyMode, $data['party'] ?? null);
 
         // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
         $siteRoot = dirname(__DIR__);
@@ -1562,6 +1583,8 @@ try {
                         trim($data['cancellation_reason'] ?? '') ?: null,
                         $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null, mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null]);
         $newPlateId = $pdo->lastInsertId();
+        // ردیفِ بی‌تنظیم از پیش‌فرضِ کلیِ درخواست پیروی می‌کند
+        party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null]);
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
         company_sync_plate_status($pdo, $newPlateId);
         echo json_encode(['ok' => true, 'plate_id' => $newPlateId]);
@@ -1640,6 +1663,7 @@ try {
     // ---- جزئیات یک درخواست (دید ادمین/همکار): مدارک، پلاک‌ها، مدارک کم، اقساط ----
     if ($action === 'request_detail') {
         $requestId = intval($data['request_id'] ?? 0);
+        party_ensure($pdo);
         $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name, c.economic_code AS company_economic_code, c.address AS company_address, c.phone AS company_phone FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
         $stmt->execute([$requestId]);
         $request = $stmt->fetch();
@@ -1692,6 +1716,8 @@ try {
             $p['proposal'] = !empty($p['proposal_json']) ? (json_decode($p['proposal_json'], true) ?: null) : null;
             unset($p['proposal_json']);
             $p['issue_info_obj'] = issue_info_decode($p['issue_info'] ?? null);
+            // مالک / بیمه‌گذار / ذینفع (ردیف یا پیش‌فرضِ کلیِ درخواست)
+            $p['party'] = party_resolve($p, ['name' => $request['company_name'], 'economic_code' => $request['company_economic_code'], 'phone' => $request['company_phone'], 'address' => $request['company_address']], $request);
             $p['doc_data'] = [];
             foreach ($rowDocs as $rd) {
                 $aj = !empty($rd['ai_json']) ? json_decode($rd['ai_json'], true) : null;
@@ -1731,7 +1757,38 @@ try {
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
                           'counts' => $counts, 'doc_types' => company_doc_types(),
                           'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options(),
-                          'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
+                          'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons(),
+                          'party_modes' => PARTY_MODES, 'party_default' => ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)]], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- مالک / بیمه‌گذار / ذینفع: برای یک یا چند ردیف، یا کلِ ردیف‌های درخواست (all=1 => پیش‌فرضِ درخواست هم می‌شود) ----
+    //      party: اطلاعاتِ شخص/شرکتِ دیگر (اختیاری)؛ keep_party=1 یعنی فقط نوع عوض شود و اطلاعاتِ ثبت‌شده‌ی هر ردیف بماند
+    if ($action === 'set_party') {
+        party_ensure($pdo);
+        $mode = party_valid_mode($data['mode'] ?? '');
+        if (!$mode) { echo json_encode(['ok' => false, 'error' => 'نوعِ مالکیت مشخص نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        $party = !empty($data['keep_party']) ? false : ($data['party'] ?? null);
+        if ($party !== false && $mode !== 'COMPANY' && !party_clean($party) && !empty($data['require_party'])) { echo json_encode(['ok' => false, 'error' => 'نام یا کد/شناسه ملیِ مالک را وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $requestId = intval($data['request_id'] ?? 0);
+        $ids = array_values(array_filter(array_map('intval', (array)($data['plate_ids'] ?? []))));
+        $skipped = 0;
+        if (!empty($data['all'])) {
+            if (!$requestId) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+            // ردیف‌های صادرشده دست نمی‌خورند (بیمه‌نامه‌شان با همان مشخصات صادر شده)
+            $st = $pdo->prepare("SELECT id, status FROM company_request_plates WHERE request_id = ?");
+            $st->execute([$requestId]);
+            $ids = [];
+            foreach ($st->fetchAll() as $r) { if ($r['status'] === 'ISSUED') $skipped++; else $ids[] = intval($r['id']); }
+            party_set_request_default($pdo, $requestId, $mode, $party === false ? null : $party);
+        } elseif ($ids) {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE id IN ($in)");
+            $st->execute($ids);
+            $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        }
+        $n = party_set_rows($pdo, $ids, $mode, $party);
+        echo json_encode(['ok' => true, 'updated' => $n, 'skipped_issued' => $skipped], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -2699,6 +2756,7 @@ try {
                 // خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
                 company_fill_from_policy($pdo, $plateId, $it['data'] ?? []);
                 company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', array_merge((array)($it['data'] ?? []), ['policy_num' => $policyNumber, 'premium' => (string)$premium, 'vin' => $vin])));
+                party_fill_issue_info($pdo, $plateId);   // مالک / ذینفعِ ردیف در «اطلاعات صدور»
                 // صفحه‌های فیشِ اقساط روی اقساطِ همین بیمه‌نامه؛ اقساط از تاریخِ صدورِ داخلِ بیمه‌نامه
                 company_attach_policy_extras($pdo, $plateId, $dir . '/pages', $it['receipts'] ?? [], $it['statement_file'] ?? null, $it['data']['issue_date'] ?? '');
             }
@@ -2766,6 +2824,7 @@ try {
             // همه‌ی فیلدهای فرمِ صدور (همان‌طور که کارشناس ویرایش کرده)
             $fields = json_decode((string)($data['fields'] ?? ''), true);
             if (is_array($fields)) company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', $fields));
+            party_fill_issue_info($pdo, $plateId);
             $res['receipts'] = count($single['receipts'] ?? []);
         }
         if ($single) cbundle_rrmdir($single['dir']);

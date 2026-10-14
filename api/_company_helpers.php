@@ -3,6 +3,7 @@
 // توابع مربوط به ماژول «شرکت‌ها»: نام‌گذاری/مسیر بایگانی و کنترل دسترسی.
 // برای اجزای مشترک (تاریخ جلالی، sanitize_folder_name، name_join و ...)
 // به‌جای تکرار، از api/_case_helpers.php استفاده می‌شود (باید قبل از این فایل include شده باشد).
+require_once __DIR__ . '/_party.php';   // مالک / بیمه‌گذار / ذینفعِ ردیف‌ها
 
 // نام کامل نمایشی پلاک از روی ۴ بخش، هم‌شکل با پلاک‌های پرسنلی («۱۲ایران - ۳۴۵ الف ۶۷»)
 function company_plate_display($p1, $p2, $letter, $p4) {
@@ -1456,6 +1457,7 @@ function issue_info_fields() {
         'owner_name' => 'نام مالک', 'owner_national_id' => 'کد/شناسه ملی مالک', 'owner_phone' => 'تلفن مالک', 'owner_address' => 'نشانی مالک',
         'insured_name' => 'نام بیمه‌گذار', 'insured_national_id' => 'کد/شناسه ملی بیمه‌گذار', 'insured_phone' => 'تلفن بیمه‌گذار',
         'insured_postal_code' => 'کد پستی بیمه‌گذار', 'insured_address' => 'نشانی بیمه‌گذار', 'insured_birth_date' => 'تاریخ تولد بیمه‌گذار',
+        'beneficiary' => 'نام ذینفع', 'beneficiary_national_id' => 'کد/شناسه ملی ذینفع',
         'car_system' => 'سیستم', 'car_type' => 'تیپ', 'car_kind' => 'نوع خودرو', 'car_model_year' => 'مدل (سال ساخت)', 'car_color' => 'رنگ',
         'car_usage' => 'کاربری', 'car_capacity' => 'ظرفیت', 'car_cylinders' => 'تعداد سیلندر', 'chassis_no' => 'شماره شاسی',
         'engine_no' => 'شماره موتور', 'vin' => 'VIN', 'prev_insurer' => 'بیمه‌گر قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی',

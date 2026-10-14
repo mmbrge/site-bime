@@ -4311,6 +4311,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
     <script src="endorse.js?v=3"></script>
+    <script src="party-ui.js?v=1"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
@@ -4325,7 +4326,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=15"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=6"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=7"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6402,6 +6403,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             currentRequestRows = data.plates || [];
             currentRequestKind = data.request_kind || 'NEW_POLICY';
             window.currentRequestInfo = r;
+            window.currentPartyDefault = data.party_default || null;
             if (data.cancellation_reasons) cancellationReasons = data.cancellation_reasons;
             const c = data.counts || {body: 0, third: 0, body_issued: 0, third_issued: 0};
 
@@ -6425,6 +6427,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${rowIdentityHtml(p)}
                         ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold">${fmEsc([p.car_name, p.car_type].filter(Boolean).join(' · '))}</p>` : ''}
                         ${Number(p.is_new_vehicle) ? '<p class="text-[10px] text-emerald-600 font-bold">صفر کیلومتر</p>' : ''}
+                        ${window.PartyUI && p.party ? `<div class="whitespace-normal max-w-[260px]">${PartyUI.chip(p.party, {onEdit: isAdmin && p.status !== 'ISSUED' ? `editRowParty(${p.id})` : ''})}</div>` : ''}
                         ${p.engine_no ? `<p class="text-[10px] text-slate-400" dir="ltr">موتور: ${p.engine_no}</p>` : ''}
                         ${p.row_note ? `<p class="text-[10px] text-slate-400">${p.row_note}</p>` : ''}
                         ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
@@ -6492,6 +6495,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
                     ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
+                    ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
                     ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی صادره‌ها</a>` : ''}
@@ -6521,6 +6525,28 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
             document.getElementById('creq-detail-modal').classList.add('active');
+        }
+
+        // ---- مالک / بیمه‌گذار / ذینفع (party-ui.js): یک ردیف یا همه‌ی ردیف‌های درخواست ----
+        async function partySave(body) {
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'set_party'}, body))})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return false; }
+            showToast(`ذخیره شد (${e2pNum(d.updated || 0)} ردیف)${d.skipped_issued ? ` · ${e2pNum(d.skipped_issued)} ردیفِ صادرشده دست نخورد` : ''}`, 'success');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            return true;
+        }
+        function editRowParty(plateId) {
+            const p = (currentRequestRows || []).find(x => String(x.id) === String(plateId));
+            if (!p || !window.PartyUI) return;
+            PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفع — ' + faDigits(p.plate_display || ''), value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other},
+                          onSave: v => partySave(Object.assign({plate_ids: [plateId]}, v))});
+        }
+        function editAllParty(requestId) {
+            const def = window.currentPartyDefault || {};
+            PartyUI.open({bulk: true, title: 'مالک / بیمه‌گذار برای همه‌ی ردیف‌ها', sub: 'برای همه‌ی ردیف‌های صادرنشده‌ی این درخواست (و ردیف‌هایی که بعداً اضافه می‌شوند) اعمال می‌شود؛ بعد می‌توانید هر ردیف را جدا عوض کنید.',
+                          value: {mode: def.mode || 'COMPANY', party: def.party}, onSave: v => partySave(Object.assign({request_id: requestId, all: 1}, v))});
         }
 
         // =================================================================
@@ -7631,6 +7657,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
                         </div>
                         ${r.company_address ? `<p class="text-[10px] text-slate-400 mt-2">${r.company_address}</p>` : ''}
+                        ${window.PartyUI && r.party ? `<div class="mt-2 pt-2 border-t border-slate-100">${PartyUI.chip(r.party)}</div>` : ''}
                     </div>
                     <div class="border border-slate-200 rounded-xl p-3">
                         <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-file-lines ml-1 text-slate-300"></i>درخواست</h4>
@@ -7887,6 +7914,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // برچسبِ اطلاعاتِ صدور (همان issue_info_fields در api/_company_helpers.php)
         const ISSUE_INFO_FA = {owner_name: 'نام مالک', owner_national_id: 'کد/شناسه ملی مالک', owner_phone: 'تلفن مالک', owner_address: 'نشانی مالک',
+            beneficiary: 'نام ذینفع', beneficiary_national_id: 'کد/شناسه ملی ذینفع',
             insured_birth_date: 'تاریخ تولد بیمه‌گذار', car_kind: 'نوع خودرو', car_capacity: 'ظرفیت', car_cylinders: 'تعداد سیلندر',
             prev_insurer: 'بیمه‌گر قبلی', prev_policy_number: 'شماره بیمه‌نامه‌ی قبلی', no_claim_years: 'سال‌های عدم خسارت', note: 'یادداشت صدور'};
         const REL_FA = {'خودم': 'خود', SELF: 'خودش', SPOUSE: 'همسر', CHILD: 'فرزند', FATHER: 'پدر', MOTHER: 'مادر', PARENT: 'والدین', SIBLING: 'خواهر/برادر', OTHER: 'سایر'};
@@ -8617,6 +8645,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ['ncd', 'تخفیف عدم خسارت', {wide: 1, only: 'ثالث'}], ['covers', 'پوشش‌های بیمه‌نامه', {wide: 1, only: 'بدنه'}]]],
             ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}], ['postal_code', 'کد پستی', {ltr: 1}],
                 ['address', 'نشانی', {wide: 1}]]],
+            ['fa-user-shield', 'مالک و ذینفع', [['owner_name', 'نام مالک'], ['owner_national_id', 'کد / شناسه ملی مالک', {ltr: 1}], ['beneficiary', 'ذینفع'], ['beneficiary_national_id', 'کد / شناسه ملی ذینفع', {ltr: 1}]]],
             ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['chassis_no', 'شماره شاسی', {ltr: 1}], ['vin', 'VIN', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
                 ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}], ['cargo', 'اتاق بار']]],
             ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}],
@@ -8899,7 +8928,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const out = {};
             box.querySelectorAll('[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
             ['premium', 'car_value', 'liability', 'total_value', 'trailer_value', 'extras_value', 'diya', 'driver_cover'].forEach(k => { if (out[k] !== undefined) out[k] = String(out[k]).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
-            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'owner_national_id', 'beneficiary_national_id', 'phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
             return out;
         }
         function pfCheck(box) {
@@ -8913,10 +8942,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // فرمِ صدورِ ردیفِ شرکتی، مثلِ کارکنان: ردیف + «اطلاعات صدور»ِ ذخیره‌شده + داده‌ی کارت/سند/فاکتورِ ردیف + شرکت؛ و در آخر «پیشنهاد» (اگر هست)
         function companyRowPrefill(p) {
             const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
+            // مالک / بیمه‌گذار / ذینفع طبقِ نوعِ مالکیتِ ردیف (خودِ شرکت، ذینفع، یا مالک = بیمه‌گذار)
+            const pt = p.party || {}, pIns = pt.insured || {}, pOwn = pt.owner || {}, pBen = pt.beneficiary || {};
+            const pid = x => x.national_id || x.economic_code || '';
+            const sameCo = rq.id && String(rq.id) === String(p.request_id);
             const o = {ins_type: p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', vin: p.vin || '', chassis_no: p.chassis_no || dd.vin || '', engine_no: p.engine_no || dd.engine_no || '', car_name: p.car_name || '',
                 car_value: p.car_value || '', liability: p.liability_limit || '',
-                insured_name: ii.insured_name || (rq.id && String(rq.id) === String(p.request_id) ? rq.company_name : '') || '', national_id: ii.insured_national_id || '',
-                phone: ii.insured_phone || '', address: ii.insured_address || '', postal_code: ii.insured_postal_code || '',
+                insured_name: ii.insured_name || pIns.name || (sameCo ? rq.company_name : '') || '', national_id: ii.insured_national_id || pid(pIns),
+                phone: ii.insured_phone || pIns.phone || '', address: ii.insured_address || pIns.address || '', postal_code: ii.insured_postal_code || pIns.postal_code || '',
+                owner_name: ii.owner_name || pOwn.name || dd.owner_name || '', owner_national_id: ii.owner_national_id || pid(pOwn) || dd.national_id || '',
+                beneficiary: ii.beneficiary || pBen.name || '', beneficiary_national_id: ii.beneficiary_national_id || pid(pBen),
                 car_system: ii.car_system || dd.car_system || '', car_tip: ii.car_type || p.car_type || dd.car_tip || '', car_kind: ii.car_kind || '',
                 model_year: ii.car_model_year || dd.model_year || '', color: ii.car_color || dd.color || '', usage: ii.car_usage || dd.usage || '',
                 capacity: ii.car_capacity || dd.capacity || '', cylinders: ii.car_cylinders || dd.cylinders || '',
@@ -8931,7 +8966,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const docs = (p.checklist || []).flatMap(it => (it.docs || []).map(d => d.is_dir ? '' : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline ml-2">${pesc(d.label)}</a>`)).join('');
             const prop = p.proposal;
             const html = sec('fa-building', 'شرکت', kv('نام', rq.company_name) + kv('کد اقتصادی', rq.company_economic_code, 1) + kv('تلفن', rq.company_phone, 1) + kv('درخواست', rq.request_ref || (rq.id ? '#' + rq.id : '')))
-                + sec('fa-user', 'مالک', kv('نام', ii.owner_name || dd.owner_name) + kv('کد/شناسه ملی', ii.owner_national_id || dd.national_id, 1) + kv('تلفن', ii.owner_phone || dd.mobile || dd.phone, 1) + kv('نشانی', ii.owner_address || dd.address))
+                + (p.party ? sec('fa-user-shield', 'مالکیت', `<span class="ml-3">${pesc(p.party.mode_fa || '')}</span>` + kv('بیمه‌گذار', (p.party.insured || {}).name) + (p.party.beneficiary ? kv('ذینفع', p.party.beneficiary.name || 'از مدارک') : '')
+                    + (p.party.mismatch ? '<span class="text-amber-700 font-bold">⚠ مالکِ کارت/سند با شرکت فرق دارد؛ نوعِ مالکیت را بررسی کنید.</span>' : '')) : '')
+                + sec('fa-user', 'مالک', kv('نام', ii.owner_name || (p.party && p.party.mode !== 'COMPANY' ? (p.party.owner || {}).name : '') || dd.owner_name) + kv('کد/شناسه ملی', ii.owner_national_id || dd.national_id, 1) + kv('تلفن', ii.owner_phone || dd.mobile || dd.phone, 1) + kv('نشانی', ii.owner_address || dd.address))
                 + sec('fa-car-side', 'خودرو', kv('نام', p.car_name) + kv('شاسی', p.chassis_no || p.vin, 1) + kv('موتور', p.engine_no, 1) + kv('سیستم', ii.car_system || dd.car_system) + kv('مدل', ii.car_model_year || dd.model_year, 1)
                     + (p.insurance_type === 'BODY' ? kv('ارزش', p.car_value ? money(p.car_value) : '') + kv('پوشش‌ها', [].concat(p.coverages_fa || []).join('، ')) : kv('تعهد مالی', p.liability_limit ? money(p.liability_limit) : '')))
                 + (prop && prop.data ? `<div class="mb-1.5"><span class="font-black text-indigo-700 ml-2"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</span>${prop.file ? `<a href="../${prop.file}" target="_blank" class="text-blue-600 hover:underline ml-2">مشاهده</a>` : ''}<span class="text-slate-500">فرم با آن پر شد و فایلِ بیمه‌نامه با آن چک می‌شود.</span></div>` : '')

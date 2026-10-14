@@ -214,6 +214,7 @@
 <div id="screen-health" class="screen">
   <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚗 بازدید سلامت</h2><div style="width:38px"></div></div>
   <div id="health-case-list"></div>
+  <div id="free-health-wrap">
   <p style="font-size:12px;color:#94a3b8;margin:14px 0 8px;">یا برای خودروی دیگری غیر از موارد بالا:</p>
   <div class="ir-pin" dir="ltr">
       <span class="ip-flag"></span>
@@ -223,6 +224,7 @@
       <span class="ip-ir"><small>ایران</small><input type="tel" id="free-region" placeholder="۶۸" maxlength="2" inputmode="numeric"></span>
     </div>
   <button class="btn btn-outline" onclick="startFreeHealthSession()">🆕 شروع بازدید آزاد</button>
+  </div>
 </div>
 
 <!-- ==================== استعلام حق بیمه ==================== -->
@@ -541,8 +543,16 @@ async function loadHealthCases() {
         const res = await fetch(`${API}?action=health_case_list&token=${encodeURIComponent(TOKEN)}`);
         const data = await res.json();
         if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
-        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">پرونده‌ی بیمه بدنه‌ی فعالی ندارید. می‌توانید از بخش پایین «بازدید آزاد» ثبت کنید.</div>'; return; }
-        box.innerHTML = data.data.map(c => `
+        const freeWrap = document.getElementById('free-health-wrap');
+        if (freeWrap) freeWrap.style.display = data.appt_mode ? 'none' : '';
+        const hint = data.appt_hint ? `<div class="list-card" style="font-size:12px;line-height:1.9;color:#bae6fd;border-color:rgba(56,189,248,.3)">🗓 ${data.appt_hint}
+            <button class="btn btn-outline" style="margin-top:8px" onclick="openVisitHub()">📎 بارگذاریِ مدارک</button></div>` : '';
+        if (data.data.length === 0) { box.innerHTML = hint + '<div class="empty-state">' + (data.appt_mode ? 'درخواستِ بدنه‌ای که منتظرِ بازدید باشد ندارید.' : 'پرونده‌ی بیمه بدنه‌ی فعالی ندارید. می‌توانید از بخش پایین «بازدید آزاد» ثبت کنید.') + '</div>'; return; }
+        box.innerHTML = hint + data.data.map(c => c.appointment ? `
+            <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                ${formatPlateHtml(c.plate) || c.unique_code}
+                <span style="font-size:11.5px;color:#7dd3fc;text-align:left;">🗓 نوبتِ بازدیدِ حضوری<br><b>${c.appointment.slot_fa || 'به‌زودی اعلام می‌شود'}</b></span>
+            </div>` : data.appt_mode ? '' : `
             <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="startCaseHealthSession(${c.id})">
                 ${formatPlateHtml(c.plate) || c.unique_code}
                 <span style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:4px;">انجام بازدید <span style="font-size:18px;">›</span></span>
