@@ -380,7 +380,7 @@ function endo_recompute($pdo, $source, $refId) {
 
 // جای فایلِ الحاقیه: پوشه‌ی خودِ بیمه‌نامه؛ وگرنه پوشه‌ی موقتِ «الحاقیه‌ها»
 function endo_policy_folder($pdo, $siteRoot, $source, $row) {
-    if ($source === 'C' && !empty($row['folder_path']) && is_dir($row['folder_path'])) return $row['folder_path'];
+    if (in_array($source, ['C', 'P'], true) && !empty($row['folder_path']) && is_dir($row['folder_path'])) return $row['folder_path'];
     if (!empty($row['issued_file_path'])) {
         $d = dirname($siteRoot . '/' . ltrim($row['issued_file_path'], '/'));
         if (is_dir($d)) return $d;
@@ -388,6 +388,62 @@ function endo_policy_folder($pdo, $siteRoot, $source, $row) {
     $d = (function_exists('temp_archive_root') ? temp_archive_root($siteRoot) : $siteRoot . '/موقت') . '/الحاقیه‌ها';
     if (!is_dir($d)) @mkdir($d, 0775, true);
     return $d;
+}
+
+// نسخه‌های دیگرِ پوشه‌ی همین بیمه‌نامه در بایگانی: «بایگانی صادره» و (کارکنان) کپی‌های ماه‌های دیگرِ معرفی‌نامه
+function endo_policy_copies($pdo, $siteRoot, $source, $row) {
+    $folder = (string)($row['folder_path'] ?? '');
+    if (!in_array($source, ['C', 'P'], true) || $folder === '' || !is_dir($folder)) return [];
+    $out = [];
+    try {
+        if ($source === 'P' || (function_exists('company_kind_goes_to_sadere') ? company_kind_goes_to_sadere($row['request_kind'] ?? 'NEW_POLICY') : ($row['request_kind'] ?? 'NEW_POLICY') === 'NEW_POLICY')) {
+            $ts = function_exists('policy_issue_ts') ? policy_issue_ts($row['policy_issue_date'] ?? '', strtotime((string)($row['issued_at'] ?? '')) ?: time()) : (strtotime((string)($row['issued_at'] ?? '')) ?: time());
+            $sd = build_sadere_base_path($siteRoot, $ts, $row['insurance_type'] ?? '') . '/' . basename($folder);
+            if (is_dir($sd)) $out[] = $sd;
+        }
+        if ($source === 'P' && !empty($row['introduction_id'])) {
+            require_once __DIR__ . '/_purge.php';
+            foreach (purge_intro_month_folders($pdo, $siteRoot, intval($row['introduction_id'])) as $mf) {
+                $d = $mf . '/' . basename($folder);
+                if (is_dir($d)) $out[] = $d;
+            }
+        }
+    } catch (Throwable $e) { error_log('[endo copies] ' . $e->getMessage()); }
+    $real = realpath($folder);
+    return array_values(array_unique(array_filter($out, fn($d) => realpath($d) !== $real)));
+}
+// فایلی که در پوشه‌ی اصلیِ بیمه‌نامه ذخیره شد، در نسخه‌های دیگرِ همان پوشه هم (با همان نام) گذاشته می‌شود
+function endo_copy_to_copies($pdo, $siteRoot, $source, $row, array $files) {
+    foreach (endo_policy_copies($pdo, $siteRoot, $source, $row) as $d) {
+        foreach ($files as $f) if ($f && is_file($f)) @copy($f, $d . '/' . basename($f));
+    }
+}
+// یک‌بار: فایل‌های الحاقیه‌هایی که پیش از این ثبت شده بودند در نسخه‌های دیگرِ پوشه‌ی بیمه‌نامه هم گذاشته می‌شوند
+// (فقط کپی؛ چیزی پاک یا بازنویسی نمی‌شود)
+function endo_backfill_copies($pdo, $siteRoot) {
+    try {
+        $done = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'endo_copies_v1'")->fetchColumn();
+        if ($done) return 0;
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('endo_copies_v1', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([date('Y-m-d H:i:s')]);
+        require_once __DIR__ . '/_pdf_split.php';
+        $n = 0;
+        foreach ($pdo->query("SELECT id, source, ref_id, file_path, final_file_path FROM policy_endorsements WHERE source IN ('C', 'P') AND (file_path IS NOT NULL OR final_file_path IS NOT NULL)")->fetchAll() as $e) {
+            $pol = endo_load_policy($pdo, $e['source'], (int)$e['ref_id']);
+            if (!$pol) continue;
+            $files = [];
+            if ($e['file_path']) $files[] = $siteRoot . '/' . $e['file_path'];
+            if ($e['final_file_path']) { $fa = $siteRoot . '/' . $e['final_file_path']; array_push($files, $fa, policy_conditions_path($fa), policy_extras_path($fa)); }
+            foreach (endo_policy_copies($pdo, $siteRoot, $e['source'], $pol['row']) as $d)
+                foreach ($files as $f) if (is_file($f) && !is_file($d . '/' . basename($f)) && @copy($f, $d . '/' . basename($f))) $n++;
+        }
+        return $n;
+    } catch (Throwable $ex) { error_log('[endo backfill] ' . $ex->getMessage()); return 0; }
+}
+// حذفِ همان فایل (با همان نام) از نسخه‌های دیگرِ پوشه‌ی بیمه‌نامه
+function endo_remove_from_copies($pdo, $siteRoot, $source, $row, array $names) {
+    foreach (endo_policy_copies($pdo, $siteRoot, $source, $row) as $d) {
+        foreach ($names as $n) if ($n !== '' && is_file($d . '/' . $n)) @unlink($d . '/' . $n);
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -464,6 +520,8 @@ function endo_create($pdo, $siteRoot, array $in, $srcFile = null, $userId = null
         if ($ok) {
             $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
             $pdo->prepare("UPDATE policy_endorsements SET file_path = ? WHERE id = ?")->execute([$rel, $id]);
+            // در «بایگانی صادره» و کپی‌های دیگرِ پوشه‌ی بیمه‌نامه هم
+            if ($pol) endo_copy_to_copies($pdo, $siteRoot, $source, $pol['row'], [$dest]);
         }
     }
     return ['ok' => true, 'id' => $id, 'plan' => $plan, 'file_path' => $rel, 'final_premium' => $pol ? endo_final_premium($pdo, $source, $refId) : null];
@@ -491,6 +549,16 @@ function endo_delete($pdo, $id, $deleteFile = true) {
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         return ['ok' => false, 'error' => 'حذف ممکن نشد: ' . $ex->getMessage()];
+    }
+    if ($deleteFile && in_array($e['source'], ['C', 'P'], true) && ($e['file_path'] || $e['final_file_path'])) {
+        $pol = endo_load_policy($pdo, $e['source'], (int)$e['ref_id']);
+        if ($pol) {
+            require_once __DIR__ . '/_pdf_split.php';
+            $names = [];
+            if ($e['file_path']) $names[] = basename($e['file_path']);
+            if ($e['final_file_path']) { $fa = dirname(__DIR__) . '/' . $e['final_file_path']; array_push($names, basename($fa), basename(policy_conditions_path($fa)), basename(policy_extras_path($fa))); }
+            endo_remove_from_copies($pdo, dirname(__DIR__), $e['source'], $pol['row'], $names);
+        }
     }
     if ($deleteFile && $e['file_path']) @unlink(dirname(__DIR__) . '/' . $e['file_path']);
     if ($deleteFile && !empty($e['final_file_path'])) endo_unlink_final(dirname(__DIR__) . '/' . $e['final_file_path']);
@@ -745,7 +813,12 @@ function endo_attach_final($pdo, $siteRoot, $endoId, $srcFile, $data = null, $mo
     $base = '(بیمه‌نامه‌ی نهایی - بعد از الحاقیه' . ($e['endorse_no'] !== null && $e['endorse_no'] !== '' ? ' ' . $e['endorse_no'] : '') . ') '
           . (function_exists('plate_for_filename') ? plate_for_filename($label) : $label);
     $base = function_exists('sanitize_folder_name') ? sanitize_folder_name($base) : preg_replace('#[\\\\/:*?"<>|]#u', ' ', $base);
-    if ($e['final_file_path']) endo_unlink_final($siteRoot . '/' . $e['final_file_path']);
+    if ($e['final_file_path']) {
+        $oldAbs = $siteRoot . '/' . $e['final_file_path'];
+        require_once __DIR__ . '/_pdf_split.php';
+        if ($pol) endo_remove_from_copies($pdo, $siteRoot, $e['source'], $pol['row'], [basename($oldAbs), basename(policy_conditions_path($oldAbs)), basename(policy_extras_path($oldAbs))]);
+        endo_unlink_final($oldAbs);
+    }
     $dest = function_exists('unique_dest_path') ? unique_dest_path($dir . '/' . $base . '.pdf') : $dir . '/' . $base . '.pdf';
     $ok = $move ? (@rename($srcFile, $dest) || (@copy($srcFile, $dest) && @unlink($srcFile))) : @copy($srcFile, $dest);
     if (!$ok) return ['ok' => false, 'error' => 'ذخیره‌ی فایلِ بیمه‌نامه‌ی نهایی ممکن نشد.'];
@@ -756,6 +829,8 @@ function endo_attach_final($pdo, $siteRoot, $endoId, $srcFile, $data = null, $mo
         policy_finalize_file($pdo, $dest, $tp);
     } catch (Throwable $ex) { error_log('[endo final pages] ' . $ex->getMessage()); }
     $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
+    // در «بایگانی صادره» و کپی‌های دیگرِ پوشه‌ی بیمه‌نامه هم (با صفحه‌های جداشده‌ی کنارش)
+    if ($pol) { require_once __DIR__ . '/_pdf_split.php'; endo_copy_to_copies($pdo, $siteRoot, $e['source'], $pol['row'], [$dest, policy_conditions_path($dest), policy_extras_path($dest)]); }
     // شرح: بخشِ قبلیِ «تغییرات در بیمه‌نامه‌ی نهایی» جایگزین می‌شود
     $desc = (string)$e['description'];
     if (($p = mb_strpos($desc, ENDO_FINAL_MARK)) !== false) $desc = rtrim(mb_substr($desc, 0, $p));

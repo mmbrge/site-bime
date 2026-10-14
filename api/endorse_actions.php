@@ -26,6 +26,7 @@ if (in_array($action, ['read', 'preview', 'create', 'delete', 'credit_paid', 'fi
                          'final_bundle_analyze', 'final_bundle_commit'], true) && !$canWrite) $out(['ok' => false, 'error' => 'ثبتِ الحاقیه فقط کارِ مدیر کل است.']);
 
 $siteRoot = dirname(__DIR__);
+endo_backfill_copies($pdo, $siteRoot);
 $tmpRoot = $siteRoot . '/tmp_ocr/endorse';
 if (!is_dir($tmpRoot)) { @mkdir($tmpRoot, 0775, true); @file_put_contents($tmpRoot . '/.htaccess', "Require all denied\nDeny from all\n"); }
 foreach ((array)glob($tmpRoot . '/[ef]_*.{pdf,json}', GLOB_BRACE) as $old) if (@filemtime($old) < time() - 86400) @unlink($old);

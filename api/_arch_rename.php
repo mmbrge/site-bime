@@ -12,7 +12,7 @@ function arch_repath($pdo, $siteRoot, $oldAbs, $newAbs) {
     $pairs = [[$oldAbs, $newAbs]];
     if (strpos($oldAbs, $root) === 0 && strpos($newAbs, $root) === 0) $pairs[] = [substr($oldAbs, strlen($root)), substr($newAbs, strlen($root))];
     $cols = [['company_request_plates', 'folder_path'], ['company_request_plates', 'issued_file_path'], ['company_documents', 'file_path'],
-             ['policy_endorsements', 'file_path'], ['company_requests', 'letter_file_path']];
+             ['policy_endorsements', 'file_path'], ['policy_endorsements', 'final_file_path'], ['company_requests', 'letter_file_path']];
     foreach ($pairs as [$o, $n]) foreach ($cols as [$t, $c]) {
         try {
             $pdo->prepare("UPDATE `$t` SET `$c` = CONCAT(?, SUBSTRING(`$c`, CHAR_LENGTH(?) + 1)) WHERE `$c` = ? OR LEFT(`$c`, CHAR_LENGTH(?)) = ?")
