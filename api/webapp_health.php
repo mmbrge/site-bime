@@ -8,6 +8,8 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_health_admin.php';
+try { hadm_ensure($pdo); } catch (Throwable $e) {}
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $siteRoot = dirname(__DIR__);
@@ -23,7 +25,7 @@ function get_active_attempt($pdo, $session) {
         $stmt = $pdo->prepare("SELECT * FROM health_attempts WHERE case_id = ? AND status = 'IN_PROGRESS' ORDER BY id DESC LIMIT 1");
         $stmt->execute([$session['case_id']]);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM health_attempts WHERE person_id = ? AND free_plate = ? AND status = 'IN_PROGRESS' ORDER BY id DESC LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM health_attempts WHERE person_id <=> ? AND free_plate = ? AND status = 'IN_PROGRESS' ORDER BY id DESC LIMIT 1");
         $stmt->execute([$session['person_id'], $session['free_plate']]);
     }
     return $stmt->fetch();
@@ -41,6 +43,17 @@ function get_case_plate($pdo, $caseId) {
 
 function resolve_plate($pdo, $session) {
     return $session['mode'] === 'case' ? get_case_plate($pdo, $session['case_id']) : $session['free_plate'];
+}
+
+// «بازدید توسط کاربر» خاموش است و این نشست مالِ مدیر/کارشناس نیست => کاربر نوبتِ بازدید می‌گیرد
+function self_inspection_blocked($pdo, $session) {
+    if (!empty($session['by_staff']) || hadm_self_enabled($pdo)) return null;
+    $msg = 'ثبتِ بازدیدِ سلامت توسط خودِ کاربران فعلاً غیرفعال است؛ بازدید را کارشناسانِ ما انجام می‌دهند.';
+    if ($session['mode'] === 'case' && $session['case_id']) {
+        $a = hadm_appt_assign($pdo, $session['case_id']);
+        if ($a) $msg .= "\nنوبتِ بازدیدِ شما: " . hadm_appt_fa($pdo, $a);
+    }
+    return $msg;
 }
 
 try {
@@ -92,6 +105,7 @@ try {
         $token = $_GET['token'] ?? '';
         $session = resolve_session($pdo, $token);
         if (!$session) { echo json_encode(['ok' => false, 'error' => 'لینک منقضی شده یا نامعتبر است. لطفاً دوباره از ربات وارد شوید.']); exit; }
+        if ($blk = self_inspection_blocked($pdo, $session)) { echo json_encode(['ok' => false, 'error' => $blk, 'self_disabled' => true], JSON_UNESCAPED_UNICODE); exit; }
 
         $stmt = $pdo->prepare("SELECT full_name, national_code FROM persons WHERE id = ?");
         $stmt->execute([$session['person_id']]);
@@ -158,11 +172,12 @@ try {
         $session = resolve_session($pdo, $token);
         if (!$session) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
+        if ($blk = self_inspection_blocked($pdo, $session)) { echo json_encode(['ok' => false, 'error' => $blk], JSON_UNESCAPED_UNICODE); exit; }
         $plate = resolve_plate($pdo, $session);
         $today = date('Y-m-d');
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM health_attempts WHERE plate = ? AND attempt_date = ? AND status != 'EXPIRED'");
         $stmt->execute([$plate, $today]);
-        if (intval($stmt->fetchColumn()) >= HEALTH_MAX_ATTEMPTS_PER_DAY) {
+        if (empty($session['by_staff']) && intval($stmt->fetchColumn()) >= HEALTH_MAX_ATTEMPTS_PER_DAY) {
             echo json_encode(['ok' => false, 'error' => 'امروز ۲ بار برای این پلاک تلاش کرده‌اید. لطفاً فردا دوباره امتحان کنید.']); exit;
         }
 
@@ -450,11 +465,15 @@ try {
             $stmt->execute([$session['case_id']]);
         } else {
             // معرفی‌نامه‌ی خودِ شخص را می‌خواهیم (نه introduction_id یک پرونده - آن ستون روی این جدول وجود ندارد)
-            $stmt2 = $pdo->prepare("SELECT id FROM introductions WHERE person_id = ? ORDER BY created_at DESC LIMIT 1");
-            $stmt2->execute([$session['person_id']]);
-            $introId = $stmt2->fetchColumn();
-            $caseFolder = build_free_inspection_folder($pdo, $siteRoot, $introId, $plate);
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM health_inspections WHERE person_id = ? AND free_plate = ?");
+            $introId = null;
+            if ($session['person_id']) {
+                $stmt2 = $pdo->prepare("SELECT id FROM introductions WHERE person_id = ? ORDER BY created_at DESC LIMIT 1");
+                $stmt2->execute([$session['person_id']]);
+                $introId = $stmt2->fetchColumn();
+            }
+            // بازدیدِ آزادِ مدیر برای پلاکی بدونِ شخص/معرفی‌نامه: پوشه‌ی «بازدیدهای آزاد»
+            $caseFolder = $introId ? build_free_inspection_folder($pdo, $siteRoot, $introId, $plate) : hadm_free_folder($siteRoot, $plate);
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM health_inspections WHERE person_id <=> ? AND free_plate = ?");
             $stmt->execute([$session['person_id'], $plate]);
         }
         $num = intval($stmt->fetchColumn()) + 1;
@@ -492,13 +511,17 @@ try {
             json_encode($finalPhotos, JSON_UNESCAPED_UNICODE),
             $pendingFolder,
         ]);
+        $newInspId = intval($pdo->lastInsertId());
         $pdo->prepare("UPDATE health_attempts SET status = 'COMPLETED' WHERE id = ?")->execute([$attemptId]);
+
+        // بازدیدی که مدیر/کارشناس از مینی‌اپِ مدیر گرفت: بدونِ نیاز به تایید، مستقیم «آماده‌ی گزارشِ بازدید»
+        if (!empty($session['by_staff']) && $newInspId) hadm_staff_approve_inspection($pdo, $siteRoot, $newInspId, intval($session['by_staff']));
 
         if ($session['mode'] === 'case' && $session['case_id']) {
             maybe_advance_case_status($pdo, $session['case_id']);
         }
 
-        echo json_encode(['ok' => true, 'inspection_number' => $num]);
+        echo json_encode(['ok' => true, 'inspection_number' => $num, 'by_staff' => !empty($session['by_staff'])]);
         exit;
     }
 

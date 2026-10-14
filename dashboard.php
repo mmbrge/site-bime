@@ -2220,6 +2220,48 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
+                <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+                <!-- بازدید سلامت: بازدید توسط کاربر روشن/خاموش، نوبت‌دهی، و ورودِ مخفیِ مدیر به مینی‌اپ (api/webapp_admin.php) -->
+                <div data-scat="bots" class="card p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/40 md:col-span-2" id="hadm-card">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-indigo-100 pb-3"><i class="fas fa-car-on text-indigo-500 ml-2"></i>بازدید سلامت، نوبت‌دهی و مینی‌اپِ مدیر</h3>
+                    <div class="grid md:grid-cols-2 gap-5 mt-3">
+                        <div>
+                            <label class="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 cursor-pointer">
+                                <input type="checkbox" id="hadm-self" class="w-5 h-5 accent-indigo-600">
+                                <span><b class="text-sm text-slate-700">بازدید توسط خودِ کاربران</b><small class="block text-[11px] text-slate-500 leading-5">خاموش: کاربران در ربات/مینی‌اپ بازدید نمی‌فرستند و طبقِ برنامه‌ی زیر نوبتِ بازدید می‌گیرند. بازدیدِ مدیر از مینی‌اپ همیشه فعال است.</small></span>
+                            </label>
+                            <p class="text-xs font-bold text-slate-600 mt-4 mb-2">برنامه‌ی نوبت‌دهی</p>
+                            <div id="hadm-days" class="flex flex-wrap gap-1.5 mb-3"></div>
+                            <div class="grid grid-cols-2 gap-2 text-[11px]">
+                                <label class="font-bold text-slate-500">از ساعت<input id="hadm-start" dir="ltr" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" placeholder="09:00"></label>
+                                <label class="font-bold text-slate-500">تا ساعت<input id="hadm-end" dir="ltr" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" placeholder="14:00"></label>
+                                <label class="font-bold text-slate-500">طولِ هر نوبت (دقیقه)<input id="hadm-slot" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs"></label>
+                                <label class="font-bold text-slate-500">خودرو در هر نوبت<input id="hadm-cap" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs"></label>
+                                <label class="font-bold text-slate-500">اولین نوبت چند روز بعد<input id="hadm-lead" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs"></label>
+                                <label class="font-bold text-slate-500 col-span-2">محل/توضیحِ بازدید (در پیامِ نوبت)<input id="hadm-place" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" placeholder="مثلاً: پارکینگ دفتر، خیابان ..."></label>
+                            </div>
+                            <p class="text-[10.5px] text-slate-400 mt-2 leading-5">روزهای «تعطیلات» (تنظیماتِ کارکرد) نوبت نمی‌گیرند. نوبتِ هر درخواست را در مینی‌اپِ مدیر می‌شود دستی عوض کرد (به کاربر خبر داده می‌شود).</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-user-secret text-indigo-500 ml-1"></i>دستورِ مخفیِ ورودِ مدیر در ربات</p>
+                            <div class="flex gap-2"><input id="hadm-cmd" dir="ltr" class="flex-1 border rounded-lg px-3 py-2 text-sm font-mono" placeholder="/my_secret_123" autocomplete="off">
+                                <button type="button" onclick="hadmGenCmd()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold px-3 rounded-lg" title="ساختِ دستورِ تصادفی"><i class="fas fa-dice"></i></button></div>
+                            <div class="mt-3 bg-white border border-indigo-100 rounded-xl p-3 text-[11.5px] text-slate-600 leading-7">
+                                <b class="text-indigo-700"><i class="fas fa-book-open ml-1"></i>راهنمای ورود به مینی‌اپِ مدیر</b>
+                                <ol class="list-decimal pr-5 mt-1">
+                                    <li>یک دستورِ مخفی (فقط حروف/رقمِ انگلیسی، مثلاً <code dir="ltr">/kz_admin_7391</code>) بالا بنویسید و ذخیره کنید؛ آن را به کسی نگویید.</li>
+                                    <li>در ربات بله‌ی کارکنان همان دستور را بفرستید. ربات <b>نام کاربری</b> و بعد <b>رمزِ سایت</b> را می‌پرسد (پیامِ رمز بلافاصله از چت پاک می‌شود).</li>
+                                    <li>فقط حسابِ «مدیر کل» وارد می‌شود؛ دکمه‌ی «🛡 ورود به پنلِ مدیر» می‌آید که ۱۰ دقیقه و فقط یک بار معتبر است.</li>
+                                    <li>در مینی‌اپ: <b>صفِ بازدید</b> (درخواست‌های بدنه به ترتیبِ نوبت، با اطلاعاتِ درخواست و معرفی‌نامه)، <b>بازدیدِ آزاد</b> (هر پلاکی)، و <b>ثبتِ درخواست</b> از روی عکسِ معرفی‌نامه.</li>
+                                    <li>بازدیدی که مدیر ثبت می‌کند تایید لازم ندارد و مستقیم در «بازدیدهای تاییدشده» برای صدورِ گزارشِ بازدید آماده است.</li>
+                                    <li>۵ رمزِ اشتباه = ۱۵ دقیقه قفل. برای لغوِ ورود در ربات <code dir="ltr">/cancel</code> را بفرستید. برای غیرفعال‌کردن، دستور را خالی کنید.</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" onclick="hadmSave()" class="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-6 py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره</button>
+                </div>
+                <?php endif; ?>
                 <div data-scat="bots" class="card p-6 border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-emerald-100 pb-3"><i class="fas fa-robot text-emerald-500 ml-2"></i>تنظیمات ربات بله</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای تغییر توکن متصل به سامانه می‌توانید از این بخش استفاده کنید.</p>
@@ -12806,6 +12848,32 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (im && !im.classList.contains('hidden') && window._introDetailId === introId) openIntroDetail(introId, q('full_name').value);
             };
         }
+
+        // ---- بازدید سلامت: تنظیماتِ بازدیدِ کاربر، نوبت‌دهی و دستورِ مخفیِ مدیر (api/webapp_admin.php) ----
+        const HADM_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
+        async function hadmLoad() {
+            const card = document.getElementById('hadm-card'); if (!card || card.dataset.loaded) return;
+            let d; try { d = await (await fetch('api/webapp_admin.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'settings_get'})})).json(); } catch (e) { return; }
+            if (!d.ok) return;
+            card.dataset.loaded = '1';
+            const s = d.settings;
+            document.getElementById('hadm-self').checked = !!s.self_enabled;
+            document.getElementById('hadm-days').innerHTML = HADM_DAYS.map((n, i) => `<label class="cursor-pointer"><input type="checkbox" value="${i}" class="peer hidden" ${s.days.includes(i) ? 'checked' : ''}><span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full border border-slate-200 text-slate-500 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">${n}</span></label>`).join('');
+            [['start', s.start], ['end', s.end], ['slot', s.slot], ['cap', s.cap], ['lead', s.lead], ['place', s.place], ['cmd', s.bot_cmd]].forEach(([k, v]) => { document.getElementById('hadm-' + k).value = v ?? ''; });
+        }
+        function hadmGenCmd() {
+            const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let x = '/adm_';
+            for (let i = 0; i < 10; i++) x += a[Math.floor(Math.random() * a.length)];
+            document.getElementById('hadm-cmd').value = x;
+        }
+        async function hadmSave() {
+            const v = id => p2e(document.getElementById('hadm-' + id).value.trim());
+            const settings = {self_enabled: document.getElementById('hadm-self').checked, days: [...document.querySelectorAll('#hadm-days input:checked')].map(i => +i.value),
+                start: v('start'), end: v('end'), slot: v('slot'), cap: v('cap'), lead: v('lead'), place: document.getElementById('hadm-place').value.trim(), bot_cmd: document.getElementById('hadm-cmd').value.trim()};
+            let d; try { d = await (await fetch('api/webapp_admin.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'settings_save', settings})})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            showToast(d.ok ? 'تنظیماتِ بازدید ذخیره شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
+        }
+        if (document.getElementById('hadm-card')) { const ob = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { hadmLoad(); ob.disconnect(); } }); ob.observe(document.getElementById('hadm-card')); }
 
         async function saveRecordEdit() {
             const payload = {

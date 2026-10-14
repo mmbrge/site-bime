@@ -4,6 +4,7 @@ require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_bot_identity.php';   // قفلِ شماره ↔ کد ملی، خروج از حساب، سوییچِ مدیر کل
 require_once __DIR__ . '/_chat_state.php';
+require_once __DIR__ . '/_health_admin.php';  // بازدید توسط کاربر روشن/خاموش، نوبت‌دهی، ورودِ مخفیِ مدیر به مینی‌اپ
 
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -1260,6 +1261,80 @@ function bot_start_switch($pdo, $chat_id, $bot_token) {
     send_msg($chat_id, "🔁 کد ملیِ کسی که می‌خواهید رویش بروید را وارد کنید:", $bot_token, kb_remove());
 }
 
+// ---------------- ورودِ مخفیِ مدیر به مینی‌اپِ مدیر ----------------
+// دستورِ مخفی (تنظیمات ← بازدید سلامت) را فقط مدیر می‌داند؛ ربات نام کاربری و رمزِ سایت را می‌پرسد (پیامِ رمز همان لحظه
+// از چت پاک می‌شود) و اگر حسابِ «مدیر کل» بود، دکمه‌ی ورود به مینی‌اپ (یک‌بارمصرف، ۱۰ دقیقه) را می‌فرستد.
+// ۵ تلاشِ ناموفق = ۱۵ دقیقه قفل. برای همه‌ی کاربرانِ دیگر این دستور مثلِ یک پیامِ معمولی است.
+function adm_bot_handle($pdo, $chat_id, $text, $incoming_message_id, $bot_token) {
+    hadm_ensure($pdo);
+    $cmd = hadm_settings($pdo)['hadm_bot_cmd'];
+    $st = $pdo->prepare("SELECT * FROM admin_bot_logins WHERE chat_id = ?");
+    $st->execute([$chat_id]);
+    $row = $st->fetch();
+    $active = $row && in_array($row['state'], ['USER', 'PASS'], true) && strtotime($row['updated_at']) > time() - 600;
+    if ($cmd === '' || (!$active && strcasecmp(trim((string)$text), $cmd) !== 0)) return false;
+    if ($active && $text === '/start') { $pdo->prepare("UPDATE admin_bot_logins SET state = 'IDLE' WHERE chat_id = ?")->execute([$chat_id]); return false; }
+    $save = function ($state, $user = null, $tries = null, $lock = null) use ($pdo, $chat_id, $row) {
+        $pdo->prepare("INSERT INTO admin_bot_logins (chat_id, state, username, tries, locked_until, updated_at) VALUES (?, ?, ?, ?, ?, NOW())
+                       ON DUPLICATE KEY UPDATE state = VALUES(state), username = VALUES(username), tries = VALUES(tries), locked_until = VALUES(locked_until), updated_at = NOW()")
+            ->execute([$chat_id, $state, $user, $tries ?? intval($row['tries'] ?? 0), $lock ?? ($row['locked_until'] ?? null)]);
+    };
+    if ($row && $row['locked_until'] && strtotime($row['locked_until']) > time()) {
+        send_msg($chat_id, "⛔ به‌خاطرِ چند تلاشِ ناموفق، ورود تا چند دقیقه‌ی دیگر بسته است.", $bot_token);
+        return true;
+    }
+    if (strcasecmp(trim((string)$text), $cmd) === 0 || $text === '/cancel') {
+        if ($text === '/cancel') { $save('IDLE'); send_msg($chat_id, "لغو شد.", $bot_token, kb_remove()); return true; }
+        $save('USER', null);
+        send_msg($chat_id, "🔐 ورود به پنلِ مدیر\nنام کاربریِ سایت را بفرستید (برای لغو: /cancel):", $bot_token, kb_remove());
+        return true;
+    }
+    if ($row['state'] === 'USER') {
+        $save('PASS', mb_substr(trim((string)$text), 0, 120));
+        send_msg($chat_id, "رمزِ عبور را بفرستید (پیامِ رمز بلافاصله از چت پاک می‌شود):", $bot_token);
+        return true;
+    }
+    // PASS: پیامِ رمز از چت پاک می‌شود
+    if ($incoming_message_id) bale_api('deleteMessage', ['chat_id' => $chat_id, 'message_id' => $incoming_message_id], $bot_token);
+    $u = null;
+    try {
+        $q = $pdo->prepare("SELECT id, full_name, role, password_hash FROM users WHERE username = ? AND COALESCE(is_deleted, 0) = 0");
+        $q->execute([$row['username']]);
+        $u = $q->fetch();
+    } catch (Throwable $e) {}
+    if (!$u || $u['role'] !== 'ADMIN' || !password_verify((string)$text, (string)$u['password_hash'])) {
+        $tries = intval($row['tries']) + 1;
+        $save('IDLE', null, $tries >= 5 ? 0 : $tries, $tries >= 5 ? date('Y-m-d H:i:s', time() + 900) : null);
+        try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (NULL, 'LOGIN_FAIL', 'admin_bot', 0, ?)")->execute(['chat ' . $chat_id . ' / ' . $row['username']]); } catch (Throwable $e) {}
+        send_msg($chat_id, "❌ نام کاربری یا رمز درست نیست" . ($u && $u['role'] !== 'ADMIN' && password_verify((string)$text, (string)$u['password_hash']) ? ' (این ورود فقط برای مدیر کل است)' : '') . ".", $bot_token);
+        return true;
+    }
+    $save('IDLE', null, 0, null);
+    $token = bin2hex(random_bytes(24));
+    $pdo->prepare("INSERT INTO admin_app_tokens (token, user_id, chat_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))")->execute([$token, $u['id'], $chat_id]);
+    $siteUrl = get_site_url($pdo);
+    if (!$siteUrl) { send_msg($chat_id, "⚠️ آدرس سایت در تنظیمات ثبت نشده است.", $bot_token); return true; }
+    bale_api('sendMessage', ['chat_id' => $chat_id, 'text' => "✅ خوش آمدید {$u['full_name']}.\nبرای ورود به پنلِ مدیر دکمه‌ی زیر را بزنید (تا ۱۰ دقیقه و فقط یک بار معتبر است):",
+        'reply_markup' => ['inline_keyboard' => [[['text' => '🛡 ورود به پنلِ مدیر', 'web_app' => ['url' => $siteUrl . '/webapp/admin/index.html?t=' . $token]]]]]], $bot_token);
+    return true;
+}
+
+// «بازدید توسط کاربر» خاموش: به‌جای مینی‌اپِ بازدید، نوبتِ بازدیدِ هر درخواستِ بدنه گفته می‌شود
+function hadm_bot_show_appointments($pdo, $chat_id, $person, $bot_token) {
+    $st = $pdo->prepare("SELECT id, unique_code, plate FROM policy_cases WHERE person_id = ? AND insurance_type = 'BODY' AND status NOT IN ('ISSUED','WITHDRAWN','CANCELLED') ORDER BY created_at DESC");
+    $st->execute([$person['id']]);
+    $lines = [];
+    foreach ($st->fetchAll() as $c) {
+        $h = compute_health_status($pdo, ['id' => $c['id'], 'insurance_type' => 'BODY']);
+        if ($h === 'approved') continue;
+        $a = hadm_appt_assign($pdo, $c['id']);
+        $lines[] = '🚗 ' . ($c['plate'] ?: $c['unique_code']) . "\n🗓 " . ($a ? hadm_appt_fa($pdo, $a) : 'نوبت به‌زودی اعلام می‌شود');
+    }
+    $msg = "ℹ️ بازدیدِ سلامتِ خودرو را کارشناسانِ ما انجام می‌دهند.\n\n" . ($lines ? "نوبتِ بازدیدِ شما:\n\n" . implode("\n\n", $lines) : "درخواستِ بدنه‌ای که نیاز به بازدید داشته باشد ندارید.")
+         . "\n\nاگر این زمان برایتان مناسب نیست، از «ارتباط با کارشناس» خبر بدهید.";
+    send_msg($chat_id, $msg, $bot_token, main_menu_kb($pdo, $chat_id));
+}
+
 function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, $text,
                                   $sender_user_id, $sender_name, $sender_username, $bot_token) {
 
@@ -1269,6 +1344,9 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
     $stmt = $pdo->prepare("SELECT * FROM persons WHERE bale_chat_id = ?");
     $stmt->execute([$chat_id]);
     $person = $stmt->fetch();
+
+    // ---- ورودِ مخفیِ مدیر به مینی‌اپِ مدیر (از هر حالتی؛ برای دیگران بی‌اثر) ----
+    try { if (adm_bot_handle($pdo, $chat_id, $text, $incoming_message_id, $bot_token)) return; } catch (Throwable $e) { error_log('[adm_bot] ' . $e->getMessage()); }
 
     // ---- خروج از حساب / سوییچِ مدیر کل: از هر حالتی ----
     if ($text === BTN_LOGOUT || $text === '/logout') {
@@ -1449,6 +1527,8 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                 if ($text === BTN_ORDER) {
                     $pdo->prepare("UPDATE persons SET conversation_state = 'AWAITING_INSURANCE_CHOICE' WHERE id = ?")->execute([$person['id']]);
                     send_msg($chat_id, "نوع بیمه‌نامه مورد نظر خود را انتخاب کنید:", $bot_token, insurance_choice_kb());
+                } elseif ($text === BTN_HEALTH && !hadm_self_enabled($pdo)) {
+                    hadm_bot_show_appointments($pdo, $chat_id, $person, $bot_token);
                 } elseif ($text === BTN_HEALTH) {
                     $stmt = $pdo->prepare("SELECT id, unique_code, plate FROM policy_cases WHERE person_id = ? AND insurance_type = 'BODY' AND status IN ('DOCS_REVIEW','ISSUING','ISSUED') ORDER BY created_at DESC");
                     $stmt->execute([$person['id']]);

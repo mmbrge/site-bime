@@ -1483,6 +1483,12 @@ async function finalizeInspection() {
     stopTimerLoop();
     showScreen('screen-success');
 
+    // بازدیدِ کارشناس از مینی‌اپِ مدیر: بدونِ تایید ثبت شد؛ برگشت به صفِ بازدیدِ مینی‌اپِ مدیر
+    if (data.by_staff) {
+      showToast('بازدید ثبت شد و آماده‌ی صدورِ گزارشِ بازدید است.');
+      setTimeout(() => { location.href = '/webapp/admin/index.html'; }, 2200);
+      return;
+    }
     const returnMode = params.get('return');
     const returnToken = params.get('rt');
     if (returnMode === 'visit' && returnToken) {

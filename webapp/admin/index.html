@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>پنل مدیر</title>
+<script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<link rel="stylesheet" href="/plate.css?v=3">
+<style>
+  /* مینی‌اپِ مدیر (ربات بله): صفِ بازدید به ترتیبِ نوبت، بازدیدِ آزاد، ثبتِ درخواست از روی معرفی‌نامه - api/webapp_admin.php */
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; }
+  @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Black.woff2') format('woff2'); font-weight: 900; }
+  :root { --bg: #0b1024; --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.12); --muted: #94a3b8; --acc: #818cf8; --acc2: #22d3ee; --ok: #34d399; --warn: #fbbf24; --bad: #fb7185; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; min-height: 100%; }
+  body { font-family: 'Vazir', Tahoma, sans-serif; color: #e2e8f0; background: radial-gradient(1200px 600px at 100% -10%, #312e81 0%, transparent 60%), radial-gradient(900px 500px at -10% 110%, #0e7490 0%, transparent 55%), var(--bg); padding: calc(env(safe-area-inset-top, 0px) + 12px) 14px calc(env(safe-area-inset-bottom, 0px) + 90px); }
+  button, input, select { font-family: inherit; }
+  .hdr { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .logo { width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center; font-size: 22px; background: linear-gradient(135deg, var(--acc), var(--acc2)); box-shadow: 0 10px 30px rgba(129,140,248,.35); }
+  .hdr h1 { margin: 0; font-size: 17px; font-weight: 900; }
+  .hdr p { margin: 2px 0 0; font-size: 11.5px; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid var(--line); }
+  .chip.ok { color: var(--ok); border-color: rgba(52,211,153,.35); } .chip.warn { color: var(--warn); border-color: rgba(251,191,36,.35); } .chip.bad { color: var(--bad); border-color: rgba(251,113,133,.35); }
+  .tabs { position: fixed; bottom: 0; left: 0; right: 0; display: flex; gap: 6px; padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); background: rgba(11,16,36,.92); backdrop-filter: blur(14px); border-top: 1px solid var(--line); z-index: 20; }
+  .tabs button { flex: 1; border: 0; border-radius: 14px; padding: 9px 4px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 800; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tabs button b { font-size: 18px; }
+  .tabs button.on { background: linear-gradient(135deg, rgba(129,140,248,.22), rgba(34,211,238,.18)); color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 14px; margin-bottom: 12px; backdrop-filter: blur(10px); animation: up .35s both; }
+  @keyframes up { from { opacity: 0; transform: translateY(10px); } }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 14px; background: linear-gradient(135deg, rgba(129,140,248,.18), rgba(34,211,238,.10)); border: 1px solid rgba(129,140,248,.3); font-size: 12px; font-weight: 800; margin-bottom: 10px; }
+  .slot.none { background: rgba(255,255,255,.04); border-color: var(--line); color: var(--muted); }
+  .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 11.5px; margin: 10px 0; }
+  .kv span { color: var(--muted); display: block; font-size: 10px; }
+  .kv b { font-weight: 800; word-break: break-word; }
+  .btn { border: 0; border-radius: 14px; padding: 11px 14px; font-weight: 900; font-size: 12.5px; color: #fff; background: linear-gradient(135deg, #6366f1, #06b6d4); box-shadow: 0 8px 22px rgba(99,102,241,.35); width: 100%; }
+  .btn.ghost { background: rgba(255,255,255,.08); box-shadow: none; border: 1px solid var(--line); color: #e2e8f0; }
+  .btn:disabled { opacity: .55; }
+  .btns { display: flex; gap: 8px; }
+  .btns .btn { flex: 1; }
+  .in { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: #fff; padding: 11px 12px; font-size: 13px; outline: none; }
+  .in:focus { border-color: var(--acc); }
+  label.f { display: block; margin-bottom: 10px; font-size: 11px; color: var(--muted); font-weight: 700; }
+  label.f .in { margin-top: 5px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .muted { color: var(--muted); font-size: 11.5px; line-height: 1.9; }
+  .empty { text-align: center; padding: 40px 10px; color: var(--muted); }
+  .empty b { display: block; font-size: 40px; margin-bottom: 8px; }
+  .toast { position: fixed; top: 14px; left: 14px; right: 14px; z-index: 50; padding: 12px 14px; border-radius: 14px; font-size: 12.5px; font-weight: 800; background: #1e293b; border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.4); animation: up .25s both; }
+  .toast.err { border-color: rgba(251,113,133,.5); color: #fecdd3; } .toast.ok { border-color: rgba(52,211,153,.5); color: #d1fae5; }
+  .search { margin-bottom: 12px; }
+  .seg { display: flex; gap: 6px; margin-bottom: 10px; }
+  .seg button { flex: 1; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--muted); border-radius: 12px; padding: 9px; font-weight: 800; font-size: 12px; }
+  .seg button.on { color: #fff; border-color: var(--acc); background: rgba(129,140,248,.2); }
+  .ir-plate { font-size: 12px; }
+  .drop { border: 2px dashed rgba(129,140,248,.45); border-radius: 18px; padding: 22px 12px; text-align: center; color: #c7d2fe; font-weight: 800; font-size: 12.5px; display: block; }
+  .drop small { display: block; color: var(--muted); font-weight: 500; margin-top: 4px; }
+  .spin { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: middle; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .screen { display: none; } .screen.on { display: block; }
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">🛡</div>
+  <div style="flex:1">
+    <h1>پنلِ مدیر</h1>
+    <p id="me">در حالِ ورود...</p>
+  </div>
+  <span id="self-chip" class="chip"></span>
+</div>
+
+<div id="sc-login" class="screen on"><div class="empty"><b><span class="spin" style="width:34px;height:34px"></span></b>در حالِ ورود...</div></div>
+
+<div id="sc-queue" class="screen">
+  <input id="q" class="in search" placeholder="جستجو: پلاک، نام، کد ملی، کد پرسنلی...">
+  <div id="queue"></div>
+</div>
+
+<div id="sc-free" class="screen">
+  <div class="card">
+    <h3 style="margin:0 0 6px;font-size:14px">🆓 بازدیدِ آزاد</h3>
+    <p class="muted">برای خودرویی که درخواستِ ثبت‌شده ندارد. پلاک (یا شماره‌ی شاسی) را وارد کنید؛ بازدید بدونِ نیاز به تایید ثبت می‌شود.</p>
+    <div class="grid2" style="grid-template-columns:1fr 1.2fr 1fr 1fr;direction:ltr">
+      <input id="fp1" class="in" placeholder="۱۲" inputmode="numeric" maxlength="2">
+      <input id="fp2" class="in" placeholder="الف" maxlength="3" style="direction:rtl">
+      <input id="fp3" class="in" placeholder="۳۴۵" inputmode="numeric" maxlength="3">
+      <input id="fp4" class="in" placeholder="ایران ۶۷" inputmode="numeric" maxlength="2">
+    </div>
+    <p class="muted" style="margin:8px 0">یا شماره‌ی شاسی:</p>
+    <input id="fvin" class="in" dir="ltr" placeholder="VIN / شماره شاسی">
+    <div style="height:12px"></div>
+    <button class="btn" onclick="startFree()">📸 شروعِ بازدید</button>
+  </div>
+</div>
+
+<div id="sc-new" class="screen">
+  <div class="card" id="new-step1">
+    <h3 style="margin:0 0 6px;font-size:14px">📄 ثبتِ درخواست از روی معرفی‌نامه</h3>
+    <p class="muted">از معرفی‌نامه عکس بگیرید یا فایلش را انتخاب کنید؛ اطلاعات خودکار خوانده می‌شود.</p>
+    <label class="drop"><input id="intro-file" type="file" accept="image/*,application/pdf" hidden onchange="detectIntro(this)">📷 عکس / فایلِ معرفی‌نامه<small id="intro-file-st">PDF یا عکس</small></label>
+    <div id="intro-form" style="display:none;margin-top:12px">
+      <label class="f">نام و نام خانوادگی<input class="in" id="i-name"></label>
+      <div class="grid2">
+        <label class="f">کد ملی<input class="in" id="i-nid" dir="ltr" inputmode="numeric"></label>
+        <label class="f">کد پرسنلی<input class="in" id="i-pc" dir="ltr"></label>
+        <label class="f">شرکت<input class="in" id="i-co"></label>
+        <label class="f">تاریخ معرفی‌نامه<input class="in" id="i-date" dir="ltr" placeholder="1405/07/01"></label>
+        <label class="f">موبایل<input class="in" id="i-mob" dir="ltr" inputmode="numeric"></label>
+        <label class="f">سهمیه<input class="in" id="i-quota" dir="ltr" inputmode="numeric" placeholder="4"></label>
+      </div>
+      <button class="btn" id="intro-save" onclick="createIntro()">✅ ثبتِ معرفی‌نامه</button>
+    </div>
+  </div>
+  <div class="card" id="new-step2" style="display:none">
+    <h3 style="margin:0 0 6px;font-size:14px">🚗 درخواستِ بیمه برای <span id="s2-name"></span></h3>
+    <div class="seg"><button data-t="BODY" class="on">بدنه</button><button data-t="THIRDPARTY">ثالث</button></div>
+    <div class="grid2" style="grid-template-columns:1fr 1.2fr 1fr 1fr;direction:ltr;margin-bottom:10px">
+      <input id="np1" class="in" placeholder="۱۲" inputmode="numeric" maxlength="2">
+      <input id="np2" class="in" placeholder="الف" maxlength="3" style="direction:rtl">
+      <input id="np3" class="in" placeholder="۳۴۵" inputmode="numeric" maxlength="3">
+      <input id="np4" class="in" placeholder="ایران ۶۷" inputmode="numeric" maxlength="2">
+    </div>
+    <div class="seg" id="rel-seg"><button data-r="self" class="on">برای خودش</button><button data-r="other">برای بستگان</button></div>
+    <div id="other-box" style="display:none" class="grid2">
+      <label class="f">نام بیمه‌گذار<input class="in" id="o-name"></label>
+      <label class="f">کد ملی بیمه‌گذار<input class="in" id="o-nid" dir="ltr" inputmode="numeric"></label>
+    </div>
+    <button class="btn" id="case-save" onclick="createCase()">➕ ثبتِ درخواست</button>
+    <button class="btn ghost" id="new-done" style="display:none;margin-top:8px" onclick="newDone()">✔️ تمام شد (برگشت به صفِ بازدید)</button>
+    <p class="muted" style="margin-top:8px">بعد از ثبت، درخواست در «صفِ بازدید» (اگر بدنه است) و در پنلِ سایت دیده می‌شود.</p>
+  </div>
+</div>
+
+<div class="tabs">
+  <button data-tab="queue" class="on"><b>🗓</b>صفِ بازدید</button>
+  <button data-tab="free"><b>🆓</b>بازدیدِ آزاد</button>
+  <button data-tab="new"><b>➕</b>ثبتِ درخواست</button>
+</div>
+
+<script>
+const API = '/api/webapp_admin.php';
+const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const en = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const money = v => v ? fa(Number(v).toLocaleString('en-US')) : '';
+function toast(msg, type) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast ' + (type || ''); t.textContent = msg; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+async function call(action, body = {}, url = API) {
+  try {
+    const r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action}, body))});
+    return await r.json();
+  } catch (e) { return {ok: false, error: 'خطا در اتصال به سرور.'}; }
+}
+function plateHtml(p) {
+  const m = en(p || '').match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
+  if (!m) return `<b dir="ltr">${esc(p || 'بدونِ پلاک')}</b>`;
+  return `<span class="ir-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;
+}
+function plateFrom(prefix) {
+  const g = i => en(document.getElementById(prefix + i).value.trim());
+  const [a, l, b, c] = [g(1), document.getElementById(prefix + '2').value.trim(), g(3), g(4)];
+  if (!a && !l && !b && !c) return '';
+  if (!/^\d{2}$/.test(a) || !l || !/^\d{3}$/.test(b) || !/^\d{2}$/.test(c)) return null;
+  return `${c}ایران - ${b} ${l} ${a}`;
+}
+
+// ---------------- ورود ----------------
+(async function boot() {
+  try { if (window.Bale && Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch (e) {}
+  const t = new URLSearchParams(location.search).get('t');
+  let r = t ? await call('login', {t}) : {ok: false};
+  if (t) history.replaceState(null, '', location.pathname);   // توکنِ یک‌بارمصرف در آدرس نماند
+  if (!r.ok) {
+    const me = await call('me');
+    if (!me.ok) { document.getElementById('sc-login').innerHTML = `<div class="empty"><b>🔐</b>${esc(r.error || me.error || 'ابتدا از ربات وارد شوید.')}</div>`; document.getElementById('me').textContent = 'وارد نشده‌اید'; return; }
+  }
+  const me = await call('me');
+  document.getElementById('me').textContent = (me.name || '') + ' · مدیر کل';
+  const chip = document.getElementById('self-chip');
+  chip.className = 'chip ' + (me.self_enabled ? 'ok' : 'warn');
+  chip.textContent = me.self_enabled ? 'بازدیدِ کاربر: روشن' : 'بازدیدِ کاربر: خاموش';
+  show('queue');
+})();
+
+function show(tab) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  document.getElementById('sc-' + tab).classList.add('on');
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  if (tab === 'queue') loadQueue();
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.tab));
+
+// ---------------- صفِ بازدید ----------------
+let QUEUE = [];
+const INSP = {PENDING: ['در انتظارِ بررسی', 'warn'], REJECTED: ['ناقص - دوباره لازم است', 'bad']};
+async function loadQueue() {
+  const box = document.getElementById('queue');
+  box.innerHTML = '<div class="empty"><b><span class="spin" style="width:30px;height:30px"></span></b></div>';
+  const d = await call('queue');
+  if (!d.ok) { box.innerHTML = `<div class="empty"><b>⚠️</b>${esc(d.error || 'خطا')}</div>`; return; }
+  QUEUE = d.rows || [];
+  renderQueue();
+}
+function renderQueue() {
+  const q = en(document.getElementById('q').value.trim()).toLowerCase();
+  const rows = QUEUE.filter(r => !q || [r.plate, r.insured, r.holder, r.holder_nid, r.insured_nid, r.personnel_code, r.company, r.code, r.mobile].some(v => en(v || '').toLowerCase().includes(q)));
+  const box = document.getElementById('queue');
+  if (!rows.length) { box.innerHTML = `<div class="empty"><b>✅</b>${QUEUE.length ? 'موردی با این جستجو نیست.' : 'درخواستی منتظرِ بازدید نیست.'}</div>`; return; }
+  box.innerHTML = rows.map((r, i) => `
+    <div class="card" style="animation-delay:${Math.min(i, 8) * 40}ms">
+      <div class="slot ${r.slot_fa ? '' : 'none'}">🗓 ${r.slot_fa ? esc(r.slot_fa) : 'بدونِ نوبت'}</div>
+      <div class="row">${plateHtml(r.plate)}<span class="chip">${esc(r.code || '')}</span></div>
+      <div class="kv">
+        <div><span>بیمه‌گذار</span><b>${esc(r.insured || '—')}</b></div>
+        <div><span>پرسنل (معرفی‌نامه)</span><b>${esc(r.holder || '—')}</b></div>
+        <div><span>کد پرسنلی · شرکت</span><b>${fa(r.personnel_code || '—')} · ${esc(r.company || '—')}</b></div>
+        <div><span>تاریخ معرفی‌نامه</span><b>${fa(r.letter_date || '—')}</b></div>
+        <div><span>ارزش خودرو</span><b>${r.car_value ? money(r.car_value) + ' ریال' : '—'}</b></div>
+        <div><span>موبایل</span><b dir="ltr">${fa(r.mobile || '—')}</b></div>
+      </div>
+      <div class="row" style="margin-bottom:10px"><span class="chip">${esc(r.status_fa || r.status)}</span>${r.last_insp && INSP[r.last_insp] ? `<span class="chip ${INSP[r.last_insp][1]}">بازدیدِ کاربر: ${INSP[r.last_insp][0]}</span>` : ''}</div>
+      <div class="btns"><button class="btn" onclick="startCase(${r.case_id}, this)">📸 شروعِ بازدید</button><button class="btn ghost" style="flex:.6" onclick="this.closest('.card').querySelector('.slotf').style.display='grid'">🗓 تغییرِ نوبت</button></div>
+      <div class="slotf grid2" style="display:none;margin-top:10px;grid-template-columns:1.3fr 1fr auto">
+        <input class="in" data-d dir="ltr" placeholder="1405/07/20"><input class="in" data-t dir="ltr" placeholder="10:30">
+        <button class="btn" style="width:auto;padding:10px 14px" onclick="changeSlot(${r.case_id}, this)">ثبت</button>
+      </div>
+    </div>`).join('');
+}
+document.getElementById('q').addEventListener('input', renderQueue);
+
+async function startCase(caseId, btn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  const d = await call('start', {case_id: caseId});
+  if (!d.ok) { toast(d.error || 'خطا', 'err'); btn.disabled = false; btn.textContent = '📸 شروعِ بازدید'; return; }
+  location.href = d.url;
+}
+async function changeSlot(caseId, btn) {
+  const box = btn.closest('.slotf');
+  const date = box.querySelector('[data-d]').value.trim(), time = box.querySelector('[data-t]').value.trim();
+  if (!date || !time) { toast('تاریخ و ساعت را وارد کنید.', 'err'); return; }
+  const d = await call('set_appt', {case_id: caseId, date: en(date), time: en(time)});
+  if (!d.ok) { toast(d.error || 'خطا', 'err'); return; }
+  toast('نوبت ثبت شد و به کاربر خبر داده شد: ' + d.slot_fa, 'ok'); loadQueue();
+}
+
+// ---------------- بازدیدِ آزاد ----------------
+async function startFree() {
+  let plate = plateFrom('fp');
+  if (plate === null) { toast('پلاک کامل نیست.', 'err'); return; }
+  if (!plate) plate = en(document.getElementById('fvin').value.trim()).toUpperCase();
+  if (!plate) { toast('پلاک یا شماره‌ی شاسی را وارد کنید.', 'err'); return; }
+  const d = await call('start_free', {plate});
+  if (!d.ok) { toast(d.error || 'خطا', 'err'); return; }
+  location.href = d.url;
+}
+
+// ---------------- ثبتِ درخواست از روی معرفی‌نامه (همان APIهای پنل) ----------------
+let FILE_TOKEN = '', NEW_INTRO = null, NEW_TYPE = 'BODY', NEW_REL = 'self';
+async function detectIntro(inp) {
+  const f = inp.files[0]; if (!f) return;
+  const st = document.getElementById('intro-file-st'); st.innerHTML = '<span class="spin"></span> در حالِ خواندن...';
+  const fd = new FormData(); fd.append('action', 'intro_detect'); fd.append('file', f);
+  let r; try { r = await (await fetch('/api/record_actions.php', {method: 'POST', body: fd, credentials: 'same-origin'})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارسال.'}; }
+  if (!r.ok) { st.textContent = r.error || 'خطا'; inp.value = ''; return; }
+  FILE_TOKEN = r.token || '';
+  st.textContent = r.detected ? '✅ خوانده شد؛ اطلاعات را بررسی کنید.' : (r.warning || 'فایل پیوست شد؛ اطلاعات را وارد کنید.');
+  const x = r.fields || {};
+  const set = (id, v) => { if (v) document.getElementById(id).value = fa(v); };
+  document.getElementById('i-name').value = x.full_name || '';
+  set('i-nid', x.national_code); set('i-pc', x.personnel_code); set('i-date', x.letter_date); set('i-mob', x.mobile);
+  document.getElementById('i-co').value = x.company_name || '';
+  document.getElementById('intro-form').style.display = 'block';
+}
+async function createIntro() {
+  const b = document.getElementById('intro-save'); b.disabled = true;
+  const g = id => en(document.getElementById(id).value.trim());
+  const r = await call('create_intro', {full_name: document.getElementById('i-name').value.trim(), national_code: g('i-nid'), personnel_code: g('i-pc'),
+    company_name: document.getElementById('i-co').value.trim(), letter_date: g('i-date'), mobile: g('i-mob'), max_quota: g('i-quota'), file_token: FILE_TOKEN}, '/api/record_actions.php');
+  b.disabled = false;
+  if (!r.ok) { toast(r.error || 'خطا', 'err'); return; }
+  NEW_INTRO = r.intro_id;
+  document.getElementById('s2-name').textContent = document.getElementById('i-name').value.trim();
+  document.getElementById('new-step1').style.display = 'none';
+  document.getElementById('new-step2').style.display = 'block';
+  toast('معرفی‌نامه ثبت شد' + (r.filed ? ' و فایلش بایگانی شد.' : '.'), 'ok');
+}
+document.querySelectorAll('#new-step2 .seg:first-of-type button').forEach(b => b.onclick = () => { NEW_TYPE = b.dataset.t; b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('#rel-seg button').forEach(b => b.onclick = () => { NEW_REL = b.dataset.r; b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); document.getElementById('other-box').style.display = NEW_REL === 'other' ? 'grid' : 'none'; });
+async function createCase() {
+  const plate = plateFrom('np');
+  if (plate === null) { toast('پلاک کامل نیست.', 'err'); return; }
+  const b = document.getElementById('case-save'); b.disabled = true;
+  const r = await call('create_case_for_intro', {introduction_id: NEW_INTRO, insurance_type: NEW_TYPE}, '/api/record_actions.php');
+  if (!r.ok) { b.disabled = false; toast(r.error || 'خطا', 'err'); return; }
+  const self = NEW_REL === 'self';
+  const nm = self ? document.getElementById('s2-name').textContent : document.getElementById('o-name').value.trim();
+  const nid = self ? en(document.getElementById('i-nid').value.trim()) : en(document.getElementById('o-nid').value.trim());
+  await call('set_naming', {case_id: r.case_id, plate: plate || '', insured_name: nm, insured_national_id: nid}, '/api/case_actions.php');
+  b.disabled = false;
+  toast('درخواست ثبت شد؛ برای همین معرفی‌نامه درخواستِ دیگری هم می‌توانید ثبت کنید.', 'ok');
+  ['np1', 'np2', 'np3', 'np4', 'o-name', 'o-nid'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('new-done').style.display = 'block';
+}
+function newDone() {
+  NEW_INTRO = null; FILE_TOKEN = '';
+  document.getElementById('new-done').style.display = 'none';
+  document.getElementById('new-step2').style.display = 'none';
+  document.getElementById('new-step1').style.display = 'block';
+  document.getElementById('intro-form').style.display = 'none';
+  document.getElementById('intro-file').value = ''; document.getElementById('intro-file-st').textContent = 'PDF یا عکس';
+  show('queue');
+}
+</script>
+</body>
+</html>
