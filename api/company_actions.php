@@ -1657,11 +1657,21 @@ try {
 
     // ---- صندوق ورودیِ مدارک تخصیص‌نیافته (همه‌ی شرکت‌ها) ----
     if ($action === 'list_inbox') {
+        require_once __DIR__ . '/_vdoc.php';
+        vdoc_ensure($pdo);
         $stmt = $pdo->query("SELECT cd.*, c.name AS company_name FROM company_documents cd
                               JOIN companies c ON c.id = cd.company_id
                               WHERE cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC, cd.id ASC LIMIT 300");
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$r) $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
+        foreach ($rows as &$r) {
+            $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
+            // نتیجه‌ی شناساییِ خودکار (فقط بخش‌های لازم برای نمایش و پیش‌پر کردنِ تگ‌گذاری)
+            $aj = !empty($r['ai_json']) ? json_decode($r['ai_json'], true) : null;
+            $r['ai'] = is_array($aj) ? ['kind' => $aj['kind'] ?? null, 'kind_fa' => $aj['kind_fa'] ?? null, 'status' => $aj['status'] ?? null,
+                                        'data' => $aj['data'] ?? [], 'missing' => $aj['missing'] ?? [], 'error' => $aj['error'] ?? null] : null;
+            unset($r['ai_json']);
+        }
+        unset($r);
         echo json_encode(['ok' => true, 'documents' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1708,8 +1718,75 @@ try {
         $docId = intval($pdo->lastInsertId());
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
         $sp = company_split_document($pdo, $siteRoot, $docId);
-        if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? ''], JSON_UNESCAPED_UNICODE); exit; }
-        echo json_encode(['ok' => true, 'pages' => $sp ? intval($sp['pages']) : 1], JSON_UNESCAPED_UNICODE);
+        require_once __DIR__ . '/_vdoc.php';
+        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId]);
+        if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? '', 'ai_queued' => true], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'pages' => $sp ? intval($sp['pages']) : 1, 'ai_queued' => true], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- شناساییِ خودکارِ مدارکِ صف‌شده (صندوقِ مدارک در پنل تا خالی شدنِ صف تکرار می‌کند) ----
+    if ($action === 'doc_ai_step') {
+        require_once __DIR__ . '/_vdoc.php';
+        if (function_exists('sess_release')) sess_release();
+        $r = vdoc_step($pdo, dirname(__DIR__), null, 1);
+        echo json_encode(['ok' => true] + $r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- ساختِ ردیفِ تازه از اطلاعاتِ خوانده‌شده‌ی یک مدرک (شاسی/موتور/مالک) و نشاندنِ مدرک رویش ----
+    if ($action === 'doc_ai_create_row') {
+        require_once __DIR__ . '/_vdoc.php';
+        vdoc_ensure($pdo);
+        $docId = intval($data['doc_id'] ?? 0); $requestId = intval($data['request_id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM company_documents WHERE id = ? AND status = 'UNASSIGNED'");
+        $st->execute([$docId]);
+        $doc = $st->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد یا قبلاً تخصیص یافته است.']); exit; }
+        $st = $pdo->prepare("SELECT id FROM company_requests WHERE id = ? AND company_id = ?");
+        $st->execute([$requestId, $doc['company_id']]);
+        if (!$st->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواستِ همین شرکت را انتخاب کنید.']); exit; }
+        $aj = json_decode((string)$doc['ai_json'], true) ?: [];
+        $d = array_merge($aj['data'] ?? [], array_filter(['vin' => trim((string)($data['vin'] ?? '')), 'engine_no' => trim((string)($data['engine_no'] ?? ''))], 'strlen'));
+        $vin = vdoc_clean_code($d['vin'] ?? ''); $eng = vdoc_clean_code($d['engine_no'] ?? '');
+        if (strlen($vin) < 5 && strlen($eng) < 5) { echo json_encode(['ok' => false, 'error' => 'شماره شاسی یا موتور را وارد کنید.']); exit; }
+        $types = array_values(array_intersect((array)($data['types'] ?? []), ['THIRDPARTY', 'BODY'])) ?: [null];
+        $kind = $aj['kind'] ?? '';
+        $isNew = !empty($data['is_new']) || $kind === 'sales_invoice' ? 1 : 0;
+        $carName = mb_substr(trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? ''), 0, 100) ?: null;
+        $ids = [];
+        foreach ($types as $t) {
+            $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                ->execute([$requestId, $vin ?: null, strlen($vin) === 17 ? $vin : null, $eng ?: null, $isNew, $t, $isNew, $carName]);
+            $ids[] = intval($pdo->lastInsertId());
+        }
+        $docType = vdoc_doc_type($kind, $d, []) ?: (trim((string)($data['doc_type'] ?? '')) ?: 'other');
+        $siteRoot = dirname(__DIR__);
+        $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = ?, doc_type = ?, status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), ai_status = 'AUTO_NEW' WHERE id = ?")
+            ->execute([$requestId, $ids[0], $docType, $actor['user_id'], $docId]);
+        $newRel = company_place_document($pdo, $siteRoot, $docId, $ids[0], $docType);
+        vdoc_apply_to_row($pdo, $ids[0], $d);
+        company_sync_plate_status($pdo, $ids[0]);
+        foreach (array_slice($ids, 1) as $pid) {   // ثالث و بدنه: کپیِ همان مدرک برای ردیفِ دوم
+            $src = $siteRoot . '/' . ltrim((string)$newRel, '/');
+            $dest = dirname($src) . '/' . pathinfo($src, PATHINFO_FILENAME) . '_' . $pid . '.' . pathinfo($src, PATHINFO_EXTENSION);
+            if (is_file($src) && @copy($src, $dest)) {
+                $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at, ai_status) VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED', ?, NOW(), 'AUTO_NEW')")
+                    ->execute([$doc['company_id'], $requestId, $pid, ltrim(str_replace($siteRoot, '', $dest), '/'), $doc['orig_name'], $docType, $actor['user_id']]);
+                company_place_document($pdo, $siteRoot, intval($pdo->lastInsertId()), $pid, $docType);
+            }
+            vdoc_apply_to_row($pdo, $pid, $d);
+            company_sync_plate_status($pdo, $pid);
+        }
+        $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
+        echo json_encode(['ok' => true, 'plate_ids' => $ids], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- دوباره خواندنِ یک مدرک (دکمه‌ی «شناساییِ دوباره» در صندوق) ----
+    if ($action === 'doc_ai_retry') {
+        require_once __DIR__ . '/_vdoc.php';
+        vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)]);
+        $r = vdoc_process_company_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0));
+        echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

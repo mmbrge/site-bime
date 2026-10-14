@@ -109,6 +109,31 @@ function sec_exec_run($py, $code, array $env, $fix) {
     return ['ok', 'PHP ' . PHP_VERSION . ' — تابع‌های لازم باز است و پایتون واقعاً اجرا شد: Python ' . $out . ' (' . fa_digits($ms) . ' میلی‌ثانیه).', ''];
 }
 
+// موتورهای خواندنِ مدارکِ اسکن‌شده (api/py/vehicle_doc_reader.py): بارکد (zxing-cpp)، OCRِ فارسی (PaddleOCR یا tesseract) و OCRِ لاتین (RapidOCR)
+function sec_ocr_check($pdo) {
+    if (!function_exists('pdf_split_python')) require_once __DIR__ . '/_pdf_split.php';
+    $py = pdf_split_python($pdo);
+    $cacheF = rtrim(sys_get_temp_dir(), '/') . '/bime_ocr_' . md5(__DIR__ . '|' . $py) . '.json';
+    $c = is_file($cacheF) && filemtime($cacheF) > time() - 600 ? json_decode((string)@file_get_contents($cacheF), true) : null;
+    if (!is_array($c)) {
+        $code = "import importlib,shutil,json\nr={}\nfor m in ['paddleocr','zxingcpp','rapidocr_onnxruntime','PIL','numpy']:\n    try:\n        importlib.import_module(m); r[m]=1\n    except Exception:\n        r[m]=0\nr['tesseract']=1 if shutil.which('tesseract') else 0\nprint(json.dumps(r))";
+        $home = getenv('HOME');
+        if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
+        $proc = @proc_open([$py, '-c', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
+        if (!is_resource($proc)) return ['warn', 'بررسیِ موتورها ممکن نشد.', ''];
+        $out = trim((string)stream_get_contents($pipes[1])); stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
+        $c = json_decode(substr($out, (int)strrpos("\n" . $out, "\n")), true);
+        if (!is_array($c)) return ['warn', 'خروجیِ بررسیِ موتورها خوانده نشد.', ''];
+        @file_put_contents($cacheF, json_encode($c));
+    }
+    $fa = !empty($c['paddleocr']) ? 'PaddleOCR' : (!empty($c['tesseract']) ? 'tesseract' : '');
+    $parts = ['بارکد: ' . (!empty($c['zxingcpp']) ? 'دارد ✓' : 'ندارد'), 'OCRِ فارسی: ' . ($fa ?: 'ندارد'), 'OCRِ لاتین (شاسی/موتور): ' . (!empty($c['rapidocr_onnxruntime']) ? 'RapidOCR ✓' : ($fa ?: 'ندارد'))];
+    $fix = 'در cPanel ← Setup Python App، همان محیطِ پایتونِ سایت (' . $py . ') را باز کنید و در «Execute python script» یا ترمینالِ همان محیط بزنید: pip install zxing-cpp rapidocr-onnxruntime — بارکد شاسی و موتور را بی‌خطا می‌خواند و RapidOCR حروفِ لاتین را دقیق‌تر.';
+    if (empty($c['PIL']) || (!$fa && empty($c['rapidocr_onnxruntime']))) return ['bad', implode(' · ', $parts) . ' — مدارکِ اسکن‌شده خوانده نمی‌شوند و برای شناساییِ دستی به صندوقِ مدارک می‌روند.', $fix];
+    if (empty($c['zxingcpp']) || !$fa || empty($c['rapidocr_onnxruntime'])) return ['warn', implode(' · ', $parts) . ' — کار می‌کند ولی با همه‌ی موتورها دقیق‌تر است.', $fix];
+    return ['ok', implode(' · ', $parts), ''];
+}
+
 // ---------------- بررسی‌های امنیتی ----------------
 function sec_checks($pdo) {
     $s = sec_settings($pdo);
@@ -134,6 +159,7 @@ function sec_checks($pdo) {
          in_array($de, ['1', 'on', 'stdout'], true) ? 'در php.ini روشن است ولی سپرِ امنیتی روی همه‌ی صفحه‌ها خاموشش می‌کند.' : 'خاموش است؛ جزئیاتِ فنی به بیرون درز نمی‌کند.', '', 1);
     [$exSt, $exDetail, $exFix] = sec_exec_check($pdo);
     $add('exec', 'سرور', 'اجرای پایتون از PHP (OCR، استخراج و تقسیمِ PDF)', $exSt, $exDetail, $exFix, 3);
+    if ($exSt === 'ok') { [$oSt, $oDetail, $oFix] = sec_ocr_check($pdo); $add('ocr_engines', 'سرور', 'موتورهای خواندنِ اسکن (فاکتور فروش، سند، کارت)', $oSt, $oDetail, $oFix, 2); }
     $idle = max(0.25, floatval($s['sec_idle_hours'] ?? 3)) * 3600;
     $gc = intval(ini_get('session.gc_maxlifetime'));
     $add('gc', 'نشست', 'عمرِ نشست در سرور در برابرِ زمانِ خروجِ خودکار', $gc >= $idle ? 'ok' : 'warn',

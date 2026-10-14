@@ -1046,10 +1046,34 @@ async function uploadDocuments() {
             if (data.ok) { okCount++; if (Number(data.pages) > 1) splitPages += Number(data.pages); }
         } catch (e) { /* ادامه با فایل بعدی */ }
     }
-    showToast(`${okCount} از ${files.length} فایل آپلود شد.` + (splitPages ? ` PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا شدند (${splitPages} صفحه) تا هر صفحه جدا بررسی شود.` : ''));
+    showToast(`${okCount} از ${files.length} فایل آپلود شد.` + (splitPages ? ` PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا شدند (${splitPages} صفحه).` : '') + ' شناساییِ خودکارِ صفحه‌ها شروع شد…');
     document.getElementById('doc-upload-input').value = '';
     document.getElementById('doc-upload-rows').innerHTML = '';
     openRequestDetail(activeRequestId);
+    if (okCount) docAiLoop(activeRequestId);
+}
+
+// شناساییِ خودکارِ صفحه‌ها (فاکتور فروش، سند، کارت، بیمه‌نامه‌ی قبلی): هر بار یک صفحه، تا تمام شود.
+// صفحه‌ای که شناخته شد روی ردیفِ همان خودرو (یا ردیفِ تازه) می‌نشیند؛ بقیه برای بررسیِ کارشناس می‌ماند.
+let docAiBusy = false;
+async function docAiLoop(reqId) {
+    if (docAiBusy) return;
+    docAiBusy = true;
+    let bar = document.getElementById('doc-ai-bar');
+    if (!bar) { bar = document.createElement('div'); bar.id = 'doc-ai-bar'; bar.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:9999;max-width:340px'; document.body.appendChild(bar); }
+    let auto = 0, rest = 0, total = 0;
+    try {
+        for (let i = 0; i < 80; i++) {
+            const r = await (await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json();
+            if (!r.ok) break;
+            (r.done || []).forEach(x => { total++; if (x.status === 'AUTO' || x.status === 'AUTO_NEW') auto++; else rest++; });
+            bar.innerHTML = `<div class="card p-3 text-xs shadow-lg border border-indigo-100"><b class="text-indigo-700">🔎 شناساییِ خودکارِ مدارک</b><div class="mt-1 text-slate-600">${faNum(total)} صفحه خوانده شد · ${faNum(auto)} خودکار روی ردیف نشست${rest ? ' · ' + faNum(rest) + ' برای بررسیِ کارشناس' : ''}${r.pending ? ' · ' + faNum(r.pending) + ' صفحه‌ی دیگر…' : ''}</div></div>`;
+            if (!r.pending) break;
+        }
+    } catch (e) {}
+    docAiBusy = false;
+    setTimeout(() => { bar.remove(); }, 6000);
+    if (total && reqId) openRequestDetail(reqId);
 }
 
 

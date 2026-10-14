@@ -432,6 +432,8 @@ function co_store_doc($chat, $acc, $t, $message) {
         require_once __DIR__ . '/_pdf_split.php';
         $sp = company_split_document($pdo, $siteRoot, $docId);
         if ($sp && !empty($sp['ok'])) $pages = intval($sp['pages']);
+        require_once __DIR__ . '/_vdoc.php';   // شناساییِ خودکار (در پنل یا با بازشدنِ صندوقِ مدارک انجام می‌شود)
+        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId]);
     }
     $t['count'] = intval($t['count'] ?? 0) + $pages;
     st_set($chat, 'UPDOC', $t);

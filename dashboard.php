@@ -3212,6 +3212,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div id="cit-preview" class="mb-3 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"></div>
             <!-- PDFِ چندصفحه‌ای: پیشنهادِ جدا کردنِ صفحه‌ها (هر صفحه یک مدرکِ جدا برای تگ‌گذاری) -->
             <div id="cit-split" class="hidden mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 flex items-center justify-between gap-2"></div>
+            <!-- نتیجه‌ی شناساییِ خودکار (فاکتور فروش، سند، کارت، بیمه‌نامه‌ی قبلی) + ساختِ ردیف از همین اطلاعات -->
+            <div id="cit-ai" class="hidden mb-3"></div>
 
             <div class="float-input"><select id="cit-request" onchange="onCitRequestChange()"></select><label>درخواست مربوطه</label></div>
 
@@ -8021,6 +8023,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function loadCompanyInbox() {
+            await loadCompanyInboxList();
+            if ((companyInboxCache || []).some(d => d.ai_status === 'PENDING' || d.ai_status === 'RUNNING')) aiStepLoop();
+        }
+        async function loadCompanyInboxList() {
             const box = document.getElementById('cinbox-list');
 
             let data;
@@ -8033,16 +8039,85 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
             box.innerHTML = data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
-                    <div>
+                    <div class="min-w-0">
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
                         <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${aiBadge(d)}
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
+                        ${['FAIL', 'NONE', 'PARTIAL'].includes(d.ai_status) ? `<button onclick="aiRetry(${d.id})" title="خواندنِ دوباره‌ی این صفحه" class="bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-xl"><i class="fas fa-rotate"></i></button>` : ''}
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
                         <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
                     </div>
                 </div>`).join('');
+        }
+
+        // ---- شناساییِ خودکارِ مدارکِ شرکت‌ها (api/_vdoc.php): نشان، صفِ خواندن و ساختِ ردیف ----
+        const AI_DOC_TYPE = {sales_invoice: 'sales_invoice', ownership_doc: 'ownership_doc', car_card: 'car_card_front'};
+        const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        function aiBadge(d) {
+            const a = d.ai || {}, dd = a.data || {}, st = d.ai_status;
+            if (!st) return '';
+            if (st === 'PENDING' || st === 'RUNNING') return '<p class="text-[11px] text-indigo-600 font-bold mt-1"><i class="fas fa-spinner fa-spin ml-1"></i>در صفِ شناساییِ خودکار…</p>';
+            if (st === 'FAIL') return `<p class="text-[11px] text-rose-600 font-bold mt-1"><i class="fas fa-triangle-exclamation ml-1"></i>خوانده نشد${a.error ? ': ' + escapeHtml(a.error) : ''}</p>`;
+            if (st === 'NONE') return '<p class="text-[11px] text-slate-400 font-bold mt-1"><i class="fas fa-circle-question ml-1"></i>شناسایی نشد؛ نوع و ردیف را دستی انتخاب کنید.</p>';
+            const bits = [dd.vin ? 'شاسی ' + dd.vin : '', dd.engine_no ? 'موتور ' + dd.engine_no : '', dd.owner_name ? 'مالک ' + escapeHtml(dd.owner_name) : ''].filter(Boolean).join(' · ');
+            return `<p class="text-[11px] text-amber-700 font-bold mt-1"><i class="fas fa-wand-magic-sparkles ml-1"></i>${escapeHtml(a.kind_fa || 'مدرک')} — ناقص شناسایی شد${(a.missing || []).length ? ' (خوانده نشد: ' + a.missing.join('، ') + ')' : ''}${bits ? '<br><span class="text-slate-500 font-normal" dir="auto">' + bits + '</span>' : ''}</p>`;
+        }
+        let aiStepBusy = false;
+        async function aiStepLoop() {
+            if (aiStepBusy) return;
+            aiStepBusy = true;
+            try {
+                for (let i = 0; i < 60; i++) {
+                    const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json();
+                    if (!r.ok) break;
+                    (r.done || []).forEach(x => { if (x.status === 'AUTO' || x.status === 'AUTO_NEW') showToast(`${x.kind_fa || 'مدرک'} ${x.vin ? '(' + x.vin + ') ' : ''}خودکار ${x.status === 'AUTO_NEW' ? 'با ردیفِ تازه ' : ''}ثبت شد.`, 'success'); });
+                    if ((r.done || []).length && document.getElementById('cinbox-list')) await loadCompanyInboxList();
+                    if (!r.pending) break;
+                }
+            } catch (e) {}
+            aiStepBusy = false;
+        }
+        async function aiRetry(id) {
+            showToast('در حالِ خواندنِ دوباره…', 'info');
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_retry', doc_id: id})})).json();
+            showToast(r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'شناسایی و روی ردیف ثبت شد.' : (r.status === 'PARTIAL' ? 'ناقص شناسایی شد؛ در تگ‌گذاری کاملش کنید.' : 'شناسایی نشد.'), r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'success' : 'info');
+            loadCompanyInbox();
+        }
+        // جعبه‌ی «اطلاعاتِ خوانده‌شده» در پنجره‌ی تگ‌گذاری
+        function renderCitAi(doc) {
+            const box = document.getElementById('cit-ai');
+            const a = doc.ai || {}, d = a.data || {};
+            if (!doc.ai || (!d.vin && !d.engine_no && !d.owner_name)) { box.className = 'hidden mb-3'; box.innerHTML = ''; return; }
+            const row = (l, v, ltr) => v ? `<div class="bg-white border border-violet-100 rounded-lg px-2 py-1"><span class="block text-[9.5px] text-slate-400">${l}</span><b class="text-[11px] break-all" ${ltr ? 'dir="ltr"' : ''}>${escapeHtml(faDigits(v))}</b></div>` : '';
+            box.className = 'mb-3 rounded-xl border border-violet-200 bg-violet-50/60 p-3';
+            box.innerHTML = `<p class="text-[11px] font-black text-violet-800 mb-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>خوانده‌شده از فایل: ${escapeHtml(a.kind_fa || '')}
+                    ${(a.missing || []).length ? `<span class="font-bold text-amber-700">— خوانده نشد: ${a.missing.join('، ')}</span>` : ''}</p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">${row('شاسی', d.vin, 1)}${row('موتور', d.engine_no, 1)}${row('مالک / خریدار', d.owner_name)}${row('کد / شناسه ملی', d.national_id, 1)}
+                    ${row('خودرو', [d.usage, d.car_system, d.car_tip].filter(Boolean).join(' '))}${row('مدل', d.model_year, 1)}${row('رنگ', d.color)}${row('شماره اتاق', d.cab_no, 1)}${row('پلاک', d.plate)}</div>
+                <div class="mt-2 pt-2 border-t border-violet-100 flex flex-wrap items-end gap-2">
+                    <label class="text-[10.5px]"><span class="block text-slate-500">شاسی</span><input id="cit-ai-vin" value="${escapeHtml(d.vin || '')}" dir="ltr" class="border rounded-lg px-2 py-1 text-[11px] w-40"></label>
+                    <label class="text-[10.5px]"><span class="block text-slate-500">موتور</span><input id="cit-ai-eng" value="${escapeHtml(d.engine_no || '')}" dir="ltr" class="border rounded-lg px-2 py-1 text-[11px] w-44"></label>
+                    <label class="text-[11px] flex items-center gap-1"><input type="checkbox" id="cit-ai-t3" checked> ثالث</label>
+                    <label class="text-[11px] flex items-center gap-1"><input type="checkbox" id="cit-ai-tb"> بدنه</label>
+                    <button type="button" onclick="aiCreateRow()" class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-plus ml-1"></i>ساختِ ردیفِ تازه با همین اطلاعات و ثبتِ مدرک</button>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-1">اگر ردیفِ این خودرو در درخواست هست، از فهرستِ پلاک‌های پایین انتخابش کنید و «ثبت» را بزنید.</p>`;
+        }
+        async function aiCreateRow() {
+            const docId = document.getElementById('cit-doc-id').value, reqId = document.getElementById('cit-request').value;
+            const types = [document.getElementById('cit-ai-t3').checked ? 'THIRDPARTY' : '', document.getElementById('cit-ai-tb').checked ? 'BODY' : ''].filter(Boolean);
+            if (!reqId) { showToast('درخواست را انتخاب کنید.', 'error'); return; }
+            if (!types.length) { showToast('نوعِ بیمه (ثالث/بدنه) را انتخاب کنید.', 'error'); return; }
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_create_row', doc_id: docId, request_id: reqId, types,
+                vin: document.getElementById('cit-ai-vin').value.trim(), engine_no: document.getElementById('cit-ai-eng').value.trim()})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            showToast('ردیفِ تازه ساخته شد و مدرک رویش نشست.', 'success');
+            document.getElementById('cinbox-tag-modal').classList.remove('active');
+            loadCompanyInbox();
+            if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
         }
 
         // پیش‌نمایشِ خودِ فایلِ مدرک داخل مودال تگ‌گذاری (PDF در iframe، عکس به‌صورت
@@ -8141,7 +8216,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
             // تا اول نوعِ فایل انتخاب شود و بعد فیلدهای مربوط به همان نوع ظاهر شوند
             document.getElementById('cit-doc-type').value = (doc.file_kind === 'LETTER' || doc.doc_type === 'letter') ? 'letter'
-                : (KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title' ? doc.doc_type : (doc.doc_type ? 'other' : ''));
+                : (KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title' ? doc.doc_type : (doc.doc_type ? 'other'
+                    // نوعی که شناساییِ خودکار تشخیص داد (اگر ثبت‌کننده نوعی نزده بود)
+                    : (doc.ai && AI_DOC_TYPE[doc.ai.kind]) || (doc.ai && doc.ai.kind === 'policy' ? ((doc.ai.data || {}).policy_type === 'BODY' ? 'prev_body_policy' : 'prev_third_policy') : '')));
+            renderCitAi(doc);
             document.getElementById('cit-doc-type-other').value = document.getElementById('cit-doc-type').value === 'other' ? (doc.doc_type || '') : '';
             fillCitCounts(null);
             onCitDocTypeChange();

@@ -500,12 +500,24 @@ try {
             require_once __DIR__ . '/_pdf_split.php';
             $sp = company_split_document($pdo, $siteRoot, $docId);
             if ($sp && !empty($sp['ok'])) $pages = intval($sp['pages']);
+            // شناساییِ خودکارِ هر صفحه (فاکتور فروش، سند، کارت، بیمه‌نامه‌ی قبلی) => ردیف یا صندوقِ مدارک
+            require_once __DIR__ . '/_vdoc.php';
+            vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId]);
         }
         cbot_notify_staff($pdo, ['ADMIN', 'COMPANY_LIAISON'], "📎 مدرکِ تازه از «{$companyName}» برای درخواست #{$requestId}: " . ($isLetter ? 'نامه‌ی درخواست' : company_doc_type_label($suggestedType))
             . ($pages > 1 ? " (PDFِ {$pages} صفحه‌ای؛ هر صفحه جدا برای تگ‌گذاری)" : ''),
             ['inline_keyboard' => [[['text' => 'مشاهده', 'callback_data' => 'lreq:' . $requestId]]]]);
 
-        echo json_encode(['ok' => true, 'pages' => $pages]);
+        echo json_encode(['ok' => true, 'pages' => $pages, 'ai_queued' => !$isLetter]);
+        exit;
+    }
+
+    // ---- شناساییِ خودکارِ مدارکِ آپلودشده: هر بار یک صفحه (پنل شرکت تا تمام شدن تکرار می‌کند) ----
+    if ($action === 'doc_ai_step') {
+        require_once __DIR__ . '/_vdoc.php';
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        $r = vdoc_step($pdo, dirname(__DIR__), $allowedCompanyIds, 1);
+        echo json_encode(['ok' => true] + $r, JSON_UNESCAPED_UNICODE);
         exit;
     }
 
