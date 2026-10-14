@@ -63,9 +63,11 @@
         return box;
     }
     const boxes = new Set();
+    // جدول‌های کوچکِ داخلِ جزئیاتِ یک بیمه‌نامه (الحاقیه‌ها، اقساط) شمارنده نمی‌خواهند
+    const skip = t => t.classList.contains('no-count') || !!t.closest('.no-count,[data-endolist],[data-finplan],.en-tb,.fc-tbl') || t.classList.contains('en-tb') || t.classList.contains('fc-tbl');
     // شمارنده‌ی جدول‌هایی که دوباره ساخته شده‌اند (فیلتر/جستجو) حذف می‌شود تا شمارنده‌ی قبلی تکرار نشود
     function sweep() {
-        boxes.forEach(b => { if (!b._t || !b._t.isConnected || b._t.classList.contains('no-count')) { b.remove(); boxes.delete(b); } });
+        boxes.forEach(b => { if (!b._t || !b._t.isConnected || skip(b._t)) { b.remove(); boxes.delete(b); } });
         document.querySelectorAll('.tbl-count').forEach(b => { if (!boxes.has(b)) b.remove(); });
     }
     // ---------------- صفحه‌بندی ----------------
@@ -119,7 +121,7 @@
     function update() {
         sweep();
         document.querySelectorAll('table').forEach(t => {
-            if (t.classList.contains('no-count') || t.closest('.no-count')) return;
+            if (skip(t)) return;
             const tb = t.tBodies[0]; if (!tb) return;
             const box = place(t);
             const rows = [...tb.rows].filter(tr => !isPlaceholder(tr) && tr.style.display !== 'none' && !tr.classList.contains('hidden'));

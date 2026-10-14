@@ -90,7 +90,8 @@
     function open(opts) {
         css();
         Object.keys(E).forEach(k => delete E[k]);
-        Object.assign(E, {opts: opts || {}, token: null, data: {}, matches: [], policy: null, statement: [], warnings: [], sel: null, previewSeq: 0});
+        Object.assign(E, {opts: opts || {}, token: null, data: {}, matches: [], policy: null, statement: [], warnings: [], sel: null, previewSeq: 0,
+                          finalToken: null, finalDiffs: [], finalWarn: [], finalErr: null});
         const ov = document.createElement('div');
         ov.className = 'en-ov'; ov.id = 'en-ov';
         ov.innerHTML = `<div class="en-box">
@@ -140,18 +141,55 @@
                     <label class="w4">شرح<textarea id="en-desc" rows="2">${esc(d.description || '')}${(d.changes || []).length ? '' : ''}</textarea></label>
                 </div>
             </div>
-            <div class="en-sec" id="en-fin"></div>`;
+            <div class="en-sec" id="en-fin"></div>
+            <div class="en-sec"><h4>۵) بیمه‌نامه‌ی نهایی (بعد از الحاقیه) — اختیاری</h4>
+                <label class="en-drop" id="en-fdrop"><input type="file" accept="application/pdf,.pdf" class="hidden" id="en-ffile">${finalDropHtml()}</label>
+                <div id="en-fres" class="mt-2">${finalResHtml()}</div>
+                <p class="text-[10.5px] text-slate-400 mt-1">اطلاعاتِ این فایل دوباره خوانده و با اطلاعاتِ قبلیِ بیمه‌نامه مقایسه می‌شود؛ هر چه عوض شده (پلاک، تعهد، تاریخ پایان، ...) در شرحِ الحاقیه نوشته می‌شود. بعداً هم از فهرستِ الحاقیه‌ها می‌شود داد.</p></div>`;
         const drop = bd.querySelector('#en-drop'), fi = bd.querySelector('#en-file');
         fi.onchange = () => fi.files[0] && readFile(fi.files[0]);
         drop.ondragover = e => { e.preventDefault(); drop.classList.add('on'); };
         drop.ondragleave = () => drop.classList.remove('on');
         drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) readFile(f); };
+        const fdrop = bd.querySelector('#en-fdrop'), ffi = bd.querySelector('#en-ffile');
+        ffi.onchange = () => ffi.files[0] && readFinal(ffi.files[0]);
+        fdrop.ondragover = e => { e.preventDefault(); fdrop.classList.add('on'); };
+        fdrop.ondragleave = () => fdrop.classList.remove('on');
+        fdrop.ondrop = e => { e.preventDefault(); fdrop.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) readFinal(f); };
         bd.querySelector('#en-qb').onclick = () => searchPolicy(bd.querySelector('#en-q').value);
         bd.querySelector('#en-q').onkeydown = e => { if (e.key === 'Enter') searchPolicy(e.target.value); };
         bd.querySelectorAll('#en-pols button').forEach(b => b.onclick = () => pickPolicy(b.dataset.k));
         bd.querySelector('#en-kind').onchange = () => { renderFin(); };
         ['en-gross', 'en-eff', 'en-issue'].forEach(id => bd.querySelector('#' + id).addEventListener('input', schedulePreview));
         renderFin();
+    }
+
+    function finalDropHtml() {
+        return E.finalToken ? `<i class="fas fa-circle-check text-emerald-600 ml-1"></i>بیمه‌نامه‌ی نهایی دریافت شد${E.finalErr ? ` — <span class="text-amber-700">${esc(E.finalErr)}</span>` : ''} · برای عوض کردن کلیک کنید`
+            : '<i class="fas fa-file-shield ml-1"></i>فایلِ PDFِ بیمه‌نامه‌ی نهایی (بعد از الحاقیه) را بکشید یا کلیک کنید';
+    }
+    function finalResHtml() {
+        if (!E.finalToken) return '';
+        const ds = E.finalDiffs || [];
+        return (E.finalWarn || []).map(w => `<div class="en-warn mb-1"><i class="fas fa-triangle-exclamation ml-1"></i>${esc(w)}</div>`).join('')
+            + (ds.length ? `<div class="rounded-xl bg-indigo-50/60 border border-indigo-100 p-2.5 text-[11.5px]"><b class="text-indigo-700"><i class="fas fa-code-compare ml-1"></i>تغییرها نسبت به اطلاعاتِ قبلی (${fa(ds.length)}):</b>
+                <ul class="mt-1 pr-4" style="list-style:disc">${ds.map(d => `<li>${esc(fa(d.text))}</li>`).join('')}</ul></div>`
+                : (E.finalErr ? '' : '<p class="text-[11px] text-emerald-700"><i class="fas fa-check ml-1"></i>تغییری نسبت به اطلاعاتِ قبلیِ بیمه‌نامه دیده نشد.</p>'));
+    }
+    async function readFinal(f) {
+        if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { toast('فایلِ بیمه‌نامه باید PDF باشد.', 'warning'); return; }
+        const drop = document.getElementById('en-fdrop');
+        if (drop) drop.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ بیمه‌نامه‌ی نهایی...';
+        const [src, ref] = (E.sel || 'X:0').split(':');
+        const fd = new FormData();
+        fd.append('action', 'final_read'); fd.append('file', f); fd.append('source', src); fd.append('ref_id', ref || 0);
+        fd.append('policy_number', en((document.getElementById('en-q') || {}).value || '').trim() || (E.policy || {}).policy_number || '');
+        const r = await post(fd, true);
+        if (!r.ok) { toast(r.error || 'خطا', 'error'); E.finalToken = null; }
+        else { E.finalToken = r.token; E.finalDiffs = r.diffs || []; E.finalWarn = r.warnings || []; E.finalErr = r.read_ok ? null : (r.read_error || 'خوانده نشد؛ فقط فایل ذخیره می‌شود.'); }
+        const d2 = document.getElementById('en-fdrop'); if (d2) d2.innerHTML = '<input type="file" accept="application/pdf,.pdf" class="hidden" id="en-ffile">' + finalDropHtml();
+        const fi2 = document.getElementById('en-ffile'); if (fi2) fi2.onchange = () => fi2.files[0] && readFinal(fi2.files[0]);
+        const box = document.getElementById('en-fres'); if (box) box.innerHTML = finalResHtml();
     }
 
     function polButtons() {
@@ -305,10 +343,10 @@
         if (p.source === 'X' && !p.policy_number) { toast('شماره‌ی بیمه‌نامه را بنویسید.', 'warning'); return; }
         const b = document.getElementById('en-save');
         b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حال ثبت...';
-        const r = await post(Object.assign({action: 'create', token: E.token || '', request_plate_id: E.opts.requestPlateId || 0}, p));
+        const r = await post(Object.assign({action: 'create', token: E.token || '', final_token: E.finalToken || '', request_plate_id: E.opts.requestPlateId || 0}, p));
         if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check"></i>ثبتِ الحاقیه'; return; }
         close();
-        toast(`الحاقیه ثبت شد${r.final_premium !== null && r.final_premium !== undefined ? ' · حق بیمه‌ی نهایی ' + money(r.final_premium) + ' ریال' : ''}${(r.plan || {}).credit ? ' · بستانکار ' + money(r.plan.credit) : ''}.`, 'success');
+        toast(`الحاقیه ثبت شد${r.final_premium !== null && r.final_premium !== undefined ? ' · حق بیمه‌ی نهایی ' + money(r.final_premium) + ' ریال' : ''}${(r.plan || {}).credit ? ' · بستانکار ' + money(r.plan.credit) : ''}${r.final ? (r.final.ok ? ' · بیمه‌نامه‌ی نهایی ذخیره شد (' + fa((r.final.diffs || []).length) + ' تغییر)' : ' · بیمه‌نامه‌ی نهایی: ' + (r.final.error || 'خطا')) : ''}.`, r.final && !r.final.ok ? 'warning' : 'success');
         if (typeof E.opts.onDone === 'function') E.opts.onDone(r);
         if (P.root && document.body.contains(P.root)) load();
     }
@@ -328,7 +366,7 @@
             root.innerHTML = `
             <div class="en-hero"><div class="flex flex-wrap items-center justify-between gap-3"><div><h2><i class="fas fa-file-pen ml-2"></i>الحاقیه‌ها</h2>
                 <p>الحاقیه‌های اضافی، برگشتی، فسخ و اصلاحیِ بیمه‌نامه‌های شرکتی و کارکنان. حق بیمه‌ی نهاییِ هر بیمه‌نامه = حق بیمه‌ی اصلی + اضافی‌ها − برگشتی‌ها، و اثرش روی اقساط همان‌طور که موقعِ ثبت انتخاب شد.</p></div>
-                <div class="flex gap-2">${isAdmin && canWrite ? '<button class="en-btn" style="background:#fff;color:#0f766e" id="en-new"><i class="fas fa-plus"></i>ثبتِ الحاقیه</button>' : ''}
+                <div class="flex gap-2 flex-wrap">${isAdmin && canWrite ? '<button class="en-btn" style="background:#fff;color:#0f766e" id="en-new"><i class="fas fa-plus"></i>ثبتِ الحاقیه</button><button class="en-btn" style="background:#fff;color:#4338ca" id="en-grp"><i class="fas fa-layer-group"></i>صدورِ گروهیِ الحاقیه</button><button class="en-btn" style="background:rgba(255,255,255,.18);color:#fff" id="en-fgrp"><i class="fas fa-file-shield"></i>بیمه‌نامه‌های نهایی (گروهی)</button>' : ''}
                 <button class="en-btn" style="background:rgba(255,255,255,.18);color:#fff" id="en-xls"><i class="fas fa-file-excel"></i>اکسل</button></div></div></div>
             <div class="en-cards" id="en-cards"></div>
             <div class="card p-3 grid grid-cols-2 md:grid-cols-6 gap-2">
@@ -342,6 +380,8 @@
                 <th class="p-2">مبلغ</th><th class="p-2">حق بیمه: اصلی ← نهایی</th><th class="p-2">اثرِ مالی</th><th class="p-2">بستانکار</th><th class="p-2"></th></tr></thead>
                 <tbody id="en-body"></tbody></table></div>`;
             const nb = root.querySelector('#en-new'); if (nb) nb.onclick = () => open({onDone: load});
+            const gb = root.querySelector('#en-grp'); if (gb) gb.onclick = () => openGroup({onDone: load});
+            const fb = root.querySelector('#en-fgrp'); if (fb) fb.onclick = () => openFinalGroup({onDone: load});
             root.querySelector('#en-xls').onclick = () => { const q = new URLSearchParams(Object.assign({action: 'export'}, filters())); location.href = API + '?' + q.toString(); };
             let t = null;
             ['en-fq', 'en-fk', 'en-fs', 'en-ff', 'en-ft'].forEach(id => root.querySelector('#' + id).addEventListener(id === 'en-fq' || id === 'en-ff' || id === 'en-ft' ? 'input' : 'change', () => { clearTimeout(t); t = setTimeout(load, 300); }));
@@ -376,7 +416,7 @@
                 <td class="p-2">${x.premium ? money(x.premium) + ' ← <b>' + money(x.final_premium) + '</b>' : '—'}</td>
                 <td class="p-2">${esc(x.finance_fa)}</td>
                 <td class="p-2">${x.credit ? `<label class="inline-flex items-center gap-1 ${x.credit_paid ? 'text-emerald-600' : 'text-amber-700'}"><input type="checkbox" data-paid="${x.id}" ${x.credit_paid ? 'checked' : ''} ${isAdmin ? '' : 'disabled'}>${money(x.credit)}</label>` : '—'}</td>
-                <td class="p-2"><div class="flex gap-1">${x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200" title="فایلِ الحاقیه" onclick="event.stopPropagation()"><i class="fas fa-file-pdf text-rose-500"></i></a>` : ''}
+                <td class="p-2"><div class="flex gap-1">${filesHtml(x, isAdmin)}
                     ${isAdmin ? `<button data-del="${x.id}" class="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100" title="حذف و برگرداندنِ اثرِ مالی"><i class="fas fa-trash"></i></button>` : ''}</div></td>
             </tr>
             <tr class="${P.open === x.id ? '' : 'hidden'}" data-d="${x.id}"><td colspan="11" class="p-3 bg-slate-50">${detail(x)}</td></tr>`).join('')
@@ -388,6 +428,7 @@
             body.querySelectorAll('tr[data-d]').forEach(d => d.classList.toggle('hidden', Number(d.dataset.d) !== P.open));
         });
         body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => del(Number(b.dataset.del)));
+        bindFinalUpload(body, load);
         body.querySelectorAll('[data-paid]').forEach(c => c.onchange = async () => {
             const r2 = await post({action: 'credit_paid', id: Number(c.dataset.paid), paid: c.checked ? 1 : 0});
             toast(r2.ok ? (c.checked ? 'استرداد پرداخت‌شده علامت خورد.' : 'برداشته شد.') : (r2.error || 'خطا'), r2.ok ? 'success' : 'error');
@@ -397,7 +438,9 @@
     function detail(x) {
         const pl = x.plan || {};
         return `<div class="grid md:grid-cols-2 gap-3 text-[11.5px]">
-            <div><p><b>شرح:</b> ${esc(x.description || '—')}</p>${x.new_end_date ? `<p><b>تاریخِ پایانِ جدید:</b> ${fa(x.new_end_date)}</p>` : ''}
+            <div><p style="white-space:pre-line"><b>شرح:</b> ${esc(fa(x.description || '—'))}</p>${x.new_end_date ? `<p><b>تاریخِ پایانِ جدید:</b> ${fa(x.new_end_date)}</p>` : ''}
+                <p class="mt-1">${x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="text-blue-600 font-bold"><i class="fas fa-file-pdf ml-1"></i>فایلِ الحاقیه</a>` : '<span class="text-slate-400">فایلِ الحاقیه ندارد</span>'}
+                 · ${x.final_file_path ? `<a href="${fpath(x.final_file_path)}" target="_blank" class="text-emerald-700 font-bold"><i class="fas fa-file-shield ml-1"></i>بیمه‌نامه‌ی نهایی</a>` : '<span class="text-slate-400">بیمه‌نامه‌ی نهایی هنوز داده نشده</span>'}</p>
                 <p><b>مبلغ:</b> ${money(x.gross)}${x.net ? ' · خالص ' + money(x.net) : ''}${x.tax ? ' · مالیات ' + money(x.tax) : ''}</p>
                 <p class="text-slate-400">ثبت: ${esc(x.creator || '')} · ${x.origin === 'REQUEST' ? 'از درخواستِ شرکت' : x.origin === 'LEGACY' ? 'بایگانیِ قبلی' : 'دستی'}</p></div>
             <div>${(pl.changes || []).length ? `<table class="en-tb"><tr><th>قسط</th><th>سررسید</th><th>قبل</th><th>بعد</th></tr>${pl.changes.map(c => `<tr><td>${fa(c.n)}</td><td>${fa(c.due)}</td><td>${money(c.before)}</td><td>${c.deleted ? 'حذف' : money(c.after)}</td></tr>`).join('')}</table>` : ''}
@@ -427,10 +470,240 @@
                 ${rows.map(x => `<tr><td><span class="en-badge ${KIND_CLS[x.kind] || ''}">${esc(x.kind_fa)}</span></td><td>${fa(x.endorse_no || '—')}</td>
                     <td>${fa(x.issue_date || '')} · ${fa(x.effect_date || '')}</td><td class="font-bold ${x.signed >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${smoney(x.signed)}</td>
                     <td>${esc(x.finance_fa)}${x.credit ? ` · بستانکار ${money(x.credit)}` : ''}</td><td>${money(x.final_premium)}</td>
-                    <td>${x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="text-blue-600"><i class="fas fa-file-pdf"></i></a>` : ''}</td></tr>`).join('')}</table>`
+                    <td><div class="flex gap-1">${filesHtml(x, typeof IS_ADMIN === 'undefined' || IS_ADMIN)}</div></td></tr>
+                    ${x.description ? `<tr><td colspan="7" class="text-[10.5px] text-slate-500" style="white-space:pre-line">${esc(fa(x.description))}</td></tr>` : ''}`).join('')}</table>`
                 : '<span class="text-slate-400">الحاقیه‌ای ثبت نشده.</span>';
+            bindFinalUpload(el, () => { delete el.dataset.loaded; mountLists(el.parentElement || document); });
         }
     }
 
-    window.Endorse = {open, init, badge, mountLists, kindFa: k => KIND_FA[k] || k};
+    // دکمه‌های فایل: الحاقیه، بیمه‌نامه‌ی نهایی، بارگذاریِ بیمه‌نامه‌ی نهایی
+    function filesHtml(x, isAdmin) {
+        return (x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10.5px] font-bold whitespace-nowrap" title="دانلودِ فایلِ الحاقیه" onclick="event.stopPropagation()"><i class="fas fa-file-pdf text-rose-500 ml-1"></i>الحاقیه</a>` : '')
+            + (x.final_file_path ? `<a href="${fpath(x.final_file_path)}" target="_blank" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10.5px] font-bold whitespace-nowrap" title="دانلودِ بیمه‌نامه‌ی نهایی (بعد از الحاقیه)" onclick="event.stopPropagation()"><i class="fas fa-file-shield ml-1"></i>نهایی</a>` : '')
+            + (isAdmin ? `<label class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold whitespace-nowrap cursor-pointer" title="${x.final_file_path ? 'عوض کردنِ' : 'بارگذاریِ'} بیمه‌نامه‌ی نهایی (بعد از الحاقیه)" onclick="event.stopPropagation()"><i class="fas fa-upload ml-1"></i>${x.final_file_path ? 'تعویضِ نهایی' : 'بیمه‌نامه‌ی نهایی'}<input type="file" accept="application/pdf,.pdf" class="hidden" data-final="${x.id}"></label>` : '');
+    }
+    function bindFinalUpload(root, after) {
+        root.querySelectorAll('input[data-final]').forEach(inp => inp.onchange = async () => {
+            const f = inp.files[0]; if (!f) return;
+            const send = async force => {
+                const fd = new FormData();
+                fd.append('action', 'final_attach'); fd.append('id', inp.dataset.final); fd.append('file', f); if (force) fd.append('force', '1');
+                toast('در حالِ خواندن و مقایسه‌ی بیمه‌نامه‌ی نهایی...', 'info');
+                const r = await post(fd, true);
+                if (!r.ok && r.mismatch && !force) {
+                    const go = () => send(true);
+                    if (typeof showConfirm === 'function') showConfirm('شماره‌ی بیمه‌نامه یکی نیست', r.error + ' باز هم ذخیره شود؟', go); else if (confirm(r.error + ' ذخیره شود؟')) go();
+                    return;
+                }
+                if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+                toast(`بیمه‌نامه‌ی نهایی ذخیره شد${(r.diffs || []).length ? ' · ' + fa(r.diffs.length) + ' تغییر در شرح نوشته شد' : ' · تغییری دیده نشد'}${r.read ? '' : ' (فایل خوانده نشد؛ فقط ذخیره شد)'}.`, 'success');
+                if (after) after();
+            };
+            send(false);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    //  صدورِ گروهیِ الحاقیه: اکسلِ بیمه‌گر + فایلِ PDFِ گروهی
+    // ------------------------------------------------------------------
+    const G = {};
+    const STATE = {ok: ['آماده', 'bg-emerald-50 text-emerald-700 border-emerald-200'], nomatch: ['بیمه‌نامه در سایت نیست', 'bg-amber-50 text-amber-700 border-amber-200'],
+                   dup: ['قبلاً ثبت شده', 'bg-slate-100 text-slate-500 border-slate-200'], incomplete: ['ناقص', 'bg-rose-50 text-rose-700 border-rose-200']};
+    function shell(id, title, sub, foot) {
+        css();
+        const ov = document.createElement('div');
+        ov.className = 'en-ov'; ov.id = id;
+        ov.innerHTML = `<div class="en-box" style="max-width:1200px"><div class="en-hd"><div><b>${title}</b><small>${sub}</small></div><button class="en-x" data-x>✕</button></div>
+            <div class="en-bd" data-bd></div><div class="en-ft" data-ft>${foot || ''}</div></div>`;
+        document.body.appendChild(ov);
+        ov.querySelector('[data-x]').onclick = () => ov.remove();
+        return ov;
+    }
+    function dropBox(id, accept, text) {
+        return `<label class="en-drop" data-drop="${id}"><input type="file" accept="${accept}" class="hidden" data-in="${id}"><span data-lbl="${id}">${text}</span></label>`;
+    }
+    function bindDrop(ov, id, onFile) {
+        const d = ov.querySelector(`[data-drop="${id}"]`), i = ov.querySelector(`[data-in="${id}"]`);
+        const set = f => { onFile(f); ov.querySelector(`[data-lbl="${id}"]`).innerHTML = `<i class="fas fa-circle-check text-emerald-600 ml-1"></i>${esc(f.name)} · برای عوض کردن کلیک کنید`; };
+        i.onchange = () => i.files[0] && set(i.files[0]);
+        d.ondragover = e => { e.preventDefault(); d.classList.add('on'); };
+        d.ondragleave = () => d.classList.remove('on');
+        d.ondrop = e => { e.preventDefault(); d.classList.remove('on'); if (e.dataTransfer.files[0]) set(e.dataTransfer.files[0]); };
+    }
+    function openGroup(opts) {
+        Object.keys(G).forEach(k => delete G[k]);
+        Object.assign(G, {opts: opts || {}, excel: null, pdf: null, token: null, items: [], rows: {}});
+        const ov = shell('en-gov', '<i class="fas fa-layer-group ml-1"></i>صدورِ گروهیِ الحاقیه',
+            'اکسلِ الحاقیه‌های بیمه‌گر و/یا فایلِ PDFِ گروهی را بدهید؛ هر الحاقیه جدا، خوانده و به بیمه‌نامه‌ی خودش وصل می‌شود. قبل از ثبت همه را می‌بینید و اثرِ مالی را (کلی یا برای هر ردیف) تعیین می‌کنید.',
+            '<button class="en-btn s" data-x2>بستن</button><button class="en-btn p" data-go disabled><i class="fas fa-magnifying-glass"></i>بررسیِ فایل‌ها</button>');
+        G.ov = ov;
+        ov.querySelector('[data-x2]').onclick = () => ov.remove();
+        ov.querySelector('[data-bd]').innerHTML = `<div class="grid md:grid-cols-2 gap-3">
+            <div class="en-sec"><h4>اکسلِ الحاقیه‌ها (خروجیِ سایتِ بیمه‌گر)</h4>${dropBox('x', '.xlsx,.csv', '<i class="fas fa-file-excel text-emerald-600 ml-1"></i>فایلِ اکسل را بکشید یا کلیک کنید')}
+                <p class="text-[10.5px] text-slate-400 mt-1">شماره‌ی بیمه‌نامه، شماره و نوعِ الحاقیه، مبلغ، تاریخ‌ها و شرح از ستون‌هایش خوانده می‌شود.</p></div>
+            <div class="en-sec"><h4>فایلِ PDFِ الحاقیه‌های گروهی</h4>${dropBox('p', 'application/pdf,.pdf', '<i class="fas fa-file-pdf text-rose-500 ml-1"></i>فایلِ PDF را بکشید یا کلیک کنید')}
+                <p class="text-[10.5px] text-slate-400 mt-1">هر الحاقیه (با اعلامیه و فیش‌هایش) جدا و کنارِ بیمه‌نامه‌ی خودش ذخیره می‌شود؛ «شرح تغییرات» در شرحِ الحاقیه می‌آید.</p></div></div>
+            <p class="text-[11px] text-slate-500">یکی از دو فایل هم کافی است؛ با هر دو، مبلغ‌ها از اکسل و فایل و شرحِ تغییرات از PDF گرفته و با هم مقایسه می‌شود.</p>`;
+        const upd = () => { ov.querySelector('[data-go]').disabled = !(G.excel || G.pdf); };
+        bindDrop(ov, 'x', f => { G.excel = f; upd(); });
+        bindDrop(ov, 'p', f => { G.pdf = f; upd(); });
+        ov.querySelector('[data-go]').onclick = analyzeGroup;
+    }
+    async function analyzeGroup() {
+        const ov = G.ov, b = ov.querySelector('[data-go]');
+        b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ خواندن (ممکن است کمی طول بکشد)...';
+        const fd = new FormData();
+        fd.append('action', 'bundle_analyze');
+        if (G.excel) fd.append('excel', G.excel);
+        if (G.pdf) fd.append('pdf', G.pdf);
+        const r = await post(fd, true);
+        if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-magnifying-glass"></i>بررسیِ فایل‌ها'; return; }
+        G.token = r.token; G.items = r.items || [];
+        G.items.forEach(it => { G.rows[it.i] = {include: it.state === 'ok' || it.state === 'nomatch', sel: it.sel, mode: 'DEFAULT'}; });
+        G.modeA = lsGet('A') || 'SPREAD'; G.modeR = lsGet('R') || 'LAST';
+        renderGroup(r);
+    }
+    function modeSelect(kind, val, attrs) {
+        const ms = modesOf(kind);
+        if (!ms.length) return '<span class="text-[10.5px] text-slate-400">بدونِ اثرِ مالی</span>';
+        return `<select class="en-in" style="padding:4px 6px;font-size:11px" ${attrs}><option value="DEFAULT" ${val === 'DEFAULT' ? 'selected' : ''}>طبقِ تنظیمِ کلی</option>${ms.map(([k, l]) => `<option value="${k}" ${val === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    }
+    function rowMode(it) {
+        const r = G.rows[it.i];
+        if (it.kind === 'CORRECTIVE' || (r.sel || '').startsWith('X')) return 'NONE';
+        if (r.mode && r.mode !== 'DEFAULT') return r.mode;
+        return it.kind === 'ADDITIONAL' ? G.modeA : G.modeR;
+    }
+    function renderGroup(r) {
+        const ov = G.ov, c = (r && r.counts) || {};
+        const sum = G.items.reduce((a, it) => a + (G.rows[it.i].include ? (it.kind === 'ADDITIONAL' ? 1 : (it.kind === 'CORRECTIVE' ? 0 : -1)) * (Number(it.gross) || 0) : 0), 0);
+        const nSel = G.items.filter(it => G.rows[it.i].include).length;
+        ov.querySelector('[data-bd]').innerHTML = `
+            <div class="en-cards"><div><small>الحاقیه‌های پیدا شده</small><b>${fa(G.items.length)}</b></div><div><small>آماده (بیمه‌نامه در سایت)</small><b class="text-emerald-700">${fa(c.ok || 0)}</b></div>
+                <div><small>بیمه‌نامه در سایت نیست</small><b class="text-amber-700">${fa(c.nomatch || 0)}</b></div><div><small>قبلاً ثبت شده / ناقص</small><b class="text-slate-500">${fa((c.dup || 0) + (c.incomplete || 0))}</b></div></div>
+            ${(r && r.warnings || []).map(w => `<div class="en-warn"><i class="fas fa-triangle-exclamation ml-1"></i>${esc(w)}</div>`).join('')}
+            <div class="en-sec"><h4>اثرِ مالی (کلی) — برای هر ردیف هم جدا قابلِ تغییر است</h4>
+                <div class="grid md:grid-cols-3 gap-2 text-[11.5px]">
+                    <label class="flex flex-col gap-1">الحاقیه‌های اضافی<select class="en-in" data-ga>${MODES.ADDITIONAL.map(([k, l]) => `<option value="${k}" ${G.modeA === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                    <label class="flex flex-col gap-1">برگشتی و فسخ<select class="en-in" data-gr>${MODES.REFUND.map(([k, l]) => `<option value="${k}" ${G.modeR === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                    <label class="flex items-center gap-2 mt-4"><input type="checkbox" data-gnone ${G.modeA === 'NONE' && G.modeR === 'NONE' ? 'checked' : ''}><b>هیچ‌کدام اثرِ مالی نداشته باشد</b></label>
+                </div>
+                <p class="text-[10.5px] text-slate-400 mt-1">«اقساطِ جدا» برای الحاقیه‌هایی که اعلامیه دارند طبقِ اقساطِ اعلامیه‌ی بیمه‌گر ساخته می‌شود. الحاقیه‌ی اصلاحی و بیمه‌نامه‌ای که در سایت نیست اثرِ مالی ندارند.</p></div>
+            <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:14px"><table class="en-tb" style="min-width:1050px"><tr>
+                <th><input type="checkbox" data-all ${nSel === G.items.length ? 'checked' : ''}></th><th>وضعیت</th><th>بیمه‌نامه · الحاقیه</th><th>نوع</th><th>بیمه‌نامه در سایت</th><th>مبلغ</th><th>صدور · اثر</th><th>شرح</th><th>فایل</th><th>اثرِ مالی</th></tr>
+                ${G.items.map(it => { const rw = G.rows[it.i], st = STATE[it.state] || ['', '']; return `<tr data-row="${it.i}" style="${rw.include ? '' : 'opacity:.55'}">
+                    <td><input type="checkbox" data-inc="${it.i}" ${rw.include ? 'checked' : ''} ${it.state === 'dup' || it.state === 'incomplete' ? 'disabled' : ''}></td>
+                    <td><span class="en-badge ${st[1]}">${st[0]}</span>${(it.warnings || []).length ? `<i class="fas fa-triangle-exclamation text-amber-500 mr-1" title="${esc(it.warnings.join(' | '))}"></i>` : ''}${it.read_error ? `<i class="fas fa-circle-exclamation text-rose-500 mr-1" title="${esc(it.read_error)}"></i>` : ''}</td>
+                    <td><span dir="ltr" class="font-bold">${esc(fa(it.policy_number))}</span><small class="block text-slate-400">الحاقیه‌ی ${fa(it.endorse_no || '—')}${it.excel_row ? ' · ردیفِ ' + fa(it.excel_row) + ' اکسل' : ''}</small></td>
+                    <td><span class="en-badge ${KIND_CLS[it.kind] || ''}">${esc(KIND_FA[it.kind] || '؟')}</span><small class="block text-slate-400">${esc(it.insurance_type || '')}</small></td>
+                    <td><select class="en-in" style="padding:4px 6px;font-size:11px;max-width:230px" data-sel="${it.i}">${(it.matches || []).map(m => `<option value="${m.source}:${m.ref_id}" ${rw.sel === m.source + ':' + m.ref_id ? 'selected' : ''}>${esc(m.source_fa)} · ${esc(fa(m.label || ''))} · ${esc(m.insured || '')}</option>`).join('')}<option value="X:0" ${rw.sel === 'X:0' ? 'selected' : ''}>خارج از سایت (فقط سابقه)</option></select></td>
+                    <td class="font-bold whitespace-nowrap ${it.kind === 'ADDITIONAL' ? 'text-emerald-700' : 'text-rose-700'}">${it.kind === 'CORRECTIVE' ? '—' : smoney((it.kind === 'ADDITIONAL' ? 1 : -1) * it.gross)}${it.tax ? `<small class="block text-slate-400 font-normal">مالیات ${money(it.tax)}</small>` : ''}</td>
+                    <td class="whitespace-nowrap">${fa(it.issue_date || '')}<small class="block text-slate-400">اثر ${fa(it.effect_date || '')}</small></td>
+                    <td style="max-width:280px;white-space:normal"><small style="white-space:pre-line">${esc(fa(it.full_description || '').slice(0, 260))}${(it.full_description || '').length > 260 ? '…' : ''}</small></td>
+                    <td class="whitespace-nowrap">${it.file ? `<i class="fas fa-file-pdf text-rose-500"></i> ${it.pages ? 'ص ' + fa(it.pages[0]) + '–' + fa(it.pages[1]) : ''}` : '<span class="text-slate-400">بدونِ فایل</span>'}${(it.statement || []).length ? `<small class="block text-slate-400">${fa(it.statement.length)} قسط در اعلامیه</small>` : ''}</td>
+                    <td>${it.kind === 'CORRECTIVE' || rw.sel === 'X:0' ? '<span class="text-[10.5px] text-slate-400">بدونِ اثرِ مالی</span>' : modeSelect(it.kind, rw.mode, `data-mode="${it.i}"`) + `<small class="block text-[10px] text-indigo-600 mt-0.5">${esc((endoModes[rowMode(it)] || ''))}</small>`}</td></tr>`; }).join('')}</table></div>
+            <p class="text-[11.5px] text-slate-600">انتخاب‌شده: <b>${fa(nSel)}</b> الحاقیه · اثرِ جمع بر حق بیمه: <b class="${sum >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${smoney(sum)}</b> ریال</p>`;
+        const ft = ov.querySelector('[data-ft]');
+        ft.innerHTML = `<button class="en-btn s" data-x2>بستن</button><button class="en-btn p" data-commit ${nSel ? '' : 'disabled'}><i class="fas fa-check"></i>ثبتِ ${fa(nSel)} الحاقیه</button>`;
+        ft.querySelector('[data-x2]').onclick = () => ov.remove();
+        ft.querySelector('[data-commit]').onclick = commitGroup;
+        const bd = ov.querySelector('[data-bd]');
+        bd.querySelector('[data-ga]').onchange = e => { G.modeA = e.target.value; lsSet('A', G.modeA); renderGroup(r); };
+        bd.querySelector('[data-gr]').onchange = e => { G.modeR = e.target.value; lsSet('R', G.modeR); renderGroup(r); };
+        bd.querySelector('[data-gnone]').onchange = e => { if (e.target.checked) { G.modeA = 'NONE'; G.modeR = 'NONE'; } else { G.modeA = lsGet('A') && lsGet('A') !== 'NONE' ? lsGet('A') : 'SPREAD'; G.modeR = lsGet('R') && lsGet('R') !== 'NONE' ? lsGet('R') : 'LAST'; } renderGroup(r); };
+        bd.querySelector('[data-all]').onchange = e => { G.items.forEach(it => { if (it.state !== 'dup' && it.state !== 'incomplete') G.rows[it.i].include = e.target.checked; }); renderGroup(r); };
+        bd.querySelectorAll('[data-inc]').forEach(x => x.onchange = () => { G.rows[x.dataset.inc].include = x.checked; renderGroup(r); });
+        bd.querySelectorAll('[data-sel]').forEach(x => x.onchange = () => { G.rows[x.dataset.sel].sel = x.value; renderGroup(r); });
+        bd.querySelectorAll('[data-mode]').forEach(x => x.onchange = () => { G.rows[x.dataset.mode].mode = x.value; renderGroup(r); });
+    }
+    const endoModes = {SPREAD: 'سرشکن روی اقساطِ باقی‌مانده', SEPARATE: 'اقساطِ جدا', CASH: 'نقد (یک‌جا)', LAST: 'کسر از آخرین اقساط', EVEN: 'کسرِ یکسان از اقساطِ باز',
+                       REFUND_CASH: 'استردادِ نقدی (بستانکار)', NONE: 'بدونِ اثرِ مالی'};
+    async function commitGroup() {
+        const ov = G.ov, b = ov.querySelector('[data-commit]');
+        b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ ثبت...';
+        const rows = G.items.map(it => ({i: it.i, include: G.rows[it.i].include ? 1 : 0, sel: G.rows[it.i].sel, finance_mode: G.rows[it.i].mode || 'DEFAULT'}));
+        const r = await post({action: 'bundle_commit', token: G.token, mode_add: G.modeA, mode_ref: G.modeR, rows});
+        if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check"></i>ثبت'; return; }
+        const res = r.results || [];
+        ov.querySelector('[data-bd]').innerHTML = `
+            <div class="en-cards"><div><small>ثبت شد</small><b class="text-emerald-700">${fa(r.done)}</b></div><div><small>ثبت نشد</small><b class="text-rose-700">${fa(res.length - r.done)}</b></div>
+                <div><small>با اثرِ مالی</small><b>${fa(res.filter(x => x.ok && x.finance_mode !== 'NONE').length)}</b></div><div><small>بدونِ اثرِ مالی</small><b>${fa(res.filter(x => x.ok && x.finance_mode === 'NONE').length)}</b></div></div>
+            <table class="en-tb"><tr><th>نتیجه</th><th>بیمه‌نامه · الحاقیه</th><th>نوع</th><th>اثرِ مالی</th><th>حق بیمه‌ی نهایی</th><th>فایل</th></tr>
+            ${res.map(x => `<tr><td>${x.ok ? '<span class="en-badge bg-emerald-50 text-emerald-700 border-emerald-200"><i class="fas fa-check"></i>ثبت شد</span>' : `<span class="en-badge bg-rose-50 text-rose-700 border-rose-200">ثبت نشد</span><small class="block text-rose-600">${esc(x.error || '')}</small>`}</td>
+                <td><span dir="ltr" class="font-bold">${esc(fa(x.policy_number))}</span><small class="block text-slate-400">الحاقیه‌ی ${fa(x.endorse_no || '—')}</small></td><td>${esc(KIND_FA[x.kind] || '')}</td>
+                <td>${x.ok ? esc(x.finance_fa || '') : '—'}${x.ok && x.source === 'X' ? '<small class="block text-amber-700">بیمه‌نامه در سایت نیست؛ فقط سابقه</small>' : ''}</td>
+                <td>${x.final_premium !== null && x.final_premium !== undefined ? money(x.final_premium) : '—'}</td>
+                <td>${x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="text-blue-600"><i class="fas fa-file-pdf"></i> الحاقیه</a>` : '—'}</td></tr>`).join('')}</table>
+            <div class="en-sec"><h4>مرحله‌ی بعد: بیمه‌نامه‌های نهایی</h4><p class="text-[11.5px] text-slate-600">فایلِ PDFِ بیمه‌نامه‌های نهاییِ (بعد از الحاقیه) همین بیمه‌نامه‌ها را بدهید تا هر کدام به الحاقیه‌اش وصل و تغییرهایش در شرح نوشته شود.</p>
+                <button class="en-btn p mt-2" data-fin><i class="fas fa-file-shield"></i>بارگذاریِ بیمه‌نامه‌های نهایی</button></div>`;
+        ov.querySelector('[data-ft]').innerHTML = '<button class="en-btn s" data-x2>بستن</button>';
+        ov.querySelector('[data-x2]').onclick = () => ov.remove();
+        ov.querySelector('[data-fin]').onclick = () => { ov.remove(); openFinalGroup(G.opts); };
+        toast(`${fa(r.done)} الحاقیه ثبت شد.`, r.done ? 'success' : 'warning');
+        if (typeof G.opts.onDone === 'function') G.opts.onDone(r);
+    }
+
+    // ------------------------------------------------------------------
+    //  بیمه‌نامه‌های نهایی (گروهی)
+    // ------------------------------------------------------------------
+    const F = {};
+    function openFinalGroup(opts) {
+        Object.keys(F).forEach(k => delete F[k]);
+        Object.assign(F, {opts: opts || {}, pdf: null, token: null, items: [], rows: {}});
+        const ov = shell('en-fov', '<i class="fas fa-file-shield ml-1"></i>بیمه‌نامه‌های نهایی (بعد از الحاقیه) — گروهی',
+            'یک PDF با چند بیمه‌نامه‌ی نهایی بدهید؛ هر بیمه‌نامه جدا، خوانده و به الحاقیه‌ی همان بیمه‌نامه وصل می‌شود و تغییرهایش نسبت به قبل در شرحِ الحاقیه نوشته می‌شود.',
+            '<button class="en-btn s" data-x2>بستن</button><button class="en-btn p" data-go disabled><i class="fas fa-magnifying-glass"></i>بررسی</button>');
+        F.ov = ov;
+        ov.querySelector('[data-x2]').onclick = () => ov.remove();
+        ov.querySelector('[data-bd]').innerHTML = `<div class="en-sec"><h4>فایلِ PDFِ بیمه‌نامه‌های نهایی</h4>${dropBox('f', 'application/pdf,.pdf', '<i class="fas fa-file-pdf text-rose-500 ml-1"></i>فایل را بکشید یا کلیک کنید')}</div>`;
+        bindDrop(ov, 'f', f => { F.pdf = f; ov.querySelector('[data-go]').disabled = false; });
+        ov.querySelector('[data-go]').onclick = async () => {
+            const b = ov.querySelector('[data-go]');
+            b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ خواندن...';
+            const fd = new FormData(); fd.append('action', 'final_bundle_analyze'); fd.append('pdf', F.pdf);
+            const r = await post(fd, true);
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-magnifying-glass"></i>بررسی'; return; }
+            F.token = r.token; F.items = r.items || [];
+            F.items.forEach(it => { F.rows[it.i] = {include: it.state === 'ok', endo_id: it.endo ? it.endo.id : 0}; });
+            renderFinal();
+        };
+    }
+    function renderFinal() {
+        const ov = F.ov;
+        const st = {ok: ['آماده', 'bg-emerald-50 text-emerald-700 border-emerald-200'], has_final: ['قبلاً بیمه‌نامه‌ی نهایی دارد', 'bg-amber-50 text-amber-700 border-amber-200'],
+                    noendo: ['الحاقیه‌ای برای این بیمه‌نامه ثبت نشده', 'bg-rose-50 text-rose-700 border-rose-200']};
+        const n = F.items.filter(it => F.rows[it.i].include && F.rows[it.i].endo_id).length;
+        ov.querySelector('[data-bd]').innerHTML = `<p class="text-[11.5px] text-slate-600">${fa(F.items.length)} بیمه‌نامه در فایل پیدا شد. ردیف‌هایی که «قبلاً بیمه‌نامه‌ی نهایی دارد» با تیک زدن جایگزین می‌شوند.</p>
+            <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:14px"><table class="en-tb" style="min-width:900px"><tr><th></th><th>وضعیت</th><th>بیمه‌نامه</th><th>پلاک · بیمه‌گذار</th><th>الحاقیه</th><th>تغییرها نسبت به قبل</th></tr>
+            ${F.items.map(it => { const rw = F.rows[it.i], s2 = st[it.state] || ['', '']; return `<tr style="${rw.include ? '' : 'opacity:.6'}">
+                <td><input type="checkbox" data-finc="${it.i}" ${rw.include ? 'checked' : ''} ${it.endo ? '' : 'disabled'}></td>
+                <td><span class="en-badge ${s2[1]}">${s2[0]}</span><small class="block text-slate-400">ص ${fa(it.page)}${it.end !== it.page ? '–' + fa(it.end) : ''}</small></td>
+                <td dir="ltr" class="font-bold" style="text-align:right">${esc(fa(it.policy_number || '؟'))}</td>
+                <td>${it.plate ? plate(it.plate) : '—'}<small class="block text-slate-500">${esc(it.insured || '')}</small></td>
+                <td>${(it.candidates || []).length ? `<select class="en-in" style="padding:4px 6px;font-size:11px" data-fendo="${it.i}">${it.candidates.map(c => `<option value="${c.id}" ${rw.endo_id === c.id ? 'selected' : ''}>الحاقیه‌ی ${fa(c.endorse_no || '—')} · ${esc(c.kind_fa)}${c.has_final ? ' (نهایی دارد)' : ''}</option>`).join('')}</select>` : '—'}</td>
+                <td style="white-space:normal">${(it.diffs || []).length ? `<ul class="pr-4" style="list-style:disc">${it.diffs.map(d => `<li class="text-[11px]">${esc(fa(d.text))}</li>`).join('')}</ul>` : '<span class="text-[11px] text-slate-400">تغییری دیده نشد</span>'}</td></tr>`; }).join('')}</table></div>`;
+        const ft = ov.querySelector('[data-ft]');
+        ft.innerHTML = `<button class="en-btn s" data-x2>بستن</button><button class="en-btn p" data-commit ${n ? '' : 'disabled'}><i class="fas fa-check"></i>ذخیره‌ی ${fa(n)} بیمه‌نامه‌ی نهایی</button>`;
+        ft.querySelector('[data-x2]').onclick = () => ov.remove();
+        ov.querySelectorAll('[data-finc]').forEach(x => x.onchange = () => { F.rows[x.dataset.finc].include = x.checked; renderFinal(); });
+        ov.querySelectorAll('[data-fendo]').forEach(x => x.onchange = () => { F.rows[x.dataset.fendo].endo_id = Number(x.value); });
+        ft.querySelector('[data-commit]').onclick = async () => {
+            const b = ft.querySelector('[data-commit]');
+            b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ ذخیره...';
+            const r = await post({action: 'final_bundle_commit', token: F.token, rows: F.items.map(it => ({i: it.i, include: F.rows[it.i].include ? 1 : 0, endo_id: F.rows[it.i].endo_id || 0}))});
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; return; }
+            const res = r.results || [];
+            ov.querySelector('[data-bd]').innerHTML = `<table class="en-tb"><tr><th>نتیجه</th><th>بیمه‌نامه</th><th>تغییرهای ثبت‌شده در شرح</th><th>فایل</th></tr>
+                ${res.map(x => `<tr><td>${x.ok ? '<span class="en-badge bg-emerald-50 text-emerald-700 border-emerald-200"><i class="fas fa-check"></i>ذخیره شد</span>' : `<span class="en-badge bg-rose-50 text-rose-700 border-rose-200">نشد</span><small class="block text-rose-600">${esc(x.error || '')}</small>`}</td>
+                    <td dir="ltr" style="text-align:right">${esc(fa(x.policy_number))}</td><td style="white-space:normal">${(x.diffs || []).map(d => esc(fa(d.text))).join('<br>') || '<span class="text-slate-400">تغییری نبود</span>'}</td>
+                    <td>${x.final_file_path ? `<a href="${fpath(x.final_file_path)}" target="_blank" class="text-emerald-700"><i class="fas fa-file-shield"></i> نهایی</a>` : '—'}</td></tr>`).join('')}</table>`;
+            ft.innerHTML = '<button class="en-btn s" data-x2>بستن</button>';
+            ft.querySelector('[data-x2]').onclick = () => ov.remove();
+            toast(`${fa(r.done)} بیمه‌نامه‌ی نهایی ذخیره شد.`, r.done ? 'success' : 'warning');
+            if (typeof F.opts.onDone === 'function') F.opts.onDone(r);
+        };
+    }
+
+    window.Endorse = {open, init, badge, mountLists, openGroup, openFinalGroup, kindFa: k => KIND_FA[k] || k};
 })();

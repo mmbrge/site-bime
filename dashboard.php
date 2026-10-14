@@ -4336,7 +4336,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
     <script src="chat-ui.js?v=12"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
-    <script src="table-count.js?v=5"></script>
+    <script src="table-count.js?v=6"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
         if (window.IrTime) IrTime.mountClock(document.getElementById('hdr-clock'), {render: (el, p, date, time) => {
@@ -4351,7 +4351,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=11"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
-    <script src="endorse.js?v=3"></script>
+    <script src="endorse.js?v=4"></script>
     <script src="party-ui.js?v=2"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>

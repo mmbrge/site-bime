@@ -49,27 +49,57 @@ def label_amount(spans, rx, exclude=None):
     return 0
 
 
-def main():
-    if len(sys.argv) < 2:
-        out({"ok": False, "error": "usage"}); return
-    fitz = load_fitz()
-    if fitz is None:
-        out({"ok": False, "error": "کتابخانه‌ی PyMuPDF روی پایتونِ سرور نصب نیست."}); return
-    try:
-        doc = fitz.open(sys.argv[1])
-    except Exception as e:
-        out({"ok": False, "error": "فایل PDF باز نشد.", "debug": str(e)[:200]}); return
-    texts = [normalize_text(p.get_text() or '') for p in doc]
+def fix_value(v):
+    """مقدارِ داخلِ «شرح تغییرات» که ترتیبِ تکه‌هایش (عدد/حرف) برعکس خوانده شده: «29د214» => «214د29»"""
+    v = (v or '').strip()
+    if re.search(r'[آ-ی]', v) and re.search(r'\d', v) and not re.search(r'\s', v):
+        parts = re.findall(r'\d+|[^\d]+', v)
+        v = ''.join(reversed(parts))
+    return v
+
+
+def fix_suffix(v):
+    v = (v or '').strip()
+    return v.replace(')', '\x00').replace('(', ')').replace('\x00', '(').strip()
+
+
+def fix_change_line(line):
+    """یک ردیفِ «شرح تغییرات» (متنِ راست‌به‌چپی که تکه‌هایش جابه‌جا خوانده شده) => «بخش: فیلد از «قبلی» به «جدید»»"""
+    t = re.sub(r'\s+', ' ', line).strip().lstrip('.').strip()
+    t = re.sub(r'^\d{1,2}(?=\D)', '', t).strip()
+    sec = ''
+    m = re.search(r'^(.*?)-\s*([^-]+)$', t)
+    if m and len(m.group(2)) < 40:
+        t, sec = m.group(1).strip(), m.group(2).strip()
+    m = re.match(r'^(.*?)"\s*(تغییر\s*می\s*کند)(.*?)"\s*(.*?)"\s*به(.*?)"\s*(.+?)\s*:\s*از$', t)
+    if m:
+        to = (fix_value(m.group(3)) + ' ' + fix_suffix(m.group(1))).strip()
+        fr = (fix_value(m.group(5)) + ' ' + fix_suffix(m.group(4))).strip()
+        field = m.group(6).strip()
+        txt = '%s: از «%s» به «%s»' % (field, fr, to)
+        if re.fullmatch(r'[\s()\-]*', fr):
+            txt = '%s: «%s» (قبلاً خالی بود)' % (field, to)
+    else:
+        txt = fix_suffix(t.strip(' .'))
+        txt = re.sub(r'از\s*"([^"]*)"\s*به\s*"([^"]*)"\s*تغییر\s*می\s*کند', r'از «\1» به «\2»', txt)
+    txt = re.sub(r'\s+', ' ', txt).replace(' :', ':').strip()
+    return ('%s - %s' % (sec, txt)) if sec else txt
+
+
+def read_endorse(doc, pages=None):
+    """خواندنِ یک الحاقیه از صفحه‌های داده‌شده‌ی doc => {ok, data, statement, pages, missing}"""
+    idx = list(pages) if pages is not None else list(range(len(doc)))
+    texts = [normalize_text(doc.load_page(i).get_text() or '') for i in idx]
     full = '\n'.join(texts)
     if len(full.strip()) < 40:
-        out({"ok": False, "scan": True, "error": "فایل متن ندارد (اسکن/عکس است)؛ اطلاعاتِ الحاقیه را دستی وارد کنید.", "pages": len(doc)}); return
+        return {"ok": False, "scan": True, "error": "فایل متن ندارد (اسکن/عکس است)؛ اطلاعاتِ الحاقیه را دستی وارد کنید.", "pages": len(idx)}
     if 'الحاقیه' not in full:
-        out({"ok": False, "error": "این فایل الحاقیه به نظر نمی‌رسد (کلمه‌ی «الحاقیه» در آن نیست).", "pages": len(doc)}); return
+        return {"ok": False, "error": "این فایل الحاقیه به نظر نمی‌رسد (کلمه‌ی «الحاقیه» در آن نیست).", "pages": len(idx)}
 
     # صفحه‌ی اصلیِ الحاقیه (نه اعلامیه‌ی حق بیمه)
-    main_i = next((i for i, t in enumerate(texts) if 'الحاقیه' in t and 'اعلامیه آخرین وضعیت' not in t), 0)
-    t = texts[main_i]
-    spans = page_spans(doc.load_page(main_i))
+    main_k = next((k for k, t in enumerate(texts) if 'الحاقیه' in t and 'اعلامیه آخرین وضعیت' not in t), 0)
+    t = texts[main_k]
+    spans = page_spans(doc.load_page(idx[main_k]))
     d = {}
 
     m = POLICY_RX.search(t) or POLICY_RX.search(full)
@@ -93,8 +123,11 @@ def main():
     d['endorse_no'] = no
 
     # نوع: فسخ (بیمه‌گذار/بیمه‌گر) ← برگشتی؛ برگشتی؛ اضافی؛ اصلاحی
+    mk = re.search(r'الحاقیه\s*(اضافی|برگشتی|اصلاحی|فسخ)', t)
     if re.search(r'فسخ', t) and re.search(r'ساقط|فسخ\s*بیمه\s*گذار|فسخ\s*از\s*طرف', t):
         kind = 'CANCELLATION'
+    elif mk:
+        kind = {'اضافی': 'ADDITIONAL', 'برگشتی': 'REFUND', 'اصلاحی': 'CORRECTIVE', 'فسخ': 'CANCELLATION'}[mk.group(1)]
     elif re.search(r'برگشتی', t):
         kind = 'REFUND'
     elif re.search(r'اضافی', t):
@@ -160,9 +193,13 @@ def main():
     # شرحِ تغییرات (ردیف‌های جدولِ «شرح تغییرات»): خط‌هایی که «- بیمه بدنه» یا «- بیمه شخص ثالث» دارند
     changes = []
     for line in t.split('\n'):
-        if re.search(r'-\s*بیمه\s*(بدنه|شخص\s*ثالث)', line) and len(line) > 12:
-            changes.append(re.sub(r'\s+', ' ', line).strip())
-    d['changes'] = changes[:20]
+        if 'تغییر کرده است' in line:
+            continue
+        if re.search(r'تغییر\s*می\s*کند|اضافه\s*می\s*شود|حذف\s*می\s*شود', line) and len(line) > 12:
+            c = fix_change_line(line)
+            if c and c not in changes:
+                changes.append(c)
+    d['changes'] = changes[:30]
     if not d['description']:
         for kw in ('افزایش مدت بیمه نامه', 'کاهش مدت', 'تغییر مالکیت', 'اصلاح', 'فروش رفته'):
             if kw in t:
@@ -173,11 +210,39 @@ def main():
     for tx in texts:
         if 'اعلامیه آخرین وضعیت' in tx:
             st += statement_rows(tx)
-    doc.close()
     missing = [k for k in ('policy_num', 'kind', 'issue_date', 'gross') if not d.get(k)]
     if kind == 'CORRECTIVE' and 'gross' in missing:
         missing.remove('gross')
-    out({"ok": True, "data": d, "statement": st, "pages": len(texts), "missing": missing})
+    return {"ok": True, "data": d, "statement": st, "pages": len(texts), "missing": missing}
+
+
+def main():
+    if len(sys.argv) < 2:
+        out({"ok": False, "error": "usage"}); return
+    fitz = load_fitz()
+    if fitz is None:
+        out({"ok": False, "error": "کتابخانه‌ی PyMuPDF روی پایتونِ سرور نصب نیست."}); return
+    try:
+        doc = fitz.open(sys.argv[1])
+    except Exception as e:
+        out({"ok": False, "error": "فایل PDF باز نشد.", "debug": str(e)[:200]}); return
+    r = read_endorse(doc)
+    # فایلی که چند الحاقیه دارد (فایلِ گروهی): فقط اولی خوانده شد
+    starts = endorse_starts(doc)
+    if len(starts) > 1:
+        r['multi'] = len(starts)
+    doc.close()
+    out(r)
+
+
+def endorse_starts(doc):
+    """شماره‌ی صفحه‌هایی که یک الحاقیه‌ی تازه از آن‌ها شروع می‌شود (صفحه‌ی اصلیِ هر الحاقیه)"""
+    st = []
+    for i in range(len(doc)):
+        t = normalize_text(doc.load_page(i).get_text() or '')
+        if 'الحاقیه' in t and 'اعلامیه آخرین وضعیت' not in t and POLICY_RX.search(t) and re.search(r'الحاقیه\s*شماره|نوع\s*الحاقیه', t):
+            st.append(i)
+    return st
 
 
 if __name__ == "__main__":

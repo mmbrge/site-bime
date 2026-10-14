@@ -65,7 +65,19 @@ function endo_ensure($pdo) {
         ['policy_cases', 'cancelled_on', "VARCHAR(10) NULL"], ['policy_cases', 'end_date_j', "VARCHAR(10) NULL"],
         ['policy_cases', 'no_installments', "TINYINT NOT NULL DEFAULT 0"],
         ['policy_installments', 'endorsement_id', "INT NULL"], ['company_installments', 'endorsement_id', "INT NULL"],
+        // بیمه‌نامه‌ی نهایی (بعد از الحاقیه): فایل، اطلاعاتِ خوانده‌شده و تغییرها نسبت به قبل
+        ['policy_endorsements', 'final_file_path', "VARCHAR(500) NULL"], ['policy_endorsements', 'final_data_json', "MEDIUMTEXT NULL"],
+        ['policy_endorsements', 'final_diff_json', "MEDIUMTEXT NULL"], ['policy_endorsements', 'final_at', "DATETIME NULL"],
     ];
+    $pdo->exec("CREATE TABLE IF NOT EXISTS endorsement_batches (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NULL,
+        files VARCHAR(500) NULL,
+        total INT NOT NULL DEFAULT 0,
+        created_count INT NOT NULL DEFAULT 0,
+        created_by INT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     foreach ($add as [$t, $c, $def]) {
         try {
             if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE " . $pdo->quote($c))->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def");
@@ -481,6 +493,7 @@ function endo_delete($pdo, $id, $deleteFile = true) {
         return ['ok' => false, 'error' => 'حذف ممکن نشد: ' . $ex->getMessage()];
     }
     if ($deleteFile && $e['file_path']) @unlink(dirname(__DIR__) . '/' . $e['file_path']);
+    if ($deleteFile && !empty($e['final_file_path'])) endo_unlink_final(dirname(__DIR__) . '/' . $e['final_file_path']);
     return ['ok' => true];
 }
 
@@ -494,6 +507,273 @@ function endo_attach_orphans($pdo, $source, $refId, $policyNumber) {
     $n = $st->rowCount();
     if ($n) endo_recompute($pdo, $source, $refId);
     return $n;
+}
+
+// ---------------------------------------------------------------------
+//  شرحِ الحاقیه از «شرح تغییرات»
+// ---------------------------------------------------------------------
+function endo_text_norm($v) {
+    $v = str_replace(['ي', 'ك', "\u{200C}", "\u{200F}", "\u{200E}", 'ـ'], ['ی', 'ک', ' ', '', '', ''], (string)$v);
+    return trim(preg_replace('/\s+/u', ' ', $v));
+}
+function endo_build_desc($reason, $desc, array $changes) {
+    $head = trim((string)$desc) !== '' && trim((string)$desc) !== '-' ? trim((string)$desc) : trim((string)$reason);
+    $lines = array_values(array_filter(array_map('trim', $changes)));
+    return trim($head . ($lines ? "\n• " . implode("\n• ", $lines) : ''));
+}
+
+// ---------------------------------------------------------------------
+//  اکسلِ الحاقیه‌های بیمه‌گر (گزارشِ «الحاقیه‌ها»ی سایتِ پاسارگاد): هر ردیف یک الحاقیه
+// ---------------------------------------------------------------------
+function endo_excel_rows($path, $ext = null) {
+    require_once __DIR__ . '/_xlsx_writer.php';
+    $out = [];
+    foreach (xlsx_read_sheets($path, $ext) as $rows) {
+        $rows = array_values($rows);
+        $hi = null;
+        foreach (array_slice($rows, 0, 8, true) as $i => $r) {
+            $j = endo_text_norm(implode('|', array_map('strval', (array)$r)));
+            if (mb_strpos($j, 'شماره الحاقیه') !== false && preg_match('/شماره\s*بیمه\s*نامه/u', $j)) { $hi = $i; break; }
+        }
+        if ($hi === null) continue;
+        $h = array_map('endo_text_norm', (array)$rows[$hi]);
+        $cols = function (array $names) use ($h) { $r = []; foreach ($h as $k => $v) if (in_array($v, $names, true)) $r[] = $k; return $r; };
+        $c = ['pn' => $cols(['شماره بیمه نامه']), 'no' => $cols(['شماره الحاقیه']), 'kind' => $cols(['نوع الحاقیه']),
+              'add' => $cols(['حق بیمه اضافی']), 'ref' => $cols(['حق بیمه برگشتی']), 'total' => $cols(['حق بیمه الحاقیه کل']),
+              'net_a' => $cols(['حق بیمه پرداختی اضافی', 'حق بیمه جاری اضافی']), 'net_r' => $cols(['حق بیمه پرداختی برگشتی', 'حق بیمه جاری برگشتی']),
+              'tax_a' => $cols(['مالیات اضافی', 'مالیات اضافی به عدد']), 'tax_r' => $cols(['مالیات برگشتی', 'مالیات برگشتی به عدد']),
+              'issue' => $cols(['تاریخ صدور']), 'eff' => $cols(['تاریخ اثر']), 'end' => $cols(['تاریخ انقضا']),
+              'reason' => $cols(['علت الحاقیه']), 'desc' => $cols(['شرح الحاقیه']), 'central' => $cols(['شماره بیمه مرکزی']),
+              'type' => $cols(['نوع بیمه نامه']), 'insured' => $cols(['بیمه گذار']), 'chassis' => $cols(['شماره شاسی']),
+              'plate' => $cols(['شماره انتظامی']), 'serial' => $cols(['سریال پلاک'])];
+        if (!$c['pn'] || !$c['no']) continue;
+        for ($i = $hi + 1; $i < count($rows); $i++) {
+            $r = (array)$rows[$i];
+            $g = function ($k) use ($r, $c) {
+                foreach ($c[$k] as $ci) { $v = endo_text_norm(p2e_digits((string)($r[$ci] ?? ''))); if ($v !== '' && !preg_match('/^-+$/', $v)) return $v; }
+                return '';
+            };
+            $m = function ($k) use ($r, $c) { $best = 0; foreach ($c[$k] as $ci) $best = max($best, (int)preg_replace('/\D/', '', p2e_digits((string)($r[$ci] ?? '')))); return $best; };
+            $pn = $g('pn');
+            if (endo_policy_key($pn) === '') continue;
+            $kt = '';
+            foreach ($c['kind'] as $ci) { $v = endo_text_norm((string)($r[$ci] ?? '')); if ($v !== '' && !ctype_digit($v)) { $kt = $v; break; } }
+            $kind = mb_strpos($kt, 'فسخ') !== false ? 'CANCELLATION' : (mb_strpos($kt, 'برگشت') !== false ? 'REFUND'
+                  : (mb_strpos($kt, 'اضاف') !== false ? 'ADDITIONAL' : (mb_strpos($kt, 'اصلاح') !== false ? 'CORRECTIVE' : '')));
+            $isRef = in_array($kind, ['REFUND', 'CANCELLATION'], true);
+            $gross = $isRef ? $m('ref') : $m('add');
+            if (!$gross && $kind !== 'CORRECTIVE') $gross = max($m('add'), $m('ref'), $m('total'));
+            $type = $g('type');
+            $plate = trim($g('plate') . ($g('serial') ? ' ' . $g('serial') : ''));
+            $out[] = ['row' => $i + 1, 'policy_number' => $pn, 'endorse_no' => ltrim($g('no'), '0') ?: $g('no'), 'kind' => $kind, 'kind_text' => $kt,
+                      'gross' => $kind === 'CORRECTIVE' ? 0 : $gross, 'net' => $isRef ? $m('net_r') : $m('net_a'), 'tax' => $isRef ? $m('tax_r') : $m('tax_a'),
+                      'issue_date' => endo_jdate($g('issue')), 'effect_date' => endo_jdate($g('eff')), 'end_date' => endo_jdate($g('end')),
+                      'reason' => $g('reason'), 'description' => $g('desc'), 'central_no' => preg_replace('/\D/', '', $g('central')),
+                      'insurance_type' => mb_strpos($type, 'بدنه') !== false ? 'بدنه' : (mb_strpos($type, 'ثالث') !== false ? 'ثالث' : ''),
+                      'insured' => $g('insured'), 'chassis' => $g('chassis'), 'plate' => $plate];
+        }
+    }
+    return $out;
+}
+
+// فایلِ گروهیِ الحاقیه‌ها => [ok, pages, items:[page, end, file, ok, data, statement, missing]]
+function endo_bundle_read($pdo, $pdf, $outDir) { return endo_py($pdo, 'endorse_bundle.py', [$pdf, $outDir], 900); }
+
+// اکسل و PDF با کلیدِ «شماره‌ی بیمه‌نامه + شماره‌ی الحاقیه» یکی می‌شوند؛ اکسل برای مبلغ‌ها و PDF برای فایل و شرحِ تغییرات
+function endo_merge_sources(array $excel, array $pdfItems) {
+    $items = [];
+    $key = fn($pn, $no) => endo_policy_key($pn) . '#' . (ltrim((string)$no, '0') ?: (string)$no);
+    foreach ($pdfItems as $p) {
+        $d = (array)($p['data'] ?? []);
+        $k = $key($d['policy_num'] ?? '', $d['endorse_no'] ?? '');
+        $items[$k] = ['policy_number' => $d['policy_num'] ?? '', 'endorse_no' => $d['endorse_no'] ?? '', 'kind' => $d['kind'] ?? '',
+                      'issue_date' => $d['issue_date'] ?? '', 'effect_date' => $d['effect_date'] ?? '', 'new_end_date' => $d['new_end_date'] ?? '',
+                      'gross' => (int)($d['gross'] ?? 0), 'net' => (int)($d['net'] ?? 0), 'tax' => (int)($d['tax'] ?? 0), 'central_no' => $d['central_no'] ?? '',
+                      'insurance_type' => $d['insurance_type'] ?? '', 'insured' => $d['insured'] ?? '', 'reason' => '', 'description' => $d['description'] ?? '',
+                      'changes' => array_values((array)($d['changes'] ?? [])), 'statement' => array_values((array)($p['statement'] ?? [])),
+                      'file' => $p['file'] ?? null, 'pages' => isset($p['page']) ? [(int)$p['page'], (int)$p['end']] : null,
+                      'from_pdf' => true, 'from_excel' => false, 'excel_row' => null, 'warnings' => [], 'read_error' => !empty($p['ok']) ? null : ($p['error'] ?? null)];
+    }
+    foreach ($excel as $x) {
+        $k = $key($x['policy_number'], $x['endorse_no']);
+        if (isset($items[$k])) {
+            $it = &$items[$k];
+            if ($x['kind'] && $it['kind'] && $x['kind'] !== $it['kind']) $it['warnings'][] = 'نوعِ الحاقیه در اکسل (' . endo_kind_fa($x['kind']) . ') با فایل (' . endo_kind_fa($it['kind']) . ') فرق دارد؛ طبقِ اکسل ثبت می‌شود.';
+            if ($x['gross'] && $it['gross'] && abs($x['gross'] - $it['gross']) > 1000) $it['warnings'][] = 'مبلغ در اکسل ' . number_format($x['gross']) . ' و در فایل ' . number_format($it['gross']) . ' است؛ طبقِ اکسل ثبت می‌شود.';
+            foreach (['kind', 'issue_date', 'effect_date', 'central_no', 'insurance_type', 'insured'] as $f) if ($x[$f] !== '' && $x[$f] !== null) $it[$f] = $x[$f];
+            foreach (['gross', 'net', 'tax'] as $f) if ((int)$x[$f] > 0 || ($f === 'gross' && $x['kind'] === 'CORRECTIVE')) $it[$f] = (int)$x[$f];
+            $it['reason'] = $x['reason'];
+            if ($x['description'] !== '') $it['description'] = $x['description'];
+            $it['from_excel'] = true; $it['excel_row'] = $x['row'];
+            unset($it);
+        } else {
+            $items[$k] = ['policy_number' => $x['policy_number'], 'endorse_no' => $x['endorse_no'], 'kind' => $x['kind'], 'issue_date' => $x['issue_date'],
+                          'effect_date' => $x['effect_date'], 'new_end_date' => $x['kind'] === 'CANCELLATION' ? $x['effect_date'] : $x['end_date'],
+                          'gross' => $x['gross'], 'net' => $x['net'], 'tax' => $x['tax'], 'central_no' => $x['central_no'], 'insurance_type' => $x['insurance_type'],
+                          'insured' => $x['insured'], 'reason' => $x['reason'], 'description' => $x['description'], 'changes' => [], 'statement' => [],
+                          'file' => null, 'pages' => null, 'from_pdf' => false, 'from_excel' => true, 'excel_row' => $x['row'], 'warnings' => [], 'read_error' => null];
+        }
+    }
+    foreach ($items as &$it) {
+        if ($it['kind'] === 'CANCELLATION' && $it['effect_date']) $it['new_end_date'] = $it['effect_date'];
+        $it['full_description'] = endo_build_desc($it['reason'], $it['description'], $it['changes']);
+    }
+    unset($it);
+    return array_values($items);
+}
+
+// متنِ کوتاهِ اثرِ مالیِ اجراشده
+function endo_plan_text(array $plan, $mode) {
+    if ($mode === 'NONE') return 'بدونِ اثرِ مالی (فقط حق بیمه‌ی نهایی)';
+    $p = [];
+    $ch = count((array)($plan['changes'] ?? []));
+    $nw = count((array)($plan['new'] ?? []));
+    if ($ch) $p[] = $ch . ' قسط تغییر کرد';
+    if ($nw) $p[] = $nw . ' قسطِ تازه';
+    if (!empty($plan['credit'])) $p[] = 'بستانکار ' . number_format((int)$plan['credit']) . ' ریال';
+    return (endo_modes_fa()[$mode] ?? $mode) . ($p ? ': ' . implode('، ', $p) : '');
+}
+
+// ---------------------------------------------------------------------
+//  بیمه‌نامه‌ی نهایی (بعد از الحاقیه): خواندن، مقایسه با اطلاعاتِ قبلی، ثبتِ تغییرها در شرح
+// ---------------------------------------------------------------------
+function endo_final_fields() {
+    return ['policy_num' => 'شماره بیمه‌نامه', 'insured_name' => 'بیمه‌گذار', 'national_id' => 'کد/شناسه ملی', 'plate' => 'پلاک',
+            'chassis_no' => 'شماره شاسی', 'vin' => 'VIN', 'engine_no' => 'شماره موتور', 'car_name' => 'خودرو', 'car_system' => 'سیستم',
+            'car_tip' => 'تیپ', 'model_year' => 'سال ساخت', 'color' => 'رنگ', 'usage' => 'نوع کاربری', 'capacity' => 'ظرفیت',
+            'start_date' => 'تاریخ شروع', 'end_date' => 'تاریخ پایان', 'liability' => 'تعهد مالی', 'diya' => 'تعهد جانی',
+            'driver_cover' => 'حوادث راننده', 'car_value' => 'ارزش خودرو (سرمایه)', 'premium' => 'حق بیمه', 'beneficiary' => 'ذینفع',
+            'contract_no' => 'شماره قرارداد'];
+}
+// اطلاعاتِ «قبلی»ِ بیمه‌نامه: بیمه‌نامه‌ی نهاییِ الحاقیه‌ی قبلی؛ وگرنه اطلاعاتِ خوانده‌شده هنگامِ صدور + ستون‌های خودِ ردیف
+function endo_final_baseline($pdo, $source, $refId, $excludeEndoId = 0) {
+    $base = [];
+    if (in_array($source, ['C', 'P'], true) && $refId) {
+        $pol = endo_load_policy($pdo, $source, $refId);
+        if ($pol) {
+            $r = $pol['row'];
+            $base = json_decode((string)($r['ocr_extracted_data'] ?? ''), true) ?: [];
+            // ستون‌های خودِ ردیف (که در صدور اصلاح/تأیید شده‌اند) بر اطلاعاتِ خوانده‌شده‌ی هنگامِ صدور مقدم‌اند
+            $fill = function ($k, $v) use (&$base) { if (trim((string)$v) !== '') $base[$k] = (string)$v; };
+            if ($source === 'C') {
+                if (!empty($r['plate_p2']) && function_exists('company_plate_display')) $fill('plate', company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']));
+                $fill('chassis_no', $r['chassis_no'] ?? ''); $fill('engine_no', $r['engine_no'] ?? '');
+                if ((int)($r['liability_limit'] ?? 0) > 0) $fill('liability', (int)$r['liability_limit']);
+            } else {
+                $fill('plate', $r['plate'] ?? ''); $fill('chassis_no', $r['chassis_num'] ?? ''); $fill('engine_no', $r['engine_num'] ?? '');
+                $fill('insured_name', $r['insured_name'] ?? '');
+            }
+            $fill('vin', $r['vin'] ?? ''); $fill('policy_num', $r['policy_number'] ?? '');
+            if ((int)($r['car_value'] ?? 0) > 0) $fill('car_value', (int)$r['car_value']);
+        }
+        $st = $pdo->prepare("SELECT final_data_json FROM policy_endorsements WHERE source = ? AND ref_id = ? AND id <> ? AND final_data_json IS NOT NULL ORDER BY id DESC LIMIT 1");
+        $st->execute([$source, $refId, (int)$excludeEndoId]);
+        if ($prev = json_decode((string)$st->fetchColumn(), true)) foreach ($prev as $k => $v) if (trim((string)$v) !== '') $base[$k] = $v;
+    }
+    return $base;
+}
+function endo_final_diffs(array $base, array $new) {
+    $money = ['liability', 'diya', 'driver_cover', 'car_value', 'premium'];
+    $norm = function ($k, $v) use ($money) {
+        $v = endo_text_norm(p2e_digits((string)$v));
+        if (in_array($k, $money, true)) return (string)(int)preg_replace('/\D/', '', $v);
+        if ($k === 'plate' && function_exists('plate_core')) return plate_core($v);
+        return mb_strtoupper(preg_replace('/[\s\/\-.:،,()]+/u', '', $v));
+    };
+    $show = function ($k, $v) use ($money) { return in_array($k, $money, true) ? number_format((int)preg_replace('/\D/', '', p2e_digits((string)$v))) : endo_text_norm((string)$v); };
+    $out = [];
+    foreach (endo_final_fields() as $k => $label) {
+        $nv = trim((string)($new[$k] ?? ''));
+        // حق بیمه‌ی چاپی روی بیمه‌نامه‌ی نهایی با حق بیمه‌ی الحاقیه قاطی می‌شود؛ شماره‌ی بیمه‌نامه هم پیش‌تر بررسی شده
+        if ($nv === '' || in_array($k, ['premium', 'policy_num'], true)) continue;
+        $bv = trim((string)($base[$k] ?? ''));
+        if (in_array($k, $money, true) && !(int)preg_replace('/\D/', '', p2e_digits($nv))) continue;
+        if ($bv === '') {
+            // فقط شناسه‌های خودرو (مثلاً پلاکِ صفر کیلومتری که بعداً آمد)؛ بقیه‌ی فیلدهای خالیِ قبلی «تغییر» نیستند
+            if (in_array($k, ['plate', 'chassis_no', 'vin', 'engine_no'], true)) $out[] = ['field' => $k, 'label' => $label, 'before' => '', 'after' => $show($k, $nv), 'text' => $label . ': «' . $show($k, $nv) . '» (قبلاً نبود)'];
+            continue;
+        }
+        if ($norm($k, $bv) === $norm($k, $nv)) continue;
+        $out[] = ['field' => $k, 'label' => $label, 'before' => $show($k, $bv), 'after' => $show($k, $nv), 'text' => $label . ': از «' . $show($k, $bv) . '» به «' . $show($k, $nv) . '»'];
+    }
+    return $out;
+}
+const ENDO_FINAL_MARK = 'تغییرات در بیمه‌نامه‌ی نهایی:';
+// خواندنِ یک فایلِ بیمه‌نامه (اولین بیمه‌نامه‌ی فایل؛ یا همانی که شماره‌اش $policyNumber است) => [ok, data, error]
+function endo_read_policy_file($pdo, $abs, $policyNumber = '') {
+    $dir = dirname(__DIR__) . '/tmp_ocr/endorse/r_' . bin2hex(random_bytes(6));
+    @mkdir($dir, 0775, true);
+    $r = endo_py($pdo, 'policy_bundle.py', [$abs, $dir], 300);
+    endo_rrmdir($dir);
+    if (empty($r['ok']) || empty($r['policies'])) return ['ok' => false, 'error' => $r['error'] ?? 'بیمه‌نامه‌ای در فایل خوانده نشد.'];
+    $key = endo_policy_key($policyNumber);
+    foreach ($r['policies'] as $p) if ($key !== '' && endo_policy_key($p['data']['policy_num'] ?? '') === $key) return ['ok' => true, 'data' => $p['data'], 'count' => count($r['policies'])];
+    return ['ok' => true, 'data' => $r['policies'][0]['data'] ?? [], 'count' => count($r['policies'])];
+}
+// فایلِ بیمه‌نامه‌ی نهایی + صفحه‌های جداشده‌ی کنارش (شرایط / صفحه‌های تکمیلی)
+function endo_unlink_final($abs) {
+    if (is_file($abs)) @unlink($abs);
+    require_once __DIR__ . '/_pdf_split.php';
+    foreach ([policy_conditions_path($abs), policy_extras_path($abs)] as $x) if (is_file($x)) @unlink($x);
+}
+function endo_rrmdir($dir) {
+    if (!is_dir($dir)) return;
+    foreach ((array)scandir($dir) as $f) { if ($f === '.' || $f === '..') continue; $p = $dir . '/' . $f; is_dir($p) ? endo_rrmdir($p) : @unlink($p); }
+    @rmdir($dir);
+}
+// فایلِ بیمه‌نامه‌ی نهایی را به الحاقیه وصل می‌کند؛ تغییرها نسبت به قبل در شرحِ الحاقیه نوشته می‌شود
+// $data: اطلاعاتِ از پیش خوانده‌شده (اختیاری)؛ $force: بدونِ بررسیِ یکی بودنِ شماره‌ی بیمه‌نامه
+function endo_attach_final($pdo, $siteRoot, $endoId, $srcFile, $data = null, $move = true, $force = false) {
+    endo_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM policy_endorsements WHERE id = ?");
+    $st->execute([$endoId]);
+    $e = $st->fetch();
+    if (!$e) return ['ok' => false, 'error' => 'الحاقیه پیدا نشد.'];
+    if (!$srcFile || !is_file($srcFile)) return ['ok' => false, 'error' => 'فایلِ بیمه‌نامه‌ی نهایی دریافت نشد.'];
+    if (!is_array($data)) {
+        $rd = endo_read_policy_file($pdo, $srcFile, $e['policy_number']);
+        $data = !empty($rd['ok']) ? (array)$rd['data'] : [];
+    }
+    $pn = (string)($data['policy_num'] ?? '');
+    if (!$force && $pn !== '' && endo_policy_key($pn) !== '' && endo_policy_key($pn) !== $e['policy_key'])
+        return ['ok' => false, 'mismatch' => true, 'error' => 'شماره‌ی بیمه‌نامه‌ی این فایل (' . $pn . ') با بیمه‌نامه‌ی این الحاقیه (' . $e['policy_number'] . ') یکی نیست.'];
+    $diffs = $data ? endo_final_diffs(endo_final_baseline($pdo, $e['source'], (int)$e['ref_id'], (int)$e['id']), $data) : [];
+
+    $pol = in_array($e['source'], ['C', 'P'], true) ? endo_load_policy($pdo, $e['source'], (int)$e['ref_id']) : null;
+    $dir = endo_policy_folder($pdo, $siteRoot, $e['source'], $pol['row'] ?? []);
+    $label = $pol ? ($pol['info']['label'] ?: $pol['info']['policy_number']) : $e['policy_number'];
+    $base = '(بیمه‌نامه‌ی نهایی - بعد از الحاقیه' . ($e['endorse_no'] !== null && $e['endorse_no'] !== '' ? ' ' . $e['endorse_no'] : '') . ') '
+          . (function_exists('plate_for_filename') ? plate_for_filename($label) : $label);
+    $base = function_exists('sanitize_folder_name') ? sanitize_folder_name($base) : preg_replace('#[\\\\/:*?"<>|]#u', ' ', $base);
+    if ($e['final_file_path']) endo_unlink_final($siteRoot . '/' . $e['final_file_path']);
+    $dest = function_exists('unique_dest_path') ? unique_dest_path($dir . '/' . $base . '.pdf') : $dir . '/' . $base . '.pdf';
+    $ok = $move ? (@rename($srcFile, $dest) || (@copy($srcFile, $dest) && @unlink($srcFile))) : @copy($srcFile, $dest);
+    if (!$ok) return ['ok' => false, 'error' => 'ذخیره‌ی فایلِ بیمه‌نامه‌ی نهایی ممکن نشد.'];
+    // فایلِ بیمه‌نامه هم مثلِ صدور فقط صفحه‌های بیمه‌نامه (تنظیمات)؛ بقیه کنارش
+    try {
+        require_once __DIR__ . '/_pdf_split.php';
+        $tp = $pol['row']['insurance_type'] ?? (mb_strpos((string)$e['insurance_type'], 'بدنه') !== false ? 'BODY' : 'THIRDPARTY');
+        policy_finalize_file($pdo, $dest, $tp);
+    } catch (Throwable $ex) { error_log('[endo final pages] ' . $ex->getMessage()); }
+    $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
+    // شرح: بخشِ قبلیِ «تغییرات در بیمه‌نامه‌ی نهایی» جایگزین می‌شود
+    $desc = (string)$e['description'];
+    if (($p = mb_strpos($desc, ENDO_FINAL_MARK)) !== false) $desc = rtrim(mb_substr($desc, 0, $p));
+    $desc = trim($desc . "\n" . ENDO_FINAL_MARK . "\n" . ($diffs ? '• ' . implode("\n• ", array_column($diffs, 'text')) : '• تغییری نسبت به اطلاعاتِ قبلیِ بیمه‌نامه دیده نشد.'));
+    $pdo->prepare("UPDATE policy_endorsements SET final_file_path = ?, final_data_json = ?, final_diff_json = ?, final_at = NOW(), description = ? WHERE id = ?")
+        ->execute([$rel, $data ? json_encode($data, JSON_UNESCAPED_UNICODE) : null, json_encode($diffs, JSON_UNESCAPED_UNICODE), $desc, $endoId]);
+    return ['ok' => true, 'id' => (int)$endoId, 'final_file_path' => $rel, 'diffs' => $diffs, 'read' => (bool)$data, 'description' => $desc];
+}
+
+// الحاقیه‌ای که بیمه‌نامه‌ی نهاییِ این شماره باید به آن وصل شود: آخرین الحاقیه‌ی بدونِ فایلِ نهایی، وگرنه آخرین الحاقیه
+function endo_for_final($pdo, $policyNumber) {
+    endo_ensure($pdo);
+    $key = endo_policy_key($policyNumber);
+    if (strlen($key) < 6) return [];
+    $st = $pdo->prepare("SELECT id, source, ref_id, policy_number, endorse_no, kind, issue_date, final_file_path FROM policy_endorsements WHERE policy_key = ?
+                         ORDER BY (final_file_path IS NULL) DESC, issue_date DESC, id DESC");
+    $st->execute([$key]);
+    return $st->fetchAll();
 }
 
 // فهرست برای صفحه‌ی «الحاقیه‌ها»
@@ -541,7 +821,8 @@ function endo_list($pdo, array $f = []) {
             'reason' => $r['reason'], 'description' => $r['description'], 'issue_date' => $r['issue_date'], 'effect_date' => $r['effect_date'], 'new_end_date' => $r['new_end_date'],
             'gross' => (int)$r['gross'], 'net' => $r['net'] !== null ? (int)$r['net'] : null, 'tax' => $r['tax'] !== null ? (int)$r['tax'] : null, 'signed' => (int)$r['signed_amount'],
             'finance_mode' => $r['finance_mode'], 'finance_fa' => endo_modes_fa()[$r['finance_mode']] ?? $r['finance_mode'], 'credit' => (int)$r['credit'], 'credit_paid' => (int)$r['credit_paid'],
-            'plan' => $plan, 'file_path' => $r['file_path'], 'origin' => $r['origin'], 'creator' => $r['creator'], 'created_at' => $r['created_at'],
+            'plan' => $plan, 'file_path' => $r['file_path'], 'final_file_path' => $r['final_file_path'] ?? null,
+            'final_diffs' => json_decode((string)($r['final_diff_json'] ?? ''), true) ?: [], 'batch_id' => $r['batch_id'] ? (int)$r['batch_id'] : null, 'origin' => $r['origin'], 'creator' => $r['creator'], 'created_at' => $r['created_at'],
             'label' => $label, 'company' => $isC ? $r['c_company'] : $r['p_company'], 'insured' => $isC ? $r['c_company'] : ($r['p_insured'] ?: $r['p_holder']),
             'type' => $isC ? $r['c_type'] : $r['p_type'], 'premium' => $prem ?: null, 'final_premium' => $final !== null ? (int)$final : ($prem ?: null),
             'request_plate_id' => $r['request_plate_id'] ? (int)$r['request_plate_id'] : null,
