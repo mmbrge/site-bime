@@ -11,6 +11,7 @@ require __DIR__ . '/_case_helpers.php';
 require __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_auth_helpers.php';
 require_once __DIR__ . '/_company_issue.php';
+require_once __DIR__ . '/_vdoc.php';      // شناساییِ خودکارِ کارت/سند/فاکتور و نشاندنِ اطلاعاتش روی ردیف
 require __DIR__ . '/finance_core.php'; // فقط برای fin_split_installments (تابعی محض، بدون وابستگی)
 
 $actor = require_admin_or_liaison();
@@ -2086,6 +2087,9 @@ try {
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
 
         $pdo->commit();
+        // اگر این مدرک قبلاً خودکار خوانده شده (کارت/سند/فاکتور)، همان اطلاعات روی ردیفِ انتخاب‌شده می‌نشیند (فقط خانه‌های خالی)
+        $aj = !empty($doc['ai_json']) ? json_decode($doc['ai_json'], true) : null;
+        if (is_array($aj) && !empty($aj['data']) && in_array($docType, vdoc_vehicle_types(), true)) { try { vdoc_apply_to_row($pdo, intval($plateId), $aj['data']); } catch (Throwable $e) {} }
         // وضعیت ردیف بر اساس کامل‌شدنِ چک‌لیست به‌طور خودکار بروز می‌شود
         $rowStatus = company_sync_plate_status($pdo, $plateId);
         echo json_encode(['ok' => true, 'plate_id' => $plateId, 'file_path' => $newRelPath, 'row_status' => $rowStatus], JSON_UNESCAPED_UNICODE);
@@ -2126,7 +2130,10 @@ try {
 
         $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
         $rowStatus = company_sync_plate_status($pdo, $plateId);
-        echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus], JSON_UNESCAPED_UNICODE);
+        // کارت/سند/فاکتور: در صفِ شناسایی، تا اطلاعاتش روی همین ردیف بنشیند (خانه‌های خالی)
+        $aiQueued = false;
+        if (in_array($docType, vdoc_vehicle_types(), true)) { vdoc_queue($pdo, [intval($docId)]); $aiQueued = true; }
+        echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus, 'ai_queued' => $aiQueued], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

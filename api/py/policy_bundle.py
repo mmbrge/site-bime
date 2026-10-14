@@ -528,12 +528,14 @@ def extract_layout(page):
         v = inline_kv(sp, lab)
         if v:
             d[key] = v
+    # «شماره شاسی» و «VIN» جدا: شاسی همیشه در chassis_no؛ VIN فقط از برچسبِ خودش (اگر نبود، آخرِ کار از شاسیِ ۱۷ رقمی)
     if d.get('chassis'):
         tok = re.sub(r'[^A-Za-z0-9]', '', d.pop('chassis'))
-        if len(tok) == 17 and not d.get('vin'):
-            d['vin'] = tok.upper()
-        elif tok:
+        if tok:
             d['chassis_no'] = tok.upper()
+    mv = re.search(r'VIN\s*[:：]?\s*([A-Za-z0-9]{17})(?![A-Za-z0-9])', alltext) or re.search(r'(?<![A-Za-z0-9])([A-Za-z0-9]{17})\s*[:：]\s*VIN', alltext)
+    if mv and re.search(r'[A-Za-z]', mv.group(1)) and re.search(r'\d', mv.group(1)):
+        d['vin'] = mv.group(1).upper()
     if d.get('engine_no'):
         d['engine_no'] = re.sub(r'[^A-Za-z0-9]', '', d['engine_no']).upper() or d.pop('engine_no')
     if d.get('model_year'):
@@ -555,9 +557,12 @@ def extract_layout(page):
         if len(toks) >= 2:
             eng, ch = (toks[0], toks[1]) if first_engine else (toks[1], toks[0])
             if not d.get('engine_no'): d['engine_no'] = eng
-            if not d.get('vin') and not d.get('chassis_no'): d['vin'] = ch
+            if not d.get('chassis_no'): d['chassis_no'] = ch
         break
     for lb in find_labels(sp, r'شماره\s*(?:شاسی|موتور)|VIN'):
+        lt = lb['t']
+        is_vin = bool(re.search(r'VIN', lt)) and not re.search(r'شاسی|موتور', lt)
+        is_ch = 'شاسی' in lt and 'موتور' not in lt and not is_vin
         for v in row_values(sp, lb):
             # شماره موتورهای بلند (مثلِ MC152JH25648G5454584) و با جداکننده (MC13.48-50*260117005707*) کامل خوانده می‌شوند
             for tok in [re.sub(r'[^A-Za-z0-9]', '', x) for x in re.findall(r'[A-Za-z0-9][A-Za-z0-9.*\-/]{4,40}[A-Za-z0-9*]', v['t'])]:
@@ -565,12 +570,21 @@ def extract_layout(page):
                     continue
                 if not re.search(r'\d', tok):
                     continue
-                if len(tok) == 17 and re.search(r'[A-Za-z]', tok) and not d.get('vin'):
-                    d['vin'] = tok.upper()
-                elif not d.get('engine_no') and tok.upper() != d.get('vin'):
-                    d['engine_no'] = tok.upper()
-        if d.get('vin'):
+                tok = tok.upper()
+                vinlike = len(tok) == 17 and re.search(r'[A-Z]', tok)
+                if is_vin:
+                    if vinlike and not d.get('vin'): d['vin'] = tok
+                elif is_ch:
+                    if not d.get('chassis_no') and tok != d.get('engine_no'): d['chassis_no'] = tok
+                elif vinlike and not d.get('chassis_no') and tok != d.get('vin'):
+                    d['chassis_no'] = tok
+                elif not d.get('engine_no') and tok not in (d.get('vin'), d.get('chassis_no')):
+                    d['engine_no'] = tok
+        if d.get('chassis_no') and d.get('engine_no') and d.get('vin'):
             break
+    # بیمه‌نامه‌ای که برچسبِ VIN ندارد (مثلِ بدنه): شاسیِ ۱۷ رقمی همان VIN است
+    if not d.get('vin') and d.get('chassis_no') and len(d['chassis_no']) == 17 and re.search(r'[A-Z]', d['chassis_no']):
+        d['vin'] = d['chassis_no']
 
     # خودرو: «نوع: سیستم: تیپ» (از راست به چپ)
     for lb in ([] if inline_car else find_labels(sp, r'سیستم')):

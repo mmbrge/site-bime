@@ -703,7 +703,7 @@
         },
         fileUpload(i) {
             const m = modal(`افزودنِ فایل به قسطِ ${fa(i.inst_no)}`, `<label class="block mb-3"><span class="lf-lbl">عنوان (اختیاری)</span><input class="lf-in" data-f="title" placeholder="مثلاً: فیش واریز، نامه، تصویرِ چک"></label>
-                <label class="lf-drop block"><i class="fas fa-cloud-arrow-up"></i><div class="font-black mt-2">انتخابِ فایل یا عکس</div><small class="text-slate-500">عکس، PDF، Word، Excel یا زیپ تا ۲۰ مگابایت</small><input type="file" data-f="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.txt"><div data-fn class="mt-2 text-[12px] font-bold text-blue-700"></div></label>`,
+                <label class="lf-drop block"><i class="fas fa-cloud-arrow-up"></i><div class="font-black mt-2">انتخابِ فایل یا عکس</div><small class="text-slate-500">عکس، PDF، Word، Excel یا زیپ تا ۲۰ مگابایت</small><input type="file" data-f="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.txt,.heic,.heif"><div data-fn class="mt-2 text-[12px] font-bold text-blue-700"></div></label>`,
                 '<button class="lf-btn s" data-x2>انصراف</button><button class="lf-btn p" data-ok><i class="fas fa-upload"></i>بارگذاری</button>', {icon: 'fa-paperclip'});
             const inp = m.querySelector('[data-f=file]');
             inp.onchange = () => { m.querySelector('[data-fn]').textContent = inp.files[0] ? inp.files[0].name : ''; };
@@ -844,7 +844,7 @@
                     <label><span class="lf-lbl">روشِ پرداخت</span><select class="lf-sel" data-f="method">${L.boot.pay_methods.map(x => `<option>${esc(x)}</option>`).join('')}</select></label>
                     <label><span class="lf-lbl">شماره‌ی پیگیری / مرجع</span><input class="lf-in lf-mono" data-f="ref_no" inputmode="numeric"></label>
                     <label style="grid-column:1/-1"><span class="lf-lbl">توضیح</span><input class="lf-in" data-f="note"></label>
-                    <label class="lf-drop block" style="grid-column:1/-1;padding:16px"><i class="fas fa-receipt" style="font-size:22px"></i><div class="font-black mt-1">فیشِ پرداخت (اختیاری)</div><small class="text-slate-500">عکس یا PDF؛ در پوشه‌ی همین قسط بایگانی می‌شود</small><input type="file" class="hidden" data-f="file" accept="image/*,.pdf"><div data-fn class="mt-1 text-[12px] font-bold text-blue-700"></div></label>
+                    <label class="lf-drop block" style="grid-column:1/-1;padding:16px"><i class="fas fa-receipt" style="font-size:22px"></i><div class="font-black mt-1">فیشِ پرداخت (اختیاری)</div><small class="text-slate-500">عکس یا PDF؛ در پوشه‌ی همین قسط بایگانی می‌شود</small><input type="file" class="hidden" data-f="file" accept="image/*,.pdf,.heic,.heif"><div data-fn class="mt-1 text-[12px] font-bold text-blue-700"></div></label>
                     <label class="lf-chk" style="grid-column:1/-1"><input type="checkbox" data-f="rcpt" ${can('life-pay') ? 'checked' : ''}>بعد از ثبت، رسید را آماده کن</label>
                 </div>`, '<button class="lf-btn s" data-x2>انصراف</button><button class="lf-btn g" data-ok><i class="fas fa-check"></i>ثبتِ پرداخت</button>', {icon: 'fa-money-bill-wave'});
             const inp = m.querySelector('[data-f=file]');

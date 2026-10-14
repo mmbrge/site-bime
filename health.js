@@ -339,7 +339,7 @@
                 <label><span class="hl-lbl">مبلغ (ریال)</span><input class="hl-in money-input" data-f="amount" value="${e.amount ? money(Math.abs(e.amount)) : ''}"></label>
                 <label><span class="hl-lbl">تغییرِ تعدادِ بیمه‌شدگان (+ / −)</span><input class="hl-in" data-f="headcount_delta" dir="ltr" value="${e.headcount_delta !== null && e.headcount_delta !== undefined ? fa(e.headcount_delta) : ''}"></label>
                 <label style="grid-column:1/-1"><span class="hl-lbl">توضیح</span><input class="hl-in" data-f="note" value="${esc(e.note || '')}"></label>
-                <label style="grid-column:1/-1"><span class="hl-lbl">فایلِ الحاقیه (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp"></label></div>
+                <label style="grid-column:1/-1"><span class="hl-lbl">فایلِ الحاقیه (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label></div>
                 <p class="text-[11px] text-slate-500 mt-2">اضافی به حق‌بیمه اضافه و برگشتی کم می‌شود؛ الحاقیه‌ی اصلاحی معمولاً مبلغ ندارد.</p>`, '<button class="hl-btn p" data-save><i class="fas fa-floppy-disk"></i>ذخیره</button>');
             m.querySelector('[data-save]').onclick = async ev => {
                 const v = k => m.querySelector(`[data-f=${k}]`).value, fd = new FormData();
@@ -510,7 +510,7 @@
                     <label data-chq style="display:none"><span class="hl-lbl">شماره‌ی چک</span><input class="hl-in" data-f="cheque_no" dir="ltr"></label>
                     <label data-chq style="display:none"><span class="hl-lbl">سررسیدِ چک</span><input class="hl-in" data-f="cheque_due_j" data-jdate dir="ltr"></label>
                     <label style="grid-column:1/-1"><span class="hl-lbl">توضیح</span><input class="hl-in" data-f="note"></label>
-                    <label style="grid-column:1/-1"><span class="hl-lbl">تصویرِ رسید / فیش (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp"></label></div>
+                    <label style="grid-column:1/-1"><span class="hl-lbl">تصویرِ رسید / فیش (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label></div>
                 <div class="hl-row mt-3"><div class="flex justify-between items-center"><b class="text-emerald-800"><i class="fas fa-list-check"></i> تخصیص به اقساط</b><label class="text-[11.5px] font-bold flex items-center gap-1"><input type="checkbox" data-manual>تخصیصِ دستی</label></div><div data-alloc class="text-[11.5px]"></div></div>`,
                 '<button class="hl-btn p" data-save><i class="fas fa-floppy-disk"></i>ثبت</button>');
             let payee = o.payee || B.settings.default_payee, inst = [];
@@ -590,7 +590,7 @@
                 <label><span class="hl-lbl">شماره‌ی پیگیری</span><input class="hl-in" data-f="ref_no" dir="ltr"></label>
                 <label style="grid-column:1/-1"><span class="hl-lbl">بابتِ قرارداد (اختیاری)</span><select class="hl-sel" data-f="contract_id">${conOpts(pre.contract_id || '', 'کلی / چند قرارداد')}</select></label>
                 <label style="grid-column:1/-1"><span class="hl-lbl">توضیح</span><input class="hl-in" data-f="note"></label>
-                <label style="grid-column:1/-1"><span class="hl-lbl">رسید (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp"></label></div>`, '<button class="hl-btn p" data-save><i class="fas fa-floppy-disk"></i>ثبت</button>');
+                <label style="grid-column:1/-1"><span class="hl-lbl">رسید (اختیاری)</span><input type="file" class="hl-in" data-file accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label></div>`, '<button class="hl-btn p" data-save><i class="fas fa-floppy-disk"></i>ثبت</button>');
             m.querySelector('[data-save]').onclick = async e => {
                 const v = k => m.querySelector(`[data-f=${k}]`).value;
                 const fd = new FormData();
@@ -811,7 +811,7 @@
             root.innerHTML = shell('hl-receipts', `<div class="hl-card"><div class="hl-f">
                     <div class="hl-seg" data-st>${[['NEW', 'در انتظارِ ثبت'], ['DONE', 'ثبت‌شده'], ['REJECT', 'ردشده'], ['ALL', 'همه']].map(([a, b]) => `<button data-v="${a}" class="${f.status === a ? 'on' : ''}">${b}<span data-n="${a}"></span></button>`).join('')}</div>
                     <label style="max-width:none;flex:2 1 200px"><span>جستجو (گروه، فرستنده، توضیح، شرکت)</span><input class="hl-in" data-k="q" value="${esc(f.q)}"></label>
-                    ${can('hl-receipts', 'edit') ? '<label class="hl-btn o" style="cursor:pointer"><i class="fas fa-upload text-emerald-600"></i>بارگذاریِ دستیِ رسید<input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" data-up hidden></label>' : ''}</div>
+                    ${can('hl-receipts', 'edit') ? '<label class="hl-btn o" style="cursor:pointer"><i class="fas fa-upload text-emerald-600"></i>بارگذاریِ دستیِ رسید<input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" data-up hidden></label>' : ''}</div>
                     <p class="text-[11.5px] text-slate-500 mt-2 leading-6"><i class="fas fa-robot text-emerald-600"></i> هر عکس یا PDF که در گروه‌های تعیین‌شده (تنظیمات ← گروه‌های رسید) فرستاده شود، با نامِ «رسید + تاریخ و ساعتِ دریافت» در پوشه‌ی موقت می‌آید. روی هر رسید بزنید، اطلاعاتِ پرداخت را بنویسید؛ با نامِ درست به پوشه‌ی همان شرکت و بیمه‌نامه منتقل و در دفترِ همان ماه ثبت می‌شود.</p></div>
                 <div data-list><div class="hl-card hl-empty"><i class="fas fa-spinner fa-spin"></i></div></div>`);
             root.querySelectorAll('[data-st] button').forEach(b => b.onclick = () => { f.status = b.dataset.v; this.render(root); });

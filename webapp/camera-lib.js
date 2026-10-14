@@ -114,7 +114,7 @@
             input = document.createElement('input');
             input.type = 'file';
             input.id = 'cl-native-input';
-            input.accept = 'image/*';
+            input.accept = 'image/*,.heic,.heif';
             input.setAttribute('capture', 'environment');
             input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
             document.body.appendChild(input);

@@ -68,7 +68,7 @@ if (!$companies) {
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=3">
-<script src="../chat-ui.js?v=11"></script>
+<script src="../chat-ui.js?v=12"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -299,7 +299,7 @@ if (!$companies) {
         </div>
         <div class="float-input">
             <label>فایل نامه (اختیاری - PDF یا عکس)</label>
-            <input type="file" id="nr-letter" accept=".pdf,.jpg,.jpeg,.png,.webp">
+            <input type="file" id="nr-letter" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif">
         </div>
 
         <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 mb-3">
@@ -341,7 +341,7 @@ if (!$companies) {
         <div class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
             <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5 mb-1"><i class="fas fa-cloud-arrow-up text-blue-400"></i>افزودن مدارک جدید به این درخواست</label>
             <p class="text-[11px] text-slate-400 mb-3">می‌توانید چند فایل با هم انتخاب کنید؛ فقط برای هر فایل نوعش را مشخص کنید.</p>
-            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs bg-white border border-slate-200 rounded-lg p-2">
+            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs bg-white border border-slate-200 rounded-lg p-2">
             <div id="doc-upload-rows" class="space-y-2 mb-2"></div>
             <button onclick="uploadDocuments()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
                 <i class="fas fa-upload ml-1"></i> آپلود مدارک

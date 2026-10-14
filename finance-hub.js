@@ -644,7 +644,7 @@
                 </div>
                 <label class="flex items-center gap-3 border-2 border-dashed border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
                     <i class="fas fa-paperclip text-slate-400 text-lg"></i><span class="text-[12px] font-bold text-slate-600" id="fp-files-l">فیش / تصویرِ چک / رسید (عکس یا PDF، چندتایی)</span>
-                    <input type="file" id="fp-files" multiple accept="image/*,.pdf" class="hidden"></label>
+                    <input type="file" id="fp-files" multiple accept="image/*,.pdf,.heic,.heif" class="hidden"></label>
                 <div id="fp-err" class="hidden text-[11.5px] text-red-700 bg-red-50 border border-red-200 rounded-xl p-3"></div>
                 <div class="flex gap-2 justify-end">
                     <button type="button" onclick="document.getElementById('fh-pay').classList.remove('active')" class="text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl">انصراف</button>

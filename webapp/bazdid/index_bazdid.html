@@ -446,7 +446,7 @@
       <button class="btn btn-outline" onclick="openCameraInBrowser()" style="margin-top:10px;">📷 دوربینِ زنده در مرورگر</button>
       <div id="upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
     </div>
-    <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="onFileSelected(event)">
+    <input type="file" id="camera-input" accept="image/*,.heic,.heif" capture="environment" onchange="onFileSelected(event)">
 
     <!-- برای مرحله‌ی چندعکسی -->
     <div id="multi-actions" style="display:none;">
@@ -522,7 +522,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="../camera-lib.js?v=3"></script>
+<script src="../camera-lib.js?v=4"></script>
 <script>
 // ============================================================
 //  اتصال به Bale WebApp (در صورت وجود) - برای تجربه‌ی بهتر (رنگ هدر و ...)

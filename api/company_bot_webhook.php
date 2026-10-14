@@ -169,7 +169,7 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
     if (!$fileId) return ['ok' => false, 'error' => 'فایلی دریافت نشد.'];
     if ($size > 20 * 1024 * 1024) return ['ok' => false, 'error' => 'حجم فایل بیشتر از ۲۰ مگابایت است.'];
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'jpg';
-    $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp']; if ($allowZip) $allowed[] = 'zip';
+    $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']; if ($allowZip) $allowed[] = 'zip';
     if (!in_array($ext, $allowed, true)) return ['ok' => false, 'error' => 'فقط فایل PDF یا عکس' . ($allowZip ? ' یا زیپ' : '') . ' پذیرفته می‌شود.'];
     $info = cbot_api($pdo, 'getFile', ['file_id' => $fileId]);
     if (empty($info['file_path'])) return ['ok' => false, 'error' => 'دریافتِ فایل از بله ممکن نشد؛ دوباره بفرستید.'];
@@ -182,7 +182,10 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
     if (!is_dir($destDir) && !@mkdir($destDir, 0755, true) && !is_dir($destDir)) return ['ok' => false, 'error' => 'خطا در آماده‌سازی پوشه.'];
     $dest = unique_dest_path($destDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext);
     file_put_contents($dest, $bin);
-    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($dest);
+    require_once __DIR__ . '/_heic.php';
+    $dest = heic_fix_saved_file($GLOBALS['pdo'] ?? null, $dest);   // عکسِ HEIC (آیفون) => PNG
+    if (preg_match('/\.png$/i', $dest) && preg_match('/\.(heic|heif)$/i', $name)) $name = preg_replace('/\.(heic|heif)$/i', '.png', $name);
+    if (in_array(strtolower(pathinfo($dest, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($dest);
     return ['ok' => true, 'path' => $dest, 'orig_name' => $name];
 }
 

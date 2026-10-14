@@ -95,15 +95,17 @@ function vdoc_apply_to_row($pdo, $plateId, array $d) {
     $st->execute([$plateId]);
     $r = $st->fetch();
     if (!$r) return;
-    $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
+    // «شماره شاسی»ِ مدرک در شاسیِ ردیف؛ VIN (۱۷ رقمی) در VIN — هیچ مقدارِ موجودی عوض نمی‌شود
+    $chassis = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
+    $vin = vdoc_clean_code($d['vin'] ?? '');
     $carName = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? '');
     $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), NULLIF(?, '')),
                    engine_no = COALESCE(NULLIF(engine_no, ''), NULLIF(?, '')), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')), car_type = COALESCE(NULLIF(car_type, ''), NULLIF(?, '')) WHERE id = ?")
-        ->execute([$vin, strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
+        ->execute([$chassis, strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
     $info = issue_info_decode($r['issue_info'] ?? null);
     $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'mobile' => 'owner_phone', 'address' => 'owner_address',
             'car_system' => 'car_system', 'car_tip' => 'car_type', 'usage' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color',
-            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin'];
+            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no'];
     $ch = false;
     foreach ($map as $from => $to) {
         $v = trim((string)($d[$from] ?? ''));
@@ -127,6 +129,9 @@ function vdoc_request_type($pdo, $requestId) {
 }
 
 // پردازشِ یک مدرکِ صف‌شده
+// مدارکِ خودرو که اطلاعاتشان روی ردیف می‌نشیند (کارت، سند، فاکتورِ فروش)؛ وقتی مستقیم روی یک ردیف بارگذاری می‌شوند هم خوانده می‌شوند
+function vdoc_vehicle_types() { return ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'new_car_card', 'new_ownership_doc', 'car_card_or_title']; }
+
 function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
     vdoc_ensure($pdo);
     // برداشتنِ اتمی از صف (دو درخواستِ هم‌زمان یک مدرک را دو بار نمی‌خوانند)
@@ -140,11 +145,18 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
         $pdo->prepare("UPDATE company_documents SET ai_status = ?, ai_json = ?, ai_at = NOW() WHERE id = ?")->execute([$status, json_encode($res, JSON_UNESCAPED_UNICODE), $docId]);
         return ['ok' => true, 'status' => $status, 'result' => $res];
     };
-    if (!$doc || $doc['status'] !== 'UNASSIGNED') return $save('NONE', ['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.']);
+    $onRow = $doc && $doc['status'] === 'ASSIGNED' && $doc['plate_id'] && in_array($doc['doc_type'], vdoc_vehicle_types(), true);
+    if (!$doc || ($doc['status'] !== 'UNASSIGNED' && !$onRow)) return $save('NONE', ['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.']);
     $abs = $siteRoot . '/' . ltrim($doc['file_path'], '/');
     $res = vdoc_run($pdo, $abs);
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
+    // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)
+    if ($onRow) {
+        if (!empty($d)) vdoc_apply_to_row($pdo, intval($doc['plate_id']), $d);
+        $res['plate_id'] = intval($doc['plate_id']);
+        return $save(empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL'), $res);
+    }
     $kind = $res['kind'] ?? 'unknown';
     if ($kind === 'unknown' || (empty($d['vin']) && empty($d['chassis_no']) && empty($d['engine_no']))) return $save($kind === 'unknown' && empty($d) ? 'NONE' : 'PARTIAL', $res);
 
@@ -198,7 +210,7 @@ function vdoc_step($pdo, $siteRoot, $companyIds = null, $max = 1) {
     vdoc_ensure($pdo);
     // «در حال خواندن»ِ ماندگار (قطعِ درخواست) دوباره به صف برمی‌گردد
     try { $pdo->exec("UPDATE company_documents SET ai_status = 'PENDING' WHERE ai_status = 'RUNNING' AND ai_at < (NOW() - INTERVAL 10 MINUTE)"); } catch (Throwable $e) {}
-    $w = "ai_status = 'PENDING' AND status = 'UNASSIGNED'"; $a = [];
+    $w = "ai_status = 'PENDING' AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL))"; $a = [];
     if (is_array($companyIds)) { if (!$companyIds) return ['done' => [], 'pending' => 0]; $w .= " AND company_id IN (" . implode(',', array_fill(0, count($companyIds), '?')) . ")"; $a = array_values(array_map('intval', $companyIds)); }
     $done = [];
     for ($i = 0; $i < $max; $i++) {
@@ -208,10 +220,10 @@ function vdoc_step($pdo, $siteRoot, $companyIds = null, $max = 1) {
         if (!$id) break;
         $r = vdoc_process_company_doc($pdo, $siteRoot, intval($id));
         if (!empty($r['skipped'])) continue;
-        $done[] = ['doc_id' => intval($id), 'status' => $r['status'] ?? 'FAIL', 'kind_fa' => $r['result']['kind_fa'] ?? '', 'vin' => $r['result']['data']['vin'] ?? '',
+        $done[] = ['doc_id' => intval($id), 'status' => $r['status'] ?? 'FAIL', 'plate_id' => $r['result']['plate_id'] ?? null, 'kind_fa' => $r['result']['kind_fa'] ?? '', 'vin' => $r['result']['data']['vin'] ?? '',
                    'owner' => $r['result']['data']['owner_name'] ?? '', 'missing' => $r['result']['missing'] ?? []];
     }
-    $st = $pdo->prepare("SELECT COUNT(*) FROM company_documents WHERE ai_status IN ('PENDING', 'RUNNING') AND status = 'UNASSIGNED'" . (is_array($companyIds) ? " AND company_id IN (" . implode(',', array_fill(0, count($companyIds), '?')) . ")" : ''));
+    $st = $pdo->prepare("SELECT COUNT(*) FROM company_documents WHERE ai_status IN ('PENDING', 'RUNNING') AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL))" . (is_array($companyIds) ? " AND company_id IN (" . implode(',', array_fill(0, count($companyIds), '?')) . ")" : ''));
     $st->execute($a);
     return ['done' => $done, 'pending' => intval($st->fetchColumn())];
 }
@@ -221,6 +233,8 @@ function vdoc_queue($pdo, array $docIds) {
     vdoc_ensure($pdo);
     $docIds = array_values(array_filter(array_map('intval', $docIds)));
     if (!$docIds) return;
-    $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING', ai_at = NOW() WHERE id IN (" . implode(',', array_fill(0, count($docIds), '?')) . ") AND status = 'UNASSIGNED' AND file_kind = 'SUPPORTING_DOC'")
-        ->execute($docIds);
+    $vt = vdoc_vehicle_types();
+    $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING', ai_at = NOW() WHERE id IN (" . implode(',', array_fill(0, count($docIds), '?')) . ") AND file_kind = 'SUPPORTING_DOC'
+                     AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL AND doc_type IN (" . implode(',', array_fill(0, count($vt), '?')) . ")))")
+        ->execute(array_merge($docIds, $vt));
 }

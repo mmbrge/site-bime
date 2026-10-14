@@ -206,7 +206,7 @@
             ov.innerHTML = `<div class="cx-dlg cx-pick"><b class="cx-dlg-t">عکسِ پروفایل</b>
                 <div class="cx-pick-pv"></div>
                 <div class="cx-pick-g">${PRESETS.map((p, i) => `<button type="button" data-p="preset:${i + 1}" style="background:linear-gradient(135deg,${p[1]},${p[2]})">${p[0]}</button>`).join('')}</div>
-                <div class="cx-pick-a"><label class="cx-pick-up"><i class="fas fa-image"></i> انتخاب از گالری / سیستم<input type="file" accept="image/*" hidden></label>
+                <div class="cx-pick-a"><label class="cx-pick-up"><i class="fas fa-image"></i> انتخاب از گالری / سیستم<input type="file" accept="image/*,.heic,.heif" hidden></label>
                     <button type="button" class="cx-pick-none"><i class="fas fa-font"></i> بدونِ عکس</button></div>
                 <div class="cx-dlg-b"><button class="cx-dlg-ok">ذخیره</button><button class="cx-dlg-no">انصراف</button></div></div>`;
             const pv = ov.querySelector('.cx-pick-pv');

@@ -677,7 +677,7 @@
                     if (k === 'reply_out') { m.close(); Compose.open({parent: L, direction: 'OUT'}); return; }
                     if (k === 'follow') { m.close(); Compose.open({parent: L, direction: 'OUT'}); return; }
                     if (k === 'reg_in') { m.close(); Compose.open({parent: L, direction: 'IN'}); return; }
-                    if (k === 'signed') { const i = document.createElement('input'); i.type = 'file'; i.accept = '.pdf,.jpg,.jpeg,.png'; i.onchange = async () => { const fd = new FormData(); fd.append('id', id); fd.append('kind', 'SIGNED'); fd.append('file', i.files[0]); try { await api('file_upload', {}, fd); toast('نسخه‌ی امضاشده ذخیره شد؛ شرکت هم همین را می‌بیند.', 'success'); reload(); } catch (e) { toast(e.message, 'error'); } }; i.click(); return; }
+                    if (k === 'signed') { const i = document.createElement('input'); i.type = 'file'; i.accept = '.pdf,.jpg,.jpeg,.png,.heic,.heif'; i.onchange = async () => { const fd = new FormData(); fd.append('id', id); fd.append('kind', 'SIGNED'); fd.append('file', i.files[0]); try { await api('file_upload', {}, fd); toast('نسخه‌ی امضاشده ذخیره شد؛ شرکت هم همین را می‌بیند.', 'success'); reload(); } catch (e) { toast(e.message, 'error'); } }; i.click(); return; }
                 } catch (e) { toast(e.message, 'error'); busy(b, false); }
             };
             m.querySelectorAll('[data-a]').forEach(b => b.onclick = () => act(b.dataset.a, b));

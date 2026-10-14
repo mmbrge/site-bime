@@ -88,7 +88,7 @@
               <div class="md:col-span-2"><label class="lbl">نامه‌ی درخواست (اختیاری)</label>
                 <label class="flex items-center gap-2 border-2 border-dashed rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50 text-xs ${st.letter ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}">
                   <i class="fas fa-envelope-open-text"></i><span class="truncate">${st.letter ? esc(st.letter.name) : 'انتخاب فایل نامه (PDF یا عکس) - اگر نامه ندارد خالی بماند'}</span>
-                  <input type="file" data-letter class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp"></label>
+                  <input type="file" data-letter class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
                 ${st.letter ? '<button data-act="rmletter" class="text-[10px] text-rose-500 underline mt-1">حذف نامه</button>' : ''}</div>
               <div class="md:col-span-2"><label class="lbl">توضیح درخواست (اختیاری)</label><textarea data-f="text" rows="2" class="inp" placeholder="مثلاً: مدارک در بله فرستاده شد، بدون نامه">${esc(st.text)}</textarea></div>
             </div>
@@ -205,7 +205,7 @@
                 const fs = r.files[t] || [];
                 return `<label class="text-[10px] font-bold px-2 py-1 rounded-lg cursor-pointer ${fs.length ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}">
                     ${fs.length ? '✓ ' : '+ '}${esc((form.doc_types || {})[t] || t)}${fs.length ? ` (${fa(fs.length)})` : ''}
-                    <input type="file" class="hidden" multiple data-file="${t}" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip"></label>`;
+                    <input type="file" class="hidden" multiple data-file="${t}" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif"></label>`;
             }).join('')}</div>
             ${item.upload_types.some(t => (r.files[t] || []).length) ? `<div class="text-[9.5px] text-slate-500 mt-1 truncate" dir="ltr">${item.upload_types.flatMap(t => (r.files[t] || []).map(f => esc(f.name))).join(' · ')}</div>
               <button data-clearfiles="${item.upload_types.join(',')}" class="text-[9.5px] text-rose-500 underline">حذف فایل‌ها</button>` : ''}</div>`).join('');

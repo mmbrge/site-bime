@@ -93,7 +93,7 @@ function lbot_download($pdo, array $message, $destDir, $baseName) {
     if (!$fileId) return ['error' => 'فایلی دریافت نشد.'];
     if ($size > 20 * 1048576) return ['error' => 'حجمِ فایل بیشتر از ۲۰ مگابایت است.'];
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'jpg';
-    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) return ['error' => 'فقط عکس یا PDF پذیرفته می‌شود.'];
+    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true)) return ['error' => 'فقط عکس یا PDF پذیرفته می‌شود.'];
     $info = lbot_api($pdo, 'getFile', ['file_id' => $fileId]);
     if (empty($info['file_path'])) return ['error' => 'دریافتِ فایل از بله ممکن نشد؛ دوباره بفرستید.'];
     $ch = curl_init(cbot_base() . '/file/bot' . lbot_token($pdo) . '/' . $info['file_path']);
@@ -105,6 +105,8 @@ function lbot_download($pdo, array $message, $destDir, $baseName) {
     $dest = $destDir . '/' . sanitize_folder_name($baseName) . '.' . $ext; $k = 2;
     while (file_exists($dest)) $dest = $destDir . '/' . sanitize_folder_name($baseName) . ' (' . $k++ . ').' . $ext;
     file_put_contents($dest, $bin);
+    require_once __DIR__ . '/_heic.php';
+    $dest = heic_fix_saved_file($pdo, $dest);   // عکسِ HEIC (آیفون) => PNG
     return ['path' => $dest];
 }
 

@@ -27,13 +27,32 @@ $userId = $_SESSION['user_id'];
 
 // ثبت دستی و ویرایشِ درخواست‌ها: مدیر کل، یا کاربری که مدیر برایش دسترسیِ سفارشی تعیین کرده (perm_gate در بالای همین فایل
 // ثبت/ویرایش را بر اساسِ همان دسترسی‌ها بررسی کرده: «صدورِ بیمه‌نامه‌ی کارکنان: ویرایش»، «پرونده‌ها: ثبت» یا «در حال صدور: ویرایش»)
-if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro', 'intro_edit'], true)
+if (in_array($action, ['edit', 'change_status', 'create_manual', 'create_manual_request', 'create_case_for_intro', 'intro_detect', 'create_intro', 'intro_edit', 'proposal_read'], true)
     && ($_SESSION['role'] ?? '') !== 'ADMIN' && perm_user_custom($pdo, $userId) === null) {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 try {
+    // ---- «پیشنهاد / پیش‌نویس» در پنجره‌ی ثبتِ دستیِ درخواست: فقط خواندن (چیزی ذخیره نمی‌شود) تا فرم پر شود؛
+    //      خودِ فایل بعد از ثبتِ درخواست با case_actions?action=proposal_upload روی پرونده بایگانی می‌شود ----
+    if ($action === 'proposal_read') {
+        require_once __DIR__ . '/_proposal.php';
+        $f = $_FILES['file'] ?? null;
+        if (!$f || empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ پیشنهاد باید PDF باشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $tmpDir = dirname(__DIR__) . '/tmp_ocr';
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
+        $tmp = $tmpDir . '/' . uniqid('propr_') . '.pdf';
+        if (!move_uploaded_file($f['tmp_name'], $tmp)) { echo json_encode(['ok' => false, 'error' => 'خطا در دریافت فایل.'], JSON_UNESCAPED_UNICODE); exit; }
+        $r = proposal_run($pdo, $tmp);
+        @unlink($tmp);
+        if (empty($r['ok'])) { echo json_encode(['ok' => false, 'error' => $r['error'] ?? 'فایل خوانده نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (($r['kind'] ?? '') === 'policy') { echo json_encode(['ok' => false, 'error' => 'این فایلِ خودِ بیمه‌نامه‌ی صادرشده است، نه پیشنهاد/پیش‌نویس.'], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'kind' => $r['kind'], 'kind_fa' => $r['kind'] === 'proposal' ? 'پیشنهاد' : 'پیش‌نویس', 'data' => $r['data'] ?? [], 'missing' => $r['missing'] ?? []], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- ثبت دستیِ معرفی‌نامه: ۱) تشخیصِ خودکار از روی فایل ----
     // فایل با همان الگوریتمِ صفِ پردازش خوانده می‌شود؛ اگر معرفی‌نامه نبود رد می‌شود، اگر بود
     // اطلاعاتش برگردانده و خودِ فایل موقتاً نگه داشته می‌شود تا با «ثبت» به بایگانی برود.

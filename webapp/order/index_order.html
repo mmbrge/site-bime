@@ -325,8 +325,8 @@
       <button class="btn btn-outline" onclick="pickDocPdf()">📄 ارسال PDF</button>
     </div>
     <button class="btn btn-outline" onclick="openDocCameraInBrowser()" style="margin-top:10px;">📷 دوربینِ باکیفیت‌تر (در مرورگر)</button>
-    <input type="file" id="doc-camera-input" accept="image/*" capture="environment" onchange="onDocFileSelected(event)">
-    <input type="file" id="doc-gallery-input" accept="image/*" onchange="onDocFileSelected(event)">
+    <input type="file" id="doc-camera-input" accept="image/*,.heic,.heif" capture="environment" onchange="onDocFileSelected(event)">
+    <input type="file" id="doc-gallery-input" accept="image/*,.heic,.heif" onchange="onDocFileSelected(event)">
     <input type="file" id="doc-pdf-input" accept="application/pdf,.pdf" onchange="onDocFileSelected(event)">
     <div id="doc-upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
   </div>

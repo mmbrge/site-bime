@@ -3130,7 +3130,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">توضیح / متن نامه (اختیاری)</span>
                     <textarea id="ancr-text" rows="3" class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl p-3 text-sm"></textarea></label>
                 <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایل نامه (اختیاری)</span>
-                    <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full border-2 border-dashed border-slate-300 rounded-xl p-2.5 text-xs bg-slate-50"></label>
+                    <input type="file" id="ancr-letter-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" class="w-full border-2 border-dashed border-slate-300 rounded-xl p-2.5 text-xs bg-slate-50"></label>
             </div>
             <div class="px-5 pb-5 pt-1 flex gap-2">
                 <button type="button" onclick="document.getElementById('admin-new-creq-modal').classList.remove('active')" class="px-5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm">انصراف</button>
@@ -3306,7 +3306,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="ii-sec flex flex-wrap items-center gap-2">
                     <label class="flex-1 min-w-[240px] flex items-center gap-2 border-2 border-dashed border-emerald-300 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-emerald-50 text-xs font-bold text-emerald-700">
                         <i class="fas fa-cloud-arrow-up"></i><span id="cis-file-name">انتخابِ فایلِ بیمه‌نامه‌ی صادرشده (PDF یا عکس)</span>
-                        <input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" onchange="document.getElementById('cis-file-name').textContent = this.files[0] ? this.files[0].name : 'انتخابِ فایل'; if (this.files[0]) validateCompanyPolicy();">
+                        <input type="file" id="cis-file" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" class="hidden" onchange="document.getElementById('cis-file-name').textContent = this.files[0] ? this.files[0].name : 'انتخابِ فایل'; if (this.files[0]) validateCompanyPolicy();">
                     </label>
                     <button onclick="validateCompanyPolicy()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-xs"><i class="fas fa-magnifying-glass ml-1"></i>شناسایی دوباره</button>
                 </div>
@@ -3892,7 +3892,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="mi-body">
                 <!-- بارگذاری و تشخیصِ خودکار -->
                 <label id="mi-drop" class="mi-drop">
-                    <input type="file" id="mi-file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden>
+                    <input type="file" id="mi-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" hidden>
                     <span class="mi-drop-ic"><i class="fas fa-cloud-arrow-up"></i></span>
                     <b>فایل معرفی‌نامه را اینجا رها کنید یا انتخاب کنید</b>
                     <small>PDF یا عکس · بعد از بارگذاری بررسی می‌شود که معرفی‌نامه باشد و فیلدها خودکار پر می‌شوند</small>
@@ -3959,7 +3959,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <label class="text-[11px] font-bold text-slate-500 block">موبایل پرسنل<input type="text" id="mc-mobile" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="11" placeholder="۰۹۱۲..." autocomplete="off"></label>
                     <label class="text-[11px] font-bold text-slate-500 block">تاریخ معرفی‌نامه (شمسی)<input type="text" id="mc-letter-date" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="۱۴۰۵/۰۷/۰۱"></label>
                     <label class="text-[11px] font-bold text-slate-500 block">سهمیه‌ی معرفی‌نامه<input type="text" id="mc-quota" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" placeholder="پیش‌فرض تنظیمات"></label>
-                    <label class="text-[11px] font-bold text-slate-500 block md:col-span-2">فایل معرفی‌نامه (اختیاری)<input type="file" id="mc-intro-file" accept=".pdf,.jpg,.jpeg,.png,.webp" class="mt-1 w-full text-xs"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block md:col-span-2">فایل معرفی‌نامه (اختیاری)<input type="file" id="mc-intro-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" class="mt-1 w-full text-xs"></label>
                 </div>
                 <datalist id="mc-companies-dl"></datalist>
             </div>
@@ -3968,6 +3968,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <!-- ۲. اطلاعات درخواست - فیلدها بر اساس نوع بیمه و نسبت، دقیقاً مثل ربات -->
             <div id="mc-request-section" class="border border-slate-200 rounded-xl p-3 mb-3">
                 <h4 class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات درخواست</h4>
+                <div id="mc-prop-box" class="mb-3 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-2.5 text-[11px]">
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-indigo-700"><i class="fas fa-file-signature"></i>بارگذاریِ «پیشنهاد» یا «پیش‌نویس» (PDFِ سایتِ بیمه‌گر) — هر اطلاعاتی که در آن هست خودکار در فرم می‌نشیند
+                        <input type="file" id="mc-prop-file" accept=".pdf,application/pdf" class="hidden" onchange="mcProposalPick(this)"></label>
+                    <div id="mc-prop-status" class="text-slate-500 mt-1 leading-5">اختیاری است؛ بعد از ثبت، خودِ فایل هم روی همین درخواست بایگانی می‌شود و فرمِ صدور با آن پر و چک می‌شود.</div>
+                </div>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
                     <label class="text-[11px] font-bold text-slate-500 block">نوع بیمه *
                         <select id="mc-insurance-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option></select></label>
@@ -4287,7 +4292,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=11"></script>
+    <script src="chat-ui.js?v=12"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=5"></script>
     <script>
@@ -4300,7 +4305,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=7"></script>
+    <script src="finance-hub.js?v=8"></script>
     <script src="work-log.js?v=11"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
@@ -4309,17 +4314,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
     <script src="recon.js?v=1"></script>
-    <?php if ($lifeAccess): ?><script src="life.js?v=5"></script><?php endif; ?>
-    <?php if ($mkAccess): ?><script src="marketing.js?v=2"></script><?php endif; ?>
-    <?php if ($ltAccess): ?><script src="letters.js?v=1"></script><?php endif; ?>
-    <?php if ($hlAccess): ?><script src="health.js?v=2"></script><?php endif; ?>
+    <?php if ($lifeAccess): ?><script src="life.js?v=6"></script><?php endif; ?>
+    <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
+    <?php if ($ltAccess): ?><script src="letters.js?v=2"></script><?php endif; ?>
+    <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
     <script src="fin-contracts.js?v=1"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=14"></script>
+    <script src="visit-reports.js?v=15"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=4"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=5"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6827,7 +6832,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${it.state === 'unknown' ? '' : `<div class="bdl-kv">
                         <div><span class="k">نوع / بیمه‌گر</span>${val(d.ins_type)} · ${val(d.ins_company)}</div>
                         <div><span class="k">پلاک</span>${d.plate ? formatPlateHtml(d.plate) : val('')}</div>
-                        <div><span class="k">شماره شاسی</span><b dir="ltr">${val(d.vin)}</b></div>
+                        <div><span class="k">شماره شاسی</span><b dir="ltr">${val(d.chassis_no || d.vin)}</b></div>${d.vin && d.chassis_no && d.vin !== d.chassis_no ? `<div><span class="k">VIN</span><b dir="ltr">${val(d.vin)}</b></div>` : ''}
                         <div><span class="k">بیمه‌گذار</span>${val(d.insured_name)}</div>
                         <div><span class="k">شماره بیمه‌نامه</span>${editable ? `<input id="bdl-pn-${it.i}" dir="ltr" value="${bdlEsc(pn)}">` : `<b dir="ltr">${val(pn)}</b>`}</div>
                         <div><span class="k">حق بیمه (ریال)</span>${editable ? `<input id="bdl-pr-${it.i}" class="money-input" dir="ltr" inputmode="numeric" value="${bdlEsc(prem)}">` : `<b>${d.premium ? money(d.premium) : val('')}</b>`}</div>
@@ -6985,8 +6990,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             try {
                 const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
                 const data = await res.json();
-                showToast(data.ok ? 'مدرک ثبت و نام‌گذاری شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                showToast(data.ok ? 'مدرک ثبت و نام‌گذاری شد.' + (data.ai_queued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') : (data.error || 'خطا'), data.ok ? 'success' : 'error');
                 if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+                if (data.ok && data.ai_queued && typeof aiStepLoop === 'function') aiStepLoop();
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
             input.value = '';
         }
@@ -8357,6 +8363,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     if (!r.ok) break;
                     (r.done || []).forEach(x => { if (x.status === 'AUTO' || x.status === 'AUTO_NEW') showToast(`${x.kind_fa || 'مدرک'} ${x.vin ? '(' + x.vin + ') ' : ''}خودکار ${x.status === 'AUTO_NEW' ? 'با ردیفِ تازه ' : ''}ثبت شد.`, 'success'); });
                     if ((r.done || []).length && document.getElementById('cinbox-list')) await loadCompanyInboxList();
+                    // مدرکی که روی ردیفِ همین درخواست بود و اطلاعاتش نشست => جزئیاتِ درخواست تازه شود
+                    if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
                     if (!r.pending) break;
                 }
             } catch (e) {}
@@ -8591,12 +8599,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ['ncd', 'تخفیف عدم خسارت', {wide: 1, only: 'ثالث'}], ['covers', 'پوشش‌های بیمه‌نامه', {wide: 1, only: 'بدنه'}]]],
             ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}], ['postal_code', 'کد پستی', {ltr: 1}],
                 ['address', 'نشانی', {wide: 1}]]],
-            ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['vin', 'شاسی (VIN)', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
+            ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['chassis_no', 'شماره شاسی', {ltr: 1}], ['vin', 'VIN', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
                 ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}], ['cargo', 'اتاق بار']]],
             ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}],
                 ['prev_claims', 'وضعیت خسارتِ سال قبل', {only: 'ثالث'}]]],
         ];
-        const PF_ALIAS = {phone: ['insured_phone'], address: ['insured_address'], postal_code: ['insured_postal_code'], liability: ['liability_limit'], policy_num: ['policy_number'], premium: ['total_premium'], engine_no: ['engine_num'], central_no: ['unique_code'], color: ['car_color'], usage: ['car_usage'], car_tip: ['car_type'], vin: ['chassis_num', 'chassis_no']};
+        const PF_ALIAS = {phone: ['insured_phone'], address: ['insured_address'], postal_code: ['insured_postal_code'], liability: ['liability_limit'], policy_num: ['policy_number'], premium: ['total_premium'], engine_no: ['engine_num'], central_no: ['unique_code'], color: ['car_color'], usage: ['car_usage'], car_tip: ['car_type'], chassis_no: ['chassis_num']};
         function pfVal(o, k) {
             for (const kk of [k].concat(PF_ALIAS[k] || [])) { const v = o[kk]; if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim(); }
             return '';
@@ -8636,7 +8644,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return {ins_type: c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', insured_name: c.insured_name || '', national_id: c.insured_national_id || '',
                 phone: c.insured_phone || '', address: c.insured_address || '', postal_code: c.insured_postal_code || '', plate: c.plate || '',
                 car_value: c.insurance_type === 'BODY' ? (c.estimated_car_value || c.car_value || '') : '', liability: c.insurance_type !== 'BODY' ? (c.liability_limit || '') : '',
-                vin: c.vin || c.chassis_num || '', engine_no: c.engine_num || '', car_system: c.car_system || '', car_tip: c.car_type || '',
+                vin: c.vin || '', chassis_no: c.chassis_num || '', engine_no: c.engine_num || '', car_system: c.car_system || '', car_tip: c.car_type || '',
                 model_year: c.car_model_year || '', color: c.car_color || '', usage: c.car_usage || ''};
         }
         // ---------- «پیشنهاد / پیش‌نویس» (خروجیِ سایتِ بیمه‌گر): پیش‌پر کردنِ فرمِ صدور، نسبت/مالک، و چکِ فایلِ بیمه‌نامه با آن ----------
@@ -8664,7 +8672,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const pplate = s => { const t = pnorm(s).replace(/ایران/g, ''); return (t.match(/\d+/g) || []).sort().join('-') + '|' + t.replace(/[\dA-Z]/g, ''); };
         // [کلید، عنوان، سطح (red مهم / yel جزئی / name)، نوعِ مقایسه]
         const PROP_RULES = [
-            ['national_id', 'کد ملی بیمه‌گذار', 'red', 'exact'], ['vin', 'شاسی (VIN)', 'red', 'vin'], ['plate', 'پلاک', 'red', 'plate'], ['ins_type', 'نوع بیمه', 'red', 'type'],
+            ['national_id', 'کد ملی بیمه‌گذار', 'red', 'exact'], ['vin', 'شاسی / VIN', 'red', 'vin'], ['plate', 'پلاک', 'red', 'plate'], ['ins_type', 'نوع بیمه', 'red', 'type'],
             ['car_value', 'ارزش خودرو', 'red', 'num'], ['liability', 'تعهد مالی', 'red', 'num'], ['start_date', 'تاریخ شروع', 'red', 'date'], ['insured_name', 'نام بیمه‌گذار', 'name', 'name'],
             ['engine_no', 'شماره موتور', 'yel', 'engine'], ['premium', 'حق بیمه (پیش‌نویس)', 'yel', 'num'], ['end_date', 'تاریخ پایان', 'yel', 'date'], ['model_year', 'مدل', 'yel', 'exact'],
             ['color', 'رنگ', 'yel', 'text'], ['car_system', 'سیستم', 'yel', 'text'], ['car_tip', 'تیپ', 'yel', 'text'], ['car_kind', 'نوع خودرو', 'yel', 'text'], ['usage', 'کاربری', 'yel', 'text'],
@@ -8705,7 +8713,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const k = rule[0], inp = box.querySelector(`[data-pf="${k}"]`);
                 let fv = inp ? inp.value : pfVal(base, k), cell = inp ? inp.closest('.ii-w') : null;
                 if (!inp) { const lab = [...box.querySelectorAll('.ii-f')].find(f => f.querySelector('.ii-ro') && f.dataset.k === k); cell = lab ? lab.querySelector('.ii-ro') : null; if (!cell) return; }
-                const r = propCmp(rule, fv, d[k]);
+                let r = propCmp(rule, fv, d[k]);
+                // شماره شاسیِ پیشنهاد با «شماره شاسی» یا «VIN»ِ فرم (هرکدام که بخواند) یکی حساب می‌شود
+                if (r && k === 'vin') { const ci = box.querySelector('[data-pf="chassis_no"]'); const cv = ci ? ci.value : pfVal(base, 'chassis_no'); if (cv && !propCmp(rule, cv, d[k])) r = ''; }
                 if (!r) return;
                 window._propCheck[r].push(rule[1]);
                 cell.classList.add(r === 'red' ? 'pf-red' : 'pf-yel');
@@ -8885,7 +8895,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // فرمِ صدورِ ردیفِ شرکتی، مثلِ کارکنان: ردیف + «اطلاعات صدور»ِ ذخیره‌شده + داده‌ی کارت/سند/فاکتورِ ردیف + شرکت؛ و در آخر «پیشنهاد» (اگر هست)
         function companyRowPrefill(p) {
             const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
-            const o = {ins_type: p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', vin: p.chassis_no || p.vin || dd.vin || '', engine_no: p.engine_no || dd.engine_no || '', car_name: p.car_name || '',
+            const o = {ins_type: p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', vin: p.vin || '', chassis_no: p.chassis_no || dd.vin || '', engine_no: p.engine_no || dd.engine_no || '', car_name: p.car_name || '',
                 car_value: p.car_value || '', liability: p.liability_limit || '',
                 insured_name: ii.insured_name || (rq.id && String(rq.id) === String(p.request_id) ? rq.company_name : '') || '', national_id: ii.insured_national_id || '',
                 phone: ii.insured_phone || '', address: ii.insured_address || '', postal_code: ii.insured_postal_code || '',
@@ -9001,7 +9011,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             fd.append('action', 'mark_issued');
             fd.append('plate_id', document.getElementById('cis-plate-id').value);
             fd.append('policy_number', v.policy_num);
-            fd.append('vin', v.vin || '');
+            fd.append('vin', v.vin || v.chassis_no || '');
             fd.append('total_premium', v.premium);
             fd.append('issue_date', v.issue_date || '');
             fd.append('fields', JSON.stringify(v));
@@ -11446,7 +11456,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // نام‌هایی که سرورِ صدورِ کارکنان می‌خواند
             const body = {
                 action: 'confirm_issue_policy', case_id: caseId,
-                policy_number: v.policy_num, vin: v.vin, chassis_num: v.vin, engine_num: v.engine_no, unique_code: v.central_no,
+                policy_number: v.policy_num, vin: v.vin || v.chassis_no || '', chassis_num: v.chassis_no || v.vin || '', engine_num: v.engine_no, unique_code: v.central_no,
                 total_premium: v.premium, car_system: v.car_system, car_type: v.car_tip || v.car_kind, model_year: v.model_year,
                 car_color: v.color, car_usage: v.usage, phone: v.phone, issue_date: v.issue_date, car_value: v.car_value, fields: v,
             };
@@ -11911,7 +11921,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 // همه‌ی عکس‌ها تایید شده: با بارگذاریِ فایلِ گزارش، بازدید تاییدِ نهایی می‌شود
                 const reportHtml = h.status !== 'PHOTOS_APPROVED' ? '' :
                     (window.VR ? `<button type="button" onclick="buildHealthReport(${h.id})" class="text-[11px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-2.5 py-1.5 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : '') +
-                    `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${h.id}, this)"></label>`;
+                    `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx,.heic,.heif" onchange="uploadHealthReport(${h.id}, this)"></label>`;
                 const legacy = !healthPerPhoto && h.status === 'PENDING'
                     ? `<button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">تایید کل</button>
                        <button onclick="rejectHealth(${h.id})" class="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[11px] font-bold">رد کل</button>` : '';
@@ -11993,7 +12003,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 else if (st === 'PHOTOS_APPROVED') sum.innerHTML = `<b>همه‌ی عکس‌ها تایید و بایگانی شد.</b><br>برای تاییدِ نهایی، گزارش بازدید را همین‌جا بسازید یا فایلِ گزارشِ کارشناس را بارگذاری کنید؛ بعد از آن پرونده وارد «در حال صدور» می‌شود.
                     ${window.VR ? `<button type="button" onclick="buildHealthReport(${hvData.inspection.id}, true)" class="mt-2 block w-full text-center text-[12px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-3 py-2 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : ''}
                     <label class="mt-2 block text-center text-[12px] text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی
-                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx" onchange="uploadHealthReport(${hvData.inspection.id}, this, true)"></label>`;
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx,.heic,.heif" onchange="uploadHealthReport(${hvData.inspection.id}, this, true)"></label>`;
                 else sum.innerHTML = 'بازدید به‌طور نهایی تایید شده است.' + (hvData.inspection.report_file_path ? ` <a class="underline" target="_blank" href="/${encodeFilePath(hvData.inspection.report_file_path)}">فایل گزارش</a>` : '')
                     + (window.VR ? ` · <button type="button" class="underline" onclick="buildHealthReport(${hvData.inspection.id}, true)">ساخت/ویرایش گزارش بازدید</button>` : '');
             } else sum.classList.add('hidden');
@@ -13148,7 +13158,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // introId: اگر داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود و بخش پرسنل پنهان است
         function openManualCreateModal(introId = null, holderName = '') {
-            mcCreated = null; mcFiles = {}; mcOthers = []; mcSelectedCov = {};
+            mcCreated = null; mcFiles = {}; mcOthers = []; mcSelectedCov = {}; mcProposalFile = null;
+            document.getElementById('mc-prop-file').value = '';
+            document.getElementById('mc-prop-status').innerHTML = 'اختیاری است؛ بعد از ثبت، خودِ فایل هم روی همین درخواست بایگانی می‌شود و فرمِ صدور با آن پر و چک می‌شود.';
             document.getElementById('mc-intro-id').value = introId || '';
             document.getElementById('mc-case-id').value = '';
             ['mc-full-name','mc-national-code','mc-personnel-code','mc-company-name','mc-mobile','mc-letter-date','mc-quota',
@@ -13186,6 +13198,61 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('manual-create-modal').classList.add('active');
         }
 
+        // ---- «پیشنهاد / پیش‌نویس» در ثبتِ دستی: خواندن و پر کردنِ فرم؛ فایل بعد از ثبت روی پرونده بایگانی می‌شود ----
+        let mcProposalFile = null;
+        async function mcProposalPick(input) {
+            const f = input.files[0];
+            if (!f) return;
+            const st = document.getElementById('mc-prop-status');
+            st.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ فایل...';
+            const fd = new FormData(); fd.append('action', 'proposal_read'); fd.append('file', f);
+            let d;
+            try { d = await (await fetch('api/record_actions.php', {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { st.innerHTML = `<span class="text-red-600 font-bold">${pesc(d.error || 'خطا')}</span>`; input.value = ''; mcProposalFile = null; return; }
+            mcProposalFile = f;
+            const filled = mcApplyProposal(d.data || {});
+            st.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fas fa-circle-check ml-1"></i>${pesc(d.kind_fa)} خوانده شد</span> — پر شد: ${filled.length ? filled.map(pesc).join('، ') : 'چیزی'}`
+                + ((d.missing || []).length ? `<br><span class="text-amber-700">در فایل پیدا نشد: ${d.missing.map(pesc).join('، ')}</span>` : '')
+                + (filled.relWarn ? '<br><span class="text-rose-600 font-bold">کد ملیِ بیمه‌گذار با پرسنل فرق دارد؛ «نسبت با پرسنل» را انتخاب کنید.</span>' : '')
+                + `<br><span class="text-slate-400">لطفاً فرم را بررسی کنید؛ نسبتِ بیمه‌گذار با پرسنل را هم چک کنید.</span>`;
+        }
+        function mcApplyProposal(x) {
+            const filled = [];
+            const el = id => document.getElementById(id);
+            const set = (id, v, label) => { v = String(v ?? '').trim(); if (!v || !el(id)) return; el(id).value = v; filled.push(label); };
+            const t = String(x.ins_type || '');
+            if (/بدنه/.test(t)) { el('mc-insurance-type').value = 'BODY'; filled.push('نوع بیمه'); }
+            else if (/ثالث/.test(t)) { el('mc-insurance-type').value = 'THIRDPARTY'; filled.push('نوع بیمه'); }
+            // بیمه‌گذار: اگر کد ملی‌اش همان کد ملیِ پرسنل است «خودم»، وگرنه نام و کد ملی در خانه‌های بیمه‌گذار
+            const holderNid = p2e(el('mc-national-code').value || '').replace(/\D/g, '');
+            const nid = p2e(String(x.national_id || '')).replace(/\D/g, '');
+            if (nid && holderNid && nid === holderNid) el('mc-relationship').value = 'خودم';
+            else if (nid && holderNid && el('mc-relationship').value === 'خودم') filled.relWarn = true;
+            set('mc-insured-name', x.insured_name, 'نام بیمه‌گذار'); set('mc-insured-nid', nid, 'کد ملی');
+            set('mc-birth', x.birth_date, 'تاریخ تولد'); set('mc-phone', p2e(String(x.phone || '')).replace(/\D/g, ''), 'موبایل');
+            set('mc-postal', p2e(String(x.postal_code || '')).replace(/\D/g, ''), 'کد پستی'); set('mc-address', x.address, 'آدرس');
+            if (x.plate) {
+                const pp = parseStoredPlate(x.plate);
+                if (pp.p1 && pp.p2 && pp.letter && pp.p4) { el('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', `${pp.p1}ایران - ${pp.p2} ${pp.letter} ${pp.p4}`); filled.push('پلاک'); }
+            }
+            const num = v => Number(p2e(String(v ?? '')).replace(/\D/g, '')) || 0;
+            if (el('mc-insurance-type').value === 'THIRDPARTY' && num(x.liability)) {
+                const L = num(x.liability), best = MC_LIABILITY_OPTIONS.slice().sort((a, b) => Math.abs(a - L) - Math.abs(b - L))[0];
+                if (best) { el('mc-liability').value = String(best); filled.push('تعهد مالی'); }
+            }
+            if (el('mc-insurance-type').value === 'BODY') {
+                if (num(x.car_value)) { el('mc-car-value-auto').checked = false; el('mc-car-value').value = money(num(x.car_value)); filled.push('ارزش خودرو'); }
+                if (x.covers && mcCoverageOpts) {
+                    const want = pcovers(x.covers);
+                    Object.entries(mcCoverageOpts).forEach(([k, o]) => { if ([...pcovers(o.label)].some(c => want.has(c)) && !mcSelectedCov[k]) mcSelectedCov[k] = o.tiers ? Object.keys(o.tiers)[0] : true; });
+                    filled.push('پوشش‌ها');
+                }
+                if (x.prev_policy || x.prev_insurer) { el('mc-prev-body').value = 'بله'; filled.push('بیمه‌ی قبلی'); }
+                if (/بدون\s*خسارت/.test(String(x.prev_claims || ''))) el('mc-prev-claim').value = 'خیر';
+            }
+            mcRefresh(); mcRenderCoverages();
+            return filled;
+        }
         function closeManualCreateModal() {
             document.getElementById('manual-create-modal').classList.remove('active');
             if (mcCreated) {
@@ -13244,7 +13311,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${f ? `<div class="text-[10px] text-slate-500 truncate" dir="ltr">${f.name}</div>
                            <button type="button" onclick="mcPickFile('${key}', null)" class="text-[10px] text-red-500 underline">حذف</button>` : ''}
                     <label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">${f ? 'تغییر فایل' : 'انتخاب فایل'}
-                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="mcPickFile('${key}', this.files[0])"></label>
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="mcPickFile('${key}', this.files[0])"></label>
                 </div>`;
             }).join('');
             document.getElementById('mc-other-list').innerHTML = mcOthers.map((o, i) => `
@@ -13308,6 +13375,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!data.ok) { showToast(data.error || 'خطا در ثبت.', 'error'); return; }
                 mcCreated = data;
                 document.getElementById('mc-case-id').value = data.case_id;
+                // پیشنهادی که فرم با آن پر شد، حالا روی همین پرونده بایگانی می‌شود (فرمِ صدور با آن پر و چک می‌شود)
+                if (mcProposalFile) {
+                    const pf = new FormData(); pf.append('action', 'proposal_upload'); pf.append('case_id', data.case_id); pf.append('file', mcProposalFile);
+                    fetch('api/case_actions.php', {method: 'POST', body: pf}).then(r => r.json())
+                        .then(pd => showToast(pd.ok ? 'پیشنهاد روی پرونده بایگانی شد.' : ('بایگانیِ پیشنهاد: ' + (pd.error || 'ناموفق')), pd.ok ? 'success' : 'warning')).catch(() => {});
+                    mcProposalFile = null;
+                }
                 if (data.note) showToast(data.note, 'warning');
                 (data.doc_errors || []).forEach(e => showToast(e, 'error'));
                 showToast(`درخواست ${data.unique_code} ثبت شد` + (data.uploaded ? ` و ${e2p(data.uploaded)} مدرک بایگانی شد.` : '.'), 'success');
@@ -13347,7 +13421,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="font-bold">${ok ? '✓' : '✗'} ${label}</div>
                         ${ok ? have.map(d => `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a>`).join(' ')
                              : `<label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">بارگذاری
-                                    <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="mcUploadDoc('${key}', '${label.replace(/'/g, '')}', this)"></label>`}
+                                    <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="mcUploadDoc('${key}', '${label.replace(/'/g, '')}', this)"></label>`}
                     </div>`;
                 }).join('') + docs.filter(d => d.doc_key === 'other').map(d => `<div class="rounded-lg border p-2 text-[11px] bg-emerald-50 border-emerald-200 text-emerald-700">
                         <div class="font-bold">✓ ${d.doc_label}</div><a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a></div>`).join('')
@@ -13477,7 +13551,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                   ${fld('max_quota', 'سهمیه (حداقل ' + e2pNum(I.used_quota) + ')', e2p(String(I.max_quota)), 'inputmode="numeric"')}
                   ${fld('mobile', 'موبایل', I.mobile ? e2p(I.mobile) : '', 'dir="ltr" inputmode="numeric"')}
                   <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایلِ تازه‌ی معرفی‌نامه (اختیاری)</span>
-                    <input type="file" data-file accept=".pdf,.jpg,.jpeg,.png,.webp" class="w-full text-[11px]"><span data-fs class="text-[10.5px] text-slate-400 block mt-1">${I.has_file ? 'فایلِ فعلی با «(قبلی)» کنارِ فایلِ تازه می‌ماند.' : 'فایلی ثبت نشده است.'}</span></label>
+                    <input type="file" data-file accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" class="w-full text-[11px]"><span data-fs class="text-[10.5px] text-slate-400 block mt-1">${I.has_file ? 'فایلِ فعلی با «(قبلی)» کنارِ فایلِ تازه می‌ماند.' : 'فایلی ثبت نشده است.'}</span></label>
                 </div>
                 <button type="button" data-ok class="w-full mt-5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی</button></div>`;
             document.body.appendChild(box);

@@ -116,7 +116,7 @@ function sec_ocr_check($pdo) {
     $cacheF = rtrim(sys_get_temp_dir(), '/') . '/bime_ocr_' . md5(__DIR__ . '|' . $py) . '.json';
     $c = is_file($cacheF) && filemtime($cacheF) > time() - 600 ? json_decode((string)@file_get_contents($cacheF), true) : null;
     if (!is_array($c)) {
-        $code = "import importlib,shutil,json\nr={}\nfor m in ['paddleocr','zxingcpp','rapidocr_onnxruntime','PIL','numpy']:\n    try:\n        importlib.import_module(m); r[m]=1\n    except Exception:\n        r[m]=0\nr['tesseract']=1 if shutil.which('tesseract') else 0\nprint(json.dumps(r))";
+        $code = "import importlib,shutil,json\nr={}\nfor m in ['paddleocr','zxingcpp','rapidocr_onnxruntime','PIL','numpy','pillow_heif']:\n    try:\n        importlib.import_module(m); r[m]=1\n    except Exception:\n        r[m]=0\nr['tesseract']=1 if shutil.which('tesseract') else 0\nprint(json.dumps(r))";
         $home = getenv('HOME');
         if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
         $proc = @proc_open([$py, '-c', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
@@ -127,10 +127,12 @@ function sec_ocr_check($pdo) {
         @file_put_contents($cacheF, json_encode($c));
     }
     $fa = !empty($c['paddleocr']) ? 'PaddleOCR' : (!empty($c['tesseract']) ? 'tesseract' : '');
-    $parts = ['بارکد: ' . (!empty($c['zxingcpp']) ? 'دارد ✓' : 'ندارد'), 'OCRِ فارسی: ' . ($fa ?: 'ندارد'), 'OCRِ لاتین (شاسی/موتور): ' . (!empty($c['rapidocr_onnxruntime']) ? 'RapidOCR ✓' : ($fa ?: 'ندارد'))];
-    $fix = 'در cPanel ← Setup Python App، همان محیطِ پایتونِ سایت (' . $py . ') را باز کنید و در «Execute python script» یا ترمینالِ همان محیط بزنید: pip install zxing-cpp rapidocr-onnxruntime — بارکد شاسی و موتور را بی‌خطا می‌خواند و RapidOCR حروفِ لاتین را دقیق‌تر.';
+    $heicOk = !empty($c['pillow_heif']) || (class_exists('Imagick') && in_array('HEIC', Imagick::queryFormats('HEI*'), true));
+    $parts = ['بارکد: ' . (!empty($c['zxingcpp']) ? 'دارد ✓' : 'ندارد'), 'OCRِ فارسی: ' . ($fa ?: 'ندارد'), 'OCRِ لاتین (شاسی/موتور): ' . (!empty($c['rapidocr_onnxruntime']) ? 'RapidOCR ✓' : ($fa ?: 'ندارد')),
+              'تبدیلِ عکسِ آیفون (HEIC→PNG): ' . ($heicOk ? 'دارد ✓' : 'ندارد')];
+    $fix = 'در cPanel ← Setup Python App، همان محیطِ پایتونِ سایت (' . $py . ') را باز کنید و در «Execute python script» یا ترمینالِ همان محیط بزنید: pip install zxing-cpp rapidocr-onnxruntime pillow-heif — بارکد شاسی و موتور را بی‌خطا می‌خواند، RapidOCR حروفِ لاتین را دقیق‌تر و pillow-heif عکس‌های HEIC آیفون را به PNG تبدیل می‌کند.';
     if (empty($c['PIL']) || (!$fa && empty($c['rapidocr_onnxruntime']))) return ['bad', implode(' · ', $parts) . ' — مدارکِ اسکن‌شده خوانده نمی‌شوند و برای شناساییِ دستی به صندوقِ مدارک می‌روند.', $fix];
-    if (empty($c['zxingcpp']) || !$fa || empty($c['rapidocr_onnxruntime'])) return ['warn', implode(' · ', $parts) . ' — کار می‌کند ولی با همه‌ی موتورها دقیق‌تر است.', $fix];
+    if (empty($c['zxingcpp']) || !$fa || empty($c['rapidocr_onnxruntime']) || !$heicOk) return ['warn', implode(' · ', $parts) . ' — کار می‌کند ولی با همه‌ی موتورها دقیق‌تر است.', $fix];
     return ['ok', implode(' · ', $parts), ''];
 }
 

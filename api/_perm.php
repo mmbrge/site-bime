@@ -294,7 +294,7 @@ function perm_api_map() {
         ]],
         'record_actions' => ['pages' => ['records'], 'elevate' => true, 'actions' => [
             'intro_detect' => 'records:create|records:edit|cases:edit|issue-queue:edit', 'create_intro' => 'records:create|cases:edit|issue-queue:edit',
-            'create_manual' => 'records:create|cases:edit|issue-queue:edit', 'create_manual_request' => 'records:create|issue-queue:edit|cases:edit',
+            'create_manual' => 'records:create|cases:edit|issue-queue:edit', 'create_manual_request' => 'records:create|issue-queue:edit|cases:edit', 'proposal_read' => 'records:create|issue-queue:edit|cases:edit',
             'manual_form_options' => 'records:view|records:create|cases:edit|issue-queue:edit', 'stats' => 'records:view|dashboard:view', 'delete' => 'records:delete',
             'edit' => 'records:edit|cases:edit', 'change_status' => 'records:edit|cases:edit', 'create_case_for_intro' => 'records:edit|cases:edit|issue-queue:edit',
             'reset_all' => 'settings:edit', 'reset_sections' => 'settings:edit',
@@ -436,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {

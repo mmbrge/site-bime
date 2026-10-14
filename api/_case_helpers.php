@@ -607,11 +607,21 @@ function compress_image_if_needed($absolutePath, $maxBytes = 1048576, $maxDim = 
         if ($w > $maxDim || $h > $maxDim) {
             $ratio = min($maxDim / $w, $maxDim / $h);
             $newImg = imagecreatetruecolor((int)($w * $ratio), (int)($h * $ratio));
+            if ($ext === 'png') { imagealphablending($newImg, false); imagesavealpha($newImg, true); }   // شفافیتِ PNG حفظ شود
             imagecopyresampled($newImg, $img, 0, 0, 0, 0, (int)($w * $ratio), (int)($h * $ratio), $w, $h);
             imagedestroy($img);
             $img = $newImg;
         }
 
+        if ($ext === 'png') {
+            // PNG همان PNG می‌ماند (محتوای فایل با پسوندش یکی باشد؛ مثلاً عکسِ HEICِ تبدیل‌شده): فقط کوچک‌شده با فشرده‌سازیِ کامل
+            imagesavealpha($img, true);
+            imagepng($img, $absolutePath . '.tmp', 9);
+            imagedestroy($img);
+            if (is_file($absolutePath . '.tmp') && filesize($absolutePath . '.tmp') < filesize($absolutePath)) rename($absolutePath . '.tmp', $absolutePath);
+            else @unlink($absolutePath . '.tmp');
+            return;
+        }
         // با کیفیت بالا (۸۵) ذخیره می‌کنیم؛ اگر هنوز حجم بالا بود، پلکانی کیفیت را کم می‌کنیم
         foreach ([85, 75, 65, 55] as $quality) {
             imagejpeg($img, $absolutePath . '.tmp', $quality);

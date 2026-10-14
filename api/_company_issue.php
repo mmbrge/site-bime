@@ -192,7 +192,9 @@ function cbundle_diffs($row, $d) {
     if ($rowPlate && $polPlate && plate_core($rowPlate) !== plate_core($polPlate)) $add('plate', 'پلاک', $rowPlate, $polPlate, 'hard');
     elseif ($rowPlate && !$polPlate) $add('plate', 'پلاک', $rowPlate, 'در بیمه‌نامه خوانده نشد', 'soft');
     $rowVin = trim((string)($row['chassis_no'] ?: ($row['vin'] ?? '')));
-    if ($rowVin !== '' && !empty($d['vin']) && !cbundle_vin_match($d['vin'], $rowVin)) $add('vin', 'شماره شاسی', $rowVin, $d['vin'], 'hard');
+    // شاسیِ ردیف با «شماره شاسی» یا «VIN»ِ بیمه‌نامه (هرکدام) بخواند کافی است
+    $polIds = array_values(array_unique(array_filter([$d['chassis_no'] ?? '', $d['vin'] ?? ''])));
+    if ($rowVin !== '' && $polIds && !array_filter($polIds, fn($x) => cbundle_vin_match($x, $rowVin))) $add('vin', 'شماره شاسی', $rowVin, $polIds[0], 'hard');
     $ft = insurance_type_fa($row['insurance_type'] ?? '');
     if (in_array($d['ins_type'] ?? '', ['بدنه', 'ثالث'], true) && in_array($ft, ['بدنه', 'ثالث'], true) && $ft !== $d['ins_type']) $add('type', 'نوع بیمه', $ft, $d['ins_type'], 'hard');
     if (!empty($row['engine_no']) && !empty($d['engine_no']) && $norm($row['engine_no']) !== $norm($d['engine_no'])) $add('engine', 'شماره موتور', $row['engine_no'], $d['engine_no'], 'soft');
@@ -249,7 +251,9 @@ function cbundle_match($pdo, $requestId, array $policies, $importScope = false) 
         foreach ($rows as $r) {
             $rp = company_plate_display($r['plate_p1'] ?? '', $r['plate_p2'] ?? '', $r['plate_letter'] ?? '', $r['plate_p4'] ?? '');
             $plateHit = $pc !== '' && $rp && plate_core($rp) === $pc;
-            $vinHit = !empty($d['vin']) && (cbundle_vin_match($d['vin'], $r['chassis_no']) || cbundle_vin_match($d['vin'], $r['vin']));
+            $vinHit = false;
+            foreach (array_unique(array_filter([$d['vin'] ?? '', $d['chassis_no'] ?? ''])) as $pv)
+                if (cbundle_vin_match($pv, $r['chassis_no']) || cbundle_vin_match($pv, $r['vin'])) { $vinHit = true; break; }
             // ردیفِ وارداتی شماره‌ی بیمه‌نامه‌اش را از اکسل دارد: قوی‌ترین نشانه
             $polHit = !empty($r['import_policy_number']) && !empty($d['policy_num']) && cbundle_pol_norm($r['import_policy_number']) === cbundle_pol_norm($d['policy_num']);
             if (!$plateHit && !$vinHit && !$polHit) continue;
@@ -421,7 +425,7 @@ function policy_data_clean($d) {
 function policy_fields_to_issue_info(array $f) {
     $map = ['insured_name' => 'insured_name', 'national_id' => 'insured_national_id', 'phone' => 'insured_phone', 'car_system' => 'car_system',
             'car_tip' => 'car_type', 'car_kind' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color', 'usage' => 'car_usage',
-            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin',
+            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no',
             'prev_insurer' => 'prev_insurer', 'prev_policy' => 'prev_policy_number',
             'address' => 'insured_address', 'postal_code' => 'insured_postal_code', 'cargo' => 'car_cargo', 'central_no' => 'central_unique_code',
             'start_date' => 'start_date', 'end_date' => 'end_date', 'prev_expiry' => 'prev_expiry', 'prev_claims' => 'prev_claims', 'ncd' => 'no_claim_discount',
@@ -443,9 +447,10 @@ function company_apply_policy_fields($pdo, $plateId, array $f) {
     unset($ocr['_single']);
     $carName = trim(($f['car_system'] ?? '') . ' ' . ($f['car_tip'] ?? ''));
     $pdo->prepare("UPDATE company_request_plates SET issue_info = ?, ocr_extracted_data = ?,
-                          engine_no = COALESCE(NULLIF(?, ''), engine_no), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')) WHERE id = ?")
+                          engine_no = COALESCE(NULLIF(?, ''), engine_no), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')),
+                          chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')) WHERE id = ?")
         ->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, json_encode(array_merge($ocr, array_filter($f, 'strlen')), JSON_UNESCAPED_UNICODE),
-                   $f['engine_no'] ?? '', $carName, $plateId]);
+                   $f['engine_no'] ?? '', $carName, strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($f['chassis_no'] ?? ''))), $plateId]);
     // ارزشِ خودرو (بدنه) و تعهدِ مالی (ثالث) طبقِ خودِ بیمه‌نامه روی ردیف
     $cv = intval(preg_replace('/\D/', '', p2e_digits((string)($f['car_value'] ?? ''))));
     $li = intval(preg_replace('/\D/', '', p2e_digits((string)($f['liability'] ?? ''))));

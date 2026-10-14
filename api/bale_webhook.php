@@ -456,6 +456,10 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
     $physical_path = $pending_dir . '/' . $safe_filename;
     $db_path = 'queue/pending/' . $safe_filename;
     file_put_contents($physical_path, $file_content);
+    // عکسِ HEIC (آیفون) => PNG
+    require_once __DIR__ . '/_heic.php';
+    $fixed = heic_fix_saved_file($pdo, $physical_path);
+    if ($fixed !== $physical_path) { $physical_path = $fixed; $safe_filename = basename($fixed); $db_path = 'queue/pending/' . $safe_filename; }
 
     $status = 'FAILED';
     $extractedJson = null;
@@ -719,6 +723,8 @@ function save_incoming_case_file($message, $bot_token, $nationalId = null, $plat
     $safeName = time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
     $destPath = $tmpDir . '/' . $safeName;
     file_put_contents($destPath, file_get_contents($file_url));
+    require_once __DIR__ . '/_heic.php';
+    $destPath = heic_fix_saved_file($GLOBALS['pdo'] ?? null, $destPath);   // عکسِ HEIC (آیفون) => PNG
     compress_image_if_needed($destPath);
     return ltrim(str_replace($siteRoot, '', $destPath), '/');
 }

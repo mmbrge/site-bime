@@ -509,7 +509,7 @@
                 <label style="width:80px"><span class="mk-lbl">رنگ</span><input class="mk-in" type="color" data-k="color" value="${esc(l.color || '#64748b')}" style="padding:2px;height:37px"></label>
                 <label style="width:150px"><span class="mk-lbl">از فروشِ ماه</span><input class="mk-in money-input" data-k="min_sales" value="${mv(l.min_sales)}"></label>
                 <label style="width:150px"><span class="mk-lbl">تا (خالی = بی‌سقف)</span><input class="mk-in money-input" data-k="max_sales" value="${mv(l.max_sales)}"></label>
-                ${ed && l.id ? `<label class="mk-btn s sm" style="cursor:pointer;margin-bottom:6px"><i class="fas fa-image"></i>تصویر<input type="file" accept="image/*" class="hidden" data-img></label>${l.image_path ? '<button class="mk-btn s sm" data-noimg style="margin-bottom:6px">حذفِ تصویر</button>' : ''}` : ''}
+                ${ed && l.id ? `<label class="mk-btn s sm" style="cursor:pointer;margin-bottom:6px"><i class="fas fa-image"></i>تصویر<input type="file" accept="image/*,.heic,.heif" class="hidden" data-img></label>${l.image_path ? '<button class="mk-btn s sm" data-noimg style="margin-bottom:6px">حذفِ تصویر</button>' : ''}` : ''}
                 ${ed ? '<button class="mk-btn r sm" data-rm style="margin-bottom:6px"><i class="fas fa-trash"></i></button>' : ''}</div>
                 <div class="mk-grid mk-g3"><label><span class="mk-lbl">حقوقِ ثابت (خالی = کلی)</span><input class="mk-in money-input" data-k="base_salary" value="${mv(l.base_salary)}"></label>
                     <label><span class="mk-lbl">کفِ فروش برای حقوقِ ثابت</span><input class="mk-in money-input" data-k="base_floor" value="${mv(l.base_floor)}"></label>

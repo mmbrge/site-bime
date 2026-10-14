@@ -2500,8 +2500,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && count($errors) === 0) {
 <form method="post" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="<?= e($csrf) ?>"><input type="hidden" name="action" value="process_pair">
 <div class="grid2">
-<div class="uploadBox"><strong>روی کارت — مالک / VIN / پلاک</strong><div class="muted">اگر جابه‌جا هم انتخاب شود، سیستم تلاش می‌کند سمت‌ها را خودکار تشخیص دهد.</div><br><input type="file" name="front_image" accept="image/*"></div>
-<div class="uploadBox"><strong>پشت کارت — مشخصات فنی</strong><div class="muted">کاربری، سیستم، تیپ، مدل، سوخت، رنگ، موتور، VIN و سایر فیلدها.</div><br><input type="file" name="back_image" accept="image/*"></div>
+<div class="uploadBox"><strong>روی کارت — مالک / VIN / پلاک</strong><div class="muted">اگر جابه‌جا هم انتخاب شود، سیستم تلاش می‌کند سمت‌ها را خودکار تشخیص دهد.</div><br><input type="file" name="front_image" accept="image/*,.heic,.heif"></div>
+<div class="uploadBox"><strong>پشت کارت — مشخصات فنی</strong><div class="muted">کاربری، سیستم، تیپ، مدل، سوخت، رنگ، موتور، VIN و سایر فیلدها.</div><br><input type="file" name="back_image" accept="image/*,.heic,.heif"></div>
 </div>
 <div class="note" style="margin-top:14px">برای بهترین نتیجه، مثل نمونه‌های جدیدت کارت تقریباً تمام کادر تصویر را پر کند و زاویه پرسپکتیو شدید نداشته باشد.</div>
 <br><button class="btn" type="submit">استخراج هوشمند هر دو کارت</button>

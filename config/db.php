@@ -92,3 +92,9 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
 // سپرِ امنیتی: سرتیترها، CSRF، آپلودِ خطرناک، IPِ مسدود، کلیدِ وب‌هوک، خروجِ خودکار بعد از عدمِ فعالیت (api/_security.php)
 require_once dirname(__DIR__) . "/api/_security.php";
 sec_boot($pdo);
+
+// عکس‌های HEIC/HEIF (آیفون) در همه‌ی بارگذاری‌ها: همین‌جا به PNG تبدیل می‌شوند تا همه‌جا (و در بایگانی) PNG ذخیره شود (api/_heic.php)
+if (!empty($_FILES)) {
+    require_once dirname(__DIR__) . '/api/_heic.php';
+    try { heic_normalize_uploads($pdo); } catch (Throwable $e) { error_log('[heic] ' . $e->getMessage()); }
+}
