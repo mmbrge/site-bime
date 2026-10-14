@@ -284,7 +284,7 @@ function perm_api_map() {
         'case_actions' => ['pages' => ['cases'], 'elevate' => true, 'actions' => [
             'delete_case' => 'cases:delete|records:delete', 'admin_upload_case_doc' => 'cases:edit|health:edit|records:edit',
             'split_upload' => 'cases:edit|health:edit|records:edit', 'split_existing' => 'cases:edit|health:edit|records:edit', 'split_assign' => 'cases:edit|health:edit|records:edit', 'split_page' => 'cases:view|health:view|records:view', 'set_naming' => 'cases:edit|settings:edit',
-            'list' => 'cases:view|health:view|records:view', 'detail' => 'cases:view|health:view|records:view|approved-reviews:view|fin-tracking:view',
+            'list' => 'cases:view|health:view|records:view', 'detail' => 'cases:view|health:view|records:view|approved-reviews:view|fin-tracking:view', 'intro_info' => 'cases:view|records:view|issue-queue:view|issued-list:view',
             'approve_all_docs' => 'health:edit|cases:edit', 'approve_doc' => 'health:edit|cases:edit', 'reject_doc' => 'health:edit|cases:edit', 'request_fix' => 'health:edit|cases:edit',
             'download_health_zip' => 'health:export|cases:export|approved-reviews:export|records:export', 'download_docs_zip' => 'health:export|cases:export|approved-reviews:export|records:export',
             'file' => 'cases:view|health:view|records:view|approved-reviews:view', 'upload_health_report' => 'health:edit',
@@ -436,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {

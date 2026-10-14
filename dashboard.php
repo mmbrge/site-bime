@@ -7669,6 +7669,40 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // پاپ‌آپِ ردیفِ «کارکنان» در همین فهرستِ جامعِ صدور. ستون‌ها و مدارکش با شرکتی
         // فرق دارد (کد پرسنلی، نام پرسنل، بیمه‌گذار و نسبتش، معرفی‌نامه، دوره‌ی مالی)،
         // ولی دکمه‌ها همان کارها را می‌کنند و صدور را به همان مسیرِ پرونده‌ی کارکنان می‌برد.
+        // کارتِ «پرسنل و معرفی‌نامه» (api/case_actions.php?action=intro_info) — در پاپ‌آپِ صدور و جزئیاتِ پرونده‌ی کارکنان
+        async function introInfoCard(caseId, mountId) {
+            const el = document.getElementById(mountId); if (!el) return;
+            el.innerHTML = '<p class="text-[11px] text-slate-400">در حال خواندنِ اطلاعاتِ معرفی‌نامه...</p>';
+            let d;
+            try { d = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_info', case_id: caseId})})).json(); } catch (e) { d = null; }
+            if (!document.getElementById(mountId)) return;
+            if (!d || !d.ok) { el.innerHTML = ''; return; }
+            const cp = (x, k) => `<button onclick="copyValue('${String(x).replace(/['"\\]/g, '')}', '${k}')" title="کپی ${k}" class="text-slate-300 hover:text-blue-500 mr-1"><i class="far fa-copy text-[10px]"></i></button>`;
+            const v = (k, x, ltr) => x ? `<div><span class="text-slate-400">${k}:</span> <b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(x)))}</b>${ltr ? cp(x, k) : ''}</div>` : '';
+            const pr = d.person || {}, co = d.company || {}, it = d.intro;
+            const cases = (d.intro_cases || []).map(c => `<div class="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 ${c.current ? 'bg-emerald-50 border border-emerald-200' : 'bg-white border border-slate-100'}">
+                    <b>${pesc(c.type_fa)}</b>${c.plate ? formatPlateHtml(c.plate) : ''}<span>${pesc(c.insured_name || '')}${c.relationship ? ' (' + pesc(relFa(c.relationship)) + ')' : ''}</span>
+                    <span class="text-[10px] ${c.status === 'ISSUED' ? 'text-emerald-700' : 'text-amber-700'} font-bold">${pesc(c.status_fa)}</span>
+                    ${c.policy_number ? `<span dir="ltr" class="text-[10px]">${pesc(faDigits(c.policy_number))}</span>` : ''}${c.file ? `<a href="/${encodeFilePath(c.file)}" target="_blank" class="text-blue-600 underline text-[10px]">بیمه‌نامه</a>` : ''}
+                    ${c.current ? '<span class="text-[10px] text-emerald-700 mr-auto">همین درخواست</span>' : `<button onclick="openCase(${c.id})" class="text-blue-600 underline text-[10px] mr-auto">باز کردن</button>`}</div>`).join('');
+            el.innerHTML = `<div class="border border-slate-200 rounded-xl p-3 mb-4 text-[11px] leading-6">
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-id-badge ml-1 text-slate-300"></i>پرسنل و معرفی‌نامه</h4>
+                <div class="grid sm:grid-cols-2 gap-x-4">
+                    ${v('نام پرسنل', pr.name)}${v('کد ملی پرسنل', pr.national_code, 1)}${v('کد پرسنلی', pr.personnel_code, 1)}${v('موبایل', pr.mobile, 1)}
+                    <div><span class="text-slate-400">ربات:</span> <b>${pr.bot_linked ? 'متصل' : 'متصل نیست'}</b></div>
+                    <div><span class="text-slate-400">سابقه:</span> <b>${e2pNum(pr.total_cases || 0)} درخواست · ${e2pNum(pr.issued_cases || 0)} صادره</b></div>
+                    ${v('شرکت', co.name)}${v('تلفن شرکت', co.phone, 1)}${v('کد اقتصادی شرکت', co.economic_code, 1)}${co.address ? `<div class="sm:col-span-2"><span class="text-slate-400">آدرس شرکت:</span> <b>${pesc(co.address)}</b></div>` : ''}
+                </div>
+                ${it ? `<hr class="my-2 border-slate-100"><div class="grid sm:grid-cols-2 gap-x-4">
+                    ${v('معرفی‌نامه', '#' + it.id)}${v('تاریخ نامه', it.letter_date)}${v('ماهِ مالی', it.month_fa)}
+                    <div><span class="text-slate-400">سهمیه:</span> <b>${e2pNum(it.used_quota)} از ${e2pNum(it.max_quota)}</b></div>
+                    ${v('ثبت در سایت', it.created_j)}
+                    <div><span class="text-slate-400">فایل:</span> ${it.file ? `<a href="/${encodeFilePath(it.file)}" target="_blank" data-gv="/${encodeFilePath(it.file)}" data-gv-label="معرفی‌نامه" class="text-blue-600 underline font-bold">مشاهده</a>` : `<b>${it.manual ? 'ثبتِ دستی' : '—'}</b>`}</div></div>
+                    ${cases ? `<p class="font-bold text-slate-500 mt-2 mb-1">درخواست‌های این معرفی‌نامه (${e2pNum((d.intro_cases || []).length)})</p><div class="space-y-1">${cases}</div>` : ''}
+                    ${(d.same_month_intros || []).length ? `<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-900"><i class="fas fa-triangle-exclamation ml-1"></i>معرفی‌نامه‌ی دیگرِ همین پرسنل در همین ماه: ${d.same_month_intros.map(o => `<b>#${e2pNum(o.id)}</b>${o.letter_date ? ' (' + faDigits(o.letter_date) + ')' : ''} · ${e2pNum(o.cases)} درخواست`).join('، ')}</div>` : ''}`
+                : '<p class="text-amber-600 mt-1">این درخواست به معرفی‌نامه‌ای وصل نیست.</p>'}
+            </div>`;
+        }
         function openIssueQueuePersonnelDetail(r) {
             const CASE_DOC_ST = {
                 APPROVED: '<span class="text-[10px] font-bold text-emerald-600">✓ تایید شده</span>',
@@ -7699,6 +7733,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             ${infoCell('نسبت با پرسنل', r.relationship)}
                             ${infoCell('کد ملی بیمه‌گذار', r.national_id ? e2p(r.national_id) : '', {ltr: true})}
                             ${infoCell('کد پیگیری', r.unique_code, {ltr: true})}
+                            ${infoCell('کد ملی پرسنل', r.holder_national_code ? e2p(r.holder_national_code) : '', {ltr: true})}
+                            ${infoCell('موبایل پرسنل', r.mobile_number ? e2p(r.mobile_number) : '', {ltr: true})}
+                            ${infoCell('تاریخ تولد بیمه‌گذار', r.insured_birth_date ? e2p(r.insured_birth_date) : '', {ltr: true})}
+                            ${infoCell('تلفن بیمه‌گذار', r.insured_phone ? e2p(r.insured_phone) : '', {ltr: true})}
+                            ${infoCell('کد پستی', r.insured_postal_code ? e2p(r.insured_postal_code) : '', {ltr: true})}
+                            ${infoCell('نشانی', r.insured_address || '')}
                         </div>
                     </div>
                     <div class="border border-slate-200 rounded-xl p-3">
@@ -7717,6 +7757,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>
 
+                <div id="iq-intro-card"></div>
                 ${issueInfoCardHtml(r)}
 
                 <div class="border border-slate-200 rounded-xl p-3 mb-4">
@@ -7737,6 +7778,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>
                 </div>`;
             document.getElementById('iq-detail-modal').classList.add('active');
+            introInfoCard(r.id, 'iq-intro-card');
         }
 
         // از پاپ‌آپِ فهرست صدور به پرونده‌ی کارکنان
@@ -11184,6 +11226,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div><span class="text-slate-400">سهمیه معرفی‌نامه:</span> <b>${e2p(c.used_quota)}/${e2p(c.max_quota)}</b></div>
                     </div>
 
+                    <div id="case-intro-card" class="mt-3"></div>
                     <div class="flex gap-2">
                         <button onclick="openUserChat(${c.person_id}, '${(c.holder_name||'').replace(/'/g,"")}')" class="flex-1 bg-blue-50 text-blue-700 text-xs font-bold py-2 rounded-lg hover:bg-blue-100"><i class="fas fa-comment-dots ml-1"></i>گفتگو با کاربر</button>
                         <a href="api/case_actions.php?action=download_docs_zip&case_id=${caseId}" class="flex-1 text-center bg-slate-100 text-slate-700 text-xs font-bold py-2 rounded-lg hover:bg-slate-200"><i class="fas fa-file-zipper ml-1"></i>دانلود همه مدارک (زیپ)</a>
@@ -11323,6 +11366,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </div>` : ''}
                 `;
                 // صفحه‌ی صدور: فرمِ بیمه‌نامه از همان اول با اطلاعاتِ درخواست (پیشنهاد) پر است
+                if (document.getElementById('case-intro-card')) introInfoCard(caseId, 'case-intro-card');
                 if (isIssueMode && c.status !== 'ISSUED' && document.getElementById('final-pf')) {
                     window._issueCase = c;
                     window._issueProp = data.proposal || null;

@@ -135,6 +135,47 @@ try {
     }
 
     // ۲. مدارک یک پرونده + اطلاعات معرفی‌نامه‌ی مرتبط
+    // ---- «اطلاعاتِ پرسنل و معرفی‌نامه» برای پاپ‌آپ‌های صدور: پرسنل، شرکت، معرفی‌نامه (ماهِ مالی، سهمیه، فایل)،
+    //      درخواست‌های دیگرِ همین معرفی‌نامه و معرفی‌نامه‌های دیگرِ همین پرسنل در همان ماه ----
+    if ($action === 'intro_info') {
+        $caseId = intval($data['case_id'] ?? $_GET['case_id'] ?? 0);
+        $st = $pdo->prepare("SELECT pc.id, pc.person_id, pc.introduction_id, per.full_name, per.national_code, per.personnel_code, per.mobile_number, per.bot_linked_at, per.created_at AS person_created,
+                                    co.name AS company_name, co.phone AS company_phone, co.economic_code, co.address AS company_address,
+                                    i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file, i.created_at AS intro_created
+                               FROM policy_cases pc JOIN persons per ON per.id = pc.person_id
+                               LEFT JOIN companies co ON co.id = per.company_id LEFT JOIN introductions i ON i.id = pc.introduction_id WHERE pc.id = ?");
+        $st->execute([$caseId]);
+        $r = $st->fetch();
+        if (!$r) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $intro = null; $cases = []; $others = [];
+        if ($r['introduction_id']) {
+            [$y, $m] = intro_letter_month(['letter_date' => $r['letter_date'], 'created_at' => $r['intro_created']]);
+            $intro = ['id' => intval($r['introduction_id']), 'letter_date' => $r['letter_date'] ? str_replace('-', '/', $r['letter_date']) : null,
+                      'month_fa' => jalali_month_name($m) . ' ' . $y, 'used_quota' => intval($r['used_quota']), 'max_quota' => intval($r['max_quota']),
+                      'file' => $r['intro_file'] && $r['intro_file'] !== 'ثبت_دستی' ? $r['intro_file'] : null, 'manual' => $r['intro_file'] === 'ثبت_دستی',
+                      'created_j' => $r['intro_created'] ? jalali_from_gregorian_ts_dotted(strtotime($r['intro_created'])) : null];
+            $st = $pdo->prepare("SELECT id, unique_code, insurance_type, plate, insured_name, insured_relationship, status, policy_number, issued_file_path FROM policy_cases WHERE introduction_id = ? ORDER BY id");
+            $st->execute([$r['introduction_id']]);
+            foreach ($st->fetchAll() as $c) $cases[] = ['id' => intval($c['id']), 'code' => $c['unique_code'], 'type_fa' => insurance_type_fa($c['insurance_type']), 'plate' => $c['plate'],
+                                                         'insured_name' => $c['insured_name'], 'relationship' => $c['insured_relationship'], 'status' => $c['status'], 'status_fa' => case_status_fa($c['status']),
+                                                         'policy_number' => $c['policy_number'], 'file' => $c['issued_file_path'], 'current' => intval($c['id']) === $caseId];
+            $st = $pdo->prepare("SELECT it.id, it.letter_date, it.created_at, (SELECT COUNT(*) FROM policy_cases x WHERE x.introduction_id = it.id) AS cases FROM introductions it WHERE it.person_id = ? AND it.id <> ? ORDER BY it.id DESC LIMIT 30");
+            $st->execute([$r['person_id'], $r['introduction_id']]);
+            foreach ($st->fetchAll() as $o) {
+                [$oy, $om] = intro_letter_month(['letter_date' => $o['letter_date'], 'created_at' => $o['created_at']]);
+                if ($oy === $y && $om === $m) $others[] = ['id' => intval($o['id']), 'letter_date' => $o['letter_date'] ? str_replace('-', '/', $o['letter_date']) : null, 'cases' => intval($o['cases'])];
+            }
+        }
+        $st = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status = 'ISSUED') AS issued FROM policy_cases WHERE person_id = ?");
+        $st->execute([$r['person_id']]);
+        $hist = $st->fetch();
+        echo json_encode(['ok' => true, 'person' => ['name' => $r['full_name'], 'national_code' => $r['national_code'], 'personnel_code' => $r['personnel_code'], 'mobile' => $r['mobile_number'],
+                                                       'bot_linked' => !empty($r['bot_linked_at']), 'total_cases' => intval($hist['n'] ?? 0), 'issued_cases' => intval($hist['issued'] ?? 0)],
+                          'company' => ['name' => $r['company_name'], 'phone' => $r['company_phone'], 'economic_code' => $r['economic_code'], 'address' => $r['company_address']],
+                          'intro' => $intro, 'intro_cases' => $cases, 'same_month_intros' => $others], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'detail') {
         $caseId = intval($_GET['case_id'] ?? ($data['case_id'] ?? 0));
         $stmt = $pdo->prepare("
