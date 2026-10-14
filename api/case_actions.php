@@ -9,6 +9,7 @@ require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/finance_core.php';     // سررسیدِ اقساط و ستون‌های فیشِ اقساط
 require_once __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_company_issue.php';   // خواندنِ فایلِ بیمه‌نامه با الگوریتمِ جای متن + جدا کردنِ فیش‌ها
+require_once __DIR__ . '/_proposal.php';        // «پیشنهاد / پیش‌نویسِ بیمه‌نامه»: پیش‌پر کردنِ فرمِ صدور و مقایسه با فایلِ بیمه‌نامه
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -185,8 +186,11 @@ try {
                            'approved_jalali' => $hi['approved_jalali_date'], 'report' => $hi['report_file_path'], 'photos' => $list];
             }
         }
+        $proposal = proposal_get($pdo, $caseId);
+        if ($proposal && !empty($proposal['data'])) $proposal['relation'] = proposal_relation($proposal['data'], ['national_code' => $case['holder_national_code'], 'full_name' => $case['holder_name']]);
+        unset($case['proposal_json']);
         echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels, 'required_docs' => $requiredDocs,
-                          'company' => $company, 'health' => $health], JSON_UNESCAPED_UNICODE);
+                          'company' => $company, 'health' => $health, 'proposal' => $proposal], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -769,6 +773,43 @@ try {
         exit;
     }
 
+    // ---- «پیشنهاد / پیش‌نویسِ بیمه‌نامه»: خواندن، بایگانی کنارِ مدارکِ درخواست و نگه‌داشتن برای صدور ----
+    if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'proposal_upload') {
+        $caseId = intval($_POST['case_id'] ?? 0);
+        $st = $pdo->prepare("SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_nid FROM policy_cases pc JOIN persons p ON p.id = pc.person_id WHERE pc.id = ?");
+        $st->execute([$caseId]);
+        $case = $st->fetch();
+        if (!$case) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ PDFِ پیشنهاد یا پیش‌نویس (خروجیِ سایتِ بیمه‌گر) را بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $siteRoot = dirname(__DIR__);
+        $tmpDir = $siteRoot . '/tmp_ocr';
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
+        $tmp = $tmpDir . '/' . uniqid('prop_') . '.pdf';
+        if (!move_uploaded_file($_FILES['file']['tmp_name'], $tmp)) { echo json_encode(['ok' => false, 'error' => 'خطا در دریافت فایل.'], JSON_UNESCAPED_UNICODE); exit; }
+        $r = proposal_run($pdo, $tmp);
+        if (empty($r['ok'])) { @unlink($tmp); echo json_encode(['ok' => false, 'error' => $r['error'] ?? 'فایل خوانده نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $kind = $r['kind'] === 'proposal' ? 'پیشنهاد' : 'پیش‌نویس';
+        if ($r['kind'] === 'policy') { @unlink($tmp); echo json_encode(['ok' => false, 'error' => 'این فایلِ خودِ بیمه‌نامه‌ی صادرشده است؛ آن را در بخشِ «فایلِ بیمه‌نامه» بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        // بایگانی: کنارِ مدارکِ همین درخواست با نامِ «(پیشنهاد) پلاک - نام»؛ نسخه‌ی قبلی (اگر بود) با «(قبلی)» کنار می‌رود
+        $file = null;
+        $folder = resolve_case_folder($pdo, $siteRoot, $case);
+        if ($folder) {
+            if (!is_dir($folder)) @mkdir($folder, 0777, true);
+            $old = proposal_get($pdo, $caseId);
+            if ($old && !empty($old['file']) && is_file($siteRoot . '/' . $old['file'])) { $oa = $siteRoot . '/' . $old['file']; @rename($oa, unique_dest_path(dirname($oa) . '/(قبلی) ' . basename($oa))); }
+            $base = sanitize_folder_name('(' . $kind . ') ' . name_join(array_filter([plate_for_filename($case['plate'] ?? ''), $case['insured_name'] ?: $case['holder_name']])));
+            $dest = unique_dest_path($folder . '/' . $base . '.pdf');
+            if (@rename($tmp, $dest)) $file = ltrim(str_replace($siteRoot, '', $dest), '/');
+        }
+        if (!$file) @unlink($tmp);
+        $prop = ['kind' => $r['kind'], 'kind_fa' => $kind, 'data' => $r['data'] ?? [], 'missing' => $r['missing'] ?? [], 'file' => $file, 'at' => date('Y-m-d H:i:s'), 'by' => $_SESSION['user_id'] ?? null];
+        proposal_ensure($pdo);
+        $pdo->prepare("UPDATE policy_cases SET proposal_json = ? WHERE id = ?")->execute([json_encode($prop, JSON_UNESCAPED_UNICODE), $caseId]);
+        $prop['relation'] = proposal_relation($prop['data'], ['national_code' => $case['holder_nid'], 'full_name' => $case['holder_name']]);
+        echo json_encode(['ok' => true, 'proposal' => $prop], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ۷الف. مرحله‌ی اول: آپلود فایل بیمه‌نامه + اجرای OCR + نمایش فیلدهای شناسایی‌شده برای
     // ویرایش (هنوز چیزی صادر/آرشیو نمی‌شود - فقط شناسایی و آماده‌سازی برای تایید نهایی)
     if (isset($_FILES['file']) && ($_POST['action'] ?? '') === 'ocr_preview_policy') {
@@ -946,6 +987,14 @@ try {
                 company_ensure_issue_info_cols($pdo);
                 $q = $pdo->prepare("SELECT issue_info FROM policy_cases WHERE id = ?"); $q->execute([$caseId]);
                 $info = array_merge(issue_info_decode($q->fetchColumn()), policy_fields_to_issue_info(array_map(fn($v) => is_scalar($v) ? (string)$v : '', $data['fields'])));
+                // نسبت و مالک (از پنجره‌ی پیشنهاد): مالکِ خودرو / ذینفع و نسبتش با پرسنل
+                $rel = is_array($data['relation'] ?? null) ? $data['relation'] : [];
+                foreach (['owner_name' => 120, 'owner_national_id' => 20, 'owner_relation' => 30, 'beneficiary' => 120, 'prop_check' => 400] as $rk => $rl) {
+                    if (isset($rel[$rk]) && trim((string)$rel[$rk]) !== '') $info[$rk] = mb_substr(trim((string)$rel[$rk]), 0, $rl);
+                }
+                if (!empty($rel['insured_relationship']) && in_array($rel['insured_relationship'], relationship_options(), true)) {
+                    $pdo->prepare("UPDATE policy_cases SET insured_relationship = ? WHERE id = ?")->execute([$rel['insured_relationship'], $caseId]);
+                }
                 $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, $caseId]);
             } catch (Throwable $e) { error_log('[confirm_issue_policy fields] ' . $e->getMessage()); }
         }

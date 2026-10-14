@@ -964,6 +964,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     .cmi-cols td,.cmi-cols th{padding:7px 9px;border-top:1px solid #e2e8f0;vertical-align:top}
     .cmi-cols th{background:#f1f5f9;font-weight:800;color:#334155;border-top:0}
     .ii-w.pf-miss{border-color:#fda4af !important;background:#fff1f2 !important}
+    .ii-w.pf-red,.ii-ro.pf-red{border-color:#f43f5e !important;background:#fff1f2 !important;box-shadow:0 0 0 2px #ffe4e6}
+    .ii-w.pf-yel,.ii-ro.pf-yel{border-color:#f59e0b !important;background:#fffbeb !important}
+    .pf-hint{font-size:9.5px;font-weight:700;margin-top:2px;line-height:1.5;word-break:break-word}
+    .prop-drop{border:2px dashed #a5b4fc;border-radius:14px;padding:10px;background:#eef2ff;font-size:12px}
+    .prop-drop:hover{background:#e0e7ff}
+    .prop-card{border:1px solid #c7d2fe;border-radius:16px;padding:12px;background:linear-gradient(160deg,#eef2ff,#fff 60%)}
+    .prop-chip{display:inline-flex;gap:4px;align-items:center;font-size:10.5px;background:#fff;border:1px solid #e0e7ff;border-radius:999px;padding:2px 8px}
+    .prop-chip i{font-style:normal;color:#94a3b8}.prop-chip b{color:#1e293b}
+    .iic{border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 4px 18px -10px rgba(15,23,42,.25)}
+    .iic-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px;color:#fff;background:linear-gradient(120deg,#0f766e,#4f46e5)}
+    .iic-pill{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;border-radius:999px;padding:3px 10px;max-width:100%}
+    .iic-sec{border:1px solid #f1f5f9;border-radius:14px;padding:9px 10px;background:#fbfdff}
+    .iic-sec h5{font-size:11px;font-weight:900;margin-bottom:6px}
+    .iic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+    .iic-cell{background:#fff;border:1px solid #eef2f7;border-radius:10px;padding:5px 8px;min-width:0}
+    .iic-cell span{display:block;font-size:9.5px;color:#94a3b8;font-weight:700}
+    .iic-cell b{font-size:11.5px;color:#0f172a;word-break:break-word}
+    .iic-wide{grid-column:1/-1}
+    .iic-cov{font-size:10.5px;background:#ecfdf5;border:1px solid #d1fae5;color:#065f46;border-radius:999px;padding:1px 8px}
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=1"></script>
@@ -7776,8 +7795,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${infoCell('کد اقتصادی', r.national_id, {ltr: true})}
                     ${infoCell('تلفن شرکت', r.phone, {ltr: true})}
                 </div>`}
-                ${(() => { const ii = r.issue_info || {}; const ks = Object.keys(ISSUE_INFO_FA).filter(k => ii[k]); return ks.length ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-clipboard-list text-slate-400 ml-1"></i>مالک و اطلاعاتِ ثبت‌شده‌ی صدور</h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">${ks.map(k => infoCell(ISSUE_INFO_FA[k], ii[k], {ltr: /national_id|phone|chassis|engine|vin|postal|policy_number/.test(k)})).join('')}</div>` : ''; })()}
+                ${(() => { const h = issueInfoCard(r.issue_info, r.proposal); return h ? `<div class="mb-4">${h}</div>` : ''; })()}
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌نامه</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
@@ -8237,7 +8255,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (op.wide) {
                     return `<div class="ii-f" style="grid-column:1/-1"><label>${label}</label><div class="ii-w"><textarea data-pf="${k}" rows="2" class="w-full bg-transparent outline-none resize-y text-[12px] leading-6">${esc(v)}</textarea></div></div>`;
                 }
-                if (op.ro) return `<div class="ii-f"><label>${label}</label><div class="ii-ro">${v ? (op.plate && /ایران/.test(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
+                if (op.ro) return `<div class="ii-f" data-k="${k}"><label>${label}</label><div class="ii-ro">${v ? (op.plate && /ایران/.test(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
                 const miss = op.req && !v;
                 return `<div class="ii-f"><label>${label}${op.req ? ' <span class="text-rose-500">*</span>' : ''}</label><div class="ii-w ${miss ? 'pf-miss' : ''}">
                     <input data-pf="${k}" value="${esc(v)}" ${op.ltr || op.money ? 'dir="ltr"' : ''} ${op.money ? 'inputmode="numeric" class="money-input"' : ''} placeholder="${esc(op.ph || '')}"></div></div>`;
@@ -8251,6 +8269,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ${rc.length ? `<div class="ii-sec mt-2 border-indigo-200 bg-indigo-50/40"><h5><i class="fas fa-receipt text-indigo-600"></i>${e2pNum(rc.length)} فیشِ قسط داخلِ فایل</h5>
                     <p class="text-[10.5px] text-slate-500 mb-1">صفحه‌های خودِ بیمه‌نامه جدا بایگانی می‌شوند و هر فیش روی ردیفِ قسطِ خودش می‌نشیند.</p>
                     <div class="flex flex-wrap gap-1">${rc.map((r, i) => `<span class="text-[10px] bg-white border border-indigo-100 rounded-full px-2 py-0.5">قسط ${e2pNum(i + 1)}: ${faDigits(r.date || '—')} | ${r.amount ? money(r.amount) : '—'}</span>`).join('')}</div></div>` : ''}`;
+            box._pfData = o;
             box.querySelectorAll('[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
             if (window.MoneyInput && MoneyInput.apply) try { MoneyInput.apply(box); } catch (e) {}
         }
@@ -8261,6 +8280,209 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 car_value: c.insurance_type === 'BODY' ? (c.estimated_car_value || c.car_value || '') : '', liability: c.insurance_type !== 'BODY' ? (c.liability_limit || '') : '',
                 vin: c.vin || c.chassis_num || '', engine_no: c.engine_num || '', car_system: c.car_system || '', car_tip: c.car_type || '',
                 model_year: c.car_model_year || '', color: c.car_color || '', usage: c.car_usage || ''};
+        }
+        // ---------- «پیشنهاد / پیش‌نویس» (خروجیِ سایتِ بیمه‌گر): پیش‌پر کردنِ فرمِ صدور، نسبت/مالک، و چکِ فایلِ بیمه‌نامه با آن ----------
+        const PROP_FILL = ['insured_name', 'national_id', 'address', 'postal_code', 'phone', 'car_kind', 'car_system', 'car_tip', 'model_year', 'color', 'capacity', 'usage', 'engine_no', 'vin', 'cylinders',
+            'prev_policy', 'prev_expiry', 'prev_insurer', 'prev_claims', 'covers', 'car_value', 'liability', 'start_date', 'end_date', 'premium', 'issue_date', 'central_no', 'diya', 'driver_cover', 'ncd', 'total_value'];
+        const PROP_REL_OPTS = ['پدر', 'مادر', 'همسر', 'فرزند'];
+        function propPrefill(base, prop) {
+            const o = Object.assign({}, base || {}), d = (prop && prop.data) || {};
+            PROP_FILL.forEach(k => { const v = d[k]; if (v !== undefined && v !== null && String(v).trim() !== '') o[k] = String(v).trim(); });
+            // شماره موتورِ «پیشنهاد» گاهی بریده است: اگر مقدارِ درخواست با آن شروع شود، مقدارِ کامل‌تر می‌ماند
+            const be = String((base || {}).engine_no || '').toUpperCase(), pe = String(d.engine_no || '').toUpperCase();
+            if (be && pe && be.length > pe.length && be.startsWith(pe)) o.engine_no = base.engine_no;
+            return o;
+        }
+        const pnorm = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+            .replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌\-_/.,،:;()«»"']/g, '').toUpperCase();
+        const pnum = s => Number(pnorm(s).replace(/\D/g, '')) || 0;
+        const pdate = s => { const m = String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/);
+            return m ? m[1] + '/' + m[2].padStart(2, '0') + '/' + m[3].padStart(2, '0') : pnorm(s); };
+        const pnameTokens = s => String(s ?? '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/(جناب|آقای|سرکار|خانم|شرکت)/g, ' ').split(/[\s‌]+/).filter(t => t.length > 1);
+        // پوشش‌ها با نامِ متفاوت در پیشنهاد و بیمه‌نامه نوشته می‌شوند؛ با کلیدواژه به یک کلید می‌رسند
+        const PCOVER_KW = [['fire', /آتش/], ['theft', /سرقت\s*کل/], ['parts', /لوازم|قطعات/], ['nature', /سیل|زلزله|بلایا|طوفان/], ['glass', /شیشه/], ['acid', /اسید|شیمیایی|رنگ\s*و\s*مواد/],
+            ['price', /نوسان|افزایش\s*قیمت/], ['transit', /ترانزیت|خارج\s*از\s*کشور/], ['deprec', /استهلاک/], ['strike', /شورش|بلوا|اعتصاب/], ['travel', /ایاب|ذهاب|کرایه/], ['nuclear', /هسته/]];
+        const pcovers = s => new Set(PCOVER_KW.filter(([, re]) => re.test(String(s ?? '').replace(/ي/g, 'ی'))).map(([k]) => k));
+        const pplate = s => { const t = pnorm(s).replace(/ایران/g, ''); return (t.match(/\d+/g) || []).sort().join('-') + '|' + t.replace(/[\dA-Z]/g, ''); };
+        // [کلید، عنوان، سطح (red مهم / yel جزئی / name)، نوعِ مقایسه]
+        const PROP_RULES = [
+            ['national_id', 'کد ملی بیمه‌گذار', 'red', 'exact'], ['vin', 'شاسی (VIN)', 'red', 'vin'], ['plate', 'پلاک', 'red', 'plate'], ['ins_type', 'نوع بیمه', 'red', 'type'],
+            ['car_value', 'ارزش خودرو', 'red', 'num'], ['liability', 'تعهد مالی', 'red', 'num'], ['start_date', 'تاریخ شروع', 'red', 'date'], ['insured_name', 'نام بیمه‌گذار', 'name', 'name'],
+            ['engine_no', 'شماره موتور', 'yel', 'engine'], ['premium', 'حق بیمه (پیش‌نویس)', 'yel', 'num'], ['end_date', 'تاریخ پایان', 'yel', 'date'], ['model_year', 'مدل', 'yel', 'exact'],
+            ['color', 'رنگ', 'yel', 'text'], ['car_system', 'سیستم', 'yel', 'text'], ['car_tip', 'تیپ', 'yel', 'text'], ['car_kind', 'نوع خودرو', 'yel', 'text'], ['usage', 'کاربری', 'yel', 'text'],
+            ['capacity', 'ظرفیت', 'yel', 'text'], ['cylinders', 'سیلندر', 'yel', 'exact'], ['phone', 'تلفن', 'yel', 'exact'], ['postal_code', 'کد پستی', 'yel', 'exact'],
+            ['prev_policy', 'بیمه‌نامه‌ی قبلی', 'yel', 'exact'], ['covers', 'پوشش‌ها', 'yel', 'covers'],
+        ];
+        // نتیجه: '' (یکی است) | 'red' | 'yel'
+        function propCmp(rule, fv, pv) {
+            const [, , lvl, kind] = rule;
+            if (!String(fv ?? '').trim() || !String(pv ?? '').trim()) return '';
+            const a = pnorm(fv), b = pnorm(pv);
+            let ok;
+            if (kind === 'num') ok = pnum(fv) === pnum(pv);
+            else if (kind === 'date') ok = pdate(fv) === pdate(pv);
+            else if (kind === 'vin') ok = a === b || (a.length >= 8 && b.length >= 8 && a.slice(-8) === b.slice(-8));
+            else if (kind === 'engine') ok = a === b || (Math.min(a.length, b.length) >= 5 && (a.includes(b) || b.includes(a)));
+            else if (kind === 'plate') ok = pplate(fv) === pplate(pv);
+            else if (kind === 'type') ok = (/بدنه/.test(fv) ? 'B' : /ثالث/.test(fv) ? 'T' : a) === (/بدنه/.test(pv) ? 'B' : /ثالث/.test(pv) ? 'T' : b);
+            else if (kind === 'text') ok = a === b || a.includes(b) || b.includes(a);
+            else if (kind === 'covers') { const fk = pcovers(fv); ok = [...pcovers(pv)].every(x => fk.has(x)); }
+            else if (kind === 'name') {
+                const ta = pnameTokens(fv).map(pnorm), tb = pnameTokens(pv).map(pnorm);
+                if (a === b || ta.join('') === tb.join('')) return '';
+                return ta.some(t => tb.includes(t)) ? 'yel' : 'red';
+            } else ok = a === b;
+            return ok ? '' : (lvl === 'red' ? 'red' : 'yel');
+        }
+        function propFmt(k, v) { return /car_value|liability|premium/.test(k) ? money(v) : faDigits(v); }
+        // مقایسه‌ی فرمِ صدور با «پیشنهاد»؛ فیلدها قرمز/زرد می‌شوند و زیرشان مقدارِ پیشنهاد می‌آید (همه قابلِ ویرایش‌اند)
+        function propCheck(box) {
+            const prop = window._issueProp, sum = document.getElementById('pf-cmp');
+            box.querySelectorAll('.pf-hint').forEach(e => e.remove());
+            box.querySelectorAll('.pf-red,.pf-yel').forEach(e => e.classList.remove('pf-red', 'pf-yel'));
+            window._propCheck = {red: [], yel: []};
+            if (!prop || !prop.data) { if (sum) { sum.className = 'hidden'; sum.innerHTML = ''; } return window._propCheck; }
+            const d = prop.data, base = box._pfData || {};
+            PROP_RULES.forEach(rule => {
+                const k = rule[0], inp = box.querySelector(`[data-pf="${k}"]`);
+                let fv = inp ? inp.value : pfVal(base, k), cell = inp ? inp.closest('.ii-w') : null;
+                if (!inp) { const lab = [...box.querySelectorAll('.ii-f')].find(f => f.querySelector('.ii-ro') && f.dataset.k === k); cell = lab ? lab.querySelector('.ii-ro') : null; if (!cell) return; }
+                const r = propCmp(rule, fv, d[k]);
+                if (!r) return;
+                window._propCheck[r].push(rule[1]);
+                cell.classList.add(r === 'red' ? 'pf-red' : 'pf-yel');
+                const h = document.createElement('div');
+                h.className = 'pf-hint ' + (r === 'red' ? 'text-rose-600' : 'text-amber-700');
+                h.innerHTML = `<i class="fas ${r === 'red' ? 'fa-circle-exclamation' : 'fa-triangle-exclamation'} ml-0.5"></i>${prop.kind_fa || 'پیشنهاد'}: <b dir="auto">${String(propFmt(k, d[k])).replace(/</g, '&lt;')}</b>`;
+                if (inp) { h.style.cursor = 'pointer'; h.title = 'کلیک: همین مقدار در فرم بنشیند'; h.onclick = () => { inp.value = /car_value|liability|premium/.test(k) ? mfmt(d[k]) : d[k]; propCheck(box); }; }
+                cell.closest('.ii-f').appendChild(h);
+            });
+            if (sum) {
+                const pc = window._propCheck, read = !!window._issueOcr;
+                sum.className = 'rounded-xl p-2.5 mb-2 text-[11px] leading-6 border ' + (pc.red.length ? 'bg-rose-50 border-rose-200 text-rose-800' : pc.yel.length ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-800');
+                sum.innerHTML = `<b><i class="fas fa-code-compare ml-1"></i>مقایسه با ${prop.kind_fa || 'پیشنهاد'}:</b> `
+                    + (!pc.red.length && !pc.yel.length ? (read ? 'همه‌ی اطلاعاتِ بیمه‌نامه با پیشنهاد می‌خواند ✅' : 'فرم با پیشنهاد پر شد؛ بعد از انتخابِ فایلِ بیمه‌نامه، مغایرت‌ها اینجا قرمز (مهم) یا زرد (جزئی) می‌شوند.')
+                    : (pc.red.length ? `<span class="inline-block bg-rose-600 text-white rounded-full px-2 ml-1">${e2pNum(pc.red.length)} مهم</span>${pc.red.join('، ')} ` : '')
+                      + (pc.yel.length ? `<span class="inline-block bg-amber-500 text-white rounded-full px-2 mx-1">${e2pNum(pc.yel.length)} جزئی</span>${pc.yel.join('، ')}` : '')
+                      + '<div class="text-[10px] opacity-75">روی مقدارِ زیرِ هر فیلد بزنید تا همان در فرم بنشیند؛ یا فیلد را دستی اصلاح کنید.</div>');
+            }
+            if (!box._propBound) { box._propBound = 1; let t; box.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => propCheck(box), 350); }); }
+            return window._propCheck;
+        }
+        const pesc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+        // کارتِ «پیشنهاد» در صفحه‌ی صدور: خلاصه + نسبتِ بیمه‌گذار و مالک با پرسنل
+        function propRender(caseId) {
+            const holder = document.getElementById('prop-box'); if (!holder) return;
+            const prop = window._issueProp, c = window._issueCase || {};
+            const up = (txt, cls) => `<label class="${cls} cursor-pointer"><i class="fas fa-file-import ml-1"></i>${txt}<input type="file" accept=".pdf,application/pdf" class="hidden" onchange="propUpload(${caseId}, this)"></label>`;
+            if (!prop || !prop.data) {
+                holder.innerHTML = `<div class="prop-drop">${up('بارگذاریِ «پیشنهاد» یا «پیش‌نویس» (PDFِ سایتِ بیمه‌گر)', 'block text-center font-bold text-indigo-700')}
+                    <p class="text-[10px] text-slate-500 mt-1">فرمِ صدور با آن پر می‌شود، نسبتِ بیمه‌گذار/مالک تشخیص داده می‌شود و فایلِ بیمه‌نامه با آن چک می‌شود. (اختیاری؛ «پیشنهاد» بهتر است)</p>
+                    <div id="prop-status" class="text-[11px] text-slate-500 mt-1"></div></div>`;
+                return;
+            }
+            const d = prop.data, rel = prop.relation || {};
+            const mode = rel.mode || 'self_owner';
+            const insRel = mode === 'relative' ? (c.insured_relationship && c.insured_relationship !== 'خودم' ? c.insured_relationship : '') : 'خودم';
+            const ownerIsInsured = mode === 'self_owner' || (mode === 'relative' && d.insured_is_owner !== false);
+            const ownerRel = mode === 'self_owner' ? 'خودم' : (ownerIsInsured ? insRel : '');
+            const head = {self_owner: ['fa-user-check', 'emerald', 'بیمه‌گذار و مالک: خودِ پرسنل'],
+                self_relative: ['fa-people-arrows', 'indigo', `بیمه‌گذار: خودِ پرسنل · مالکِ خودرو: <b>${pesc(rel.owner_name || '—')}</b> (از بستگان)`],
+                relative: ['fa-people-roof', 'violet', `بیمه‌گذار: <b>${pesc(d.insured_name || '—')}</b> (از بستگانِ پرسنل)${ownerIsInsured ? ' · مالک هم خودش' : ` · مالک: <b>${pesc(rel.owner_name || '—')}</b>`}`]}[mode];
+            const opt = (list, sel, first) => (first ? `<option value="">${first}</option>` : '') + list.map(x => `<option ${x === sel ? 'selected' : ''} value="${x}">${x === 'خودم' ? 'خودِ پرسنل' : x}</option>`).join('');
+            const chip = (l, v, ltr) => v ? `<span class="prop-chip"><i>${l}</i><b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(v))}</b></span>` : '';
+            holder.innerHTML = `<div class="prop-card">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                    <p class="text-xs font-black text-indigo-800"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}ِ بیمه‌گر
+                        ${prop.file ? `<a href="/${encodeFilePath(prop.file)}" target="_blank" class="text-[10.5px] font-bold text-blue-600 underline mr-1">مشاهده‌ی فایل</a>` : ''}</p>
+                    ${up('جایگزینی', 'text-[10.5px] font-bold text-indigo-600 bg-white border border-indigo-200 rounded-lg px-2 py-1 hover:bg-indigo-50')}
+                </div>
+                <div class="flex flex-wrap gap-1 mb-2">${chip('بیمه‌گذار', d.insured_name)}${chip('کد ملی', d.national_id, 1)}${chip('تولد', d.birth_date, 1)}${chip('ذینفع', d.beneficiary)}
+                    ${chip('خودرو', [d.car_system, d.car_tip].filter(Boolean).join(' '))}${chip('ارزش', d.car_value ? money(d.car_value) : '')}${chip('شروع', d.start_date, 1)}${d.premium ? chip('حق بیمه', money(d.premium)) : ''}</div>
+                <div class="rounded-lg px-2.5 py-1.5 mb-2 text-[11px] bg-${head[1]}-50 text-${head[1]}-800 border border-${head[1]}-100"><i class="fas ${head[0]} ml-1"></i>${head[2]}</div>
+                <div class="text-[11px]" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+                    <label class="block"><span class="text-[10px] text-slate-500">نسبتِ بیمه‌گذار با پرسنل</span>
+                        <select id="prop-ins-rel" class="w-full border rounded-lg px-2 py-1.5 bg-white">${opt(['خودم'].concat(PROP_REL_OPTS), insRel, mode === 'relative' ? 'انتخاب کنید…' : '')}</select></label>
+                    <label class="block"><span class="text-[10px] text-slate-500">نامِ مالکِ خودرو</span>
+                        <input id="prop-owner-name" value="${pesc(rel.owner_name || d.insured_name || '')}" class="w-full border rounded-lg px-2 py-1.5 bg-white"></label>
+                    <label class="block"><span class="text-[10px] text-slate-500">نسبتِ مالک با پرسنل</span>
+                        <select id="prop-owner-rel" class="w-full border rounded-lg px-2 py-1.5 bg-white">${opt(['خودم'].concat(PROP_REL_OPTS, ['سایر']), ownerRel, 'انتخاب کنید…')}</select></label>
+                </div>
+                ${(prop.missing || []).length ? `<p class="text-[10px] text-amber-700 mt-1.5">از ${pesc(prop.kind_fa)} خوانده نشد: ${prop.missing.map(pesc).join('، ')}</p>` : ''}
+                <div id="prop-status" class="text-[11px] text-slate-500 mt-1"></div>
+            </div>`;
+            // اگر مالک همان بیمه‌گذار است، نسبتِ مالک دنبالِ نسبتِ بیمه‌گذار می‌آید
+            const ir = document.getElementById('prop-ins-rel'), or = document.getElementById('prop-owner-rel');
+            ir.onchange = () => { if (ownerIsInsured) or.value = ir.value; };
+        }
+        async function propUpload(caseId, input) {
+            const f = input.files[0]; if (!f) return;
+            const st = document.getElementById('prop-status'); if (st) st.innerHTML = '⏳ در حالِ خواندنِ فایل…';
+            const fd = new FormData(); fd.append('action', 'proposal_upload'); fd.append('case_id', caseId); fd.append('file', f);
+            try {
+                const d = await (await fetch('api/case_actions.php', {method: 'POST', body: fd})).json();
+                if (!d.ok) { if (st) st.textContent = ''; showToast(d.error || 'فایل خوانده نشد.', 'error'); input.value = ''; return; }
+                window._issueProp = d.proposal;
+                propRender(caseId);
+                const box = document.getElementById('final-pf');
+                window._issuePrefill = propPrefill(casePrefill(window._issueCase || {}), d.proposal);
+                const o = Object.assign({}, window._issuePrefill);
+                Object.entries(window._issueOcr || {}).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) o[k] = v; });
+                pfRender(box, o, {});
+                propCheck(box);
+                showToast(`${d.proposal.kind_fa} خوانده و بایگانی شد؛ فرمِ صدور با آن پر شد.`, 'success');
+            } catch (e) { if (st) st.textContent = ''; showToast('خطا در اتصال به سرور.', 'error'); }
+        }
+        // نسبت و مالک برای ذخیره در صدور (فقط وقتی «پیشنهاد» بارگذاری شده)
+        function propRelation() {
+            const prop = window._issueProp; if (!prop || !prop.data) return null;
+            const ir = document.getElementById('prop-ins-rel'), or = document.getElementById('prop-owner-rel'), on = document.getElementById('prop-owner-name');
+            if (!ir) return null;
+            if (!ir.value) { showToast('نسبتِ بیمه‌گذار با پرسنل را انتخاب کنید (کارتِ پیشنهاد).', 'error'); ir.focus(); return false; }
+            if (!or.value) { showToast('نسبتِ مالکِ خودرو با پرسنل را انتخاب کنید (کارتِ پیشنهاد).', 'error'); or.focus(); return false; }
+            const pc = window._propCheck || {red: [], yel: []};
+            const ownerName = on.value.trim(), d = prop.data;
+            return {insured_relationship: ir.value, owner_name: ownerName, owner_relation: or.value === 'خودم' ? 'خودِ پرسنل' : or.value,
+                owner_national_id: pnorm(ownerName) === pnorm(d.insured_name) ? (d.national_id || '') : '', beneficiary: d.beneficiary || '',
+                prop_check: pc.red.length || pc.yel.length ? [pc.red.length ? 'مهم: ' + pc.red.join('، ') : '', pc.yel.length ? 'جزئی: ' + pc.yel.join('، ') : ''].filter(Boolean).join(' | ') : 'با ' + (prop.kind_fa || 'پیشنهاد') + ' می‌خواند'};
+        }
+        // کارتِ «اطلاعاتِ صدور» بعد از صدور (جزئیاتِ پرونده و صادره‌ها): همه‌ی اطلاعاتِ فرم + مالک/نسبت + نتیجه‌ی چک با پیشنهاد
+        const IIC_GROUPS = [
+            ['fa-user-shield', 'بیمه‌گذار و مالک', 'sky', [['insured_name', 'بیمه‌گذار'], ['insured_national_id', 'کد ملی', 1], ['insured_birth_date', 'تاریخ تولد', 1], ['insured_phone', 'تلفن', 1], ['insured_postal_code', 'کد پستی', 1],
+                ['owner_name', 'مالکِ خودرو'], ['owner_relation', 'نسبتِ مالک با پرسنل'], ['owner_national_id', 'کد ملی مالک', 1], ['owner_phone', 'تلفن مالک', 1], ['beneficiary', 'ذینفع'], ['insured_address', 'نشانی', 0, 1], ['owner_address', 'نشانی مالک', 0, 1]]],
+            ['fa-car-side', 'خودرو', 'teal', [['car_kind', 'نوع'], ['car_system', 'سیستم'], ['car_type', 'تیپ'], ['car_model_year', 'مدل', 1], ['car_color', 'رنگ'], ['car_usage', 'کاربری'], ['car_capacity', 'ظرفیت'],
+                ['car_cylinders', 'سیلندر', 1], ['car_cargo', 'اتاق بار'], ['vin', 'شاسی (VIN)', 1], ['engine_no', 'شماره موتور', 1]]],
+            ['fa-shield-halved', 'پوشش و تعهدات', 'indigo', [['start_date', 'شروع', 1], ['end_date', 'پایان', 1], ['car_value', 'ارزش خودرو (ریال)', 2], ['total_value', 'جمع سرمایه (ریال)', 2], ['trailer_value', 'ارزش یدک (ریال)', 2],
+                ['extras_value', 'وسایل اضافی (ریال)', 2], ['liability', 'تعهد مالی (ریال)', 2], ['diya_cover', 'تعهد بدنی (ریال)', 2], ['driver_cover', 'حوادث راننده (ریال)', 2], ['no_claim_discount', 'تخفیف عدم خسارت'],
+                ['central_unique_code', 'کد یکتای مرکزی', 1], ['covers', 'پوشش‌ها', 3, 1]]],
+            ['fa-clock-rotate-left', 'سابقه‌ی بیمه', 'slate', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy_number', 'بیمه‌نامه‌ی قبلی', 1], ['prev_expiry', 'انقضای قبلی', 1], ['prev_claims', 'خسارتِ سال قبل'], ['no_claim_years', 'سال‌های عدم خسارت']]],
+        ];
+        function issueInfoCard(ii, prop) {
+            ii = ii || {};
+            if (typeof ii === 'string') { try { ii = JSON.parse(ii) || {}; } catch (e) { ii = {}; } }
+            // «جناب آقای / سرکار خانم» فقط برای نمایش برداشته می‌شود
+            ii = Object.assign({}, ii);
+            ['insured_name', 'owner_name', 'beneficiary'].forEach(k => { if (ii[k]) ii[k] = String(ii[k]).replace(/^(جناب\s*آقای|سرکار\s*خانم|آقای|خانم)\s+/, '').trim(); });
+            const cell = ([k, label, t, wide]) => {
+                const v = ii[k]; if (v === undefined || v === null || String(v).trim() === '') return '';
+                let html;
+                if (t === 3) html = `<div class="flex flex-wrap gap-1 mt-0.5">${String(v).split(/[،,؛;\n]+/).map(x => x.trim()).filter(Boolean).map(x => `<span class="iic-cov"><i class="fas fa-check text-emerald-500 ml-0.5"></i>${pesc(faDigits(x))}</span>`).join('')}</div>`;
+                else html = `<b ${t === 1 || t === 2 ? 'dir="ltr"' : ''}>${pesc(t === 2 ? money(v) : faDigits(v))}</b>`;
+                return `<div class="iic-cell ${wide ? 'iic-wide' : ''}"><span>${label}</span>${html}</div>`;
+            };
+            const secs = IIC_GROUPS.map(([ic, title, col, fields]) => { const inner = fields.map(cell).join(''); return inner ? `<div class="iic-sec"><h5 class="text-${col}-700"><i class="fas ${ic} ml-1"></i>${title}</h5><div class="iic-grid">${inner}</div></div>` : ''; }).join('');
+            if (!secs && !prop) return '';
+            const chk = ii.prop_check ? (/مهم/.test(ii.prop_check) ? ['rose', 'fa-circle-exclamation'] : /جزئی/.test(ii.prop_check) ? ['amber', 'fa-triangle-exclamation'] : ['emerald', 'fa-circle-check']) : null;
+            return `<div class="iic">
+                <div class="iic-head">
+                    <div><p class="text-[10px] opacity-80">اطلاعاتِ صدور</p><p class="text-sm font-black">${pesc(ii.insured_name || '')}${ii.owner_name && ii.owner_name !== ii.insured_name ? ` <span class="text-[11px] font-bold opacity-90">· مالک: ${pesc(ii.owner_name)}${ii.owner_relation ? ' (' + pesc(ii.owner_relation) + ')' : ''}</span>` : ''}</p></div>
+                    <div class="flex flex-wrap gap-1 items-center">
+                        ${chk ? `<span class="iic-pill bg-${chk[0]}-100 text-${chk[0]}-800" title="${pesc(ii.prop_check)}"><i class="fas ${chk[1]} ml-1"></i>${pesc(ii.prop_check.length > 60 ? ii.prop_check.slice(0, 60) + '…' : ii.prop_check)}</span>` : ''}
+                        ${prop && prop.file ? `<a href="/${encodeFilePath(prop.file)}" target="_blank" class="iic-pill text-indigo-700" style="background:#fff"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</a>` : ''}
+                    </div>
+                </div>
+                <div class="p-2.5 space-y-2">${secs}${ii.note ? `<div class="iic-sec"><h5 class="text-slate-600"><i class="fas fa-note-sticky ml-1"></i>یادداشت صدور</h5><p class="text-[11px]">${pesc(ii.note)}</p></div>` : ''}</div>
+            </div>`;
         }
         // «درخواست تغییر کرده؟»: ارزشِ خودرو (بدنه) یا تعهدِ مالی (ثالث) در بیمه‌نامه با درخواست فرق دارد => پیشنهادِ به‌روزرسانیِ درخواست
         // req: {car_value, liability_limit} درخواست؛ o: داده‌ی فرم/فایل؛ apply(vals) => Promise<{ok}>
@@ -10634,6 +10856,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </div>
                             ${c.issued_file_path ? `<a href="/${encodeFilePath(c.issued_file_path)}" target="_blank" class="inline-block mt-2 text-blue-600 underline text-xs">مشاهده فایل بیمه‌نامه‌ی صادرشده</a> <a href="/${encodeFilePath(c.issued_file_path)}?exact=1" class="inline-block mt-2 mr-2 text-slate-500 underline text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">دانلود با نامِ دقیق</a>` : ''}
                         ` : `
+                            <div id="prop-box" class="mb-3"></div>
                             <label class="block border-2 border-dashed border-emerald-300 rounded-lg text-center p-3 text-xs text-emerald-700 cursor-pointer hover:bg-emerald-100" id="policy-upload-label">
                                 <i class="fas fa-cloud-arrow-up ml-1"></i> انتخاب فایل بیمه‌نامه (PDF) برای شناسایی خودکار
                                 <input type="file" id="final-policy-file" class="hidden" onchange="ocrPreviewPolicy(${caseId})">
@@ -10643,6 +10866,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <div id="policy-fields-wrap" class="mt-3">
                                 <p class="text-[10.5px] text-slate-500 mb-2"><i class="fas fa-circle-info text-emerald-500 ml-1"></i>فرم از اطلاعاتِ همین درخواست پر شده؛ با انتخابِ فایل، اطلاعاتِ بیمه‌نامه خوانده و با درخواست مقایسه می‌شود. بعد از بررسی «صدور» را بزنید.</p>
                                 <div id="pf-change" class="hidden"></div>
+                                <div id="pf-cmp" class="hidden"></div>
                                 <div id="final-pf" class="mb-2"></div>
                                 <div id="policy-mismatch-warning" class="hidden text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2"></div>
                                 <div id="naming-box" class="hidden bg-amber-50 border border-amber-100 rounded-xl p-3 mb-2">
@@ -10662,6 +10886,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
                         `}
                     </div>` : ''}
+
+                    ${c.status === 'ISSUED' ? issueInfoCard(c.issue_info, data.proposal) : ''}
 
                     <div>
                         <div class="flex justify-between items-center mb-2">
@@ -10735,8 +10961,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 // صفحه‌ی صدور: فرمِ بیمه‌نامه از همان اول با اطلاعاتِ درخواست (پیشنهاد) پر است
                 if (isIssueMode && c.status !== 'ISSUED' && document.getElementById('final-pf')) {
                     window._issueCase = c;
-                    window._issuePrefill = casePrefill(c);
+                    window._issueProp = data.proposal || null;
+                    window._issueOcr = null;
+                    window._issuePrefill = propPrefill(casePrefill(c), window._issueProp);
+                    propRender(caseId);
                     pfRender(document.getElementById('final-pf'), window._issuePrefill, {});
+                    propCheck(document.getElementById('final-pf'));
                 }
                 // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
                 if (c.status === 'WITHDRAWN') {
@@ -10770,6 +11000,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 // هر چه از فایل خوانده شد جای مقدارِ درخواست را می‌گیرد؛ بقیه همان مقدارِ درخواست می‌ماند
                 const o = Object.assign({}, window._issuePrefill || {});
                 Object.entries(data.ocr || {}).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) o[k] = v; });
+                window._issueOcr = data.ocr || {};
                 const cc = window._issueCase || {};
                 pfDiffNotice(document.getElementById('pf-change'), {car_value: cc.estimated_car_value, liability_limit: cc.liability_limit}, o,
                     vals => fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_request_values', case_id: caseId}, vals))}).then(r => r.json())
@@ -10783,6 +11014,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     statusEl.innerHTML = `⚠️ فایل شناسایی نشد - فیلدها را دستی پر کنید.<br><span class="text-[10px] text-slate-400">علت: ${data.ocr_debug || 'نامشخص'}</span>`;
                     pfRender(document.getElementById('final-pf'), o, {});
                 }
+                propCheck(document.getElementById('final-pf'));
             } catch(e) {
                 document.getElementById('policy-upload-label').style.pointerEvents = '';
                 statusEl.textContent = '';
@@ -10795,6 +11027,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const miss = pfCheck(box);
             if (miss.length) { showToast(miss.join(' و ') + ' الزامی است.', 'error'); return; }
             const v = pfCollect(box);
+            const relation = propRelation();
+            if (relation === false) return;
+            const pc = propCheck(box);
+            if (relation && pc.red.length && !confirmIssuePolicy._ok) {
+                showConfirm('مغایرتِ مهم با پیشنهاد', `این موارد با ${(window._issueProp || {}).kind_fa || 'پیشنهاد'} نمی‌خواند: ${pc.red.join('، ')}. با همین اطلاعات صادر شود؟`,
+                    () => { confirmIssuePolicy._ok = 1; confirmIssuePolicy(caseId).finally(() => { confirmIssuePolicy._ok = 0; }); });
+                return;
+            }
             // نام‌هایی که سرورِ صدورِ کارکنان می‌خواند
             const body = {
                 action: 'confirm_issue_policy', case_id: caseId,
@@ -10802,6 +11042,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 total_premium: v.premium, car_system: v.car_system, car_type: v.car_tip || v.car_kind, model_year: v.model_year,
                 car_color: v.color, car_usage: v.usage, phone: v.phone, issue_date: v.issue_date, car_value: v.car_value, fields: v,
             };
+            if (relation) body.relation = relation;
             showToast('در حال بررسی نهایی و صدور...', 'info');
             try {
                 const res = await fetch('api/case_actions.php', {

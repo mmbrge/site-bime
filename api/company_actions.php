@@ -862,6 +862,9 @@ try {
                         'intro_letter_j' => (!empty($r['intro_letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', $r['intro_letter_date'], $lm)) ? sprintf('%04d/%02d/%02d', $lm[1], $lm[2], $lm[3]) : null,
                         'intro_month_fa' => $r['introduction_id'] ? (function () use ($r) { [$y, $m] = intro_letter_month(['letter_date' => $r['intro_letter_date'], 'created_at' => $r['intro_created_at']]); return jalali_month_name($m) . ' ' . $y; })() : null,
                         'issue_info' => issue_info_decode($r['issue_info'] ?? null),
+                        // فایلِ «پیشنهاد / پیش‌نویس» که فرمِ صدور با آن پر و چک شد
+                        'proposal' => (function () use ($r) { $pj = !empty($r['proposal_json']) ? json_decode($r['proposal_json'], true) : null;
+                            return is_array($pj) ? ['kind_fa' => $pj['kind_fa'] ?? 'پیشنهاد', 'file' => $pj['file'] ?? null, 'at' => !empty($pj['at']) ? jd(strtotime($pj['at'])) : null] : null; })(),
                         'endo_count' => (int)($r['endo_count'] ?? 0), 'final_premium' => isset($r['final_premium']) && $r['final_premium'] !== null ? (int)$r['final_premium'] : null,
                         'is_cancelled' => (int)($r['is_cancelled'] ?? 0), 'cancelled_on' => $r['cancelled_on'] ?? null,
                     ];

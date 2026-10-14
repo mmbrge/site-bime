@@ -288,7 +288,7 @@ function perm_api_map() {
             'file' => 'cases:view|health:view|records:view|approved-reviews:view', 'upload_health_report' => 'health:edit',
             'health_list' => 'health:view', 'approved_reviews' => 'approved-reviews:view|health:view', 'approved_review_detail' => 'approved-reviews:view|health:view',
             'health_detail' => 'health:view|approved-reviews:view', 'review_health_photo' => 'health:edit', 'approve_health' => 'health:edit', 'reject_health' => 'health:edit',
-            'ocr_preview_policy' => 'cases:edit', 'confirm_issue_policy' => 'cases:edit',
+            'ocr_preview_policy' => 'cases:edit', 'proposal_upload' => 'cases:edit', 'confirm_issue_policy' => 'cases:edit',
         ]],
         'record_actions' => ['pages' => ['records'], 'elevate' => true, 'actions' => [
             'intro_detect' => 'records:create|records:edit|cases:edit|issue-queue:edit', 'create_intro' => 'records:create|cases:edit|issue-queue:edit',
