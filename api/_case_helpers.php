@@ -95,6 +95,33 @@ function build_case_folder_name_issued($plate, $insuredName, $policyNum, $vin) {
 function policy_number_clean($policyNum) {
     return trim(str_replace(['∕', '⁄', '／'], '/', (string)$policyNum));
 }
+// ---- جستجوی شماره‌ی بیمه‌نامه با هر شکلِ نوشتن ----
+// «2/49357/5051-11/1405/1003»، «2∕49357∕5051-11∕1405∕1003» (کپی از نامِ فایل، همراهِ نویسه‌های نامرئیِ جهت)، رقم‌های فارسی،
+// فاصله دورِ جداکننده‌ها یا ترتیبِ برعکسِ بخش‌ها (کپی از متنِ راست‌به‌چپ) همه یک بیمه‌نامه‌اند.
+function search_text_norm($s) {
+    $s = p2e_digits((string)$s);
+    $s = preg_replace('/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u', '', $s);   // نویسه‌های نامرئیِ جهت
+    $s = str_replace(['∕', '⁄', '／', '\\', '÷'], '/', $s);
+    $s = str_replace(['‐', '‑', '‒', '–', '—', '−', 'ـ'], '-', $s);
+    $s = preg_replace('/\s*([\/-])\s*/u', '$1', $s);
+    return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $s)));
+}
+function policy_number_groups($s) {
+    preg_match_all('/\d+/', search_text_norm($s), $m);
+    return array_map(fn($g) => ltrim($g, '0') === '' ? '0' : ltrim($g, '0'), $m[0]);
+}
+// آیا $query (دست‌کم ۳ بخشِ عددی، یا ۶ رقمِ پشتِ هم) شماره‌ی بیمه‌نامه‌ی $stored یا تکه‌ای پیوسته از آن است؟
+function policy_number_matches($query, $stored) {
+    $q = policy_number_groups($query);
+    if (!$q || trim((string)$stored) === '') return false;
+    $st = policy_number_groups($stored);
+    if (!$st) return false;
+    if (count($q) === 1) return strlen($q[0]) >= 6 && strpos(implode('', $st), $q[0]) !== false;
+    if (count($q) < 3) return false;
+    $sub = function ($hay, $nd) { $h = '|' . implode('|', $hay) . '|'; return strpos($h, '|' . implode('|', $nd) . '|') !== false; };
+    return $sub($st, $q) || $sub(array_reverse($st), $q);
+}
+
 function policy_number_for_filename($policyNum) {
     if (!$policyNum) return $policyNum;
     return str_replace('/', '∕', trim($policyNum));

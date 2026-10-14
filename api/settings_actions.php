@@ -46,6 +46,40 @@ try {
         exit;
     }
 
+    // تعدادِ صفحه‌های فایلِ بیمه‌نامه هنگامِ صدور (پیش‌فرض ۱)؛ بقیه‌ی صفحه‌ها فایلی جدا کنارِ بیمه‌نامه می‌شوند
+    if ($action === 'get_policy_pages') {
+        require_once __DIR__ . '/_pdf_split.php';
+        echo json_encode(['ok' => true, 'pages' => policy_pages_setting($pdo)]);
+        exit;
+    }
+
+    if ($action === 'save_policy_pages') {
+        $n = max(1, min(20, intval($data['pages'] ?? 1)));
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('policy_file_pages', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([(string)$n]);
+        echo json_encode(['ok' => true, 'pages' => $n]);
+        exit;
+    }
+
+    // «پیش‌نیازها»: فایلِ آزمایشی (داخلِ ZIP) با همان الگوی نامِ بایگانی تا نمایشِ «∕» در ویندوز امتحان شود
+    if ($action === 'prereq_test_zip') {
+        if (!class_exists('ZipArchive')) { echo json_encode(['ok' => false, 'error' => 'ZipArchive روی سرور فعال نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        $sep = " \u{200E}- ";
+        $name = '25ایران 982 ل 87' . $sep . 'نمونه' . $sep . '1∕49357∕5051-0∕1405∕354' . $sep . 'IRFC0000000000000.txt';
+        $tmp = tempnam(sys_get_temp_dir(), 'prq');
+        $z = new ZipArchive();
+        if ($z->open($tmp, ZipArchive::OVERWRITE) !== true) { echo json_encode(['ok' => false, 'error' => 'ساختِ ZIP ممکن نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $z->addFromString($name, "این فایل فقط برای امتحانِ نمایشِ نامِ بیمه‌نامه‌ها در ویندوز است.\r\n");
+        $z->close();
+        while (ob_get_level()) ob_end_clean();
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="name-test.zip"');
+        header('Content-Length: ' . filesize($tmp));
+        header('Cache-Control: private, no-store');
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
+
     if ($action === 'get_site_url') {
         $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'site_url'");
         echo json_encode(['ok' => true, 'site_url' => $stmt->fetchColumn() ?: '']);

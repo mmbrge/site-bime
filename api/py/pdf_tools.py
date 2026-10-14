@@ -215,6 +215,21 @@ def main():
             path = os.path.join(outdir, 'out.pdf')
             save_pdf(res, path)
             out({'ok': True, 'file': 'out.pdf', 'pages': len(res), 'from': start + 1, 'total': n, 'detected': bool(found)})
+        elif op == 'keep_first':
+            # فایلِ بیمه‌نامه فقط n صفحه‌ی اول (تنظیمات)؛ بقیه‌ی صفحه‌ها (شرایط/صفحه‌های تکمیلی) در rest.pdf
+            d = docs[0]
+            n = len(d)
+            k = max(1, min(50, int(params.get('n') or 1)))
+            if n <= k:
+                out({'ok': True, 'total': n, 'kept': n, 'rest': 0})
+                return
+            head = fitz.open()
+            head.insert_pdf(d, from_page=0, to_page=k - 1)
+            save_pdf(head, os.path.join(outdir, 'head.pdf'))
+            rest = fitz.open()
+            rest.insert_pdf(d, from_page=k, to_page=n - 1)
+            save_pdf(rest, os.path.join(outdir, 'rest.pdf'))
+            out({'ok': True, 'total': n, 'kept': k, 'rest': n - k})
         elif op == 'pages':
             d = docs[0]
             n = len(d)

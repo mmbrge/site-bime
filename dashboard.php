@@ -2327,6 +2327,33 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div data-scat="issue" class="card p-6 border-rose-100 bg-gradient-to-br from-white to-rose-50/30">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-rose-100 pb-3"><i class="fas fa-file-pdf text-rose-500 ml-2"></i>تعدادِ صفحه‌های فایلِ بیمه‌نامه</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">هنگامِ صدور (تکی، گروهی و کارکنان) فایلِ بیمه‌نامه فقط همین تعداد صفحه‌ی اول را نگه می‌دارد (پیش‌فرض: ۱). بقیه‌ی صفحه‌ها گم نمی‌شوند و فایلی جدا کنارِ بیمه‌نامه می‌شوند: بدنه ← «شرایط عمومی و خصوصی»، بقیه ← «صفحه‌های تکمیلی». در صدورِ گروهی اگر «صفحه‌های پرداخت هم بیاید» زده شود، فایل کامل می‌ماند. بیمه‌نامه‌هایی که قبلاً صادر شده‌اند دست نمی‌خورند.</p>
+                    <div class="float-input">
+                        <input type="text" inputmode="numeric" id="policy-pages-input" placeholder=" " dir="ltr" maxlength="2">
+                        <label>تعدادِ صفحه (۱ = فقط صفحه‌ی بیمه‌نامه، ۲ = بیمه‌نامه و صفحه‌ی بعدش)</label>
+                    </div>
+                    <button onclick="savePolicyPagesSetting()" class="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-rose-500/20 hover-target transition-all text-xs">
+                        <i class="fas fa-save ml-2"></i> ذخیره تعدادِ صفحه
+                    </button>
+                </div>
+
+                <div data-scat="prereq" class="card p-6 border-slate-200 bg-gradient-to-br from-white to-slate-50 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-slate-200 pb-3"><i class="fas fa-font text-slate-500 ml-2"></i>فونتِ نویسه‌ی «∕» در نامِ بیمه‌نامه‌ها (ویندوز)</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">ویندوز «/» را در نامِ فایل قبول نمی‌کند؛ برای همین در نامِ فایل‌ها و پوشه‌های بایگانی شماره‌ی بیمه‌نامه با «∕» (U+2215، «اسلشِ تقسیم») نوشته می‌شود (مثل 1∕49357∕5051-0∕1405∕354). در دیتابیس و پنل همان «/» می‌ماند. این فونت نویسه‌ی «∕» و حروفِ فارسی را دارد.</p>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <a href="Font/prereq/DejaVuSans.ttf" download="DejaVuSans.ttf" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-xs"><i class="fas fa-download ml-1"></i>دانلودِ فونت (DejaVu Sans، TTF)</a>
+                        <a href="api/settings_actions.php?action=prereq_test_zip" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs"><i class="fas fa-file-zipper ml-1"></i>فایلِ آزمایشیِ نام (ZIP)</a>
+                        <a href="Font/prereq/LICENSE-DejaVu.txt" target="_blank" class="text-slate-500 hover:underline text-[11px] self-center">مجوزِ فونت (رایگان)</a>
+                    </div>
+                    <ol class="text-xs text-slate-600 leading-7 list-decimal pr-5">
+                        <li>فایلِ <b dir="ltr">DejaVuSans.ttf</b> را دانلود کنید، رویش راست‌کلیک کنید و <b>Install for all users</b> (یا Install) را بزنید.</li>
+                        <li>«فایلِ آزمایشیِ نام» را دانلود و از ZIP بیرون بیاورید (Extract All). اگر در نامش «∕» درست دیده شد، نامِ بیمه‌نامه‌ها هم درست نشان داده می‌شود.</li>
+                        <li>فایلِ تکیِ بیمه‌نامه را با دکمه‌ی «نامِ دقیق» بگیرید؛ مرورگر در دانلودِ تکی این نویسه را از نام حذف می‌کند، ولی داخلِ ZIP نام دقیقاً همان نامِ بایگانی است.</li>
+                    </ol>
+                </div>
+
                 <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-violet-100 pb-3"><i class="fas fa-globe text-violet-500 ml-2"></i>آدرس دامنه‌ی سایت</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">برای ساخت لینک مینی‌اپ «بازدید سلامت» در بله لازم است (مثال: https://mammut.bbama.ir بدون اسلش انتهایی).</p>
@@ -4301,7 +4328,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=16"></script>
-    <script src="settings-nav.js?v=3"></script>
+    <script src="settings-nav.js?v=4"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
@@ -4334,7 +4361,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=2"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
-    <script src="fin-contracts.js?v=1"></script>
+    <script src="fin-contracts.js?v=2"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -12548,6 +12575,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (data.ok) document.getElementById('quota-input').value = data.quota;
             } catch(e) {}
             try {
+                const rp = await (await fetch('api/settings_actions.php?action=get_policy_pages')).json();
+                if (rp.ok && document.getElementById('policy-pages-input')) document.getElementById('policy-pages-input').value = rp.pages;
+            } catch(e) {}
+            try {
                 const res2 = await fetch('api/settings_actions.php?action=get_site_url');
                 const data2 = await res2.json();
                 if (data2.ok) document.getElementById('site-url-input').value = data2.site_url;
@@ -12582,6 +12613,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 });
                 showToast('تنظیمات استعلام حق بیمه ذخیره شد.', 'success');
             } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
+        }
+
+        async function savePolicyPagesSetting() {
+            const pages = Math.max(1, Math.min(20, parseInt(plateToEn(document.getElementById('policy-pages-input').value)) || 1));
+            try {
+                const r = await (await fetch('api/settings_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'save_policy_pages', pages }) })).json();
+                if (r.ok) { document.getElementById('policy-pages-input').value = r.pages; showToast('تعدادِ صفحه‌های فایلِ بیمه‌نامه ذخیره شد: ' + r.pages, 'success'); }
+                else showToast(r.error || 'خطا در ذخیره', 'error');
+            } catch(e) { showToast('خطا در اتصال به سرور', 'error'); }
         }
 
         async function saveSiteUrlSetting() {

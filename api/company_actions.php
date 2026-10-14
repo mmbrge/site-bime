@@ -912,13 +912,15 @@ try {
 
         // ---------- جستجوی آزاد روی همه‌ی ستون‌ها ----------
         if ($q !== '') {
-            $needle = mb_strtolower(p2e_digits($q));
-            $rows = array_values(array_filter($rows, function ($r) use ($needle) {
+            // «∕»ِ نامِ فایل، نویسه‌های نامرئیِ جهت، رقمِ فارسی و ترتیبِ برعکسِ بخش‌های شماره‌ی بیمه‌نامه هم پیدا می‌شوند
+            $needle = search_text_norm($q);
+            $rows = array_values(array_filter($rows, function ($r) use ($needle, $q) {
+                if ($needle === '') return true;
                 foreach ($r as $v) {
                     if ($v === null || is_array($v)) continue;
-                    if (mb_strpos(mb_strtolower(p2e_digits((string)$v)), $needle) !== false) return true;
+                    if (mb_strpos(search_text_norm($v), $needle) !== false) return true;
                 }
-                return false;
+                return policy_number_matches($q, $r['policy_number'] ?? '');
             }));
         }
 
@@ -2760,7 +2762,9 @@ try {
             $work = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cbundle_') . '.pdf';
             @copy($src, $work);
             $pdo->prepare("UPDATE company_request_plates SET ocr_extracted_data = ? WHERE id = ?")->execute([json_encode($it['data'], JSON_UNESCAPED_UNICODE), $plateId]);
+            $GLOBALS['POLICY_KEEP_ALL_PAGES'] = !empty($pk['with_payments']);   // «صفحه‌های پرداخت هم بیاید»: فایل کوتاه نمی‌شود
             $r = company_issue_plate($pdo, $plateId, $policyNumber, $vin, $premium, $work, 'policy.pdf', $it['data']['issue_date'] ?? null);
+            $GLOBALS['POLICY_KEEP_ALL_PAGES'] = false;
             if (is_file($work)) @unlink($work);
             if (!empty($r['ok'])) {
                 $done++;

@@ -102,6 +102,35 @@ function policy_conditions_make($pdo, $policyAbs) {
     return $ok ? ['ok' => true, 'path' => $dest, 'pages' => $r['pages'] ?? null, 'from' => $r['from'] ?? null, 'detected' => !empty($r['detected'])] : ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.'];
 }
 
+// ---------------- فایلِ بیمه‌نامه فقط چند صفحه‌ی اول ----------------
+// تنظیمات ← «تعداد صفحه‌های فایلِ بیمه‌نامه» (پیش‌فرض ۱). هنگامِ صدور (تکی، گروهی، کارکنان) فایلِ بیمه‌نامه به همین تعداد صفحه
+// کوتاه می‌شود و بقیه‌ی صفحه‌ها گم نمی‌شوند: بدنه => «شرایط عمومی و خصوصی»، بقیه => «صفحه‌های تکمیلی» (هر دو کنارِ بیمه‌نامه).
+function policy_pages_setting($pdo) {
+    try {
+        $v = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'policy_file_pages'")->fetchColumn();
+        if ($v !== false && $v !== null && trim((string)$v) !== '') return max(1, min(20, intval($v)));
+    } catch (Throwable $e) {}
+    return 1;
+}
+function policy_extras_path($policyAbs) {
+    $sep = defined('NAME_SEP') ? NAME_SEP : " \u{200E}- ";
+    return dirname($policyAbs) . '/صفحه‌های تکمیلی' . $sep . pathinfo($policyAbs, PATHINFO_FILENAME) . '.pdf';
+}
+function policy_finalize_file($pdo, $policyAbs, $insuranceType) {
+    if (!is_file($policyAbs) || strtolower(pathinfo($policyAbs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'skipped' => true];
+    if (!empty($GLOBALS['POLICY_KEEP_ALL_PAGES'])) return ['ok' => true, 'skipped' => true];   // «صفحه‌های پرداخت هم بیاید» در صدورِ گروهی
+    $n = policy_pages_setting($pdo);
+    $tmp = dirname($policyAbs) . '/.trim_' . uniqid();
+    $r = pdf_split_run($pdo, 'keep_first', $tmp, ['n' => $n], [$policyAbs], 120);
+    if (empty($r['ok'])) { pdf_split_rrmdir($tmp); return ['ok' => false, 'error' => $r['error'] ?? 'کوتاه کردنِ فایلِ بیمه‌نامه ممکن نشد.']; }
+    if (empty($r['rest']) || !is_file($tmp . '/head.pdf')) { pdf_split_rrmdir($tmp); return ['ok' => true, 'pages' => intval($r['total'] ?? 0), 'trimmed' => false]; }
+    $restDest = strtoupper((string)$insuranceType) === 'BODY' ? policy_conditions_path($policyAbs) : policy_extras_path($policyAbs);
+    if (!is_file($restDest)) @rename($tmp . '/rest.pdf', $restDest);
+    $ok = is_file($restDest) && @rename($tmp . '/head.pdf', $policyAbs);   // اول صفحه‌های بعدی امن ذخیره شوند، بعد بیمه‌نامه کوتاه شود
+    pdf_split_rrmdir($tmp);
+    return ['ok' => $ok, 'pages' => intval($r['kept'] ?? $n), 'rest' => intval($r['rest'] ?? 0), 'rest_file' => $ok ? $restDest : null, 'trimmed' => $ok];
+}
+
 function pdf_split_safe_name($s) {
     $s = preg_replace('/\.pdf$/i', '', trim((string)$s));
     $s = preg_replace('#[\\\\/:*?"<>|\x00-\x1F]+#u', ' ', $s);

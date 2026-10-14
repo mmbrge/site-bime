@@ -50,11 +50,10 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         if ($moved) $issuedFilePath = ltrim(str_replace($siteRoot, '', $dest), '/');
     }
 
-    // بیمه‌نامه‌ی بدنه: «شرایط عمومی و خصوصی» (صفحه‌های بعد از جدولِ بیمه‌نامه) فایلی جدا کنارِ بیمه‌نامه؛ پیش از کپیِ صادره
-    // ساخته می‌شود تا آن‌جا هم باشد. خطا جلوی صدور را نمی‌گیرد.
-    if ($issuedFilePath && $plate['insurance_type'] === 'BODY' && $kind === 'NEW_POLICY') {
-        try { require_once __DIR__ . '/_pdf_split.php'; policy_conditions_make($pdo, $siteRoot . '/' . $issuedFilePath); }
-        catch (Throwable $e) { error_log('[company conditions] ' . $e->getMessage()); }
+    // فایلِ بیمه‌نامه فقط چند صفحه‌ی اول (تنظیمات، پیش‌فرض ۱)؛ بقیه کنارش: بدنه => «شرایط عمومی و خصوصی»، ثالث => «صفحه‌های تکمیلی»
+    if ($issuedFilePath && $kind === 'NEW_POLICY') {
+        try { require_once __DIR__ . '/_pdf_split.php'; policy_finalize_file($pdo, $siteRoot . '/' . $issuedFilePath, $plate['insurance_type']); }
+        catch (Throwable $e) { error_log('[company policy pages] ' . $e->getMessage()); }
     }
 
     $issuedAt = $isImport ? policy_issue_ts($policyIssueDate, time()) : time();

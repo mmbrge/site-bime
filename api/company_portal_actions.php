@@ -137,7 +137,7 @@ try {
                               SELECT 1 FROM company_request_plates crp WHERE crp.request_id = cr.id AND (
                                   crp.chassis_no LIKE ? OR crp.car_name LIKE ? OR crp.policy_number LIKE ?
                                   OR CONCAT_WS(' ', crp.plate_p4, crp.plate_letter, crp.plate_p2, crp.plate_p1) LIKE ?)))";
-            $searchParams = [$like, $like, intval(p2e_digits($q)), p2e_digits($q), $like, $like, $like, $like];
+            $searchParams = [$like, $like, intval(p2e_digits($q)), p2e_digits($q), $like, $like, '%' . search_text_norm($q) . '%', $like];   // شماره‌ی بیمه‌نامه با «∕»/رقمِ فارسی هم
         }
         $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name,
                        (SELECT COUNT(*) FROM company_request_plates crp WHERE crp.request_id = cr.id AND crp.insurance_type = 'BODY') AS body_count,

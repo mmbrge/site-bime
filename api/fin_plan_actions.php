@@ -38,13 +38,36 @@ function fp_target($pdo, $kind, $id) {
 }
 function fp_installments($pdo, $kind, $id) {
     $st = $kind === 'C'
-        ? $pdo->prepare("SELECT inst_number, amount, due_jalali, slip_json, slip_file, (SELECT COUNT(*) FROM company_payment_allocations a WHERE a.installment_id = ci.id) AS paid_n,
+        ? $pdo->prepare("SELECT id, inst_number, amount, due_jalali, due_date, slip_json, slip_file, (SELECT COUNT(*) FROM company_payment_allocations a WHERE a.installment_id = ci.id) AS paid_n,
                                 settled_to_pasargad FROM company_installments ci WHERE plate_id = ? ORDER BY inst_number")
-        : $pdo->prepare("SELECT inst_number, amount, due_jalali, slip_json, slip_file, (SELECT COUNT(*) FROM payment_allocations a WHERE a.installment_id = pi.id) AS paid_n,
+        : $pdo->prepare("SELECT id, inst_number, amount, due_jalali, due_date, slip_json, slip_file, (SELECT COUNT(*) FROM payment_allocations a WHERE a.installment_id = pi.id) AS paid_n,
                                 settled_to_pasargad FROM policy_installments pi WHERE case_id = ? ORDER BY inst_number");
     $st->execute([intval($id)]);
-    return array_map(fn($r) => ['n' => intval($r['inst_number']), 'amount' => intval($r['amount']), 'due' => $r['due_jalali'], 'slip' => json_decode((string)$r['slip_json'], true) ?: null,
-                                'slip_file' => $r['slip_file'], 'touched' => intval($r['paid_n']) > 0 || !empty($r['settled_to_pasargad'])], $st->fetchAll());
+    $rows = $st->fetchAll();
+    if ($rows) require_once __DIR__ . '/_fin_ledger.php';
+    $today = strtotime('today');
+    return array_map(function ($r) use ($pdo, $kind, $today) {
+        $o = ['n' => intval($r['inst_number']), 'amount' => intval($r['amount']), 'due' => $r['due_jalali'], 'slip' => json_decode((string)$r['slip_json'], true) ?: null,
+              'slip_file' => $r['slip_file'], 'touched' => intval($r['paid_n']) > 0 || !empty($r['settled_to_pasargad'])];
+        // وضعیتِ قسط: دریافت از بیمه‌گذار/شرکت (نوع و تاریخِ پرداخت) و پرداخت به بیمه‌گر — فقط خواندنی، چیزی عوض نمی‌شود
+        $hist = [];
+        try { $hist = fin_ledger_history($pdo, $kind, intval($r['id'])); } catch (Throwable $e) {}
+        $in = array_values(array_filter($hist, fn($h) => $h['direction'] === 'IN'));
+        $out = array_values(array_filter($hist, fn($h) => $h['direction'] === 'OUT'));
+        $paid = array_sum(array_map(fn($h) => intval($h['amount']), $in));
+        $ins = array_sum(array_map(fn($h) => intval($h['amount']), $out));
+        if (!empty($r['settled_to_pasargad']) && $ins < $o['amount']) $ins = $o['amount'];   // تسویه‌های قدیمی بدونِ ریزِ مبلغ
+        $overdue = $paid < $o['amount'] && $r['due_date'] && strtotime($r['due_date']) < $today;
+        $o['paid'] = $paid;
+        $o['remaining'] = max(0, $o['amount'] - $paid);
+        $o['pay_status'] = $paid >= $o['amount'] && $o['amount'] > 0 ? 'PAID' : ($paid > 0 ? 'PARTIAL' : ($overdue ? 'OVERDUE' : 'UNPAID'));
+        $o['delay_days'] = $overdue ? (int)floor(($today - strtotime($r['due_date'])) / 86400) : 0;
+        $o['payments'] = array_map(fn($h) => ['amount' => intval($h['amount']), 'date' => $h['paid_jalali'], 'method_fa' => $h['method_fa'], 'ref' => $h['reference_no'],
+                                              'cheque_no' => $h['cheque_no'], 'cheque_status' => $h['cheque_status']], $in);
+        $o['insurer_paid'] = $ins;
+        $o['insurer_date'] = $out ? end($out)['paid_jalali'] : null;
+        return $o;
+    }, $rows);
 }
 function fp_state($pdo, $kind, $t) {
     $id = intval($t['id']);

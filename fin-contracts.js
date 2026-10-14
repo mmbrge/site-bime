@@ -162,6 +162,23 @@
         if (!d.ok) { el.innerHTML = `<p class="text-[11px] text-rose-600">${esc(d.error)}</p>`; return; }
         renderPlan(el, d);
     }
+    // وضعیتِ هر قسطِ صادره: پرداخت‌شده / ناقص / سررسیدگذشته / در انتظار + نوع و تاریخِ هر دریافت و پرداخت به بیمه‌گر
+    const PAY_ST = {PAID: ['پرداخت‌شده', '#dcfce7', '#15803d', 'fa-circle-check'], PARTIAL: ['پرداختِ ناقص', '#fef3c7', '#92400e', 'fa-circle-half-stroke'],
+        OVERDUE: ['سررسید گذشته', '#ffe4e6', '#be123c', 'fa-clock'], UNPAID: ['در انتظارِ پرداخت', '#f1f5f9', '#475569', 'fa-hourglass-half']};
+    function payCells(r) {
+        const st = PAY_ST[r.pay_status] || PAY_ST.UNPAID;
+        const pays = r.payments || [];
+        return `<td class="whitespace-nowrap"><span class="fc-pill" style="background:${st[1]};color:${st[2]}"><i class="fas ${st[3]}"></i>${st[0]}</span>
+                ${r.pay_status === 'PARTIAL' ? `<div class="text-[10px] text-slate-500 mt-1">مانده ${money(r.remaining)}</div>` : ''}
+                ${r.delay_days ? `<div class="text-[10px] text-rose-600 mt-1">${fa(r.delay_days)} روز تأخیر</div>` : ''}</td>
+            <td class="text-[10.5px] leading-5">${pays.length ? pays.map(p => `<div class="whitespace-nowrap"><b>${esc(p.method_fa || '—')}</b> · <span>${fa(p.date || '—')}</span>${pays.length > 1 || p.amount !== r.amount ? ' · ' + money(p.amount) : ''}${p.cheque_no ? ` · چک <span dir="ltr">${fa(p.cheque_no)}</span>` : ''}${p.ref ? ` · <span class="text-slate-400" dir="ltr">${fa(p.ref)}</span>` : ''}</div>`).join('') : '<span class="text-slate-400">—</span>'}
+                ${r.insurer_paid ? `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fas fa-building-columns"></i> به بیمه‌گر${r.insurer_paid < r.amount ? ' ' + money(r.insurer_paid) : ''}${r.insurer_date ? ' · ' + fa(r.insurer_date) : ''}</div>` : ''}</td>`;
+    }
+    function payFoot(rows) {
+        const paid = rows.filter(r => r.pay_status === 'PAID').length, over = rows.filter(r => r.pay_status === 'OVERDUE').length;
+        const rem = rows.reduce((a, r) => a + Number(r.remaining || 0), 0);
+        return `${fa(paid)} قسط پرداخت‌شده${over ? ' · <span class="text-rose-600 font-bold">' + fa(over) + ' سررسید گذشته</span>' : ''}${rem ? ' · مانده ' + money(rem) + ' ریال' : ''}`;
+    }
     function renderPlan(el, d) {
         const cu = d.custom || {};
         const mode = cu.mode || 'default';
@@ -173,6 +190,7 @@
             : x.type === 'amount' ? `قسط ${fa(x.n)}: مبلغِ محاسبه ${money(x.computed)} · فیش ${money(x.slip)}` : `قسط ${fa(x.n)}: سررسیدِ محاسبه ${fa(x.computed)} · فیش ${fa(x.slip)}`;
         const rows = d.issued && d.installments.length ? d.installments : d.preview;
         const dc = d.detected_contract;
+        const showPay = !!(d.issued && d.installments.length && rows === d.installments);
         el.innerHTML = `
         <div class="flex items-center gap-2 flex-wrap mb-2">
             <span class="text-[11px] font-bold text-slate-500">روشِ فعلی:</span><b class="text-[12px] text-slate-800">${esc(d.plan.label)}</b>
@@ -203,12 +221,12 @@
                 <div class="flex gap-2"><button class="fc-btn p" data-save><i class="fas fa-rotate"></i> ${d.issued ? 'ذخیره و ساختِ دوباره‌ی اقساط' : 'ذخیره (هنگامِ صدور اعمال می‌شود)'}</button>
                     ${d.custom ? '<button class="fc-btn s" data-reset><i class="fas fa-rotate-left"></i> برگشت به پیش‌فرض</button>' : ''}</div>
             </div></details>
-        ${rows && rows.length ? `<div style="overflow:auto;border:1px solid #f1f5f9;border-radius:12px"><table class="fc-tbl"><thead><tr><th>قسط</th><th>سررسید</th><th>مبلغ (ریال)</th><th>نوع</th><th>شناسه پرداخت</th><th>حساب / بانک</th><th>فیش</th></tr></thead><tbody>
-            ${rows.map(r => { const s = r.slip || {}; return `<tr><td>${fa(r.n)}${r.touched ? ' <i class="fas fa-lock text-slate-300" title="دریافت/تسویه ثبت شده"></i>' : ''}</td><td class="whitespace-nowrap">${fa(r.due)}</td><td class="whitespace-nowrap font-bold">${money(r.amount)}</td>
+        ${rows && rows.length ? `<div style="overflow:auto;border:1px solid #f1f5f9;border-radius:12px"><table class="fc-tbl"><thead><tr><th>قسط</th><th>سررسید</th><th>مبلغ (ریال)</th>${showPay ? '<th>وضعیت</th><th>نوع و تاریخِ پرداخت</th>' : ''}<th>نوع</th><th>شناسه پرداخت</th><th>حساب / بانک</th><th>فیش</th></tr></thead><tbody>
+            ${rows.map(r => { const s = r.slip || {}; return `<tr><td>${fa(r.n)}${r.touched ? ' <i class="fas fa-lock text-slate-300" title="دریافت/تسویه ثبت شده"></i>' : ''}</td><td class="whitespace-nowrap">${fa(r.due)}</td><td class="whitespace-nowrap font-bold">${money(r.amount)}</td>${showPay ? payCells(r) : ''}
                 <td>${esc(s.kind || '—')}</td><td class="font-mono" dir="ltr" style="text-align:right">${fa(s.shenase || s.fish || '—')}</td>
                 <td class="text-[10.5px]">${s.account ? '<span dir="ltr">' + fa(s.account) + '</span><br>' : ''}<span class="text-slate-500">${esc(s.bank || '')}</span></td>
                 <td>${r.slip_file ? `<a class="fc-btn s" style="padding:3px 8px" target="_blank" href="${fileHref(r.slip_file)}"><i class="fas fa-file-invoice text-rose-500"></i> فیش</a>` : '—'}</td></tr>`; }).join('')}
-            </tbody><tfoot><tr><td colspan="2" class="font-black">جمع (${fa(rows.length)} قسط)</td><td class="font-black whitespace-nowrap">${money(rows.reduce((a, r) => a + Number(r.amount || 0), 0))}</td><td colspan="4" class="text-[10.5px] text-slate-400">${d.issued ? '' : 'پیش‌نمایش؛ اقساطِ واقعی بعد از صدور ساخته می‌شود.'}</td></tr></tfoot></table></div>`
+            </tbody><tfoot><tr><td colspan="2" class="font-black">جمع (${fa(rows.length)} قسط)</td><td class="font-black whitespace-nowrap">${money(rows.reduce((a, r) => a + Number(r.amount || 0), 0))}</td><td colspan="${showPay ? 6 : 4}" class="text-[10.5px] text-slate-400">${d.issued ? (showPay ? payFoot(rows) : '') : 'پیش‌نمایش؛ اقساطِ واقعی بعد از صدور ساخته می‌شود.'}</td></tr></tfoot></table></div>`
             : `<p class="text-[11px] text-slate-400">${d.premium ? '' : 'حق بیمه هنوز معلوم نیست؛ اقساط بعد از صدور ساخته می‌شود.'}</p>`}`;
         let selMode = mode, selPrefer = prefer;
         el.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { selMode = b.dataset.m; el.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === b)); el.querySelectorAll('[data-box]').forEach(x => x.classList.toggle('hidden', x.dataset.box !== selMode)); });
