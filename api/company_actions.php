@@ -1632,6 +1632,20 @@ try {
             $stmtInst = $pdo->prepare("SELECT * FROM company_installments WHERE plate_id = ? ORDER BY inst_number");
             $stmtInst->execute([$p['id']]);
             $p['installments'] = $stmtInst->fetchAll();
+            // تکراری: همین خودرو و همین نوعِ بیمه در بیمه‌نامه‌های صادرشده یا درخواست‌های دیگر (برای ردیف‌های صادرنشده)
+            require_once __DIR__ . '/_dup.php';
+            $p['dups'] = [];
+            if ($reqKind === 'NEW_POLICY' && $p['status'] !== 'ISSUED' && empty($p['dup_of_id'])) {
+                $p['dups'] = dup_find($pdo, ['vin' => $p['vin'] ?: $p['chassis_no'], 'engine' => $p['engine_no'], 'p1' => $p['plate_p1'], 'p2' => $p['plate_p2'],
+                                             'letter' => $p['plate_letter'], 'p4' => $p['plate_p4'], 'type' => $p['insurance_type'], 'exclude_plate' => $p['id']]);
+            }
+            $p['dup_ref'] = null;
+            if (!empty($p['dup_of_id'])) {
+                $p['dup_ref'] = ['source' => $p['dup_of_source'], 'id' => intval($p['dup_of_id'])];
+                $q = $p['dup_of_source'] === 'C' ? "SELECT policy_number, issued_file_path AS file, issued_at FROM company_request_plates WHERE id = ?" : "SELECT policy_number, issued_file_path AS file, issued_at FROM policy_cases WHERE id = ?";
+                $sq = $pdo->prepare($q); $sq->execute([$p['dup_of_id']]);
+                if ($x = $sq->fetch()) $p['dup_ref'] += ['policy_number' => $x['policy_number'], 'file' => $x['file'], 'issued_j' => $x['issued_at'] ? jd(strtotime($x['issued_at'])) : null];
+            }
         }
         // بدون unset، حلقه‌ی بعدیِ «foreach ($plates as $p)» ردیفِ آخر را با ردیفِ ماقبل آخر رونویسی می‌کرد
         // (ردیف آخرِ هر درخواستِ چندردیفی در جزئیات، تکراریِ ردیف قبلی دیده می‌شد)
@@ -1733,6 +1747,44 @@ try {
         echo json_encode(['ok' => true] + $r, JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // ---- تکراری: بررسیِ یک ردیف/خودرو، و «تکراری» زدنِ ردیف (صادر نمی‌شود؛ بیمه‌نامه‌ی قبلی رویش می‌نشیند) ----
+    if ($action === 'dup_check_row') {
+        require_once __DIR__ . '/_dup.php';
+        $pid = intval($data['plate_id'] ?? 0);
+        if ($pid) {
+            $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $st->execute([$pid]);
+            $p = $st->fetch();
+            if (!$p) { echo json_encode(['ok' => false, 'error' => 'ردیف پیدا نشد.']); exit; }
+            $v = ['vin' => $p['vin'] ?: $p['chassis_no'], 'engine' => $p['engine_no'], 'p1' => $p['plate_p1'], 'p2' => $p['plate_p2'], 'letter' => $p['plate_letter'], 'p4' => $p['plate_p4'], 'type' => $p['insurance_type'], 'exclude_plate' => $pid];
+        } else {
+            $v = ['vin' => $data['vin'] ?? '', 'engine' => $data['engine'] ?? '', 'plate' => $data['plate'] ?? '', 'type' => $data['type'] ?? null, 'exclude_case' => intval($data['case_id'] ?? 0)];
+        }
+        echo json_encode(['ok' => true, 'dups' => dup_find($pdo, $v)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'mark_duplicate' || $action === 'unmark_duplicate') {
+        require_once __DIR__ . '/_dup.php';
+        dup_ensure($pdo);
+        $pid = intval($data['plate_id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $st->execute([$pid]);
+        $p = $st->fetch();
+        if (!$p) { echo json_encode(['ok' => false, 'error' => 'ردیف پیدا نشد.']); exit; }
+        if ($p['status'] === 'ISSUED') { echo json_encode(['ok' => false, 'error' => 'ردیفِ صادرشده را نمی‌شود تکراری زد.']); exit; }
+        if ($action === 'unmark_duplicate') {
+            $pdo->prepare("UPDATE company_request_plates SET dup_of_source = NULL, dup_of_id = NULL, dup_at = NULL, dup_by = NULL, status = 'PENDING' WHERE id = ?")->execute([$pid]);
+            company_sync_plate_status($pdo, $pid);
+            echo json_encode(['ok' => true]); exit;
+        }
+        $src = ($data['source'] ?? '') === 'P' ? 'P' : 'C';
+        $ref = intval($data['ref_id'] ?? 0);
+        $q = $src === 'C' ? "SELECT id FROM company_request_plates WHERE id = ? AND status = 'ISSUED'" : "SELECT id FROM policy_cases WHERE id = ? AND status = 'ISSUED'";
+        $sq = $pdo->prepare($q); $sq->execute([$ref]);
+        if (!$sq->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'بیمه‌نامه‌ی قبلی پیدا نشد (فقط بیمه‌نامه‌ی صادرشده).']); exit; }
+        $pdo->prepare("UPDATE company_request_plates SET dup_of_source = ?, dup_of_id = ?, dup_at = NOW(), dup_by = ?, status = 'CANCELLED' WHERE id = ?")
+            ->execute([$src, $ref, $actor['user_id'], $pid]);
+        echo json_encode(['ok' => true]); exit;
+    }
+
     // ---- ساختِ ردیفِ تازه از اطلاعاتِ خوانده‌شده‌ی یک مدرک (شاسی/موتور/مالک) و نشاندنِ مدرک رویش ----
     if ($action === 'doc_ai_create_row') {
         require_once __DIR__ . '/_vdoc.php';

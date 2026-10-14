@@ -62,7 +62,7 @@ if (!$companies) {
 <script src="../comfort.js?v=16"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
-<script src="zerokm.js?v=1"></script>
+<script src="zerokm.js?v=3"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
@@ -682,6 +682,40 @@ function togglePlateNoPlate(cb) {
         if (noPlate) i.value = '';
     });
 }
+// ---- هشدارِ تکراری در فرمِ ثبت: هر ردیف (شاسی/موتور/پلاک + نوع) با بیمه‌نامه‌های صادرشده و درخواست‌های باز ----
+let nrDupTimer = null;
+function nrDupSchedule() { clearTimeout(nrDupTimer); nrDupTimer = setTimeout(nrDupCheck, 700); }
+async function nrDupCheck() {
+    const kind = document.getElementById('nr-kind')?.value || 'NEW_POLICY';
+    const rows = Array.from(document.querySelectorAll('#nr-plates-list .plate-row'));
+    if (!rows.length) return;
+    if (kind !== 'NEW_POLICY') { rows.forEach(r => { const b = r.querySelector('.plate-dup'); if (b) b.remove(); }); return; }
+    const payload = rows.map(row => ({p1: row.querySelector('.plate-p1').value.trim(), p2: row.querySelector('.plate-p2').value.trim(), letter: row.querySelector('.plate-letter').value.trim(),
+        p4: row.querySelector('.plate-p4').value.trim(), chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(), engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
+        type: row.querySelector('.plate-instype').value}));
+    let r;
+    try { r = await (await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dup_check', rows: payload})})).json(); } catch (e) { return; }
+    if (!r.ok) return;
+    rows.forEach((row, i) => {
+        let box = row.querySelector('.plate-dup');
+        const list = (r.dups[i] || []);
+        if (!list.length) { if (box) box.remove(); return; }
+        if (!box) { box = document.createElement('div'); box.className = 'plate-dup mt-1.5'; row.appendChild(box); }
+        box.innerHTML = portalDupHtml(list);
+    });
+}
+function portalDupHtml(list) {
+    return list.slice(0, 3).map(m => {
+        const t = m.type === 'BODY' ? 'بدنه' : 'ثالث', bad = m.state !== 'history';
+        const txt = m.state === 'open' ? `برای همین خودرو (${m.match}) درخواستِ ${t}ِ دیگری در جریان است${m.own && m.request_id ? ' (درخواست #' + faNum(m.request_id) + ')' : ''}`
+            : `این خودرو (${m.match}) قبلاً بیمه‌نامه‌ی ${t}${m.own && m.policy_number ? ' شماره ' + escH(faNum(m.policy_number)) : ''}${m.own && m.issued_j ? ' صادره ' + faNum(m.issued_j) : ''} دارد${m.end_j ? ' (اعتبار تا ' + faNum(m.end_j) + ')' : ''}${bad ? '' : ' — نزدیکِ پایان/منقضی؛ تمدید مجاز است'}`;
+        return `<div class="text-[11px] rounded-lg px-2.5 py-1.5 mb-1 ${bad ? 'bg-rose-50 border border-rose-200 text-rose-800' : 'bg-amber-50 border border-amber-200 text-amber-800'}">${bad ? '⛔' : '⚠️'} ${txt}
+            ${m.own && m.has_file ? `<a class="font-bold text-blue-600 underline mr-1" href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${m.plate_id}">دانلودِ بیمه‌نامه</a>` : ''}${bad ? '<div class="text-[10px] opacity-80">این ردیف تکراری است و با درخواست ثبت نمی‌شود؛ حذفش کنید.</div>' : ''}</div>`;
+    }).join('');
+}
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#nr-plates-list')) nrDupSchedule(); });
+document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#nr-plates-list')) nrDupSchedule(); });
+
 // اکسلِ خودروها => ردیف‌های همین فرم (برای بازبینی پیش از ثبت)
 async function importPlatesExcel(inp) {
     const f = inp.files[0]; if (!f) return;
@@ -710,6 +744,7 @@ async function importPlatesExcel(inp) {
             set('.plate-carvalue', x.car_value ? Number(x.car_value).toLocaleString('en-US') : ''); set('.plate-liability', x.liability_limit ? Number(x.liability_limit).toLocaleString('en-US') : '');
             set('.plate-refpolicy', x.ref_policy_number); set('.plate-endorse', x.endorsement_request);
         });
+        nrDupSchedule();
         msg.innerHTML = `<span class="text-emerald-700 font-bold">${merged.length.toLocaleString('fa-IR')} خودرو از اکسل اضافه شد؛ بازبینی و بعد «ثبت» را بزنید.</span>` + (r.errors && r.errors.length ? `<div class="text-amber-700 mt-1">${r.errors.slice(0, 6).map(escH).join('<br>')}</div>` : '');
     } catch (e) { msg.innerHTML = '<span class="text-rose-600">خطا در ارتباط با سرور.</span>'; }
 }
@@ -892,9 +927,12 @@ async function openRequestDetail(id) {
                     ${p.insurance_type === 'BODY' && p.car_value ? `<span class="text-[10px] text-slate-500">ارزش: ${faMoney(p.car_value)}</span>` : ''}
                     ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<span class="text-[10px] text-slate-500">تعهد: ${faMoney(p.liability_limit)}</span>` : ''}
                 </div>
-                <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${PORTAL_ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-500'}">${p.status_fa || p.status}</span>
+                <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${p.dup ? 'bg-rose-100 text-rose-700' : (PORTAL_ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-500')}">${p.dup ? '⛔ تکراری' : (p.status_fa || p.status)}</span>
             </div>
             <div class="prow-body">
+            ${p.dup ? `<div class="text-[11px] rounded-lg bg-rose-50 border border-rose-200 text-rose-800 px-2.5 py-1.5 mb-1.5">این خودرو برای همین نوعِ بیمه قبلاً بیمه‌نامه دارد و این ردیف صادر نمی‌شود.
+                ${p.dup.plate_id ? `<br>بیمه‌نامه‌ی قبلی${p.dup.policy_number ? ' شماره <b dir="ltr">' + escH(faNum(p.dup.policy_number)) + '</b>' : ''}${p.dup.issued_j ? ' (صادره ' + faNum(p.dup.issued_j) + ')' : ''}
+                    <a class="font-bold text-blue-600 underline mr-1" href="../api/company_portal_actions.php?action=download_issued_policy&plate_id=${p.dup.plate_id}">دانلود</a>` : (p.dup.end_j ? '<br>بیمه‌نامه‌ی قبلی معتبر تا ' + faNum(p.dup.end_j) : '')}</div>` : ''}
             ${p.car_name ? `<p class="text-[10px] text-slate-400 mb-1">${p.car_name}</p>` : ''}
             ${p.engine_no ? `<p class="text-[10px] text-slate-400 mb-1" dir="ltr">شماره موتور: ${p.engine_no}</p>` : ''}
             ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500 mb-1" dir="ltr">شماره بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}

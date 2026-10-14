@@ -213,6 +213,7 @@ function perm_api_map() {
             'excel_sample' => $req . ':view|companies-manage:view|settings:view', 'excel_map_get' => 'settings:view|companies-manage:view', 'excel_map_save' => 'settings:edit|companies-manage:edit', 'excel_headers' => 'settings:edit|companies-manage:edit',
             'dashboard_alerts' => 'dashboard:view', 'issue_queue' => 'issue-queue:view|issued-list:view|issue-group:view',
             'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_retry' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
+            'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
@@ -435,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
@@ -449,7 +450,7 @@ function perm_activity_labels() {
         'company_actions.reject_document' => 'ردِ مدرکِ شرکتی', 'company_actions.split_document' => 'جدا کردنِ صفحه‌های مدرکِ شرکتی', 'company_actions.upload_combined_pdf' => 'بارگذاریِ PDFِ چند مدرکیِ شرکتی', 'company_actions.upload_row_doc' => 'بارگذاریِ مدرکِ ردیف', 'company_actions.admin_upload_plate_doc' => 'بارگذاریِ مدرکِ ردیف',
         'company_actions.delete_row_doc' => 'حذفِ مدرکِ ردیف', 'company_actions.set_row_stage' => 'تغییرِ مرحله‌ی ردیف', 'company_actions.update_row' => 'ویرایشِ ردیفِ درخواست',
         'company_actions.set_row_coverages' => 'ویرایشِ پوشش‌های ردیف', 'company_actions.delete_row' => 'حذفِ ردیفِ درخواست', 'company_actions.import_letter_rows' => 'ورودِ ردیف‌ها از نامه',
-        'company_actions.doc_ai_create_row' => 'ساختِ ردیف از مدرکِ شناسایی‌شده', 'company_actions.doc_ai_retry' => 'شناساییِ دوباره‌ی مدرکِ شرکتی',
+        'company_actions.doc_ai_create_row' => 'ساختِ ردیف از مدرکِ شناسایی‌شده', 'company_actions.mark_duplicate' => 'تکراری زدنِ ردیفِ شرکتی', 'company_actions.unmark_duplicate' => 'برداشتنِ «تکراری» از ردیف', 'company_actions.doc_ai_retry' => 'شناساییِ دوباره‌ی مدرکِ شرکتی',
         'company_actions.create_company' => 'ثبتِ شرکت', 'company_actions.update_company' => 'ویرایشِ شرکت', 'company_actions.delete_company' => 'حذفِ شرکت', 'company_actions.company_import' => 'ورودِ شرکت‌ها از اکسل',
         'company_actions.create_portal_user' => 'ساختِ کاربرِ شرکت', 'company_actions.save_issue_info' => 'ثبتِ اطلاعاتِ صدور', 'company_actions.retry_folder_transfer' => 'تلاشِ دوباره برای بایگانی',
         'company_actions.create_company_payment' => 'ثبتِ پرداختِ شرکت', 'company_actions.settle_company_pasargad' => 'تسویه با بیمه‌گر',

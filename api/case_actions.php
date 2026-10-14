@@ -189,8 +189,23 @@ try {
         $proposal = proposal_get($pdo, $caseId);
         if ($proposal && !empty($proposal['data'])) $proposal['relation'] = proposal_relation($proposal['data'], ['national_code' => $case['holder_national_code'], 'full_name' => $case['holder_name']]);
         unset($case['proposal_json']);
+        // تکراری: همین خودرو و همین نوعِ بیمه (بیمه‌نامه‌ی صادرشده یا درخواستِ دیگر) + معرفی‌نامه‌ی دیگرِ همین پرسنل در همان ماه
+        require_once __DIR__ . '/_dup.php';
+        $dups = $case['status'] === 'ISSUED' ? [] : dup_find($pdo, ['vin' => $case['vin'] ?: $case['chassis_num'], 'engine' => $case['engine_num'], 'plate' => $case['plate'], 'type' => $case['insurance_type'], 'exclude_case' => $caseId]);
+        $introDups = [];
+        try {
+            if (!empty($case['introduction_id'])) {
+                $st = $pdo->prepare("SELECT it.id, it.letter_date, it.created_at, (SELECT COUNT(*) FROM policy_cases x WHERE x.introduction_id = it.id) AS cases
+                                       FROM introductions it WHERE it.person_id = ? AND it.id <> ? ORDER BY it.id DESC LIMIT 20");
+                $st->execute([$case['person_id'], $case['introduction_id']]);
+                $mine = $pdo->prepare("SELECT letter_date, created_at FROM introductions WHERE id = ?"); $mine->execute([$case['introduction_id']]);
+                $me = $mine->fetch() ?: [];
+                $ym = function ($r) { $d = (string)($r['letter_date'] ?? ''); return preg_match('/^(1[34]\d\d)-(\d{2})/', $d, $m) ? $m[1] . '/' . $m[2] : ($r['created_at'] ? (function ($ts) { [$y, $mo] = jalali_from_gregorian_ts($ts); return sprintf('%04d/%02d', $y, $mo); })(strtotime($r['created_at'])) : ''); };
+                foreach ($st->fetchAll() as $r) if ($ym($r) !== '' && $ym($r) === $ym($me)) $introDups[] = ['id' => intval($r['id']), 'month' => $ym($r), 'letter_date' => $r['letter_date'] ? str_replace('-', '/', $r['letter_date']) : null, 'cases' => intval($r['cases'])];
+            }
+        } catch (Throwable $e) {}
         echo json_encode(['ok' => true, 'case' => $case, 'documents' => $docs, 'coverage_labels' => $coverageLabels, 'required_docs' => $requiredDocs,
-                          'company' => $company, 'health' => $health, 'proposal' => $proposal], JSON_UNESCAPED_UNICODE);
+                          'company' => $company, 'health' => $health, 'proposal' => $proposal, 'dups' => $dups, 'intro_dups' => $introDups], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -132,7 +132,18 @@
         });
         S.rows = rows;
         S.extraPages = S.excel.length ? pages.filter(p => !used.has(p.n) && !keep['p' + p.n]) : [];
-        renderSettings(); renderTable();
+        renderSettings(); renderTable(); dupSchedule();
+    }
+    // تکراری: خودرویی که برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ در جریان دارد (ردیفش تیک‌نخورده می‌شود)
+    let dupT = null;
+    function dupSchedule() { clearTimeout(dupT); dupT = setTimeout(dupCheck, 500); }
+    async function dupCheck() {
+        if (!S.rows.length) return;
+        const rows = S.rows.map(r => { const e = r.e || {}, v = r.inv || {}; return {chassis_no: e.chassis || clean(v.vin), engine_no: e.engine || clean(v.engine_no), type: r.type || S.type}; });
+        const r = await post({action: 'dup_check', rows}).catch(() => null);
+        if (!r || !r.ok) return;
+        S.rows.forEach((row, i) => { row.dups = r.dups[i] || []; if (row.dups.some(m => m.state !== 'history') && !row.dupSeen) { row.on = false; row.dupSeen = 1; } });
+        renderTable();
     }
 
     function covHtml(cov, base, scope) {
@@ -162,7 +173,7 @@
                     ${S.def && S.def.liability_from ? `<span class="block text-[10px] text-emerald-600 mt-0.5">پیش‌فرض از آخرین درخواست (${fa(S.def.liability_from.date)})</span>` : ''}</label>
             </div>
             ${showBody ? `<div class="mt-2"><span class="block text-[11px] text-slate-500 mb-1">پوشش‌های بدنه (کلی)${S.def && S.def.coverages_from ? ` <span class="text-emerald-600">— از آخرین درخواستِ بدنه (${fa(S.def.coverages_from.date)})</span>` : ''}</span>${covHtml(S.cov, S.covBase, 'all')}</div>` : ''}`;
-        box.querySelector('#zk-type').onchange = e => { S.type = e.target.value; renderSettings(); renderTable(); };
+        box.querySelector('#zk-type').onchange = e => { S.type = e.target.value; renderSettings(); renderTable(); dupSchedule(); };
         box.querySelector('#zk-liab').onchange = e => { S.liab = e.target.value; renderTable(); };
         const cb = box.querySelector('.zk-cov[data-scope="all"]');
         if (cb) cb.addEventListener('change', () => { const r = readCov(cb); S.cov = r.cov; S.covBase = r.base; renderSettings(); });
@@ -180,7 +191,7 @@
                 const mis = v.vin && e.chassis && clean(v.vin) !== e.chassis;
                 return `<tr data-i="${i}">
                 <td><input type="checkbox" data-k="on" ${r.on ? 'checked' : ''}></td>
-                <td dir="ltr" class="font-bold ${mis ? 'text-amber-700' : ''}" title="${mis ? 'فاکتور: ' + esc(v.vin) : ''}">${esc(ch)}</td>
+                <td dir="ltr" class="font-bold ${mis ? 'text-amber-700' : ''}" title="${mis ? 'فاکتور: ' + esc(v.vin) : ''}">${esc(ch)}${(r.dups || []).filter(m => m.state !== 'history').length ? `<div dir="rtl" class="zk-pill zk-no mt-0.5" title="${esc(r.dups.map(m => (m.type === 'BODY' ? 'بدنه' : 'ثالث') + ': ' + (m.state === 'open' ? 'درخواستِ در جریان' : 'بیمه‌نامه‌ی فعال' + (m.end_j ? ' تا ' + fa(m.end_j) : ''))).join(' · '))}">⛔ تکراری</div>` : ''}</td>
                 <td dir="ltr">${esc(eg)}${e.engine_raw && e.engine_raw !== eg ? `<div class="text-[9.5px] text-slate-400">${esc(e.engine_raw)}</div>` : ''}</td>
                 <td>${esc(car)}</td>
                 <td>${esc(e.customer || '')}${v.owner_name ? `<div class="text-[10px] text-indigo-700">فاکتور: ${esc(v.owner_name)}${v.national_id ? ' · ' + fa(v.national_id) : ''}</div>` : ''}</td>
@@ -200,6 +211,7 @@
                 const k = el.dataset.k;
                 r[k] = el.type === 'checkbox' ? el.checked : (k === 'liab' || k === 'value' ? en(el.value).replace(/\D/g, '') : el.value);
                 if (k === 'type' || k === 'covMode') { renderSettings(); renderTable(); }
+                if (k === 'type') dupSchedule();
             });
         });
         box.querySelectorAll('tr[data-ci]').forEach(tr => {

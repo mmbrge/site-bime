@@ -6339,6 +6339,45 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return `<div class="flex flex-wrap gap-1 mt-1">${parts.join('')}</div>`;
         }
 
+        // ---- تکراری (api/_dup.php): همین خودرو و همین نوعِ بیمه در بیمه‌نامه‌های صادرشده یا درخواست‌های دیگر ----
+        function dupBoxHtml(list, opts = {}) {
+            list = (list || []).filter(m => opts.history || m.state !== 'history' || list.length <= 3);
+            if (!list.length) return '';
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            return `<div class="rounded-xl border ${list.some(m => m.state === 'active') ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'} p-2 mt-1 space-y-1 text-[10.5px] whitespace-normal ${opts.cls || ''}">` + list.slice(0, 4).map(m => {
+                const t = m.type === 'BODY' ? 'بدنه' : 'ثالث', who = m.source === 'C' ? (m.owner ? 'شرکت ' + esc(m.owner) : 'شرکتی') : 'کارکنان' + (m.owner ? ' · ' + esc(m.owner) : '');
+                const head = m.state === 'open' ? `⏳ درخواستِ ${t}ِ دیگری برای همین خودرو در جریان است (${m.match}) — ${who}${m.request_id ? ' · درخواست #' + e2pNum(m.request_id) : (m.code ? ' · ' + esc(m.code) : '')}`
+                    : `${m.state === 'active' ? '⛔' : '🕘'} بیمه‌نامه‌ی ${t}${m.policy_number ? ' <b dir="ltr">' + esc(faDigits(m.policy_number)) + '</b>' : ''} (${m.match}) — ${who}${m.issued_j ? ' · صادره ' + faDigits(m.issued_j) : ''}${m.end_j ? ' · تا ' + faDigits(m.end_j) : ''}${m.state === 'history' ? ' · منقضی/نزدیکِ پایان' : ''}`;
+                const btns = m.state === 'open' ? '' : `${m.file ? `<a href="/${encodeFilePath(m.file)}" target="_blank" class="text-blue-600 underline font-bold">دانلود</a>` : ''}
+                    <button type="button" onclick="openIssuedRef('${m.source}', ${m.id})" class="text-indigo-600 underline font-bold">صفحه‌ی صدور</button>
+                    ${opts.plateId && m.state === 'active' ? `<button type="button" onclick="markDuplicate(${opts.plateId}, '${m.source}', ${m.id})" class="bg-rose-600 text-white rounded-md px-2 py-0.5 font-bold">تکراری بزن (صادر نشود)</button>` : ''}`;
+                return `<div class="${m.state === 'active' ? 'text-rose-800' : (m.state === 'open' ? 'text-amber-800' : 'text-slate-600')}">${head} <span class="inline-flex gap-2 mr-1">${btns}</span></div>`;
+            }).join('') + '</div>';
+        }
+        // رفتن به جزئیاتِ یک بیمه‌نامه‌ی صادرشده در «صادره‌ها»
+        async function openIssuedRef(src, id) {
+            switchTab('issued-list');
+            if (typeof loadIssuedList === 'function') await loadIssuedList();
+            const idx = (issuedListCache || []).findIndex(r => (src === 'C' ? r.source === 'COMPANY' : r.source === 'PERSONNEL') && Number(r.row_id || r.id) === Number(id));
+            if (idx >= 0) openIssuedDetail(idx); else showToast('این بیمه‌نامه در فیلترِ فعلیِ صادره‌ها نیست؛ بازه‌ی تاریخ را بازتر کنید.', 'info');
+        }
+        function markDuplicate(plateId, src, refId) {
+            showConfirm('تکراری', 'این ردیف «تکراری» زده شود؟ صادر نمی‌شود و بیمه‌نامه‌ی قبلی رویش نمایش داده می‌شود (شرکت هم می‌بیند).', async () => {
+                const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'mark_duplicate', plate_id: plateId, source: src, ref_id: refId})})).json();
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+                showToast('ردیف تکراری زده شد.', 'success');
+                document.getElementById('cissue-modal')?.classList.remove('active');
+                if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+                if (typeof loadIssueQueue === 'function' && document.getElementById('tab-issue-queue') && !document.getElementById('tab-issue-queue').classList.contains('hidden')) loadIssueQueue();
+            });
+        }
+        async function unmarkDuplicate(plateId) {
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'unmark_duplicate', plate_id: plateId})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            showToast('«تکراری» برداشته شد.', 'success');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
         async function openCompanyRequestDetail(id) {
             const lk = document.getElementById('creq-lock'); if (lk) lk.setAttribute('data-lock', 'req:' + id);
             currentRequestId = id;
@@ -6380,6 +6419,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
                         ${p.endorsement_request ? `<p class="text-[10px] text-violet-600 mt-0.5">خواسته: ${p.endorsement_request}</p>` : ''}
                         ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600 mt-0.5">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
+                        ${p.dup_ref ? `<div class="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] p-1.5 mt-1 whitespace-normal">⛔ تکراری — بیمه‌نامه‌ی قبلی${p.dup_ref.policy_number ? ' <b dir="ltr">' + faDigits(p.dup_ref.policy_number) + '</b>' : ''}${p.dup_ref.issued_j ? ' (صادره ' + faDigits(p.dup_ref.issued_j) + ')' : ''}
+                            ${p.dup_ref.file ? `<a href="/${encodeFilePath(p.dup_ref.file)}" target="_blank" class="text-blue-600 underline mr-1">دانلود</a>` : ''}<button type="button" onclick="openIssuedRef('${p.dup_ref.source}', ${p.dup_ref.id})" class="text-indigo-600 underline mr-1">صفحه‌ی صدور</button>
+                            ${isAdmin ? `<button type="button" onclick="unmarkDuplicate(${p.id})" class="text-slate-500 underline mr-1">برداشتنِ تکراری</button>` : ''}</div>` : dupBoxHtml(p.dups, {plateId: isAdmin ? p.id : 0})}
                     </td>
                     <td class="p-2 text-[11px] whitespace-nowrap">${p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—')}
                         ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500">ارزش: ${money(p.car_value)} ریال</p>` : ''}
@@ -6393,8 +6435,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر کیلومتر</span>' : '—')}</td>
                     <td class="p-2 col-checklist"><div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
                     <td class="p-2 whitespace-nowrap">
-                        <span class="status-badge ${ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600'} text-[10px] font-bold px-2 py-1 rounded-full">${p.status_fa || p.status}</span>
-                        ${missing.length ? `<p class="text-[9px] text-amber-600 mt-1">کم دارد: ${missing.join('، ')}</p>` : ''}
+                        <span class="status-badge ${p.dup_ref ? 'bg-rose-100 text-rose-700' : (ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600')} text-[10px] font-bold px-2 py-1 rounded-full">${p.dup_ref ? '⛔ تکراری' : (p.status_fa || p.status)}</span>
+                        ${(p.dups || []).some(m => m.state === 'active') && !p.dup_ref ? '<p class="text-[9px] text-rose-600 font-bold mt-1">⚠ احتمالاً تکراری</p>' : ''}
+                        ${missing.length && !p.dup_ref ? `<p class="text-[9px] text-amber-600 mt-1">کم دارد: ${missing.join('، ')}</p>` : ''}
                         ${p.status === 'ISSUED' ? `<p class="text-[9px] ${fs[1]} mt-1">بایگانی: ${fs[0]}${p.folder_status === 'FAILED' && isAdmin ? ` <button onclick="retryFolderTransfer(${p.id})" class="text-blue-600 underline">تلاش دوباره</button>` : ''}</p>` : ''}
                         ${rowStageButtons(p, isAdmin)}
                     </td>
@@ -6402,7 +6445,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.status === 'ISSUED'
                             ? `<p class="text-[10px] text-slate-500">${p.policy_number || ''}</p>
                                ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a> <a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">(نامِ دقیق)</a>` : ''}`
-                            : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>')}
+                            : (p.dup_ref ? '<span class="text-[10px] text-rose-500">صادر نمی‌شود (تکراری)</span>' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>'))}
                         ${isAdmin ? `<div class="flex gap-2 mt-1">
                             <button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px]">ویرایش</button>
                             ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px]">حذف</button>` : ''}
@@ -8629,6 +8672,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             pfRender(document.getElementById('cis-form'), pre && pre.pf ? Object.assign({}, pre.pf)
                 : (p ? {vin: p.chassis_no || '', engine_no: p.engine_no || '', car_name: p.car_name || '', car_value: p.car_value || '', liability: p.liability_limit || ''} : {}));
             document.getElementById('cissue-modal').classList.add('active');
+            // تکراری: اگر همین خودرو برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ دیگری دارد، همین‌جا با دانلود و «تکراری بزن»
+            let dupBox = document.getElementById('cis-dup');
+            if (!dupBox) { dupBox = document.createElement('div'); dupBox.id = 'cis-dup'; document.getElementById('cis-plate-label').after(dupBox); }
+            dupBox.innerHTML = '';
+            if (!pre) fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dup_check_row', plate_id: plateId})}).then(r => r.json())
+                .then(d => { if (d.ok && String(document.getElementById('cis-plate-id').value) === String(plateId)) dupBox.innerHTML = dupBoxHtml(d.dups, {plateId, history: true}); }).catch(() => {});
         }
 
         // ---- اعتبارسنجیِ فایل بیمه‌نامه، همان روالِ بخش پرسنلی: اگر پلاک یا نوع بیمه‌ی
@@ -10865,7 +10914,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         : `<div><span class="text-slate-400">ارزش خودرو:</span> <b class="text-amber-500">محاسبه‌ی خودکار توسط کارشناس</b></div>`;
                 }
 
-                body.innerHTML = (c.status === 'WITHDRAWN' ? `
+                const dupTop = ((data.dups || []).length ? `<div class="mb-3"><p class="text-xs font-black text-rose-700 mb-1"><i class="fas fa-clone ml-1"></i>هشدارِ تکراری: همین خودرو (${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'})</p>${dupBoxHtml(data.dups, {history: true})}</div>` : '')
+                    + ((data.intro_dups || []).length ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900"><i class="fas fa-triangle-exclamation ml-1"></i>برای همین پرسنل در همین ماه معرفی‌نامه‌ی دیگری هم ثبت شده:
+                        ${data.intro_dups.map(x => `<b>معرفی‌نامه #${e2pNum(x.id)}</b>${x.letter_date ? ' (' + faDigits(x.letter_date) + ')' : ''} · ${e2pNum(x.cases)} درخواست`).join('، ')}</div>` : '');
+                body.innerHTML = dupTop + (c.status === 'WITHDRAWN' ? `
                     <div class="bg-slate-100 border border-slate-300 text-slate-600 rounded-xl p-3 mb-3 text-xs leading-6">
                         <i class="fas fa-box-archive ml-1"></i><b>این درخواست از فاز عملیاتی خارج شده است</b> و فقط برای سابقه نگه داشته می‌شود؛
                         در لیست صدور، صادره‌ها و شمارِ معرفی‌نامه نمی‌آید و عملیاتی روی آن انجام نمی‌شود.

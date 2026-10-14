@@ -58,6 +58,22 @@ try {
         exit;
     }
 
+    // ---- تکراری: هر ردیف (شاسی/موتور/پلاک + نوعِ بیمه) با بیمه‌نامه‌های صادرشده و درخواست‌های باز ----
+    if ($action === 'dup_check') {
+        require_once __DIR__ . '/_dup.php';
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : (json_decode((string)($data['rows'] ?? '[]'), true) ?: []);
+        $out = [];
+        foreach (array_slice($rows, 0, 300) as $i => $r) {
+            $types = ($r['type'] ?? '') === 'BOTH' ? ['THIRDPARTY', 'BODY'] : [$r['type'] ?? 'THIRDPARTY'];
+            $list = [];
+            foreach ($types as $t) $list = array_merge($list, dup_find($pdo, ['vin' => $r['chassis_no'] ?? '', 'engine' => $r['engine_no'] ?? '', 'p1' => $r['p1'] ?? '', 'p2' => $r['p2'] ?? '',
+                                                                              'letter' => $r['letter'] ?? '', 'p4' => $r['p4'] ?? '', 'type' => $t]));
+            $out[$i] = dup_for_company($list, $allowedCompanyIds);
+        }
+        echo json_encode(['ok' => true, 'dups' => (object)$out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- صفر کیلومتر (فاکتور فروش): پیش‌فرض‌ها، اکسل، PDFِ فاکتورها و خواندنِ هر صفحه ----
     if ($action === 'zk_defaults') {
         $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null) ?: ($allowedCompanyIds[0] ?? 0);
@@ -175,10 +191,28 @@ try {
                                        car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
                                        insurance_type, status, expiry_date,
                                        skip_health_inspection, has_prev_body, car_name, car_type, row_note, policy_number, issued_at,
-                                       issued_file_path, issued_file_path IS NOT NULL AS has_issued_file, selected_coverages
+                                       issued_file_path, issued_file_path IS NOT NULL AS has_issued_file, selected_coverages, dup_of_source, dup_of_id
                                 FROM company_request_plates WHERE request_id = ? ORDER BY id");
+        require_once __DIR__ . '/_dup.php';
+        dup_ensure($pdo);
         $stmt->execute([$requestId]);
         $plates = $stmt->fetchAll();
+        // ردیفِ «تکراری»: بیمه‌نامه‌ی قبلیِ همین خودرو (اگر مالِ همین شرکت است، با دانلود)
+        foreach ($plates as &$p) {
+            $p['dup'] = null;
+            if (!empty($p['dup_of_id'])) {
+                $p['dup'] = ['source' => $p['dup_of_source']];
+                if ($p['dup_of_source'] === 'C') {
+                    $st2 = $pdo->prepare("SELECT crp.id, crp.policy_number, crp.issued_at, crp.end_date_j, crp.insurance_type, cr.company_id FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
+                    $st2->execute([$p['dup_of_id']]);
+                    $q2 = $st2->fetch();
+                    if ($q2 && in_array(intval($q2['company_id']), $allowedCompanyIds, true))
+                        $p['dup'] += ['plate_id' => intval($q2['id']), 'policy_number' => $q2['policy_number'], 'end_j' => $q2['end_date_j'], 'issued_j' => $q2['issued_at'] ? jalali_from_gregorian_ts_dotted(strtotime($q2['issued_at'])) : null];
+                    elseif ($q2) $p['dup'] += ['end_j' => $q2['end_date_j']]; // بیمه‌نامه‌ی شرکت/شخصِ دیگر: فقط تاریخِ اعتبار
+                }
+            }
+        }
+        unset($p);
         // همان چک‌لیستی که ما در پنل خودمان می‌بینیم، عیناً برای ثبت‌کننده‌ی شرکت هم
         // نمایش داده می‌شود تا هر دو طرف بدانند هر ردیف چه کم دارد و خودش بتواند
         // همان‌جا آپلود کند (خواسته‌ی صریح کارفرما: «هم اون بتونه انجام بده هم من»)
@@ -431,6 +465,23 @@ try {
             }
         } elseif ($counts) {
             $counts['ENDORSEMENT'] = 0; $counts['CANCELLATION'] = 0; $counts = array_sum($counts) ? $counts : null;
+        }
+        // درخواستِ تکراری ثبت نمی‌شود: خودرویی که برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ در جریان دارد
+        if ($kind === 'NEW_POLICY') {
+            require_once __DIR__ . '/_dup.php';
+            $dupMsgs = [];
+            foreach ((json_decode($data['plates'] ?? '[]', true) ?: []) as $p) {
+                $t = in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $p['insurance_type'] : null;
+                if (!$t) continue;
+                $hits = array_filter(dup_find($pdo, ['vin' => $p['chassis_no'] ?? '', 'engine' => $p['engine_no'] ?? '', 'p1' => $p['p1'] ?? '', 'p2' => $p['p2'] ?? '', 'letter' => $p['letter'] ?? '', 'p4' => $p['p4'] ?? '', 'type' => $t]),
+                                     function ($m) { return $m['state'] !== 'history'; });
+                if ($hits) {
+                    $lab = trim(($p['p2'] ?? '') . ' ' . ($p['letter'] ?? '') . ' ' . ($p['p4'] ?? '') . ' ' . ($p['p1'] ?? '')) ?: ($p['chassis_no'] ?? '') ?: ($p['engine_no'] ?? '');
+                    $m = array_values($hits)[0];
+                    $dupMsgs[] = '«' . $lab . '» (' . ($t === 'BODY' ? 'بدنه' : 'ثالث') . '): ' . ($m['state'] === 'open' ? 'درخواستِ دیگری برای همین خودرو در جریان است' : 'بیمه‌نامه‌ی فعال دارد' . ($m['end_j'] ? ' تا ' . strtr($m['end_j'], ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']) : ''));
+                }
+            }
+            if ($dupMsgs) { echo json_encode(['ok' => false, 'dup' => true, 'error' => "این خودروها تکراری‌اند و ثبت نشدند:\n" . implode("\n", array_slice($dupMsgs, 0, 15)) . (count($dupMsgs) > 15 ? "\n…" : '') . "\nآن‌ها را از فهرست حذف کنید."], JSON_UNESCAPED_UNICODE); exit; }
         }
         $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, ?, ?, ?, ?, ?, 'NEW')");
         $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind,
