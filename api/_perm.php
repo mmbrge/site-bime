@@ -215,7 +215,7 @@ function perm_api_map() {
             'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_retry' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
             'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
-            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
+            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
             'create_portal_user' => 'companies-manage:create|staff-users:create', 'update_portal_user' => 'companies-manage:edit|staff-users:edit',
@@ -233,7 +233,7 @@ function perm_api_map() {
             'set_row_coverages' => $req . ':edit', 'delete_row' => $req . ':delete',
             'preview_letter_rows' => $req . ':create|' . $req . ':edit', 'import_letter_rows' => $req . ':create|' . $req . ':edit', 'request_rows_text' => $req . ':view',
             'policy_file' => $req . ':view|issued-list:view|issue-queue:view|import-archive:view', 'ocr_preview_company_policy' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit',
-            'bundle_analyze' => 'issue-group:create|import-archive:edit', 'bundle_recheck' => 'issue-group:create|import-archive:edit', 'bundle_page' => 'issue-group:view|import-archive:view', 'bundle_issue' => 'issue-group:create|import-archive:edit',
+            'bundle_analyze' => 'issue-group:create|import-archive:edit', 'cprop_upload' => 'issue-group:create|' . $req . ':edit', 'cprop_step' => 'issue-group:create|' . $req . ':edit', 'cprop_assign' => 'issue-group:create|' . $req . ':edit', 'bundle_recheck' => 'issue-group:create|import-archive:edit', 'bundle_page' => 'issue-group:view|import-archive:view', 'bundle_issue' => 'issue-group:create|import-archive:edit',
             'mark_issued' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit', 'list_company_installments' => $req . ':view|fin-installments:view',
             'company_receipts' => $req . ':view|fin-installments:view', 'company_pasargad_receipts' => $req . ':view|fin-installments:view',
             'create_company_payment' => 'fin-installments:create|fin-payments:create', 'settle_company_pasargad' => 'fin-installments:create|fin-payments:create',
@@ -436,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
@@ -464,7 +464,7 @@ function perm_activity_labels() {
         'case_actions.confirm_issue_policy' => 'صدورِ بیمه‌نامه‌ی کارکنان', 'case_actions.approve_doc' => 'تأییدِ مدرکِ کارکنان', 'case_actions.approve_all_docs' => 'تأییدِ همه‌ی مدارکِ کارکنان',
         'case_actions.reject_doc' => 'ردِ مدرکِ کارکنان', 'case_actions.request_fix' => 'درخواستِ اصلاحِ مدارک', 'case_actions.approve_health' => 'تأییدِ بازدیدِ سلامت',
         'case_actions.reject_health' => 'ردِ بازدیدِ سلامت', 'case_actions.review_health_photo' => 'بررسیِ عکسِ بازدیدِ سلامت', 'case_actions.upload_health_report' => 'بارگذاریِ گزارشِ بازدیدِ سلامت',
-        'case_actions.delete_case' => 'حذفِ درخواستِ کارکنان', 'case_actions.admin_upload_case_doc' => 'بارگذاریِ مدرکِ کارکنان', 'case_actions.split_assign' => 'ثبتِ صفحه‌های PDFِ چند مدرکیِ کارکنان', 'company_actions.split_apply' => 'جداسازیِ صفحه‌های مدرکِ شرکتی', 'case_actions.download_docs_zip' => 'دانلودِ مدارکِ کارکنان',
+        'case_actions.delete_case' => 'حذفِ درخواستِ کارکنان', 'case_actions.admin_upload_case_doc' => 'بارگذاریِ مدرکِ کارکنان', 'case_actions.split_assign' => 'ثبتِ صفحه‌های PDFِ چند مدرکیِ کارکنان', 'company_actions.split_apply' => 'جداسازیِ صفحه‌های مدرکِ شرکتی', 'company_actions.cprop_upload' => 'پیشنهادِ گروهیِ درخواستِ شرکتی', 'company_actions.download_issued_bulk' => 'دانلودِ گروهیِ بیمه‌نامه‌های صادره', 'company_actions.cprop_assign' => 'نشاندنِ دستیِ پیشنهاد روی ردیف', 'case_actions.download_docs_zip' => 'دانلودِ مدارکِ کارکنان',
         'record_actions.create_intro' => 'ثبتِ معرفی‌نامه', 'record_actions.create_manual' => 'ثبتِ دستیِ پرونده', 'record_actions.create_manual_request' => 'ثبتِ دستیِ درخواستِ کارکنان',
         'record_actions.create_case_for_intro' => 'ساختِ درخواست از معرفی‌نامه', 'record_actions.edit' => 'ویرایشِ پرونده', 'record_actions.change_status' => 'تغییرِ وضعیتِ پرونده',
         'record_actions.delete' => 'حذفِ پرونده', 'record_actions.reset_all' => 'پاک‌سازیِ کلِ سامانه', 'records.export' => 'خروجیِ اکسلِ پرونده‌ها',

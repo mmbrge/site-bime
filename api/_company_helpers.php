@@ -543,6 +543,11 @@ function company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $oldAbs, $newAbs) 
         ->execute([$oldRel, $newRel, $plateId]);
     $pdo->prepare("UPDATE company_request_plates SET issued_file_path = REPLACE(issued_file_path, ?, ?) WHERE id = ? AND issued_file_path IS NOT NULL")
         ->execute([$oldRel, $newRel, $plateId]);
+    // فایلِ «پیشنهاد»ِ ردیف (api/_proposal.php) هم داخلِ همین پوشه است؛ مسیرش در JSON (با / یا \/) به‌روز می‌شود
+    try {
+        $pdo->prepare("UPDATE company_request_plates SET proposal_json = REPLACE(REPLACE(proposal_json, ?, ?), ?, ?) WHERE id = ? AND proposal_json IS NOT NULL")
+            ->execute([$oldRel, $newRel, str_replace('/', '\\/', $oldRel), str_replace('/', '\\/', $newRel), $plateId]);
+    } catch (Throwable $e) {}   // ستونِ proposal_json هنوز ساخته نشده
 }
 
 // =====================================================================

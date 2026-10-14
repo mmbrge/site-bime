@@ -2747,6 +2747,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <div class="flex gap-2">
                     <button onclick="exportIssuedExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-file-excel ml-1"></i> خروجی اکسل</button>
+                    <button onclick="downloadIssuedBulk()" title="فایلِ همه‌ی بیمه‌نامه‌های همین نتیجه‌ی فیلتر در یک ZIP (پوشه‌ی هر شرکت و «کارکنان»)" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-file-zipper ml-1"></i> دانلود گروهیِ فایل‌ها</button>
                     <button onclick="loadIssuedList()" class="bg-slate-100 text-slate-600 hover:bg-slate-200 px-4 py-2 rounded-lg font-bold text-sm"><i class="fas fa-sync-alt"></i></button>
                 </div>
             </div>
@@ -4405,6 +4406,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
             [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
             [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
+            [/openCpropModal|cpropUpload|cpropAssign/, ['issue-group:create', 'companies-requests:edit']],
+            [/downloadIssuedBulk/, ['issued-list:export', 'issued-list:view']],
+            [/openCompanySplit|cspSave|caseSplitExisting/, ['companies-inbox:edit', 'companies-requests:edit', 'cases:edit', 'records:edit']],
             [/openCompanyVisitReport|openCaseVisitReport|buildHealthReport/, ['vr-build:create']],
             [/creqPay|openPayDialog/, ['fin-installments:create', 'fin-payments:create']],
             [/setRowStage/, ['companies-requests:edit', 'issue-queue:edit']],
@@ -6391,6 +6395,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const isAdmin = <?php echo $isLiaison ? 'false' : 'true'; ?>;
             currentRequestRows = data.plates || [];
             currentRequestKind = data.request_kind || 'NEW_POLICY';
+            window.currentRequestInfo = r;
             if (data.cancellation_reasons) cancellationReasons = data.cancellation_reasons;
             const c = data.counts || {body: 0, third: 0, body_issued: 0, third_issued: 0};
 
@@ -6481,6 +6486,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
                     ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
+                    ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
                     ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی صادره‌ها</a>` : ''}
                 </div>
@@ -6525,6 +6531,86 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             duplicate: ['تکراری در فایل', 'bg-rose-100 text-rose-700', 'fa-clone'],
             unknown:   ['شناسایی نشد', 'bg-red-100 text-red-700', 'fa-circle-question'],
         };
+
+        // ---- «پیشنهادِ گروهی»: یک PDF با چند پیشنهاد/پیش‌نویس؛ هر صفحه خوانده و روی ردیفِ خودش (شاسی/موتور/پلاک) می‌نشیند ----
+        let CPROP = null;
+        function openCpropModal(requestId) {
+            let m = document.getElementById('cprop-modal');
+            if (!m) { m = document.createElement('div'); m.id = 'cprop-modal'; m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3'; m.style.zIndex = '1000002'; document.body.appendChild(m); }
+            CPROP = {requestId, token: null, pages: 0, results: [], stop: false};
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-file-signature ml-1 text-indigo-600"></i>پیشنهادِ گروهی — درخواست #${e2pNum(requestId)}</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">PDFی که چند «پیشنهاد» یا «پیش‌نویس» پشتِ سرِ هم دارد را بدهید؛ هر صفحه خوانده و با شاسی/موتور/پلاک روی ردیفِ خودش می‌نشیند، در پوشه‌ی ردیف بایگانی می‌شود و فرمِ صدورِ همان ردیف با آن پر و چک می‌شود. ردیف‌های صادرشده دست نمی‌خورند.</p></div>
+                    <button onclick="cpropClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="p-4 overflow-y-auto flex-1">
+                    <label id="cprop-drop" class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-xl p-6 text-center cursor-pointer text-indigo-700 font-bold text-sm">
+                        <i class="fas fa-file-pdf text-2xl block mb-2"></i>انتخابِ فایلِ PDFِ پیشنهادها
+                        <input type="file" accept=".pdf,application/pdf" class="hidden" onchange="cpropUpload(this)"></label>
+                    <div id="cprop-prog" class="hidden text-[11px] text-slate-600 mb-2"></div>
+                    <div id="cprop-list" class="space-y-1.5"></div>
+                </div>
+                <div class="p-3 border-t border-slate-100 flex justify-end"><button onclick="cpropClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">بستن</button></div></div>`;
+        }
+        function cpropClose() {
+            if (CPROP) CPROP.stop = true;
+            const m = document.getElementById('cprop-modal'); if (m) m.remove();
+            const changed = CPROP && CPROP.results.some(x => x && x.state === 'matched');
+            if (changed && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+            CPROP = null;
+        }
+        async function cpropUpload(input) {
+            const f = input.files[0]; input.value = '';
+            if (!f) return;
+            const fd = new FormData(); fd.append('action', 'cprop_upload'); fd.append('request_id', CPROP.requestId); fd.append('file', f);
+            const prog = document.getElementById('cprop-prog');
+            prog.classList.remove('hidden'); prog.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال جدا کردنِ صفحه‌ها...';
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { prog.innerHTML = `<span class="text-red-600">${pesc(d.error || 'خطا')}</span>`; return; }
+            document.getElementById('cprop-drop').classList.add('hidden');
+            Object.assign(CPROP, {token: d.token, pages: d.pages, results: []});
+            CPROP.rowOpts = '<option value="">— انتخابِ ردیف —</option>' + (d.rows || []).map(p => `<option value="${p.id}">${pesc(faDigits(p.label || ''))} · ${p.type === 'BODY' ? 'بدنه' : 'ثالث'}</option>`).join('');
+            for (let n = 1; n <= d.pages; n++) {
+                if (!CPROP || CPROP.stop) return;
+                prog.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ صفحه‌ی ${e2pNum(n)} از ${e2pNum(d.pages)}...`;
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'cprop_step', token: CPROP.token, n})})).json(); }
+                catch (e) { r = {ok: true, n, state: 'error', message: 'خطا در ارتباط با سرور.'}; }
+                if (!CPROP) return;
+                CPROP.results[n] = r.ok ? r : {n, state: 'error', message: r.error};
+                cpropRender();
+            }
+            const ok = CPROP.results.filter(x => x && x.state === 'matched').length;
+            prog.innerHTML = `✓ ${e2pNum(d.pages)} صفحه بررسی شد؛ ${e2pNum(ok)} پیشنهاد روی ردیف‌ها نشست.`;
+        }
+        function cpropRender() {
+            const ST = {matched: ['bg-emerald-50 border-emerald-200', 'fa-circle-check text-emerald-600'], no_match: ['bg-amber-50 border-amber-200', 'fa-circle-question text-amber-600'],
+                        issued: ['bg-slate-50 border-slate-200', 'fa-lock text-slate-400'], cont: ['bg-emerald-50/50 border-emerald-100', 'fa-link text-emerald-500'], policy: ['bg-slate-50 border-slate-200', 'fa-ban text-slate-400'], error: ['bg-red-50 border-red-200', 'fa-circle-xmark text-red-500']};
+            document.getElementById('cprop-list').innerHTML = CPROP.results.filter(Boolean).map(r => {
+                const [cls, ic] = ST[r.state] || ST.error, sm = r.summary || {};
+                const who = [sm.insured_name, sm.plate ? faDigits(sm.plate) : '', sm.vin].filter(Boolean).map(pesc).join(' · ');
+                const pageUrl = `${COMPANY_API}?action=split_page&o=cp&token=${CPROP.token}&n=${r.n}&kind=pdf`;
+                return `<div class="rounded-lg border ${cls} p-2 text-[11px] flex flex-wrap items-center gap-2">
+                    <i class="fas ${ic}"></i><a href="${pageUrl}" target="_blank" class="font-bold text-blue-700 hover:underline">صفحه‌ی ${e2pNum(r.n)}</a>
+                    <span class="text-slate-600">${r.state === 'matched' ? `روی ردیفِ <b>${pesc(faDigits(r.label || ''))}</b> نشست (${pesc(r.match || '')})` : r.state === 'cont' ? `ادامه‌ی صفحه‌ی قبل (ردیفِ <b>${pesc(faDigits(r.label || ''))}</b>)` : pesc(r.message || '')}</span>
+                    ${who ? `<span class="text-slate-400">${who}</span>` : ''}
+                    ${r.state === 'no_match' ? `<span class="mr-auto flex items-center gap-1"><select class="border border-slate-300 rounded p-1 text-[11px]" id="cprop-sel-${r.n}">${CPROP.rowOpts}</select>
+                        <button onclick="cpropAssign(${r.n})" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded">بنشان</button></span>` : ''}
+                </div>`;
+            }).join('');
+        }
+        async function cpropAssign(n) {
+            const pid = document.getElementById('cprop-sel-' + n)?.value;
+            if (!pid) { showToast('ردیف را انتخاب کنید.', 'warning'); return; }
+            let r;
+            try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'cprop_assign', token: CPROP.token, n, plate_id: Number(pid)})})).json(); }
+            catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            CPROP.results[n] = r; cpropRender();
+            showToast('پیشنهاد روی ردیف نشست.', 'success');
+        }
 
         function openBundleModal(requestId, from) {
             // اگر همین درخواست یک بررسیِ باز دارد، همان را نشان بده (مثلاً بعد از تکمیلِ مراحلِ یک ردیف)
@@ -7316,6 +7402,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden mb-3"><div class="h-full bg-gradient-to-l from-emerald-500 to-teal-400" style="width:${open ? Math.round(ready * 100 / open) : 0}%"></div></div>
                     <div class="flex gap-2">
                         <button onclick="openBundleModal(${r.id}, 'group')" class="flex-1 text-[12px] font-black text-white px-3 py-2 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی</button>
+                        <button onclick="openCpropModal(${r.id})" title="پیشنهادِ گروهی: PDFِ چند پیشنهاد/پیش‌نویس برای پر کردنِ اطلاعاتِ صدورِ ردیف‌ها" class="text-[12px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>
                         <button onclick="openCompanyRequestDetail(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl">جزئیات</button>
                     </div>
                 </div>`;
@@ -7904,6 +7991,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // خروجی اکسل، دقیقاً با همان فیلترهایی که الان روی جدول اعمال شده
+        // دانلودِ گروهیِ فایلِ بیمه‌نامه‌های نتیجه‌ی فعلیِ فیلتر (POST با فرمِ پنهان، چون فهرست می‌تواند بلند باشد)
+        function downloadIssuedBulk() {
+            const keys = (issuedListCache || []).filter(r => r.issued_file_path).map(r => (r.source === 'PERSONNEL' ? 'P:' : 'C:') + Number(r.row_id || 0)).filter(k => !/:0$/.test(k));
+            if (!keys.length) { showToast('در این نتیجه فایلِ بیمه‌نامه‌ای نیست.', 'warning'); return; }
+            const f = document.createElement('form');
+            f.method = 'POST'; f.action = COMPANY_API; f.style.display = 'none';
+            [['action', 'download_issued_bulk'], ['keys', keys.join(',')]].forEach(([n, v]) => { const i = document.createElement('input'); i.name = n; i.value = v; f.appendChild(i); });
+            document.body.appendChild(f); f.submit(); f.remove();
+            showToast(`در حال ساختِ ZIPِ ${e2pNum(keys.length)} بیمه‌نامه...`, 'info');
+        }
         function exportIssuedExcel() {
             const f = issuedFilters();
             Object.keys(f).forEach(k => { if (f[k] === '') delete f[k]; });
@@ -8556,7 +8653,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function propFmt(k, v) { return /car_value|liability|premium/.test(k) ? money(v) : faDigits(v); }
         // مقایسه‌ی فرمِ صدور با «پیشنهاد»؛ فیلدها قرمز/زرد می‌شوند و زیرشان مقدارِ پیشنهاد می‌آید (همه قابلِ ویرایش‌اند)
         function propCheck(box) {
-            const prop = window._issueProp, sum = document.getElementById('pf-cmp');
+            const prop = window._issueProp, sum = box._cmpEl || document.getElementById('pf-cmp');
             box.querySelectorAll('.pf-hint').forEach(e => e.remove());
             box.querySelectorAll('.pf-red,.pf-yel').forEach(e => e.classList.remove('pf-red', 'pf-yel'));
             window._propCheck = {red: [], yel: []};
@@ -8743,6 +8840,34 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return miss;
         }
         // pre (اختیاری، از «بایگانی وارداتی»): {pf: داده‌ی اکسلِ بیمه‌گر برای پیش‌پر کردن، label, onDone}
+        // فرمِ صدورِ ردیفِ شرکتی، مثلِ کارکنان: ردیف + «اطلاعات صدور»ِ ذخیره‌شده + داده‌ی کارت/سند/فاکتورِ ردیف + شرکت؛ و در آخر «پیشنهاد» (اگر هست)
+        function companyRowPrefill(p) {
+            const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
+            const o = {ins_type: p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', vin: p.chassis_no || p.vin || dd.vin || '', engine_no: p.engine_no || dd.engine_no || '', car_name: p.car_name || '',
+                car_value: p.car_value || '', liability: p.liability_limit || '',
+                insured_name: ii.insured_name || (rq.id && String(rq.id) === String(p.request_id) ? rq.company_name : '') || '', national_id: ii.insured_national_id || '',
+                phone: ii.insured_phone || '', address: ii.insured_address || '', postal_code: ii.insured_postal_code || '',
+                car_system: ii.car_system || dd.car_system || '', car_tip: ii.car_type || p.car_type || dd.car_tip || '', car_kind: ii.car_kind || '',
+                model_year: ii.car_model_year || dd.model_year || '', color: ii.car_color || dd.color || '', usage: ii.car_usage || dd.usage || '',
+                capacity: ii.car_capacity || dd.capacity || '', cylinders: ii.car_cylinders || dd.cylinders || '',
+                prev_insurer: ii.prev_insurer || '', prev_policy: ii.prev_policy_number || ''};
+            return p.proposal && p.proposal.data ? propPrefill(o, p.proposal) : o;
+        }
+        // کارتِ اطلاعاتِ کامل بالای فرمِ صدورِ شرکتی: شرکت، مالک (از مدارک)، خودرو، پیشنهاد و مدارکِ ردیف
+        function companyIssueInfoHtml(p) {
+            const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
+            const kv = (k, v, ltr) => v ? `<span class="inline-flex gap-1 ml-3"><span class="text-slate-400">${k}:</span><b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(v)))}</b></span>` : '';
+            const sec = (ic, t, body) => body.replace(/\s/g, '') ? `<div class="mb-1.5"><span class="font-black text-slate-600 ml-2"><i class="fas ${ic} text-teal-600 ml-1"></i>${t}</span>${body}</div>` : '';
+            const docs = (p.checklist || []).flatMap(it => (it.docs || []).map(d => d.is_dir ? '' : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline ml-2">${pesc(d.label)}</a>`)).join('');
+            const prop = p.proposal;
+            const html = sec('fa-building', 'شرکت', kv('نام', rq.company_name) + kv('کد اقتصادی', rq.company_economic_code, 1) + kv('تلفن', rq.company_phone, 1) + kv('درخواست', rq.request_ref || (rq.id ? '#' + rq.id : '')))
+                + sec('fa-user', 'مالک', kv('نام', ii.owner_name || dd.owner_name) + kv('کد/شناسه ملی', ii.owner_national_id || dd.national_id, 1) + kv('تلفن', ii.owner_phone || dd.mobile || dd.phone, 1) + kv('نشانی', ii.owner_address || dd.address))
+                + sec('fa-car-side', 'خودرو', kv('نام', p.car_name) + kv('شاسی', p.chassis_no || p.vin, 1) + kv('موتور', p.engine_no, 1) + kv('سیستم', ii.car_system || dd.car_system) + kv('مدل', ii.car_model_year || dd.model_year, 1)
+                    + (p.insurance_type === 'BODY' ? kv('ارزش', p.car_value ? money(p.car_value) : '') + kv('پوشش‌ها', [].concat(p.coverages_fa || []).join('، ')) : kv('تعهد مالی', p.liability_limit ? money(p.liability_limit) : '')))
+                + (prop && prop.data ? `<div class="mb-1.5"><span class="font-black text-indigo-700 ml-2"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</span>${prop.file ? `<a href="../${prop.file}" target="_blank" class="text-blue-600 hover:underline ml-2">مشاهده</a>` : ''}<span class="text-slate-500">فرم با آن پر شد و فایلِ بیمه‌نامه با آن چک می‌شود.</span></div>` : '')
+                + (docs ? `<div><span class="font-black text-slate-600 ml-2"><i class="fas fa-folder-open text-teal-600 ml-1"></i>مدارک</span>${docs}</div>` : '');
+            return html ? `<div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5 my-2 text-[11px] leading-6">${html}</div>` : '';
+        }
         function openMarkIssued(plateId, pre) {
             // ردیفِ «الحاقیه» یا «فسخ»: صدورش یعنی ثبتِ الحاقیه روی بیمه‌نامه‌ی اصلی (با اثرِ مالی) - endorse.js
             if (!pre && ['ENDORSEMENT', 'CANCELLATION'].includes(currentRequestKind) && window.Endorse) {
@@ -8764,8 +8889,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cis-plate-label').innerHTML = pre && pre.label ? pre.label : (p
                 ? `ردیف: <span class="plate-display">${fmtPlateHtml(p)}</span> | ${p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}` : '');
             // فرم از قبل با اطلاعاتِ ردیف پر می‌شود (برای صدورِ دستی بدونِ فایل هم کار می‌کند)؛ ردیفِ وارداتی: همه‌ی اطلاعاتِ اکسلِ بیمه‌گر
-            pfRender(document.getElementById('cis-form'), pre && pre.pf ? Object.assign({}, pre.pf)
-                : (p ? {vin: p.chassis_no || '', engine_no: p.engine_no || '', car_name: p.car_name || '', car_value: p.car_value || '', liability: p.liability_limit || ''} : {}));
+            const cisForm = document.getElementById('cis-form');
+            pfRender(cisForm, pre && pre.pf ? Object.assign({}, pre.pf) : (p ? companyRowPrefill(p) : {}));
+            let infoBox = document.getElementById('cis-info');
+            if (!infoBox) { infoBox = document.createElement('div'); infoBox.id = 'cis-info'; cisForm.before(infoBox); }
+            infoBox.innerHTML = !pre && p ? companyIssueInfoHtml(p) : '';
+            let cmp = document.getElementById('cis-pf-cmp');
+            if (!cmp) { cmp = document.createElement('div'); cmp.id = 'cis-pf-cmp'; cisForm.before(cmp); }
+            cisForm._cmpEl = cmp;
+            window._issueProp = !pre && p && p.proposal ? p.proposal : null; window._issueOcr = null;
+            propCheck(cisForm);
             document.getElementById('cissue-modal').classList.add('active');
             // تکراری: اگر همین خودرو برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ دیگری دارد، همین‌جا با دانلود و «تکراری بزن»
             let dupBox = document.getElementById('cis-dup');
@@ -8799,7 +8932,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             let o = data.ocr || {};
             // ردیفِ وارداتی: هر چه از فایل خوانده نشد از اکسلِ بیمه‌گر می‌آید؛ ردیفِ معمولی: از اطلاعاتِ خودِ ردیف (درخواست)
             const cisRow = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(document.getElementById('cis-plate-id').value));
-            const cisBase = window.CIS_PRE && CIS_PRE.pf ? CIS_PRE.pf : (cisRow ? {vin: cisRow.chassis_no || '', engine_no: cisRow.engine_no || '', car_name: cisRow.car_name || '', car_value: cisRow.car_value || '', liability: cisRow.liability_limit || ''} : null);
+            const cisBase = window.CIS_PRE && CIS_PRE.pf ? CIS_PRE.pf : (cisRow ? companyRowPrefill(cisRow) : null);
             if (cisBase) { const base = Object.assign({}, cisBase); Object.keys(o).forEach(k => { if (o[k] !== '' && o[k] !== null && o[k] !== undefined) base[k] = o[k]; }); o = base; }
             if (cisRow && !(window.CIS_PRE && CIS_PRE.pf)) {
                 let ch = document.getElementById('cis-change');
@@ -8810,6 +8943,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         .then(d => { if (d.ok) Object.assign(cisRow, vals); return d; }));
             }
             pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: (data.missing || []).filter(m => !(window.CIS_PRE && CIS_PRE.pf)), source: data.source, layout_debug: data.layout_debug});
+            if (window._issueProp) { window._issueOcr = data.ocr || {}; propCheck(document.getElementById('cis-form')); }
             note.className = 'text-[11px] rounded-lg p-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
                 ? `✓ فایل با این ردیف مطابقت دارد (${(o.plate || data.expected_plate) && /ایران/.test(o.plate || data.expected_plate) ? formatPlateHtml(o.plate || data.expected_plate) : (o.plate || data.expected_plate || '')} | ${o.ins_type || ''}). فیلدها پر شدند؛ بررسی و در صورتِ نیاز اصلاح کنید.`

@@ -217,6 +217,7 @@ if (!$companies) {
             </div>
         </div>
         <div id="req-chips" class="pt-chips"></div>
+        <div class="flex justify-end mb-2"><button type="button" onclick="openBulkPolicyDownload()" class="text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-3 py-2"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌ها</button></div>
         <div id="requests-list" class="pt-req-grid"></div>
     </section>
 
@@ -530,6 +531,28 @@ async function loadRequests() {
     document.getElementById('req-chips').innerHTML = [['', 'همه', reqAll.length]].concat(Object.keys(STATUS_FA).filter(k => cnt[k]).map(k => [k, STATUS_FA[k], cnt[k]]))
         .map(([k, l, n]) => `<button type="button" class="${reqFilter === k ? 'on' : ''}" onclick="reqFilter='${k}';renderRequests()">${k ? REQ_ICON[k] + ' ' : ''}${l}<i>${faNum(n)}</i></button>`).join('');
     renderRequests(q);
+}
+// دانلودِ گروهی: چند درخواست (یا همه) => یک ZIP؛ هر درخواست یک پوشه
+function openBulkPolicyDownload() {
+    const list = (reqAll || []).filter(r => (r.body_issued || 0) + (r.third_issued || 0) > 0);
+    let m = document.getElementById('bulkdl-modal');
+    if (!m) { m = document.createElement('div'); m.id = 'bulkdl-modal'; m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3'; m.style.zIndex = '100050'; document.body.appendChild(m); }
+    m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col">
+        <div class="p-4 border-b border-slate-100 flex items-center justify-between"><h3 class="font-black text-sm"><i class="fas fa-file-zipper ml-1 text-emerald-600"></i>دانلودِ گروهیِ بیمه‌نامه‌های صادرشده</h3>
+            <button type="button" onclick="document.getElementById('bulkdl-modal').remove()" class="text-slate-400 hover:text-slate-700 text-lg">✕</button></div>
+        <div class="p-4 overflow-y-auto flex-1">${list.length ? `<label class="flex items-center gap-2 text-xs font-bold mb-2"><input type="checkbox" onchange="document.querySelectorAll('#bulkdl-modal .bd-cb').forEach(c => c.checked = this.checked)" checked> همه</label>`
+            + list.map(r => `<label class="flex items-center gap-2 text-xs border border-slate-100 rounded-lg p-2 mb-1.5"><input type="checkbox" class="bd-cb" value="${r.id}" checked>
+                <span class="flex-1">${r.ref_code ? 'شناسه‌ی ' + faNum(r.ref_code) : 'درخواست #' + faNum(r.id)}${r.company_name && COMPANIES_DATA.length > 1 ? ' · ' + r.company_name : ''}</span>
+                <span class="text-[10px] font-bold text-emerald-700">${faNum((r.body_issued || 0) + (r.third_issued || 0))} بیمه‌نامه</span></label>`).join('')
+            : '<p class="text-center text-xs text-slate-400 py-8">هنوز بیمه‌نامه‌ی صادرشده‌ای نیست.</p>'}</div>
+        ${list.length ? `<div class="p-3 border-t border-slate-100"><button type="button" onclick="bulkPolicyDownloadGo()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs"><i class="fas fa-download ml-1"></i>دانلودِ ZIP</button></div>` : ''}</div>`;
+}
+function bulkPolicyDownloadGo() {
+    const ids = [...document.querySelectorAll('#bulkdl-modal .bd-cb:checked')].map(c => c.value);
+    if (!ids.length) { showToast('حداقل یک درخواست را انتخاب کنید.'); return; }
+    const all = ids.length === document.querySelectorAll('#bulkdl-modal .bd-cb').length;
+    window.location.href = '../api/company_portal_actions.php?action=download_issued_multi&ids=' + (all ? 'all' : ids.join(','));
+    document.getElementById('bulkdl-modal').remove();
 }
 function renderRequests(q) {
     q = q === undefined ? (document.getElementById('req-search')?.value || '').trim() : q;

@@ -379,6 +379,48 @@ try {
     // ---- دانلودِ دسته‌جمعیِ همه‌ی بیمه‌نامه‌های صادرشده‌ی یک درخواست (تا همین لحظه) ----
     // فقط خودِ فایل‌های بیمه‌نامه داخل زیپ می‌روند (نه مدارک). زیپ در پوشه‌ی موقتِ سیستم
     // ساخته می‌شود و بلافاصله بعد از فرستادن پاک می‌شود - در بایگانی ما چیزی نمی‌ماند.
+    // ---- دانلودِ گروهیِ بیمه‌نامه‌ها از چند درخواست (یا همه): هر درخواست یک پوشه داخلِ ZIP ----
+    if (($_GET['action'] ?? '') === 'download_issued_multi') {
+        $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
+        $idsIn = (string)($_GET['ids'] ?? '');
+        $ids = $idsIn === 'all' ? [] : array_values(array_filter(array_map('intval', explode(',', $idsIn))));
+        if ($idsIn !== 'all' && !$ids) { http_response_code(400); echo json_encode(['ok' => false, 'error' => 'درخواستی انتخاب نشده.'], JSON_UNESCAPED_UNICODE); exit; }
+        $sql = "SELECT crp.issued_file_path, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no, crp.policy_number, crp.insurance_type, cr.id AS rid, cr.ref_code
+                  FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id
+                 WHERE cr.company_id IN ($placeholders) AND crp.status = 'ISSUED' AND crp.issued_file_path IS NOT NULL"
+             . ($ids ? " AND cr.id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")" : '') . " ORDER BY cr.id, crp.id LIMIT 2000";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array_merge($allowedCompanyIds, $ids));
+        $siteRoot = dirname(__DIR__);
+        $files = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $abs = $siteRoot . '/' . $row['issued_file_path'];
+            if (!is_file($abs)) continue;
+            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $dir = sanitize_folder_name('درخواست ' . ($row['ref_code'] ?: $row['rid']));
+            $base = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename(company_row_label($row)), policy_number_for_filename($row['policy_number'])]));
+            $name = $dir . '/' . $base . '.' . $ext;
+            for ($n = 2; isset($files[$name]); $n++) $name = $dir . '/' . $base . " ($n)." . $ext;
+            $files[$name] = $abs;
+        }
+        if (!$files) { http_response_code(404); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body dir="rtl" style="font-family:tahoma;padding:40px">بیمه‌نامه‌ی صادرشده‌ای برای دانلود نیست.</body>'; exit; }
+        if (!class_exists('ZipArchive')) { echo json_encode(['ok' => false, 'error' => 'ساخت زیپ روی سرور ممکن نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        @set_time_limit(300);
+        $tmp = tempnam(sys_get_temp_dir(), 'pzip_');
+        register_shutdown_function(function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); });
+        $zip = new ZipArchive();
+        $zip->open($tmp, ZipArchive::OVERWRITE);
+        $used = [];
+        foreach ($files as $name => $abs) $zip->addFile($abs, dl_zip_path($name, $used));
+        $zip->close();
+        $zipName = str_replace(['"', '/', '\\'], ['', '-', '-'], 'بیمه‌نامه‌های صادره - ' . count($files) . ' فایل - ' . jalali_from_gregorian_ts_dotted(time()) . '.zip');
+        header('Content-Type: application/zip');
+        header("Content-Disposition: attachment; filename=\"policies.zip\"; filename*=UTF-8''" . rawurlencode(dl_name($zipName)));
+        header('Content-Length: ' . filesize($tmp));
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
+    }
     if (($action === 'download_issued_zip') || ($_GET['action'] ?? '') === 'download_issued_zip') {
         $requestId = intval($data['request_id'] ?? ($_GET['request_id'] ?? 0));
         $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));

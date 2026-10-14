@@ -801,6 +801,8 @@ try {
                     'status_fa' => company_plate_status_fa('ISSUED', $kind),
                     'folder_status' => $r['folder_status'], 'issued_file_path' => $r['issued_file_path'],
                     'issue_info' => issue_info_decode($r['issue_info'] ?? null),
+                    'proposal' => (function () use ($r) { $pj = !empty($r['proposal_json']) ? json_decode($r['proposal_json'], true) : null;
+                        return is_array($pj) ? ['kind_fa' => $pj['kind_fa'] ?? 'پیشنهاد', 'file' => $pj['file'] ?? null, 'at' => !empty($pj['at']) ? jd(strtotime($pj['at'])) : null] : null; })(),
                     'endo_count' => (int)($r['endo_count'] ?? 0), 'final_premium' => $r['final_premium'] !== null ? (int)$r['final_premium'] : null,
                     'is_cancelled' => (int)($r['is_cancelled'] ?? 0), 'cancelled_on' => $r['cancelled_on'] ?? null,
                 ];
@@ -1584,7 +1586,7 @@ try {
     // ---- جزئیات یک درخواست (دید ادمین/همکار): مدارک، پلاک‌ها، مدارک کم، اقساط ----
     if ($action === 'request_detail') {
         $requestId = intval($data['request_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name, c.economic_code AS company_economic_code, c.address AS company_address, c.phone AS company_phone FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
         $stmt->execute([$requestId]);
         $request = $stmt->fetch();
         if (!$request) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
@@ -1632,6 +1634,16 @@ try {
             $stmtInst = $pdo->prepare("SELECT * FROM company_installments WHERE plate_id = ? ORDER BY inst_number");
             $stmtInst->execute([$p['id']]);
             $p['installments'] = $stmtInst->fetchAll();
+            // برای پنجره‌ی صدور (مثلِ کارکنان): پیشنهادِ همین ردیف، «اطلاعات صدور»ِ ذخیره‌شده و داده‌ای که از کارت/سند/فاکتورِ ردیف خوانده شده
+            $p['proposal'] = !empty($p['proposal_json']) ? (json_decode($p['proposal_json'], true) ?: null) : null;
+            unset($p['proposal_json']);
+            $p['issue_info_obj'] = issue_info_decode($p['issue_info'] ?? null);
+            $p['doc_data'] = [];
+            foreach ($rowDocs as $rd) {
+                $aj = !empty($rd['ai_json']) ? json_decode($rd['ai_json'], true) : null;
+                if (!is_array($aj) || empty($aj['data'])) continue;
+                foreach ((array)$aj['data'] as $k => $v) if (is_scalar($v) && trim((string)$v) !== '' && !isset($p['doc_data'][$k])) $p['doc_data'][$k] = trim((string)$v);
+            }
             // تکراری: همین خودرو و همین نوعِ بیمه در بیمه‌نامه‌های صادرشده یا درخواست‌های دیگر (برای ردیف‌های صادرنشده)
             require_once __DIR__ . '/_dup.php';
             $p['dups'] = [];
@@ -1724,7 +1736,7 @@ try {
     if ($action === 'split_page') {
         require_once __DIR__ . '/_pdf_split.php';
         $kind = ($_GET['kind'] ?? '') === 'png' ? 'png' : 'pdf';
-        $p = pdf_split_job_page_path(dirname(__DIR__), $_GET['token'] ?? '', 'cs' . $actor['user_id'], intval($_GET['n'] ?? 0), $kind);
+        $p = pdf_split_job_page_path(dirname(__DIR__), $_GET['token'] ?? '', (($_GET['o'] ?? '') === 'cp' ? 'cp' : 'cs') . $actor['user_id'], intval($_GET['n'] ?? 0), $kind);
         if (!$p) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'صفحه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
         header('Content-Type: ' . ($kind === 'png' ? 'image/png' : 'application/pdf'));
         header('Content-Disposition: inline; filename="page-' . intval($_GET['n']) . '.' . $kind . '"');
@@ -2411,6 +2423,86 @@ try {
     //   ۱) bundle_analyze : جدا کردنِ صفحه‌های بیمه‌نامه، شناسایی، پیدا کردنِ ردیف و آمادگی
     //   ۲) bundle_issue   : صدور و بایگانیِ ردیف‌های انتخاب‌شده
     // =================================================================
+    // =================================================================
+    //  «پیشنهادِ گروهی»: یک PDF با چند پیشنهاد/پیش‌نویس برای ردیف‌های یک درخواست
+    //   cprop_upload (جدا کردنِ صفحه‌ها) => cprop_step (خواندن و نشاندنِ هر صفحه؛ صفحه‌به‌صفحه تا timeout نخورد)
+    //   => cprop_assign (صفحه‌ای که خودکار جا نیفتاد، دستی روی ردیف)
+    // =================================================================
+    if (($_POST['action'] ?? '') === 'cprop_upload') {
+        require_admin_only();
+        require_once __DIR__ . '/_pdf_split.php';
+        $requestId = intval($_POST['request_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id FROM company_requests WHERE id = ?"); $st->execute([$requestId]);
+        if (!$st->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $r = pdf_split_job_create($pdo, dirname(__DIR__), $_FILES['file'] ?? [], 'cp' . $actor['user_id']);
+        if (!empty($r['ok'])) {
+            $jf = pdf_split_job_dir(dirname(__DIR__), $r['token']) . '/job.json';
+            $j = json_decode((string)@file_get_contents($jf), true) ?: [];
+            $j['request_id'] = $requestId;
+            @file_put_contents($jf, json_encode($j, JSON_UNESCAPED_UNICODE));
+            $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? AND status <> 'ISSUED' ORDER BY id");
+            $st->execute([$requestId]);
+            $r['rows'] = array_map(fn($p) => ['id' => intval($p['id']), 'label' => company_row_label($p), 'type' => $p['insurance_type']], $st->fetchAll());
+        }
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'cprop_step' || $action === 'cprop_assign') {
+        require_admin_only();
+        require_once __DIR__ . '/_pdf_split.php';
+        require_once __DIR__ . '/_proposal.php';
+        $siteRoot = dirname(__DIR__);
+        $owner = 'cp' . $actor['user_id'];
+        $job = pdf_split_job_info($siteRoot, $data['token'] ?? '', $owner);
+        $n = intval($data['n'] ?? 0);
+        $page = $job ? pdf_split_job_page_path($siteRoot, $data['token'], $owner, $n, 'pdf') : null;
+        if (!$job || !$page) { echo json_encode(['ok' => false, 'error' => 'زمانِ این فایل گذشته؛ دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $requestId = intval($job['request_id'] ?? 0);
+        $cache = dirname($page) . sprintf('/r%03d.json', $n);
+        $r = is_file($cache) ? json_decode((string)file_get_contents($cache), true) : null;
+        if (!is_array($r)) {
+            $r = proposal_run($pdo, $page);
+            if (!empty($r['ok'])) @file_put_contents($cache, json_encode($r, JSON_UNESCAPED_UNICODE));
+        }
+        $d = $r['data'] ?? [];
+        $sum = ['vin' => $d['vin'] ?? '', 'engine_no' => $d['engine_no'] ?? '', 'plate' => $d['plate'] ?? '', 'insured_name' => $d['insured_name'] ?? '', 'ins_type' => $d['ins_type'] ?? ''];
+        $out = ['ok' => true, 'n' => $n, 'summary' => $sum, 'kind' => $r['kind'] ?? null];
+        // صفحه‌ای که شاسی/موتور/پلاک ندارد، ادامه‌ی پیشنهادِ قبلی است (پیش‌نویس‌ها چند صفحه‌اند): به فایلِ همان ردیف اضافه می‌شود
+        require_once __DIR__ . '/_dup.php';
+        $hasId = strlen(dup_clean($d['vin'] ?? '')) >= 6 || strlen(dup_clean($d['engine_no'] ?? '')) >= 6 || dup_plate_key($d['plate'] ?? '') !== '';
+        $lastF = $job['dir'] . '/last.json';
+        if ($action === 'cprop_step' && !$hasId) {
+            $last = json_decode((string)@file_get_contents($lastF), true);
+            if (is_array($last) && intval($last['n'] ?? 0) === $n - 1 && !empty($last['file']) && is_file($siteRoot . '/' . $last['file'])) {
+                $abs = $siteRoot . '/' . $last['file'];
+                $tmpM = $job['dir'] . '/m_' . $n . '.pdf';
+                if (pdf_merge_files($pdo, [$abs, $page], $tmpM) && @rename($tmpM, $abs)) {
+                    @file_put_contents($lastF, json_encode(['n' => $n] + $last, JSON_UNESCAPED_UNICODE));
+                    echo json_encode($out + ['state' => 'cont', 'plate_id' => $last['plate_id'], 'label' => $last['label'], 'message' => 'ادامه‌ی صفحه‌ی قبل؛ به فایلِ همان ردیف اضافه شد.'], JSON_UNESCAPED_UNICODE); exit;
+                }
+            }
+            echo json_encode($out + ['state' => empty($r['ok']) ? 'error' : 'no_match', 'message' => empty($r['ok']) ? ($r['error'] ?? 'خوانده نشد.') : 'شاسی، موتور یا پلاکی در این صفحه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit;
+        }
+        if (empty($r['ok'])) { echo json_encode($out + ['state' => 'error', 'message' => $r['error'] ?? 'خوانده نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (($r['kind'] ?? '') === 'policy') { echo json_encode($out + ['state' => 'policy', 'message' => 'این صفحه خودِ بیمه‌نامه است، نه پیشنهاد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($action === 'cprop_assign') {
+            $plateId = intval($data['plate_id'] ?? 0);
+            $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE id = ? AND request_id = ?"); $st->execute([$plateId, $requestId]);
+            if (!$st->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'ردیف متعلق به این درخواست نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+            $a = cproposal_attach($pdo, $siteRoot, $plateId, $page, $r, $actor['user_id']);
+            echo json_encode($a['ok'] ? $out + ['state' => 'matched', 'plate_id' => $plateId, 'label' => $a['label'], 'match' => 'دستی'] : ['ok' => false, 'error' => $a['error']], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        [$row, $by] = cproposal_match($pdo, $requestId, $d);
+        if (!$row) { echo json_encode($out + ['state' => 'no_match', 'message' => 'ردیفی با این شاسی/موتور/پلاک در درخواست نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($row['status'] === 'ISSUED') { echo json_encode($out + ['state' => 'issued', 'plate_id' => intval($row['id']), 'label' => company_row_label($row), 'message' => 'این ردیف صادر شده است.'], JSON_UNESCAPED_UNICODE); exit; }
+        $a = cproposal_attach($pdo, $siteRoot, intval($row['id']), $page, $r, $actor['user_id']);
+        if ($a['ok']) @file_put_contents($lastF, json_encode(['n' => $n, 'plate_id' => intval($row['id']), 'label' => $a['label'], 'file' => $a['file']], JSON_UNESCAPED_UNICODE));
+        echo json_encode($a['ok'] ? $out + ['state' => 'matched', 'plate_id' => intval($row['id']), 'label' => $a['label'], 'match' => $by, 'missing' => $r['missing'] ?? []]
+                                  : $out + ['state' => 'error', 'message' => $a['error']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'bundle_analyze') {
         require_admin_only();
         @set_time_limit(600);
@@ -2804,6 +2896,38 @@ try {
     }
 
     // ---- دانلود دسته‌جمعی (زیپ) همه‌ی بیمه‌نامه‌های صادرشده‌ی یک درخواست ----
+    // ---- دانلودِ گروهیِ بیمه‌نامه‌های صادره (نتیجه‌ی فیلترِ «صادرشده‌ها»): کلیدها C:id (شرکتی) و P:id (کارکنان) ----
+    //      داخلِ ZIP: پوشه‌ی هر شرکت / «کارکنان»، با همان نامِ دقیقِ فایل در بایگانی
+    if ($action === 'download_issued_bulk') {
+        @set_time_limit(300);
+        $keys = array_slice(array_filter(array_map('trim', explode(',', (string)($data['keys'] ?? $_GET['keys'] ?? '')))), 0, 2000);
+        $cIds = []; $pIds = [];
+        foreach ($keys as $k) { if (preg_match('/^C:(\d+)$/', $k, $m)) $cIds[] = intval($m[1]); elseif (preg_match('/^P:(\d+)$/', $k, $m)) $pIds[] = intval($m[1]); }
+        $siteRoot = dirname(__DIR__);
+        $files = [];
+        if ($cIds) {
+            $st = $pdo->prepare("SELECT crp.issued_file_path, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                                  WHERE crp.id IN (" . implode(',', array_fill(0, count($cIds), '?')) . ") AND crp.status = 'ISSUED' AND crp.issued_file_path IS NOT NULL");
+            $st->execute($cIds);
+            foreach ($st->fetchAll() as $r) $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => sanitize_folder_name($r['company_name'] ?: 'شرکت') . '/' . basename($r['issued_file_path'])];
+        }
+        if ($pIds && ($actor['role'] ?? '') === 'ADMIN') {   // مثلِ فهرستِ صادره‌ها: بیمه‌ی کارکنان فقط برای مدیر کل
+            $st = $pdo->prepare("SELECT issued_file_path FROM policy_cases WHERE id IN (" . implode(',', array_fill(0, count($pIds), '?')) . ") AND status = 'ISSUED' AND issued_file_path IS NOT NULL");
+            $st->execute($pIds);
+            foreach ($st->fetchAll() as $r) $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => 'کارکنان/' . basename($r['issued_file_path'])];
+        }
+        $files = array_values(array_filter($files, fn($f) => is_file($f['path'])));
+        if (!$files) { http_response_code(404); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body dir="rtl" style="font-family:tahoma;padding:40px">فایلی برای دانلود نیست.</body>'; exit; }
+        $zipPath = build_zip_from_files($files, 'issued.zip');
+        if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
+        $zn = 'بیمه‌نامه‌های صادره - ' . count($files) . ' فایل - ' . jalali_from_gregorian_ts_dotted(time()) . '.zip';
+        header('Content-Type: application/zip');
+        header(dl_disposition('attachment', $zn, 'issued-policies.zip'));
+        header('Content-Length: ' . filesize($zipPath));
+        readfile($zipPath);
+        @unlink($zipPath);
+        exit;
+    }
     if ($action === 'download_issued_zip') {
         $requestId = intval($_GET['request_id'] ?? 0);
         $stmt = $pdo->prepare("SELECT plate_p1, plate_p2, plate_letter, plate_p4, issued_file_path FROM company_request_plates WHERE request_id = ? AND issued_file_path IS NOT NULL");
