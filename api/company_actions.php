@@ -1698,6 +1698,120 @@ try {
         echo json_encode($r ?: ['ok' => false, 'error' => 'جدا کردن ممکن نشد.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // ---- جداسازیِ دستیِ هر PDFِ بارگذاری‌شده (پنجره‌ی صفحه‌ها) ----
+    // split_open: صفحه‌ها در پوشه‌ی موقت جدا می‌شوند (فایلِ اصلی تا «ثبت» دست نمی‌خورد)؛ پیش‌نمایش + نوع/ردیفِ هر صفحه
+    if ($action === 'split_open') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $docId = intval($data['doc_id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM company_documents WHERE id = ?");
+        $st->execute([$docId]);
+        $doc = $st->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $abs = dirname(__DIR__) . '/' . ltrim($doc['file_path'], '/');
+        $r = pdf_split_job_from_path($pdo, dirname(__DIR__), $abs, $doc['orig_name'] ?: basename($abs), 'cs' . $actor['user_id'], ['doc_id' => $docId]);
+        if (empty($r['ok'])) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+        $types = company_doc_types(); unset($types['car_card_or_title']);
+        $plates = [];
+        if ($doc['request_id']) {
+            $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
+            $st->execute([$doc['request_id']]);
+            foreach ($st->fetchAll() as $pl) $plates[] = ['id' => intval($pl['id']), 'label' => company_row_label($pl), 'type' => $pl['insurance_type']];
+        }
+        echo json_encode($r + ['doc_id' => $docId, 'types' => $types, 'plates' => $plates, 'has_request' => (bool)$doc['request_id'],
+                               'cur_type' => $doc['file_kind'] === 'LETTER' ? 'letter' : ($doc['doc_type'] ?: ''), 'cur_plate' => $doc['plate_id'] ? intval($doc['plate_id']) : null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'split_page') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $kind = ($_GET['kind'] ?? '') === 'png' ? 'png' : 'pdf';
+        $p = pdf_split_job_page_path(dirname(__DIR__), $_GET['token'] ?? '', 'cs' . $actor['user_id'], intval($_GET['n'] ?? 0), $kind);
+        if (!$p) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'صفحه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        header('Content-Type: ' . ($kind === 'png' ? 'image/png' : 'application/pdf'));
+        header('Content-Disposition: inline; filename="page-' . intval($_GET['n']) . '.' . $kind . '"');
+        header('Cache-Control: private, max-age=3600');
+        header('Content-Length: ' . filesize($p));
+        readfile($p);
+        exit;
+    }
+    // split_apply: صفحه‌های «بماند» با هم‌نوع/هم‌ردیف‌ها یک فایل می‌شوند؛ صفحه‌های «حذف» ذخیره نمی‌شوند؛ بعد فایلِ اصلی برداشته می‌شود
+    if ($action === 'split_apply') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $siteRoot = dirname(__DIR__);
+        $docId = intval($data['doc_id'] ?? 0);
+        $st = $pdo->prepare("SELECT cd.*, c.name AS company_name FROM company_documents cd JOIN companies c ON c.id = cd.company_id WHERE cd.id = ?");
+        $st->execute([$docId]);
+        $doc = $st->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک یافت نشد (شاید کسِ دیگری همین حالا جدایش کرده).'], JSON_UNESCAPED_UNICODE); exit; }
+        $job = pdf_split_job_info($siteRoot, $data['token'] ?? '', 'cs' . $actor['user_id']);
+        if (!$job || intval($job['doc_id'] ?? 0) !== $docId) { echo json_encode(['ok' => false, 'error' => 'زمانِ این پنجره گذشته؛ دوباره «جداسازی» را بزنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $types = company_doc_types();
+        $validPlates = [];
+        if ($doc['request_id']) {
+            $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE request_id = ?");
+            $st->execute([$doc['request_id']]);
+            $validPlates = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        }
+        $groups = [];
+        foreach ((array)($data['items'] ?? []) as $it) {
+            $n = intval($it['n'] ?? 0);
+            if ($n < 1 || $n > intval($job['pages']) || empty($it['keep'])) continue;
+            $t = (string)($it['doc_type'] ?? '');
+            if ($t === 'letter') { if (!$doc['request_id']) $t = ''; }
+            elseif ($t !== '' && !isset($types[$t])) $t = '';
+            $pl = $t === 'letter' ? 0 : intval($it['plate_id'] ?? 0);
+            if ($pl && !in_array($pl, $validPlates, true)) $pl = 0;
+            $g = $t . '|' . $pl;
+            if (!isset($groups[$g])) $groups[$g] = ['type' => $t, 'plate' => $pl, 'pages' => []];
+            $groups[$g]['pages'][] = $n;
+        }
+        if (!$groups) { echo json_encode(['ok' => false, 'error' => 'هیچ صفحه‌ای «بماند» نیست. اگر کلِ فایل اضافه است، خودِ مدرک را حذف کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $destDir = company_unassigned_temp_path($siteRoot, $doc['company_name'] ?: 'نامشخص');
+        if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
+        $base = pdf_split_safe_name($doc['orig_name'] ?: basename($doc['file_path']));
+        $made = []; $failed = 0; $touched = $doc['plate_id'] ? [intval($doc['plate_id'])] : [];
+        foreach ($groups as $g) {
+            $pagesFa = implode('،', $g['pages']);
+            $dest = unique_dest_path($destDir . '/' . $base . ' - صفحه ' . $pagesFa . '.pdf');
+            if (!pdf_split_job_take($pdo, $job, $g['pages'], $dest)) { $failed++; continue; }
+            $rel = ltrim(str_replace($siteRoot, '', $dest), '/');
+            $orig = $base . ' - صفحه ' . $pagesFa . '.pdf';
+            if ($g['type'] === 'letter') {
+                $newRel = company_place_letter($pdo, $siteRoot, intval($doc['request_id']), $dest, 'pdf') ?: $rel;
+                $pdo->prepare("INSERT INTO company_documents (company_id, request_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at, uploaded_at)
+                               VALUES (?, ?, ?, ?, ?, 'LETTER', 'letter', 'ASSIGNED', ?, NOW(), ?)")
+                    ->execute([$doc['company_id'], $doc['request_id'], $doc['uploaded_by'], $newRel, $orig, $actor['user_id'], $doc['uploaded_at']]);
+                $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$newRel, $doc['request_id']]);
+            } elseif ($g['plate'] && $g['type'] !== '') {
+                $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at, uploaded_at)
+                               VALUES (?, ?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED', ?, NOW(), ?)")
+                    ->execute([$doc['company_id'], $doc['request_id'], $g['plate'], $doc['uploaded_by'], $rel, $orig, $g['type'], $actor['user_id'], $doc['uploaded_at']]);
+                company_place_document($pdo, $siteRoot, intval($pdo->lastInsertId()), $g['plate'], $g['type']);
+                $touched[] = $g['plate'];
+            } else {
+                // نوع یا ردیف معلوم نیست => صندوقِ مدارک برای تگ‌گذاری
+                $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status, uploaded_at)
+                               VALUES (?, ?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'UNASSIGNED', ?)")
+                    ->execute([$doc['company_id'], $doc['request_id'], $g['plate'] ?: null, $doc['uploaded_by'], $rel, $orig, $g['type'] ?: null, $doc['uploaded_at']]);
+            }
+            $made[] = ['type' => $g['type'], 'label' => $g['type'] === 'letter' ? 'نامه' : ($types[$g['type']] ?? 'نامشخص'), 'plate_id' => $g['plate'] ?: null, 'pages' => $g['pages']];
+        }
+        if (!$made) { echo json_encode(['ok' => false, 'error' => 'ساختنِ فایلِ صفحه‌ها ممکن نشد؛ فایلِ اصلی دست نخورد.'], JSON_UNESCAPED_UNICODE); exit; }
+        // فایلِ اصلی فقط وقتی برداشته می‌شود که همه‌ی گروه‌ها ساخته شده باشند (وگرنه نگه داشته می‌شود تا چیزی از دست نرود)
+        $removed = false;
+        if (!$failed) {
+            $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$docId]);
+            $abs = $siteRoot . '/' . ltrim($doc['file_path'], '/');
+            if (is_file($abs)) @unlink($abs);
+            if ($doc['file_kind'] === 'LETTER' && $doc['request_id'] && !in_array('letter', array_column($made, 'type'), true))
+                $pdo->prepare("UPDATE company_requests SET letter_file_path = NULL WHERE id = ? AND letter_file_path = ?")->execute([$doc['request_id'], $doc['file_path']]);
+            $removed = true;
+        }
+        foreach (array_unique($touched) as $pid) { try { company_sync_plate_status($pdo, $pid); } catch (Throwable $e) {} }
+        if ($doc['request_id']) $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$doc['request_id']]);
+        pdf_split_rrmdir($job['dir']);
+        echo json_encode(['ok' => true, 'made' => $made, 'failed' => $failed, 'source_removed' => $removed, 'request_id' => $doc['request_id'] ? intval($doc['request_id']) : null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     // doc_pages: شمارِ صفحه‌های یک مدرک (برای نمایشِ دکمه‌ی «جدا کردنِ صفحه‌ها» در پنجره‌ی تگ‌گذاری)
     if ($action === 'doc_pages') {
         require_once __DIR__ . '/_pdf_split.php';

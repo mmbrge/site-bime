@@ -6253,7 +6253,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const star = item.required ? '<span class="text-red-400">*</span>' : '';
             const links = (item.docs || []).map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ این پوشه">${d.label} (پوشه)</a>`
-                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`
             ).join('<span class="text-slate-300 mx-1">|</span>');
             const del = canEdit ? (item.docs || []).map(d =>
                 `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
@@ -6296,7 +6296,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const docs = items.flatMap(it => it.docs || []);
             const links = docs.map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ عکس‌ها">عکس‌ها (پوشه)</a>`
-                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>`).join('<span class="text-slate-300 mx-1">|</span>');
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`).join('<span class="text-slate-300 mx-1">|</span>');
             const del = canEdit ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
             const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
             const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow px-2 py-0.5 rounded whitespace-nowrap">
@@ -6398,7 +6398,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const requestLevelDocs = data.documents.filter(d => !d.plate_id);
             const docsHtml = requestLevelDocs.length ? requestLevelDocs.map(d => `
                 <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2 mb-1.5">
-                    <a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                    <span><a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}</span>
                     <span class="text-[10px] ${d.status === 'ASSIGNED' ? 'text-emerald-600' : 'text-amber-600'}">${d.doc_type_label || '—'} · ${d.status === 'ASSIGNED' ? 'تگ‌گذاری‌شده' : 'در انتظار تگ‌گذاری'}</span>
                 </div>`).join('') : '<p class="text-xs text-slate-400">مدرک عمومیِ بدون پلاک ثبت نشده.</p>';
 
@@ -7517,7 +7517,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span class="flex items-center gap-2">
                             ${d.is_dir
                                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="text-blue-600 hover:underline text-[11px]">دانلود پوشه</a>`
-                                : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>`}
+                                : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>${splitBtnHtml(d.id, d.file_path)}`}
                             <button onclick="rejectDocument(${d.id})" class="text-red-500 hover:underline text-[11px]">رد</button>
                         </span>
                     </div>`).join('')
@@ -8021,17 +8021,112 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) {}
         }
 
-        function splitCompanyDoc(docId) {
-            showConfirm('جدا کردنِ صفحه‌ها', 'هر صفحه‌ی این PDF یک مدرکِ جدا می‌شود (فایلِ ترکیبی حذف می‌شود) و باید هر صفحه را جدا تگ‌گذاری کنید. ادامه می‌دهید؟', async () => {
-                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_document', doc_id: docId})})).json();
-                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
-                showToast(`${faDigits(data.pages)} صفحه جدا شد؛ هر صفحه را جدا تگ‌گذاری کنید.`, 'success');
-                document.getElementById('cinbox-tag-modal').classList.remove('active');
-                if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
-                else if (data.request_id && currentRequestId && String(data.request_id) === String(currentRequestId)) openRequestDocsReview(currentRequestId);
-                else loadCompanyInbox();
-                if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        function splitCompanyDoc(docId) { openCompanySplit(docId); }
+
+        // ---- دکمه‌ی «جداسازی» زیرِ هر PDF (شرکتی): پنجره‌ی صفحه‌ها با پیش‌نمایش؛ برای هر صفحه بماند/حذف + نوعِ مدرک + ردیف ----
+        // فایلِ اصلی تا «ثبت» دست نمی‌خورد؛ صفحه‌های هم‌نوع و هم‌ردیف یک PDF می‌شوند؛ نوع/ردیفِ نامعلوم => صندوقِ مدارک
+        function splitBtnHtml(id, path, fn) {
+            if (!/\.pdf$/i.test(path || '')) return '';
+            return `<button type="button" onclick="event.stopPropagation(); ${fn || 'openCompanySplit'}(${id})" title="جداسازیِ صفحه‌های این PDF" class="split-btn inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1"><i class="fas fa-scissors"></i>جداسازی</button>`;
+        }
+        let CSP = null;
+        async function openCompanySplit(docId) {
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_open', doc_id: docId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            CSP = d;
+            let m = document.getElementById('csp-modal');
+            if (!m) { m = document.createElement('div'); m.id = 'csp-modal'; m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3'; m.style.zIndex = '1000002'; document.body.appendChild(m); }
+            const url = (n, k) => `${COMPANY_API}?action=split_page&token=${d.token}&n=${n}&kind=${k}`;
+            const typeOpts = `<option value="">— نامشخص (صندوقِ مدارک) —</option>` + (d.has_request ? '<option value="letter">نامه‌ی درخواست</option>' : '')
+                + Object.entries(d.types).map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
+            const plateOpts = `<option value="0">— بدونِ ردیف —</option>` + d.plates.map(p => `<option value="${p.id}">${escapeHtml(faDigits(p.label))}${p.type ? ' · ' + (p.type === 'BODY' ? 'بدنه' : 'ثالث') : ''}</option>`).join('');
+            const cards = Array.from({length: d.pages}, (_, i) => i + 1).map(n => `
+                <div class="csp-card rounded-xl border-2 border-teal-400 bg-white p-2 flex flex-col gap-1.5" data-n="${n}">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                        <span>صفحه‌ی ${faDigits(n)} از ${faDigits(d.pages)}</span>
+                        <a href="${url(n, 'pdf')}" target="_blank" class="text-blue-600 hover:underline font-normal"><i class="fas fa-up-right-from-square ml-1"></i>باز کردن</a>
+                    </div>
+                    <img src="${url(n, 'png')}" alt="صفحه ${n}" loading="lazy" class="w-full h-44 object-contain bg-slate-50 rounded-lg cursor-zoom-in" onclick="openImageZoom(this.src, 'صفحه ${faDigits(n)}')">
+                    <div class="grid grid-cols-2 gap-1 text-[11px] font-bold">
+                        <label class="csp-keep-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer bg-teal-600 text-white"><input type="radio" name="csp-k-${n}" value="1" class="hidden" checked onchange="cspPaint(this)">بماند</label>
+                        <label class="csp-del-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer bg-slate-100 text-slate-500"><input type="radio" name="csp-k-${n}" value="0" class="hidden" onchange="cspPaint(this)">حذف</label>
+                    </div>
+                    <select class="csp-type border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="cspSum()">${typeOpts}</select>
+                    ${d.plates.length ? `<select class="csp-plate border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="cspSum()">${plateOpts}</select>` : ''}
+                </div>`).join('');
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-scissors ml-1 text-amber-600"></i>جداسازیِ صفحه‌های «${escapeHtml(d.name)}»</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">برای هر صفحه بگویید بماند یا حذف شود و چه مدرکی است${d.plates.length ? ' و مالِ کدام ردیف' : ''}. صفحه‌های هم‌نوع و هم‌ردیف یک فایل می‌شوند. صفحه‌ای که نوع یا ردیفش معلوم نیست به صندوقِ مدارک می‌رود. فایلِ اصلی بعد از ثبت برداشته می‌شود.</p></div>
+                    <button onclick="cspClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="px-4 pt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span class="font-bold text-slate-500">برای همه:</span>
+                    <select id="csp-all-type" class="border border-slate-300 rounded-lg p-1.5">${typeOpts}</select>
+                    ${d.plates.length ? `<select id="csp-all-plate" class="border border-slate-300 rounded-lg p-1.5">${plateOpts}</select>` : ''}
+                    <button onclick="cspApplyAll()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg">اعمال روی همه‌ی صفحه‌ها</button>
+                </div>
+                <div class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${cards}</div>
+                <div class="p-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span id="csp-sum" class="text-[11px] text-slate-500"></span>
+                    <div class="flex gap-2"><button onclick="cspClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">انصراف</button>
+                    <button id="csp-save" onclick="cspSave()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-xl"><i class="fas fa-check ml-1"></i>ثبتِ صفحه‌ها</button></div>
+                </div></div>`;
+            m.querySelectorAll('.csp-type').forEach(x => x.value = d.cur_type && [...x.options].some(o => o.value === d.cur_type) ? d.cur_type : '');
+            m.querySelectorAll('.csp-plate').forEach(x => x.value = String(d.cur_plate || 0));
+            cspSum();
+        }
+        function cspPaint(inp) {
+            const card = inp.closest('.csp-card'), keep = card.querySelector('input[value="1"]').checked;
+            card.querySelector('.csp-keep-l').className = 'csp-keep-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer ' + (keep ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-500');
+            card.querySelector('.csp-del-l').className = 'csp-del-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer ' + (!keep ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500');
+            card.classList.toggle('border-teal-400', keep); card.classList.toggle('border-red-300', !keep); card.classList.toggle('opacity-60', !keep);
+            card.querySelectorAll('select').forEach(x => x.disabled = !keep);
+            cspSum();
+        }
+        function cspApplyAll() {
+            const t = document.getElementById('csp-all-type').value, pl = document.getElementById('csp-all-plate');
+            document.querySelectorAll('#csp-modal .csp-card').forEach(c => {
+                if (!c.querySelector('input[value="1"]').checked) return;
+                c.querySelector('.csp-type').value = t;
+                if (pl && c.querySelector('.csp-plate')) c.querySelector('.csp-plate').value = pl.value;
             });
+            cspSum();
+        }
+        function cspItems() {
+            return [...document.querySelectorAll('#csp-modal .csp-card')].map(c => ({n: Number(c.dataset.n), keep: c.querySelector('input[value="1"]').checked ? 1 : 0,
+                doc_type: c.querySelector('.csp-type').value, plate_id: Number(c.querySelector('.csp-plate')?.value || 0)}));
+        }
+        function cspSum() {
+            const it = cspItems(), keep = it.filter(x => x.keep), el = document.getElementById('csp-sum');
+            const groups = new Set(keep.map(x => x.doc_type + '|' + (x.doc_type === 'letter' ? 0 : x.plate_id)));
+            const inbox = keep.filter(x => x.doc_type !== 'letter' && (!x.doc_type || !x.plate_id)).length;
+            if (el) el.textContent = `${faDigits(keep.length)} صفحه می‌ماند (${faDigits(groups.size)} فایل) · ${faDigits(it.length - keep.length)} صفحه حذف` + (inbox ? ` · ${faDigits(inbox)} صفحه به صندوقِ مدارک می‌رود` : '');
+        }
+        function cspClose() { const m = document.getElementById('csp-modal'); if (m) m.remove(); CSP = null; }
+        async function cspSave() {
+            const items = cspItems();
+            if (!items.some(x => x.keep)) { showToast('هیچ صفحه‌ای «بماند» نیست.', 'warning'); return; }
+            const del = items.filter(x => !x.keep).length;
+            const go = async () => {
+                const btn = document.getElementById('csp-save');
+                btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_apply', doc_id: CSP.doc_id, token: CSP.token, items})})).json(); }
+                catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبتِ صفحه‌ها'; showToast(r.error || 'خطا', 'error'); return; }
+                cspClose();
+                showToast(`${faDigits(r.made.length)} فایل ساخته شد: ` + r.made.map(x => x.label + ` (ص ${faDigits(x.pages.join('،'))})`).join('، ')
+                    + (r.source_removed ? '' : ' · فایلِ اصلی چون بعضی صفحه‌ها ساخته نشدند نگه داشته شد.'), r.source_removed ? 'success' : 'warning');
+                document.getElementById('cinbox-tag-modal')?.classList.remove('active');
+                if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+                if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+                if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+            };
+            if (del) showConfirm('حذفِ صفحه‌ها', `${faDigits(del)} صفحه «حذف» زده شده و ذخیره نمی‌شود. ادامه می‌دهید؟`, go); else go();
         }
 
         let companyInboxCache = [];
@@ -8059,7 +8154,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.innerHTML = data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div>
-                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
                         <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
@@ -8088,7 +8183,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.innerHTML = data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div class="min-w-0">
-                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
                         <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                         ${aiBadge(d)}
@@ -10847,6 +10942,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     const preview = d.file_path
                         ? (isImg ? `<img src="/${encodeFilePath(d.file_path)}" data-gv="/${encodeFilePath(d.file_path)}" data-gv-label="${(d.doc_label || '').replace(/"/g, '')}" class="w-24 h-24 object-cover rounded-lg border cursor-zoom-in hover:opacity-80">` : `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 underline text-xs">مشاهده فایل</a>`)
                         : '';
+                    const splitP = (!isIssueMode && IS_ADMIN && c.status !== 'ISSUED') ? splitBtnHtml(d.id, d.file_path, `caseSplitExisting.bind(null, ${c.id})`) : '';
                     const actions = (!isIssueMode && d.status === 'PENDING')
                         ? `<div class="flex gap-2 mt-2">
                              <button onclick="approveDoc(${d.id})" class="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs hover:bg-emerald-600">تایید</button>
@@ -10854,7 +10950,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                            </div>` : '';
                     return `<div class="border rounded-xl p-3 flex gap-3 items-start">
                         <input type="checkbox" class="doc-select-cb mt-2" value="${d.id}">
-                        <div>${preview}</div>
+                        <div>${preview}${splitP ? '<div class="mt-1">' + splitP + '</div>' : ''}</div>
                         <div class="flex-1">
                             <p class="font-bold text-sm">${d.doc_label}</p>
                             ${statusBadge}
@@ -11451,6 +11547,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             CSPLIT = {caseId, token: data.token, pages: data.pages, name: data.name, docs: data.required_docs || {}, onDone};
             caseSplitRender();
         }
+        // دکمه‌ی «جداسازی» زیرِ PDFی که از قبل روی پرونده است: همان پنجره؛ بعد از ثبت، فایلِ ترکیبیِ قبلی برداشته می‌شود
+        async function caseSplitExisting(caseId, docId) {
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let data;
+            try { data = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_existing', case_id: caseId, doc_id: docId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            CSPLIT = {caseId, token: data.token, pages: data.pages, name: data.name, docs: data.required_docs || {}, sourceDocId: data.source_doc_id, curKey: data.cur_key, curLabel: data.cur_label,
+                      onDone: () => { openCase(caseId); if (typeof loadCases === 'function') loadCases(); }};
+            caseSplitRender();
+        }
         function caseSplitUrl(n, kind) { return `api/case_actions.php?action=split_page&token=${CSPLIT.token}&n=${n}&kind=${kind}`; }
         function caseSplitRender() {
             let m = document.getElementById('csplit-modal');
@@ -11482,10 +11589,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <div class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${cards}</div>
                 <div class="p-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <span id="csplit-sum" class="text-[11px] text-slate-500"></span>
+                    <span class="flex flex-col gap-1"><span id="csplit-sum" class="text-[11px] text-slate-500"></span>
+                    ${CSPLIT.sourceDocId ? `<label class="text-[11px] text-slate-600 flex items-center gap-1.5"><input type="checkbox" id="csplit-rm" checked> فایلِ ترکیبیِ قبلی («${escapeHtml(CSPLIT.curLabel || '')}») بعد از ثبت برداشته شود</label>` : ''}</span>
                     <div class="flex gap-2"><button onclick="caseSplitClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">انصراف</button>
                     <button id="csplit-save" onclick="caseSplitSave()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-xl"><i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها</button></div>
                 </div></div>`;
+            if (CSPLIT.curKey && (CSPLIT.docs[CSPLIT.curKey] || CSPLIT.curKey === 'other')) m.querySelectorAll('.csplit-key').forEach(x => {
+                x.value = CSPLIT.curKey; caseSplitOnPick(x);
+                if (CSPLIT.curKey === 'other') x.closest('.csplit-card').querySelector('.csplit-other').value = CSPLIT.curLabel || '';
+            });
             caseSplitSummary();
         }
         function caseSplitOnPick(sel) {
@@ -11517,13 +11629,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             let data;
             try {
                 data = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'split_assign', case_id: CSPLIT.caseId, token: CSPLIT.token, items, done: 1})})).json();
+                    body: JSON.stringify({action: 'split_assign', case_id: CSPLIT.caseId, token: CSPLIT.token, items, done: 1, remove_source: document.getElementById('csplit-rm')?.checked ? 1 : 0})})).json();
             } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
             if (!data.ok) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها'; showToast(data.error || 'خطا', 'error'); return; }
             const done = CSPLIT.onDone;
             caseSplitClose();
             showToast(`${faDigits((data.saved || []).length)} مدرک ثبت و تایید شد: ` + (data.saved || []).map(x => x.label + (x.pages.length > 1 ? ` (${faDigits(x.pages.length)} صفحه)` : '')).join('، ')
-                + ((data.failed || []).length ? ` · ناموفق: ${data.failed.join('، ')}` : ''), (data.failed || []).length ? 'warning' : 'success');
+                + ((data.failed || []).length ? ` · ناموفق: ${data.failed.join('، ')}` : '') + (data.source_removed ? ' · فایلِ ترکیبیِ قبلی برداشته شد.' : ''), (data.failed || []).length ? 'warning' : 'success');
             if (typeof done === 'function') done();
         }
 

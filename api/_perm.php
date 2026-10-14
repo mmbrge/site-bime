@@ -227,7 +227,7 @@ function perm_api_map() {
             'list_request_inbox' => $req . ':view|companies-inbox:view',
             'request_detail' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view|fin-tracking:view',
             'list_inbox' => 'companies-inbox:view', 'reject_document' => 'companies-inbox:edit|' . $req . ':edit', 'assign_document' => 'companies-inbox:edit|' . $req . ':edit',
-            'split_document' => 'companies-inbox:edit|' . $req . ':edit', 'doc_pages' => $req . ':view|companies-inbox:view', 'upload_combined_pdf' => $req . ':edit|companies-inbox:edit',
+            'split_document' => 'companies-inbox:edit|' . $req . ':edit', 'split_open' => 'companies-inbox:edit|' . $req . ':edit', 'split_page' => $req . ':view|companies-inbox:view', 'split_apply' => 'companies-inbox:edit|' . $req . ':edit', 'doc_pages' => $req . ':view|companies-inbox:view', 'upload_combined_pdf' => $req . ':edit|companies-inbox:edit',
             'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|import-archive:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit',
             'delete_row_doc' => $req . ':delete|companies-inbox:delete|import-archive:delete', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => $req . ':edit|issue-queue:edit',
             'set_row_coverages' => $req . ':edit', 'delete_row' => $req . ':delete',
@@ -283,7 +283,7 @@ function perm_api_map() {
         ]],
         'case_actions' => ['pages' => ['cases'], 'elevate' => true, 'actions' => [
             'delete_case' => 'cases:delete|records:delete', 'admin_upload_case_doc' => 'cases:edit|health:edit|records:edit',
-            'split_upload' => 'cases:edit|health:edit|records:edit', 'split_assign' => 'cases:edit|health:edit|records:edit', 'split_page' => 'cases:view|health:view|records:view', 'set_naming' => 'cases:edit|settings:edit',
+            'split_upload' => 'cases:edit|health:edit|records:edit', 'split_existing' => 'cases:edit|health:edit|records:edit', 'split_assign' => 'cases:edit|health:edit|records:edit', 'split_page' => 'cases:view|health:view|records:view', 'set_naming' => 'cases:edit|settings:edit',
             'list' => 'cases:view|health:view|records:view', 'detail' => 'cases:view|health:view|records:view|approved-reviews:view|fin-tracking:view',
             'approve_all_docs' => 'health:edit|cases:edit', 'approve_doc' => 'health:edit|cases:edit', 'reject_doc' => 'health:edit|cases:edit', 'request_fix' => 'health:edit|cases:edit',
             'download_health_zip' => 'health:export|cases:export|approved-reviews:export|records:export', 'download_docs_zip' => 'health:export|cases:export|approved-reviews:export|records:export',
@@ -436,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
@@ -464,7 +464,7 @@ function perm_activity_labels() {
         'case_actions.confirm_issue_policy' => 'صدورِ بیمه‌نامه‌ی کارکنان', 'case_actions.approve_doc' => 'تأییدِ مدرکِ کارکنان', 'case_actions.approve_all_docs' => 'تأییدِ همه‌ی مدارکِ کارکنان',
         'case_actions.reject_doc' => 'ردِ مدرکِ کارکنان', 'case_actions.request_fix' => 'درخواستِ اصلاحِ مدارک', 'case_actions.approve_health' => 'تأییدِ بازدیدِ سلامت',
         'case_actions.reject_health' => 'ردِ بازدیدِ سلامت', 'case_actions.review_health_photo' => 'بررسیِ عکسِ بازدیدِ سلامت', 'case_actions.upload_health_report' => 'بارگذاریِ گزارشِ بازدیدِ سلامت',
-        'case_actions.delete_case' => 'حذفِ درخواستِ کارکنان', 'case_actions.admin_upload_case_doc' => 'بارگذاریِ مدرکِ کارکنان', 'case_actions.split_assign' => 'ثبتِ صفحه‌های PDFِ چند مدرکیِ کارکنان', 'case_actions.download_docs_zip' => 'دانلودِ مدارکِ کارکنان',
+        'case_actions.delete_case' => 'حذفِ درخواستِ کارکنان', 'case_actions.admin_upload_case_doc' => 'بارگذاریِ مدرکِ کارکنان', 'case_actions.split_assign' => 'ثبتِ صفحه‌های PDFِ چند مدرکیِ کارکنان', 'company_actions.split_apply' => 'جداسازیِ صفحه‌های مدرکِ شرکتی', 'case_actions.download_docs_zip' => 'دانلودِ مدارکِ کارکنان',
         'record_actions.create_intro' => 'ثبتِ معرفی‌نامه', 'record_actions.create_manual' => 'ثبتِ دستیِ پرونده', 'record_actions.create_manual_request' => 'ثبتِ دستیِ درخواستِ کارکنان',
         'record_actions.create_case_for_intro' => 'ساختِ درخواست از معرفی‌نامه', 'record_actions.edit' => 'ویرایشِ پرونده', 'record_actions.change_status' => 'تغییرِ وضعیتِ پرونده',
         'record_actions.delete' => 'حذفِ پرونده', 'record_actions.reset_all' => 'پاک‌سازیِ کلِ سامانه', 'records.export' => 'خروجیِ اکسلِ پرونده‌ها',

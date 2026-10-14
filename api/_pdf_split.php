@@ -193,12 +193,34 @@ function pdf_split_job_create($pdo, $siteRoot, $file, $ownerId) {
     @mkdir($dir, 0755, true);
     $src = $dir . '/source.pdf';
     if (!move_uploaded_file($file['tmp_name'], $src)) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']; }
+    return pdf_split_job_finish($pdo, $dir, $token, $file['name'], $ownerId);
+}
+// همان کار برای فایلی که از قبل روی سرور است (دکمه‌ی «جداسازی» زیرِ هر PDFِ بارگذاری‌شده) — فایلِ اصلی دست نمی‌خورد
+// $meta کنارِ job.json نگه داشته می‌شود (مثلاً doc_id تا هنگامِ ثبت معلوم باشد این صفحه‌ها از کدام مدرک‌اند)
+function pdf_split_job_from_path($pdo, $siteRoot, $abs, $name, $ownerId, $meta = []) {
+    if (!is_file($abs) || strtolower(pathinfo($abs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'error' => 'فقط فایلِ PDF صفحه‌به‌صفحه جدا می‌شود.'];
+    $token = bin2hex(random_bytes(12));
+    $dir = pdf_split_job_root($siteRoot) . '/s_' . $token;
+    @mkdir($dir, 0755, true);
+    if (!@copy($abs, $dir . '/source.pdf')) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.']; }
+    return pdf_split_job_finish($pdo, $dir, $token, $name, $ownerId, $meta);
+}
+function pdf_split_job_finish($pdo, $dir, $token, $origName, $ownerId, $meta = []) {
+    $src = $dir . '/source.pdf';
     $r = pdf_split_run($pdo, 'pages', $dir, ['max' => PDF_SPLIT_MAX_PAGES, 'force' => 1, 'thumbs' => 1], [$src]);
     if (empty($r['ok'])) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => $r['error'] ?? 'جدا کردنِ صفحه‌ها ممکن نشد.']; }
     @unlink($src);
-    $name = pdf_split_safe_name($file['name']);
-    @file_put_contents($dir . '/job.json', json_encode(['owner' => (string)$ownerId, 'pages' => intval($r['pages']), 'name' => $name], JSON_UNESCAPED_UNICODE));
+    $name = pdf_split_safe_name($origName);
+    @file_put_contents($dir . '/job.json', json_encode(array_merge($meta, ['owner' => (string)$ownerId, 'pages' => intval($r['pages']), 'name' => $name]), JSON_UNESCAPED_UNICODE));
     return ['ok' => true, 'token' => $token, 'pages' => intval($r['pages']), 'name' => $name];
+}
+// صفحه‌های انتخاب‌شده‌ی یک کار (به ترتیب) => یک PDF در $destPath (یک صفحه => کپی، چند صفحه => ادغام)
+function pdf_split_job_take($pdo, $job, array $pages, $destPath) {
+    sort($pages);
+    $files = array_values(array_filter(array_map(function ($n) use ($job) { return $job['dir'] . sprintf('/p%03d.pdf', $n); }, $pages), 'is_file'));
+    if (!$files) return false;
+    if (count($files) === 1) return @copy($files[0], $destPath) ? $destPath : false;
+    return pdf_merge_files($pdo, $files, $destPath);
 }
 function pdf_split_job_info($siteRoot, $token, $ownerId) {
     $dir = pdf_split_job_dir($siteRoot, $token);

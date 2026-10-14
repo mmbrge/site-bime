@@ -55,7 +55,7 @@ try {
     // ---- بارگذاریِ مستقیمِ مدرک و تکمیل/ویرایشِ دستیِ اطلاعاتِ درخواست فقط برای مدیر کل ----
     // (فیلدهای نام‌گذاریِ هنگامِ صدور - پلاک و نام بیمه‌گذار - برای کارشناسِ صدور آزاد می‌ماند)
     if (($_SESSION['role'] ?? '') !== 'ADMIN'
-        && (in_array(($_POST['action'] ?? ''), ['admin_upload_case_doc', 'split_upload'], true) || $action === 'split_assign'
+        && (in_array(($_POST['action'] ?? ''), ['admin_upload_case_doc', 'split_upload'], true) || $action === 'split_assign' || $action === 'split_existing'
             || ($action === 'set_naming' && (($data['insured_national_id'] ?? '') !== '' || ($data['ownership_choice'] ?? '') !== '' || ($data['prev_body_insurance'] ?? '') !== '')))) {
         echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
         exit;
@@ -63,7 +63,7 @@ try {
 
     // ---- درخواستِ «خارج از فاز عملیاتی» فقط قابلِ دیدن است؛ هیچ کارِ عملیاتی روی آن انجام نمی‌شود ----
     $mutating = ['approve_all_docs', 'approve_doc', 'reject_doc', 'request_fix', 'review_health_photo', 'approve_health',
-                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report', 'split_upload', 'split_assign'];
+                 'reject_health', 'set_naming', 'confirm_issue_policy', 'admin_upload_case_doc', 'ocr_preview_policy', 'upload_health_report', 'split_upload', 'split_assign', 'split_existing'];
     $postAction = $_POST['action'] ?? '';
     $guardAction = in_array($action, $mutating, true) ? $action : (in_array($postAction, $mutating, true) ? $postAction : '');
     if ($guardAction !== '') {
@@ -726,6 +726,26 @@ try {
         echo json_encode($r, JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // ۱-ب) split_existing: همان پنجره برای PDFی که قبلاً روی پرونده بارگذاری شده (دکمه‌ی «جداسازی» زیرِ هر PDF)
+    if ($action === 'split_existing') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $caseId = intval($data['case_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+        $stmt->execute([$caseId]);
+        $c = $stmt->fetch();
+        $stmt = $pdo->prepare("SELECT * FROM case_documents WHERE id = ? AND case_id = ?");
+        $stmt->execute([intval($data['doc_id'] ?? 0), $caseId]);
+        $d = $stmt->fetch();
+        if (!$c || !$d) { echo json_encode(['ok' => false, 'error' => 'مدرک یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $abs = dirname(__DIR__) . '/' . ltrim($d['file_path'], '/');
+        $r = pdf_split_job_from_path($pdo, dirname(__DIR__), $abs, ($d['doc_label'] ?: 'مدرک') . '.pdf', $_SESSION['user_id'], ['doc_id' => intval($d['id']), 'case_id' => $caseId, 'src_path' => $d['file_path']]);
+        if (!empty($r['ok'])) {
+            $r['required_docs'] = get_required_docs_v2($c['insurance_type'], $c['ownership_choice'], $c['prev_body_insurance'], $c['insured_relationship']);
+            $r['source_doc_id'] = intval($d['id']); $r['cur_key'] = $d['doc_key']; $r['cur_label'] = $d['doc_label'];
+        }
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     // ۲) split_page: پیش‌نمایشِ یک صفحه (png کوچک یا pdfِ همان صفحه)
     if ($action === 'split_page') {
         require_once __DIR__ . '/_pdf_split.php';
@@ -783,8 +803,24 @@ try {
             $r = admin_store_case_doc_file($pdo, $siteRoot, $caseId, $g['key'], $g['label'], $src, 'pdf', $_SESSION['user_id']);
             if (!empty($r['ok'])) $saved[] = ['label' => $g['label'], 'pages' => $g['pages']]; else $errors[] = $g['label'];
         }
+        // جداسازیِ مدرکی که از قبل روی پرونده بود: اگر همه‌ی صفحه‌های «بماند» ذخیره شدند، فایلِ ترکیبیِ قبلی برداشته می‌شود
+        // (پرونده‌ی صادرشده دست نمی‌خورد تا بایگانیِ نهایی‌اش به هم نریزد)
+        $sourceRemoved = false;
+        if (!empty($job['doc_id']) && intval($job['case_id'] ?? 0) === $caseId && $saved && !$errors && !empty($data['remove_source']) && $c['status'] !== 'ISSUED') {
+            $st = $pdo->prepare("SELECT file_path FROM case_documents WHERE id = ? AND case_id = ?");
+            $st->execute([intval($job['doc_id']), $caseId]);
+            $fp = $st->fetchColumn();
+            if ($fp === false) $fp = (string)($job['src_path'] ?? '');
+            $pdo->prepare("DELETE FROM case_documents WHERE id = ? AND case_id = ?")->execute([intval($job['doc_id']), $caseId]);
+            if ($fp) {
+                $st = $pdo->prepare("SELECT COUNT(*) FROM case_documents WHERE file_path = ?");
+                $st->execute([$fp]);
+                if (!intval($st->fetchColumn()) && is_file($siteRoot . '/' . ltrim($fp, '/'))) @unlink($siteRoot . '/' . ltrim($fp, '/'));
+            }
+            $sourceRemoved = true;
+        }
         if (!empty($data['done'])) pdf_split_rrmdir($job['dir']);
-        echo json_encode(['ok' => (bool)$saved, 'saved' => $saved, 'failed' => $errors, 'error' => $saved ? null : 'ذخیره‌ی صفحه‌ها ممکن نشد.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => (bool)$saved, 'saved' => $saved, 'failed' => $errors, 'source_removed' => $sourceRemoved, 'error' => $saved ? null : 'ذخیره‌ی صفحه‌ها ممکن نشد.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
