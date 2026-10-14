@@ -62,6 +62,7 @@ if (!$companies) {
 <script src="../comfort.js?v=16"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
+<script src="zerokm.js?v=1"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
@@ -308,6 +309,13 @@ if (!$companies) {
             </div>
             <div id="nr-excel-msg" class="text-[11px] mt-1"></div>
         </div>
+        <div class="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 mb-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div><b class="text-[12px] text-indigo-800">🚚 خودروهای صفر کیلومتر با فاکتور فروش</b><p class="text-[10.5px] text-slate-500">اکسلِ خودروها و PDFِ فاکتورهای فروش (چند فاکتور پشتِ سرِ هم) را بدهید؛ هر فاکتور جدا خوانده و با اکسل تطبیق داده می‌شود و برای هر خودرو یک ردیف با فاکتورش ساخته می‌شود.</p></div>
+                <button type="button" onclick="ZeroKm.open()" class="text-[11px] font-bold bg-indigo-600 text-white rounded-lg px-3 py-1.5">شروع</button>
+            </div>
+            <div id="zk-summary"></div>
+        </div>
         <label class="text-xs font-bold text-slate-500 block mb-2">پلاک‌های این درخواست (اختیاری - می‌توانید چند پلاک اضافه کنید)</label>
         <div id="nr-plates-list" class="space-y-2 mb-2"></div>
         <button type="button" onclick="addPlateRow('nr-plates-list')" class="text-xs font-bold text-blue-600 mb-4"><i class="fas fa-plus ml-1"></i>افزودن پلاک</button>
@@ -482,6 +490,7 @@ function openModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function openNewRequestModal() {
     document.getElementById('nr-plates-list').innerHTML = '';
+    if (window.ZeroKm) ZeroKm.clear();
     document.getElementById('nr-kind').value = 'NEW_POLICY';
     onNrKindChange();
     updateInsurerOptions();
@@ -754,7 +763,9 @@ async function submitNewRequest() {
     fd.append('request_kind', document.getElementById('nr-kind').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
     fd.append('requested_counts', JSON.stringify(collectNrCounts()));
-    fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list')));
+    const zk = window.ZeroKm ? ZeroKm.payload() : null;   // خودروهای صفر کیلومتر با فاکتور (company-portal/zerokm.js)
+    fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list').concat(zk ? zk.plates : [])));
+    if (zk && zk.token) fd.append('zk_token', zk.token);
     const fileInput = document.getElementById('nr-letter');
     if (fileInput.files[0]) fd.append('letter_file', fileInput.files[0]);
     try {

@@ -58,6 +58,51 @@ try {
         exit;
     }
 
+    // ---- صفر کیلومتر (فاکتور فروش): پیش‌فرض‌ها، اکسل، PDFِ فاکتورها و خواندنِ هر صفحه ----
+    if ($action === 'zk_defaults') {
+        $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null) ?: ($allowedCompanyIds[0] ?? 0);
+        echo json_encode(['ok' => true, 'defaults' => company_last_request_defaults($pdo, $companyId), 'coverage_options' => body_coverage_options(),
+                          'liability_options' => liability_limit_options()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'zk_parse_excel') {
+        require_once __DIR__ . '/_zerokm.php';
+        $f = $_FILES['file'] ?? null;
+        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK || !in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل (xlsx) یا csv را انتخاب کنید.']); exit; }
+        $tmp = sys_get_temp_dir() . '/' . uniqid('zk_') . '.' . $ext;
+        if (!@move_uploaded_file($f['tmp_name'], $tmp)) { echo json_encode(['ok' => false, 'error' => 'فایل دریافت نشد.']); exit; }
+        $r = zk_parse_excel($tmp);
+        @unlink($tmp);
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'zk_upload_pdf') {
+        require_once __DIR__ . '/_zerokm.php';
+        $r = pdf_split_job_create($pdo, dirname(__DIR__), $_FILES['file'] ?? [], zk_owner($session['company_user_id']));
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'zk_read_page') {
+        require_once __DIR__ . '/_zerokm.php';
+        session_write_close();
+        $r = zk_read_page($pdo, dirname(__DIR__), (string)($data['token'] ?? ''), zk_owner($session['company_user_id']), intval($data['n'] ?? 0));
+        $d = $r['data'] ?? [];
+        echo json_encode(['ok' => !empty($r['ok']), 'error' => $r['error'] ?? null, 'kind' => $r['kind'] ?? null, 'kind_fa' => $r['kind_fa'] ?? null, 'status' => $r['status'] ?? null,
+                          'missing' => $r['missing'] ?? [], 'data' => array_intersect_key($d, array_flip(['vin', 'engine_no', 'engine_raw', 'cab_no', 'owner_name', 'national_id', 'usage', 'car_system', 'car_tip', 'model_year', 'color', 'capacity', 'doc_no', 'doc_date', 'mobile', 'address']))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'zk_page') {   // پیش‌نمایشِ یک صفحه‌ی فاکتور
+        require_once __DIR__ . '/_zerokm.php';
+        $p = pdf_split_job_page_path(dirname(__DIR__), (string)($_GET['token'] ?? ''), zk_owner($session['company_user_id']), intval($_GET['n'] ?? 0), ($_GET['kind'] ?? '') === 'png' ? 'png' : 'pdf');
+        if (!$p) { http_response_code(404); exit; }
+        header_remove('Content-Type');
+        header('Content-Type: ' . (substr($p, -3) === 'png' ? 'image/png' : 'application/pdf'));
+        header('Content-Disposition: inline; filename="page.' . substr($p, -3) . '"');
+        readfile($p);
+        exit;
+    }
+
     // ---- شرکت‌هایی که این کاربر به آن‌ها دسترسی دارد (برای پرکردن انتخابگر) ----
     if ($action === 'my_companies') {
         echo json_encode(['ok' => true, 'companies' => $session['companies']], JSON_UNESCAPED_UNICODE);
@@ -406,11 +451,15 @@ try {
                  car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
                  insurance_type, skip_health_inspection, car_name, car_type, expiry_date, row_note)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $zkToken = preg_replace('/[^a-f0-9]/', '', (string)($data['zk_token'] ?? ''));
+            $zkUsed = [];
             foreach ($plates as $p) {
+                // صفر کیلومتر از فاکتور: شماره موتور و شاسی بدونِ . * - و فاصله
+                if (!empty($p['zk'])) { $p['chassis_no'] = preg_replace('/[^A-Za-z0-9]/', '', strtoupper(p2e_digits((string)($p['chassis_no'] ?? '')))); $p['engine_no'] = preg_replace('/[^A-Za-z0-9]/', '', strtoupper(p2e_digits((string)($p['engine_no'] ?? '')))); }
                 $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');
                 $pletter = trim($p['letter'] ?? ''); $pp4 = trim($p['p4'] ?? '');
                 $chassis = trim($p['chassis_no'] ?? '');
-                if ($pp1 === '' && $pp2 === '' && $pletter === '' && $pp4 === '' && $chassis === '') continue;
+                if ($pp1 === '' && $pp2 === '' && $pletter === '' && $pp4 === '' && $chassis === '' && trim((string)($p['engine_no'] ?? '')) === '') continue;
                 $pInsType = in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $p['insurance_type'] : null;
                 $isNew = !empty($p['is_new_vehicle']) ? 1 : 0;
                 $pExp = null;
@@ -423,6 +472,30 @@ try {
                                     trim($p['cancellation_reason'] ?? '') ?: null,
                                     $pInsType, $isNew ? 1 : 0, mb_substr(trim((string)($p['car_name'] ?? '')), 0, 190) ?: null, mb_substr(trim((string)($p['car_type'] ?? '')), 0, 120) ?: null,
                                     $pExp, mb_substr(trim((string)($p['note'] ?? '')), 0, 500) ?: null]);
+                $newPlateId = intval($pdo->lastInsertId());
+                // پوشش‌های بدنه‌ی همین ردیف (جزئی) یا پیش‌فرضِ کلیِ فرم
+                if ($pInsType === 'BODY' && array_key_exists('coverages', $p) && $p['coverages'] !== null && $p['coverages'] !== '') {
+                    $cov = company_clean_coverages($p['coverages']);
+                    if ($cov !== null) $pdo->prepare("UPDATE company_request_plates SET selected_coverages = ? WHERE id = ?")->execute([$cov, $newPlateId]);
+                }
+                if ($zkToken && !empty($p['zk_page'])) {
+                    require_once __DIR__ . '/_zerokm.php';
+                    $n = intval($p['zk_page']);
+                    zk_attach_page($pdo, dirname(__DIR__), $zkToken, zk_owner($session['company_user_id']), $n, $newPlateId, $companyId, $requestId, $session['company_user_id'],
+                                   ['owner_name' => trim((string)($p['owner_name'] ?? '')), 'national_id' => trim((string)($p['owner_national_id'] ?? ''))]);
+                    $zkUsed[$n] = true;
+                } elseif (!empty($p['zk'])) {
+                    require_once __DIR__ . '/_zerokm.php';
+                    vdoc_apply_to_row($pdo, $newPlateId, ['owner_name' => trim((string)($p['owner_name'] ?? '')), 'national_id' => trim((string)($p['owner_national_id'] ?? ''))]);
+                }
+            }
+            // فاکتورهایی که با هیچ خودرویی تطبیق نخوردند => صندوقِ مدارک (با نتیجه‌ی شناسایی) برای بررسیِ کارشناس
+            if ($zkToken) {
+                require_once __DIR__ . '/_zerokm.php';
+                $job = pdf_split_job_info(dirname(__DIR__), $zkToken, zk_owner($session['company_user_id']));
+                if ($job) for ($n = 1; $n <= intval($job['pages']); $n++) {
+                    if (empty($zkUsed[$n])) zk_attach_page($pdo, dirname(__DIR__), $zkToken, zk_owner($session['company_user_id']), $n, null, $companyId, $requestId, $session['company_user_id']);
+                }
             }
         }
 
