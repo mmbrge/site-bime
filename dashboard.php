@@ -1253,7 +1253,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center text-sm"><i class="fas fa-clock"></i></div>
                     </div>
                     <h3 class="text-2xl font-black text-slate-800 mt-2" id="stat-new">۰</h3>
-                    <p class="text-[11px] text-slate-400 mt-1">منتظر اولین پیام پرسنل</p>
+                    <p class="text-[11px] text-slate-400 mt-1">معرفی‌نامه‌هایی که هنوز درخواستی ندارند</p>
                 </div>
 
                 <div class="card p-5 border-t-4 border-cyan-500">
@@ -1262,7 +1262,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center text-sm"><i class="fas fa-id-card"></i></div>
                     </div>
                     <h3 class="text-2xl font-black text-slate-800 mt-2" id="stat-pending">۰</h3>
-                    <p class="text-[11px] text-slate-400 mt-1">در حال گفتگو و ارسال مدرک</p>
+                    <p class="text-[11px] text-slate-400 mt-1" id="stat-pending-sub">در حال تکمیلِ مدارک تا صدور</p>
                 </div>
 
                 <div class="card p-5 border-t-4 border-emerald-500">
@@ -1271,7 +1271,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm"><i class="fas fa-check-circle"></i></div>
                     </div>
                     <h3 class="text-2xl font-black text-slate-800 mt-2" id="stat-issued">۰</h3>
-                    <p class="text-[11px] text-slate-400 mt-1">فرآیند صدور نهایی شده</p>
+                    <p class="text-[11px] text-slate-400 mt-1" id="stat-issued-sub">کارکنان و شرکتی</p>
                 </div>
             </div>
 
@@ -4752,10 +4752,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const res = await fetch('api/record_actions.php?action=stats');
                 const data = await res.json();
                 if (data.ok && data.stats) {
-                    document.getElementById('stat-total').innerText = e2p(data.stats.total);
-                    document.getElementById('stat-new').innerText = e2p(data.stats.new);
-                    document.getElementById('stat-pending').innerText = e2p(data.stats.pending);
-                    document.getElementById('stat-issued').innerText = e2p(data.stats.issued);
+                    const st = data.stats, sub = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+                    document.getElementById('stat-total').innerText = e2pNum(st.total);
+                    document.getElementById('stat-new').innerText = e2pNum(st.new);
+                    document.getElementById('stat-pending').innerText = e2pNum(st.pending);
+                    document.getElementById('stat-issued').innerText = e2pNum(st.issued);
+                    if (st.issued_personnel !== undefined) {
+                        sub('stat-pending-sub', `کارکنان ${e2pNum(st.pending_personnel)} · ردیفِ شرکتی ${e2pNum(st.pending_company)}`);
+                        sub('stat-issued-sub', `کارکنان ${e2pNum(st.issued_personnel)} · شرکتی ${e2pNum(st.issued_company)}`);
+                    }
                 }
             } catch (e) {}
         }

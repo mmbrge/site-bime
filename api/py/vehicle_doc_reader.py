@@ -55,9 +55,11 @@ def valid_nid(s):
 VIN_RX = re.compile(r'(?<![A-Z0-9])([A-HJ-NPR-Z0-9]{17})(?![A-Z0-9])')
 
 
-def is_vin(t):
+def is_vin(t, strict=True):
+    """strict: استانداردِ VIN (بدونِ I/O/Q). شاسیِ بعضی خودروهای ایرانی I و O دارد؛ وقتی کنارِ برچسبِ خودش است، strict=False"""
     t = clean_code(t)
-    return len(t) == 17 and bool(VIN_RX.fullmatch(t)) and bool(re.search(r'[A-Z]', t)) and bool(re.search(r'\d', t))
+    ok = bool(VIN_RX.fullmatch(t)) if strict else bool(re.fullmatch(r'[A-Z0-9]{17}', t))
+    return len(t) == 17 and ok and bool(re.search(r'[A-Z]', t)) and bool(re.search(r'\d', t))
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +105,13 @@ def page_image(path, page_no, dpi=300):
     os.close(fd)
     im.save(png)
     return im, png, spans
+
+
+def clean_image(im):
+    """حذفِ پس‌زمینه‌ی رنگیِ طرح‌دار: کانالِ قرمز (طرحِ سبز/آبیِ روشن سفید می‌شود، متنِ تیره سیاه می‌ماند)"""
+    from PIL import ImageOps
+    r = ImageOps.autocontrast(im.split()[0])
+    return r.point(lambda v: 255 if v > 120 else 0).convert('L')
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +390,7 @@ def classify(text):
     """نوعِ صفحه با نشانه‌های متنی (OCR عنوان‌های خوشنویسی را معمولاً نمی‌خواند؛ پس نشانه‌های فرم هم شمرده می‌شوند)"""
     t = norm(text)
     sales = len(re.findall(r'سند\s*فروش|فاکتور\s*فروش|صورت\s*حساب\s*فروش|PILSAN|کارخانه|شماره\s*اتاق|نظریه\s*کارشناس\s*تصادفات|شماره\s*پروانه\s*گمرکی|نامبرده\s*زیر\s*واگذار', t, re.I))
-    own = len(re.findall(r'مالکیت\s*وسیله|سند\s*رسمی|واحد\s*شماره\s*گذاری|شماره\s*انتظامی|اثر\s*انگشت|نام\s*سازمان|تاریخ\s*تاسیس|مسئول\s*بررسی\s*مدارک|مشخصات\s*وسیله\s*\S*\s*:', t))
+    own = len(re.findall(r'مالکیت\s*وسیله|سند\s*رسمی|پلیس\s*راهنمایی|واحد\s*شماره\s*گذاری|شماره\s*انتظامی|اثر\s*انگشت|نام\s*سازمان|تاریخ\s*تاسیس|مسئول\s*بررسی\s*مدارک|مشخصات\s*وسیله\s*\S*\s*:', t))
     pol = len(re.findall(r'بیمه\s*نامه|حق\s*بیمه|تعهدات\s*بیمه\s*گر|بیمه\s*گذار|خسارت|تخفیف', t))
     if re.search(r'کارت\s*(?:خودرو|ماشین|مشخصات\s*خودرو)|VEHICLE\s*CARD', t, re.I) and max(sales, own, pol) < 2:
         return 'car_card'
@@ -429,6 +438,9 @@ def extract(atoms, boxes, barcodes, alltext, page_w):
         if re.search(r'مشخصات\s*مال[کك]', b['text']):
             owner_y = b['y']
             break
+    dang = [b for b in atoms if re.search(r'دا?ن[گک]', norm(b['t']))]
+    if owner_y is None and dang:
+        owner_y = min(b['y0'] for b in dang) - 3 * max(10.0, dang[0]['y1'] - dang[0]['y0'])
     if owner_y is None and len(kvg.get('owner_name', [])) > 1:
         # عنوانِ «مشخصات مالک» خوانده نشد: نامِ بالای صفحه (مدیرانِ کارخانه) کنار می‌رود؛ آخرین «نام و نام خانوادگی» مالک است
         owner_y = max(y for _v, y in kvg['owner_name']) - 10
@@ -445,21 +457,45 @@ def extract(atoms, boxes, barcodes, alltext, page_w):
     vins = [clean_code(x) for x in bc if is_vin(x)]
     if not vins:
         for v in kv.get('chassis_no', []) + kv.get('vin_label', []):
-            vins += [clean_code(x) for x in re.findall(r'[A-Z0-9][A-Z0-9 ]{15,40}', v) if is_vin(clean_code(x))]
+            vins += [clean_code(x) for x in re.findall(r'[A-Z0-9][A-Z0-9 ]{15,40}', v) if is_vin(clean_code(x), strict=False)]
     if not vins:
         vins = [clean_code(x) for x in lat if is_vin(x)]
+    if not vins:
+        # شاسیِ حرف‌به‌حرف در خانه‌های جدا («N A A N 1 1 F E …» در سندِ مالکیت): کادرهای تک‌نویسه‌ای یک سطر، از چپ به راست
+        singles = [b for b in boxes if re.fullmatch(r'[A-Za-z0-9]', norm(b['t']))]
+        for r in to_rows(singles):
+            seq = ''.join(norm(b['t']).upper() for b in sorted(r['items'], key=lambda b: b['x0']))
+            for k in range(len(seq) - 16):
+                if is_vin(seq[k:k + 17], strict=False):
+                    vins.append(seq[k:k + 17]); break
     if vins:
-        d['vin'] = max(set(vins), key=vins.count)
+        fixed = []
+        for x in vins:   # «O» به‌جای صفرِ OCR: اگر با صفر VINِ استاندارد شد، همان
+            y = x.replace('O', '0')
+            fixed.append(y if not is_vin(x) and is_vin(y) else x)
+        strict = [x for x in fixed if is_vin(x)]
+        pool = strict or fixed
+        d['vin'] = max(set(pool), key=pool.count)
+    # شماره شاسیِ غیر ۱۷ نویسه‌ای (خودروهای قدیمی/وارداتی: NAG087NPRF08314) از برچسبِ «شماره شاسی»
+    for v in kv.get('chassis_no', []):
+        for x in re.findall(r'[A-Za-z0-9][A-Za-z0-9\-]{6,24}', v):
+            c = clean_code(x)
+            if 8 <= len(c) <= 22 and re.search(r'[A-Z]', c) and re.search(r'\d', c) and c != d.get('vin'):
+                d['chassis_no'] = c
+                break
+        if d.get('chassis_no'):
+            break
 
     def eng_ok(x):
         c = clean_code(x)
         return (6 <= len(c) <= 30 and re.search(r'\d', c) and re.search(r'[A-Z]', c) and not similar(c, d.get('vin', ''))
                 and not is_vin(c) and not re.fullmatch(r'[A-Z]{2,4}[0-9O]{5,8}', c) and not re.fullmatch(r'\d+CC', c) and not re.fullmatch(r'S\d{2,8}', c))
     # ---- موتور: بارکد → مقدارِ برچسبِ «شماره موتور» → بلندترین کدِ لاتینِ دیگر ----
-    engs = [x for x in bc if eng_ok(x)]
+    engs = [x for x in bc if eng_ok(x) and not re.search(r'\s|/', x.strip())]
     if not engs:
         for v in kv.get('engine_no', []):
-            engs += [x for x in re.findall(r'[A-Za-z0-9*][A-Za-z0-9.*\-/,]{4,40}[A-Za-z0-9*]?', v) if eng_ok(x)]
+            engs += [x for x in re.findall(r'[A-Za-z0-9*][A-Za-z0-9.*\-/,]{4,40}[A-Za-z0-9*]?', v) if eng_ok(x) and clean_code(x) != d.get('chassis_no')]
+
     # مقدارِ برچسب با OCRِ فارسی گاهی حرفِ اول را جا می‌اندازد (*13.48-50…)؛ کدِ لاتینِ هم‌پایانِ دقیق‌تر جایش را می‌گیرد
     lat_eng = [x for x in lat if eng_ok(x) and not re.fullmatch(r'\d{2}/\d+-\d+-\d+=\d+', x)]
     if engs and lat_eng:
@@ -469,6 +505,13 @@ def extract(atoms, boxes, barcodes, alltext, page_w):
             engs = [max(better, key=lambda x: len(clean_code(x)))]
     if not engs and lat_eng:
         engs = [max(lat_eng, key=lambda x: len(clean_code(x)))]
+        # نه از بارکد و نه کنارِ برچسب => حدس؛ مگر اینکه انتهایش با مقدارِ (ناقصِ) کنارِ برچسب یکی باشد
+        tail = clean_code(engs[0])[-8:]
+        if not [x for x in bc if eng_ok(x)] and not any(clean_code(v).find(tail) >= 0 for v in kv.get('engine_no', [])):
+            d['engine_guess'] = 1
+    if not engs:   # شماره موتورِ فقط رقمی (۵۹۵۸۰۴) فقط وقتی کنارِ برچسبِ خودش است
+        for v in kv.get('engine_no', []):
+            engs += [x for x in re.findall(r'(?<!\d)\d{5,12}(?!\d)', v) if not similar(x, d.get('vin', ''))][:1]
     if engs:
         d['engine_raw'] = norm(engs[0])
         d['engine_no'] = clean_code(engs[0])
@@ -518,16 +561,25 @@ def extract(atoms, boxes, barcodes, alltext, page_w):
             v = m.group(1) + ' (' + m.group(2) + ' دانگ)'
             v = re.split(r'شر\s*کت\s*:|سازمان\s*/?\s*ش\s*ر\s*ک\s*ت\s*:?', v)[-1]
             break
+    if not v and dang:
+        # کادرهای سمتِ راستِ «دانگ» در همان نوار = نامِ خریدار (تا برچسبِ «نام و نام خانوادگی …»)
+        b0 = dang[0]; h0 = max(10.0, b0['y1'] - b0['y0']); cy0 = (b0['y0'] + b0['y1']) / 2
+        labs = [h for h in label_hits(atoms) if abs((h['y0'] + h['y1']) / 2 - cy0) < 1.6 * h0 and h['x0'] > b0['x1']]
+        right = min([h['x0'] for h in labs] or [page_w * 0.9])
+        near = [b for b in atoms if b is not b0 and abs((b['y0'] + b['y1']) / 2 - cy0) < 0.9 * h0 and b0['x1'] - 4 <= b['x0'] and b['x1'] <= right + 4]
+        if near:
+            v = ' '.join(r['text'] for r in to_rows(near)) + ' (6 دانگ)'
     if not v:
-        v = first(kv.get('owner_name'), clean=lambda s: s.strip(' :|-'))
+        v = first([x for x in kv.get('owner_name', []) if not re.search(r'سمت|مدیر', x)], clean=lambda s: s.strip(' :|-'))
     if v:
         sh = re.search(r'\(?\s*(\d)\s*دا?ن[گک]\s*\)?', v)
         if sh:
             d['owner_share'] = sh.group(1)
             v = v[:sh.start()]
-        v = re.sub(r'^(?:سازمان|شرکت)\s*[:/]?\s*', '', v)
         v = re.sub(r'[^آ-ی\s]', ' ', v)
         v = re.sub(r'\s+', ' ', v).strip()
+        # باقی‌مانده‌ی برچسب («سازمان / شرکت:») و کلمه‌های تکراری
+        v = re.sub(r'^(?:(?:سازمان|ش\s*ر\s*ک\s*ت|نام\s*و\s*نام\s*خانواد\s*[گک]\s*[یي])\s*)+', '', v).strip()
         if 3 <= len(v) <= 90:
             d['owner_name'] = v
     v = first(kv.get('birth_date'), clean=fdate)
@@ -589,12 +641,22 @@ def read(path, page_no=1):
             engines.append('barcode')
         if not boxes:
             fa_boxes = ocr_paddle(im)
+            eng = 'paddle'
+            if fa_boxes is None:
+                fa_boxes, eng = ocr_tesseract(png), 'tesseract'
             if fa_boxes is not None:
-                engines.append('paddle')
-            else:
-                fa_boxes = ocr_tesseract(png)
-                if fa_boxes is not None:
-                    engines.append('tesseract')
+                engines.append(eng)
+                # پس‌زمینه‌ی طرح‌دار (سندِ سبزِ پلیس، کارت): اگر برچسب کم خوانده شد، یک بار روی تصویرِ پاک‌سازی‌شده
+                if len(label_hits(fa_boxes)) < 6:
+                    im2 = clean_image(im)
+                    fd2, png2 = tempfile.mkstemp(suffix='.png'); os.close(fd2); im2.save(png2)
+                    try:
+                        b2 = ocr_paddle(im2.convert('RGB')) if eng == 'paddle' else ocr_tesseract(png2)
+                    finally:
+                        os.unlink(png2)
+                    if b2 and len(label_hits(b2)) > len(label_hits(fa_boxes)):
+                        fa_boxes = b2
+                        engines.append('cleaned')
             boxes = fa_boxes or []
             lat = ocr_rapid(im)
             if lat is not None:
@@ -612,8 +674,10 @@ def read(path, page_no=1):
         if kind == 'policy':   # بیمه‌نامه‌ی قبلیِ همین خودرو: ثالث یا بدنه
             data['policy_type'] = 'BODY' if re.search(r'بدنه', alltext) and not re.search(r'شخص\s*ثالث', alltext) else 'THIRDPARTY'
         req = REQUIRED.get(kind, [])
-        missing = [fa for k, fa in req if not data.get(k)]
-        ident = bool(data.get('vin') or data.get('engine_no'))
+        missing = [fa for k, fa in req if not (data.get(k) or (k == 'vin' and data.get('chassis_no')))]
+        if data.get('engine_guess') and 'شماره موتور' not in missing:
+            missing.append('شماره موتور (حدسی؛ تأیید شود)')
+        ident = bool(data.get('vin') or data.get('chassis_no') or data.get('engine_no'))
         status = 'full' if (req and not missing) else ('partial' if ident or (kind != 'unknown') else 'none')
         return {'ok': True, 'kind': kind, 'kind_fa': KIND_FA[kind], 'status': status, 'data': data, 'missing': missing,
                 'engines': engines, 'barcodes': [b['t'] for b in (barcodes or [])]}

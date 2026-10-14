@@ -95,7 +95,7 @@ function vdoc_apply_to_row($pdo, $plateId, array $d) {
     $st->execute([$plateId]);
     $r = $st->fetch();
     if (!$r) return;
-    $vin = vdoc_clean_code($d['vin'] ?? '');
+    $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
     $carName = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? '');
     $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), NULLIF(?, '')),
                    engine_no = COALESCE(NULLIF(engine_no, ''), NULLIF(?, '')), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')), car_type = COALESCE(NULLIF(car_type, ''), NULLIF(?, '')) WHERE id = ?")
@@ -146,14 +146,14 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     $kind = $res['kind'] ?? 'unknown';
-    if ($kind === 'unknown' || (empty($d['vin']) && empty($d['engine_no']))) return $save($kind === 'unknown' && empty($d) ? 'NONE' : 'PARTIAL', $res);
+    if ($kind === 'unknown' || (empty($d['vin']) && empty($d['chassis_no']) && empty($d['engine_no']))) return $save($kind === 'unknown' && empty($d) ? 'NONE' : 'PARTIAL', $res);
 
     $rows = vdoc_match_row($pdo, intval($doc['company_id']), $doc['request_id'] ? intval($doc['request_id']) : null, $d);
     $created = false;
     if (!$rows && $doc['request_id'] && in_array($kind, ['sales_invoice', 'ownership_doc'], true) && ($res['status'] ?? '') === 'full') {
         // فاکتور/سندِ کامل که هنوز ردیفی ندارد => ردیفِ تازه (صفر کیلومتر برای فاکتورِ فروش: بازدید لازم نیست)
         $isNew = $kind === 'sales_invoice' ? 1 : 0;
-        $vin = vdoc_clean_code($d['vin'] ?? '');
+        $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
         $type = vdoc_request_type($pdo, intval($doc['request_id']));
         $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name, row_note)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")

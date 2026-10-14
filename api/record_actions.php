@@ -258,12 +258,18 @@ try {
     }
 
     // ---- ۱. آمار داشبورد ----
+    // کارت‌های داشبورد: از جدول‌های واقعیِ فرآیند (معرفی‌نامه‌ها، درخواست‌های کارکنان، ردیف‌های شرکتی)؛
+    // قبلاً از جدولِ قدیمیِ insurance_requests خوانده می‌شد که صدورها در آن ثبت نمی‌شوند
     if ($action === 'stats') {
-        $total = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status != 'DELETED'")->fetchColumn();
-        $new = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status = 'NEW'")->fetchColumn();
-        $pending = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status IN ('WAITING_FOR_DOCUMENTS', 'DOCUMENTS_REVIEW', 'در انتظار انتخاب')")->fetchColumn();
-        $issued = $pdo->query("SELECT COUNT(*) FROM insurance_requests WHERE status = 'ISSUED'")->fetchColumn();
-        echo json_encode(['ok' => true, 'stats' => ['total' => intval($total), 'new' => intval($new), 'pending' => intval($pending), 'issued' => intval($issued)]]);
+        $q = function ($sql) use ($pdo) { try { return intval($pdo->query($sql)->fetchColumn()); } catch (Throwable $e) { return 0; } };
+        $total = $q("SELECT COUNT(*) FROM introductions");
+        $new = $q("SELECT COUNT(*) FROM introductions it WHERE NOT EXISTS (SELECT 1 FROM policy_cases pc WHERE pc.introduction_id = it.id)");
+        $pendP = $q("SELECT COUNT(*) FROM policy_cases WHERE status IN ('REGISTERED', 'AWAITING_DOCS', 'DOCS_PENDING', 'DOCS_REVIEW', 'ISSUING')");
+        $pendC = $q("SELECT COUNT(*) FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.status IN ('PENDING', 'READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE') AND cr.status <> 'CANCELLED'");
+        $issP = $q("SELECT COUNT(*) FROM policy_cases WHERE status = 'ISSUED'");
+        $issC = $q("SELECT COUNT(*) FROM company_request_plates WHERE status = 'ISSUED'");
+        echo json_encode(['ok' => true, 'stats' => ['total' => $total, 'new' => $new, 'pending' => $pendP + $pendC, 'issued' => $issP + $issC,
+                          'pending_personnel' => $pendP, 'pending_company' => $pendC, 'issued_personnel' => $issP, 'issued_company' => $issC]]);
         exit;
     }
 
