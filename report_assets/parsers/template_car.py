@@ -22,7 +22,7 @@ def parse_pdf_fields(raw_text):
         out.update(plate_part1=m_plate2.group(3), plate_letter=m_plate2.group(2), plate_part2=m_plate2.group(1), plate_part3=m_plate2.group(4))
 
     # ۲ و ۳. شماره شاسی و موتور (Chassis & Engine)
-    raw_words = re.findall(r'\b[A-Za-z0-9\-]{6,24}\b', t)
+    raw_words = re.findall(r'\b[A-Za-z0-9\-]{6,30}\b', t)
     candidates = []
     for w in raw_words:
         if re.match(r'^\d{10,11}$', w) or re.match(r'^(13|14)\d{2}$', w) or re.match(r'^\d{4}$', w):

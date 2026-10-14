@@ -230,7 +230,7 @@ def parse_text_to_fields(raw_text):
     else:
         text_without_chassis = text_normalized
 
-    engine_candidates = re.findall(r'\b[A-Za-z0-9\-]{6,25}\b', text_without_chassis)
+    engine_candidates = re.findall(r'\b[A-Za-z0-9\-]{6,30}\b', text_without_chassis)
     filtered = [x for x in engine_candidates if not re.match(r'^\d{10,11}$', x) and not re.match(r'^(13|14)\d{2}$', x)]
     if filtered:
         alphanum = [x for x in filtered if not re.match(r'^[\d\-]+$', x)]

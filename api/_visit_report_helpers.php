@@ -678,29 +678,33 @@ function vr_map_parsed(array $data, array $fields, array $visitors) {
 function vr_lookup_insured($pdo, $nid) {
     $nid = preg_replace('/\D/', '', p2e_digits((string)$nid));
     if (strlen($nid) < 8) return null;
+    // اول فهرستِ «بیمه‌گذارانِ گزارش بازدید» (همان فهرستِ انتخابیِ فرم؛ شناسه‌اش هم وصل می‌شود)، بعد اشخاص و شرکت‌های خودمان
     $tries = [
-        ['person', 'اشخاص حقیقی (پرسنل)', "SELECT full_name AS name, mobile_number AS phone, NULL AS address FROM persons WHERE national_code = ? AND full_name <> '' ORDER BY id DESC LIMIT 1"],
-        ['case', 'اشخاص حقیقی (بیمه‌گذارانِ درخواست‌ها)', "SELECT insured_name AS name, insured_phone AS phone, insured_address AS address FROM policy_cases WHERE insured_national_id = ? AND insured_name <> '' ORDER BY id DESC LIMIT 1"],
-        ['company', 'شرکت‌ها', "SELECT name, phone, address FROM companies WHERE REPLACE(REPLACE(economic_code, '-', ''), ' ', '') = ? AND name <> '' ORDER BY id LIMIT 1"],
-        ['insured', 'بیمه‌گذارانِ گزارش بازدید', "SELECT name, phone, address FROM report_insureds WHERE national_id = ? AND name <> '' AND is_active = 1 ORDER BY id DESC LIMIT 1"],
+        ['insured', 'بیمه‌گذارانِ گزارش بازدید', "SELECT id, name, phone, address FROM report_insureds WHERE REPLACE(national_id, ' ', '') = ? AND name <> '' AND is_active = 1 ORDER BY id DESC LIMIT 1"],
+        ['person', 'اشخاص حقیقی (پرسنل)', "SELECT NULL AS id, full_name AS name, mobile_number AS phone, NULL AS address FROM persons WHERE national_code = ? AND full_name <> '' ORDER BY id DESC LIMIT 1"],
+        ['case', 'اشخاص حقیقی (بیمه‌گذارانِ درخواست‌ها)', "SELECT NULL AS id, insured_name AS name, insured_phone AS phone, insured_address AS address FROM policy_cases WHERE insured_national_id = ? AND insured_name <> '' ORDER BY id DESC LIMIT 1"],
+        // شرکت: کد اقتصادی یا شناسه‌ی ملی (هر دو در همان ستون ثبت می‌شوند؛ صفرهای اول و خط‌تیره مهم نیست)
+        ['company', 'شرکت‌ها', "SELECT NULL AS id, name, phone, address FROM companies WHERE TRIM(LEADING '0' FROM REPLACE(REPLACE(REPLACE(economic_code, '-', ''), ' ', ''), '/', '')) = TRIM(LEADING '0' FROM ?) AND name <> '' ORDER BY id LIMIT 1"],
     ];
     foreach ($tries as [$src, $label, $sql]) {
         try {
             $st = $pdo->prepare($sql);
             $st->execute([$nid]);
-            if ($r = $st->fetch()) return ['source' => $src, 'source_fa' => $label, 'name' => trim((string)$r['name']),
+            if ($r = $st->fetch()) return ['source' => $src, 'source_fa' => $label, 'name' => trim((string)$r['name']), 'insured_id' => $r['id'] ? intval($r['id']) : null,
                                            'phone' => trim((string)($r['phone'] ?? '')), 'address' => trim((string)($r['address'] ?? ''))];
         } catch (Throwable $e) {}
     }
     return null;
 }
-// نامِ بیمه‌گذارِ فرمِ نگاشته‌شده را از فهرست‌های خودمان جایگزین می‌کند (اگر پیدا شد)
+// بیمه‌گذارِ فرمِ نگاشته‌شده: اگر کدِ ملی/اقتصادی در فهرست‌های خودمان بود، همان اطلاعاتِ ثبت‌شده جای اطلاعاتِ استخراج‌شده می‌نشیند
+// (نام همیشه؛ تلفن و نشانی هر کدام که ثبت شده باشد)، وگرنه همان اطلاعاتِ استخراج‌شده می‌ماند
 function vr_apply_insured_lookup($pdo, array $form) {
     $hit = vr_lookup_insured($pdo, $form['insured']['national_id'] ?? '');
     if (!$hit) return [$form, null];
     $form['insured']['name'] = $hit['name'];
-    if (($form['insured']['phone'] ?? '') === '' && $hit['phone'] !== '') $form['insured']['phone'] = $hit['phone'];
-    if (($form['insured']['address'] ?? '') === '' && $hit['address'] !== '') $form['insured']['address'] = $hit['address'];
+    if ($hit['phone'] !== '') $form['insured']['phone'] = $hit['phone'];
+    if ($hit['address'] !== '') $form['insured']['address'] = $hit['address'];
+    if (!empty($hit['insured_id'])) $form['insured']['insured_id'] = $hit['insured_id'];
     return [$form, $hit];
 }
 

@@ -559,7 +559,10 @@ def extract_layout(page):
         break
     for lb in find_labels(sp, r'شماره\s*(?:شاسی|موتور)|VIN'):
         for v in row_values(sp, lb):
-            for tok in re.findall(r'[A-Za-z0-9]{6,20}', v['t']):
+            # شماره موتورهای بلند (مثلِ MC152JH25648G5454584) و با جداکننده (MC13.48-50*260117005707*) کامل خوانده می‌شوند
+            for tok in [re.sub(r'[^A-Za-z0-9]', '', x) for x in re.findall(r'[A-Za-z0-9][A-Za-z0-9.*\-/]{4,40}[A-Za-z0-9*]', v['t'])]:
+                if not 6 <= len(tok) <= 30:
+                    continue
                 if not re.search(r'\d', tok):
                     continue
                 if len(tok) == 17 and re.search(r'[A-Za-z]', tok) and not d.get('vin'):
@@ -813,8 +816,8 @@ def clean_fields(d):
     if not d.get('car_name') or not d.get('car_system'):
         d['car_name'] = ' '.join(x for x in [d.get('car_system', ''), d.get('car_tip', '')] if x).strip() or d.get('car_name', '')
     for k in ('engine_no', 'vin', 'chassis_no'):
-        if d.get(k) and not re.fullmatch(r'[A-Za-z0-9]{5,25}', str(d[k])):
-            d[k] = re.sub(r'[^A-Za-z0-9]', '', str(d[k]))[:25]
+        if d.get(k) and not re.fullmatch(r'[A-Za-z0-9]{5,30}', str(d[k])):
+            d[k] = re.sub(r'[^A-Za-z0-9]', '', str(d[k]))[:30]
     return d
 
 

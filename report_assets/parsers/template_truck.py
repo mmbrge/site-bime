@@ -52,8 +52,9 @@ def parse_pdf_fields(raw_text):
         out["shasi"] = valid_chassis[0].upper()
         t = t.replace(valid_chassis[0], ' ')
         
-    # ۳. موتور (۶ تا ۱۵ کاراکتر با فیلتر کدهای ملی و سال)
-    engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,15})(?![A-Za-z0-9])', t, re.I)
+    # ۳. موتور (۶ تا ۳۰ کاراکتر با فیلتر کدهای ملی و سال)
+    # تا ۳۰ نویسه: شماره موتورِ کامیون‌ها بلند است (MC152JH25648G5454584)؛ قبلاً ۱۵ نویسه‌ی اول برداشته می‌شد
+    engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,30})(?![A-Za-z0-9])', t, re.I)
     valid_engines = [c for c in engine_cands if not (c.isdigit() and len(c) in (10, 11) and c.startswith('0')) and not re.match(r'^(13|14)\d{2}$', c)]
     if valid_engines:
         alphanumeric_engines = [c for c in valid_engines if re.search(r'[A-Za-z]', c)]

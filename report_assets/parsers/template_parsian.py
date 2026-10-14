@@ -78,11 +78,11 @@ class ParsianParser:
             out["vin"] = out["chassis_no"]
             
         # ۴. موتور: اول مقدارِ بعد از «شماره موتور:»؛ وگرنه بلندترین کدِ حرف+عددی (نه اسمِ لاتینِ تیپ مثل FIDELITY)
-        m_eng = re.search(r'شماره\s*موتور\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]{4,24})(?![A-Za-z0-9])', t)
+        m_eng = re.search(r'شماره\s*موتور\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]{4,30})(?![A-Za-z0-9])', t)
         if m_eng and re.search(r'\d', m_eng.group(1)) and m_eng.group(1).upper() != out.get('chassis_no'):
             out["engine_no"] = m_eng.group(1).upper()
         else:
-            engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,25})(?![A-Za-z0-9])', t.replace(out.get('chassis_no', ''), ''), re.I)
+            engine_cands = re.findall(r'(?<![A-Za-z0-9])([A-Z0-9\-]{6,30})(?![A-Za-z0-9])', t.replace(out.get('chassis_no', ''), ''), re.I)
             valid_engines = [c for c in engine_cands if not (c.isdigit() and len(c) in (10, 11) and c.startswith('0')) and not re.match(r'^(13|14)\d{2}$', c)]
             mixed = [c for c in valid_engines if re.search(r'[A-Za-z]', c) and re.search(r'\d', c)]
             if mixed or valid_engines:

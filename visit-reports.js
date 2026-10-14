@@ -812,8 +812,10 @@
             if (!d.ok || !d.found) { if (badge) { badge.classList.toggle('hidden', silentIfNone); badge.innerHTML = '<i class="fas fa-circle-info"></i> این کد در فهرستِ اشخاص و شرکت‌ها نبود؛ همان نامِ واردشده/استخراج‌شده می‌ماند.'; badge.className = 'vr-ins-src text-[10px] font-bold text-slate-400 mt-1'; } return; }
             const i = d.insured;
             const set = (k, v, onlyEmpty) => { const el = this.$(`#${this.id(k)}`); if (!el || !v || (onlyEmpty && el.value.trim())) return; el.value = faAuto(v); el.classList.remove('vr-flash'); void el.offsetWidth; el.classList.add('vr-flash'); };
-            set('ins-name', i.name); set('ins-phone', fa(i.phone), true); set('ins-addr', i.address, true);
-            if (badge) { badge.innerHTML = `<i class="fas fa-user-check"></i> نام از «${esc(i.source_fa)}» خوانده شد.`; badge.className = 'vr-ins-src text-[10px] font-bold text-emerald-600 mt-1'; }
+            // پیدا شد: اطلاعاتِ ثبت‌شده‌ی خودمان جای اطلاعاتِ استخراج‌شده می‌نشیند
+            set('ins-name', i.name); set('ins-phone', fa(i.phone)); set('ins-addr', i.address);
+            if (i.insured_id) { this.insuredId = i.insured_id; const b = this.$('.vr-ins-badge'); if (b) b.classList.remove('hidden'); }
+            if (badge) { badge.innerHTML = `<i class="fas fa-user-check"></i> اطلاعاتِ بیمه‌گذار از «${esc(i.source_fa)}» خوانده شد.`; badge.className = 'vr-ins-src text-[10px] font-bold text-emerald-600 mt-1'; }
             this.saveDraft();
         }
         // پنجره‌ی «پوشه»: کشیدن و رها کردنِ پوشه (بی‌پیغام) یا انتخاب از رایانه
