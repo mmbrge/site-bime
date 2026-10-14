@@ -2774,7 +2774,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="il-type" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs">
                     <option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option>
                 </select>
-                <select id="il-company" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="il-company" onchange="ilRequestOptions(); loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="il-request" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs max-w-[230px]" title="فقط بیمه‌نامه‌های یک نامه / درخواست"><option value="">همه‌ی نامه‌ها / درخواست‌ها</option></select>
                 <select id="il-month" onchange="jMonthToRange(this.value, 'il-from', 'il-to'); loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="ماهِ صدور"><option value="">همه‌ی ماه‌ها (صدور)</option></select>
                 <input type="text" id="il-from" oninput="debouncedIssuedList()" placeholder="صدور از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-to" oninput="debouncedIssuedList()" placeholder="صدور تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
@@ -4324,7 +4325,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=15"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=5"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=6"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -7804,6 +7805,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 source: document.getElementById('il-source').value,
                 insurance_type: document.getElementById('il-type').value,
                 company_id: (document.getElementById('il-company') || {}).value || '',
+                request_id: (document.getElementById('il-request') || {}).value || '',
                 issued_from: document.getElementById('il-from').value.trim(),
                 issued_to: document.getElementById('il-to').value.trim(),
                 request_kind: (document.getElementById('il-kind') || {}).value || '',
@@ -7816,7 +7818,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         let ilCompaniesLoaded = false;
+        // فیلترِ «نامه / درخواست»: درخواست‌هایی که صادره دارند (با تغییرِ شرکت دوباره پر می‌شود)
+        let ilReqLoaded = false;
+        async function ilRequestOptions() {
+            const sel = document.getElementById('il-request'); if (!sel) return;
+            const keep = sel.value;
+            sel.innerHTML = '<option value="">همه‌ی نامه‌ها / درخواست‌ها</option>';
+            try {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'issued_request_options', company_id: (document.getElementById('il-company') || {}).value || ''})})).json();
+                if (!d.ok) return;
+                const multi = !(document.getElementById('il-company') || {}).value;
+                sel.innerHTML += (d.requests || []).map(r => `<option value="${r.id}">${r.has_letter ? '✉ ' : ''}${r.ref ? 'درخواست ' + e2pNum(r.ref) : '#' + e2pNum(r.id)} · ${faDigits(r.date_j || '')}${multi ? ' · ' + fmEsc(r.company || '') : ''} (${e2pNum(r.issued)} صادره)</option>`).join('');
+                if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+            } catch (e) {}
+        }
         async function loadIssuedList() {
+            if (!ilReqLoaded) { ilReqLoaded = true; ilRequestOptions(); }
             jMonthOptions(document.getElementById('il-month'), 'همه‌ی ماه‌ها (صدور)');
             applyFacets('issued', {'il-company': 'companies', 'il-month': 'months'});
             if (!ilCompaniesLoaded) {

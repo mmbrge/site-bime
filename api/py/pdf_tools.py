@@ -114,6 +114,8 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     try:
         docs = [fitz.open(f) for f in files]
+        # عکس (jpg/png/...) هم مثلِ یک PDFِ یک‌صفحه‌ای پردازش می‌شود
+        docs = [d if d.is_pdf else fitz.open('pdf', d.convert_to_pdf()) for d in docs]
     except Exception as e:
         out({'ok': False, 'error': 'یکی از فایل‌ها PDFِ سالم نیست.', 'debug': str(e)[:200]})
         return

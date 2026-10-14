@@ -732,6 +732,19 @@ try {
     //  که داریم - از جمله چیزهایی که از خودِ فایل بیمه‌نامه شناسایی شده - می‌آید.
     //  همین اکشن خروجی اکسل هم می‌دهد (export=1).
     // =================================================================
+    // فهرستِ «نامه / درخواست» برای فیلترِ صادره‌ها: درخواست‌هایی که بیمه‌نامه‌ی صادرشده دارند (اختیاری: یک شرکت)
+    if ($action === 'issued_request_options') {
+        $w = ["crp.status = 'ISSUED'"]; $p = [];
+        if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
+        $st = $pdo->prepare("SELECT cr.id, cr.ref_code, cr.created_at, cr.letter_file_path, c.name AS company_name, COUNT(crp.id) AS issued
+                               FROM company_requests cr JOIN companies c ON c.id = cr.company_id JOIN company_request_plates crp ON crp.request_id = cr.id
+                              WHERE " . implode(' AND ', $w) . " GROUP BY cr.id ORDER BY cr.id DESC LIMIT 500");
+        $st->execute($p);
+        $out = array_map(fn($r) => ['id' => intval($r['id']), 'ref' => $r['ref_code'], 'date_j' => jd(strtotime($r['created_at'])), 'company' => $r['company_name'],
+                                    'has_letter' => !empty($r['letter_file_path']), 'issued' => intval($r['issued'])], $st->fetchAll());
+        echo json_encode(['ok' => true, 'requests' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'issued_list' || ($_GET['action'] ?? '') === 'issued_list') {
         $data = $data + $_GET;   // خروجی اکسل (GET) هم همه‌ی فیلترها را داشته باشد، از جمله شرکت
         company_ensure_issue_info_cols($pdo);
@@ -759,6 +772,7 @@ try {
             if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
             if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
             if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
+            if (!empty($data['request_id'])) { $w[] = "cr.id = ?"; $p[] = intval($data['request_id']); }   // «نامه / درخواست»
             if ($expFromI) { $w[] = "crp.expiry_date >= ?"; $p[] = $expFromI; }
             if ($expToI)   { $w[] = "crp.expiry_date <= ?"; $p[] = $expToI; }
             if ($insurerF) { $w[] = "cr.insurer = ?"; $p[] = $insurerF; }
@@ -812,7 +826,7 @@ try {
 
         // ---------- صادره‌های پرسنلی ----------
         // مثل فهرست صدور: بیمه‌ی کارکنان را فقط مدیر کل می‌بیند.
-        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN' && (string)($data['import'] ?? '') !== '1') {
+        if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN' && (string)($data['import'] ?? '') !== '1' && empty($data['request_id'])) {
             $w = ["pc.status = 'ISSUED'"]; $p = [];
             if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
             if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
@@ -1343,6 +1357,45 @@ try {
     //      (برای همه یا تک‌تک)، ارزش خودرو و پوشش‌های بدنه (پیش‌فرض برای همه + متفاوت برای هر پلاک).
     //      نامه اختیاری است؛ مدارک و نامه بعد از همین، با admin_upload_plate_doc بارگذاری می‌شوند.
     //      پوشه‌ی روزِ درخواست داخل پوشه‌ی همان شرکت و پوشه‌ی هر ردیف همین حالا ساخته می‌شود. ----
+    // ---- ثبتِ دستیِ درخواست از پنل: شناساییِ خودکارِ فاکتور / سند / کارت (هر فایل چند صفحه؛ عکس هم) ----
+    if (($_POST['action'] ?? '') === 'mreq_doc_upload') {
+        require_once __DIR__ . '/_pdf_split.php';
+        $r = pdf_split_job_create_ex($pdo, dirname(__DIR__), $_FILES['file'] ?? [], 'md' . $actor['user_id'], true);
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'mreq_doc_read') {
+        $n = intval($data['n'] ?? 0);
+        $r = vdoc_job_read($pdo, dirname(__DIR__), (string)($data['token'] ?? ''), 'md' . $actor['user_id'], $n);
+        if (empty($r['ok'])) { echo json_encode(['ok' => true, 'n' => $n, 'kind' => 'unknown', 'kind_fa' => 'خوانده نشد', 'status' => 'none', 'data' => [], 'error' => $r['error'] ?? null], JSON_UNESCAPED_UNICODE); exit; }
+        $d = (array)($r['data'] ?? []);
+        foreach (['vin', 'chassis_no', 'engine_no'] as $k) if (!empty($d[$k])) $d[$k] = vdoc_clean_code($d[$k]);
+        echo json_encode(['ok' => true, 'n' => $n, 'kind' => $r['kind'] ?? 'unknown', 'kind_fa' => $r['kind_fa'] ?? '', 'status' => $r['status'] ?? 'none',
+                          'data' => $d, 'missing' => $r['missing'] ?? []], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'mreq_doc_attach') {
+        $out = []; $ok = 0;
+        foreach (array_slice((array)($data['items'] ?? []), 0, 300) as $it) {
+            $r = vdoc_job_attach($pdo, dirname(__DIR__), (string)($it['token'] ?? ''), 'md' . $actor['user_id'], intval($it['n'] ?? 0), intval($it['plate_id'] ?? 0), $actor['user_id'], (string)($it['doc_type'] ?? ''));
+            if (!empty($r['ok'])) $ok++;
+            $out[] = $r;
+        }
+        echo json_encode(['ok' => true, 'attached' => $ok, 'results' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'mreq_doc_page') {   // پیش‌نمایشِ صفحه در فرم
+        require_once __DIR__ . '/_pdf_split.php';
+        $kind = ($_GET['kind'] ?? '') === 'png' ? 'png' : 'pdf';
+        $p = pdf_split_job_page_path(dirname(__DIR__), $_GET['token'] ?? '', 'md' . $actor['user_id'], intval($_GET['n'] ?? 0), $kind);
+        if (!$p) { http_response_code(404); exit; }
+        header('Content-Type: ' . ($kind === 'png' ? 'image/png' : 'application/pdf'));
+        header('Cache-Control: private, max-age=3600');
+        header('Content-Length: ' . filesize($p));
+        readfile($p);
+        exit;
+    }
+
     if ($action === 'admin_create_full_request') {
         $companyId = intval($data['company_id'] ?? 0);
         $st = $pdo->prepare("SELECT id, name, allowed_insurers FROM companies WHERE id = ?");

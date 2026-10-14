@@ -186,14 +186,25 @@ function pdf_split_job_dir($siteRoot, $token) {
 // آپلودِ $_FILES => ['ok', 'token', 'pages', 'name']
 function pdf_split_job_create($pdo, $siteRoot, $file, $ownerId) {
     if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) return ['ok' => false, 'error' => 'فایل دریافت نشد (شاید حجمش زیاد است).'];
-    if (strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'error' => 'فقط فایلِ PDF.'];
+    return pdf_split_job_create_ex($pdo, $siteRoot, $file, $ownerId, false);
+}
+// $allowImages: عکس (jpg/png/webp) هم پذیرفته و اول به PDFِ یک‌صفحه‌ای تبدیل می‌شود
+function pdf_split_job_create_ex($pdo, $siteRoot, $file, $ownerId, $allowImages = false, $meta = []) {
+    if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) return ['ok' => false, 'error' => 'فایل دریافت نشد (شاید حجمش زیاد است).'];
+    $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
+    if ($ext !== 'pdf' && !($allowImages && $isImg)) return ['ok' => false, 'error' => $allowImages ? 'فقط PDF یا عکس.' : 'فقط فایلِ PDF.'];
     if (($file['size'] ?? 0) > 41943040) return ['ok' => false, 'error' => 'حجمِ فایل بیشتر از ۴۰ مگابایت است.'];
     $token = bin2hex(random_bytes(12));
     $dir = pdf_split_job_root($siteRoot) . '/s_' . $token;
     @mkdir($dir, 0755, true);
     $src = $dir . '/source.pdf';
-    if (!move_uploaded_file($file['tmp_name'], $src)) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']; }
-    return pdf_split_job_finish($pdo, $dir, $token, $file['name'], $ownerId);
+    if ($isImg) {
+        $img = $dir . '/img.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $img) || !pdf_merge_files($pdo, [$img], $src)) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => 'خواندنِ عکس ممکن نشد.']; }
+        @unlink($img);
+    } elseif (!move_uploaded_file($file['tmp_name'], $src)) { pdf_split_rrmdir($dir); return ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']; }
+    return pdf_split_job_finish($pdo, $dir, $token, $file['name'], $ownerId, $meta);
 }
 // همان کار برای فایلی که از قبل روی سرور است (دکمه‌ی «جداسازی» زیرِ هر PDFِ بارگذاری‌شده) — فایلِ اصلی دست نمی‌خورد
 // $meta کنارِ job.json نگه داشته می‌شود (مثلاً doc_id تا هنگامِ ثبت معلوم باشد این صفحه‌ها از کدام مدرک‌اند)

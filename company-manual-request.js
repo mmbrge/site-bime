@@ -21,7 +21,7 @@
 
     const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
         carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
-        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false });
+        refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false, docPages: [], docData: null });
     // سواری/وانت یا سنگین: انتخابِ کاربر، وگرنه حدس از نام خودرو (مثل سرور)
     const HEAVY_RE = /کامیون|کشنده|تریلی|تریلر|اتوبوس|مینی\s*بوس|میدل\s*باس|بوس|سنگین|کمپرسی|تانکر|جرثقیل|لودر|بیل\s*مکانیکی|گریدر|بولدوزر|تراکتور|ماشین\s*آلات|یدک\s*کش/;
     const vclassOf = r => r.vclass || (HEAVY_RE.test(String(r.carName || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک')) ? 'HEAVY' : 'LIGHT');
@@ -31,7 +31,8 @@
 
     function blankState() {
         return { companyId: '', insurer: 'PASARGAD', kind: 'NEW_POLICY', mode: 'THIRDPARTY', text: '', letter: null, noVisitAll: false,
-                 liabilityAll: '', liabilityPerRow: false, cov: null, covBaseOnly: false, defaults: null, rows: [newRow('THIRDPARTY')] };
+                 liabilityAll: '', liabilityPerRow: false, cov: null, covBaseOnly: false, defaults: null, rows: [newRow('THIRDPARTY')],
+                 detect: { busy: false, done: 0, total: 0, pages: [] } };
     }
 
     async function open() {
@@ -93,6 +94,7 @@
               <div class="md:col-span-2"><label class="lbl">توضیح درخواست (اختیاری)</label><textarea data-f="text" rows="2" class="inp" placeholder="مثلاً: مدارک در بله فرستاده شد، بدون نامه">${esc(st.text)}</textarea></div>
             </div>
 
+            ${isNew() ? detectBox() : ''}
             ${hasThird ? thirdBox() : ''}
             ${hasBody ? bodyBox() : ''}
 
@@ -112,6 +114,89 @@
           </div></div>
           <style>.lbl{display:block;font-size:10px;font-weight:700;color:#64748b;margin-bottom:4px}.inp{width:100%;border:2px solid #e2e8f0;border-radius:12px;padding:8px 10px;font-size:12px;background:#fff;outline:none}.inp:focus{border-color:#818cf8}.btn-s{border-radius:12px;padding:8px 14px;font-size:12px;font-weight:800}</style>`;
         bind();
+    }
+
+    // ---------------- شناساییِ خودکار از فاکتور فروش / سند / کارت ماشین ----------------
+    // هر فایل (PDFِ چندصفحه‌ای یا عکس) صفحه‌به‌صفحه خوانده می‌شود؛ صفحه‌های یک خودرو (همان شاسی/موتور) کنارِ هم می‌آیند
+    // و برای هر خودرو یک ردیف (در «هر دو»: ثالث + بدنه) با اطلاعاتش ساخته می‌شود. بعد از ثبت، هر صفحه روی ردیفِ خودش بایگانی می‌شود.
+    const KIND_FA = { sales_invoice: 'فاکتور فروش', ownership_doc: 'سند', car_card: 'کارت ماشین', policy: 'بیمه‌نامه', unknown: 'نامعلوم' };
+    const vkey = d => en(d.chassis_no || d.vin || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || en(d.engine_no || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const ckey = v => en(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    function detectBox() {
+        const D = st.detect, pages = D.pages;
+        const veh = new Set(pages.filter(p => p.row).map(p => p.vehicle)).size, unk = pages.filter(p => !p.row).length;
+        return `<div class="bg-white rounded-2xl border-2 border-dashed border-emerald-200 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div><h3 class="font-black text-sm text-emerald-800"><i class="fas fa-wand-magic-sparkles ml-1"></i>شناساییِ خودکار از فاکتور فروش / سند / کارت ماشین</h3>
+                <p class="text-[10.5px] text-slate-500 mt-1 leading-5">یک یا چند فایل بدهید (PDFِ چندصفحه‌ای که چند فاکتور یا سند پشتِ سرِ هم دارد، یا عکس). سایت هر صفحه را می‌خواند، نوعش را تشخیص می‌دهد و برای هر خودرو یک ردیف با شاسی، موتور، نام خودرو و مشخصاتِ مالک می‌سازد. بعد از ثبت، هر صفحه روی ردیفِ خودش بایگانی می‌شود و جزئیاتِ کامل در «اطلاعات صدور»ِ همان ردیف (صفحه‌ی صدور و صادره) می‌نشیند.</p></div>
+              <label class="btn-s bg-emerald-600 text-white cursor-pointer whitespace-nowrap ${D.busy ? 'opacity-60 pointer-events-none' : ''}"><i class="fas fa-file-arrow-up ml-1"></i>انتخابِ فایل‌ها
+                <input type="file" multiple data-detect class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
+            </div>
+            ${D.busy ? `<div class="mt-3 text-[11px] text-emerald-700 font-bold"><i class="fas fa-circle-notch fa-spin ml-1"></i>در حال خواندن… ${fa(D.done)} از ${fa(D.total)} صفحه</div>
+                <div class="h-1.5 rounded-full bg-emerald-50 overflow-hidden mt-1"><div class="h-full bg-emerald-500" style="width:${D.total ? Math.round(D.done * 100 / D.total) : 0}%"></div></div>` : ''}
+            ${pages.length ? `<div class="mt-3 text-[11px] font-bold text-slate-600">${fa(pages.length)} صفحه · ${fa(veh)} خودرو${unk ? ` · <span class="text-amber-700">${fa(unk)} صفحه شناخته نشد</span>` : ''}</div>
+              <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1.5">${pages.map(p => {
+                const d = p.data || {};
+                return `<div class="flex items-center gap-2 rounded-lg border ${p.row ? 'border-emerald-100 bg-emerald-50/50' : 'border-amber-200 bg-amber-50'} p-1.5 text-[10.5px]">
+                  <a href="${API}?action=mreq_doc_page&token=${p.token}&n=${p.n}&kind=pdf" target="_blank" title="دیدنِ صفحه"><img src="${API}?action=mreq_doc_page&token=${p.token}&n=${p.n}&kind=png" class="w-9 h-12 object-cover rounded border bg-white" loading="lazy"></a>
+                  <div class="min-w-0 flex-1"><b>${esc(KIND_FA[p.kind] || p.kind_fa || 'نامعلوم')}</b>${p.status === 'partial' ? ' <span class="text-amber-600">(ناقص)</span>' : ''}
+                    <div class="truncate text-slate-500" dir="ltr">${esc([d.chassis_no || d.vin, d.engine_no].filter(Boolean).join(' · ')) || '—'}</div>
+                    ${d.owner_name ? `<div class="truncate text-slate-500">مالک: ${esc(d.owner_name)}</div>` : ''}</div>
+                  ${p.row ? `<span class="text-emerald-700 font-black whitespace-nowrap">خودروی ${fa(p.vehicle)}</span>` : '<span class="text-amber-700 whitespace-nowrap">بدونِ ردیف</span>'}
+                </div>`; }).join('')}</div>` : ''}
+          </div>`;
+    }
+    async function detectFiles(files) {
+        const D = st.detect;
+        if (D.busy || !files.length) return;
+        D.busy = true; render();
+        for (const f of files) {
+            const fd = new FormData(); fd.append('action', 'mreq_doc_upload'); fd.append('file', f);
+            let j;
+            try { j = await (await fetch(API, { method: 'POST', body: fd })).json(); } catch (e) { j = { ok: false, error: 'خطا در ارتباط با سرور' }; }
+            if (!j.ok) { toast(`${f.name}: ${j.error || 'خطا'}`, 'error'); continue; }
+            D.total += j.pages; render();
+            for (let n = 1; n <= j.pages; n++) {
+                const r = await post({ action: 'mreq_doc_read', token: j.token, n });
+                D.done++;
+                const pg = { token: j.token, n, kind: r.kind || 'unknown', kind_fa: r.kind_fa || '', status: r.status || 'none', data: r.data || {}, row: false, vehicle: 0 };
+                D.pages.push(pg);
+                detectPlace(pg);
+                if (root && root.style.display !== 'none') render();
+            }
+        }
+        D.busy = false;
+        const veh = new Set(D.pages.filter(p => p.row).map(p => p.vehicle)).size;
+        toast(`${fa(D.pages.length)} صفحه خوانده شد؛ ${fa(veh)} خودرو در ردیف‌ها نشست.`, 'success');
+        render();
+    }
+    // صفحه => ردیفِ خودروی خودش (همان شاسی/موتور) یا ردیفِ تازه
+    function detectPlace(pg) {
+        const d = pg.data || {}, key = vkey(d);
+        if (!key || pg.kind === 'policy') return;
+        let rows = st.rows.filter(r => r.docKey === key || (ckey(r.chassis) && ckey(r.chassis) === key) || (ckey(r.engine) && ckey(r.engine) === ckey(d.engine_no)));
+        if (!rows.length) {
+            // ردیفِ خالیِ اولِ فرم (هنوز چیزی در آن ننوشته‌اند) به‌جای ساختنِ ردیفِ تازه پر می‌شود
+            const blank = st.rows.filter(r => !r.docKey && !r.chassis && !r.p2 && !r.carName && !Object.keys(r.files).length);
+            const types = st.mode === 'MIXED' ? ['THIRDPARTY', 'BODY'] : [st.mode];
+            rows = types.map(t => { const b = blank.find(x => x.type === t && !x._taken); if (b) { b._taken = true; return b; } const nr = newRow(t); st.rows.push(nr); return nr; });
+            st.rows.forEach(r => delete r._taken);
+            const vno = Math.max(0, ...st.rows.map(r => r.vehicleNo || 0)) + 1;
+            rows.forEach(r => { r.vehicleNo = vno; });
+        }
+        rows.forEach(r => {
+            r.docKey = key;
+            const chassis = d.chassis_no || d.vin || '';
+            if (!r.chassis && chassis) r.chassis = chassis;
+            if (!r.engine && d.engine_no) r.engine = d.engine_no;
+            if (!r.carName && (d.car_system || d.car_name)) r.carName = d.car_system || d.car_name;
+            if (!r.carType && d.car_tip) r.carType = d.car_tip;
+            if (pg.kind === 'sales_invoice') { r.isNew = true; if (r.type === 'BODY') r.skipHealth = true; }
+            if (!r.p2 && !r.isNew) r.noPlate = true;   // سند/کارت پلاکی نمی‌دهد: تا پلاک وارد نشده، با شاسی ثبت می‌شود
+            r.docData = Object.assign({}, d, r.docData || {});
+            if (!r.docPages.some(x => x.token === pg.token && x.n === pg.n)) r.docPages.push({ token: pg.token, n: pg.n, kind: pg.kind });
+        });
+        pg.row = true; pg.vehicle = rows[0].vehicleNo || 0;
     }
 
     function liabilityOptions(val, withEmpty) {
@@ -228,6 +313,10 @@
               <div class="md:col-span-4"><label class="lbl">توضیح این ردیف</label><input data-r="note" class="inp" value="${esc(r.note)}"></div>
             </div>
             ${covRow}
+            ${r.docPages.length ? `<div class="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 p-2 text-[10.5px] text-emerald-800">
+              <b><i class="fas fa-wand-magic-sparkles ml-1"></i>${r.vehicleNo ? 'خودروی ' + fa(r.vehicleNo) + ' — ' : ''}از مدارکِ شناسایی‌شده:</b> ${r.docPages.map(p => esc(KIND_FA[p.kind] || 'مدرک') + ' (ص ' + fa(p.n) + ')').join('، ')}
+              ${r.docData && r.docData.owner_name ? ` · مالک: <b>${esc(r.docData.owner_name)}</b>` : ''}${r.docData && r.docData.model_year ? ` · مدل ${esc(fa(r.docData.model_year))}` : ''}${r.docData && r.docData.color ? ` · ${esc(r.docData.color)}` : ''}
+              <div class="text-emerald-600 mt-0.5">بعد از ثبت، این صفحه‌ها روی همین ردیف بایگانی و جزئیاتشان در «اطلاعات صدور» نشانده می‌شود.</div></div>` : ''}
             <div class="mt-3 border-t pt-3"><p class="text-[11px] font-black text-slate-600 mb-2"><i class="fas fa-paperclip ml-1"></i>مدارک این خودرو (می‌توانید الان بارگذاری کنید یا بعداً از جزئیات درخواست)</p>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">${docs}</div></div>
           </div>`;
@@ -269,7 +358,7 @@
 
     function summary() {
         const t = st.rows.filter(r => r.type === 'THIRDPARTY').length, b = st.rows.length - t;
-        const files = st.rows.reduce((a, r) => a + Object.values(r.files).reduce((x, f) => x + f.length, 0), 0) + (st.letter ? 1 : 0);
+        const files = st.rows.reduce((a, r) => a + Object.values(r.files).reduce((x, f) => x + f.length, 0) + r.docPages.length, 0) + (st.letter ? 1 : 0);
         return isNew() ? `${fa(t)} ثالث · ${fa(b)} بدنه · ${fa(files)} فایل برای بارگذاری` : `${fa(st.rows.length)} ردیف · ${fa(files)} فایل`;
     }
 
@@ -281,6 +370,7 @@
         root.querySelector('[data-act="submit"]').onclick = submit;
         const rm = root.querySelector('[data-act="rmletter"]'); if (rm) rm.onclick = () => { st.letter = null; render(); };
         root.querySelector('[data-letter]').onchange = e => { st.letter = e.target.files[0] || null; render(); };
+        const det = root.querySelector('[data-detect]'); if (det) det.onchange = e => detectFiles([...e.target.files]);
 
         root.querySelectorAll('[data-f]').forEach(el => {
             const ev = el.tagName === 'TEXTAREA' ? 'input' : 'change';
@@ -358,6 +448,7 @@
     // ---------------- ثبت ----------------
     async function submit() {
         if (!st.companyId) { toast('شرکت را انتخاب کنید.', 'error'); return; }
+        if (st.detect && st.detect.busy) { toast('صبر کنید خواندنِ مدارک تمام شود.', 'warning'); return; }
         const covOut = c => (!c ? null : (c.__none ? 'none' : c));
         const payload = {
             action: 'admin_create_full_request', company_id: st.companyId, insurer: st.insurer, request_kind: st.kind,
@@ -366,7 +457,8 @@
             default_coverages: st.covBaseOnly ? 'none' : (st.cov && Object.keys(st.cov).length ? st.cov : null),
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
-                plate_p1: r.noPlate ? '' : r.p1, plate_letter: r.noPlate ? '' : r.letter, plate_p2: r.noPlate ? '' : r.p2, plate_p4: r.noPlate ? '' : r.p4,
+                // صفرکیلومترِ بی‌پلاک: خانه‌های عددیِ پلاک خالی‌اند، پس حرفِ پیش‌فرضِ «الف» هم فرستاده نمی‌شود (وگرنه «پلاک ناقص» می‌شد)
+                plate_p1: r.noPlate ? '' : r.p1, plate_letter: r.noPlate || !(en(r.p1) + en(r.p2) + en(r.p4)).trim() ? '' : r.letter, plate_p2: r.noPlate ? '' : r.p2, plate_p4: r.noPlate ? '' : r.p4,
                 chassis_no: r.noPlate || r.isNew ? en(r.chassis) : '', engine_no: r.noPlate || r.isNew ? en(r.engine) : '', is_new_vehicle: r.isNew ? 1 : 0,
                 car_name: r.carName, car_type: r.carType || '', expiry_date: r.isNew ? '' : en(r.expiry), liability_limit: st.liabilityPerRow ? r.liability : '',
                 car_value: en(r.carValue), has_prev_body: r.prevBody, skip_health_inspection: r.skipHealth ? 1 : 0,
@@ -395,6 +487,14 @@
             if (jobs[j].plate) fd.append('plate_id', jobs[j].plate);
             fd.append('doc_type', jobs[j].type); fd.append('file', jobs[j].file);
             try { const x = await (await fetch(API, { method: 'POST', body: fd })).json(); if (!x.ok) failed++; } catch (e) { failed++; }
+        }
+        // صفحه‌های شناسایی‌شده (فاکتور/سند/کارت) روی ردیفِ خودشان بایگانی و اطلاعاتشان روی ردیف نشانده می‌شود
+        const docItems = [];
+        st.rows.forEach((r, i) => (r.docPages || []).forEach(p => { if (d.plate_ids[i]) docItems.push({ token: p.token, n: p.n, plate_id: d.plate_ids[i] }); }));
+        for (let k = 0; k < docItems.length; k += 10) {
+            btn.innerHTML = `<i class="fas fa-circle-notch fa-spin ml-1"></i> بایگانیِ مدارکِ شناسایی‌شده ${fa(Math.min(k + 10, docItems.length))} از ${fa(docItems.length)}...`;
+            const x = await post({ action: 'mreq_doc_attach', items: docItems.slice(k, k + 10) });
+            failed += x.ok ? (x.results || []).filter(y => !y.ok).length : Math.min(10, docItems.length - k);
         }
         // گزارش‌های بازدیدی که در همین فرم ساخته شده‌اند به ردیفِ خودشان وصل می‌شوند (PDF و عکس‌ها در پوشه‌ی همان ردیف)
         let linked = 0;

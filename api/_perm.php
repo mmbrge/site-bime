@@ -215,13 +215,13 @@ function perm_api_map() {
             'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_retry' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
             'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
-            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
+            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
             'create_portal_user' => 'companies-manage:create|staff-users:create', 'update_portal_user' => 'companies-manage:edit|staff-users:edit',
             'delete_portal_user' => 'companies-manage:delete|staff-users:delete', 'list_portal_users' => 'companies-manage:view|staff-users:view',
             'list_requests' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view',
-            'admin_create_request' => $req . ':create|issue-queue:edit', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit',
+            'admin_create_request' => $req . ':create|issue-queue:edit', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
             'edit_request' => $req . ':edit', 'delete_request' => $req . ':delete',
             'admin_add_plate' => $req . ':create|' . $req . ':edit', 'admin_upload_plate_doc' => $req . ':edit|companies-inbox:edit',
             'list_request_inbox' => $req . ':view|companies-inbox:view',
@@ -436,7 +436,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {

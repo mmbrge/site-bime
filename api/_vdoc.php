@@ -238,3 +238,49 @@ function vdoc_queue($pdo, array $docIds) {
                      AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL AND doc_type IN (" . implode(',', array_fill(0, count($vt), '?')) . ")))")
         ->execute(array_merge($docIds, $vt));
 }
+
+// =====================================================================
+//  ثبتِ دستیِ درخواستِ شرکتی از پنل: فاکتور/سند/کارت (یک یا چند فایل، هر فایل چند صفحه) صفحه‌به‌صفحه خوانده می‌شود؛
+//  پنل از روی نتیجه برای هر خودرو یک ردیف می‌سازد و بعد از ثبت، هر صفحه روی ردیفِ خودش بایگانی و اطلاعاتش روی ردیف می‌نشیند.
+//  کارِ جداسازی با مالکِ 'md'+شناسه‌ی کاربر نگه داشته می‌شود (api/_pdf_split.php)
+// =====================================================================
+function vdoc_job_read($pdo, $siteRoot, $token, $owner, $n) {
+    if (!function_exists('pdf_split_job_page_path')) require_once __DIR__ . '/_pdf_split.php';
+    $p = pdf_split_job_page_path($siteRoot, $token, $owner, $n, 'pdf');
+    if (!$p) return ['ok' => false, 'error' => 'صفحه پیدا نشد (شاید زمانش گذشته؛ دوباره بارگذاری کنید).'];
+    $cache = dirname($p) . sprintf('/r%03d.json', $n);
+    if (is_file($cache)) { $j = json_decode((string)file_get_contents($cache), true); if (is_array($j)) return $j; }
+    $r = vdoc_run($pdo, $p);
+    if (!empty($r['ok'])) @file_put_contents($cache, json_encode($r, JSON_UNESCAPED_UNICODE));
+    return $r;
+}
+
+// صفحه‌ی n را روی ردیف بایگانی می‌کند (نوعِ مدرک از نتیجه‌ی شناسایی یا $docType) و اطلاعاتش را روی ردیف می‌نشاند
+function vdoc_job_attach($pdo, $siteRoot, $token, $owner, $n, $plateId, $userId, $docType = '') {
+    if (!function_exists('pdf_split_job_page_path')) require_once __DIR__ . '/_pdf_split.php';
+    if (!function_exists('company_place_document')) require_once __DIR__ . '/_company_helpers.php';
+    $p = pdf_split_job_page_path($siteRoot, $token, $owner, $n, 'pdf');
+    if (!$p) return ['ok' => false, 'error' => 'صفحه پیدا نشد.'];
+    $st = $pdo->prepare("SELECT crp.*, cr.company_id, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+    $st->execute([intval($plateId)]);
+    $row = $st->fetch();
+    if (!$row) return ['ok' => false, 'error' => 'ردیف پیدا نشد.'];
+    $res = json_decode((string)@file_get_contents(dirname($p) . sprintf('/r%03d.json', $n)), true) ?: [];
+    $d = (array)($res['data'] ?? []);
+    $type = $docType !== '' && array_key_exists($docType, company_doc_types()) ? $docType : (vdoc_doc_type($res['kind'] ?? '', $d, $row) ?: 'other');
+    $tmpDir = company_unassigned_temp_path($siteRoot, $row['company_name'] ?: 'نامشخص');
+    if (!is_dir($tmpDir)) @mkdir($tmpDir, 0755, true);
+    $label = company_doc_type_label($type);
+    $dest = unique_dest_path($tmpDir . '/' . pdf_split_safe_name($label . ' - صفحه ' . intval($n)) . '.pdf');
+    if (!@copy($p, $dest)) return ['ok' => false, 'error' => 'کپیِ صفحه ممکن نشد.'];
+    vdoc_ensure($pdo);
+    $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at, ai_status, ai_json)
+                   VALUES (?, ?, ?, NULL, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED', ?, NOW(), ?, ?)")
+        ->execute([$row['company_id'], $row['request_id'], $row['id'], ltrim(str_replace($siteRoot, '', $dest), '/'), $label . ' - صفحه ' . intval($n) . '.pdf', $type, $userId,
+                   $res ? 'AUTO' : null, $res ? json_encode($res, JSON_UNESCAPED_UNICODE) : null]);
+    $docId = intval($pdo->lastInsertId());
+    company_place_document($pdo, $siteRoot, $docId, intval($row['id']), $type);
+    if ($d) vdoc_apply_to_row($pdo, intval($row['id']), $d);
+    company_sync_plate_status($pdo, intval($row['id']));
+    return ['ok' => true, 'doc_id' => $docId, 'doc_type' => $type];
+}
