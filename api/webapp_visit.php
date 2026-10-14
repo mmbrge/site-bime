@@ -191,7 +191,7 @@ try {
             $healthToken = create_webapp_session($pdo, $person['id'], $caseId, 'case', null);
         } else {
             $plate = trim($jsonBody['plate'] ?? '');
-            if (!preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', $plate)) { echo json_encode(['ok' => false, 'error' => 'پلاک نامعتبر است.']); exit; }
+            if (!plate_valid($plate)) { echo json_encode(['ok' => false, 'error' => 'پلاک نامعتبر است.']); exit; }
             if ($person) {
                 $healthToken = create_webapp_session($pdo, $person['id'], null, 'free', $plate);
             } else {

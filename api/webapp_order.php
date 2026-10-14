@@ -181,7 +181,7 @@ try {
             }
         } elseif ($step === 'plate') {
             $plate = trim($jsonBody['plate'] ?? '');
-            if (!preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', $plate)) { $err = 'پلاک نامعتبر است.'; }
+            if (!plate_valid($plate)) { $err = 'پلاک نامعتبر است.'; }
             else {
                 $pdo->prepare("UPDATE policy_cases SET plate=? WHERE id=?")->execute([$plate, $caseId]);
                 $stmt = $pdo->prepare("SELECT id FROM person_vehicles WHERE person_id=? AND plate=?");
@@ -232,7 +232,7 @@ try {
                     $normalized = normalize_jalali_date($value);
                     if (!$normalized) $err = 'فرمت تاریخ نامعتبر است.'; else $value = $normalized;
                 }
-                elseif ($field === 'plate' && !preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', $value)) $err = 'پلاک نامعتبر است.';
+                elseif ($field === 'plate' && !plate_valid($value)) $err = 'پلاک نامعتبر است.';
                 if (!$err) $pdo->prepare("UPDATE policy_cases SET {$field} = ? WHERE id = ?")->execute([$value, $caseId]);
             }
         } else {

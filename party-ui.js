@@ -128,5 +128,55 @@
         return ov;
     }
 
-    window.PartyUI = {MODES, SHORT, chip, editor, collect, open, _toggle};
+    // ---------------- کارکنان: معرفی‌نامه همیشه به نامِ پرسنل ----------------
+    const PMODES = {
+        self_owner: 'بیمه‌گذار و مالک: خودِ پرسنل',
+        self_relative: 'بیمه‌گذار: خودِ پرسنل · مالک (ذینفع): همسر یا بستگان',
+        relative: 'بیمه‌گذار و مالک: همسر یا بستگانِ پرسنل',
+    };
+    const PSHORT = {self_owner: 'خودِ پرسنل', self_relative: 'مالک = ذینفع', relative: 'بستگان'};
+    const PREL = {self_relative: ['همسر', 'پدر', 'مادر', 'فرزند', 'سایر'], relative: ['همسر', 'پدر', 'مادر', 'فرزند']};
+    function personnelEditor(v = {}) {
+        const mode = v.mode || 'self_owner', own = (mode === 'relative' ? v.insured : v.owner) || {};
+        const opt = k => `<option value="${k}" ${mode === k ? 'selected' : ''}>${PMODES[k]}</option>`;
+        return `<div class="pty-ed" data-ppty>
+            <select data-pp-mode onchange="PartyUI._ptoggle(this)">${opt('self_owner')}${opt('self_relative')}${opt('relative')}</select>
+            <div data-pp-other style="display:${mode === 'self_owner' ? 'none' : ''}">
+                <div class="pty-grid">
+                    <div><label data-pp-rl>${mode === 'relative' ? 'نسبتِ بیمه‌گذار با پرسنل' : 'نسبتِ مالک با پرسنل'}</label><select data-pp-f="relation">${relOpts(mode, own.relation)}</select></div>
+                    <div><label data-pp-nl>${mode === 'relative' ? 'نامِ بیمه‌گذار و مالک' : 'نامِ مالک (ذینفع)'}</label><input data-pp-f="name" value="${esc(own.name || '')}"></div>
+                    <div><label>کد ملی</label><input data-pp-f="national_id" dir="ltr" inputmode="numeric" value="${esc(fa(own.national_id || ''))}"></div>
+                </div>
+                <p class="pty-hint" data-pp-hint>${mode === 'relative' ? 'معرفی‌نامه به نامِ پرسنل می‌ماند؛ بیمه‌نامه به نامِ همین شخص صادر می‌شود.' : 'بیمه‌نامه به نامِ پرسنل صادر می‌شود و مالکِ خودرو «ذینفع» نوشته می‌شود.'}</p>
+            </div></div>`;
+    }
+    function relOpts(mode, sel) {
+        return '<option value="">انتخاب…</option>' + (PREL[mode] || PREL.self_relative).map(r => `<option ${r === sel ? 'selected' : ''}>${r}</option>`).join('');
+    }
+    function _ptoggle(sel) {
+        const ed = sel.closest('[data-ppty]'), m = sel.value, other = ed.querySelector('[data-pp-other]');
+        other.style.display = m === 'self_owner' ? 'none' : '';
+        const rs = ed.querySelector('[data-pp-f="relation"]'), cur = rs.value;
+        rs.innerHTML = relOpts(m, cur);
+        ed.querySelector('[data-pp-rl]').textContent = m === 'relative' ? 'نسبتِ بیمه‌گذار با پرسنل' : 'نسبتِ مالک با پرسنل';
+        ed.querySelector('[data-pp-nl]').textContent = m === 'relative' ? 'نامِ بیمه‌گذار و مالک' : 'نامِ مالک (ذینفع)';
+        ed.querySelector('[data-pp-hint]').textContent = m === 'relative' ? 'معرفی‌نامه به نامِ پرسنل می‌ماند؛ بیمه‌نامه به نامِ همین شخص صادر می‌شود.' : 'بیمه‌نامه به نامِ پرسنل صادر می‌شود و مالکِ خودرو «ذینفع» نوشته می‌شود.';
+    }
+    function personnelCollect(root) {
+        const ed = root && (root.matches && root.matches('[data-ppty]') ? root : root.querySelector('[data-ppty]'));
+        if (!ed) return null;
+        const g = k => en((ed.querySelector(`[data-pp-f="${k}"]`) || {}).value || '').trim();
+        const mode = ed.querySelector('[data-pp-mode]').value;
+        return mode === 'self_owner' ? {mode} : {mode, owner_name: g('name'), owner_national_id: g('national_id').replace(/\D/g, ''), owner_relation: g('relation')};
+    }
+    function personnelChip(p) {
+        if (!p) return '';
+        const n = x => (x && x.name) || '';
+        const parts = p.mode === 'self_owner' ? `<span class="pty-n">بیمه‌گذار و مالک: <b>${esc(n(p.insured) || 'پرسنل')}</b></span>`
+            : `<span class="pty-n">بیمه‌گذار: <b>${esc(n(p.insured) || '—')}</b></span> · <span class="pty-n">مالک${p.mode === 'self_relative' ? ' (ذینفع)' : ''}: <b>${esc(n(p.owner) || '—')}</b>${p.owner && p.owner.relation ? ' (' + esc(p.owner.relation) + ')' : ''}</span>`;
+        const cls = {self_owner: 'COMPANY', self_relative: 'BENEFICIARY', relative: 'OWNER'}[p.mode] || 'COMPANY';
+        return `<span class="pty-chip"><span class="pty-b m-${cls}">${PSHORT[p.mode] || ''}</span>${parts}</span>`;
+    }
+
+    window.PartyUI = {MODES, SHORT, chip, editor, collect, open, _toggle, PMODES, personnelEditor, personnelCollect, personnelChip, _ptoggle};
 })();

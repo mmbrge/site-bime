@@ -105,7 +105,23 @@ function policy_number_for_filename($policyNum) {
 // «68ایران - 711 د 16» در این نام‌گذاری خاص می‌شود «68ایران 711 د 16»
 function plate_for_filename($plate) {
     if (!$plate) return $plate;
+    // پلاکِ موتورسیکلت در بایگانی: «موتور 583 76224» (تا با پلاکِ خودرو اشتباه نشود)
+    if ($mp = moto_plate_parse($plate)) return 'موتور ' . $mp[0] . ' ' . $mp[1];
     return preg_replace('/\s*-\s*/', ' ', trim($plate));
+}
+
+// ---- پلاکِ موتورسیکلت: کدِ شهر (۳ رقم) و شماره (۵ رقم)؛ قالبِ ذخیره «583-76224» ----
+//      (در ردیف‌های شرکتی: plate_p1 = کد شهر، plate_p2 = شماره، plate_letter = «موتور»، plate_p4 خالی)
+const MOTO_PLATE_LETTER = 'موتور';
+function moto_plate_parse($plate) {
+    $t = strtr(trim((string)$plate), ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
+    return preg_match('/^(\d{3})\s*-\s*(\d{5})$/', $t, $m) ? [$m[1], $m[2]] : null;
+}
+function plate_is_moto($plate) { return moto_plate_parse($plate) !== null; }
+function moto_plate_make($city, $num) { return trim((string)$city) . '-' . trim((string)$num); }
+// پلاکِ معتبر (خودرو یا موتورسیکلت) برای فرم‌ها و ربات
+function plate_valid($plate) {
+    return (bool)preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', (string)$plate) || plate_is_moto($plate);
 }
 
 // «هسته»ی پلاک را برای مقایسه‌ی دو پلاک با فرمت‌های نوشتاریِ متفاوت (با/بدون خط‌تیره، با/بدون

@@ -8,7 +8,7 @@
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <script src="/iran-time.js?v=1"></script>
-<link rel="stylesheet" href="/plate.css?v=3">
+<link rel="stylesheet" href="/plate.css?v=4">
 <script src="/chat-ui.js?v=12"></script>
 <script src="/maint-watch.js?v=1"></script>
 <style>
@@ -198,8 +198,12 @@
   <div id="vehicles-list"></div>
   <button class="btn btn-outline" onclick="showAddVehicleForm()" id="btn-show-add-vehicle">➕ افزودن پلاک جدید</button>
   <div id="add-vehicle-form" style="display:none; margin-top:14px;">
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی خودرو وارد کنید:</p>
-    <div class="field-row">
+    <div class="pk-switch" style="background:rgba(255,255,255,.08)"><button type="button" class="on" data-vpk="car" onclick="setVehKind('car')">🚗 خودرو</button><button type="button" data-vpk="moto" onclick="setVehKind('moto')">🏍 موتورسیکلت</button></div>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی <span id="veh-kind-word">خودرو</span> وارد کنید:</p>
+    <div id="veh-moto" class="mt-pin hidden-pk" dir="ltr" style="margin:0 auto 10px"><span class="ip-flag"></span><span class="mt-rows">
+      <input type="text" id="veh-mcity" placeholder="کد شهر ۵۸۳" maxlength="3" inputmode="numeric">
+      <input type="text" id="veh-mnum" placeholder="۷۶۲۲۴" maxlength="5" inputmode="numeric"></span></div>
+    <div class="field-row" id="veh-car">
       <input type="text" id="veh-region" placeholder="۶۸" maxlength="2" inputmode="numeric" style="flex:1">
       <span style="align-self:center;font-size:12px;">ایران</span>
       <input type="text" id="veh-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" style="flex:1.3">
@@ -314,6 +318,8 @@ function showToast(msg) {
 }
 function formatPlateHtml(plate) {
     if (!plate) return '';
+    { const _mp = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
+      if (_mp) { const _f = x => x.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${_f(_mp[1])}</b><span>${_f(_mp[2])}</span></span><span class="mt-ic">🏍</span></span>`; } }
     const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
@@ -512,7 +518,24 @@ function showAddVehicleForm() {
     document.getElementById('add-vehicle-form').style.display = 'block';
     document.getElementById('btn-show-add-vehicle').style.display = 'none';
 }
+let VEH_KIND = 'car';
+function setVehKind(k) {
+    VEH_KIND = k;
+    document.querySelectorAll('[data-vpk]').forEach(b => b.classList.toggle('on', b.dataset.vpk === k));
+    document.getElementById('veh-car').classList.toggle('hidden-pk', k === 'moto');
+    document.getElementById('veh-moto').classList.toggle('hidden-pk', k !== 'moto');
+    document.getElementById('veh-kind-word').textContent = k === 'moto' ? 'موتور' : 'خودرو';
+}
 async function submitAddVehicle() {
+    if (VEH_KIND === 'moto') {   // پلاکِ موتورسیکلت: کد شهر ۳ رقم + شماره ۵ رقم
+        const moto_city = toEn(document.getElementById('veh-mcity').value.trim()), moto_num = toEn(document.getElementById('veh-mnum').value.trim());
+        if (!/^\d{3}$/.test(moto_city) || !/^\d{5}$/.test(moto_num)) { showToast('پلاکِ موتور را کامل وارد کنید: کد شهر ۳ رقم و شماره ۵ رقم.'); return; }
+        try {
+            const data = await (await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'add_vehicle', token: TOKEN, moto: 1, moto_city, moto_num }) })).json();
+            if (data.ok) { showToast('پلاک ذخیره شد.'); loadVehicles(); } else showToast(data.error || 'خطا در ثبت پلاک.');
+        } catch(e) { showToast('خطا در اتصال به سرور.'); }
+        return;
+    }
     const region = toEn(document.getElementById('veh-region').value.trim());
     const suffix = toEn(document.getElementById('veh-suffix').value.trim());
     const prefix = toEn(document.getElementById('veh-prefix').value.trim());

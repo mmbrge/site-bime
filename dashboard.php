@@ -991,7 +991,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 <script src="iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
-<link rel="stylesheet" href="plate.css?v=3">
+<link rel="stylesheet" href="plate.css?v=4">
 <link rel="stylesheet" href="ui-scroll.css?v=3">
 </head>
 <body class="h-screen flex flex-col">
@@ -3148,7 +3148,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <input type="hidden" id="aap-request-id">
             <!-- ترتیبِ نمایشی چپ‌به‌راست: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقمِ کد شهر].
                  شناسه‌ها عمداً عوض نشده‌اند: aap-p1 همان دو رقمِ کنارِ «ایران» است. -->
-            <div class="ir-pin mb-3" dir="ltr">
+            <div class="pk-switch" data-vkfor="aap"><button type="button" data-vk="car" class="on">🚗 خودرو</button><button type="button" data-vk="moto">🏍 موتورسیکلت</button></div>
+            <div id="aap-moto" class="mt-pin mb-3 hidden-pk" dir="ltr"><span class="ip-flag"></span><span class="mt-rows">
+                <input type="text" id="aap-mcity" maxlength="3" inputmode="numeric" placeholder="کد شهر ۵۸۳" class="vk-digits">
+                <input type="text" id="aap-mnum" maxlength="5" inputmode="numeric" placeholder="۷۶۲۲۴" class="vk-digits"></span></div>
+            <div class="ir-pin mb-3" dir="ltr" id="aap-carpin">
                 <span class="ip-flag"></span>
                 <input type="text" id="aap-p4" maxlength="2" inputmode="numeric" placeholder="۱۲" class="ip-cell">
                 <input type="text" id="aap-letter" maxlength="3" placeholder="الف" list="plate-letters-dl" class="ip-cell ip-letter">
@@ -3347,7 +3351,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div id="cre-lock" data-lock=""></div>
             <input type="hidden" id="cre-plate-id">
             <label class="text-xs font-bold text-slate-500 block mb-2">پلاک</label>
-            <div class="ir-pin mb-3" dir="ltr">
+            <div class="pk-switch" data-vkfor="cre"><button type="button" data-vk="car" class="on">🚗 خودرو</button><button type="button" data-vk="moto">🏍 موتورسیکلت</button></div>
+            <div id="cre-moto" class="mt-pin mb-3 hidden-pk" dir="ltr"><span class="ip-flag"></span><span class="mt-rows">
+                <input type="text" id="cre-mcity" maxlength="3" inputmode="numeric" placeholder="کد شهر ۵۸۳" class="vk-digits">
+                <input type="text" id="cre-mnum" maxlength="5" inputmode="numeric" placeholder="۷۶۲۲۴" class="vk-digits"></span></div>
+            <div class="ir-pin mb-3" dir="ltr" id="cre-carpin">
                 <span class="ip-flag"></span>
                 <input type="text" id="cre-p4" maxlength="2" inputmode="numeric" placeholder="۱۲" class="ip-cell">
                 <input type="text" id="cre-letter" maxlength="3" placeholder="الف" list="plate-letters-dl" class="ip-cell ip-letter">
@@ -3981,6 +3989,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <select id="mc-relationship" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option>خودم</option><option>پدر</option><option>مادر</option><option>همسر</option><option>فرزند</option></select></label>
                     <label class="text-[11px] font-bold text-slate-500 block">مدرک مالکیت خودرو *
                         <select id="mc-ownership" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="کارت ماشین">کارت ماشین</option><option value="سند">سند</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-self-only">مالکِ خودرو
+                        <select id="mc-owner-kind" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" onchange="mcRefresh()"><option value="self">خودِ پرسنل (همان بیمه‌گذار)</option><option value="other">همسر یا بستگان (ذینفع)</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-owner-only hidden">نسبتِ مالک با پرسنل *
+                        <select id="mc-owner-rel" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="">انتخاب…</option><option>همسر</option><option>پدر</option><option>مادر</option><option>فرزند</option><option>سایر</option></select></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-owner-only hidden">نامِ مالک (ذینفع) *<input type="text" id="mc-owner-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
+                    <label class="text-[11px] font-bold text-slate-500 block mc-owner-only hidden">کد ملیِ مالک<input type="text" id="mc-owner-nid" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
                     <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">نام و نام خانوادگی بیمه‌گذار *<input type="text" id="mc-insured-name" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"></label>
                     <label class="text-[11px] font-bold text-slate-500 block mc-rel-only hidden">کد ملی بیمه‌گذار *<input type="text" id="mc-insured-nid" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white" dir="ltr" inputmode="numeric" maxlength="10"></label>
                 </div>
@@ -4311,7 +4325,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
     <script src="endorse.js?v=3"></script>
-    <script src="party-ui.js?v=1"></script>
+    <script src="party-ui.js?v=2"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
@@ -4324,9 +4338,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=15"></script>
+    <script src="visit-reports.js?v=16"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=7"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=8"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -4511,16 +4525,28 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const m = plateToEn(v).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
             return m ? {p1: m[1], p2: m[2], letter: m[3], p4: m[4]} : {p1: '', p2: '', letter: '', p4: ''};
         }
-        function plateSplitHtml(id, value) {
-            const v = parseStoredPlate(value);
+        // پلاکِ موتورسیکلت: «583-76224» (کد شهر ۳ رقم - شماره‌ی ۵ رقم)
+        function parseMotoPlate(v) {
+            const m = plateToEn(v).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);
+            return m ? {city: m[1], num: m[2]} : null;
+        }
+        // opts.moto === false: فقط پلاکِ خودرو (بدونِ انتخابِ «موتورسیکلت»)
+        function plateSplitHtml(id, value, opts = {}) {
+            const v = parseStoredPlate(value), mp = parseMotoPlate(value), moto = !!mp && opts.moto !== false;
             const fa = x => x ? e2p(x) : '';
-            // ظاهرِ پلاکِ واقعی (plate.css): نوارِ آبی، [۲ رقم][حرف][۳ رقم][ایران/۲ رقم]
-            return `<div class="psplit ir-pin" dir="ltr" data-target="${id}">
+            // ظاهرِ پلاکِ واقعی (plate.css): نوارِ آبی، [۲ رقم][حرف][۳ رقم][ایران/۲ رقم] — یا پلاکِ موتور [کد شهر / شماره]
+            return `<div class="psplit-wrap" data-target="${id}">
+                ${opts.moto === false ? '' : `<div class="pk-switch"><button type="button" data-pk="car" class="${moto ? '' : 'on'}">🚗 خودرو</button><button type="button" data-pk="moto" class="${moto ? 'on' : ''}">🏍 موتورسیکلت</button></div>`}
+                <div class="psplit ir-pin ${moto ? 'hidden-pk' : ''}" dir="ltr" data-target="${id}">
                 <span class="ip-flag"></span>
                 <input type="text" inputmode="numeric" maxlength="2" data-part="p4" placeholder="۱۲" value="${fa(v.p4)}" class="psplit-part ip-cell" aria-label="دو رقمِ اول">
                 <input type="text" maxlength="3" data-part="letter" placeholder="الف" value="${v.letter}" list="plate-letters-dl" class="psplit-part ip-cell ip-letter" aria-label="حرف">
                 <input type="text" inputmode="numeric" maxlength="3" data-part="p2" placeholder="۳۴۵" value="${fa(v.p2)}" class="psplit-part ip-cell ip-wide" aria-label="سه رقم">
                 <span class="ip-ir"><small>ایران</small><input type="text" inputmode="numeric" maxlength="2" data-part="p1" placeholder="۶۷" value="${fa(v.p1)}" class="psplit-part" aria-label="کدِ ایران"></span>
+                </div>
+                ${opts.moto === false ? '' : `<div class="msplit mt-pin ${moto ? '' : 'hidden-pk'}" dir="ltr" data-target="${id}"><span class="ip-flag"></span><span class="mt-rows">
+                    <input type="text" inputmode="numeric" maxlength="3" data-mpart="city" placeholder="کد شهر ۵۸۳" value="${mp ? fa(mp.city) : ''}" class="msplit-part" aria-label="کد شهر">
+                    <input type="text" inputmode="numeric" maxlength="5" data-mpart="num" placeholder="۷۶۲۲۴" value="${mp ? fa(mp.num) : ''}" class="msplit-part" aria-label="شماره‌ی پلاکِ موتور"></span></div>`}
                 <input type="hidden" id="${id}" value="${value ? String(value).replace(/"/g, '') : ''}">
             </div>`;
         }
@@ -4530,15 +4556,52 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const hidden = document.getElementById(box.dataset.target);
             if (hidden) hidden.value = (p.p1 || p.p2 || p.letter || p.p4) ? `${p.p1}ایران - ${p.p2} ${p.letter} ${p.p4}` : '';
         }
+        function syncMotoSplit(box) {
+            const get = k => plateToEn(box.querySelector(`[data-mpart="${k}"]`).value.trim());
+            const c = get('city'), n = get('num');
+            const hidden = document.getElementById(box.dataset.target);
+            if (hidden) hidden.value = (c || n) ? `${c}-${n}` : '';
+        }
         function setPlateSplit(id, value) {
             const hidden = document.getElementById(id);
-            const box = hidden && hidden.closest('.psplit');
-            if (!box) { if (hidden) hidden.value = value || ''; return; }
-            const v = parseStoredPlate(value);
+            const wrap = hidden && hidden.closest('.psplit-wrap');
+            if (!wrap) { if (hidden) hidden.value = value || ''; return; }
+            const box = wrap.querySelector('.psplit'), mbox = wrap.querySelector('.msplit');
+            const v = parseStoredPlate(value), mp = parseMotoPlate(value);
             ['p1', 'p2', 'p4'].forEach(k => { box.querySelector(`[data-part="${k}"]`).value = v[k] ? e2p(v[k]) : ''; });
             box.querySelector('[data-part="letter"]').value = v.letter;
+            if (mbox) {
+                mbox.querySelector('[data-mpart="city"]').value = mp ? e2p(mp.city) : '';
+                mbox.querySelector('[data-mpart="num"]').value = mp ? e2p(mp.num) : '';
+                plateKindSet(wrap, mp ? 'moto' : 'car', true);
+            }
             hidden.value = value || '';
         }
+        // «خودرو / موتورسیکلت»: فیلدِ همان نوع نشان داده و مقدارِ مخفی از همان ساخته می‌شود
+        function plateKindSet(wrap, kind, keepValue) {
+            wrap.querySelectorAll('[data-pk]').forEach(b => b.classList.toggle('on', b.dataset.pk === kind));
+            const box = wrap.querySelector('.psplit'), mbox = wrap.querySelector('.msplit');
+            box.classList.toggle('hidden-pk', kind === 'moto');
+            if (mbox) mbox.classList.toggle('hidden-pk', kind !== 'moto');
+            if (!keepValue) (kind === 'moto' && mbox ? syncMotoSplit(mbox) : syncPlateSplit(box));
+        }
+        window.parseMotoPlate = parseMotoPlate;
+        document.addEventListener('click', e => {
+            const b = e.target.closest && e.target.closest('.psplit-wrap [data-pk]');
+            if (!b) return;
+            const wrap = b.closest('.psplit-wrap');
+            plateKindSet(wrap, b.dataset.pk);
+            const first = wrap.querySelector(b.dataset.pk === 'moto' ? '[data-mpart="city"]' : '[data-part="p4"]');
+            if (first) first.focus();
+        });
+        document.addEventListener('input', e => {
+            const el = e.target;
+            if (!el.classList || !el.classList.contains('msplit-part')) return;
+            el.value = plateToEn(el.value).replace(/\D/g, '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+            const box = el.closest('.msplit');
+            syncMotoSplit(box);
+            if (el.dataset.mpart === 'city' && el.value.length >= 3) box.querySelector('[data-mpart="num"]').focus();
+        });
         document.addEventListener('input', e => {
             const el = e.target;
             if (!el.classList || !el.classList.contains('psplit-part')) return;
@@ -4561,8 +4624,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
             return `<span class="ir-plate"><span class="flag"></span><span>${e2p(String(p4 || ''))}</span><span>${esc(letter)}</span><span>${e2p(String(p2 || ''))}</span><span class="ir"><small>ایران</small>${e2p(String(p1 || ''))}</span></span>`;
         }
+        function motoPlateHtml(city, num) {
+            return `<span class="mt-plate" title="پلاکِ موتورسیکلت"><span class="flag"></span><span class="mt-n"><b>${e2p(String(city || ''))}</b><span>${e2p(String(num || ''))}</span></span><span class="mt-ic">🏍</span></span>`;
+        }
         function formatPlateHtml(plate) {
             if (!plate) return '-';
+            const mp = parseMotoPlate(plate);
+            if (mp) return motoPlateHtml(mp.city, mp.num);
             const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
             if (!m) return plate;
             const [, region, suffix, letter, prefix] = m;
@@ -5944,6 +6012,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // از inline-flex و unicode-bidi:isolate استفاده می‌شود چون در متنِ راست‌به‌چپ،
         // مرورگر ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
         function fmtPlateHtml(p) {
+            if (p.plate_letter === 'موتور') return motoPlateHtml(p.plate_p1, p.plate_p2);
             if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
             return irPlateHtml(p.plate_p4, p.plate_letter, p.plate_p2, p.plate_p1);
         }
@@ -6187,7 +6256,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // فیلدهای بی‌ربط به نوعِ این درخواست پنهان می‌شوند تا فرم شلوغ نشود
             applyKindFieldVisibility('aap');
             document.getElementById('aap-request-id').value = requestId;
-            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-expiry','aap-chassis','aap-engine','aap-car-name','aap-car-type','aap-carvalue','aap-liability'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-mcity','aap-mnum','aap-expiry','aap-chassis','aap-engine','aap-car-name','aap-car-type','aap-carvalue','aap-liability'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            vkSet('aap', 'car');
             ['aap-noplate','aap-isnew'].forEach(id => { document.getElementById(id).checked = false; });
             toggleNoPlate('aap');
             document.getElementById('aap-insurance-type').value = '';
@@ -6198,10 +6268,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const payload = {
                 action: 'admin_add_plate',
                 request_id: document.getElementById('aap-request-id').value,
-                plate_p1: document.getElementById('aap-p1').value.trim(),
-                plate_p2: document.getElementById('aap-p2').value.trim(),
-                plate_letter: document.getElementById('aap-letter').value.trim(),
-                plate_p4: document.getElementById('aap-p4').value.trim(),
+                ...vkPlateParts('aap'),
                 ref_policy_number: document.getElementById('aap-refpolicy').value.trim(),
                 endorsement_request: document.getElementById('aap-endorse').value.trim(),
                 cancellation_reason: document.getElementById('aap-cancelreason').value,
@@ -6332,6 +6399,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4) {
                 return `<span class="plate-display font-bold text-xs">${fmtPlateHtml(p)}</span>`;
             }
+            if (p.vehicle_kind === 'MOTOR') return `<span class="font-bold text-xs" dir="ltr" title="شماره شاسی">${p.chassis_no || ''}</span><span class="text-[9px] text-slate-500 block">🏍 موتورسیکلت (بی‌پلاک)</span>`;
             if (p.chassis_no) {
                 return `<span class="font-bold text-xs" dir="ltr" title="شماره شاسی">${p.chassis_no}</span>
                         <span class="text-[9px] text-slate-400 block">شماره شاسی</span>`;
@@ -7066,11 +7134,32 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // «پلاک ندارد»: خانه‌های پلاک غیرفعال می‌شوند و به‌جایش شماره شاسی/موتور گرفته می‌شود
         // «پلاک ندارد» (لیفتراک/ماشین‌آلات) و «صفر کیلومتر» جدا هستند: صفرکیلومتر شماره شاسی می‌خواهد (پلاک اختیاری)،
         // تاریخِ انقضای بیمه‌نامه‌ی قبلی ندارد و بازدیدِ سلامت نمی‌خواهد
+        // «خودرو / موتورسیکلت» در پنجره‌های افزودن/ویرایشِ ردیف: پلاکِ موتور = کد شهر (۳ رقم) + شماره (۵ رقم)
+        function vkSet(prefix, kind) {
+            document.querySelectorAll(`[data-vkfor="${prefix}"] [data-vk]`).forEach(b => b.classList.toggle('on', b.dataset.vk === kind));
+            const car = document.getElementById(prefix + '-carpin'), moto = document.getElementById(prefix + '-moto');
+            if (car) car.classList.toggle('hidden-pk', kind === 'moto');
+            if (moto) moto.classList.toggle('hidden-pk', kind !== 'moto');
+        }
+        const vkGet = prefix => document.querySelector(`[data-vkfor="${prefix}"] [data-vk="moto"].on`) ? 'moto' : 'car';
+        // بخش‌های پلاک برای ارسال (موتور: p1 = کد شهر، p2 = شماره، حرف = «موتور»)
+        function vkPlateParts(prefix) {
+            const v = id => plateToEn((document.getElementById(prefix + '-' + id) || {}).value || '').trim();
+            if (vkGet(prefix) === 'moto') return {plate_p1: v('mcity'), plate_p2: v('mnum'), plate_letter: (v('mcity') || v('mnum')) ? 'موتور' : '', plate_p4: '', vehicle_kind: 'MOTOR'};
+            return {plate_p1: v('p1'), plate_p2: v('p2'), plate_letter: (document.getElementById(prefix + '-letter') || {}).value.trim(), plate_p4: v('p4'), vehicle_kind: ''};
+        }
+        document.addEventListener('click', e => {
+            const b = e.target.closest && e.target.closest('[data-vkfor] [data-vk]');
+            if (b) vkSet(b.closest('[data-vkfor]').dataset.vkfor, b.dataset.vk);
+        });
+        document.addEventListener('input', e => {
+            if (e.target.classList && e.target.classList.contains('vk-digits')) e.target.value = plateToEn(e.target.value).replace(/\D/g, '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+        });
         function toggleNoPlate(prefix) {
             const g = id => document.getElementById(prefix + '-' + id);
             const noPlate = !!(g('noplate') && g('noplate').checked), isNew = !!(g('isnew') && g('isnew').checked);
             g('chassis-box').classList.toggle('hidden', !(noPlate || isNew));
-            ['p1', 'p2', 'p4', 'letter'].forEach(k => {
+            ['p1', 'p2', 'p4', 'letter', 'mcity', 'mnum'].forEach(k => {
                 const el = g(k);
                 if (!el) return;
                 el.disabled = noPlate;
@@ -7091,6 +7180,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cre-letter').value = p.plate_letter || '';
             document.getElementById('cre-p2').value = p.plate_p2 || '';
             document.getElementById('cre-p1').value = p.plate_p1 || '';
+            const creMoto = p.plate_letter === 'موتور' || p.vehicle_kind === 'MOTOR';
+            vkSet('cre', creMoto ? 'moto' : 'car');
+            document.getElementById('cre-mcity').value = p.plate_letter === 'موتور' ? faDigits(p.plate_p1 || '') : '';
+            document.getElementById('cre-mnum').value = p.plate_letter === 'موتور' ? faDigits(p.plate_p2 || '') : '';
+            if (creMoto) ['cre-p1', 'cre-p2', 'cre-p4', 'cre-letter'].forEach(i => { document.getElementById(i).value = ''; });
             document.getElementById('cre-insurance-type').value = p.insurance_type || '';
             document.getElementById('cre-expiry').value = faDigits(p.expiry_date_jalali);
             document.getElementById('cre-has-prev-body').value = p.has_prev_body || '';
@@ -7116,10 +7210,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const payload = {
                 action: 'update_row',
                 plate_id: document.getElementById('cre-plate-id').value,
-                plate_p1: document.getElementById('cre-p1').value.trim(),
-                plate_p2: document.getElementById('cre-p2').value.trim(),
-                plate_letter: document.getElementById('cre-letter').value.trim(),
-                plate_p4: document.getElementById('cre-p4').value.trim(),
+                ...vkPlateParts('cre'),
                 insurance_type: document.getElementById('cre-insurance-type').value,
                 expiry_date: document.getElementById('cre-expiry').value.trim(),
                 has_prev_body: document.getElementById('cre-has-prev-body').value,
@@ -8815,7 +8906,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex flex-wrap gap-1 mb-2">${chip('بیمه‌گذار', d.insured_name)}${chip('کد ملی', d.national_id, 1)}${chip('تولد', d.birth_date, 1)}${chip('ذینفع', d.beneficiary)}
                     ${chip('خودرو', [d.car_system, d.car_tip].filter(Boolean).join(' '))}${chip('ارزش', d.car_value ? money(d.car_value) : '')}${chip('شروع', d.start_date, 1)}${d.premium ? chip('حق بیمه', money(d.premium)) : ''}</div>
                 <div class="rounded-lg px-2.5 py-1.5 mb-2 text-[11px] bg-${head[1]}-50 text-${head[1]}-800 border border-${head[1]}-100"><i class="fas ${head[0]} ml-1"></i>${head[2]}</div>
-                <div class="text-[11px]" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+                ${document.getElementById('pparty-box') ? '<p class="text-[10.5px] text-slate-500">نسبت و مالک در کارتِ «مالک / بیمه‌گذار / ذینفع» (بالا) تعیین می‌شود.</p>' : ''}
+                <div class="text-[11px]" style="display:${document.getElementById('pparty-box') ? 'none' : 'grid'};grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
                     <label class="block"><span class="text-[10px] text-slate-500">نسبتِ بیمه‌گذار با پرسنل</span>
                         <select id="prop-ins-rel" class="w-full border rounded-lg px-2 py-1.5 bg-white">${opt(['خودم'].concat(PROP_REL_OPTS), insRel, mode === 'relative' ? 'انتخاب کنید…' : '')}</select></label>
                     <label class="block"><span class="text-[10px] text-slate-500">نامِ مالکِ خودرو</span>
@@ -8838,6 +8930,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const d = await (await fetch('api/case_actions.php', {method: 'POST', body: fd})).json();
                 if (!d.ok) { if (st) st.textContent = ''; showToast(d.error || 'فایل خوانده نشد.', 'error'); input.value = ''; return; }
                 window._issueProp = d.proposal;
+                // حالتِ مالک/بیمه‌گذار از «پیشنهاد» (اگر قبلاً دستی تعیین نشده)
+                const ic = window._issueCase || {}, rl = d.proposal.relation;
+                if (rl && ic.party && !ic.party.explicit) {
+                    const pd = d.proposal.data || {};
+                    ic.party = Object.assign({}, ic.party, {mode: rl.mode,
+                        owner: {name: rl.owner_name || '', national_id: rl.mode === 'relative' ? (pd.national_id || '') : '', relation: ''},
+                        insured: rl.mode === 'relative' ? {name: pd.insured_name || '', national_id: pd.national_id || '', relation: ic.insured_relationship !== 'خودم' ? ic.insured_relationship : ''} : ic.party.holder});
+                    ppartyRender(caseId, ic.party);
+                }
                 propRender(caseId);
                 const box = document.getElementById('final-pf');
                 window._issuePrefill = propPrefill(casePrefill(window._issueCase || {}), d.proposal);
@@ -8849,7 +8950,51 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { if (st) st.textContent = ''; showToast('خطا در اتصال به سرور.', 'error'); }
         }
         // نسبت و مالک برای ذخیره در صدور (فقط وقتی «پیشنهاد» بارگذاری شده)
+        // ---- مالک / بیمه‌گذار / ذینفعِ کارکنان (party-ui.js): همیشه در صفحه‌ی صدور؛ فرمِ بیمه‌نامه را هم هماهنگ پر می‌کند ----
+        function ppartyRender(caseId, party) {
+            const box = document.getElementById('pparty-box'); if (!box || !window.PartyUI) return;
+            box.innerHTML = `<div class="rounded-xl border border-amber-200 bg-amber-50/50 p-2.5">
+                <p class="text-xs font-black text-amber-800 mb-1.5"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار / ذینفع <span class="font-normal text-[10.5px] text-slate-500">(معرفی‌نامه به نامِ پرسنل)</span></p>
+                ${PartyUI.personnelEditor(party || {})}</div>`;
+            const h = () => { const pf = document.getElementById('final-pf'); if (pf) ppartyApplyToForm(pf); };
+            box.addEventListener('change', h); box.addEventListener('input', h);
+        }
+        // حالتِ انتخاب‌شده => خانه‌های بیمه‌گذار، مالک و ذینفعِ فرمِ صدور
+        function ppartyValues(party, sel) {
+            const hold = (party && party.holder) || {}, ins = (party && party.insured) || {};
+            const m = (sel && sel.mode) || (party && party.mode) || 'self_owner';
+            const other = sel && sel.mode !== 'self_owner' ? {name: sel.owner_name, national_id: sel.owner_national_id} : ((m === 'relative' ? ins : (party && party.owner)) || {});
+            if (m === 'self_owner') return {insured_name: hold.name, national_id: hold.national_id, owner_name: hold.name, owner_national_id: hold.national_id, beneficiary: '', beneficiary_national_id: ''};
+            if (m === 'self_relative') return {insured_name: hold.name, national_id: hold.national_id, owner_name: other.name, owner_national_id: other.national_id, beneficiary: other.name, beneficiary_national_id: other.national_id};
+            return {insured_name: other.name, national_id: other.national_id, owner_name: other.name, owner_national_id: other.national_id, beneficiary: '', beneficiary_national_id: ''};
+        }
+        function ppartyPrefill(o, party) {
+            if (!party) return o;
+            const v = ppartyValues(party, null);
+            Object.entries(v).forEach(([k, x]) => { if (x && !(k === 'insured_name' && o.insured_name && party.mode === 'relative' && !party.explicit)) o[k] = x; });
+            return o;
+        }
+        function ppartyApplyToForm(box) {
+            const sel = PartyUI.personnelCollect(document.getElementById('pparty-box'));
+            if (!sel) return;
+            const v = ppartyValues((window._issueCase || {}).party, sel);
+            Object.entries(v).forEach(([k, x]) => { const inp = box.querySelector(`[data-pf="${k}"]`); if (inp && (x || k.startsWith('beneficiary'))) inp.value = x ? faDigits(String(x)) : ''; });
+        }
         function propRelation() {
+            // کارتِ «مالک / بیمه‌گذار» (همیشه): نسبت و مالک از همان؛ «پیشنهاد» فقط نتیجه‌ی مقایسه و ذینفعِ خوانده‌شده را می‌دهد
+            const ppBox = document.getElementById('pparty-box');
+            const sel = ppBox && window.PartyUI ? PartyUI.personnelCollect(ppBox) : null;
+            if (sel) {
+                if (sel.mode !== 'self_owner' && !sel.owner_relation) { showToast('نسبتِ ' + (sel.mode === 'relative' ? 'بیمه‌گذار' : 'مالک') + ' با پرسنل را انتخاب کنید (کارتِ «مالک / بیمه‌گذار»).', 'error'); return false; }
+                if (sel.mode !== 'self_owner' && !sel.owner_name) { showToast('نامِ ' + (sel.mode === 'relative' ? 'بیمه‌گذار' : 'مالک') + ' را وارد کنید (کارتِ «مالک / بیمه‌گذار»).', 'error'); return false; }
+                const prop = window._issueProp, pc = window._propCheck || {red: [], yel: []}, hold = ((window._issueCase || {}).party || {}).holder || {};
+                const own = sel.mode === 'self_owner' ? {name: hold.name, national_id: hold.national_id, relation: 'خودِ پرسنل'} : {name: sel.owner_name, national_id: sel.owner_national_id, relation: sel.owner_relation};
+                return {insured_relationship: sel.mode === 'relative' ? (['پدر', 'مادر', 'همسر', 'فرزند'].includes(sel.owner_relation) ? sel.owner_relation : '') : 'خودم',
+                    owner_name: own.name || '', owner_national_id: own.national_id || '', owner_relation: own.relation || '',
+                    beneficiary: sel.mode === 'self_relative' ? (sel.owner_name || '') : ((prop && prop.data && prop.data.beneficiary) || ''),
+                    prop_check: prop && prop.data ? (pc.red.length || pc.yel.length ? [pc.red.length ? 'مهم: ' + pc.red.join('، ') : '', pc.yel.length ? 'جزئی: ' + pc.yel.join('، ') : ''].filter(Boolean).join(' | ') : 'با ' + (prop.kind_fa || 'پیشنهاد') + ' می‌خواند') : '',
+                    _party: sel};
+            }
             const prop = window._issueProp; if (!prop || !prop.data) return null;
             const ir = document.getElementById('prop-ins-rel'), or = document.getElementById('prop-owner-rel'), on = document.getElementById('prop-owner-name');
             if (!ir) return null;
@@ -11263,6 +11408,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 rounded-xl p-4">
                         <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-user ml-1"></i>اطلاعات شخص / بیمه‌گذار</p>
                         <div><span class="text-slate-400">بیمه‌گذار:</span> <b>${c.insured_name || '-'}</b> ${copyBtn(c.insured_name,'نام بیمه‌گذار')}</div>
+                        ${window.PartyUI && c.party ? `<div class="col-span-2">${PartyUI.personnelChip(c.party)}</div>` : ''}
                         <div><span class="text-slate-400">کد ملی بیمه‌گذار:</span> <b dir="ltr">${e2p(c.insured_national_id) || '-'}</b> ${copyBtn(c.insured_national_id,'کد ملی')}</div>
                         <div><span class="text-slate-400">تاریخ تولد:</span> <b dir="ltr">${e2p(c.insured_birth_date) || '-'}</b> ${copyBtn(c.insured_birth_date,'تاریخ تولد')}</div>
                         <div><span class="text-slate-400">موبایل:</span> <b dir="ltr">${e2p(c.insured_phone) || '-'}</b> ${copyBtn(c.insured_phone,'موبایل')}</div>
@@ -11328,6 +11474,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </div>
                             ${c.issued_file_path ? `<a href="/${encodeFilePath(c.issued_file_path)}" target="_blank" class="inline-block mt-2 text-blue-600 underline text-xs">مشاهده فایل بیمه‌نامه‌ی صادرشده</a> <a href="/${encodeFilePath(c.issued_file_path)}?exact=1" class="inline-block mt-2 mr-2 text-slate-500 underline text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">دانلود با نامِ دقیق</a>` : ''}
                         ` : `
+                            <div id="pparty-box" class="mb-3"></div>
                             <div id="prop-box" class="mb-3"></div>
                             <label class="block border-2 border-dashed border-emerald-300 rounded-lg text-center p-3 text-xs text-emerald-700 cursor-pointer hover:bg-emerald-100" id="policy-upload-label">
                                 <i class="fas fa-cloud-arrow-up ml-1"></i> انتخاب فایل بیمه‌نامه (PDF) برای شناسایی خودکار
@@ -11436,8 +11583,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     window._issueCase = c;
                     window._issueProp = data.proposal || null;
                     window._issueOcr = null;
-                    window._issuePrefill = propPrefill(casePrefill(c), window._issueProp);
+                    window._issuePrefill = ppartyPrefill(propPrefill(casePrefill(c), window._issueProp), c.party);
                     propRender(caseId);
+                    ppartyRender(caseId, c.party);
                     pfRender(document.getElementById('final-pf'), window._issuePrefill, {});
                     propCheck(document.getElementById('final-pf'));
                 }
@@ -11515,7 +11663,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 total_premium: v.premium, car_system: v.car_system, car_type: v.car_tip || v.car_kind, model_year: v.model_year,
                 car_color: v.color, car_usage: v.usage, phone: v.phone, issue_date: v.issue_date, car_value: v.car_value, fields: v,
             };
-            if (relation) body.relation = relation;
+            if (relation) { if (relation._party) { body.party = relation._party; delete relation._party; } body.relation = relation; }
             showToast('در حال بررسی نهایی و صدور...', 'info');
             try {
                 const res = await fetch('api/case_actions.php', {
@@ -13223,6 +13371,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('mc-intro-file').value = '';
             document.getElementById('mc-insurance-type').value = 'THIRDPARTY';
             document.getElementById('mc-relationship').value = 'خودم';
+            ['mc-owner-name', 'mc-owner-nid', 'mc-owner-rel'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+            document.getElementById('mc-owner-kind').value = 'self';
             document.getElementById('mc-ownership').value = 'کارت ماشین';
             document.getElementById('mc-prev-body').value = 'خیر';
             document.getElementById('mc-prev-claim').value = 'خیر';
@@ -13329,6 +13479,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             m.querySelectorAll('.mc-body-only').forEach(el => el.classList.toggle('hidden', !body));
             m.querySelectorAll('.mc-third-only').forEach(el => el.classList.toggle('hidden', body));
             m.querySelectorAll('.mc-rel-only').forEach(el => el.classList.toggle('hidden', rel === 'خودم'));
+            // مالکِ جدا (ذینفع) فقط وقتی بیمه‌گذار خودِ پرسنل است؛ وقتی بیمه‌گذار از بستگان است، مالک همان بیمه‌گذار است
+            const ownOther = rel === 'خودم' && document.getElementById('mc-owner-kind').value === 'other';
+            m.querySelectorAll('.mc-self-only').forEach(el => el.classList.toggle('hidden', rel !== 'خودم'));
+            m.querySelectorAll('.mc-owner-only').forEach(el => el.classList.toggle('hidden', !ownOther));
             m.querySelectorAll('.mc-prev-only').forEach(el => el.classList.toggle('hidden', !prev));
             m.querySelectorAll('.mc-noclaim-only').forEach(el => el.classList.toggle('hidden', !(prev && !claim)));
             const auto = document.getElementById('mc-car-value-auto').checked;
@@ -13387,7 +13541,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const warn = msg => { showToast(msg, 'warning'); return false; };
             if (!introId && (!v('mc-full-name') || !/^\d{10}$/.test(p2e(v('mc-national-code'))))) return warn('نام و کد ملیِ ۱۰ رقمیِ پرسنل را وارد کنید.');
             if (rel !== 'خودم' && (v('mc-insured-name').length < 3 || !/^\d{8,10}$/.test(p2e(v('mc-insured-nid'))))) return warn('نام و کد ملیِ بیمه‌گذار (' + rel + ') را وارد کنید.');
-            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate'))) return warn('پلاک را کامل وارد کنید (همه‌ی خانه‌ها).');
+            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate')) && !/^\d{3}-\d{5}$/.test(v('mc-plate'))) return warn('پلاک را کامل وارد کنید (همه‌ی خانه‌ها؛ موتور: کد شهر ۳ رقم و شماره ۵ رقم).');
+            const ownOther = rel === 'خودم' && v('mc-owner-kind') === 'other';
+            if (ownOther && (!v('mc-owner-rel') || v('mc-owner-name').length < 3)) return warn('نسبت و نامِ مالکِ خودرو (ذینفع) را وارد کنید.');
             if (!/^1[34]\d{2}\D+\d{1,2}\D+\d{1,2}$/.test(p2e(v('mc-birth')))) return warn('تاریخ تولد بیمه‌گذار را درست وارد کنید (مثل ۱۳۷۰/۰۵/۱۲).');
             if (!/^09\d{9}$/.test(p2e(v('mc-phone')))) return warn('موبایل بیمه‌گذار باید ۱۱ رقم و با ۰۹ شروع شود.');
             if (!/^\d{10}$/.test(p2e(v('mc-postal')))) return warn('کد پستی باید ۱۰ رقم باشد.');
@@ -13417,6 +13573,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
              'prev_body_insurance:mc-prev-body', 'prev_body_claim:mc-prev-claim', 'no_claim_years:mc-no-claim-years',
              'insured_birth_date:mc-birth', 'insured_phone:mc-phone', 'insured_postal_code:mc-postal',
              'insured_address:mc-address'].forEach(pair => { const [k, id] = pair.split(':'); fd.append(k, v(id)); });
+            // مالک / بیمه‌گذار / ذینفع (معرفی‌نامه به نامِ پرسنل)
+            fd.append('party', JSON.stringify(rel !== 'خودم' ? {mode: 'relative', owner_name: v('mc-insured-name'), owner_national_id: p2e(v('mc-insured-nid')), owner_relation: rel}
+                : ownOther ? {mode: 'self_relative', owner_name: v('mc-owner-name'), owner_national_id: p2e(v('mc-owner-nid')), owner_relation: v('mc-owner-rel')} : {mode: 'self_owner'}));
             fd.append('car_value_auto', document.getElementById('mc-car-value-auto').checked ? '1' : '');
             fd.append('coverages', JSON.stringify(mcSelectedCov));
             Object.entries(mcFiles).forEach(([k, f]) => fd.append('doc_' + k, f));

@@ -311,6 +311,7 @@
     }
 
     function plateHtml(p) {
+        if (window.parseMotoPlate && window.parseMotoPlate(p) && window.formatPlateHtml) return window.formatPlateHtml(p);   // موتورسیکلت
         const m = String(p || '').match(/^(\d{2})ایران\s*-\s*(\d{3})\s*(\S+)\s*(\d{2})$/);
         if (!m) return p ? `<span class="font-bold text-slate-600">${esc(p)}</span>` : '<span class="text-slate-400 text-xs">بدون پلاک</span>';
         return `<span class="ir-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;
@@ -485,7 +486,7 @@
                 </div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div class="vr-card p-4 sm:p-5 vr-fade-up"><div class="vr-sec-title mb-4"><span class="vr-ic bg-gradient-to-br from-slate-600 to-slate-800"><i class="fas fa-rectangle-list"></i></span>پلاک خودرو</div>
-                        ${typeof window.plateSplitHtml === 'function' ? window.plateSplitHtml(`${u}-plate`, '') : `<input id="${u}-plate" class="vr-in" placeholder="۱۲ب۳۴۵ ایران ۶۷">`}
+                        ${typeof window.plateSplitHtml === 'function' ? window.plateSplitHtml(`${u}-plate`, '', {moto: false}) : `<input id="${u}-plate" class="vr-in" placeholder="۱۲ب۳۴۵ ایران ۶۷">`}
                         <p class="text-[10px] text-slate-400 font-bold mt-2">اگر خودرو پلاک ندارد خالی بگذارید و «شماره شاسی» را وارد کنید.</p>
                         ${this.mode === 'target' && this.opts.target ? `<p class="vr-chip bg-emerald-50 text-emerald-600 mt-3"><i class="fas fa-link"></i> این گزارش به همان درخواستی که از رویش ساخته شده وصل می‌شود</p>` : '<div class="vr-plink"></div>'}</div>
                     <div class="vr-card p-4 sm:p-5 vr-fade-up">

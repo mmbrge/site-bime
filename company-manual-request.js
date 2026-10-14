@@ -19,7 +19,7 @@
     let root = null;
     let seq = 0;
 
-    const newRow = type => ({ id: ++seq, type, noPlate: false, p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
+    const newRow = type => ({ id: ++seq, type, noPlate: false, moto: false, mcity: '', mnum: '', p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
         carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
         refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false, docPages: [], docData: null,
         partyOpen: false, partyMode: '', party: null });
@@ -279,8 +279,13 @@
         // صفرکیلومتر: شماره شاسی لازم است (پلاک اگر گرفته باشد اختیاری)
         const vinBox = `<div class="grid grid-cols-2 gap-2"><div><label class="lbl">شماره شاسی (VIN) *</label><input data-r="chassis" class="inp" dir="ltr" value="${esc(r.chassis)}"></div>
                <div><label class="lbl">شماره موتور</label><input data-r="engine" class="inp" dir="ltr" value="${esc(r.engine)}"></div></div>`;
+        // موتورسیکلت: پلاکِ دوخطی (کد شهر ۳ رقم / شماره‌ی ۵ رقم)
+        const motoPin = `<div><label class="lbl">پلاکِ موتور *</label><div class="mt-pin" dir="ltr"><span class="ip-flag"></span><span class="mt-rows">
+                <input data-r="mcity" maxlength="3" inputmode="numeric" placeholder="کد شهر ۵۸۳" value="${esc(fa(r.mcity))}">
+                <input data-r="mnum" maxlength="5" inputmode="numeric" placeholder="۷۶۲۲۴" value="${esc(fa(r.mnum))}"></span></div>${r.isNew ? '<p class="text-[9.5px] text-slate-400 mt-1">صفرکیلومتر: اگر هنوز پلاک نگرفته، خالی بگذارید.</p>' + vinBox : ''}</div>`;
         const plate = r.noPlate
             ? vinBox
+            : r.moto ? motoPin
             // مثلِ بقیه‌ی فرم‌های پنل: چپ‌به‌راست [۲ رقم = p4] [حرف] [۳ رقم] [ایران + کد شهر = p1]
             : `<div><label class="lbl">پلاک *</label><div class="ir-pin" dir="ltr"><span class="ip-flag"></span>
                 <input data-r="p4" class="ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲" value="${esc(fa(r.p4))}">
@@ -325,6 +330,7 @@
               <div class="flex items-center gap-2"><span class="w-7 h-7 rounded-full bg-slate-800 text-white text-xs font-black flex items-center justify-center">${fa(i + 1)}</span>
                 ${st.mode === 'MIXED' && isNew() ? `<select data-r="type" class="inp !w-28 !py-1"><option value="THIRDPARTY" ${!body ? 'selected' : ''}>ثالث</option><option value="BODY" ${body ? 'selected' : ''}>بدنه</option></select>` : tBadge}</div>
               <div class="flex gap-3 items-center text-[11px]">
+                <label class="flex items-center gap-1 font-bold ${r.moto ? 'text-blue-700' : 'text-slate-500'}"><input type="checkbox" data-r="moto" ${r.moto ? 'checked' : ''}> 🏍 موتورسیکلت</label>
                 <label class="flex items-center gap-1 font-bold text-slate-500"><input type="checkbox" data-r="noPlate" ${r.noPlate ? 'checked' : ''}> بدون پلاک (شماره شاسی)</label>
                 <label class="flex items-center gap-1 font-bold text-slate-500"><input type="checkbox" data-r="isNew" ${r.isNew ? 'checked' : ''}> صفرکیلومتر</label>
                 ${st.rows.length > 1 ? '<button data-act="delrow" class="text-rose-500 hover:text-rose-700 font-bold">حذف</button>' : ''}</div></div>
@@ -422,10 +428,11 @@
             el.addEventListener(isText ? 'input' : 'change', () => {
                 const r = rowOf(el), f = el.dataset.r;
                 let v = el.type === 'checkbox' ? el.checked : el.value;
-                if (['p1', 'p2', 'p4', 'expiry'].includes(f)) { v = en(v); el.value = fa(v); }
+                if (['p1', 'p2', 'p4', 'expiry', 'mcity', 'mnum'].includes(f)) { v = en(v).replace(f === 'expiry' ? /[^\d/]/g : /\D/g, ''); el.value = fa(v); }
+                if (f === 'mcity' && v.length >= 3) { const nx = el.closest('.mt-pin').querySelector('[data-r="mnum"]'); if (nx) nx.focus(); }
                 r[f] = v;
                 // فیلدهایی که ظاهر کارت را عوض می‌کنند، کارت را دوباره می‌سازند
-                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit', 'partyOpen'].includes(f)) {
+                if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit', 'partyOpen', 'moto'].includes(f)) {
                     if (f === 'customCov' && v && !r.cov) r.cov = JSON.parse(JSON.stringify(st.covBaseOnly ? { __none: true } : (st.cov || {})));
                     render();
                 } else { const s = root.querySelector('#cmr-summary'); if (s) s.innerHTML = summary(); }
@@ -494,7 +501,10 @@
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
                 // صفرکیلومترِ بی‌پلاک: خانه‌های عددیِ پلاک خالی‌اند، پس حرفِ پیش‌فرضِ «الف» هم فرستاده نمی‌شود (وگرنه «پلاک ناقص» می‌شد)
-                plate_p1: r.noPlate ? '' : r.p1, plate_letter: r.noPlate || !(en(r.p1) + en(r.p2) + en(r.p4)).trim() ? '' : r.letter, plate_p2: r.noPlate ? '' : r.p2, plate_p4: r.noPlate ? '' : r.p4,
+                ...(r.moto && !r.noPlate
+                    ? { plate_p1: en(r.mcity), plate_p2: en(r.mnum), plate_letter: (en(r.mcity) + en(r.mnum)).trim() ? 'موتور' : '', plate_p4: '' }
+                    : { plate_p1: r.noPlate ? '' : r.p1, plate_letter: r.noPlate || !(en(r.p1) + en(r.p2) + en(r.p4)).trim() ? '' : r.letter, plate_p2: r.noPlate ? '' : r.p2, plate_p4: r.noPlate ? '' : r.p4 }),
+                vehicle_kind: r.moto ? 'MOTOR' : '',
                 chassis_no: r.noPlate || r.isNew ? en(r.chassis) : '', engine_no: r.noPlate || r.isNew ? en(r.engine) : '', is_new_vehicle: r.isNew ? 1 : 0,
                 car_name: r.carName, car_type: r.carType || '', expiry_date: r.isNew ? '' : en(r.expiry), liability_limit: st.liabilityPerRow ? r.liability : '',
                 car_value: en(r.carValue), has_prev_body: r.prevBody, skip_health_inspection: r.skipHealth ? 1 : 0,

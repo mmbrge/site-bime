@@ -8,6 +8,8 @@ require_once __DIR__ . '/_party.php';   // مالک / بیمه‌گذار / ذی
 // نام کامل نمایشی پلاک از روی ۴ بخش، هم‌شکل با پلاک‌های پرسنلی («۱۲ایران - ۳۴۵ الف ۶۷»)
 function company_plate_display($p1, $p2, $letter, $p4) {
     $p1 = trim((string)$p1); $p2 = trim((string)$p2); $letter = trim((string)$letter); $p4 = trim((string)$p4);
+    // موتورسیکلت: «کدشهر-شماره» (مثلِ «583-76224»)
+    if ($letter === 'موتور') return ($p1 !== '' || $p2 !== '') ? $p1 . '-' . $p2 : null;
     if ($p1 === '' && $p2 === '' && $letter === '' && $p4 === '') return null;
     return "{$p1}ایران - {$p2} {$letter} {$p4}";
 }
@@ -130,6 +132,8 @@ function company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDispla
         if ($ts) { [, , $jd] = jalali_from_gregorian_ts($ts); $dayPart = '{' . sprintf('%02d', intval($jd)) . '}'; }
     }
     $prefix = $dayPart . '(' . company_kind_folder_label($kind, $insuranceTypeEnum) . ')';
+    // پلاکِ موتورسیکلت: «موتور 583 76224» (مثلِ نامِ پوشه‌ی صادره)
+    if ($plateDisplay && function_exists('plate_is_moto') && plate_is_moto($plateDisplay)) $plateDisplay = plate_for_filename($plateDisplay);
     return sanitize_folder_name($prefix . ' ' . ($plateDisplay ?: 'بدون‌پلاک'));
 }
 
@@ -657,6 +661,9 @@ function company_parse_plate_text($text) {
     if (preg_match('/(\d{2})\s*([^\d\s\-]{1,3})\s*(\d{3})\s*[-\s]\s*(\d{2})/u', $t, $m)) {
         return ['p4' => $m[1], 'letter' => trim($m[2]), 'p2' => $m[3], 'p1' => $m[4]];
     }
+    // موتورسیکلت: «583-76224»، «۵۸۳ ایران ۷۶۲۲۴» یا «۷۶۲۲۴ ایران ۵۸۳» (کد شهر ۳ رقم، شماره ۵ رقم)
+    if (preg_match('/(?<!\d)(\d{3})\s*(?:-|ایران|-\s*ایران\s*-)\s*(\d{5})(?!\d)/u', $t, $m)) return ['p1' => $m[1], 'p2' => $m[2], 'letter' => 'موتور', 'p4' => ''];
+    if (preg_match('/(?<!\d)(\d{5})\s*(?:-|ایران|-\s*ایران\s*-)\s*(\d{3})(?!\d)/u', $t, $m)) return ['p1' => $m[2], 'p2' => $m[1], 'letter' => 'موتور', 'p4' => ''];
     return null;
 }
 
@@ -1438,6 +1445,39 @@ function company_ensure_car_type($pdo) {
     $done = true;
     try { if (!$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'car_type'")->fetch()) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN car_type VARCHAR(120) NULL AFTER car_name"); }
     catch (Throwable $e) { error_log('[car_type column] ' . $e->getMessage()); }
+    company_ensure_moto_cols($pdo);
+}
+// موتورسیکلت: کدِ شهرِ ۳ رقمی در plate_p1 و شماره‌ی ۵ رقمی در plate_p2 جا می‌شود (فقط پهن‌تر شدنِ ستون‌ها؛ داده‌ی قبلی دست نمی‌خورد)
+// و vehicle_kind = MOTOR (برای موتورِ بی‌پلاک/صفر هم)
+function company_ensure_moto_cols($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $cols = [];
+        foreach ($pdo->query("SHOW COLUMNS FROM company_request_plates")->fetchAll() as $c) $cols[$c['Field']] = strtolower($c['Type']);
+        foreach (['plate_p1' => 3, 'plate_p2' => 5] as $c => $len) {
+            if (isset($cols[$c]) && preg_match('/^varchar\((\d+)\)/', $cols[$c], $m) && intval($m[1]) < $len)
+                $pdo->exec("ALTER TABLE company_request_plates MODIFY `$c` VARCHAR($len) NULL");
+        }
+        if (!isset($cols['vehicle_kind'])) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN vehicle_kind VARCHAR(12) NULL");
+    } catch (Throwable $e) { error_log('[moto cols] ' . $e->getMessage()); }
+}
+// نوعِ وسیله‌ی ردیف: پلاکِ موتور (حرفِ «موتور») یا انتخابِ «موتورسیکلت» (موتورِ بی‌پلاک/صفر) => MOTOR؛ پلاکِ موتور خانه‌ی چهارم ندارد
+function company_set_vehicle_kind($pdo, $plateId, $kind = '') {
+    company_ensure_moto_cols($pdo);
+    $kind = strtoupper(trim((string)$kind)) === 'MOTOR' ? 'MOTOR' : '';
+    try {
+        $pdo->prepare("UPDATE company_request_plates SET vehicle_kind = CASE WHEN plate_letter = 'موتور' OR ? = 'MOTOR' THEN 'MOTOR' ELSE NULL END,
+                              plate_p4 = CASE WHEN plate_letter = 'موتور' THEN NULL ELSE plate_p4 END WHERE id = ?")->execute([$kind, intval($plateId)]);
+    } catch (Throwable $e) { error_log('[vehicle_kind] ' . $e->getMessage()); }
+}
+// ردیفِ شرکتی: پلاکِ ناقص؟ (خودرو: ۴ بخش؛ موتور: کد شهر ۳ رقم + شماره‌ی ۵ رقم)
+function company_plate_incomplete($p1, $p2, $letter, $p4) {
+    $p1 = trim((string)$p1); $p2 = trim((string)$p2); $letter = trim((string)$letter); $p4 = trim((string)$p4);
+    if ($letter === 'موتور') return !preg_match('/^\d{3}$/', p2e_digits($p1)) || !preg_match('/^\d{5}$/', p2e_digits($p2));
+    if ($p1 === '' && $p2 === '' && $letter === '' && $p4 === '') return false;
+    return $p1 === '' || $p2 === '' || $letter === '' || $p4 === '';
 }
 function company_ensure_issue_info_cols($pdo) {
     static $done = false;

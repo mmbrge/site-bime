@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>پنل مدیر</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
-<link rel="stylesheet" href="/plate.css?v=3">
+<link rel="stylesheet" href="/plate.css?v=4">
 <style>
   /* مینی‌اپِ مدیر (ربات بله): صفِ بازدید به ترتیبِ نوبت، بازدیدِ آزاد، ثبتِ درخواست از روی معرفی‌نامه - api/webapp_admin.php */
   @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; }
@@ -158,6 +158,8 @@ async function call(action, body = {}, url = API) {
   } catch (e) { return {ok: false, error: 'خطا در اتصال به سرور.'}; }
 }
 function plateHtml(p) {
+  const mp = en(p || '').match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
+  if (mp) return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${fa(mp[1])}</b><span>${fa(mp[2])}</span></span><span class="mt-ic">🏍</span></span>`;
   const m = en(p || '').match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
   if (!m) return `<b dir="ltr">${esc(p || 'بدونِ پلاک')}</b>`;
   return `<span class="ir-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;

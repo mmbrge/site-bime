@@ -476,7 +476,7 @@ try {
 
         if (!$insuranceType) { echo json_encode(['ok' => false, 'error' => 'نوع بیمه (ثالث یا بدنه) را انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
         if (!in_array($relationship, relationship_options(), true)) { echo json_encode(['ok' => false, 'error' => 'نسبت بیمه‌گذار نامعتبر است.'], JSON_UNESCAPED_UNICODE); exit; }
-        if (!preg_match('/^\d{2}ایران - \d{3} \S+ \d{2}$/u', $plate)) { echo json_encode(['ok' => false, 'error' => 'پلاک را کامل وارد کنید (همه‌ی خانه‌ها).'], JSON_UNESCAPED_UNICODE); exit; }
+        if (!plate_valid($plate)) { echo json_encode(['ok' => false, 'error' => 'پلاک را کامل وارد کنید (همه‌ی خانه‌ها).'], JSON_UNESCAPED_UNICODE); exit; }
 
         $pdo->beginTransaction();
         try {
@@ -640,6 +640,8 @@ try {
                 $r['ok'] ? $uploaded++ : $docErrors[] = $r['error'];
             }
         }
+        // مالک / بیمه‌گذار / ذینفع (معرفی‌نامه به نامِ پرسنل)
+        if (!empty($data['party'])) { require_once __DIR__ . '/_party.php'; pparty_save($pdo, $caseId, $data['party']); }
         $st = $pdo->prepare("SELECT status FROM policy_cases WHERE id = ?");
         $st->execute([$caseId]);
 

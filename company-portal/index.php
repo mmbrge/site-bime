@@ -54,7 +54,7 @@ if (!$companies) {
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
-<script src="../party-ui.js?v=1"></script>
+<script src="../party-ui.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=5"></script>
@@ -68,7 +68,7 @@ if (!$companies) {
 <script src="../iran-time.js?v=1"></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
-<link rel="stylesheet" href="../plate.css?v=3">
+<link rel="stylesheet" href="../plate.css?v=4">
 <script src="../chat-ui.js?v=12"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=1" defer></script>
@@ -614,7 +614,10 @@ function addPlateRow(containerId) {
     row.className = 'plate-row border rounded-lg p-2 mb-1';
     row.innerHTML = `
         <div class="flex items-center gap-2">
-            <div class="ir-pin sm flex-1" dir="ltr">
+            <div class="plate-mt mt-pin hidden-pk flex-1" dir="ltr" style="height:58px"><span class="ip-flag"></span><span class="mt-rows">
+                <input class="plate-mcity" maxlength="3" inputmode="numeric" placeholder="کد شهر ۵۸۳" oninput="plateMotoInput(this)">
+                <input class="plate-mnum" maxlength="5" inputmode="numeric" placeholder="۷۶۲۲۴" oninput="plateMotoInput(this)"></span></div>
+            <div class="plate-car ir-pin sm flex-1" dir="ltr">
                 <span class="ip-flag"></span>
                 <input class="plate-p4 ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲">
                 <input class="plate-letter ip-cell ip-letter" maxlength="3" placeholder="الف">
@@ -626,6 +629,9 @@ function addPlateRow(containerId) {
             </button>
         </div>
         <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+            <label class="flex items-center gap-1.5 text-[11px] font-bold text-blue-700 cursor-pointer">
+                <input type="checkbox" class="plate-moto" onchange="togglePlateNoPlate(this)"> 🏍 موتورسیکلت
+            </label>
             <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 cursor-pointer">
                 <input type="checkbox" class="plate-noplate" onchange="togglePlateNoPlate(this)"> پلاک ندارد (لیفتراک / ماشین‌آلات)
             </label>
@@ -703,9 +709,18 @@ function collectNrCounts() {
 
 // «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود.
 // «صفر کیلومتر»: شماره شاسی لازم است (پلاک اختیاری)، تاریخِ انقضای بیمه‌نامه‌ی قبلی ندارد و بازدیدِ سلامت نمی‌خواهد.
+// پلاکِ موتور: فقط رقم (فارسی نمایش داده می‌شود)؛ کد شهر که پر شد، می‌رود سراغِ شماره
+function plateMotoInput(el) {
+    el.value = String(el.value).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    if (el.classList.contains('plate-mcity') && el.value.length >= 3) el.closest('.plate-row').querySelector('.plate-mnum').focus();
+}
 function togglePlateNoPlate(cb) {
     const row = cb.closest('.plate-row');
     const noPlate = row.querySelector('.plate-noplate').checked, isNew = row.querySelector('.plate-isnew').checked;
+    const moto = !!(row.querySelector('.plate-moto') || {}).checked;
+    row.querySelector('.plate-car').classList.toggle('hidden-pk', moto);
+    row.querySelector('.plate-mt').classList.toggle('hidden-pk', !moto);
+    row.querySelectorAll('.plate-mcity, .plate-mnum').forEach(i => { i.disabled = noPlate; i.classList.toggle('opacity-40', noPlate); if (noPlate) i.value = ''; });
     row.querySelector('.plate-chassis-box').classList.toggle('hidden', !(noPlate || isNew));
     row.querySelector('.plate-expiry').classList.toggle('hidden', isNew);
     if (isNew) row.querySelector('.plate-expiry').value = '';
@@ -723,9 +738,15 @@ async function nrDupCheck() {
     const rows = Array.from(document.querySelectorAll('#nr-plates-list .plate-row'));
     if (!rows.length) return;
     if (kind !== 'NEW_POLICY') { rows.forEach(r => { const b = r.querySelector('.plate-dup'); if (b) b.remove(); }); return; }
-    const payload = rows.map(row => ({p1: row.querySelector('.plate-p1').value.trim(), p2: row.querySelector('.plate-p2').value.trim(), letter: row.querySelector('.plate-letter').value.trim(),
-        p4: row.querySelector('.plate-p4').value.trim(), chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(), engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
-        type: row.querySelector('.plate-instype').value}));
+    const enD = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).trim();
+    const payload = rows.map(row => {
+        const moto = row.querySelector('.plate-moto')?.checked;   // موتورسیکلت: کد شهر و شماره
+        return {p1: moto ? enD(row.querySelector('.plate-mcity').value) : row.querySelector('.plate-p1').value.trim(),
+            p2: moto ? enD(row.querySelector('.plate-mnum').value) : row.querySelector('.plate-p2').value.trim(),
+            letter: moto ? 'موتور' : row.querySelector('.plate-letter').value.trim(), p4: moto ? '' : row.querySelector('.plate-p4').value.trim(),
+            chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(), engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
+            type: row.querySelector('.plate-instype').value};
+    });
     let r;
     try { r = await (await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dup_check', rows: payload})})).json(); } catch (e) { return; }
     if (!r.ok) return;
@@ -769,6 +790,7 @@ async function importPlatesExcel(inp) {
             addPlateRow('nr-plates-list');
             const row = list.lastElementChild, set = (c, v) => { const el = row.querySelector(c); if (el && v !== null && v !== undefined && v !== '') el.value = v; };
             if (!x.p1 && !x.p2 && x.chassis_no) row.querySelector('.plate-noplate').checked = true;
+            if (x.letter === 'موتور') { row.querySelector('.plate-moto').checked = true; row.querySelector('.plate-mcity').value = x.p1 || ''; row.querySelector('.plate-mnum').value = x.p2 || ''; x.p1 = x.p2 = x.letter = x.p4 = ''; plateMotoInput(row.querySelector('.plate-mnum')); plateMotoInput(row.querySelector('.plate-mcity')); }
             if (Number(x.is_new_vehicle)) row.querySelector('.plate-isnew').checked = true;
             togglePlateNoPlate(row.querySelector('.plate-isnew'));
             set('.plate-p1', x.p1); set('.plate-p2', x.p2); set('.plate-letter', x.letter); set('.plate-p4', x.p4);
@@ -792,7 +814,12 @@ function togglePlateValueBox(sel) {
 }
 
 function collectPlateRows(containerId) {
-    const rows = Array.from(document.getElementById(containerId).querySelectorAll('.plate-row')).map(row => ({
+    const enD = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).trim();
+    const motoParts = row => {   // موتورسیکلت: p1 = کد شهر، p2 = شماره، حرف = «موتور»
+        const c = enD(row.querySelector('.plate-mcity').value), n = enD(row.querySelector('.plate-mnum').value);
+        return {p1: c, p2: n, letter: (c || n) ? 'موتور' : '', p4: '', vehicle_kind: 'MOTOR'};
+    };
+    const rows = Array.from(document.getElementById(containerId).querySelectorAll('.plate-row')).map(row => Object.assign({
         p1: row.querySelector('.plate-p1').value.trim(),
         p2: row.querySelector('.plate-p2').value.trim(),
         letter: row.querySelector('.plate-letter').value.trim(),
@@ -812,7 +839,7 @@ function collectPlateRows(containerId) {
         insurance_type: row.querySelector('.plate-instype').value,
         ...(row.querySelector('.plate-party-on')?.checked && window.PartyUI ? PartyUI.collect(row.querySelector('.plate-party')) : {}),
     // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
-    })).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
+    }, row.querySelector('.plate-moto')?.checked ? motoParts(row) : {})).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
     // اگر «هردو» انتخاب شده، همین پلاک به دو ردیفِ جدا (ثالث + بدنه) تبدیل می‌شود
     const out = [];
     rows.forEach(p => {
@@ -1120,6 +1147,7 @@ function plateHtml(p) {
     if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return 'پلاک نامشخص';
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const fa = v => String(v ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    if (p.plate_letter === 'موتور') return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${fa(p.plate_p1 || '---')}</b><span>${fa(p.plate_p2 || '-----')}</span></span><span class="mt-ic">🏍</span></span>`;
     return `<span class="ir-plate"><span class="flag"></span><span>${fa(p.plate_p4 || '--')}</span><span>${esc(p.plate_letter || '-')}</span><span>${fa(p.plate_p2 || '---')}</span><span class="ir"><small>ایران</small>${fa(p.plate_p1 || '--')}</span></span>`;
 }
 

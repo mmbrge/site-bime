@@ -116,7 +116,7 @@
   .summary-row span:first-child { color: #94a3b8; }
   input[type=file] { display: none; }
 </style>
-<link rel="stylesheet" href="/plate.css?v=3">
+<link rel="stylesheet" href="/plate.css?v=4">
 </head>
 <body>
 
@@ -208,12 +208,16 @@
 
 <!-- پلاک -->
 <div id="screen-plate" class="screen">
-  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پلاک خودرو</h2><div style="width:38px"></div></div>
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پلاک خودرو / موتور</h2><div style="width:38px"></div></div>
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:45%"></div></div></div>
   <div id="plate-vehicles-list"></div>
   <div class="form-card">
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی خودرو وارد کنید:</p>
-    <div class="ir-pin" dir="ltr">
+    <div class="pk-switch" style="background:rgba(255,255,255,.08)"><button type="button" class="on" data-pk="car" onclick="setPlateKind('car')">🚗 خودرو</button><button type="button" data-pk="moto" onclick="setPlateKind('moto')">🏍 موتورسیکلت</button></div>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی <span id="pl-kind-word">خودرو</span> وارد کنید:</p>
+    <div id="pl-moto" class="mt-pin hidden-pk" dir="ltr" style="margin:0 auto"><span class="ip-flag"></span><span class="mt-rows">
+      <input type="tel" id="pl-mcity" placeholder="کد شهر ۵۸۳" maxlength="3" inputmode="numeric">
+      <input type="tel" id="pl-mnum" placeholder="۷۶۲۲۴" maxlength="5" inputmode="numeric"></span></div>
+    <div class="ir-pin" dir="ltr" id="pl-car">
       <span class="ip-flag"></span>
       <input type="tel" id="pl-prefix" placeholder="۱۶" maxlength="2" inputmode="numeric" class="ip-cell">
       <select id="pl-letter" class="ip-cell ip-letter"></select>
@@ -388,6 +392,8 @@ function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
 function formatPlateHtml(plate) {
     if (!plate) return '';
+    { const _mp = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
+      if (_mp) { const _f = x => x.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${_f(_mp[1])}</b><span>${_f(_mp[2])}</span></span><span class="mt-ic">🏍</span></span>`; } }
     const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;
@@ -704,7 +710,24 @@ async function chooseExistingPlate(plate) {
     const res = await saveStep({ step:'plate', plate });
     if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
 }
+// «خودرو / موتورسیکلت»: پلاکِ موتور دوخطی است (کد شهر ۳ رقم + شماره‌ی ۵ رقم) و «583-76224» ذخیره می‌شود
+let PLATE_KIND = 'car';
+function setPlateKind(k) {
+    PLATE_KIND = k;
+    document.querySelectorAll('#screen-plate [data-pk]').forEach(b => b.classList.toggle('on', b.dataset.pk === k));
+    document.getElementById('pl-car').classList.toggle('hidden-pk', k === 'moto');
+    document.getElementById('pl-moto').classList.toggle('hidden-pk', k !== 'moto');
+    document.getElementById('pl-kind-word').textContent = k === 'moto' ? 'موتور' : 'خودرو';
+    (document.getElementById(k === 'moto' ? 'pl-mcity' : 'pl-prefix') || {}).focus?.();
+}
 async function submitNewPlate() {
+    if (PLATE_KIND === 'moto') {
+        const city = toEn(document.getElementById('pl-mcity').value.trim()), num = toEn(document.getElementById('pl-mnum').value.trim());
+        if (!/^\d{3}$/.test(city) || !/^\d{5}$/.test(num)) { showToast('پلاکِ موتور را کامل وارد کنید: کد شهر ۳ رقم و شماره ۵ رقم.'); return; }
+        const res = await saveStep({ step:'plate', plate: `${city}-${num}` });
+        if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+        return;
+    }
     const region = toEn(document.getElementById('pl-region').value.trim());
     const suffix = toEn(document.getElementById('pl-suffix').value.trim());
     const prefix = toEn(document.getElementById('pl-prefix').value.trim());
@@ -1003,6 +1026,8 @@ initApp();
 
 // پلاک: با پُر شدنِ هر خانه مکان‌نما به خانه‌ی بعد می‌رود (۲ رقم -> حرف -> ۳ رقم -> ایران)
 (function () {
+    const mc = document.getElementById('pl-mcity');
+    if (mc) mc.addEventListener('input', () => { if (toEn(mc.value).replace(/\D/g, '').length >= 3) document.getElementById('pl-mnum').focus(); });
     const seq = [['pl-prefix', 2], ['pl-letter', 0], ['pl-suffix', 3], ['pl-region', 2]];
     seq.forEach(([id, len], i) => {
         const el = document.getElementById(id);

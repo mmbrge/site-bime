@@ -161,3 +161,65 @@ function party_fill_issue_info($pdo, $plateId) {
     }
     if ($ch) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($info, JSON_UNESCAPED_UNICODE), intval($plateId)]);
 }
+
+// =====================================================================
+//  کارکنان: معرفی‌نامه همیشه به نامِ پرسنل است؛ مالک/بیمه‌گذار سه حالت دارد (همان کدهای «پیشنهاد»):
+//   self_owner    بیمه‌گذار و مالک: خودِ پرسنل
+//   self_relative بیمه‌گذار: خودِ پرسنل · مالک: همسر/بستگان (مالک = ذینفع)
+//   relative      بیمه‌گذار و مالک: بستگانِ پرسنل
+// =====================================================================
+const PPARTY_MODES = [
+    'self_owner' => 'بیمه‌گذار و مالک: خودِ پرسنل',
+    'self_relative' => 'بیمه‌گذار: خودِ پرسنل · مالک (ذینفع): بستگان',
+    'relative' => 'بیمه‌گذار و مالک: بستگانِ پرسنل',
+];
+function pparty_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    foreach (['party_mode' => 'VARCHAR(16) NULL', 'party_json' => 'TEXT NULL'] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM policy_cases LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE policy_cases ADD COLUMN `$c` $def"); }
+        catch (Throwable $e) { error_log('[pparty_ensure] ' . $e->getMessage()); }
+    }
+}
+function pparty_valid_mode($m) { $m = trim((string)$m); return isset(PPARTY_MODES[$m]) ? $m : null; }
+// ورودیِ فرم => {mode, owner:{name,national_id,relation}}
+function pparty_clean($in) {
+    if (is_string($in)) $in = json_decode($in, true);
+    if (!is_array($in)) return null;
+    $mode = pparty_valid_mode($in['mode'] ?? '');
+    if (!$mode) return null;
+    $d = function ($v) { return preg_replace('/\D/', '', strtr((string)$v, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9'])); };
+    return ['mode' => $mode,
+            'name' => mb_substr(trim((string)($in['owner_name'] ?? ($in['name'] ?? ''))), 0, 120),
+            'national_id' => mb_substr($d($in['owner_national_id'] ?? ($in['national_id'] ?? '')), 0, 11),
+            'relation' => mb_substr(trim((string)($in['owner_relation'] ?? ($in['relation'] ?? ''))), 0, 30)];
+}
+// $case: ردیفِ پرونده (با holder_name/holder_national_code)، $propRel: نتیجه‌ی proposal_relation (اختیاری)
+function pparty_resolve(array $case, $propRel = null) {
+    $stored = pparty_clean($case['party_json'] ?? null);
+    $mode = pparty_valid_mode($case['party_mode'] ?? '') ?: ($propRel['mode'] ?? null);
+    $rel = trim((string)($case['insured_relationship'] ?? ''));
+    if (!$mode) $mode = ($rel !== '' && $rel !== 'خودم') ? 'relative' : 'self_owner';
+    $holder = ['name' => (string)($case['holder_name'] ?? ''), 'national_id' => (string)($case['holder_national_code'] ?? ''), 'relation' => 'خودِ پرسنل'];
+    $insuredRel = ['name' => (string)($case['insured_name'] ?? ''), 'national_id' => (string)($case['insured_national_id'] ?? ''), 'relation' => ($rel !== 'خودم' ? $rel : '')];
+    if ($mode === 'self_owner') { $ins = $holder; $own = $holder; }
+    elseif ($mode === 'self_relative') {
+        $ins = $holder;
+        $own = ['name' => ($stored['name'] ?? '') ?: ($propRel['owner_name'] ?? ''), 'national_id' => $stored['national_id'] ?? '', 'relation' => $stored['relation'] ?? ''];
+    } else {
+        $ins = ($rel !== '' && $rel !== 'خودم') ? $insuredRel : ['name' => $stored['name'] ?? '', 'national_id' => $stored['national_id'] ?? '', 'relation' => $stored['relation'] ?? ''];
+        if (!empty($stored['name']) && empty($ins['name'])) $ins['name'] = $stored['name'];
+        $own = $ins;
+    }
+    return ['mode' => $mode, 'mode_fa' => PPARTY_MODES[$mode], 'explicit' => (bool)pparty_valid_mode($case['party_mode'] ?? ''),
+            'insured' => $ins, 'owner' => $own, 'beneficiary' => $mode === 'self_relative' ? $own : null, 'holder' => $holder];
+}
+function pparty_save($pdo, $caseId, $in) {
+    pparty_ensure($pdo);
+    $p = pparty_clean($in);
+    if (!$p) return false;
+    $pdo->prepare("UPDATE policy_cases SET party_mode = ?, party_json = ? WHERE id = ?")
+        ->execute([$p['mode'], $p['mode'] === 'self_owner' ? null : json_encode($p, JSON_UNESCAPED_UNICODE), intval($caseId)]);
+    return $p;
+}

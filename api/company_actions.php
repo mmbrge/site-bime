@@ -868,6 +868,12 @@ try {
                         'holder' => $r['holder_name'], 'holder_nid' => $r['holder_nid'], 'relationship' => $r['insured_relationship'] ?? null,
                         'insured_phone' => $r['insured_phone'] ?? null, 'insured_address' => $r['insured_address'] ?? null, 'insured_postal_code' => $r['insured_postal_code'] ?? null,
                         'insured_name' => $r['insured_name'] ?: $r['holder_name'],
+                        // مالک / ذینفع (معرفی‌نامه به نامِ پرسنل)
+                        'party_mode_fa' => (function () use ($r) { $m = $r['party_mode'] ?? ''; $ii = json_decode((string)($r['issue_info'] ?? ''), true) ?: [];
+                            if (!$m) $m = !empty($ii['beneficiary']) ? 'self_relative' : (($r['insured_relationship'] ?? 'خودم') !== 'خودم' ? 'relative' : 'self_owner');
+                            return ['self_owner' => 'خودِ پرسنل', 'self_relative' => 'مالک = ذینفع', 'relative' => 'بستگان'][$m] ?? ''; })(),
+                        'owner_name' => (json_decode((string)($r['issue_info'] ?? ''), true) ?: [])['owner_name'] ?? '',
+                        'beneficiary_name' => (json_decode((string)($r['issue_info'] ?? ''), true) ?: [])['beneficiary'] ?? '',
                         'national_id' => $r['insured_national_id'] ?: $r['holder_nid'], 'phone' => $r['ocr_phone'] ?: $r['mobile_number'],
                         'company_name' => $r['employer_name'],
                         'plate' => $r['plate'], 'chassis_no' => $r['chassis_num'], 'engine_no' => $r['engine_num'],
@@ -1428,7 +1434,7 @@ try {
 
         $defaultLiability = company_parse_money($data['default_liability'] ?? '');
         $defaultCov = company_clean_coverages($data['default_coverages'] ?? null);
-        $clean = []; $errors = []; $classes = []; $parties = [];
+        $clean = []; $errors = []; $classes = []; $parties = []; $vkinds = [];
         $counts = ['THIRDPARTY' => 0, 'BODY' => 0, 'ENDORSEMENT' => 0, 'CANCELLATION' => 0];
         foreach ($rows as $i => $r) {
             $n = $i + 1;
@@ -1436,7 +1442,7 @@ try {
             $letter = trim($r['plate_letter'] ?? ''); $p4 = trim(p2e_digits($r['plate_p4'] ?? ''));
             $chassis = trim(p2e_digits($r['chassis_no'] ?? ''));
             $hasPlate = $p1 !== '' || $p2 !== '' || $letter !== '' || $p4 !== '';
-            if ($hasPlate && ($p1 === '' || $p2 === '' || $letter === '' || $p4 === '')) { $errors[] = "ردیف $n: پلاک ناقص است."; continue; }
+            if ($hasPlate && company_plate_incomplete($p1, $p2, $letter, $p4)) { $errors[] = "ردیف $n: پلاک ناقص است" . ($letter === 'موتور' ? ' (موتور: کد شهر ۳ رقم و شماره ۵ رقم).' : '.'); continue; }
             if (!$hasPlate && $chassis === '') { $errors[] = "ردیف $n: پلاک یا شماره شاسی را وارد کنید."; continue; }
             $type = in_array($r['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $r['insurance_type'] : null;
             if (!$type) { $errors[] = "ردیف $n: نوع بیمه (ثالث/بدنه) را انتخاب کنید."; continue; }
@@ -1472,6 +1478,7 @@ try {
                         trim($r['row_note'] ?? '') ?: null, $cov];
             $classes[] = in_array($r['vehicle_class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $r['vehicle_class'] : null;
             $parties[] = ['party_mode' => $r['party_mode'] ?? '', 'party' => $r['party'] ?? null];
+            $vkinds[] = $r['vehicle_kind'] ?? '';
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
 
@@ -1498,6 +1505,7 @@ try {
         $defPartyMode = party_valid_mode($data['party_mode'] ?? '');
         if ($defPartyMode) party_set_request_default($pdo, $requestId, $defPartyMode, $data['party'] ?? null);
         foreach ($plateIds as $i => $pid) party_apply_from_input($pdo, $pid, $parties[$i] ?? [], $defPartyMode, $data['party'] ?? null);
+        foreach ($plateIds as $i => $pid) company_set_vehicle_kind($pdo, $pid, $vkinds[$i] ?? '');   // موتورسیکلت
 
         // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
         $siteRoot = dirname(__DIR__);
@@ -1585,6 +1593,7 @@ try {
         $newPlateId = $pdo->lastInsertId();
         // ردیفِ بی‌تنظیم از پیش‌فرضِ کلیِ درخواست پیروی می‌کند
         party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null]);
+        company_set_vehicle_kind($pdo, intval($newPlateId), $data['vehicle_kind'] ?? '');
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
         company_sync_plate_status($pdo, $newPlateId);
         echo json_encode(['ok' => true, 'plate_id' => $newPlateId]);
@@ -2312,6 +2321,8 @@ try {
                 $insuranceType, $expiry, $hasPrevBody, !empty($data['skip_health_inspection']) ? 1 : 0,
                 trim($data['car_name'] ?? '') ?: null, trim($data['row_note'] ?? '') ?: null, $plateId,
             ]);
+        // پلاکِ موتور خانه‌ی چهارم ندارد؛ نوعِ وسیله (موتورسیکلت/خودرو)
+        if (array_key_exists('vehicle_kind', $data) || trim($data['plate_letter'] ?? '') === 'موتور') company_set_vehicle_kind($pdo, $plateId, $data['vehicle_kind'] ?? '');
         // شناسه‌های خودروی بدونِ پلاک و مبالغ، جدا بروز می‌شوند (رشته‌ی خالی یعنی «پاک کن»)
         $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, engine_no = ?, is_new_vehicle = ?,
                           car_value = ?, liability_limit = ?, ref_policy_number = ?,

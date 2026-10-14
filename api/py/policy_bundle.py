@@ -140,6 +140,7 @@ def extract_insurance_data(raw_text):
             # چیدمانِ برعکسِ بعضی PDFها: «12 ایران 345 ب 66» (کد شهر، ایران، سه رقم، حرف، دو رقم)
             m5 = re.search(r'(\d{2})\s*ایران\s*(\d{3})\s*([آ-یa-zA-Z])\s*(\d{2})(?!\d)', pt)
             if m5: data["plate"] = f"{m5.group(1)}ایران {m5.group(2)} {m5.group(3)} {m5.group(4)}"
+            elif parse_moto_plate(pt): data["plate"] = parse_moto_plate(pt)   # موتورسیکلت
 
     # حق بیمه (برای ساختِ اقساط): بزرگ‌ترین مبلغی که بلافاصله بعد از عبارت‌های «حق بیمه ...» آمده
     best = 0
@@ -272,7 +273,14 @@ FA_SCALE = {'هزار': 10 ** 3, 'میلیون': 10 ** 6, 'ملیون': 10 ** 6,
 
 
 def fa_words_to_int(text):
-    toks = [t for t in re.split(r'[\s\u200c]+|(?<=\S)و(?=\s)', re.sub(r'ریال|تومان|حداکثر|تا', ' ', text or '')) if t and t != 'و']
+    # «و»ِ چسبیده‌ی عطف («بیستو هشت») جدا می‌شود، ولی «دو» و «سو» خودشان عددند (قبلاً «دو میلیارد» یک میلیارد خوانده می‌شد)
+    toks = []
+    for t in re.split(r'[\s\u200c]+', re.sub(r'ریال|تومان|حداکثر|تا', ' ', text or '')):
+        if not t or t == 'و':
+            continue
+        if t not in FA_NUM and t not in FA_SCALE and t.endswith('و') and (t[:-1] in FA_NUM or t[:-1] in FA_SCALE):
+            t = t[:-1]
+        toks.append(t)
     total, cur, seen = 0, 0, False
     for t in toks:
         if re.fullmatch(r'\d+', t):
@@ -321,7 +329,18 @@ def parse_plate(text):
         if m:
             region, three, letter, two = fn(m)
             return '%sایران %s %s %s' % (region, three, letter, two)
-    return ''
+    return parse_moto_plate(t)
+
+
+def parse_moto_plate(t):
+    """پلاکِ موتورسیکلت (کد شهر ۳ رقم + شماره‌ی ۵ رقمی، مثلِ «۷۶۲۲۴ ایران ۵۸۳») → «583-76224»"""
+    t = (t or '').replace('\u200e', '').replace('\u200f', '')
+    m = re.search(r'(?<!\d)(\d{3})\s{0,3}ایران\s{0,3}(\d{5})(?!\d)', t) or re.search(r'(?<!\d)(\d{5})\s{0,3}ایران\s{0,3}(\d{3})(?!\d)', t)
+    if not m:
+        return ''
+    a, b = m.group(1), m.group(2)
+    city, num = (a, b) if len(a) == 3 else (b, a)
+    return '%s-%s' % (city, num)
 
 
 def footer_counter(spans, page_h):
@@ -521,12 +540,23 @@ def extract_layout(page):
         if d.get('premium'):
             break
 
+    # «سیستم: کویر   تیپ: آیروکس۱۵۰» در یک تکه (ثالثِ موتورسیکلت)؛ عددی که به آخرِ سیستم چسبیده در اصل مالِ تیپ است
+    for s_ in sp:
+        m = re.match(r'^\s*سیستم\s*:\s*(.+?)\s*تیپ\s*:\s*(.+?)\s*$', s_['t'])
+        if m:
+            sysv, tipv = m.group(1).strip(' -'), m.group(2).strip(' -')
+            mm = re.match(r'^(.*?[^\d\s])\s*(\d+)$', sysv)
+            if mm and not re.search(r'\d', tipv):
+                sysv, tipv = mm.group(1), tipv + ' ' + mm.group(2)
+            if sysv and ':' not in sysv: d['car_system'] = sysv
+            if tipv and ':' not in tipv: d['car_tip'] = tipv
+            break
     # برچسب و مقدار در یک تکه (قالبِ ثالثِ پاسارگاد): «نوع: سواری»، «سیستم: سایپا»، «۱۴۰۲ :مدل»، «M155... :شماره موتور»
     for key, lab in [('car_kind', r'نوع'), ('car_system', r'سیستم'), ('car_tip', r'تیپ'), ('model_year', r'مدل'), ('color', r'رنگ'),
                      ('usage', r'مورد\s*استفاده|کاربری'), ('engine_no', r'شماره\s*موتور'), ('chassis', r'شماره\s*شاسی'),
                      ('capacity', r'ظرفیت'), ('cylinders', r'تعداد\s*سیلندر')]:
         v = inline_kv(sp, lab)
-        if v:
+        if v and not (key in ('car_system', 'car_tip') and d.get(key)):
             d[key] = v
     # «شماره شاسی» و «VIN» جدا: شاسی همیشه در chassis_no؛ VIN فقط از برچسبِ خودش (اگر نبود، آخرِ کار از شاسیِ ۱۷ رقمی)
     if d.get('chassis'):

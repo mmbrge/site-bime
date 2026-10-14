@@ -207,6 +207,12 @@ try {
         $person = resolve_main_session($pdo, $data['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
+        if (!empty($data['moto'])) {   // پلاکِ موتورسیکلت: کد شهر ۳ رقم + شماره‌ی ۵ رقم
+            $city = preg_replace('/\D/', '', p2e_digits($data['moto_city'] ?? ''));
+            $num = preg_replace('/\D/', '', p2e_digits($data['moto_num'] ?? ''));
+            if (strlen($city) !== 3 || strlen($num) !== 5) { echo json_encode(['ok' => false, 'error' => 'پلاکِ موتور کامل نیست (کد شهر ۳ رقم و شماره ۵ رقم).'], JSON_UNESCAPED_UNICODE); exit; }
+            $plate = moto_plate_make($city, $num);
+        } else {
         $region = preg_replace('/\D/', '', $data['region'] ?? '');
         $suffix = preg_replace('/\D/', '', $data['suffix'] ?? '');
         $prefix = preg_replace('/\D/', '', $data['prefix'] ?? '');
@@ -215,6 +221,7 @@ try {
             echo json_encode(['ok' => false, 'error' => 'پلاک وارد‌شده کامل نیست.']); exit;
         }
         $plate = "{$region}ایران - {$suffix} {$letter} {$prefix}";
+        }
 
         $stmt = $pdo->prepare("SELECT id FROM person_vehicles WHERE person_id = ? AND plate = ?");
         $stmt->execute([$person['id'], $plate]);

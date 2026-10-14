@@ -26,6 +26,9 @@ function dup_plate_key($s) {
     $s = str_replace(['ي', 'ك', 'ایران', 'ايران'], ['ی', 'ک', ' ', ' '], p2e_digits((string)$s));
     preg_match_all('/\d+/', $s, $m);
     $d = $m[0];
+    // موتورسیکلت: کد شهر ۳ رقم + شماره‌ی ۵ رقم (حرف ندارد)
+    if (count($d) === 2 && ((strlen($d[0]) === 3 && strlen($d[1]) === 5) || (strlen($d[0]) === 5 && strlen($d[1]) === 3)))
+        return 'M|' . (strlen($d[0]) === 3 ? $d[0] . '-' . $d[1] : $d[1] . '-' . $d[0]);
     if (count($d) < 3) return '';
     sort($d);
     preg_match('/[آ-ی]/u', $s, $l);
@@ -33,6 +36,7 @@ function dup_plate_key($s) {
 }
 function dup_plate_key_parts($p1, $p2, $letter, $p4) {
     if (!$p1 && !$p2 && !$p4) return '';
+    if (trim((string)$letter) === 'موتور') return dup_plate_key("$p1 $p2");
     return dup_plate_key("$p1 $p2 $letter $p4");
 }
 

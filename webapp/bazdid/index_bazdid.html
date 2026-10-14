@@ -263,7 +263,7 @@
 
   input[type=file] { display: none; }
 </style>
-<link rel="stylesheet" href="/plate.css?v=3">
+<link rel="stylesheet" href="/plate.css?v=4">
 </head>
 <body>
 
@@ -662,6 +662,8 @@ function fillAllTopbars(name, plate) {
 // خودش رندر می‌شود ولی چیدمان کلی همیشه دقیقاً چپ‌به‌راست و صحیح می‌ماند.
 function formatPlateHtml(plate) {
     if (!plate) return '';
+    { const _mp = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
+      if (_mp) { const _f = x => x.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${_f(_mp[1])}</b><span>${_f(_mp[2])}</span></span><span class="mt-ic">🏍</span></span>`; } }
     const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
     if (!m) return plate;
     const [, region, suffix, letter, prefix] = m;

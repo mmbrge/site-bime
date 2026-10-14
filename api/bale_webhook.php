@@ -155,7 +155,15 @@ function plate_letter_kb() {
 function plate_confirm_kb() {
     return ['inline_keyboard' => [[['text' => '✅ بله، درست است', 'callback_data' => 'pl:yes'], ['text' => '🔁 از نو بساز', 'callback_data' => 'pl:no']]]];
 }
+function plate_kind_kb() {
+    return ['inline_keyboard' => [[['text' => '🚗 خودرو', 'callback_data' => 'pl:kind:car'], ['text' => '🏍 موتورسیکلت', 'callback_data' => 'pl:kind:moto']]]];
+}
 function render_plate_text($ft) {
+    // پلاکِ موتورسیکلت: کد شهر (ردیفِ بالا، ۳ رقم) و شماره (ردیفِ پایین، ۵ رقم)
+    if (!empty($ft['moto'])) {
+        return "🏍 در حال ساخت پلاکِ موتور:\n\nکد شهر: " . e2p_php(($ft['mcity'] ?? '') ?: '___') . "\nشماره: " . e2p_php(($ft['mnum'] ?? '') ?: '_____');
+    }
+    if (($ft['stage'] ?? '') === 'kind') return "🚘 پلاکِ خودرو یا موتورسیکلت؟";
     $p = $ft['prefix'] ?? ''; $l = $ft['letter'] ?? ''; $s = $ft['suffix'] ?? ''; $r = $ft['region'] ?? '';
     return "🚘 در حال ساخت پلاک:\n\n" . e2p_php($r ?: '__') . "ایران   -   " . e2p_php($s ?: '___') . "   " . ($l ?: '_') . "   " . e2p_php($p ?: '__');
 }
@@ -164,10 +172,14 @@ function ask_plate_step($pdo, $chat_id, $personId, $bot_token, $editMsgId = null
     $stmt = $pdo->prepare("SELECT flow_temp FROM persons WHERE id = ?");
     $stmt->execute([$personId]);
     $ft = json_decode($stmt->fetchColumn() ?: '{}', true) ?: [];
-    $ft += ['stage' => 'prefix', 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => ''];
+    // اولِ کار: خودرو یا موتورسیکلت (بازدیدِ سلامت فقط برای خودرو است)
+    $ft += ['stage' => (($ft['purpose'] ?? '') === 'free_health' ? 'prefix' : 'kind'), 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => '', 'mcity' => '', 'mnum' => ''];
 
     $stage = $ft['stage'];
-    if ($stage === 'prefix') { $prompt = "دو رقم اول پلاک را وارد کنید:"; $kb = plate_digit_kb(); }
+    if ($stage === 'kind') { $prompt = "نوعِ وسیله را انتخاب کنید:"; $kb = plate_kind_kb(); }
+    elseif ($stage === 'mcity') { $prompt = "کد شهرِ پلاکِ موتور (۳ رقمِ ردیفِ بالا) را وارد کنید:"; $kb = plate_digit_kb(); }
+    elseif ($stage === 'mnum') { $prompt = "شماره‌ی پلاکِ موتور (۵ رقمِ ردیفِ پایین) را وارد کنید:"; $kb = plate_digit_kb(); }
+    elseif ($stage === 'prefix') { $prompt = "دو رقم اول پلاک را وارد کنید:"; $kb = plate_digit_kb(); }
     elseif ($stage === 'letter') { $prompt = "حرف پلاک را انتخاب کنید:"; $kb = plate_letter_kb(); }
     elseif ($stage === 'suffix') { $prompt = "سه رقم بعدی پلاک را وارد کنید:"; $kb = plate_digit_kb(); }
     elseif ($stage === 'region') { $prompt = "دو رقم کد «ایران» را وارد کنید:"; $kb = plate_digit_kb(); }
@@ -185,10 +197,21 @@ function ask_plate_step($pdo, $chat_id, $personId, $bot_token, $editMsgId = null
 }
 
 function handle_plate_callback($pdo, $data, $chatId, $person, $ft, $msgId, $bot_token) {
-    $ft += ['stage' => 'prefix', 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => ''];
+    $ft += ['stage' => (($ft['purpose'] ?? '') === 'free_health' ? 'prefix' : 'kind'), 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => '', 'mcity' => '', 'mnum' => ''];
     $parts = explode(':', $data);
 
-    if ($parts[1] === 'd') {
+    if ($parts[1] === 'kind') {
+        $ft['moto'] = ($parts[2] ?? '') === 'moto';
+        $ft['stage'] = $ft['moto'] ? 'mcity' : 'prefix';
+    } elseif ($parts[1] === 'd' && in_array($ft['stage'], ['mcity', 'mnum'], true)) {   // پلاکِ موتور
+        $digit = $parts[2];
+        if ($ft['stage'] === 'mcity' && strlen($ft['mcity']) < 3) $ft['mcity'] .= $digit;
+        elseif ($ft['stage'] === 'mnum' && strlen($ft['mnum']) < 5) $ft['mnum'] .= $digit;
+        if ($ft['stage'] === 'mcity' && strlen($ft['mcity']) == 3) $ft['stage'] = 'mnum';
+        elseif ($ft['stage'] === 'mnum' && strlen($ft['mnum']) == 5) $ft['stage'] = 'confirm';
+    } elseif ($parts[1] === 'bs' && in_array($ft['stage'], ['mcity', 'mnum'], true)) {
+        $ft[$ft['stage']] = substr($ft[$ft['stage']], 0, -1);
+    } elseif ($parts[1] === 'd') {
         $digit = $parts[2]; $stage = $ft['stage'];
         if ($stage === 'prefix' && strlen($ft['prefix']) < 2) $ft['prefix'] .= $digit;
         elseif ($stage === 'suffix' && strlen($ft['suffix']) < 3) $ft['suffix'] .= $digit;
@@ -206,7 +229,8 @@ function handle_plate_callback($pdo, $data, $chatId, $person, $ft, $msgId, $bot_
         $ft['letter'] = $parts[2]; $ft['stage'] = 'suffix';
     } elseif ($parts[1] === 'yes') {
         // فرمت نمایش دقیقاً مثل ظاهر فیزیکی پلاک (چپ به راست): کد ایران، سپس سه‌رقم-حرف-دورقم
-        $plateStr = $ft['region'] . 'ایران - ' . $ft['suffix'] . ' ' . $ft['letter'] . ' ' . $ft['prefix'];
+        $plateStr = !empty($ft['moto']) ? moto_plate_make($ft['mcity'], $ft['mnum'])
+                  : $ft['region'] . 'ایران - ' . $ft['suffix'] . ' ' . $ft['letter'] . ' ' . $ft['prefix'];
         $purpose = $ft['purpose'] ?? 'new';
 
         // ذخیره در «خودروهای من» برای انتخاب سریع در درخواست‌های بعدی
@@ -219,7 +243,7 @@ function handle_plate_callback($pdo, $data, $chatId, $person, $ft, $msgId, $bot_
         apply_chosen_plate($pdo, $chatId, $person, $plateStr, $purpose, $bot_token);
         return;
     } elseif ($parts[1] === 'no') {
-        $ft = ['stage' => 'prefix', 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => '', 'msg_id' => $ft['msg_id'] ?? null, 'purpose' => $ft['purpose'] ?? 'new'];
+        $ft = ['stage' => (($ft['purpose'] ?? '') === 'free_health' ? 'prefix' : 'kind'), 'prefix' => '', 'letter' => '', 'suffix' => '', 'region' => '', 'mcity' => '', 'mnum' => '', 'msg_id' => $ft['msg_id'] ?? null, 'purpose' => $ft['purpose'] ?? 'new'];
     }
 
     $pdo->prepare("UPDATE persons SET flow_temp = ? WHERE id = ?")->execute([json_encode($ft, JSON_UNESCAPED_UNICODE), $person['id']]);

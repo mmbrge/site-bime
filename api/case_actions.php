@@ -176,8 +176,21 @@ try {
         exit;
     }
 
+    // ---- مالک / بیمه‌گذار / ذینفعِ پرونده‌ی کارکنان (معرفی‌نامه همیشه به نامِ پرسنل) ----
+    if ($action === 'set_case_party') {
+        $caseId = intval($data['case_id'] ?? 0);
+        $p = pparty_save($pdo, $caseId, $data['party'] ?? null);
+        if (!$p) { echo json_encode(['ok' => false, 'error' => 'حالتِ مالک/بیمه‌گذار مشخص نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        // نسبتِ بیمه‌گذار با پرسنل هم هماهنگ می‌شود (بستگان => همان نسبت؛ خودِ پرسنل => «خودم»)
+        $rel = $p['mode'] === 'relative' ? $p['relation'] : 'خودم';
+        if (in_array($rel, relationship_options(), true)) $pdo->prepare("UPDATE policy_cases SET insured_relationship = ? WHERE id = ? AND status <> 'ISSUED'")->execute([$rel, $caseId]);
+        echo json_encode(['ok' => true, 'party' => $p], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'detail') {
         $caseId = intval($_GET['case_id'] ?? ($data['case_id'] ?? 0));
+        pparty_ensure($pdo);
         $stmt = $pdo->prepare("
             SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_national_code,
                    p.personnel_code AS holder_personnel_code, p.mobile_number AS holder_mobile, c.name AS company_name,
@@ -230,6 +243,7 @@ try {
         $proposal = proposal_get($pdo, $caseId);
         if ($proposal && !empty($proposal['data'])) $proposal['relation'] = proposal_relation($proposal['data'], ['national_code' => $case['holder_national_code'], 'full_name' => $case['holder_name']]);
         unset($case['proposal_json']);
+        $case['party'] = pparty_resolve($case, $proposal['relation'] ?? null);   // مالک / بیمه‌گذار / ذینفع
         // تکراری: همین خودرو و همین نوعِ بیمه (بیمه‌نامه‌ی صادرشده یا درخواستِ دیگر) + معرفی‌نامه‌ی دیگرِ همین پرسنل در همان ماه
         require_once __DIR__ . '/_dup.php';
         $dups = $case['status'] === 'ISSUED' ? [] : dup_find($pdo, ['vin' => $case['vin'] ?: $case['chassis_num'], 'engine' => $case['engine_num'], 'plate' => $case['plate'], 'type' => $case['insurance_type'], 'exclude_case' => $caseId]);
@@ -1084,6 +1098,7 @@ try {
                 foreach (['owner_name' => 120, 'owner_national_id' => 20, 'owner_relation' => 30, 'beneficiary' => 120, 'prop_check' => 400] as $rk => $rl) {
                     if (isset($rel[$rk]) && trim((string)$rel[$rk]) !== '') $info[$rk] = mb_substr(trim((string)$rel[$rk]), 0, $rl);
                 }
+                if (!empty($data['party'])) pparty_save($pdo, $caseId, $data['party']);   // حالتِ مالک/بیمه‌گذار
                 if (!empty($rel['insured_relationship']) && in_array($rel['insured_relationship'], relationship_options(), true)) {
                     $pdo->prepare("UPDATE policy_cases SET insured_relationship = ? WHERE id = ?")->execute([$rel['insured_relationship'], $caseId]);
                 }

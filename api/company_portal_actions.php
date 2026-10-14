@@ -194,7 +194,7 @@ try {
                                        insurance_type, status, expiry_date,
                                        skip_health_inspection, has_prev_body, car_name, car_type, row_note, policy_number, issued_at,
                                        issued_file_path, issued_file_path IS NOT NULL AS has_issued_file, selected_coverages, dup_of_source, dup_of_id,
-                                       party_mode, party_json, issue_info
+                                       party_mode, party_json, issue_info, vehicle_kind
                                 FROM company_request_plates WHERE request_id = ? ORDER BY id");
         require_once __DIR__ . '/_dup.php';
         dup_ensure($pdo);
@@ -611,6 +611,7 @@ try {
                 $newPlateId = intval($pdo->lastInsertId());
                 // مالک / بیمه‌گذار / ذینفع: جدا برای همین ردیف یا طبقِ انتخابِ کلیِ فرم
                 party_apply_from_input($pdo, $newPlateId, ['party_mode' => $p['party_mode'] ?? '', 'party' => $p['party'] ?? null], $partyDefMode, $partyDef);
+                company_set_vehicle_kind($pdo, $newPlateId, $p['vehicle_kind'] ?? '');   // موتورسیکلت
                 // پوشش‌های بدنه‌ی همین ردیف (جزئی) یا پیش‌فرضِ کلیِ فرم
                 if ($pInsType === 'BODY' && array_key_exists('coverages', $p) && $p['coverages'] !== null && $p['coverages'] !== '') {
                     $cov = company_clean_coverages($p['coverages']);

@@ -33,6 +33,7 @@ function plate_core_php($text) {
     if (preg_match('/(\d{2})([آ-ی])(\d{3})/u', $text, $m)) {
         return $m[1] . $m[2] . $m[3];
     }
+    if ($mp = moto_plate_parse($text)) return 'M' . $mp[0] . $mp[1];   // پلاکِ موتورسیکلت
     return null;
 }
 
