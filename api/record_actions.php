@@ -5,6 +5,7 @@ require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
+companies_extra_ensure($pdo);   // شرکت‌های ساخته‌شده از معرفی‌نامه (auto_created)
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -125,10 +126,7 @@ try {
         $pdo->beginTransaction();
         $companyId = null;
         if ($companyName !== '') {
-            $st = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
-            $st->execute([$companyName]);
-            $companyId = $st->fetchColumn() ?: null;
-            if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+            $companyId = company_find_or_create_intro($pdo, $companyName);   // شرکتِ تازه: «اطلاعات ناقص» در صفحه‌ی شرکت‌ها
         }
         $st = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
         $st->execute([$nationalCode]);
@@ -213,10 +211,7 @@ try {
         try {
             $companyId = $I['company_id'] ?: null;
             if ($companyName !== '' && $companyName !== $oldCompany) {
-                $st = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
-                $st->execute([$companyName]);
-                $companyId = $st->fetchColumn() ?: null;
-                if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+                $companyId = company_find_or_create_intro($pdo, $companyName);
             }
             // خانه‌ی خالی = همان مقدارِ قبلی (هیچ اطلاعاتی با خالی گذاشتن پاک نمی‌شود)
             $pdo->prepare("UPDATE persons SET full_name = ?, company_id = ?, mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")->execute([$fullName, $companyId, $mobile, $personId]);
@@ -421,14 +416,7 @@ try {
         // ثبت شرکت
         $company_id = null;
         if (!empty($company_name)) {
-            $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
-            $stmt->execute([$company_name]);
-            $company_id = $stmt->fetchColumn();
-            if (!$company_id) {
-                $stmt = $pdo->prepare("INSERT INTO companies (name) VALUES (?)");
-                $stmt->execute([$company_name]);
-                $company_id = $pdo->lastInsertId();
-            }
+            $company_id = company_find_or_create_intro($pdo, $company_name);
         }
 
         // ثبت یا آپدیت پرسنل
@@ -498,10 +486,7 @@ try {
 
                 $companyId = null;
                 if ($companyName !== '') {
-                    $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
-                    $stmt->execute([$companyName]);
-                    $companyId = $stmt->fetchColumn() ?: null;
-                    if (!$companyId) { $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([$companyName]); $companyId = $pdo->lastInsertId(); }
+                    $companyId = company_find_or_create_intro($pdo, $companyName);
                 }
                 $stmt = $pdo->prepare("SELECT id FROM persons WHERE national_code = ?");
                 $stmt->execute([$nationalCode]);
@@ -652,6 +637,12 @@ try {
     }
 
     // گزینه‌های فرمِ ثبتِ دستی (پوشش‌های بدنه، سقف‌های تعهد) - همان فهرستِ ربات
+    // نامِ شرکت‌ها برای پیشنهادِ «شرکتِ موجود» در فرم‌های معرفی‌نامه (company-pick.js)
+    if ($action === 'company_names') {
+        $rows = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['ok' => true, 'companies' => $rows], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'manual_form_options') {
         echo json_encode(['ok' => true, 'coverages' => body_coverage_options(), 'liability' => liability_limit_options(),
                           'relationships' => relationship_options()], JSON_UNESCAPED_UNICODE);

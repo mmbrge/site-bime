@@ -3025,6 +3025,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <input type="search" id="cm-q" oninput="renderCompanyCards()" placeholder="جستجو: نام شرکت، کد اقتصادی، تلفن، شرکت مادر..." class="w-full border-2 border-slate-200 focus:border-indigo-400 rounded-xl pr-8 pl-3 py-2 text-xs"></div>
                 <select id="cm-f-pay" onchange="renderCompanyCards()" class="border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی روش‌های تسویه</option><option value="INSTALLMENT">قسطی</option><option value="CASH_NET30">نقدی ۳۰ روزه</option><option value="CASH_IMMEDIATE">نقدی فوری</option><option value="NONE">مشخص نشده</option></select>
                 <select id="cm-f-ins" onchange="renderCompanyCards()" class="border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی بیمه‌گرها</option><option value="BOTH">هردو</option><option value="PASARGAD">فقط پاسارگاد</option><option value="IRAN">فقط ایران</option></select>
+                <select id="cm-f-info" onchange="renderCompanyCards()" class="border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه (کامل و ناقص)</option><option value="INCOMPLETE">اطلاعات ناقص</option><option value="INTRO">ساخته‌شده از معرفی‌نامه</option></select>
                 <button onclick="loadCompanyManage()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt ml-1"></i>بروزرسانی</button>
                 <button onclick="switchTab('staff-users'); setUserTypeFilter('COMPANY')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-users ml-1"></i>کاربرانِ شرکت‌ها</button>
                 <span id="cm-count" class="mr-auto text-[11px] font-bold text-slate-400"></span>
@@ -3607,6 +3608,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <option value="IRAN">فقط ایران</option>
                             </select>
                             <label>بیمه‌گر(های) مجاز</label>
+                        </div>
+                        <div class="float-input sm:col-span-2">
+                            <select id="cm-other-owner">
+                                <option value="">ذینفع شود · بیمه‌گذار: خودِ شرکت (پیش‌فرض)</option>
+                                <option value="OWNER">بیمه‌گذار: همان مالکِ مدرک</option>
+                            </select>
+                            <label>اگر مالکِ سند/فاکتورِ خودرو کسِ دیگری بود</label>
                         </div>
                     </div>
                     <p id="cm-contract-hint" class="text-[10.5px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 leading-6">نقد/اقساط، تعداد قسط و سررسیدِ اول از قراردادِ انتخاب‌شده می‌آید.</p>
@@ -4357,8 +4365,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="work-log.js?v=11"></script>
     <script src="import-archive.js?v=2"></script>
     <script src="renewals.js?v=2"></script>
-    <script src="endorse.js?v=4"></script>
+    <script src="endorse.js?v=5"></script>
     <script src="party-ui.js?v=2"></script>
+    <script src="company-pick.js?v=1"></script>
     <script src="legacy-import.js?v=1"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
@@ -4373,7 +4382,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=16"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=8"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=5"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=9"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -4409,6 +4418,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                   ${kind !== 'case' ? li('fa-layer-group', (kind === 'creq' ? 'ردیف‌ها: ' : 'درخواست‌ها: ') + e2pNum(pv.cases) + (pv.issued ? ' (' + e2pNum(pv.issued) + ' صادرشده)' : '')) : (pv.issued ? li('fa-certificate', 'بیمه‌نامه‌ی صادرشده') : '')}
                   ${li('fa-file-lines', 'مدارک: ' + e2pNum(pv.documents))}
                   ${li('fa-calendar-days', 'اقساط: ' + e2pNum(pv.installments) + (pv.paid ? ' - تخصیصِ ' + e2pNum(Number(pv.paid).toLocaleString('en-US')) + ' ریال دریافتی برداشته می‌شود (خودِ دریافت می‌ماند)' : ''))}
+                  ${pv.endorsements ? li('fa-file-circle-plus', 'الحاقیه‌های این بیمه‌نامه‌ها: ' + e2pNum(pv.endorsements) + ' (با فایلِ الحاقیه و بیمه‌نامه‌ی نهایی)') : ''}
+                  ${pv.endo_linked ? li('fa-rotate-left', 'الحاقیه/فسخی که این درخواست روی بیمه‌نامه‌های دیگر ثبت کرده: ' + e2pNum(pv.endo_linked) + ' - اثرِ مالی‌شان برگردانده می‌شود') : ''}
                   ${li('fa-box-archive', 'پوشه‌ها و فایل‌ها در بایگانی (کسر از حقوق، صادره، موقت) و شمارِ معرفی‌نامه')}
                   ${pv.invoiced ? li('fa-file-invoice', 'صورتحساب‌های صادرشده دست نمی‌خورند') : ''}
                 </ul>
@@ -5339,6 +5350,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const names = [...new Set((d.companies || []).map(c => c.name))];
                 document.getElementById('mi-companies-dl').innerHTML = names.map(n => `<option value="${n}">`).join('');
             }).catch(() => {});
+            if (window.CompanyPick) { CompanyPick.reload(); CompanyPick.attach(miEl('company_name')); CompanyPick.refresh(miEl('company_name')); }
             openModal('manual-intro-modal');
         }
         function closeManualIntroModal() { closeModal('manual-intro-modal'); }
@@ -5364,6 +5376,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     e.classList.remove('auto'); void e.offsetWidth; e.classList.add('auto'); n++;
                 });
                 showToast(n ? `${e2p(n)} فیلد از روی معرفی‌نامه پر شد؛ بقیه را کامل کنید.` : 'معرفی‌نامه تشخیص داده شد ولی فیلدی خوانده نشد؛ دستی وارد کنید.', n ? 'success' : 'warning');
+                if (window.CompanyPick) CompanyPick.refresh(miEl('company_name'));
             }
         }
         function miRemoveFile() { miToken = null; miShow('drop'); miAlert(); }
@@ -5723,6 +5736,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('review-national-code').value = g('national_id', 'national_code');
             document.getElementById('review-personnel-code').value = g('personnel_id', 'personnel_code');
             document.getElementById('review-company').value = g('company_name');
+            if (window.CompanyPick) { const rc = document.getElementById('review-company'); CompanyPick.attach(rc); CompanyPick.refresh(rc); }
             document.getElementById('review-letterdate').value = faDigits(g('letter_date'));
             document.getElementById('review-policy').value = g('policy_num', 'policy_number');
             document.getElementById('review-uniquecode').value = g('central_no', 'unique_code');
@@ -9418,7 +9432,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 + kpi(n('open_requests'), 'درخواستِ باز', 'fa-folder-open') + kpi(n('issued_count'), 'بیمه‌نامه‌ی صادره', 'fa-file-circle-check');
             const q = (document.getElementById('cm-q').value || '').trim().toLowerCase();
             const fp = document.getElementById('cm-f-pay').value, fi = document.getElementById('cm-f-ins').value;
+            const fn = (document.getElementById('cm-f-info') || {}).value || '';
             const rows = list.filter(c => {
+                if (fn === 'INCOMPLETE' && !Number(c.incomplete)) return false;
+                if (fn === 'INTRO' && c.auto_created !== 'INTRO') return false;
                 if (fp === 'NONE' ? c.payment_terms : (fp && c.payment_terms !== fp)) return false;
                 if (fi && (c.allowed_insurers || 'BOTH') !== fi) return false;
                 if (!q) return true;
@@ -9442,6 +9459,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>
                         ${c.bale_group_chat_id ? '<span class="cmx-chip bg-emerald-50 text-emerald-700" title="گروه بله وصل است"><i class="fas fa-paper-plane"></i>بله</span>' : ''}
                     </div>
+                    ${Number(c.incomplete) ? `<div class="px-4 pt-2"><button onclick="editCompany(${c.id})" class="cmx-chip bg-red-50 text-red-700 font-black" title="کد اقتصادی/شناسه ملی، تلفن یا نشانی وارد نشده؛ برای تکمیل کلیک کنید"><i class="fas fa-triangle-exclamation"></i>اطلاعات ناقص${c.auto_created === 'INTRO' ? ' · از معرفی‌نامه' : ''}</button></div>` : ''}
                     <div class="px-4 pt-3 flex flex-wrap gap-1.5">
                         <span class="cmx-chip ${c.contract_name || c.payment_terms ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'}"><i class="fas ${c.contract_name ? 'fa-file-contract' : 'fa-sack-dollar'}"></i>${c.contract_name ? iiEsc(c.contract_name) + (c.contract_key ? ' (' + c.contract_key + ')' : '') : (PAY_FA[c.payment_terms] || 'قرارداد: مشخص نشده')}</span>
                         ${c.installment_count ? `<span class="cmx-chip bg-indigo-50 text-indigo-700"><i class="fas fa-list-ol"></i>${e2pNum(c.installment_count)} قسط${Number(c.first_due_offset_months) ? ` | اولی ${e2pNum(c.first_due_offset_months)} ماه بعد` : ''}</span>` : ''}
@@ -9534,7 +9552,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-group-select').value = '';
             cmLoadContracts('');
             document.getElementById('cm-allowed-insurers').value = 'BOTH';
-
+            document.getElementById('cm-other-owner').value = '';
         }
 
         // قراردادهای پرداخت برای فرمِ شرکت
@@ -9568,6 +9586,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-parent-company').value = c.parent_id || '';
             cmLoadContracts(c.contract_id || '');
             document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
+            document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
 
             const groupSel = document.getElementById('cm-group-select');
             if (c.bale_group_chat_id && [...groupSel.options].some(o => o.value == c.bale_group_chat_id)) {
@@ -9591,6 +9610,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 name,
                 contract_id: document.getElementById('cm-contract').value,
                 allowed_insurers: document.getElementById('cm-allowed-insurers').value,
+                other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),
@@ -13822,6 +13842,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.addEventListener('click', e => { if (e.target === box) close(); });
             const q = k => box.querySelector(`[data-f="${k}"]`);
             let token = '';
+            if (window.CompanyPick) CompanyPick.attach(q('company_name'));   // نامِ کاملِ شرکتِ موجود را بشود انتخاب کرد
             // فایلِ تازه: مثلِ ثبتِ دستی خوانده می‌شود و اگر چیزی تشخیص داد، فیلدها (به‌جز کد ملی و کد پرسنلی) پیشنهاد می‌شوند
             box.querySelector('[data-file]').onchange = async ev => {
                 const f = ev.target.files[0]; if (!f) return;

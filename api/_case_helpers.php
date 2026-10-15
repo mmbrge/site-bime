@@ -2086,3 +2086,49 @@ function policy_issue_ts($jalali, $fallback = null) {
     }
     return $fallback ?: time();
 }
+
+// =====================================================================
+//  شرکت‌ها: ستون‌های افزودنی (خودکار، بی‌آسیب به داده‌های قبلی)
+//   auto_created     : 'INTRO' = از معرفی‌نامه ساخته شده و باید در صفحه‌ی شرکت‌ها تکمیل شود
+//   other_owner_mode : وقتی مالکِ مدرکِ خودرو کسِ دیگری است: BENEFICIARY (ذینفع؛ بیمه‌گذار = شرکت، پیش‌فرض) یا OWNER (بیمه‌گذار = همان مالک)
+// =====================================================================
+// ALTER داخلِ تراکنش آن را بی‌صدا commit می‌کند: داخلِ تراکنش فقط بررسی می‌شود (ستون‌ها را فراخوانیِ اولِ فایل‌ها می‌سازد)
+function companies_extra_ensure($pdo) {
+    static $ok = null;
+    if ($ok) return true;
+    $ok = true;
+    foreach (['auto_created' => 'VARCHAR(16) NULL', 'other_owner_mode' => 'VARCHAR(16) NULL'] as $c => $def) {
+        try {
+            if ($pdo->query("SHOW COLUMNS FROM companies LIKE '$c'")->fetch()) continue;
+            if ($pdo->inTransaction()) { $ok = false; continue; }
+            $pdo->exec("ALTER TABLE companies ADD COLUMN `$c` $def");
+        } catch (Throwable $e) { $ok = false; error_log('[companies_extra_ensure] ' . $e->getMessage()); }
+    }
+    return $ok;
+}
+
+// نامِ شرکت برای مقایسه: بی‌فاصله، ی/ک یکسان، بدونِ «شرکت/سهامی خاص/…» و علامت‌ها
+function company_name_key($s) {
+    $s = str_replace(['ي', 'ك', 'ة', 'أ', 'إ', 'آ'], ['ی', 'ک', 'ه', 'ا', 'ا', 'ا'], p2e_digits((string)$s));
+    $s = preg_replace('/(شرکت|سهامی|خاص|عام|مسئولیت|محدود|تعاونی|موسسه|مؤسسه|گروه|صنعتی|و\s*شرکا)/u', '', $s);
+    return mb_strtolower(preg_replace('/[\s\x{200B}-\x{200F}\x{202A}-\x{202E}\-ـ«»"\'().،,_\/]+/u', '', $s));
+}
+
+// شرکتِ معرفی‌نامه: همان نام، یا (اگر فقط یک شرکت با همان نامِ ساده‌شده هست) همان شرکت؛ وگرنه شرکتِ تازه با اطلاعاتِ ناقص
+function company_find_or_create_intro($pdo, $name) {
+    $name = trim(preg_replace('/\s+/u', ' ', (string)$name));
+    if ($name === '') return null;
+    $cols = companies_extra_ensure($pdo);
+    $st = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
+    $st->execute([$name]);
+    if ($id = $st->fetchColumn()) return (int)$id;
+    $key = company_name_key($name);
+    if ($key !== '') {
+        $hit = [];
+        foreach ($pdo->query("SELECT id, name FROM companies WHERE is_import = 0") as $r) if (company_name_key($r['name']) === $key) $hit[] = (int)$r['id'];
+        if (count($hit) === 1) return $hit[0];
+    }
+    if ($cols) $pdo->prepare("INSERT INTO companies (name, auto_created) VALUES (?, 'INTRO')")->execute([mb_substr($name, 0, 190)]);
+    else $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([mb_substr($name, 0, 190)]);
+    return (int)$pdo->lastInsertId();
+}

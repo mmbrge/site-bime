@@ -298,7 +298,9 @@ try {
     }
 
     if ($action === 'delete') {
-        $out(endo_delete($pdo, intval($data['id'] ?? 0)));
+        // انتخابِ اثرها: برگرداندنِ اثرِ مالی، حذفِ فایلِ الحاقیه، حذفِ بیمه‌نامه‌ی نهایی (پیش‌فرض: همه)
+        $opt = function ($k) use ($data) { return !array_key_exists($k, $data) || !empty($data[$k]); };
+        $out(endo_delete($pdo, intval($data['id'] ?? 0), ['finance' => $opt('revert_finance'), 'file' => $opt('delete_file'), 'final' => $opt('delete_final')]));
     }
 
     // بستانکاریِ استردادِ نقدی پرداخت شد / نشد

@@ -533,16 +533,22 @@ function endo_final_premium($pdo, $source, $refId) {
     return $r ? (int)($r['final_premium'] ?? money_to_int($r['total_premium'])) : null;
 }
 
-function endo_delete($pdo, $id, $deleteFile = true) {
+// $opts: true/false (همه‌ی فایل‌ها پاک شوند یا نه؛ سازگار با قبل) یا ['finance' => برگرداندنِ اثرِ مالی،
+//        'file' => حذفِ فایلِ الحاقیه، 'final' => حذفِ بیمه‌نامه‌ی نهایی] (پیش‌فرضِ هر سه: بله)
+function endo_delete($pdo, $id, $opts = true) {
     endo_ensure($pdo);
+    $o = is_array($opts) ? $opts : ['file' => (bool)$opts, 'final' => (bool)$opts];
+    $o += ['finance' => true, 'file' => true, 'final' => true];
     $st = $pdo->prepare("SELECT * FROM policy_endorsements WHERE id = ?");
     $st->execute([$id]);
     $e = $st->fetch();
     if (!$e) return ['ok' => false, 'error' => 'الحاقیه پیدا نشد.'];
     $pdo->beginTransaction();
     try {
-        $r = endo_revert_finance($pdo, $e);
-        if (empty($r['ok'])) { $pdo->rollBack(); return $r; }
+        if ($o['finance']) {
+            $r = endo_revert_finance($pdo, $e);
+            if (empty($r['ok'])) { $pdo->rollBack(); return $r; }
+        }
         $pdo->prepare("DELETE FROM policy_endorsements WHERE id = ?")->execute([$id]);
         endo_recompute($pdo, $e['source'], (int)$e['ref_id']);
         $pdo->commit();
@@ -550,19 +556,21 @@ function endo_delete($pdo, $id, $deleteFile = true) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         return ['ok' => false, 'error' => 'حذف ممکن نشد: ' . $ex->getMessage()];
     }
-    if ($deleteFile && in_array($e['source'], ['C', 'P'], true) && ($e['file_path'] || $e['final_file_path'])) {
+    $delFile = $o['file'] && !empty($e['file_path']);
+    $delFinal = $o['final'] && !empty($e['final_file_path']);
+    if (($delFile || $delFinal) && in_array($e['source'], ['C', 'P'], true)) {
         $pol = endo_load_policy($pdo, $e['source'], (int)$e['ref_id']);
         if ($pol) {
             require_once __DIR__ . '/_pdf_split.php';
             $names = [];
-            if ($e['file_path']) $names[] = basename($e['file_path']);
-            if ($e['final_file_path']) { $fa = dirname(__DIR__) . '/' . $e['final_file_path']; array_push($names, basename($fa), basename(policy_conditions_path($fa)), basename(policy_extras_path($fa))); }
+            if ($delFile) $names[] = basename($e['file_path']);
+            if ($delFinal) { $fa = dirname(__DIR__) . '/' . $e['final_file_path']; array_push($names, basename($fa), basename(policy_conditions_path($fa)), basename(policy_extras_path($fa))); }
             endo_remove_from_copies($pdo, dirname(__DIR__), $e['source'], $pol['row'], $names);
         }
     }
-    if ($deleteFile && $e['file_path']) @unlink(dirname(__DIR__) . '/' . $e['file_path']);
-    if ($deleteFile && !empty($e['final_file_path'])) endo_unlink_final(dirname(__DIR__) . '/' . $e['final_file_path']);
-    return ['ok' => true];
+    if ($delFile) @unlink(dirname(__DIR__) . '/' . $e['file_path']);
+    if ($delFinal) endo_unlink_final(dirname(__DIR__) . '/' . $e['final_file_path']);
+    return ['ok' => true, 'finance_reverted' => (bool)$o['finance'], 'file_deleted' => $delFile, 'final_deleted' => $delFinal];
 }
 
 // بیمه‌نامه‌ای که بعداً در سایت ثبت شد: الحاقیه‌های «بیرونی» (X) با همان شماره به آن وصل می‌شوند (بدونِ اثرِ مالی)

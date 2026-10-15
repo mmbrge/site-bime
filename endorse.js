@@ -427,7 +427,7 @@
             P.open = P.open === x.id ? null : x.id;
             body.querySelectorAll('tr[data-d]').forEach(d => d.classList.toggle('hidden', Number(d.dataset.d) !== P.open));
         });
-        body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => del(Number(b.dataset.del)));
+        body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => del(P.rows.find(r => r.id === Number(b.dataset.del)) || Number(b.dataset.del)));
         bindFinalUpload(body, load);
         body.querySelectorAll('[data-paid]').forEach(c => c.onchange = async () => {
             const r2 = await post({action: 'credit_paid', id: Number(c.dataset.paid), paid: c.checked ? 1 : 0});
@@ -447,14 +447,38 @@
                 ${(pl.new || []).length ? `<table class="en-tb mt-1"><tr><th>قسطِ تازه</th><th>سررسید</th><th>مبلغ</th></tr>${pl.new.map((n, i) => `<tr><td>${fa(i + 1)}</td><td>${fa(n.due)}</td><td>${money(n.amount)}</td></tr>`).join('')}</table>` : ''}
                 ${!(pl.changes || []).length && !(pl.new || []).length ? '<p class="text-slate-400">اقساط تغییری نکرد.</p>' : ''}</div></div>`;
     }
-    function del(id) {
-        const go = async () => {
-            const r = await post({action: 'delete', id});
-            toast(r.ok ? 'الحاقیه حذف و اثرِ مالی‌اش برگردانده شد.' : (r.error || 'خطا'), r.ok ? 'success' : 'error');
-            if (r.ok) load();
+    // حذفِ تکیِ الحاقیه با انتخابِ اثرها: برگرداندنِ اثرِ مالی، حذفِ فایلِ الحاقیه، حذفِ بیمه‌نامه‌ی نهایی
+    function del(x, after) {
+        if (typeof x !== 'object') x = (P.rows || []).find(r => r.id === Number(x)) || { id: Number(x) };
+        const hasFin = x.finance_mode && x.finance_mode !== 'NONE';
+        const box = document.createElement('div');
+        box.className = 'modal-overlay active'; box.style.zIndex = '1000003';
+        const ck = (k, label, on, dis, hint) => `<label class="flex items-start gap-2 p-2 rounded-xl border ${dis ? 'opacity-50' : 'hover:bg-slate-50 cursor-pointer'}"><input type="checkbox" data-o="${k}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''} class="mt-1">
+            <span><b class="text-[12px]">${label}</b>${hint ? `<small class="block text-[10.5px] text-slate-500">${hint}</small>` : ''}</span></label>`;
+        box.innerHTML = `<div class="modal-content w-full max-w-md p-5 relative">
+            <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-base text-slate-800 mb-1"><i class="fas fa-trash text-rose-500 ml-1"></i>حذفِ الحاقیه</h3>
+            <p class="text-[11px] text-slate-500 mb-3">${esc(x.kind_fa || '')} ${x.endorse_no ? 'شماره‌ی ' + fa(x.endorse_no) : ''} ${x.policy_number ? '· بیمه‌نامه‌ی <span dir="ltr">' + esc(fa(x.policy_number)) + '</span>' : ''}</p>
+            <div class="space-y-2">
+              ${ck('revert_finance', 'برگرداندنِ اثرِ مالی', hasFin, !hasFin, hasFin ? 'اقساطی که این الحاقیه ساخته/تغییر داده به حالتِ قبل برمی‌گردد (' + esc(x.finance_fa || '') + ')' : 'این الحاقیه اثرِ مالی نداشته است.')}
+              ${ck('delete_file', 'حذفِ فایلِ الحاقیه', !!x.file_path, !x.file_path, x.file_path ? 'از پوشه‌ی بیمه‌نامه و همه‌ی کپی‌هایش در بایگانی' : 'فایلی ندارد.')}
+              ${ck('delete_final', 'حذفِ بیمه‌نامه‌ی نهایی (بعد از الحاقیه)', !!x.final_file_path, !x.final_file_path, x.final_file_path ? 'با شرایط/صفحه‌های جداشده‌اش' : 'بیمه‌نامه‌ی نهایی ثبت نشده.')}
+            </div>
+            <p class="text-[10.5px] text-slate-400 mt-2">گزینه‌ای که تیکش برداشته شود همان‌طور می‌ماند؛ خودِ ردیفِ الحاقیه در هر حال حذف می‌شود.</p>
+            <button type="button" data-ok class="w-full mt-3 bg-rose-600 hover:bg-rose-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-trash ml-1"></i>حذفِ الحاقیه</button></div>`;
+        document.body.appendChild(box);
+        const close = () => box.remove();
+        box.querySelector('[data-x]').onclick = close;
+        box.addEventListener('click', e => { if (e.target === box) close(); });
+        box.querySelector('[data-ok]').onclick = async () => {
+            const o = k => { const c = box.querySelector(`[data-o="${k}"]`); return c && !c.disabled && c.checked ? 1 : 0; };
+            const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ حذف...';
+            const r = await post({ action: 'delete', id: x.id, revert_finance: o('revert_finance'), delete_file: o('delete_file'), delete_final: o('delete_final') });
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-trash ml-1"></i>حذفِ الحاقیه'; return; }
+            close();
+            toast('الحاقیه حذف شد' + (r.finance_reverted && hasFin ? ' و اثرِ مالی‌اش برگشت' : '') + '.', 'success');
+            if (typeof after === 'function') after(); else load();
         };
-        if (typeof showConfirm === 'function') showConfirm('حذفِ الحاقیه', 'الحاقیه حذف می‌شود و تغییراتی که روی اقساط داده بود برمی‌گردد. ادامه می‌دهید؟', go);
-        else if (confirm('حذف شود؟')) go();
     }
 
     // فهرستِ الحاقیه‌های یک بیمه‌نامه داخلِ پنجره‌های دیگر: <div data-endolist="C:12">
@@ -470,10 +494,11 @@
                 ${rows.map(x => `<tr><td><span class="en-badge ${KIND_CLS[x.kind] || ''}">${esc(x.kind_fa)}</span></td><td>${fa(x.endorse_no || '—')}</td>
                     <td>${fa(x.issue_date || '')} · ${fa(x.effect_date || '')}</td><td class="font-bold ${x.signed >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${smoney(x.signed)}</td>
                     <td>${esc(x.finance_fa)}${x.credit ? ` · بستانکار ${money(x.credit)}` : ''}</td><td>${money(x.final_premium)}</td>
-                    <td><div class="flex gap-1">${filesHtml(x, typeof IS_ADMIN === 'undefined' || IS_ADMIN)}</div></td></tr>
+                    <td><div class="flex gap-1">${filesHtml(x, typeof IS_ADMIN === 'undefined' || IS_ADMIN)}${typeof IS_ADMIN === 'undefined' || IS_ADMIN ? `<button type="button" data-edel="${x.id}" class="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100" title="حذفِ الحاقیه (با انتخابِ اثرها)"><i class="fas fa-trash"></i></button>` : ''}</div></td></tr>
                     ${x.description ? `<tr><td colspan="7" class="text-[10.5px] text-slate-500" style="white-space:pre-line">${esc(fa(x.description))}</td></tr>` : ''}`).join('')}</table>`
                 : '<span class="text-slate-400">الحاقیه‌ای ثبت نشده.</span>';
             bindFinalUpload(el, () => { delete el.dataset.loaded; mountLists(el.parentElement || document); });
+            el.querySelectorAll('[data-edel]').forEach(b => b.onclick = ev => { ev.stopPropagation(); del(rows.find(r => r.id === Number(b.dataset.edel)), () => mountLists(el.parentElement || document)); });
         }
     }
 

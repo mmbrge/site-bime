@@ -6,6 +6,7 @@ require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
+companies_extra_ensure($pdo);   // شرکت‌های ساخته‌شده از معرفی‌نامه (auto_created)
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);
@@ -254,14 +255,7 @@ try {
 
             // ثبت/اتصال شرکت (قبل از ساخت پوشه، تا نامِ شرکت در پوشه درست باشد)
             if ($company_name !== '') {
-                $stmt = $pdo->prepare("SELECT id FROM companies WHERE name = ? AND is_import = 0");
-                $stmt->execute([$company_name]);
-                $company_id = $stmt->fetchColumn();
-                if (!$company_id) {
-                    $stmt = $pdo->prepare("INSERT INTO companies (name) VALUES (?)");
-                    $stmt->execute([$company_name]);
-                    $company_id = $pdo->lastInsertId();
-                }
+                $company_id = company_find_or_create_intro($pdo, $company_name);   // شرکتِ تازه: «اطلاعات ناقص» در صفحه‌ی شرکت‌ها
                 $pdo->prepare("UPDATE persons SET company_id = ? WHERE id = ?")->execute([$company_id, $person_id]);
             }
 

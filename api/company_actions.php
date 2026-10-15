@@ -1026,9 +1026,11 @@ try {
     if ($action === 'list_companies') {
         if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
         fin_contracts_ensure($pdo);
+        companies_extra_ensure($pdo);
+        // همه‌ی شرکت‌ها (کارفرمایانِ معرفی‌نامه‌ها هم؛ آن‌هایی که اطلاعاتشان کامل نیست «اطلاعات ناقص» می‌خورند)
         $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name, fc.name AS contract_name, fc.contract_key FROM companies c
                               LEFT JOIN companies parent ON parent.id = c.parent_id LEFT JOIN fin_contracts fc ON fc.id = c.contract_id
-                              WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') AND c.is_import = 0 ORDER BY c.name");
+                              WHERE c.is_import = 0 ORDER BY c.name");
         $companiesList = $stmt->fetchAll();
         // آمار برای کارت‌های صفحه‌ی شرکت‌ها: کاربرانِ پنل، درخواست‌ها، درخواست‌های باز، صادره‌ها
         $stat = ['users' => [], 'req' => [], 'open' => [], 'issued' => []];
@@ -1042,6 +1044,7 @@ try {
             $cid = (int)$c['id'];
             $c['users_count'] = $stat['users'][$cid] ?? 0; $c['requests_count'] = $stat['req'][$cid] ?? 0;
             $c['open_requests'] = $stat['open'][$cid] ?? 0; $c['issued_count'] = $stat['issued'][$cid] ?? 0;
+            $c['incomplete'] = trim((string)$c['economic_code']) === '' || trim((string)$c['phone']) === '' || trim((string)$c['address']) === '' ? 1 : 0;
         }
         echo json_encode(['ok' => true, 'companies' => $companiesList], JSON_UNESCAPED_UNICODE);
         exit;
@@ -1097,6 +1100,14 @@ try {
         $offsetMonths = intval($data['first_due_offset_months'] ?? 0);
         $offsetDays = intval($data['first_due_offset_days'] ?? 0);
         $allowedInsurers = in_array($data['allowed_insurers'] ?? '', ['PASARGAD', 'IRAN', 'BOTH'], true) ? $data['allowed_insurers'] : 'BOTH';
+        // مالکِ مدرکِ خودرو کسِ دیگری باشد: ذینفع (بیمه‌گذار = شرکت) یا بیمه‌گذار = همان مالک
+        companies_extra_ensure($pdo);
+        $ownerGiven = array_key_exists('other_owner_mode', $data);
+        $otherOwner = in_array($data['other_owner_mode'] ?? '', ['BENEFICIARY', 'OWNER'], true) ? $data['other_owner_mode'] : null;
+        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address) {
+            if ($ownerGiven) $pdo->prepare("UPDATE companies SET other_owner_mode = ? WHERE id = ?")->execute([$otherOwner, $cid]);
+            if ($economicCode && $phone && $address) $pdo->prepare("UPDATE companies SET auto_created = NULL WHERE id = ?")->execute([$cid]);   // تکمیل شد
+        };
         // قراردادِ پرداخت: نقد/اقساط و تعدادِ قسط از قرارداد می‌آید (ستون‌های قدیمی هم برای سازگاری هم‌شکل می‌شوند)
         if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
         fin_contracts_ensure($pdo);
@@ -1118,6 +1129,7 @@ try {
                             bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
                 ->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $companyId]);
             if ($contractGiven) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $companyId]);
+            $saveExtra($companyId);
             echo json_encode(['ok' => true, 'company_id' => $companyId]);
             exit;
         }
@@ -1131,6 +1143,7 @@ try {
                             bale_group_chat_id=?, allowed_insurers=?, installment_count=?, first_due_offset_months=?, first_due_offset_days=? WHERE id=?")
                 ->execute([$newKind, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays, $existing['id']]);
             if ($contractGiven) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $existing['id']]);
+            $saveExtra((int)$existing['id']);
             echo json_encode(['ok' => true, 'company_id' => $existing['id']]);
             exit;
         }
@@ -1140,6 +1153,7 @@ try {
         $stmt->execute([$name, $paymentTerms, $economicCode, $address, $phone, $parentId, $groupChatId, $allowedInsurers, $instCount, $offsetMonths, $offsetDays]);
         $newId = $pdo->lastInsertId();
         if ($contractId) $pdo->prepare("UPDATE companies SET contract_id = ? WHERE id = ?")->execute([$contractId, $newId]);
+        $saveExtra((int)$newId);
         echo json_encode(['ok' => true, 'company_id' => $newId]);
         exit;
     }
@@ -1365,7 +1379,8 @@ try {
             echo json_encode(['ok' => true, 'defaults' => company_last_request_defaults($pdo, $companyId)], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $companies = $pdo->query("SELECT id, name, allowed_insurers FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
+        companies_extra_ensure($pdo);
+        $companies = $pdo->query("SELECT id, name, allowed_insurers, economic_code, other_owner_mode FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
         $checklists = [];
         foreach (['NEW_POLICY', 'ENDORSEMENT', 'CANCELLATION'] as $k) {
             foreach (['THIRDPARTY', 'BODY'] as $t) {
@@ -1396,6 +1411,18 @@ try {
         echo json_encode($r, JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // چند صفحه با هم (یک اجرای پایتون برای همه => مدلِ OCR یک بار بارگذاری می‌شود)
+    if ($action === 'mreq_doc_read' && !empty($data['ns']) && is_array($data['ns'])) {
+        $pages = [];
+        foreach (vdoc_job_read_many($pdo, dirname(__DIR__), (string)($data['token'] ?? ''), 'md' . $actor['user_id'], $data['ns']) as $n => $r) {
+            if (empty($r['ok'])) { $pages[] = ['n' => $n, 'kind' => 'unknown', 'kind_fa' => 'خوانده نشد', 'status' => 'none', 'data' => [], 'error' => $r['error'] ?? null]; continue; }
+            $d = (array)($r['data'] ?? []);
+            foreach (['vin', 'chassis_no', 'engine_no'] as $k) if (!empty($d[$k])) $d[$k] = vdoc_clean_code($d[$k]);
+            $pages[] = ['n' => $n, 'kind' => $r['kind'] ?? 'unknown', 'kind_fa' => $r['kind_fa'] ?? '', 'status' => $r['status'] ?? 'none', 'data' => $d, 'missing' => $r['missing'] ?? [], 'warn' => $r['warn'] ?? null];
+        }
+        echo json_encode(['ok' => true, 'pages' => $pages], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'mreq_doc_read') {
         $n = intval($data['n'] ?? 0);
         $r = vdoc_job_read($pdo, dirname(__DIR__), (string)($data['token'] ?? ''), 'md' . $actor['user_id'], $n);
@@ -1403,7 +1430,7 @@ try {
         $d = (array)($r['data'] ?? []);
         foreach (['vin', 'chassis_no', 'engine_no'] as $k) if (!empty($d[$k])) $d[$k] = vdoc_clean_code($d[$k]);
         echo json_encode(['ok' => true, 'n' => $n, 'kind' => $r['kind'] ?? 'unknown', 'kind_fa' => $r['kind_fa'] ?? '', 'status' => $r['status'] ?? 'none',
-                          'data' => $d, 'missing' => $r['missing'] ?? []], JSON_UNESCAPED_UNICODE);
+                          'data' => $d, 'missing' => $r['missing'] ?? [], 'warn' => $r['warn'] ?? null], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'mreq_doc_attach') {
@@ -2072,7 +2099,7 @@ try {
         $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = ?, doc_type = ?, status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), ai_status = 'AUTO_NEW' WHERE id = ?")
             ->execute([$requestId, $ids[0], $docType, $actor['user_id'], $docId]);
         $newRel = company_place_document($pdo, $siteRoot, $docId, $ids[0], $docType);
-        vdoc_apply_to_row($pdo, $ids[0], $d);
+        vdoc_apply_to_row($pdo, $ids[0], $d, $kind);
         company_sync_plate_status($pdo, $ids[0]);
         foreach (array_slice($ids, 1) as $pid) {   // ثالث و بدنه: کپیِ همان مدرک برای ردیفِ دوم
             $src = $siteRoot . '/' . ltrim((string)$newRel, '/');
@@ -2082,7 +2109,7 @@ try {
                     ->execute([$doc['company_id'], $requestId, $pid, ltrim(str_replace($siteRoot, '', $dest), '/'), $doc['orig_name'], $docType, $actor['user_id']]);
                 company_place_document($pdo, $siteRoot, intval($pdo->lastInsertId()), $pid, $docType);
             }
-            vdoc_apply_to_row($pdo, $pid, $d);
+            vdoc_apply_to_row($pdo, $pid, $d, $kind);
             company_sync_plate_status($pdo, $pid);
         }
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
@@ -2218,7 +2245,7 @@ try {
         $pdo->commit();
         // اگر این مدرک قبلاً خودکار خوانده شده (کارت/سند/فاکتور)، همان اطلاعات روی ردیفِ انتخاب‌شده می‌نشیند (فقط خانه‌های خالی)
         $aj = !empty($doc['ai_json']) ? json_decode($doc['ai_json'], true) : null;
-        if (is_array($aj) && !empty($aj['data']) && in_array($docType, vdoc_vehicle_types(), true)) { try { vdoc_apply_to_row($pdo, intval($plateId), $aj['data']); } catch (Throwable $e) {} }
+        if (is_array($aj) && !empty($aj['data']) && in_array($docType, vdoc_vehicle_types(), true)) { try { vdoc_apply_to_row($pdo, intval($plateId), $aj['data'], $aj['kind'] ?? ''); } catch (Throwable $e) {} }
         // وضعیت ردیف بر اساس کامل‌شدنِ چک‌لیست به‌طور خودکار بروز می‌شود
         $rowStatus = company_sync_plate_status($pdo, $plateId);
         echo json_encode(['ok' => true, 'plate_id' => $plateId, 'file_path' => $newRelPath, 'row_status' => $rowStatus], JSON_UNESCAPED_UNICODE);

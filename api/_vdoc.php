@@ -41,7 +41,7 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280) {
     $home = getenv('HOME');
     if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
     $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore',
-            'OMP_NUM_THREADS' => '2', 'FLAGS_allocator_strategy' => 'auto_growth'];
+            'OMP_NUM_THREADS' => '2', 'OMP_THREAD_LIMIT' => '1', 'FLAGS_allocator_strategy' => 'auto_growth'];
     $proc = @proc_open([pdf_split_python($pdo), __DIR__ . '/py/vehicle_doc_reader.py', $tmp, (string)intval($page)], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
     if (!is_resource($proc)) { @unlink($tmp); return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.']; }
     stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
@@ -60,6 +60,50 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280) {
     $j = json_decode($line, true);
     if (is_array($j)) return $j;
     return ['ok' => false, 'error' => time() - $t0 > $timeout ? 'خواندنِ فایل بیش از حد طول کشید.' : 'خروجیِ خواننده خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -300)];
+}
+
+// چند فایلِ تک‌صفحه‌ای در یک اجرای پایتون (مدلِ OCR یک بار بارگذاری می‌شود) => [i => نتیجه]
+function vdoc_run_many($pdo, array $files, $timeout = 420) {
+    if (count($files) <= 1) { $out = []; foreach ($files as $i => $f) $out[$i] = vdoc_run($pdo, $f); return $out; }
+    if (!function_exists('proc_open')) return array_fill_keys(array_keys($files), ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست.']);
+    if (!function_exists('pdf_split_python')) require_once __DIR__ . '/_pdf_split.php';
+    $dir = dirname(__DIR__) . '/tmp_ocr';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $keys = array_keys($files); $tmps = [];
+    foreach ($keys as $k) {
+        $ext = strtolower(pathinfo($files[$k], PATHINFO_EXTENSION));
+        $t = $dir . '/vd_' . bin2hex(random_bytes(6)) . '.' . $ext;
+        if (!is_file($files[$k]) || !@copy($files[$k], $t)) { foreach ($tmps as $x) @unlink($x); $out = []; foreach ($files as $i => $f) $out[$i] = vdoc_run($pdo, $f); return $out; }
+        $tmps[] = $t;
+    }
+    @set_time_limit($timeout + 30);
+    $home = getenv('HOME');
+    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
+    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore',
+            'OMP_NUM_THREADS' => '2', 'OMP_THREAD_LIMIT' => '1', 'FLAGS_allocator_strategy' => 'auto_growth'];
+    $proc = @proc_open(array_merge([pdf_split_python($pdo), __DIR__ . '/py/vehicle_doc_reader.py', '--files'], $tmps), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
+    $res = null;
+    if (is_resource($proc)) {
+        stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
+        $o = ''; $t0 = time();
+        while (true) {
+            $o .= (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
+            $st = proc_get_status($proc);
+            if (!$st['running']) break;
+            if (time() - $t0 > $timeout) { proc_terminate($proc); break; }
+            usleep(150000);
+        }
+        $o .= (string)stream_get_contents($pipes[1]);
+        fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
+        $res = json_decode(trim((string)substr($o, (int)strrpos("\n" . trim($o), "\n"))), true);
+    }
+    foreach ($tmps as $x) @unlink($x);
+    $out = [];
+    foreach ($keys as $i => $k) {
+        $r = is_array($res) ? ($res['pages'][$i] ?? null) : null;
+        $out[$k] = is_array($r) ? $r : ['ok' => false, 'error' => 'خروجیِ خواننده خوانده نشد.'];
+    }
+    return $out;
 }
 
 // ردیفِ هم‌خوان با شاسی/موتورِ خوانده‌شده (در همان درخواست؛ اگر درخواست مشخص نیست، درخواست‌های بازِ همان شرکت)
@@ -88,7 +132,7 @@ function vdoc_doc_type($kind, array $d, array $row) {
 }
 
 // اطلاعاتِ خوانده‌شده روی ردیف: فقط خانه‌های خالی پر می‌شوند (چیزی که ثبت شده عوض نمی‌شود)
-function vdoc_apply_to_row($pdo, $plateId, array $d) {
+function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
     if (!function_exists('company_ensure_issue_info_cols')) require_once __DIR__ . '/_company_helpers.php';
     company_ensure_issue_info_cols($pdo);
     $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
@@ -112,6 +156,50 @@ function vdoc_apply_to_row($pdo, $plateId, array $d) {
         if ($v !== '' && trim((string)($info[$to] ?? '')) === '') { $info[$to] = mb_substr($v, 0, 250); $ch = true; }
     }
     if ($ch) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($info, JSON_UNESCAPED_UNICODE), $plateId]);
+    if (($r['status'] ?? '') === 'ISSUED') return;   // ردیفِ صادرشده: فقط خانه‌های خالیِ اطلاعات (بالا)؛ پلاک/نقش‌ها دست نمی‌خورد
+    $hasPlate = trim((string)($r['plate_p2'] ?? '')) !== '' || trim((string)($r['plate_p1'] ?? '')) !== '';
+    // پلاکِ خوانده‌شده از بارکدِ سند/کارت: فقط وقتی ردیف پلاک ندارد و حرفِ پلاک هم شناخته شده
+    $pp = $d['plate_parts'] ?? null;
+    if (!$hasPlate && is_array($pp) && !empty($pp['letter']) && preg_match('/^\d{3}$/', (string)($pp['three'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['two'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['iran'] ?? ''))) {
+        // plate_p4 = دو رقمِ اول، plate_p2 = سه رقم، plate_p1 = کدِ ایران (مثلِ فرم‌های ثبت)
+        $pdo->prepare("UPDATE company_request_plates SET plate_p4 = ?, plate_letter = ?, plate_p2 = ?, plate_p1 = ? WHERE id = ? AND COALESCE(plate_p2, '') = '' AND COALESCE(plate_p1, '') = ''")
+            ->execute([$pp['two'], $pp['letter'], $pp['three'], $pp['iran'], $plateId]);
+        $hasPlate = true;
+    }
+    // فاکتورِ فروش و بی‌پلاک = صفرکیلومتر (بازدیدِ سلامت لازم نیست)
+    if ($kind === 'sales_invoice' && !$hasPlate && empty($r['is_new_vehicle'])) {
+        $pdo->prepare("UPDATE company_request_plates SET is_new_vehicle = 1, skip_health_inspection = 1 WHERE id = ?")->execute([$plateId]);
+    }
+    // مالکِ مدرک با شرکت فرق دارد => نقشِ «ذینفع» یا «مالک = بیمه‌گذار» طبقِ تنظیمِ شرکت (فقط اگر نقشِ ردیف/درخواست تعیین نشده)
+    try { vdoc_owner_party($pdo, $r, $d); } catch (Throwable $e) { error_log('[vdoc_owner_party] ' . $e->getMessage()); }
+}
+
+// مالکِ مدرک ≠ شرکت؟ (نام ساده‌شده یا شناسه‌ی ملی = کد اقتصادی) => null اگر اطلاعات کافی نیست
+function vdoc_owner_differs(array $d, array $company) {
+    $name = trim((string)($d['owner_name'] ?? '')); $nid = preg_replace('/\D/', '', (string)($d['national_id'] ?? ''));
+    if (($name === '' && $nid === '') || trim((string)($company['name'] ?? '')) === '') return null;
+    $eco = preg_replace('/\D/', '', (string)($company['economic_code'] ?? ''));
+    if ($nid !== '' && $eco !== '' && $nid === $eco) return false;
+    if (!function_exists('company_name_key')) require_once __DIR__ . '/_case_helpers.php';
+    $a = company_name_key($name); $b = company_name_key($company['name']);
+    if ($a !== '' && $b !== '' && (mb_strpos($a, $b) !== false || mb_strpos($b, $a) !== false)) return false;
+    return $name !== '' || $nid !== '' ? true : null;
+}
+
+function vdoc_owner_party($pdo, array $row, array $d) {
+    if (!function_exists('party_ensure')) require_once __DIR__ . '/_party.php';
+    party_ensure($pdo);
+    if (party_valid_mode($row['party_mode'] ?? '')) return;          // نقشِ ردیف را کاربر تعیین کرده
+    $st = $pdo->prepare("SELECT cr.party_mode, c.* FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+    $st->execute([intval($row['request_id'])]);
+    $c = $st->fetch();
+    if (!$c) return;
+    $reqMode = party_valid_mode($c['party_mode'] ?? '');
+    if ($reqMode && $reqMode !== 'COMPANY') return;                  // پیش‌فرضِ درخواست «به نامِ دیگری» است
+    if (vdoc_owner_differs($d, $c) !== true) return;
+    $mode = ($c['other_owner_mode'] ?? '') === 'OWNER' ? 'OWNER' : 'BENEFICIARY';
+    party_set_rows($pdo, [intval($row['id'])], $mode, ['name' => $d['owner_name'] ?? '', 'national_id' => $d['national_id'] ?? '', 'phone' => $d['mobile'] ?? '',
+                                                       'address' => $d['address'] ?? '', 'postal_code' => $d['postal_code'] ?? '']);
 }
 
 // نوعِ بیمه‌ی ردیفِ تازه: اگر درخواست فقط یک نوع خواسته (تعدادها یا ردیف‌های موجود)
@@ -153,7 +241,7 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)
     if ($onRow) {
-        if (!empty($d)) vdoc_apply_to_row($pdo, intval($doc['plate_id']), $d);
+        if (!empty($d)) vdoc_apply_to_row($pdo, intval($doc['plate_id']), $d, $res['kind'] ?? '');
         $res['plate_id'] = intval($doc['plate_id']);
         return $save(empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL'), $res);
     }
@@ -185,7 +273,7 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
     $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = ?, doc_type = ?, status = 'ASSIGNED', assigned_at = NOW() WHERE id = ?")
         ->execute([$first['request_id'], $first['id'], $type, $docId]);
     $newRel = company_place_document($pdo, $siteRoot, $docId, intval($first['id']), $type);
-    vdoc_apply_to_row($pdo, intval($first['id']), $d);
+    vdoc_apply_to_row($pdo, intval($first['id']), $d, $kind);
     company_sync_plate_status($pdo, intval($first['id']));
     foreach (array_slice($rows, 1) as $r2) {
         $src = $siteRoot . '/' . ltrim((string)$newRel, '/');
@@ -197,7 +285,7 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
             ->execute([$doc['company_id'], $r2['request_id'], $r2['id'], $doc['uploaded_by'], ltrim(str_replace($siteRoot, '', $dest), '/'), $doc['orig_name'], $type]);
         $d2 = intval($pdo->lastInsertId());
         company_place_document($pdo, $siteRoot, $d2, intval($r2['id']), $type);
-        vdoc_apply_to_row($pdo, intval($r2['id']), $d);
+        vdoc_apply_to_row($pdo, intval($r2['id']), $d, $kind);
         company_sync_plate_status($pdo, intval($r2['id']));
     }
     $res['plate_id'] = intval($first['id']);
@@ -255,6 +343,27 @@ function vdoc_job_read($pdo, $siteRoot, $token, $owner, $n) {
     return $r;
 }
 
+// چند صفحه از یک فایلِ بارگذاری‌شده با هم (نتیجه‌ی قبلی از کش) => [n => نتیجه]
+function vdoc_job_read_many($pdo, $siteRoot, $token, $owner, array $ns) {
+    if (!function_exists('pdf_split_job_page_path')) require_once __DIR__ . '/_pdf_split.php';
+    $out = []; $todo = [];
+    foreach (array_slice(array_unique(array_map('intval', $ns)), 0, 6) as $n) {
+        $p = pdf_split_job_page_path($siteRoot, $token, $owner, $n, 'pdf');
+        if (!$p) { $out[$n] = ['ok' => false, 'error' => 'صفحه پیدا نشد (شاید زمانش گذشته؛ دوباره بارگذاری کنید).']; continue; }
+        $cache = dirname($p) . sprintf('/r%03d.json', $n);
+        if (is_file($cache) && is_array($j = json_decode((string)file_get_contents($cache), true))) { $out[$n] = $j; continue; }
+        $todo[$n] = $p;
+    }
+    if ($todo) {
+        foreach (vdoc_run_many($pdo, $todo) as $n => $r) {
+            $out[$n] = $r;
+            if (!empty($r['ok'])) @file_put_contents(dirname($todo[$n]) . sprintf('/r%03d.json', $n), json_encode($r, JSON_UNESCAPED_UNICODE));
+        }
+    }
+    ksort($out);
+    return $out;
+}
+
 // صفحه‌ی n را روی ردیف بایگانی می‌کند (نوعِ مدرک از نتیجه‌ی شناسایی یا $docType) و اطلاعاتش را روی ردیف می‌نشاند
 function vdoc_job_attach($pdo, $siteRoot, $token, $owner, $n, $plateId, $userId, $docType = '') {
     if (!function_exists('pdf_split_job_page_path')) require_once __DIR__ . '/_pdf_split.php';
@@ -280,7 +389,7 @@ function vdoc_job_attach($pdo, $siteRoot, $token, $owner, $n, $plateId, $userId,
                    $res ? 'AUTO' : null, $res ? json_encode($res, JSON_UNESCAPED_UNICODE) : null]);
     $docId = intval($pdo->lastInsertId());
     company_place_document($pdo, $siteRoot, $docId, intval($row['id']), $type);
-    if ($d) vdoc_apply_to_row($pdo, intval($row['id']), $d);
+    if ($d) vdoc_apply_to_row($pdo, intval($row['id']), $d, $res['kind'] ?? '');
     company_sync_plate_status($pdo, intval($row['id']));
     return ['ok' => true, 'doc_id' => $docId, 'doc_type' => $type];
 }

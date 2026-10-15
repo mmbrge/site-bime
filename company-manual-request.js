@@ -159,12 +159,20 @@
             try { j = await (await fetch(API, { method: 'POST', body: fd })).json(); } catch (e) { j = { ok: false, error: 'خطا در ارتباط با سرور' }; }
             if (!j.ok) { toast(`${f.name}: ${j.error || 'خطا'}`, 'error'); continue; }
             D.total += j.pages; render();
-            for (let n = 1; n <= j.pages; n++) {
-                const r = await post({ action: 'mreq_doc_read', token: j.token, n });
-                D.done++;
-                const pg = { token: j.token, n, kind: r.kind || 'unknown', kind_fa: r.kind_fa || '', status: r.status || 'none', data: r.data || {}, row: false, vehicle: 0 };
-                D.pages.push(pg);
-                detectPlace(pg);
+            // چند صفحه با هم (یک اجرای پایتون: مدلِ OCR یک بار بارگذاری می‌شود؛ خیلی سریع‌تر از صفحه‌به‌صفحه)
+            for (let n0 = 1; n0 <= j.pages; n0 += 3) {
+                const ns = []; for (let n = n0; n < n0 + 3 && n <= j.pages; n++) ns.push(n);
+                let res = await post({ action: 'mreq_doc_read', token: j.token, ns });
+                const list = res && Array.isArray(res.pages) ? res.pages : null;
+                const items = list || [];
+                if (!list) for (const n of ns) { const r = await post({ action: 'mreq_doc_read', token: j.token, n }); items.push(Object.assign({ n }, r)); }   // سرورِ قدیمی
+                for (const r of items) {
+                    D.done++;
+                    if (r.warn && !D.warned) { D.warned = true; toast(r.warn, 'warning'); }
+                    const pg = { token: j.token, n: r.n, kind: r.kind || 'unknown', kind_fa: r.kind_fa || '', status: r.status || 'none', data: r.data || {}, row: false, vehicle: 0 };
+                    D.pages.push(pg);
+                    detectPlace(pg);
+                }
                 if (root && root.style.display !== 'none') render();
             }
         }
@@ -194,12 +202,44 @@
             if (!r.engine && d.engine_no) r.engine = d.engine_no;
             if (!r.carName && (d.car_system || d.car_name)) r.carName = d.car_system || d.car_name;
             if (!r.carType && d.car_tip) r.carType = d.car_tip;
-            if (pg.kind === 'sales_invoice') { r.isNew = true; if (r.type === 'BODY') r.skipHealth = true; }
-            if (!r.p2 && !r.isNew) r.noPlate = true;   // سند/کارت پلاکی نمی‌دهد: تا پلاک وارد نشده، با شاسی ثبت می‌شود
+            // پلاکِ خوانده‌شده از بارکدِ سند/کارت (حرفِ ناشناخته خالی می‌ماند تا انتخاب شود)
+            const pp = d.plate_parts;
+            if (pp && pp.three && !r.p2 && !r.p4 && !r.moto) {
+                r.p1 = pp.iran || ''; r.p2 = pp.three; r.p4 = pp.two || '';
+                r.letter = pp.letter && LETTERS.includes(pp.letter) ? pp.letter : '';
+                r.noPlate = false;
+            }
+            // فاکتورِ فروش = صفرکیلومتر: بیمه‌نامه‌ی قبلی و بازدید ندارد و تا پلاک نگرفته «بدون پلاک» (با شماره شاسی)
+            if (pg.kind === 'sales_invoice') { r.isNew = true; if (r.type === 'BODY') r.skipHealth = true; if (!r.p2) r.noPlate = true; }
+            else if (!r.p2) r.noPlate = true;   // سند/کارت پلاکی نداد: تا پلاک وارد نشده، با شاسی ثبت می‌شود
             r.docData = Object.assign({}, d, r.docData || {});
+            ownerParty(r);
             if (!r.docPages.some(x => x.token === pg.token && x.n === pg.n)) r.docPages.push({ token: pg.token, n: pg.n, kind: pg.kind });
         });
         pg.row = true; pg.vehicle = rows[0].vehicleNo || 0;
+    }
+
+    // مالکِ مدرک (سند/فاکتور/کارت) با شرکتِ درخواست‌دهنده فرق دارد؟ => «مالک/بیمه‌گذارِ این خودرو فرق دارد» روشن می‌شود:
+    // طبقِ تنظیمِ همان شرکت «ذینفع» (بیمه‌گذار = شرکت؛ پیش‌فرض) یا «مالک = بیمه‌گذار». اگر کاربر خودش دست زده باشد، دست نمی‌خورد.
+    function ownerDiffers(d, company) {
+        const name = String(d.owner_name || '').trim(), nid = en(d.national_id || '').replace(/\D/g, '');
+        if (!company || (!name && !nid)) return null;
+        const cn = pnorm(company.name), on = pnorm(name), eco = en(company.economic_code || '').replace(/\D/g, '');
+        if (nid && eco && nid === eco) return false;
+        if (on && cn && (on.includes(cn) || cn.includes(on))) return false;
+        return true;
+    }
+    function ownerParty(r) {
+        if (r.partyUser || !r.docData) return;
+        const company = (form.companies || []).find(c => String(c.id) === String(st.companyId));
+        const diff = ownerDiffers(r.docData, company);
+        if (diff === null) return;
+        if (!diff) { if (r.partyAuto) { r.partyOpen = false; r.partyMode = ''; r.party = null; r.partyAuto = false; } return; }
+        const d = r.docData, nid = en(d.national_id || '').replace(/\D/g, '');
+        r.partyOpen = true; r.partyAuto = true;
+        r.partyMode = company.other_owner_mode === 'OWNER' ? 'OWNER' : 'BENEFICIARY';
+        r.party = { kind: nid.length === 11 ? 'COMPANY' : 'PERSON', name: String(d.owner_name || '').trim(), national_id: nid,
+                    phone: en(d.mobile || d.phone || '').replace(/[^\d+]/g, ''), address: d.address || '', postal_code: en(d.postal_code || '').replace(/\D/g, '') };
     }
 
     // ---------------- مالک / بیمه‌گذار / ذینفع (party-ui.js): کلی برای همه‌ی خودروها + جدا برای هر خودرو ----------------
@@ -221,6 +261,7 @@
         return `<div class="mt-3 border-t pt-3">
             <label class="flex items-center gap-2 text-[11px] font-bold ${r.partyOpen ? 'text-amber-800' : 'text-slate-500'}"><input type="checkbox" data-r="partyOpen" ${r.partyOpen ? 'checked' : ''}> مالک/بیمه‌گذارِ این خودرو فرق دارد
               ${r.partyOpen ? '' : `<span class="font-normal text-slate-400">(طبقِ انتخابِ کلی: ${esc(PartyUI.SHORT[st.partyMode] || '')})</span>`}</label>
+            ${r.partyAuto ? `<p class="text-[10.5px] text-amber-700 mt-1">مالکِ مدرک «${esc(r.party && r.party.name || '')}» با شرکت فرق دارد؛ طبقِ تنظیمِ شرکت «${esc(PartyUI.SHORT[r.partyMode] || '')}» انتخاب شد (قابلِ تغییر).</p>` : ''}
             ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${PartyUI.editor({ mode: r.partyMode, party: r.party }, { allowInherit: true })}</div>` : ''}${warn}</div>`;
     }
 
@@ -289,7 +330,7 @@
             // مثلِ بقیه‌ی فرم‌های پنل: چپ‌به‌راست [۲ رقم = p4] [حرف] [۳ رقم] [ایران + کد شهر = p1]
             : `<div><label class="lbl">پلاک *</label><div class="ir-pin" dir="ltr"><span class="ip-flag"></span>
                 <input data-r="p4" class="ip-cell" maxlength="2" inputmode="numeric" placeholder="۱۲" value="${esc(fa(r.p4))}">
-                <select data-r="letter" class="ip-cell ip-letter" dir="rtl">${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                <select data-r="letter" class="ip-cell ip-letter${r.letter ? '' : ' !bg-amber-100'}" dir="rtl" title="${r.letter ? '' : 'حرفِ پلاک از مدرک خوانده نشد؛ انتخاب کنید'}">${r.letter ? '' : '<option value="" selected>؟</option>'}${LETTERS.map(l => `<option ${r.letter === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
                 <input data-r="p2" class="ip-cell ip-wide" maxlength="3" inputmode="numeric" placeholder="۳۴۵" value="${esc(fa(r.p2))}">
                 <span class="ip-ir"><small>ایران</small><input data-r="p1" maxlength="2" inputmode="numeric" placeholder="۶۷" value="${esc(fa(r.p1))}"></span></div>${r.isNew ? '<p class="text-[9.5px] text-slate-400 mt-1">صفرکیلومتر: اگر هنوز پلاک نگرفته، خالی بگذارید.</p>' + vinBox : ''}</div>`;
         const kindFields = isNew() ? (body ? `
@@ -409,7 +450,7 @@
             el.addEventListener(ev, async () => {
                 const f = el.dataset.f;
                 st[f] = el.type === 'checkbox' ? el.checked : el.value;
-                if (f === 'companyId') await loadDefaults();
+                if (f === 'companyId') { await loadDefaults(); st.rows.forEach(ownerParty); }
                 if (f === 'noVisitAll') st.rows.forEach(r => { if (r.type === 'BODY') r.skipHealth = st.noVisitAll; });
                 if (f === 'kind' && st.kind !== 'NEW_POLICY') st.rows.forEach(r => { r.customCov = false; });
                 if (f !== 'text') render();
@@ -431,6 +472,7 @@
                 if (['p1', 'p2', 'p4', 'expiry', 'mcity', 'mnum'].includes(f)) { v = en(v).replace(f === 'expiry' ? /[^\d/]/g : /\D/g, ''); el.value = fa(v); }
                 if (f === 'mcity' && v.length >= 3) { const nx = el.closest('.mt-pin').querySelector('[data-r="mnum"]'); if (nx) nx.focus(); }
                 r[f] = v;
+                if (f === 'partyOpen') { r.partyUser = true; r.partyAuto = false; }
                 // فیلدهایی که ظاهر کارت را عوض می‌کنند، کارت را دوباره می‌سازند
                 if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit', 'partyOpen', 'moto'].includes(f)) {
                     if (f === 'customCov' && v && !r.cov) r.cov = JSON.parse(JSON.stringify(st.covBaseOnly ? { __none: true } : (st.cov || {})));
@@ -443,7 +485,7 @@
             const h = () => {
                 const v = PartyUI.collect(box);
                 if (box.dataset.ptyScope === 'all') { st.partyMode = v.party_mode || 'COMPANY'; st.party = v.party; }
-                else { const r = rowOf(box); r.partyMode = v.party_mode; r.party = v.party; }
+                else { const r = rowOf(box); r.partyMode = v.party_mode; r.party = v.party ? Object.assign({}, r.party || {}, v.party) : null; r.partyUser = true; r.partyAuto = false; }
             };
             box.addEventListener('input', h); box.addEventListener('change', h);
         });
@@ -491,6 +533,8 @@
     async function submit() {
         if (!st.companyId) { toast('شرکت را انتخاب کنید.', 'error'); return; }
         if (st.detect && st.detect.busy) { toast('صبر کنید خواندنِ مدارک تمام شود.', 'warning'); return; }
+        const noLetter = st.rows.findIndex(r => !r.noPlate && !r.moto && !r.letter && (en(r.p1) + en(r.p2) + en(r.p4)).trim());
+        if (noLetter >= 0) { toast(`حرفِ پلاکِ خودروی ردیفِ ${fa(noLetter + 1)} از مدرک خوانده نشد؛ انتخابش کنید.`, 'error'); return; }
         const covOut = c => (!c ? null : (c.__none ? 'none' : c));
         const payload = {
             action: 'admin_create_full_request', company_id: st.companyId, insurer: st.insurer, request_kind: st.kind,

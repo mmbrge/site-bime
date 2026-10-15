@@ -51,7 +51,7 @@ function purge_path(array &$T, $p) {
     $T['paths'][$p] = true;
 }
 // فقط چیزی که داخلِ بایگانی/موقت است جابه‌جا می‌شود، و پوشه فقط وقتی به اندازه‌ی کافی پایین است که ریشه، سال، ماه
-// یا پوشه‌ی یک شرکت نباشد (پوشه زیرِ Archive دست‌کم ۵ سطح، زیرِ موقت ۴ سطح؛ فایل دست‌کم ۳ سطح)
+// یا پوشه‌ی یک شرکت نباشد (پوشه زیرِ Archive دست‌کم ۵ سطح، زیرِ موقت ۴ سطح؛ فایل دست‌کم ۲ سطح)
 function purge_safe(array $T, $abs) {
     $real = realpath($abs);
     if (!$real) return false;
@@ -59,7 +59,7 @@ function purge_safe(array $T, $abs) {
         $root = realpath($T['root'] . $sub);
         if (!$root || strpos($real, $root . '/') !== 0) continue;
         $depth = count(array_filter(explode('/', substr($real, strlen($root) + 1)), 'strlen'));
-        return $depth >= (is_dir($real) ? $minDir : 3) ? $real : false;
+        return $depth >= (is_dir($real) ? $minDir : 2) ? $real : false;   // فایلِ تکی (مسیرش از پایگاه داده) به سطل می‌رود و برگشت‌پذیر است
     }
     return false;
 }
@@ -117,7 +117,7 @@ function purge_intro_month_folders($pdo, $siteRoot, $introId) {
 // ---------------- درخواستِ کارکنان ----------------
 function purge_case_collect($pdo, $siteRoot, array $case, array &$T) {
     $caseId = intval($case['id']);
-    $n = ['installments' => 0, 'documents' => 0];
+    $n = ['installments' => 0, 'documents' => 0, 'endorsements' => 0];
     $inst = [];
     try { $st = $pdo->prepare("SELECT id FROM policy_installments WHERE case_id = ?"); $st->execute([$caseId]); $inst = $st->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) {}
     if ($inst) {
@@ -152,12 +152,8 @@ function purge_case_collect($pdo, $siteRoot, array $case, array &$T) {
             if (is_dir($mf . '/' . $bn)) purge_path($T, $mf . '/' . $bn);
         }
     }
-    // الحاقیه‌ها
-    try {
-        $st = $pdo->prepare("SELECT file_path FROM policy_endorsements WHERE source = 'P' AND ref_id = ?"); $st->execute([$caseId]);
-        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $p) purge_path($T, $p);
-    } catch (Throwable $e) {}
-    purge_take($pdo, $T, 'policy_endorsements', "source = 'P' AND ref_id = ?", [$caseId]);
+    // الحاقیه‌ها (فایل، بیمه‌نامه‌ی نهایی و کپی‌هایشان)
+    $n['endorsements'] = purge_endo_of_policies($pdo, $siteRoot, "source = 'P' AND ref_id = ?", [$caseId], $T);
     $n['documents'] = purge_take($pdo, $T, 'case_documents', 'case_id = ?', [$caseId]);
     foreach (['health_inspections', 'health_attempts', 'webapp_sessions', 'review_log'] as $t) purge_take($pdo, $T, $t, 'case_id = ?', [$caseId]);
     purge_unlink($pdo, $T, 'visit_reports', 'case_id', 'case_id = ?', [$caseId]);
@@ -177,6 +173,7 @@ function purge_policy_case($pdo, $siteRoot, $caseId, $userId) {
     $case = $st->fetch();
     if (!$case) return ['ok' => false, 'error' => 'درخواست یافت نشد.'];
     $T = purge_begin($siteRoot, 'case_' . $case['id']);
+    purge_endo_prepare($pdo);
     $pdo->beginTransaction();
     try { $n = purge_case_collect($pdo, $siteRoot, $case, $T); $pdo->commit(); }
     catch (Throwable $e) { $pdo->rollBack(); error_log('[purge_case] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خطا در حذف: ' . $e->getMessage()]; }
@@ -186,7 +183,54 @@ function purge_policy_case($pdo, $siteRoot, $caseId, $userId) {
         try { sync_intro_folder($pdo, $siteRoot, intval($case['introduction_id'])); } catch (Throwable $e) {}
         try { sync_intro_group_message($pdo, intval($case['introduction_id'])); } catch (Throwable $e) {}
     }
-    return ['ok' => true, 'message' => $summary . ' کامل حذف شد (' . fa_digits($n['documents']) . ' مدرک، ' . fa_digits($n['installments']) . ' قسط).', 'trash' => basename($T['dir'])];
+    return ['ok' => true, 'message' => $summary . ' کامل حذف شد (' . fa_digits($n['documents']) . ' مدرک، ' . fa_digits($n['installments']) . ' قسط' . ($n['endorsements'] ? '، ' . fa_digits($n['endorsements']) . ' الحاقیه' : '') . ').', 'trash' => basename($T['dir'])];
+}
+
+// ---------------- الحاقیه‌ها ----------------
+// جدول/ستون‌های الحاقیه پیش از شروعِ تراکنش (CREATE/ALTER داخلِ تراکنش آن را بی‌صدا commit می‌کند)
+function purge_endo_prepare($pdo) {
+    if (!function_exists('endo_ensure')) require_once __DIR__ . '/_endorse.php';
+    try { endo_ensure($pdo); } catch (Throwable $e) { error_log('[purge_endo_prepare] ' . $e->getMessage()); }
+}
+// فایل‌های یک الحاقیه: خودِ فایل، بیمه‌نامه‌ی نهایی (+شرایط/صفحه‌های اضافه) و کپی‌هایشان در صادره/ماه‌های کسر از حقوق
+function purge_endo_files($pdo, $siteRoot, array $e, array &$T) {
+    $names = [];
+    if (!empty($e['file_path'])) { purge_path($T, $e['file_path']); $names[] = basename($e['file_path']); }
+    if (!empty($e['final_file_path'])) {
+        require_once __DIR__ . '/_pdf_split.php';
+        $abs = $siteRoot . '/' . ltrim($e['final_file_path'], '/');
+        foreach ([$abs, policy_conditions_path($abs), policy_extras_path($abs)] as $f) { purge_path($T, $f); $names[] = basename($f); }
+    }
+    if (!$names || !in_array($e['source'] ?? '', ['C', 'P'], true) || !function_exists('endo_policy_copies')) return;
+    try {
+        $pol = endo_load_policy($pdo, $e['source'], (int)$e['ref_id']);
+        if ($pol) foreach (endo_policy_copies($pdo, $siteRoot, $e['source'], $pol['row']) as $d) foreach ($names as $n) if (is_file($d . '/' . $n)) purge_path($T, $d . '/' . $n);
+    } catch (Throwable $ex) { error_log('[purge_endo_files] ' . $ex->getMessage()); }
+}
+// الحاقیه‌های بیمه‌نامه‌های حذف‌شده ($where روی policy_endorsements) => فایل‌ها به سطل و ردیف‌ها حذف
+function purge_endo_of_policies($pdo, $siteRoot, $where, array $args, array &$T) {
+    if (!function_exists('endo_ensure')) require_once __DIR__ . '/_endorse.php';
+    try { $st = $pdo->prepare("SELECT * FROM policy_endorsements WHERE $where"); $st->execute($args); $rows = $st->fetchAll(PDO::FETCH_ASSOC); }
+    catch (Throwable $e) { return 0; }
+    foreach ($rows as $e) purge_endo_files($pdo, $siteRoot, $e, $T);
+    return purge_take($pdo, $T, 'policy_endorsements', $where, $args);
+}
+// الحاقیه‌هایی که «درخواستِ الحاقیه/فسخِ» همین ردیف‌ها روی بیمه‌نامه‌های دیگر ساخته: اثرِ مالی‌شان برگردانده می‌شود
+function purge_endo_linked($pdo, $siteRoot, array $plateIds, array &$T) {
+    if (!$plateIds) return 0;
+    if (!function_exists('endo_ensure')) require_once __DIR__ . '/_endorse.php';
+    $pin = purge_ids_in($plateIds);
+    try { $rows = $pdo->query("SELECT * FROM policy_endorsements WHERE request_plate_id IN ($pin) AND NOT (source = 'C' AND ref_id IN ($pin))")->fetchAll(PDO::FETCH_ASSOC); }
+    catch (Throwable $e) { return 0; }
+    $n = 0;
+    foreach ($rows as $e) {
+        $r = endo_revert_finance($pdo, $e);
+        if (empty($r['ok'])) throw new RuntimeException('الحاقیه‌ی ' . ($e['endorse_no'] ?: '#' . $e['id']) . ' بیمه‌نامه‌ی ' . $e['policy_number'] . ': ' . ($r['error'] ?? 'برگرداندنِ اثرِ مالی ممکن نشد.'));
+        purge_endo_files($pdo, $siteRoot, $e, $T);
+        $n += purge_take($pdo, $T, 'policy_endorsements', 'id = ?', [(int)$e['id']]);
+        endo_recompute($pdo, $e['source'], (int)$e['ref_id']);
+    }
+    return $n;
 }
 
 // ---------------- معرفی‌نامه (همراهِ همه‌ی درخواست‌هایش) ----------------
@@ -198,12 +242,13 @@ function purge_introduction($pdo, $siteRoot, $introId, $userId) {
     if (!$intro) return ['ok' => false, 'error' => 'معرفی‌نامه یافت نشد.'];
     $T = purge_begin($siteRoot, 'intro_' . $introId);
     $folders = purge_intro_month_folders($pdo, $siteRoot, $introId);   // پیش از حذفِ ردیف‌ها
-    $cases = 0; $docs = 0; $inst = 0;
+    $cases = 0; $docs = 0; $inst = 0; $endo = 0;
+    purge_endo_prepare($pdo);
     $pdo->beginTransaction();
     try {
         $cs = $pdo->prepare("SELECT * FROM policy_cases WHERE introduction_id = ?");
         $cs->execute([$introId]);
-        foreach ($cs->fetchAll() as $c) { $n = purge_case_collect($pdo, $siteRoot, $c, $T); $cases++; $docs += $n['documents']; $inst += $n['installments']; }
+        foreach ($cs->fetchAll() as $c) { $n = purge_case_collect($pdo, $siteRoot, $c, $T); $cases++; $docs += $n['documents']; $inst += $n['installments']; $endo += $n['endorsements']; }
         purge_take($pdo, $T, 'insurance_requests', 'introduction_id = ?', [$introId]);
         purge_take($pdo, $T, 'legacy_items', 'intro_id = ?', [$introId]);
         purge_take($pdo, $T, 'introductions', 'id = ?', [$introId]);
@@ -213,7 +258,7 @@ function purge_introduction($pdo, $siteRoot, $introId, $userId) {
     if (!empty($intro['file_path']) && $intro['file_path'] !== 'بایگانی_قبلی') purge_path($T, $intro['file_path']);
     $summary = 'معرفی‌نامه‌ی ' . ($intro['full_name'] ?? '') . ' (#' . $introId . ')';
     purge_finish($pdo, $T, $userId, $summary);
-    return ['ok' => true, 'message' => $summary . ' با ' . fa_digits($cases) . ' درخواست، ' . fa_digits($docs) . ' مدرک و ' . fa_digits($inst) . ' قسط کامل حذف شد.', 'trash' => basename($T['dir'])];
+    return ['ok' => true, 'message' => $summary . ' با ' . fa_digits($cases) . ' درخواست، ' . fa_digits($docs) . ' مدرک، ' . fa_digits($inst) . ' قسط' . ($endo ? ' و ' . fa_digits($endo) . ' الحاقیه' : '') . ' کامل حذف شد.', 'trash' => basename($T['dir'])];
 }
 
 // ---------------- درخواستِ شرکتی ----------------
@@ -229,7 +274,8 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
     $plates = $st->fetchAll();
     $pids = array_map(function ($p) { return intval($p['id']); }, $plates);
     $pin = purge_ids_in($pids);
-    $nInst = 0; $nDocs = 0;
+    $nInst = 0; $nDocs = 0; $nEndo = 0;
+    purge_endo_prepare($pdo);
     $pdo->beginTransaction();
     try {
         $inst = [];
@@ -240,8 +286,9 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
             purge_take($pdo, $T, 'fin_receipt_lines', "source = 'C' AND installment_id IN ($in)");
         }
         $nInst = purge_take($pdo, $T, 'company_installments', "plate_id IN ($pin)");
-        try { foreach ($pdo->query("SELECT file_path FROM policy_endorsements WHERE source = 'C' AND ref_id IN ($pin)")->fetchAll(PDO::FETCH_COLUMN) as $p) purge_path($T, $p); } catch (Throwable $e) {}
-        purge_take($pdo, $T, 'policy_endorsements', "source = 'C' AND ref_id IN ($pin)");
+        // الحاقیه‌هایی که درخواست‌های الحاقیه/فسخِ همین ردیف‌ها روی بیمه‌نامه‌های دیگر ساخته‌اند (اثرِ مالی برمی‌گردد) و الحاقیه‌های خودِ این بیمه‌نامه‌ها
+        $nEndo = purge_endo_linked($pdo, $siteRoot, $pids, $T);
+        $nEndo += purge_endo_of_policies($pdo, $siteRoot, "source = 'C' AND ref_id IN ($pin)", [], $T);
         try {
             $q = $pdo->prepare("SELECT file_path FROM company_documents WHERE request_id = ? OR plate_id IN ($pin)"); $q->execute([$requestId]);
             foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) purge_path($T, $p);
@@ -263,5 +310,5 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
     if (!empty($req['letter_file_path'])) purge_path($T, $req['letter_file_path']);
     $summary = 'درخواستِ شرکتیِ ' . ($req['ref_code'] ?: '#' . $requestId) . ' (' . ($req['company_name'] ?? '') . ')';
     purge_finish($pdo, $T, $userId, $summary);
-    return ['ok' => true, 'message' => $summary . ' با ' . fa_digits(count($plates)) . ' ردیف، ' . fa_digits($nDocs) . ' مدرک و ' . fa_digits($nInst) . ' قسط کامل حذف شد.', 'trash' => basename($T['dir'])];
+    return ['ok' => true, 'message' => $summary . ' با ' . fa_digits(count($plates)) . ' ردیف، ' . fa_digits($nDocs) . ' مدرک، ' . fa_digits($nInst) . ' قسط' . ($nEndo ? ' و ' . fa_digits($nEndo) . ' الحاقیه' : '') . ' کامل حذف شد.', 'trash' => basename($T['dir'])];
 }

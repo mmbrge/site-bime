@@ -27,6 +27,10 @@ import subprocess
 import sys
 import tempfile
 
+# روی هاستِ اشتراکی (CPUِ شلوغ) چند نخِ OpenMP در tesseract/PaddleOCR به‌جای کمک، منتظرِ هم می‌چرخند و یک صفحه
+# چند برابر (تا یک دقیقه و بیشتر) طول می‌کشد؛ با یک نخ زمان روی سرورِ خلوت همان است و روی سرورِ شلوغ چند برابر کمتر.
+os.environ.setdefault('OMP_THREAD_LIMIT', '1')
+
 FA_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
 KIND_FA = {'sales_invoice': 'فاکتور فروش (سند فروش کارخانه)', 'ownership_doc': 'سند مالکیت', 'policy': 'بیمه‌نامه',
            'car_card': 'کارت خودرو', 'unknown': 'نامشخص'}
@@ -94,14 +98,16 @@ def page_image(path, page_no, dpi=300):
                             spans.append({'t': t, 'x0': x0 * k, 'y0': y0 * k, 'x1': x1 * k, 'y1': y1 * k, 'src': 'text'})
         except Exception:
             pass
-        pm = pg.get_pixmap(dpi=dpi)
-        im = Image.open(io.BytesIO(pm.tobytes('png'))).convert('RGB')
+        pm = pg.get_pixmap(dpi=dpi, alpha=False)
+        # مستقیم از بایت‌های خامِ تصویر (بدونِ ساختن و دوباره خواندنِ PNG؛ چند ثانیه سریع‌تر)
+        im = Image.frombytes('RGB', (pm.width, pm.height), pm.samples) if pm.n == 3 else Image.open(io.BytesIO(pm.tobytes('png'))).convert('RGB')
     else:
         im = Image.open(path).convert('RGB')
         if max(im.size) < 1800:   # عکسِ کوچک: بزرگ‌تر برای OCR
             r = 2400.0 / max(im.size)
             im = im.resize((int(im.width * r), int(im.height * r)))
-    fd, png = tempfile.mkstemp(suffix='.png')
+    # فایلِ موقت برای tesseract: PPM (همان تصویرِ رنگی، ولی نوشتنش خیلی سریع‌تر از PNG است)
+    fd, png = tempfile.mkstemp(suffix='.ppm')
     os.close(fd)
     im.save(png)
     return im, png, spans
@@ -157,25 +163,44 @@ def read_barcodes(im):
 #  موتورهای OCR — خروجیِ همه: [{'t','x0','y0','x1','y1','src'}]
 # ---------------------------------------------------------------------------
 _PADDLE = None
+_PADDLE_ERR = ''
+
+
+def _paddle_init():
+    """PaddleOCR نسخه‌ی ۲ و ۳ آرگومان‌های متفاوتی دارند؛ آرگومانِ ناشناخته در نسخه‌ی ۳ خطای غیر TypeError می‌دهد.
+    در نسخه‌ی ۳ «صاف‌کردنِ سند» و «تشخیصِ چرخش» پیش‌فرض روشن‌اند و هر صفحه را چند برابر کُند می‌کنند: خاموش."""
+    import paddleocr
+    from paddleocr import PaddleOCR
+    v3 = dict(lang='fa', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
+    tries = [dict(v3, text_det_limit_side_len=1800, text_det_limit_type='max'), v3,
+             dict(lang='fa', use_angle_cls=False, show_log=False), dict(lang='fa')]
+    if str(getattr(paddleocr, '__version__', '')).startswith('2'):
+        tries = tries[2:]
+    last = None
+    for kw in tries:
+        try:
+            return PaddleOCR(**kw)
+        except Exception as e:
+            last = e
+    raise last
 
 
 def ocr_paddle(im):
-    global _PADDLE
+    global _PADDLE, _PADDLE_ERR
+    if _PADDLE_ERR:
+        return None        # یک بار شکست خورد: برای صفحه‌های بعدی دوباره مدل بارگذاری نمی‌شود
     try:
         import numpy as np
-        from paddleocr import PaddleOCR
+        import paddleocr  # noqa: F401
     except Exception:
         return None
     try:
         if _PADDLE is None:
-            try:
-                _PADDLE = PaddleOCR(lang='fa', use_angle_cls=False, show_log=False)   # نسخه‌ی ۲
-            except TypeError:
-                _PADDLE = PaddleOCR(lang='fa')                                     # نسخه‌ی ۳
+            _PADDLE = _paddle_init()
         arr = np.array(im)
         out = []
         if hasattr(_PADDLE, 'predict'):
-            res = _PADDLE.predict(arr)
+            res = _PADDLE.predict(np.ascontiguousarray(arr[:, :, ::-1]))   # نسخه‌ی ۳ تصویرِ BGR می‌خواهد
             for r in res or []:
                 rr = r.json.get('res', r) if hasattr(r, 'json') else r
                 texts = rr.get('rec_texts') or []
@@ -190,10 +215,49 @@ def ocr_paddle(im):
                     p, (t, _c) = it[0], it[1]
                     xs = [float(q[0]) for q in p]; ys = [float(q[1]) for q in p]
                     out.append({'t': t, 'x0': min(xs), 'y0': min(ys), 'x1': max(xs), 'y1': max(ys), 'src': 'paddle'})
-        return out
+        return fix_rtl_order(out)
     except Exception as e:
+        if _PADDLE is None:
+            _PADDLE_ERR = str(e)[:300]
         sys.stderr.write('paddle: %s\n' % e)
         return None
+
+
+# PaddleOCR متنِ فارسی/عربی را گاهی با ترتیبِ نمایشی (حروفِ برعکس) برمی‌گرداند: «یگداوناخ مان» به‌جای «نام خانوادگی».
+# جهت با شمردنِ واژه‌های آشنای مدارک در هر دو حالت انتخاب می‌شود (برای کلِ صفحه یکسان).
+_FA_WORDS = ('شماره', 'نام', 'تاریخ', 'موتور', 'شاسی', 'مالک', 'خانوادگی', 'سند', 'ملی', 'نوع', 'رنگ', 'مدل', 'سیستم', 'تیپ',
+             'ظرفیت', 'آدرس', 'پستی', 'فروش', 'وسیله', 'نقلیه', 'سازمان', 'ثبت', 'شرکت', 'تلفن', 'کاربری', 'سوخت', 'دانگ', 'انتظامی')
+
+
+def unreverse_rtl(t):
+    if not re.search(r'[\u0600-\u06FF]', t or ''):
+        return t
+    r = t[::-1]
+    # تکه‌های چپ‌به‌راست (رقم و حروفِ لاتین) دوباره به ترتیبِ خودشان
+    r = re.sub(r'[0-9A-Za-z\u06F0-\u06F9\u0660-\u0669][0-9A-Za-z\u06F0-\u06F9\u0660-\u0669.,/:\-*]*', lambda m: m.group(0)[::-1], r)
+    return r.translate(str.maketrans('()[]{}<>', ')(][}{><'))
+
+
+def fix_rtl_order(boxes):
+    if not boxes:
+        return boxes
+    text = ' '.join(norm(b['t']) for b in boxes)
+    rev = ' '.join(norm(unreverse_rtl(b['t'])) for b in boxes)
+    sc = lambda x: sum(x.count(w) for w in _FA_WORDS)
+    if sc(rev) > sc(text):
+        for b in boxes:
+            b['t'] = unreverse_rtl(b['t'])
+    return boxes
+
+
+def tesseract_fa():
+    exe = shutil.which('tesseract')
+    if not exe:
+        return False
+    try:
+        return 'fas' in subprocess.run([exe, '--list-langs'], capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return False
 
 
 def ocr_tesseract(png):
@@ -248,6 +312,18 @@ def ocr_rapid(im):
     except Exception as e:
         sys.stderr.write('rapid: %s\n' % e)
         return None
+
+
+def ocr_rapid_scaled(im, max_w=1700):
+    if im.width <= max_w:
+        return ocr_rapid(im)
+    k = im.width / float(max_w)
+    out = ocr_rapid(im.resize((max_w, int(im.height / k))))
+    if out:
+        for b in out:
+            for c in ('x0', 'y0', 'x1', 'y1'):
+                b[c] *= k
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +459,9 @@ def fdate(s):
     return '%s/%02d/%02d' % (m.group(1), int(m.group(2)), int(m.group(3))) if m else ''
 
 
+# کدِ حرفِ پلاک در بارکدِ سندِ مالکیت — فقط کدهایی که روی سندهای واقعی دیده و تأیید شده‌اند؛
+# حرفِ ناشناخته خالی می‌ماند (رقم‌ها پر می‌شوند) تا کارشناس انتخابش کند.
+PLATE_LETTER_CODES = {'02': 'ب', '09': 'ع'}
 PLATE_RX = re.compile(r'(\d{2})\s*[|\-]?\s*(\d{3})\s*([آ-ی])\s*(\d{2})|(\d{2})\s*([آ-ی])\s*(\d{3})\s*[|\-]?\s*(\d{2})')
 
 
@@ -615,6 +694,15 @@ def extract(atoms, boxes, barcodes, alltext, page_w):
     if m:
         g = m.groups()
         d['plate'] = ('%s%s%s - %s' % (g[0], g[2], g[1], g[3])) if g[0] else ('%s%s%s - %s' % (g[4], g[5], g[6], g[7]))
+    # سندِ مالکیت: بارکدِ ۹ رقمیِ کنارِ پلاک = کدِ ایران(۲) + کدِ حرف(۲) + دو رقم + سه رقم (مثلاً 440958184 => ۵۸ ع ۱۸۴ ایران ۴۴)
+    if not d.get('plate'):
+        for x in bc:
+            pm = re.fullmatch(r'([1-9]\d)(\d{2})(\d{2})(\d{3})', x.strip())
+            if pm:
+                d['plate_parts'] = {'iran': pm.group(1), 'letter': PLATE_LETTER_CODES.get(pm.group(2), ''), 'two': pm.group(3), 'three': pm.group(4), 'letter_code': pm.group(2)}
+                if d['plate_parts']['letter']:
+                    d['plate'] = '%s%s%s - %s' % (pm.group(3), d['plate_parts']['letter'], pm.group(4), pm.group(1))
+                break
     if d.get('car_system') or d.get('car_tip'):
         d['car_name'] = ' '.join(x for x in [d.get('car_system', ''), d.get('car_tip', '')] if x).strip()
     return d
@@ -628,6 +716,19 @@ REQUIRED = {
 }
 
 
+def _fa_ocr(im, png):
+    """OCRِ فارسی: tesseract (اگر fas دارد؛ سریع و با ترتیبِ درست) وگرنه PaddleOCR => (boxes, engine)"""
+    if tesseract_fa():
+        b = ocr_tesseract(png)
+        if b is not None:
+            return b, 'tesseract'
+    b = ocr_paddle(im)
+    if b is not None:
+        return b, 'paddle'
+    b = ocr_tesseract(png)
+    return (b, 'tesseract') if b is not None else (None, '')
+
+
 def read(path, page_no=1):
     im, png, spans = page_image(path, page_no)
     engines = []
@@ -639,48 +740,66 @@ def read(path, page_no=1):
         barcodes = read_barcodes(im)
         if barcodes is not None:
             engines.append('barcode')
+        fa_boxes = None
         if not boxes:
-            fa_boxes = ocr_paddle(im)
-            eng = 'paddle'
-            if fa_boxes is None:
-                fa_boxes, eng = ocr_tesseract(png), 'tesseract'
+            fa_boxes, eng = _fa_ocr(im, png)
             if fa_boxes is not None:
                 engines.append(eng)
-                # پس‌زمینه‌ی طرح‌دار (سندِ سبزِ پلیس، کارت): اگر برچسب کم خوانده شد، یک بار روی تصویرِ پاک‌سازی‌شده
-                if len(label_hits(fa_boxes)) < 6:
+                # پس‌زمینه‌ی طرح‌دار (سندِ سبزِ پلیس، کارت): اگر برچسب خیلی کم خوانده شد، یک بار روی تصویرِ پاک‌سازی‌شده
+                # (PaddleOCR کُند است: فقط وقتی تقریباً هیچ برچسبی پیدا نشد)
+                hits = len(label_hits(fa_boxes))
+                if hits < (6 if eng == 'tesseract' else 2):
                     im2 = clean_image(im)
                     fd2, png2 = tempfile.mkstemp(suffix='.png'); os.close(fd2); im2.save(png2)
                     try:
                         b2 = ocr_paddle(im2.convert('RGB')) if eng == 'paddle' else ocr_tesseract(png2)
                     finally:
                         os.unlink(png2)
-                    if b2 and len(label_hits(b2)) > len(label_hits(fa_boxes)):
+                    if b2 and len(label_hits(b2)) > hits:
                         fa_boxes = b2
                         engines.append('cleaned')
             boxes = fa_boxes or []
-            lat = ocr_rapid(im)
-            if lat is not None:
-                engines.append('rapid')
-                boxes = boxes + lat   # حروفِ لاتینِ دقیق‌تر؛ برچسب‌های فارسی از موتورِ فارسی
         if not boxes and not barcodes:
-            return {'ok': False, 'error': 'هیچ موتورِ شناسایی (OCR) روی سرور در دسترس نیست یا صفحه خالی است.', 'engines': engines}
-        fa_only = [b for b in boxes if b.get('src') != 'rapid']
-        rows = to_rows(fa_only or boxes)
-        alltext = '\n'.join(r['text'] for r in rows) + '\n' + '\n'.join(norm(b['t']) for b in boxes if b.get('src') == 'rapid')
+            lat0 = ocr_rapid(im)
+            if not lat0:
+                return {'ok': False, 'error': 'هیچ موتورِ شناسایی (OCR) روی سرور در دسترس نیست یا صفحه خالی است.', 'engines': engines}
+            boxes = lat0
+            engines.append('rapid')
+
+        def run(bxs):
+            fa_only = [b for b in bxs if b.get('src') != 'rapid']
+            rows = to_rows(fa_only or bxs)
+            alltext = '\n'.join(r['text'] for r in rows) + '\n' + '\n'.join(norm(b['t']) for b in bxs if b.get('src') == 'rapid')
+            return alltext, extract(fa_only or bxs, bxs, barcodes, alltext, im.width)
+        alltext, data = run(boxes)
+        # OCRِ لاتین (RapidOCR): تیپ، سال، شماره اتاق و … هم از آن می‌آید؛ روی تصویرِ کوچک‌تر (سریع‌تر، حروفِ لاتینِ چاپی هنوز خواناست)
+        if fa_boxes is not None and 'rapid' not in engines:
+            lat = ocr_rapid_scaled(im)
+            if lat:
+                engines.append('rapid')
+                boxes = boxes + lat
+                alltext, data = run(boxes)
         kind = classify(alltext)
-        data = extract(fa_only or boxes, boxes, barcodes, alltext, im.width)
         if kind == 'unknown' and data.get('vin') and data.get('engine_no'):
-            kind = 'sales_invoice' if data.get('cab_no') or data.get('owner_share') else 'ownership_doc' if data.get('plate') else 'unknown'
+            kind = 'sales_invoice' if data.get('cab_no') or data.get('owner_share') else 'ownership_doc' if (data.get('plate') or data.get('plate_parts')) else 'unknown'
         if kind == 'policy':   # بیمه‌نامه‌ی قبلیِ همین خودرو: ثالث یا بدنه
             data['policy_type'] = 'BODY' if re.search(r'بدنه', alltext) and not re.search(r'شخص\s*ثالث', alltext) else 'THIRDPARTY'
+        if kind != 'ownership_doc' and kind != 'car_card':
+            data.pop('plate_parts', None)
         req = REQUIRED.get(kind, [])
         missing = [fa for k, fa in req if not (data.get(k) or (k == 'vin' and data.get('chassis_no')))]
         if data.get('engine_guess') and 'شماره موتور' not in missing:
             missing.append('شماره موتور (حدسی؛ تأیید شود)')
+        if kind == 'ownership_doc' and not data.get('plate'):
+            missing.append('حرفِ پلاک' if data.get('plate_parts') else 'پلاک')
         ident = bool(data.get('vin') or data.get('chassis_no') or data.get('engine_no'))
         status = 'full' if (req and not missing) else ('partial' if ident or (kind != 'unknown') else 'none')
-        return {'ok': True, 'kind': kind, 'kind_fa': KIND_FA[kind], 'status': status, 'data': data, 'missing': missing,
-                'engines': engines, 'barcodes': [b['t'] for b in (barcodes or [])]}
+        out = {'ok': True, 'kind': kind, 'kind_fa': KIND_FA[kind], 'status': status, 'data': data, 'missing': missing,
+               'engines': engines, 'barcodes': [b['t'] for b in (barcodes or [])]}
+        if 'text' not in engines and 'paddle' not in engines and 'tesseract' not in engines:
+            out['warn'] = 'OCRِ فارسی روی سرور کار نکرد؛ فقط حروف/ارقامِ لاتین (شاسی، موتور) خوانده شد.' + (
+                ' PaddleOCR: ' + _PADDLE_ERR if _PADDLE_ERR else '')
+        return out
     finally:
         try:
             os.unlink(png)
@@ -691,8 +810,31 @@ def read(path, page_no=1):
 if __name__ == '__main__':
     try:
         p = sys.argv[1]
-        n = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-        res = read(p, n)
+        arg = sys.argv[2] if len(sys.argv) > 2 else '1'
+        if p == '--files':
+            # چند فایلِ تک‌صفحه‌ای در یک اجرا (صفحه‌های جداشده‌ی یک PDF): مدلِ OCR یک بار بارگذاری می‌شود
+            res = {'ok': True, 'multi': True, 'pages': []}
+            for i, fp in enumerate(sys.argv[2:12]):
+                try:
+                    r = read(fp, 1)
+                except Exception as e:
+                    r = {'ok': False, 'error': 'خواندنِ صفحه ممکن نشد: %s' % e}
+                r['i'] = i
+                res['pages'].append(r)
+            sys.stdout.write(json.dumps(res, ensure_ascii=False) + '\n')
+            sys.exit(0)
+        if ',' in arg:
+            # چند صفحه در یک اجرا: مدلِ OCR یک بار بارگذاری می‌شود
+            res = {'ok': True, 'multi': True, 'pages': []}
+            for n in [int(x) for x in arg.split(',') if x.strip().isdigit()][:10]:
+                try:
+                    r = read(p, n)
+                except Exception as e:
+                    r = {'ok': False, 'error': 'خواندنِ صفحه ممکن نشد: %s' % e}
+                r['n'] = n
+                res['pages'].append(r)
+        else:
+            res = read(p, int(arg))
     except Exception as e:
         res = {'ok': False, 'error': 'خواندنِ فایل ممکن نشد: %s' % e}
     sys.stdout.write(json.dumps(res, ensure_ascii=False) + '\n')

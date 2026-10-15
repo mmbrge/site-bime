@@ -38,6 +38,8 @@ try {
             $out['installments'] = $count("SELECT COUNT(*) FROM policy_installments i JOIN policy_cases pc ON pc.id = i.case_id WHERE $where", [$id]);
             $out['paid'] = $count("SELECT COALESCE(SUM(a.amount), 0) FROM payment_allocations a JOIN policy_installments i ON i.id = a.installment_id JOIN policy_cases pc ON pc.id = i.case_id WHERE $where", [$id]);
             $out['invoiced'] = $count("SELECT COUNT(*) FROM policy_cases pc WHERE $where AND pc.is_invoiced = 1", [$id]);
+            $out['endorsements'] = $count("SELECT COUNT(*) FROM policy_endorsements e JOIN policy_cases pc ON pc.id = e.ref_id AND e.source = 'P' WHERE $where", [$id]);
+            $out['endo_linked'] = 0;
         } else {
             $out['title'] = (string)$pdo->query("SELECT CONCAT(COALESCE(cr.ref_code, CONCAT('#', cr.id)), ' - ', COALESCE(c.name, '')) FROM company_requests cr LEFT JOIN companies c ON c.id = cr.company_id WHERE cr.id = " . $id)->fetchColumn();
             if ($out['title'] === '') pout(['ok' => false, 'error' => 'مورد یافت نشد.']);
@@ -47,6 +49,10 @@ try {
             $out['installments'] = $count("SELECT COUNT(*) FROM company_installments ci JOIN company_request_plates p ON p.id = ci.plate_id WHERE p.request_id = ?", [$id]);
             $out['paid'] = $count("SELECT COALESCE(SUM(a.amount), 0) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id JOIN company_request_plates p ON p.id = ci.plate_id WHERE p.request_id = ?", [$id]);
             $out['invoiced'] = 0;
+            $out['endorsements'] = $count("SELECT COUNT(*) FROM policy_endorsements e JOIN company_request_plates p ON p.id = e.ref_id AND e.source = 'C' WHERE p.request_id = ?", [$id]);
+            // الحاقیه/فسخی که ردیف‌های این درخواست روی بیمه‌نامه‌های دیگر ساخته‌اند (اثرِ مالی‌شان برمی‌گردد)
+            $out['endo_linked'] = $count("SELECT COUNT(*) FROM policy_endorsements e JOIN company_request_plates p ON p.id = e.request_plate_id
+                                          WHERE p.request_id = ? AND NOT (e.source = 'C' AND e.ref_id IN (SELECT id FROM company_request_plates WHERE request_id = ?))", [$id, $id]);
         }
         pout($out);
     }
