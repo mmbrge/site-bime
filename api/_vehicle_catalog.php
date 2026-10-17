@@ -31,6 +31,34 @@ function vc_ensure($pdo) {
         KEY k_kind (kind, grp), KEY k_title (title)
     ) DEFAULT CHARSET=utf8mb4");
     if (!(int)$pdo->query("SELECT COUNT(*) FROM vehicle_catalog")->fetchColumn()) vc_seed($pdo);
+    vc_split_pride($pdo);
+}
+
+// گروهِ جدا و رده‌ی نرخِ «پراید / پیکان» (رده‌ی ۱ در premium_calc.php) - نرخش با بقیه‌ی ۴ سیلندرها فرق دارد
+const VC_PRIDE_GRP = '۴ سیلندر (پراید و پیکان)';
+
+// خانواده‌ی پراید (پراید، سایپا ۱۱۱/۱۳۱/۱۳۲/۱۴۱، صبا، نسیم) و پیکان (پیکان، هیلمن) - «کیا پیکانتو» جزوش نیست
+function vc_is_pride($title) {
+    $t = vc_norm($title);
+    if (mb_strpos($t, 'پیکانتو') !== false) return false;
+    return (bool)preg_match('/پراید|پیکان|^سایپا\s*(111|131|132|141)(\D|$)|^(صبا|نسیم|هیلمن)(\s|$)/u', $t);
+}
+
+// یک بار روی فهرستِ موجود: مدل‌های پراید و پیکان که هنوز در گروهِ «۴ سیلندر» هستند به گروهِ جدا با رده‌ی ۱ می‌روند،
+// و «کیا پیکانتو» که اشتباهی رده‌ی ۱ گرفته بود رده‌ی درستش (۴ سیلندر = ۲، ۳ سیلندر = ۳) را می‌گیرد.
+// فقط ردیف‌هایی که هنوز همان مقدارِ اولیه را دارند عوض می‌شوند؛ تغییرِ دستیِ پنل دست نمی‌خورد.
+function vc_split_pride($pdo) {
+    try {
+        $f = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'vc_pride_split_v1'")->fetchColumn();
+        if ($f === '1') return;
+        $up = $pdo->prepare("UPDATE vehicle_catalog SET grp = ?, premium_cat = 1 WHERE id = ?");
+        foreach ($pdo->query("SELECT id, title FROM vehicle_catalog WHERE kind = 'CAR' AND grp = '۴ سیلندر'")->fetchAll(PDO::FETCH_ASSOC) as $r)
+            if (vc_is_pride($r['title'])) $up->execute([VC_PRIDE_GRP, $r['id']]);
+        $fix = $pdo->prepare("UPDATE vehicle_catalog SET premium_cat = ? WHERE id = ?");
+        foreach ($pdo->query("SELECT id, title, cylinders FROM vehicle_catalog WHERE kind = 'CAR' AND premium_cat = 1")->fetchAll(PDO::FETCH_ASSOC) as $r)
+            if (mb_strpos(vc_norm($r['title']), 'پیکانتو') !== false) $fix->execute([(int)$r['cylinders'] === 3 ? 3 : 2, $r['id']]);
+        $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('vc_pride_split_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+    } catch (Throwable $e) { error_log('[vc_split_pride] ' . $e->getMessage()); }
 }
 
 function vc_seed($pdo) {
@@ -65,7 +93,12 @@ function vc_groups($pdo, $kind) {
     vc_ensure($pdo);
     $st = $pdo->prepare("SELECT grp, COUNT(*) n, MAX(premium_cat IS NOT NULL) has_rate FROM vehicle_catalog WHERE kind = ? AND active = 1 GROUP BY grp ORDER BY MIN(id)");
     $st->execute([$kind]);
-    return array_map(fn($r) => ['grp' => $r['grp'], 'n' => (int)$r['n'], 'has_rate' => (int)$r['has_rate']], $st->fetchAll(PDO::FETCH_ASSOC));
+    $g = array_map(fn($r) => ['grp' => $r['grp'], 'n' => (int)$r['n'], 'has_rate' => (int)$r['has_rate']], $st->fetchAll(PDO::FETCH_ASSOC));
+    // «۴ سیلندر (پراید و پیکان)» درست بعد از «۴ سیلندر» بیاید
+    $pi = array_search(VC_PRIDE_GRP, array_column($g, 'grp'), true);
+    $fi = array_search('۴ سیلندر', array_column($g, 'grp'), true);
+    if ($pi !== false && $fi !== false && $pi !== $fi + 1) { $row = array_splice($g, $pi, 1)[0]; $fi = array_search('۴ سیلندر', array_column($g, 'grp'), true); array_splice($g, $fi + 1, 0, [$row]); }
+    return $g;
 }
 
 // مدل‌ها (در یک گروه، یا جستجو در همه‌ی گروه‌های یک نوع)
@@ -122,7 +155,11 @@ function vc_search($pdo, $kind, $q = '', $brand = '', $limit = 600) {
                                   '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']);
     $low = fn($x) => mb_strtolower($fa2en(vc_norm($x)));
     $count = [];
-    foreach ($rows as &$r) { $r['brand'] = vc_brand($kind, $r['title']); $count[$r['brand']] = ($count[$r['brand']] ?? 0) + 1; }
+    foreach ($rows as &$r) {
+        $r['brand'] = vc_brand($kind, $r['title']); $count[$r['brand']] = ($count[$r['brand']] ?? 0) + 1;
+        // سایپا ۱۳۱، صبا، … با «پراید» و هیلمن با «پیکان» هم پیدا می‌شوند
+        $r['alias'] = $r['grp'] === VC_PRIDE_GRP ? (preg_match('/پیکان|هیلمن/u', $r['title']) ? 'پیکان' : 'پراید') : '';
+    }
     unset($r);
     $q = $low($q); $brand = vc_norm($brand);
     if ($q === '' && $brand === '') {
@@ -135,9 +172,9 @@ function vc_search($pdo, $kind, $q = '', $brand = '', $limit = 600) {
     $tokens = $q === '' || $brand !== '' ? [] : array_slice(preg_split('/\s+/u', $q), 0, 5);
     $res = [];
     foreach ($rows as $r) {
-        if ($brand !== '' && $r['brand'] !== $brand) continue;
+        if ($brand !== '' && $r['brand'] !== $brand && $r['alias'] !== $brand) continue;
         if ($tokens) {
-            $hay = $low($r['title'] . ' ' . $r['brand']);
+            $hay = $low($r['title'] . ' ' . $r['brand'] . ($r['alias'] !== '' ? ' ' . $r['alias'] : ''));
             $hayNs = str_replace(' ', '', $hay);
             $ok = true;
             foreach ($tokens as $tk) if (mb_strpos($hay, $tk) === false && mb_strpos($hayNs, $tk) === false && (string)$r['code'] !== $tk) { $ok = false; break; }
