@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/plate.css?v=4">
 <script src="/chat-ui.js?v=12"></script>
 <script src="/maint-watch.js?v=1"></script>
+<script src="../mini-kit.js?v=2"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -118,6 +119,35 @@
   .app-footer img { height: 26px; width: auto; opacity: .9; }
   .app-footer .footer-text { flex: 1; text-align: center; font-size: 9.5px; color: #94a3b8; line-height: 1.7; }
   .app-footer .footer-text b { color: #a5b4fc; }
+  /* زنگوله: وقتی اعلانِ خوانده‌نشده هست تکان می‌خورد و نشانش می‌تپد */
+  .notif-icon-wrap.has-unread { border-color: rgba(251,191,36,.6); background: rgba(251,191,36,.12); animation: bellShake 2.8s ease-in-out infinite; transform-origin: 50% 10%; }
+  .notif-icon-wrap.has-unread .notif-badge { animation: badgePulse 1.4s ease-in-out infinite; }
+  @keyframes bellShake { 0%,62%,100% { transform: rotate(0); } 66% { transform: rotate(14deg); } 72% { transform: rotate(-12deg); } 78% { transform: rotate(9deg); } 84% { transform: rotate(-6deg); } 90% { transform: rotate(3deg); } }
+  @keyframes badgePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.6); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+  .nt-card { display: flex; gap: 12px; align-items: flex-start; background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; position: relative; }
+  .nt-card .nt-ic { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .nt-card.success .nt-ic { background: rgba(16,185,129,.18); } .nt-card.warning .nt-ic { background: rgba(245,158,11,.18); }
+  .nt-card.error .nt-ic { background: rgba(239,68,68,.18); } .nt-card.info .nt-ic { background: rgba(99,102,241,.2); }
+  .nt-card.unread { border-color: rgba(165,180,252,.6); background: linear-gradient(135deg, rgba(99,102,241,.14), rgba(255,255,255,.05)); }
+  .nt-card.unread::before { content: 'جدید'; position: absolute; top: 10px; left: 12px; font-size: 9.5px; font-weight: 900; color: #fff; background: #ef4444; padding: 2px 7px; border-radius: 8px; }
+  .nt-card b { display: block; font-size: 13px; margin-bottom: 4px; padding-left: 40px; }
+  .nt-card p { font-size: 12px; color: #cbd5e1; margin: 0; line-height: 1.9; white-space: pre-line; }
+  .nt-card small { display: block; font-size: 10px; color: #64748b; margin-top: 6px; }
+  .nt-sec { font-size: 11.5px; font-weight: 900; color: #a5b4fc; margin: 4px 0 10px; }
+  /* بیمه‌نامه‌های من */
+  .pol-card { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 16px; margin-bottom: 14px; }
+  .pol-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .pol-head b { font-size: 14.5px; }
+  .pol-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 11.5px; margin: 12px 0 4px; }
+  .pol-kv span { color: #94a3b8; } .pol-kv b { color: #e2e8f0; font-weight: 700; text-align: left; }
+  .pol-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .pol-card .mk-stages { margin: 16px 0 6px; }
+  .pol-card .mk-st i { width: 42px; height: 42px; font-size: 18px; }
+  .pol-card .mk-st:not(:last-child)::after { top: 20px; }
+  .pol-card .mk-st span { font-size: 11px; }
+  .pol-draft { font-size: 11.5px; color: #fcd34d; background: rgba(245,158,11,.1); border: 1px dashed rgba(245,158,11,.5); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+  #support-chat .cx-topic { display: flex; width: 100%; justify-content: center; padding: 9px 12px; font-size: 12px; border: 1.5px dashed #a5b4fc; color: #c7d2fe; background: rgba(99,102,241,.12); border-radius: 12px; margin-bottom: 8px; }
+  #support-chat .cx-topic.set { border-style: solid; background: rgba(16,185,129,.14); border-color: #34d399; color: #a7f3d0; }
   .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--danger); color: #fff; font-size: 9px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
 </style>
 <link rel="stylesheet" href="/ui-scroll.css?v=3">
@@ -165,11 +195,11 @@
     </div>
   </div>
   <div class="grid-cards">
-    <div class="card-btn wide" onclick="location.href='../order/index_order.html?t='+TOKEN">
+    <div class="card-btn wide" onclick="goOrder()">
       <span class="ic">📝</span>
       <div class="lbl">ثبت درخواست بیمه جدید</div>
     </div>
-    <div class="card-btn" onclick="openVisitHub()"><span class="ic">🚗</span><span class="lbl">بازدید مدارک و سلامت خودرو</span></div>
+    <div class="card-btn" onclick="openVisitHub()"><span class="ic">📎</span><span class="lbl">بارگزاری مدارک</span><span class="sub" id="docs-count-badge"></span></div>
     <div class="card-btn" onclick="nav('policies')"><span class="ic">📁</span><span class="lbl">بیمه‌نامه‌های من</span><span class="sub" id="policies-count-badge"></span></div>
     <div class="card-btn" onclick="nav('vehicles')"><span class="ic">🚙</span><span class="lbl">پلاک‌های من</span><span class="sub" id="vehicles-count-badge"></span></div>
     <div class="card-btn" onclick="location.href='../premium/index_premium.html?t='+TOKEN"><span class="ic">💰</span><span class="lbl">استعلام حق بیمه</span></div>
@@ -178,6 +208,13 @@
       <span id="support-reply-badge" style="display:none; position:absolute; top:8px; left:8px; font-size:9px; background:var(--success); color:#fff; padding:2px 6px; border-radius:8px; font-weight:800;">پاسخ جدید</span>
     </div>
   </div>
+</div>
+
+<!-- ==================== خارج از ساعتِ کاری (ثبتِ درخواست) ==================== -->
+<div id="screen-closed" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>⏰ ساعتِ کاری</h2><div style="width:38px"></div></div>
+  <div id="closed-box"></div>
+  <button class="btn btn-outline" style="margin-top:16px;" onclick="nav('home')">بازگشت به صفحه‌ی اصلی</button>
 </div>
 
 <!-- ==================== اعلان‌ها ==================== -->
@@ -218,7 +255,7 @@
 <div id="screen-health" class="screen">
   <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚗 بازدید سلامت</h2><div style="width:38px"></div></div>
   <div id="health-case-list"></div>
-  <div id="free-health-wrap">
+  <div id="free-health-wrap" style="display:none;">
   <p style="font-size:12px;color:#94a3b8;margin:14px 0 8px;">یا برای خودروی دیگری غیر از موارد بالا:</p>
   <div class="ir-pin" dir="ltr">
       <span class="ip-flag"></span>
@@ -341,8 +378,8 @@ function nav(screen) {
 
 // این‌جا داخل WebView محدودِ مینی‌اپ هستیم؛ برای این‌که «هاب بازدید» واقعاً در مرورگر معمولیِ
 // داخل بله باز شود (نه همین WebView)، باید از openLink استفاده کنیم، نه فقط location.href
-function openVisitHub() {
-    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}`;
+function openVisitHub(caseId, tab) {
+    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}` + (caseId ? `&case=${caseId}` : '') + (tab ? `&tab=${tab}` : '');
     try {
         if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
             Bale.WebApp.openLink(url);
@@ -408,44 +445,86 @@ async function initApp() {
         document.getElementById('home-nid').textContent = data.national_code ? toFa(data.national_code) : '';
         document.getElementById('policies-count-badge').textContent = data.policies_count ? `${toFa(data.policies_count)} مورد` : '';
         document.getElementById('vehicles-count-badge').textContent = data.vehicles_count ? `${toFa(data.vehicles_count)} پلاک` : '';
-        const badge = document.getElementById('notif-badge');
-        if (data.unread_notifications > 0) { badge.textContent = toFa(data.unread_notifications); badge.style.display = 'flex'; }
+        setUnread(data.unread_notifications);
+        HOURS = data.hours || null;
+        document.getElementById('docs-count-badge').textContent = data.awaiting_docs ? `${toFa(data.awaiting_docs)} درخواست در انتظار` : '';
+        if (data.awaiting_docs) document.getElementById('docs-count-badge').style.color = '#fcd34d';
+        setInterval(pollUnread, 30000);
         if (data.has_unread_support_reply) { document.getElementById('support-reply-badge').style.display = 'block'; }
         showScreen('home');
         paintMyAvatar(); loadMyAvatar(); startPresence();
         // لینکِ «مشاهده و پاسخ» در پیامِ ربات مستقیم گفتگو را باز می‌کند
         if (params.get('open') === 'support') nav('support');
+        if (params.get('open') === 'policies') nav('policies');
     } catch (e) { showAppError('خطا در اتصال به سرور.'); }
 }
 function showAppError(msg) { document.getElementById('error-text').textContent = msg; showScreen('error'); }
 
-// ======================= بیمه‌نامه‌های من =======================
-const STATUS_FA = {REGISTERED:'ثبت شده', AWAITING_DOCS:'در انتظار بارگذاری مدارک', DOCS_PENDING:'در انتظار اصلاح', DOCS_REVIEW:'در انتظار تایید مدارک', ISSUING:'در حال صدور', ISSUED:'صادر شده ✅', REJECTED:'رد شده'};
-const STATUS_CLASS = {REGISTERED:'pending', DOCS_PENDING:'rejected', DOCS_REVIEW:'review', ISSUING:'issuing', ISSUED:'issued', REJECTED:'rejected'};
+// ======================= ثبتِ درخواست (با ساعتِ کاری) =======================
+let HOURS = null;
+async function goOrder() {
+    try { const d = await (await fetch(`/api/webapp_order.php?action=init&token=${encodeURIComponent(TOKEN)}`)).json(); if (d && d.hours) HOURS = d.hours; } catch (e) {}
+    if (HOURS && HOURS.open === false) {
+        showScreen('closed');
+        if (window.MiniKit) MiniKit.closedScreen(document.getElementById('closed-box'), HOURS);
+        return;
+    }
+    location.href = '../order/index_order.html?t=' + encodeURIComponent(TOKEN);
+}
 
+// ======================= بیمه‌نامه‌های من =======================
+const escH = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => toFa(Number(n || 0).toLocaleString('en-US'));
 async function loadPolicies() {
     const box = document.getElementById('policies-list');
     box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
     try {
         const res = await fetch(`${API}?action=my_policies&token=${encodeURIComponent(TOKEN)}`);
         const data = await res.json();
-        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${escH(data.error)}</div>`; return; }
         if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">هنوز درخواست بیمه‌ای ثبت نکرده‌اید.</div>'; return; }
-        box.innerHTML = data.data.map(c => `
-            <div class="list-card">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <b style="font-size:13px;">${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</b>
-                    <span class="badge ${STATUS_CLASS[c.status]||''}">${STATUS_FA[c.status]||c.status}</span>
+        box.innerHTML = data.data.map(c => {
+            const rows = [];
+            if (c.kind_fa || c.car_system) rows.push(['وسیله', [c.kind_fa, c.car_system].filter(Boolean).join(' · ')]);
+            if (c.no_plate && c.chassis_num) rows.push(['شماره شاسی', c.chassis_num]);
+            if (c.insured_name) rows.push(['بیمه‌گذار', c.insured_name + (c.insured_relationship && c.insured_relationship !== 'خودم' ? ` (${c.insured_relationship})` : '')]);
+            if (c.insurance_type === 'THIRDPARTY' && c.liability_limit) rows.push(['سقف تعهد مالی', money(c.liability_limit / 10) + ' تومان']);
+            if (c.insurance_type === 'BODY' && c.estimated_car_value > 0) rows.push(['ارزش خودرو', money(c.estimated_car_value) + ' تومان']);
+            if (c.policy_number) rows.push(['شماره بیمه‌نامه', toFa(c.policy_number)]);
+            if (c.issued_j) rows.push(['تاریخ صدور', c.issued_j]);
+            if (c.end_date_j) rows.push(['تاریخ انقضا', c.end_date_j]);
+            if (c.status === 'ISSUED' && c.total_premium > 0) rows.push(['حق بیمه', money(c.total_premium) + ' ریال']);
+            rows.push(['تاریخ ثبت درخواست', c.created_j]);
+            const draft = c.stage === 'draft';
+            const actions = [];
+            if (c.status === 'ISSUED') {
+                actions.push(c.has_file ? `<button class="btn btn-primary" onclick="downloadPolicy(${c.id})">📥 دانلودِ فایلِ بیمه‌نامه</button>` : '<div class="pol-draft" style="color:#bfdbfe;border-color:rgba(96,165,250,.5);background:rgba(96,165,250,.1)">📄 فایلِ بیمه‌نامه به‌زودی بارگذاری می‌شود.</div>');
+                actions.push(`<button class="btn btn-outline btn-sm" onclick="toggleInstallments(${c.id}, this)">💳 اقساطِ این بیمه‌نامه</button><div id="inst-box-${c.id}" style="display:none;"></div>`);
+            } else if (['awaiting', 'needs_fix'].includes(c.stage)) {
+                actions.push(`<button class="btn btn-primary" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#1c1917;" onclick="openVisitHub(${c.id})">📎 بارگزاری مدارک</button>`);
+            } else if (!draft) {
+                actions.push(`<button class="btn btn-outline btn-sm" onclick="openVisitHub(0, 'uploaded')">📂 مشاهده‌ی مدارکِ بارگزاری‌شده</button>`);
+            }
+            if (draft) actions.push(`<button class="btn btn-outline btn-sm" onclick="location.href='../order/index_order.html?t=${encodeURIComponent(TOKEN)}&case=${c.id}'">✏️ ادامه‌ی ثبتِ درخواست</button>`);
+            return `<div class="pol-card">
+                <div class="pol-head"><b>${escH(c.kind_icon)} ${escH(c.type_fa)}</b>${formatPlateHtml(c.plate) || ''}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                    ${draft ? '<span class="mk-pill awaiting">📝 ثبتِ درخواست تکمیل نشده</span>' : (window.MiniKit ? MiniKit.stagePill(c.stage) : escH(c.stage_fa))}
+                    <span style="font-size:10px;color:#64748b;direction:ltr;">${escH(c.unique_code)}</span>
                 </div>
-                <div style="margin-top:8px;">${formatPlateHtml(c.plate) || '<span style="font-size:11px;color:#64748b;">بدون پلاک</span>'}</div>
-                <div style="font-size:10px;color:#64748b;margin-top:6px;">شناسه: ${c.unique_code}</div>
-                ${c.status === 'ISSUED' ? `
-                    <a href="${API}?action=download_policy&token=${encodeURIComponent(TOKEN)}&case_id=${c.id}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="margin-top:10px;">📥 دانلود فایل بیمه‌نامه</a>
-                    <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="toggleInstallments(${c.id}, this)">💳 اقساط این بیمه‌نامه</button>
-                    <div id="inst-box-${c.id}" style="display:none; margin-top:10px;"></div>
-                ` : ''}
-            </div>`).join('');
+                ${c.is_cancelled ? '<div class="pol-draft" style="color:#fecaca;border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.1)">⛔ این بیمه‌نامه فسخ شده است.</div>' : ''}
+                ${!draft && window.MiniKit ? MiniKit.stages(c.stage) : ''}
+                <div class="pol-kv">${rows.map(([k, v]) => `<span>${k}</span><b>${escH(v)}</b>`).join('')}</div>
+                ${actions.length ? `<div class="pol-actions">${actions.join('')}</div>` : ''}
+            </div>`;
+        }).join('');
     } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+// دانلود داخلِ بله: لینکِ کامل با openLink در مرورگرِ داخلیِ بله باز می‌شود (WebView خودش دانلود نمی‌کند)
+function downloadPolicy(id) {
+    const url = `${location.origin}${API}?action=download_policy&token=${encodeURIComponent(TOKEN)}&case_id=${id}`;
+    try { if (window.Bale && Bale.WebApp && typeof Bale.WebApp.openLink === 'function') { Bale.WebApp.openLink(url); showToast('📥 دانلود در مرورگرِ بله باز شد'); return; } } catch (e) {}
+    const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
 }
 
 // ======================= اقساط یک بیمه‌نامه =======================
@@ -567,7 +646,7 @@ async function loadHealthCases() {
         const data = await res.json();
         if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
         const freeWrap = document.getElementById('free-health-wrap');
-        if (freeWrap) freeWrap.style.display = data.appt_mode ? 'none' : '';
+        if (freeWrap) freeWrap.style.display = 'none';   // «بازدیدِ آزاد» حذف شده
         const hint = data.appt_hint ? `<div class="list-card" style="font-size:12px;line-height:1.9;color:#bae6fd;border-color:rgba(56,189,248,.3)">🗓 ${data.appt_hint}
             <button class="btn btn-outline" style="margin-top:8px" onclick="openVisitHub()">📎 بارگذاریِ مدارک</button></div>` : '';
         if (data.data.length === 0) { box.innerHTML = hint + '<div class="empty-state">' + (data.appt_mode ? 'درخواستِ بدنه‌ای که منتظرِ بازدید باشد ندارید.' : 'پرونده‌ی بیمه بدنه‌ی فعالی ندارید. می‌توانید از بخش پایین «بازدید آزاد» ثبت کنید.') + '</div>'; return; }
@@ -663,27 +742,46 @@ async function changeMyAvatar() {
 }
 
 // ======================= اعلان‌ها =======================
-const NOTIF_ICON = {info:'ℹ️', success:'✅', warning:'⚠️', error:'❌'};
+const NOTIF_ICON = {info:'🔔', success:'✅', warning:'⚠️', error:'❌'};
+function setUnread(n) {
+    const badge = document.getElementById('notif-badge'), wrap = badge.parentElement;
+    n = Number(n) || 0;
+    badge.textContent = toFa(n > 99 ? '99+' : n);
+    badge.style.display = n > 0 ? 'flex' : 'none';
+    wrap.classList.toggle('has-unread', n > 0);
+}
+async function pollUnread() {
+    if (document.hidden) return;
+    try { const d = await (await fetch(`${API}?action=notif_count&token=${encodeURIComponent(TOKEN)}`)).json(); if (d.ok) setUnread(d.unread); } catch (e) {}
+}
+function ago(sec) {
+    if (sec == null) return '';
+    if (sec < 60) return 'همین الان';
+    if (sec < 3600) return toFa(Math.floor(sec / 60)) + ' دقیقه پیش';
+    if (sec < 86400) return toFa(Math.floor(sec / 3600)) + ' ساعت پیش';
+    if (sec < 86400 * 7) return toFa(Math.floor(sec / 86400)) + ' روز پیش';
+    return '';
+}
 async function loadNotifications() {
     const box = document.getElementById('notifications-list');
     box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
     try {
         const res = await fetch(`${API}?action=notifications&token=${encodeURIComponent(TOKEN)}`);
         const data = await res.json();
-        if (!data.ok) { box.innerHTML = `<div class="empty-state">${data.error}</div>`; return; }
-        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state">اعلانی وجود ندارد.</div>'; return; }
-        box.innerHTML = data.data.map(n => `
-            <div class="list-card" style="${n.is_read == 0 ? 'border-color:var(--accent);' : 'opacity:.7;'}">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <b style="font-size:12.5px;">${NOTIF_ICON[n.type]||'ℹ️'} ${n.title}</b>
-                    ${n.is_read == 0 ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></span>' : ''}
-                </div>
-                <p style="font-size:11.5px;color:#cbd5e1;margin:6px 0 0;line-height:1.8;">${n.message}</p>
-            </div>`).join('');
+        if (!data.ok) { box.innerHTML = `<div class="empty-state">${escH(data.error)}</div>`; return; }
+        if (data.data.length === 0) { box.innerHTML = '<div class="empty-state" style="font-size:13px;line-height:2.2;"><div style="font-size:40px;">🔕</div>اعلانی وجود ندارد.<br>هر تغییری در وضعیتِ درخواست‌هایتان همین‌جا اطلاع داده می‌شود.</div>'; return; }
+        const card = n => `<div class="nt-card ${escH(n.type || 'info')} ${n.is_read == 0 ? 'unread' : ''}">
+                <span class="nt-ic">${NOTIF_ICON[n.type] || '🔔'}</span>
+                <div style="flex:1;min-width:0;"><b>${escH(n.title)}</b><p>${escH(n.message)}</p>
+                <small>🕒 ${escH(ago(n.age_sec) || '')}${ago(n.age_sec) && n.created_j ? ' · ' : ''}${escH(n.created_j || '')}</small></div>
+            </div>`;
+        const unread = data.data.filter(n => n.is_read == 0), read = data.data.filter(n => n.is_read != 0);
+        box.innerHTML = (unread.length ? `<div class="nt-sec">🆕 اعلان‌های جدید (${toFa(unread.length)})</div>${unread.map(card).join('')}` : '')
+            + (read.length ? `<div class="nt-sec" style="${unread.length ? 'margin-top:18px;' : ''}">📜 اعلان‌های قبلی</div>${read.map(card).join('')}` : '');
         // بعد از نمایش، همه را خوانده‌شده علامت می‌زنیم
         fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ action: 'mark_notifications_read', token: TOKEN }) })
-            .then(() => { document.getElementById('notif-badge').style.display = 'none'; });
+            .then(() => setUnread(0));
     } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
 }
 

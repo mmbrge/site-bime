@@ -855,6 +855,24 @@ function maybe_advance_case_status($pdo, $caseId, $bot_token = null) {
     }
 }
 
+// مرحله‌ی قابلِ نمایش به کاربر در مینی‌اپ (رنگ‌ها: awaiting زرد، received سبزِ روشن، approved/issued آبی، needs_fix قرمز)
+const CASE_USER_STAGE_FA = [
+    'awaiting'  => 'در انتظار بارگزاری مدارک',
+    'needs_fix' => 'نیاز به اصلاحِ مدارک',
+    'received'  => 'مدارک دریافت شد · در انتظار تایید کارشناس',
+    'approved'  => 'تایید شده · در انتظار صدور',
+    'issued'    => 'تایید شده · بیمه‌نامه صادر شد',
+];
+function case_user_stage($pdo, $case, $docsStatus = null, $healthStatus = null) {
+    if (($case['status'] ?? '') === 'ISSUED') return 'issued';
+    $d = $docsStatus ?? compute_docs_status($pdo, $case);
+    $h = $healthStatus ?? compute_health_status($pdo, $case);
+    if ($d === 'needs_fix' || $h === 'needs_fix') return 'needs_fix';
+    if ($d === 'approved' && in_array($h, ['not_applicable', 'approved'], true)) return 'approved';
+    if (in_array($d, ['submitted', 'approved'], true) && in_array($h, ['not_applicable', 'submitted', 'approved'], true)) return 'received';
+    return 'awaiting';
+}
+
 function get_required_docs_v2($insuranceType, $ownershipChoice, $prevInsuranceAnswer, $relationship) {
     $docs = [];
 
@@ -867,8 +885,8 @@ function get_required_docs_v2($insuranceType, $ownershipChoice, $prevInsuranceAn
     if ($ownershipChoice === 'سند') {
         $docs['ownership_doc'] = 'سند مالکیت';
     } else {
-        $docs['car_card_front'] = 'کارت ماشین رو';
-        $docs['car_card_back'] = 'کارت ماشین پشت';
+        $docs['car_card_front'] = 'روی کارت ماشین';
+        $docs['car_card_back'] = 'پشت کارت ماشین';
     }
 
     if ($relationship && $relationship !== 'خودم') {

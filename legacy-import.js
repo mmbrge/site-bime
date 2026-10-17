@@ -326,7 +326,7 @@
                 <div class="text-[10.5px] text-slate-400 mt-1" dir="rtl"><i class="fas fa-folder ml-1"></i>${esc(g.folder)}</div>
                 <ul>${g.files.slice(0, 12).map(f => `<li>${esc(f.rel.split('/').pop())} <span class="lg-pill n">${esc(f.type_fa)}</span></li>`).join('')}${g.files.length > 12 ? `<li>و ${fa(g.files.length - 12)} فایلِ دیگر</li>` : ''}</ul></div>`;
         const typeOpts = sel => ['policy', 'endorsement', 'car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'prev_body_policy', 'prev_third_policy', 'health_report', 'health_inspection', 'receipt', 'other']
-            .map(t => `<option value="${t}"${sel === t ? ' selected' : ''}>${({policy: 'بیمه‌نامه', endorsement: 'الحاقیه', car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند', sales_invoice: 'فاکتور فروش', prev_body_policy: 'بیمه بدنه قبل', prev_third_policy: 'بیمه ثالث قبل', health_report: 'گزارش بازدید', health_inspection: 'عکس بازدید', receipt: 'فیش/اعلامیه اقساط', other: 'سایر مدارک'})[t]}</option>`).join('');
+            .map(t => `<option value="${t}"${sel === t ? ' selected' : ''}>${({policy: 'بیمه‌نامه', endorsement: 'الحاقیه', car_card_front: 'روی کارت ماشین', car_card_back: 'پشت کارت ماشین', ownership_doc: 'سند', sales_invoice: 'فاکتور فروش', prev_body_policy: 'بیمه بدنه قبل', prev_third_policy: 'بیمه ثالث قبل', health_report: 'گزارش بازدید', health_inspection: 'عکس بازدید', receipt: 'فیش/اعلامیه اقساط', other: 'سایر مدارک'})[t]}</option>`).join('');
         const um = r.unmatched || [];
         out.innerHTML = `
             <div class="lg-card"><div class="lg-kpi"><div><small>فایل‌ها</small><b>${fa(r.total)}</b></div><div><small>ادغام‌شده</small><b class="text-emerald-700">${fa(r.merged)}</b></div>

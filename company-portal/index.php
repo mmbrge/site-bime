@@ -924,7 +924,7 @@ const PORTAL_ROW_STATUS_COLOR = {
     ISSUED: 'bg-emerald-50 text-emerald-600', CANCELLED: 'bg-red-50 text-red-600',
 };
 const PORTAL_DOC_TYPE_FA = {
-    car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند', sales_invoice: 'فاکتور فروش',
+    car_card_front: 'روی کارت ماشین', car_card_back: 'پشت کارت ماشین', ownership_doc: 'سند', sales_invoice: 'فاکتور فروش',
     prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
     health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
     policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
@@ -1115,8 +1115,8 @@ const DOC_TYPE_OPTIONS = [
     ['letter', 'نامه‌ی درخواست (اگر موقع ثبت درخواست نامه ارسال نشده بود)'],
     ['mixed', 'چند مدرکِ مختلف در یک PDF (هر صفحه جدا بررسی می‌شود)'],
     ['ownership_doc', 'سند'],
-    ['car_card_front', 'کارت ماشین رو'],
-    ['car_card_back', 'کارت ماشین پشت'],
+    ['car_card_front', 'روی کارت ماشین'],
+    ['car_card_back', 'پشت کارت ماشین'],
     ['sales_invoice', 'فاکتور فروش (خودروی صفر کیلومتر)'],
     ['prev_third_policy', 'بیمه ثالث قبل'],
     ['prev_body_policy', 'بیمه بدنه قبل'],

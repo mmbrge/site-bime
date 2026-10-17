@@ -7,6 +7,8 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_case_doc_upload.php';   // عکس/گالری/PDF برای مدارک + «چند مدرک در یک PDF»
+require_once __DIR__ . '/_order_hours.php';       // ساعتِ کاریِ ثبتِ درخواستِ آنلاین
+require_once __DIR__ . '/_vehicle_catalog.php';   // نوع ← گروه ← مدلِ وسیله‌ی نقلیه
 
 $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
@@ -46,7 +48,24 @@ function normalize_jalali_date($str) {
     return null;
 }
 
+// ستون‌های افزودنیِ پرونده: نوعِ وسیله، مدلِ انتخاب‌شده از فهرست، و «بدونِ پلاک» (ماشین‌آلات با شاسی و موتور)
+function order_case_cols_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    foreach (['vehicle_kind' => 'VARCHAR(10) NULL', 'vehicle_model_id' => 'INT NULL', 'no_plate' => 'TINYINT NOT NULL DEFAULT 0'] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM policy_cases LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE policy_cases ADD COLUMN `$c` $def"); }
+        catch (Throwable $e) { error_log('[order_case_cols] ' . $e->getMessage()); }
+    }
+}
+
 try {
+    order_case_cols_ensure($pdo);
+    // ثبت و ویرایشِ درخواست فقط در ساعتِ کاری (خواندنِ پرونده آزاد است)
+    if (in_array($action, ['start_case', 'save_step', 'finalize', 'upload_doc', 'split_upload', 'split_assign'], true)) {
+        $ohs = oh_status($pdo);
+        if (!$ohs['open']) { echo json_encode(oh_closed_payload($ohs), JSON_UNESCAPED_UNICODE); exit; }
+    }
     // =====================================================================
     if ($action === 'init') {
         $person = resolve_order_session($pdo, $_GET['token'] ?? '');
@@ -67,6 +86,8 @@ try {
             'quota_ok' => $quotaOk,
             'quota_summary' => $intro ? (($intro['used_quota'] ?? 0) . ' / ' . ($intro['max_quota'] ?? 4)) : null,
             'incomplete_cases' => $incomplete,
+            'hours' => oh_status($pdo),
+            'kinds' => vc_kinds_list(),
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -179,11 +200,34 @@ try {
                 $allSaved[get_profile_key($case)] = ['birth_date' => $bd, 'address' => $addr, 'phone' => $phone, 'postal_code' => $postal];
                 $pdo->prepare("UPDATE persons SET saved_profile=? WHERE id=?")->execute([json_encode($allSaved, JSON_UNESCAPED_UNICODE), $person['id']]);
             }
+        } elseif ($step === 'vehicle') {
+            // نوعِ وسیله + مدل از فهرستِ پنل؛ نوعِ خودرو (گروه) و سیستم روی پرونده می‌نشیند و در صفحه‌ی صدور دیده می‌شود
+            $kind = (string)($jsonBody['vehicle_kind'] ?? '');
+            $model = vc_get($pdo, intval($jsonBody['model_id'] ?? 0));
+            if (!isset(VC_KINDS[$kind])) $err = 'نوعِ وسیله‌ی نقلیه را انتخاب کنید.';
+            elseif (!$model || $model['kind'] !== $kind) $err = 'نوع و مدلِ خودرو را از فهرست انتخاب کنید.';
+            else {
+                $prevKind = (string)($case['vehicle_kind'] ?? '');
+                $pdo->prepare("UPDATE policy_cases SET vehicle_kind=?, vehicle_model_id=?, car_type=?, car_system=? WHERE id=?")
+                    ->execute([$kind, $model['id'], mb_substr(VC_KINDS[$kind]['fa'] . ' · ' . $model['grp'], 0, 100), mb_substr($model['title'], 0, 100), $caseId]);
+                // با عوض شدنِ نوعِ پلاک (موتور/خودرو/ماشین‌آلات) پلاکِ قبلی دیگر معتبر نیست
+                if ($prevKind !== '' && VC_KINDS[$prevKind]['plate'] !== VC_KINDS[$kind]['plate']) $pdo->prepare("UPDATE policy_cases SET plate=NULL, no_plate=0 WHERE id=?")->execute([$caseId]);
+            }
+        } elseif ($step === 'plate' && !empty($jsonBody['no_plate'])) {
+            // ماشین‌آلاتِ کشاورزی/راهسازیِ بدونِ پلاک: با شماره‌ی شاسی و موتور
+            $ch = strtoupper(preg_replace('/[^0-9A-Za-z]/', '', strtr((string)($jsonBody['chassis'] ?? ''), ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9'])));
+            $en = strtoupper(preg_replace('/[^0-9A-Za-z]/', '', strtr((string)($jsonBody['engine'] ?? ''), ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9'])));
+            if (($case['vehicle_kind'] ?? '') !== 'AGRI') $err = '«بدونِ پلاک» فقط برای ماشین‌آلاتِ کشاورزی و راهسازی است.';
+            elseif (strlen($ch) < 5) $err = 'شماره‌ی شاسی را کامل وارد کنید.';
+            elseif (strlen($en) < 4) $err = 'شماره‌ی موتور را کامل وارد کنید.';
+            else $pdo->prepare("UPDATE policy_cases SET plate=NULL, no_plate=1, chassis_num=?, engine_num=? WHERE id=?")->execute([mb_substr($ch, 0, 40), mb_substr($en, 0, 40), $caseId]);
         } elseif ($step === 'plate') {
             $plate = trim($jsonBody['plate'] ?? '');
             if (!plate_valid($plate)) { $err = 'پلاک نامعتبر است.'; }
+            elseif (($case['vehicle_kind'] ?? '') === 'MOTO' && !preg_match('/^\d{3}\s*-\s*\d{5}$/', $plate)) { $err = 'برای موتورسیکلت پلاکِ موتور (کد شهر و شماره) را وارد کنید.'; }
+            elseif (($case['vehicle_kind'] ?? '') !== '' && $case['vehicle_kind'] !== 'MOTO' && preg_match('/^\d{3}\s*-\s*\d{5}$/', $plate)) { $err = 'این پلاکِ موتورسیکلت است؛ پلاکِ خودرو را وارد کنید.'; }
             else {
-                $pdo->prepare("UPDATE policy_cases SET plate=? WHERE id=?")->execute([$plate, $caseId]);
+                $pdo->prepare("UPDATE policy_cases SET plate=?, no_plate=0 WHERE id=?")->execute([$plate, $caseId]);
                 $stmt = $pdo->prepare("SELECT id FROM person_vehicles WHERE person_id=? AND plate=?");
                 $stmt->execute([$person['id'], $plate]);
                 if (!$stmt->fetchColumn()) $pdo->prepare("INSERT INTO person_vehicles (person_id,plate) VALUES (?,?)")->execute([$person['id'], $plate]);
@@ -205,10 +249,14 @@ try {
             if ($claim === 'بله') $pdo->prepare("UPDATE policy_cases SET no_claim_years=NULL WHERE id=?")->execute([$caseId]);
         } elseif ($step === 'no_claim_years') {
             $years = intval($jsonBody['no_claim_years'] ?? -1);
-            if ($years < 0 || $years > 50) { $err = 'عدد سال نامعتبر است.'; }
+            if ($years < 0 || $years > 5) { $err = 'سال‌های عدمِ خسارت را از فهرست انتخاب کنید.'; }
             else $pdo->prepare("UPDATE policy_cases SET no_claim_years=? WHERE id=?")->execute([$years, $caseId]);
         } elseif ($step === 'coverages') {
-            $cov = $jsonBody['coverages'] ?? [];
+            $cov = is_array($jsonBody['coverages'] ?? null) ? $jsonBody['coverages'] : [];
+            // پوشش‌های چندگزینه‌ای (مثلِ نوسانِ قیمت ۵۰٪/۱۰۰٪) باید گزینه‌شان انتخاب شده باشد
+            $tiered = ['price_fluctuation' => ['50', '100'], 'parts_theft' => ['10', '15'], 'transport_cost' => ['750000', '1200000', '1500000']];
+            foreach ($cov as $k => $v) if (isset($tiered[$k]) && !in_array((string)$v, $tiered[$k], true)) { $err = 'برای پوششِ «' . (['price_fluctuation' => 'نوسان قیمت', 'parts_theft' => 'سرقت لوازم', 'transport_cost' => 'هزینه ایاب‌وذهاب'][$k]) . '» یکی از گزینه‌ها را انتخاب کنید.'; break; }
+            if ($err) { echo json_encode(['ok' => false, 'error' => $err], JSON_UNESCAPED_UNICODE); exit; }
             $pdo->prepare("UPDATE policy_cases SET selected_coverages=? WHERE id=?")->execute([json_encode($cov, JSON_UNESCAPED_UNICODE), $caseId]);
         } elseif ($step === 'car_value') {
             if (!empty($jsonBody['auto_calc'])) {
@@ -326,7 +374,7 @@ try {
         $pdo->prepare("UPDATE policy_cases SET status = 'AWAITING_DOCS' WHERE id = ?")->execute([$caseId]);
         if (function_exists('intro_msg_refresh')) intro_msg_refresh($pdo, $caseId);
         notify_customer_app($pdo, $person['id'], $person['bale_chat_id'], 'درخواست ثبت شد',
-            "📝 اطلاعات اولیه‌ی درخواست بیمه {$case['unique_code']} ثبت شد.\nبرای بارگذاری مدارک و ثبت نهایی، لطفاً به بخش «بازدید مدارک و سلامت خودرو» مراجعه کنید.",
+            "📝 اطلاعات اولیه‌ی درخواست بیمه {$case['unique_code']} ثبت شد.\nبرای تکمیلِ درخواست، از دکمه‌ی «📎 بارگذاری مدارک» مدارکتان را ارسال کنید.",
             'success', $caseId);
         notify_admin($pdo, "📝 درخواست جدید (اپ) · {$case['unique_code']} · {$case['insured_name']} · " . insurance_type_fa($case['insurance_type']) . " · پلاک " . ($case['plate'] ?: '-'));
 

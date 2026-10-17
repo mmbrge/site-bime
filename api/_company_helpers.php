@@ -179,8 +179,8 @@ function company_copy_to_shared_sadere($siteRoot, $issuedFolderAbsPath, $issuedT
 // «(سند) 21ایران - 693 ع 31»
 function company_doc_types() {
     return [
-        'car_card_front'    => 'کارت ماشین رو',
-        'car_card_back'     => 'کارت ماشین پشت',
+        'car_card_front'    => 'روی کارت ماشین',
+        'car_card_back'     => 'پشت کارت ماشین',
         'ownership_doc'     => 'سند',
         'prev_third_policy' => 'بیمه ثالث قبل',
         'prev_body_policy'  => 'بیمه بدنه قبل',

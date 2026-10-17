@@ -52,7 +52,7 @@ function legacy_file_type($name, $dir = '') {
     if (preg_match('/عکس.*بازدید|بازدید.*عکس/u', $d) || preg_match('/^\d{2}\s*-\s*(نمای|مواضع)/u', $n)) return 'health_inspection';
     if (preg_match('/بدنه\s*قبل/u', $n)) return 'prev_body_policy';
     if (preg_match('/ثالث\s*قبل/u', $n)) return 'prev_third_policy';
-    if (preg_match('/کارت.*(پشت|back)/u', $n)) return 'car_card_back';
+    if (preg_match('/کارت.*(پشت|back)|پشت\s*کارت/u', $n)) return 'car_card_back';
     if (preg_match('/کارت/u', $n)) return 'car_card_front';
     if (preg_match('/(^|[^\p{L}])سند([^\p{L}]|$)/u', $n)) return 'ownership_doc';
     if (preg_match('/معرفی\s*نامه/u', $n)) return 'intro';
@@ -62,7 +62,7 @@ function legacy_file_type($name, $dir = '') {
 }
 function legacy_type_fa($t) {
     return ['policy' => 'بیمه‌نامه', 'endorsement' => 'الحاقیه', 'sales_invoice' => 'فاکتور فروش', 'health_report' => 'گزارش بازدید', 'health_inspection' => 'عکس بازدید',
-            'prev_body_policy' => 'بیمه بدنه قبل', 'prev_third_policy' => 'بیمه ثالث قبل', 'car_card_back' => 'کارت ماشین پشت', 'car_card_front' => 'کارت ماشین رو',
+            'prev_body_policy' => 'بیمه بدنه قبل', 'prev_third_policy' => 'بیمه ثالث قبل', 'car_card_back' => 'پشت کارت ماشین', 'car_card_front' => 'روی کارت ماشین',
             'ownership_doc' => 'سند', 'intro' => 'معرفی‌نامه', 'receipt' => 'فیش/اعلامیه اقساط', 'other' => 'سایر مدارک', 'skip' => 'نادیده'][$t] ?? $t;
 }
 

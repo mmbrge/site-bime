@@ -88,6 +88,33 @@
 
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  .kind-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .kind-grid .option-card { padding: 12px 6px; }
+  .kind-grid .option-card .ic { font-size: 24px; }
+  .kind-grid .option-card .lbl { font-size: 11px; }
+  .step-lbl { font-size: 11.5px; color: #a5b4fc; font-weight: 800; margin: 14px 0 6px; }
+  .pick-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; background: rgba(255,255,255,.06); border: 1px dashed rgba(165,180,252,.45); border-radius: 14px; padding: 13px 14px; color: #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: right; }
+  .pick-btn.on { border-style: solid; border-color: var(--accent); background: rgba(99,102,241,.14); color: #fff; }
+  .warn-box { margin-top: 10px; font-size: 11.5px; line-height: 1.9; color: #fcd34d; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); border-radius: 12px; padding: 10px 12px; }
+  .hint { font-size: 10.5px; color: #64748b; margin: 2px 0 6px; }
+  .sub-h { font-size: 12px; color: #a5b4fc; font-weight: 800; margin: 16px 0 8px; }
+  .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; box-shadow: 0 8px 22px rgba(16,185,129,.3); margin-top: 10px; }
+  .btn-outline { margin-top: 10px; }
+  .btn + .btn, .card + .btn, .btn + .card, #guest-guide { margin-top: 12px; }
+  a.btn { text-decoration: none; box-sizing: border-box; }
+  .btn-bot { background: linear-gradient(135deg, #0ea5e9, #6366f1); color: #fff; box-shadow: 0 8px 22px rgba(14,165,233,.3); margin: 4px 0 2px; }
+  .info-box + .info-box { margin-top: 10px; }
+  .notice { display: flex; gap: 12px; align-items: flex-start; background: linear-gradient(135deg, rgba(56,189,248,.12), rgba(99,102,241,.1)); border-color: rgba(56,189,248,.35); }
+  .notice-ic { font-size: 26px; line-height: 1; }
+  .notice p { margin: 0; font-size: 12.5px; line-height: 2.1; color: #e0f2fe; }
+  .guide h3 { color: #fde68a; }
+  .steps { list-style: none; padding: 0; margin: 0 0 12px; }
+  .steps li { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.9; color: #e2e8f0; margin-bottom: 8px; }
+  .steps li span { flex: none; width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 12px; }
+  .info-box { border-radius: 14px; padding: 12px; font-size: 12px; line-height: 2; margin-bottom: 10px; }
+  .info-box.amber { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); color: #fef3c7; }
+  .info-box.sky { background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.35); color: #e0f2fe; }
+  .tel { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 5px 12px; color: #fff; font-weight: 900; text-decoration: none; direction: ltr; }
   #screen-form, #screen-result { display: none; }
   #screen-form.active, #screen-result.active { display: block; }
 </style>
@@ -107,21 +134,19 @@
 
 <div id="screen-form" class="active">
   <div class="card">
-    <h3>🚗 مشخصات خودرو</h3>
-    <div class="field car-search-wrap">
-      <label>نوع و مدل خودرو</label>
-      <input type="text" id="car-search" placeholder="جستجو کنید، مثلاً پراید یا سمند..." autocomplete="off" oninput="onCarSearch()">
-      <div class="car-results" id="car-results"></div>
-      <div id="selected-car-display" style="display:none;"></div>
+    <h3>🚗 وسیله‌ی نقلیه</h3>
+    <p class="step-lbl">۱. نوعِ وسیله‌ی نقلیه را انتخاب کنید</p>
+    <div class="kind-grid" id="kind-grid"></div>
+    <div id="veh-steps" style="display:none;">
+      <p class="step-lbl">۲. نوعِ خودرو</p>
+      <button type="button" class="pick-btn" id="grp-btn" onclick="pickGroup()"><span id="grp-txt">انتخاب کنید</span><span>▾</span></button>
+      <p class="step-lbl">۳. مدلِ خودرو</p>
+      <button type="button" class="pick-btn" id="model-btn" onclick="pickModel()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+      <div id="rate-warn" class="warn-box" style="display:none;"></div>
     </div>
-    <div class="field" id="manual-category-field" style="display:none;">
-      <label>رده‌ی خودرو را دستی انتخاب کنید</label>
-      <select id="manual-category-select"></select>
-    </div>
-    <div class="field" id="model-year-field">
+    <div class="field" style="margin-top:12px;">
       <label>سال ساخت خودرو (شمسی)</label>
       <select id="model-year-select"></select>
-      <p style="font-size:10.5px;color:#64748b;margin-top:6px;">خودروهای قدیمی‌تر از ۱۳۹۰ مشمول جریمه‌ی سال ساخت می‌شوند. (برای خودروی صفر کیلومتر مهم نیست)</p>
     </div>
   </div>
 
@@ -131,55 +156,24 @@
   </div>
 
   <div class="card">
-    <h3>📋 سابقه‌ی بیمه‌نامه</h3>
-    <p style="font-size:11px;color:#94a3b8;margin:-4px 0 12px;">اگر مطمئن نیستید، همان چیزی که در بیمه‌نامه‌ی قبلی‌تان بوده را وارد کنید — خودمان درصد تخفیف یا جریمه را حساب می‌کنیم.</p>
-    <div class="option-grid">
-      <div class="option-card selected" data-val="1" onclick="selectPrevPolicy(true)"><span class="ic">✅</span><span class="lbl">بیمه‌نامه‌ی ثالث قبلی دارم</span></div>
-      <div class="option-card" data-val="0" onclick="selectPrevPolicy(false)"><span class="ic">🆕</span><span class="lbl">خودرو صفر کیلومتر</span></div>
+    <h3>📋 بیمه‌نامه‌ی ثالثِ قبلی</h3>
+    <div class="field-row">
+      <div class="field"><label>تاریخِ شروع</label><input type="text" id="prev-start"></div>
+      <div class="field"><label>تاریخِ انقضا</label><input type="text" id="prev-expiry"></div>
     </div>
+    <p class="hint">تاریخ‌ها را از روی تقویم انتخاب کنید (همان تاریخ‌های نوشته‌شده روی بیمه‌نامه‌ی قبلی).</p>
 
-    <div id="prev-policy-details" style="margin-top:14px;">
-      <div class="field">
-        <label>تاریخ انقضای بیمه‌نامه‌ی قبلی (شمسی)</label>
-        <div class="field-row">
-          <input type="text" id="prev-expiry" placeholder="۱۴۰۵/۰۶/۲۱" dir="ltr" style="text-align:center;flex:1;">
-          <button type="button" class="btn btn-outline" style="flex:0 0 90px;margin-top:0;" onclick="openDatePicker()">📅 تقویم</button>
-        </div>
-      </div>
+    <p class="sub-h">🏷 تخفیف‌های بیمه‌نامه‌ی قبلی</p>
+    <div class="field"><label>درصد تخفیفِ عدمِ خسارتِ ثالث (سالِ قبل)</label><select id="tp-percent"></select></div>
+    <div class="field"><label>درصد تخفیفِ عدمِ خسارتِ حوادث راننده (سالِ قبل)</label><select id="dr-percent"></select></div>
 
-      <p style="font-size:11.5px;color:#a5b4fc;font-weight:800;margin:14px 0 8px;">سابقه‌ی ثالث</p>
-      <div class="field-row">
-        <div class="field"><label>سال متوالی بدون خسارت</label><select id="tp-years"></select></div>
-      </div>
-      <div class="field-row" style="margin-top:8px;">
-        <div class="field"><label>خسارت مالی بیمه‌نامه‌ی قبل</label><select id="tp-mali"></select></div>
-        <div class="field"><label>خسارت بدنی بیمه‌نامه‌ی قبل</label><select id="tp-badani"></select></div>
-      </div>
-
-      <p style="font-size:11.5px;color:#a5b4fc;font-weight:800;margin:16px 0 8px;">سابقه‌ی حوادث راننده</p>
-      <div class="field-row">
-        <div class="field"><label>سال متوالی بدون خسارت</label><select id="dr-years"></select></div>
-      </div>
-      <div class="field-row" style="margin-top:8px;">
-        <div class="field"><label>خسارت مالی بیمه‌نامه‌ی قبل</label><select id="dr-mali"></select></div>
-        <div class="field"><label>خسارت بدنی بیمه‌نامه‌ی قبل</label><select id="dr-badani"></select></div>
-      </div>
-    </div>
-
-    <div id="zero-km-details" style="margin-top:14px; display:none;">
-      <div class="field">
-        <label>تاریخ خرید (شمسی)</label>
-        <div class="field-row">
-          <input type="text" id="purchase-date" dir="ltr" style="text-align:center;flex:1;">
-          <button type="button" class="btn btn-outline" style="flex:0 0 90px;margin-top:0;" onclick="openPurchaseDatePicker()">📅 تقویم</button>
-        </div>
-        <p style="font-size:10.5px;color:#64748b;margin-top:6px;">اگر تاریخ خرید قبل از امروز باشد، سهم صندوقِ تاخیر به همان نسبت اعمال می‌شود.</p>
-      </div>
-    </div>
+    <p class="sub-h">⚠️ خسارت‌های سالِ قبل</p>
+    <div class="field"><label>تعدادِ خسارتِ ثالثِ سالِ قبل</label><select id="tp-claims"></select></div>
+    <div class="field"><label>تعدادِ خسارتِ حوادث راننده‌ی سالِ قبل</label><select id="dr-claims"></select></div>
   </div>
 
   <div class="card" id="live-summary-card" style="background:rgba(99,102,241,.08); border-color:var(--accent);">
-    <h3 style="color:#c7d2fe;">🔍 خلاصه‌ی ورودی شما (قبل از محاسبه چک کنید)</h3>
+    <h3 style="color:#c7d2fe;">🔍 خلاصه‌ی ورودی شما</h3>
     <div id="live-summary-content" style="font-size:12px;line-height:2.1;color:#cbd5e1;"></div>
   </div>
 
@@ -187,206 +181,148 @@
 </div>
 
 <div id="screen-result">
-  <div class="card result-hero">
-    <div class="final-label">مبلغ نهایی قابل پرداخت</div>
+  <div class="card result-hero" id="result-hero">
+    <div class="final-label">مبلغِ تقریبیِ قابل پرداخت</div>
     <div class="final-amount" id="result-final"></div>
     <div class="final-label" id="result-category"></div>
   </div>
+  <div class="card notice" id="result-notice"></div>
 
-  <div class="card">
-    <h3>📊 جزئیات محاسبه</h3>
-    <div id="result-table"></div>
-  </div>
-
-  <button class="btn btn-outline" onclick="backToForm()">🔁 استعلام جدید</button>
+  <button class="btn btn-primary" onclick="openAccurate()">💬 استعلامِ دقیق‌تر از کارشناس</button>
+  <button class="btn btn-success" id="order-btn" onclick="goOrder()">📝 ثبتِ درخواستِ بیمه</button>
+  <div id="guest-guide" style="display:none;"></div>
+  <button class="btn btn-outline" onclick="backToForm()">🔁 استعلامِ جدید</button>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<!-- انتخاب‌گر تاریخ شمسی (روز/ماه/سال) -->
-<div id="date-picker-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; align-items:flex-end; justify-content:center;">
-  <div style="background:#1e1b4b; border-radius:20px 20px 0 0; padding:20px; width:100%; max-width:480px;">
-    <h3 style="font-size:14px; font-weight:800; margin:0 0 14px; text-align:center;">📅 انتخاب تاریخ انقضا</h3>
-    <div class="field-row">
-      <select id="dp-day" style="flex:1;"></select>
-      <select id="dp-month" style="flex:1.4;"></select>
-      <select id="dp-year" style="flex:1;"></select>
-    </div>
-    <div class="field-row" style="margin-top:14px;">
-      <button class="btn btn-primary" onclick="confirmDatePicker()">✅ تایید</button>
-      <button class="btn btn-outline" style="flex:0 0 90px;" onclick="closeDatePicker()">انصراف</button>
-    </div>
-  </div>
-</div>
-
+<script src="/iran-time.js?v=1"></script>
+<script src="../mini-kit.js?v=2"></script>
 <script>
 try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch(e) {}
 
 const params = new URLSearchParams(location.search);
 const TOKEN = params.get('t') || '';
 const API = '/api/premium_actions.php';
+const VC = '/api/vehicle_catalog.php';
+let INIT_DATA = '';
+try { if (window.Bale && window.Bale.WebApp) INIT_DATA = Bale.WebApp.initData || ''; } catch(e) {}
+const K = window.MiniKit;
+const toFa = n => K.fa(n), toEn = s => K.en(s);
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const esc = s => K.esc(s);
 
-const CAR_DB = [{"brand": "سایپا", "model": "پراید 111", "cat": 1}, {"brand": "سایپا", "model": "پراید 131", "cat": 1}, {"brand": "سایپا", "model": "پراید 132", "cat": 1}, {"brand": "سایپا", "model": "پراید 141", "cat": 1}, {"brand": "سایپا", "model": "پراید وانت 151", "cat": 5}, {"brand": "سایپا", "model": "پراید وانت 141i", "cat": 5}, {"brand": "سایپا", "model": "تیبا", "cat": 2}, {"brand": "سایپا", "model": "تیبا 2", "cat": 2}, {"brand": "سایپا", "model": "ساینا", "cat": 2}, {"brand": "سایپا", "model": "ساینا S", "cat": 2}, {"brand": "سایپا", "model": "ساینا اتوماتیک", "cat": 2}, {"brand": "سایپا", "model": "کوییک", "cat": 2}, {"brand": "سایپا", "model": "کوییک اتوماتیک", "cat": 2}, {"brand": "سایپا", "model": "کوییک R", "cat": 2}, {"brand": "سایپا", "model": "کوییک GX", "cat": 2}, {"brand": "سایپا", "model": "شاهین", "cat": 2}, {"brand": "سایپا", "model": "شاهین اتوماتیک", "cat": 2}, {"brand": "سایپا", "model": "شاهین G", "cat": 2}, {"brand": "سایپا", "model": "آریسان", "cat": 2}, {"brand": "سایپا", "model": "آریسان اتوماتیک", "cat": 2}, {"brand": "سایپا", "model": "اطلس", "cat": 2}, {"brand": "ایران خودرو", "model": "پیکان سواری", "cat": 1}, {"brand": "ایران خودرو", "model": "پیکان وانت", "cat": 5}, {"brand": "ایران خودرو", "model": "سمند LX", "cat": 2}, {"brand": "ایران خودرو", "model": "سمند EF7", "cat": 2}, {"brand": "ایران خودرو", "model": "سمند سورن", "cat": 2}, {"brand": "ایران خودرو", "model": "سمند سورن پلاس", "cat": 2}, {"brand": "ایران خودرو", "model": "دنا", "cat": 2}, {"brand": "ایران خودرو", "model": "دنا پلاس", "cat": 2}, {"brand": "ایران خودرو", "model": "دنا پلاس توربو", "cat": 2}, {"brand": "ایران خودرو", "model": "رانا", "cat": 2}, {"brand": "ایران خودرو", "model": "رانا پلاس", "cat": 2}, {"brand": "ایران خودرو", "model": "تارا", "cat": 2}, {"brand": "ایران خودرو", "model": "تارا اتوماتیک", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 206", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 206 صندوق‌دار", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 206 SD", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 207", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 207 اتوماتیک", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 207i", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 405", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو پارس", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو پارس ELX", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو پارس TU5", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو RD", "cat": 2}, {"brand": "ایران خودرو", "model": "پژو 2008", "cat": 2}, {"brand": "ایران خودرو", "model": "هایما S5", "cat": 2}, {"brand": "ایران خودرو", "model": "هایما S7", "cat": 4}, {"brand": "ایران خودرو", "model": "هایما S7 توربو", "cat": 4}, {"brand": "ایران خودرو", "model": "وانت آریسان", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "نیسان وانت (زامیاد پایه/جونیور)", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "نیسان پیکاپ", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "زامیاد Z24", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "زامیاد Z24 دوگانه‌سوز", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "زامیاد پادرا (Z28)", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "مزدا وانت تک‌کابین 2000", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "مزدا وانت دوکابین 2000", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "مزدا وانت تیتان (سنگین‌تر)", "cat": 6}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "تویوتا هایلوکس (وانت)", "cat": 6}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "میتسوبیشی L200 (وانت)", "cat": 6}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "فوتون وانت سبک", "cat": 5}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "گریت وال وینگل (وانت)", "cat": 6}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "جک وانت T8", "cat": 6}, {"brand": "وانت‌های رایج (نیسان/زامیاد/مزدا و مشابه)", "model": "کاپرا / کاپرا 2 (بهمن موتور)", "cat": 6}, {"brand": "بهمن موتور", "model": "کارا", "cat": 2}, {"brand": "بهمن موتور", "model": "کارا اتوماتیک", "cat": 2}, {"brand": "بهمن موتور", "model": "فیدلیتی", "cat": 4}, {"brand": "بهمن موتور", "model": "دیگنیتی", "cat": 4}, {"brand": "بهمن موتور", "model": "دیگنیتی پرایم", "cat": 4}, {"brand": "بهمن موتور", "model": "ریسپکت", "cat": 2}, {"brand": "بهمن موتور", "model": "کاراپلاس", "cat": 2}, {"brand": "بهمن موتور", "model": "دیانا", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM 110", "cat": 3}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM 315", "cat": 2}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM 550", "cat": 2}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM X22", "cat": 2}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM X33", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "MVM X55", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "آریزو 5", "cat": 2}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "آریزو 6", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "تیگو 5", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "تیگو 7", "cat": 4}, {"brand": "مدیران خودرو / ام‌وی‌ام", "model": "تیگو 8", "cat": 4}, {"brand": "کرمان موتور / جک و هایما", "model": "جک J4", "cat": 2}, {"brand": "کرمان موتور / جک و هایما", "model": "جک S3", "cat": 2}, {"brand": "کرمان موتور / جک و هایما", "model": "جک S5", "cat": 4}, {"brand": "کرمان موتور / جک و هایما", "model": "جک S7", "cat": 4}, {"brand": "کرمان موتور / جک و هایما", "model": "هایما 8S", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "چری آریزو", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "چری تیگو", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "لیفان 620", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "لیفان X60", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "جیلی امگرند", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "جیلی امگرند X7", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "برلیانس H220", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "برلیانس H230", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "برلیانس H320", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "برلیانس H330", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "فوتون (وانت)", "cat": 5}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "هاوال H6", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "هاوال جولیون", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "بایک X25", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "بایک X55", "cat": 4}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "بایک D20", "cat": 2}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "کاپرا/فوتون سبک", "cat": 5}, {"brand": "چری، لیفان، جیلی و سایر چینی", "model": "دیگنیتی (فوتون سواری)", "cat": 4}, {"brand": "رنو", "model": "رنو تندر 90 / L90", "cat": 2}, {"brand": "رنو", "model": "رنو ساندرو", "cat": 2}, {"brand": "رنو", "model": "رنو داستر", "cat": 4}, {"brand": "رنو", "model": "رنو کولیوس", "cat": 4}, {"brand": "رنو", "model": "رنو مگان", "cat": 2}, {"brand": "هیوندای", "model": "هیوندای اکسنت", "cat": 2}, {"brand": "هیوندای", "model": "هیوندای النترا", "cat": 2}, {"brand": "هیوندای", "model": "هیوندای سوناتا", "cat": 4}, {"brand": "هیوندای", "model": "هیوندای توسان", "cat": 4}, {"brand": "هیوندای", "model": "هیوندای سانتافه", "cat": 4}, {"brand": "هیوندای", "model": "هیوندای کرتا", "cat": 2}, {"brand": "هیوندای", "model": "هیوندای i10", "cat": 3}, {"brand": "هیوندای", "model": "هیوندای i20", "cat": 2}, {"brand": "هیوندای", "model": "هیوندای وراکروز", "cat": 4}, {"brand": "هیوندای", "model": "هیوندای آزرا", "cat": 4}, {"brand": "هیوندای", "model": "هیوندای پورتر (وانت)", "cat": 5}, {"brand": "کیا", "model": "کیا پراید (نسخه اصلی)", "cat": 1}, {"brand": "کیا", "model": "کیا ریو", "cat": 2}, {"brand": "کیا", "model": "کیا سراتو", "cat": 2}, {"brand": "کیا", "model": "کیا اپتیما", "cat": 4}, {"brand": "کیا", "model": "کیا اسپورتیج", "cat": 4}, {"brand": "کیا", "model": "کیا سورنتو", "cat": 4}, {"brand": "کیا", "model": "کیا کدنزا", "cat": 4}, {"brand": "کیا", "model": "کیا پیکانتو", "cat": 3}, {"brand": "کیا", "model": "کیا سول", "cat": 2}, {"brand": "کیا", "model": "کیا کارنیوال", "cat": 4}, {"brand": "کیا", "model": "کیا بونگو (وانت)", "cat": 5}, {"brand": "تویوتا", "model": "تویوتا کرولا", "cat": 2}, {"brand": "تویوتا", "model": "تویوتا کمری", "cat": 4}, {"brand": "تویوتا", "model": "تویوتا یاریس", "cat": 3}, {"brand": "تویوتا", "model": "تویوتا راو4", "cat": 4}, {"brand": "تویوتا", "model": "تویوتا لندکروز", "cat": 4}, {"brand": "تویوتا", "model": "تویوتا پرادو", "cat": 4}, {"brand": "تویوتا", "model": "تویوتا اینوا", "cat": 4}, {"brand": "تویوتا", "model": "تویوتا اویز", "cat": 3}, {"brand": "نیسان", "model": "نیسان ماکسیما", "cat": 4}, {"brand": "نیسان", "model": "نیسان تیانا", "cat": 4}, {"brand": "نیسان", "model": "نیسان جوک", "cat": 2}, {"brand": "نیسان", "model": "نیسان ایکس‌تریل", "cat": 4}, {"brand": "نیسان", "model": "نیسان قشقایی", "cat": 4}, {"brand": "نیسان", "model": "نیسان پاترول", "cat": 4}, {"brand": "نیسان", "model": "نیسان وانت (زامیاد پایه)", "cat": 5}, {"brand": "نیسان", "model": "نیسان سانی", "cat": 2}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "پژو 2008 وارداتی", "cat": 2}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "پژو 3008", "cat": 4}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "پژو 508", "cat": 4}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "سیتروئن C3", "cat": 2}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "سیتروئن C4", "cat": 2}, {"brand": "پژو/سیتروئن (وارداتی)", "model": "سیتروئن C5", "cat": 4}, {"brand": "مزدا", "model": "مزدا 2", "cat": 2}, {"brand": "مزدا", "model": "مزدا 3", "cat": 2}, {"brand": "مزدا", "model": "مزدا 6", "cat": 4}, {"brand": "مزدا", "model": "مزدا CX-5", "cat": 4}, {"brand": "مزدا", "model": "مزدا وانت (تک‌کابین/دوکابین)", "cat": 5}, {"brand": "هوندا", "model": "هوندا سیویک", "cat": 2}, {"brand": "هوندا", "model": "هوندا آکورد", "cat": 4}, {"brand": "هوندا", "model": "هوندا CR-V", "cat": 4}, {"brand": "میتسوبیشی", "model": "میتسوبیشی لنسر", "cat": 2}, {"brand": "میتسوبیشی", "model": "میتسوبیشی پاجرو", "cat": 4}, {"brand": "میتسوبیشی", "model": "میتسوبیشی اوتلندر", "cat": 4}, {"brand": "میتسوبیشی", "model": "میتسوبیشی وانت (L200)", "cat": 6}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "بی‌ام‌و سری 3", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "بی‌ام‌و سری 5", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "بی‌ام‌و X5", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "مرسدس بنز C کلاس", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "مرسدس بنز E کلاس", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "مرسدس بنز S کلاس", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "فولکس‌واگن پاسات", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "فولکس‌واگن جتا", "cat": 2}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "آئودی A4", "cat": 4}, {"brand": "بی‌ام‌و / مرسدس بنز / آلمانی لوکس", "model": "آئودی Q5", "cat": 4}, {"brand": "شورولت / آمریکایی", "model": "شورولت کروز", "cat": 2}, {"brand": "شورولت / آمریکایی", "model": "شورولت اپتیرا", "cat": 2}, {"brand": "شورولت / آمریکایی", "model": "شورولت کاپتیوا", "cat": 4}, {"brand": "شورولت / آمریکایی", "model": "جیپ چروکی", "cat": 4}, {"brand": "شورولت / آمریکایی", "model": "جیپ رنگلر", "cat": 4}, {"brand": "سوزوکی", "model": "سوزوکی ویتارا", "cat": 2}, {"brand": "سوزوکی", "model": "سوزوکی گراند ویتارا", "cat": 4}, {"brand": "سوزوکی", "model": "سوزوکی سویفت", "cat": 2}, {"brand": "موتورسیکلت", "model": "هوندا CG 125 / 200", "cat": 7}, {"brand": "موتورسیکلت", "model": "یاماها همتاز 125", "cat": 7}, {"brand": "موتورسیکلت", "model": "پیاجیو/وسپا", "cat": 7}, {"brand": "موتورسیکلت", "model": "احسان 125/150", "cat": 7}, {"brand": "موتورسیکلت", "model": "باجاج پالس / دیسکاور", "cat": 7}, {"brand": "موتورسیکلت", "model": "کویر موتور 250 و بالاتر (2 سیلندر)", "cat": 8}, {"brand": "موتورسیکلت", "model": "هوندا CBR 250/500 (2 سیلندر)", "cat": 8}, {"brand": "موتورسیکلت", "model": "کاوازاکی نینجا (2 سیلندر به بالا)", "cat": 8}, {"brand": "موتورسیکلت", "model": "موتورسیکلت سایدبار / سه‌چرخ باری", "cat": 9}];
+let KINDS = [], veh = { kind: null, grp: null, model: null }, selectedTier = null, personName = null, loggedIn = false, lastInquiryId = null;
 
-function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
-function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
-function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
-
-let selectedCategory = null;
-let categories = [];
-let hasPrevPolicy = true;
-
-function fillCountSelect(id, max, labelSuffix) {
-    const el = document.getElementById(id);
-    let html = '';
-    for (let i = 0; i <= max; i++) html += `<option value="${i}">${toFa(i)}${i===max?'+':''} ${labelSuffix||''}</option>`;
-    el.innerHTML = html;
+// ---------------- خسارت‌ها: هر ترکیبِ بدنی/مالی (۳ = ۳ مورد و بیشتر) ----------------
+function claimOptions() {
+    const n = x => x >= 3 ? '۳ مورد و بیشتر' : toFa(x);
+    const o = [['0-0', 'بدون خسارت']];
+    for (let b = 0; b <= 3; b++) for (let m = 0; m <= 3; m++) {
+        if (!b && !m) continue;
+        const p = [];
+        if (b) p.push(`${n(b)} خسارت بدنی`);
+        if (m) p.push(`${n(m)} خسارت مالی`);
+        o.push([`${m}-${b}`, p.join(' و ')]);
+    }
+    return o.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 }
+function percentOptions() { let h = ''; for (let p = 0; p <= 70; p += 5) h += `<option value="${p}">${toFa(p)}٪${p === 0 ? ' (بدون تخفیف)' : ''}</option>`; return h; }
 
-// ============================================================
-//  سال ساخت خودرو + انتخاب‌گر تاریخ شمسی (همان الگوی تاییدشده‌ی اپ ثبت درخواست بیمه)
-// ============================================================
-const JALALI_MONTHS_ORDER = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-function isJalaliLeap(jy) {
-    const r = (jy - (jy > 0 ? 474 : 473)) % 2820 + 474;
-    return ((r + 38) * 682) % 2816 < 682;
-}
-function daysInJalaliMonth(jy, jm) {
-    if (jm <= 6) return 31;
-    if (jm <= 11) return 30;
-    return isJalaliLeap(jy) ? 30 : 29;
-}
-function currentJalaliYear() {
-    const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
-    const now = new Date();
-    let gy = now.getFullYear(), gm = now.getMonth()+1, gd = now.getDate();
-    let jy = (gy <= 1600) ? 0 : 979;
-    gy -= (gy <= 1600) ? 621 : 1600;
-    const gy2 = (gm > 2) ? (gy + 1) : gy;
-    let days = (365*gy) + (Math.floor((gy2+3)/4)) - (Math.floor((gy2+99)/100)) + (Math.floor((gy2+399)/400)) - 80 + gd + g_d_m[gm-1];
-    jy += 33*Math.floor(days/12053); days %= 12053;
-    jy += 4*Math.floor(days/1461); days %= 1461;
-    if (days > 365) { jy += Math.floor((days-1)/365); }
-    return jy;
-}
 function fillModelYearSelect() {
-    const curY = currentJalaliYear();
-    const sel = document.getElementById('model-year-select');
+    const curY = K.jToday()[0];
     let html = '';
     for (let y = curY; y >= 1300; y--) html += `<option value="${y}">${toFa(y)}</option>`;
-    sel.innerHTML = html;
+    document.getElementById('model-year-select').innerHTML = html;
 }
-let datePickerTarget = 'prev-expiry';
-function openDatePicker() {
-    datePickerTarget = 'prev-expiry';
-    const yearSel = document.getElementById('dp-year');
-    const curY = currentJalaliYear();
-    let yearsHtml = '';
-    for (let y = curY + 1; y >= 1300; y--) yearsHtml += `<option value="${y}">${toFa(y)}</option>`;
-    yearSel.innerHTML = yearsHtml;
-    const monthSel = document.getElementById('dp-month');
-    monthSel.innerHTML = JALALI_MONTHS_ORDER.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
 
-    const existing = toEn(document.getElementById('prev-expiry').value.trim());
-    const m = existing.match(/^(\d{4})\D(\d{1,2})\D(\d{1,2})$/);
-    if (m) { yearSel.value = m[1]; monthSel.value = parseInt(m[2]); }
-
-    fillDayOptions();
-    monthSel.onchange = fillDayOptions;
-    yearSel.onchange = fillDayOptions;
-    if (m) document.getElementById('dp-day').value = parseInt(m[3]);
-
-    document.getElementById('date-picker-overlay').style.display = 'flex';
-}
-// انتخاب‌گر تاریخ خرید (برای خودروی صفر کیلومتر) - از همان مودال استفاده می‌کند ولی اجازه‌ی
-// انتخاب تاریخِ آینده را نمی‌دهد (چون تاریخ خرید نمی‌تواند بعد از امروز باشد)
-function openPurchaseDatePicker() {
-    datePickerTarget = 'purchase-date';
-    const [ty, tm, td] = todayJalaliParts();
-    const yearSel = document.getElementById('dp-year');
-    let yearsHtml = '';
-    for (let y = ty; y >= 1300; y--) yearsHtml += `<option value="${y}">${toFa(y)}</option>`;
-    yearSel.innerHTML = yearsHtml;
-    const monthSel = document.getElementById('dp-month');
-    monthSel.innerHTML = JALALI_MONTHS_ORDER.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
-
-    const existing = toEn(document.getElementById('purchase-date').value.trim());
-    const m = existing.match(/^(\d{4})\D(\d{1,2})\D(\d{1,2})$/);
-    if (m) { yearSel.value = m[1]; monthSel.value = parseInt(m[2]); } else { yearSel.value = ty; monthSel.value = tm; }
-
-    fillDayOptions();
-    monthSel.onchange = fillDayOptions;
-    yearSel.onchange = fillDayOptions;
-    document.getElementById('dp-day').value = m ? parseInt(m[3]) : td;
-
-    document.getElementById('date-picker-overlay').style.display = 'flex';
-}
-function fillDayOptions() {
-    const y = parseInt(document.getElementById('dp-year').value);
-    const mo = parseInt(document.getElementById('dp-month').value);
-    const daySel = document.getElementById('dp-day');
-    const prevVal = daySel.value;
-    const maxDay = daysInJalaliMonth(y, mo);
-    let html = '';
-    for (let d = 1; d <= maxDay; d++) html += `<option value="${d}">${toFa(d)}</option>`;
-    daySel.innerHTML = html;
-    if (prevVal && parseInt(prevVal) <= maxDay) daySel.value = prevVal;
-}
-function closeDatePicker() { document.getElementById('date-picker-overlay').style.display = 'none'; }
-function confirmDatePicker() {
-    const y = parseInt(document.getElementById('dp-year').value);
-    const mo = parseInt(document.getElementById('dp-month').value);
-    const d = parseInt(document.getElementById('dp-day').value);
-    if (datePickerTarget === 'purchase-date') {
-        const [ty, tm, td] = todayJalaliParts();
-        const isFuture = (y > ty) || (y === ty && mo > tm) || (y === ty && mo === tm && d > td);
-        if (isFuture) { showToast('تاریخ خرید نمی‌تواند بعد از امروز باشد.'); return; }
-    }
-    document.getElementById(datePickerTarget).value = toFa(`${y}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`);
-    closeDatePicker();
-    updateLiveSummary();
+// پیش‌فرضِ تاریخ‌ها: انقضا = امروز، شروع = دقیقاً یک سال قبلِ همان روز
+function resetDates() {
+    const t = K.jToday();
+    document.getElementById('prev-expiry').value = toFa(K.jFmt(t));
+    document.getElementById('prev-start').value = toFa(K.jFmt(K.jAddYears(t, -1)));
 }
 
 async function init() {
-    fillCountSelect('tp-years', 20, 'سال');
-    fillCountSelect('tp-mali', 3, 'مورد');
-    fillCountSelect('tp-badani', 3, 'مورد');
-    fillCountSelect('dr-years', 20, 'سال');
-    fillCountSelect('dr-mali', 3, 'مورد');
-    fillCountSelect('dr-badani', 3, 'مورد');
+    document.getElementById('tp-percent').innerHTML = percentOptions();
+    document.getElementById('dr-percent').innerHTML = percentOptions();
+    document.getElementById('tp-claims').innerHTML = claimOptions();
+    document.getElementById('dr-claims').innerHTML = claimOptions();
     fillModelYearSelect();
-
-    // خلاصه‌ی زنده: با هر تغییری در هر فیلد مؤثر، بلافاصله به‌روزرسانی می‌شود تا کاربر
-    // قبل از زدن «محاسبه» ببیند دقیقاً چه مقادیری برای محاسبه استفاده می‌شود
-    ['model-year-select','prev-expiry','purchase-date','tp-years','tp-mali','tp-badani','dr-years','dr-mali','dr-badani'].forEach(id => {
-        document.getElementById(id).addEventListener('input', updateLiveSummary);
-        document.getElementById(id).addEventListener('change', updateLiveSummary);
-    });
-
+    const t = K.jToday();
+    K.dateField(document.getElementById('prev-start'), () => ({ title: '📅 تاریخِ شروعِ بیمه‌نامه‌ی قبلی', max: t, onChange: updateLiveSummary }));
+    K.dateField(document.getElementById('prev-expiry'), () => ({ title: '📅 تاریخِ انقضای بیمه‌نامه‌ی قبلی', max: K.jAddDays(t, 400), onChange: updateLiveSummary }));
+    resetDates();
+    ['model-year-select','tp-percent','dr-percent','tp-claims','dr-claims'].forEach(id => document.getElementById(id).addEventListener('change', updateLiveSummary));
     try {
-        const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`);
-        const data = await res.json();
+        const data = await (await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}&init_data=${encodeURIComponent(INIT_DATA)}`)).json();
         if (data.ok) {
-            categories = data.categories;
-            document.getElementById('manual-category-select').innerHTML =
-                categories.map(c => `<option value="${c.code}">${c.name}</option>`).join('');
-            document.getElementById('manual-category-select').addEventListener('change', updateLiveSummary);
+            KINDS = data.kinds || [];
+            renderKinds();
             renderTierGrid(data.liability_tiers);
-            if (data.person_name) document.getElementById('hero-sub').textContent = `${data.person_name} عزیز، بیمه پاسارگاد`;
-            if (TOKEN) {
-                const backLink = document.getElementById('back-to-app-link');
-                backLink.style.display = 'flex';
-                backLink.href = `../app/index.html?t=${encodeURIComponent(TOKEN)}`;
-            }
+            personName = data.person_name || null;
+            loggedIn = !!data.logged_in;
+            if (personName) document.getElementById('hero-sub').textContent = `${personName} عزیز، بیمه پاسارگاد`;
+            if (TOKEN) { const b = document.getElementById('back-to-app-link'); b.style.display = 'flex'; b.href = `../app/index.html?t=${encodeURIComponent(TOKEN)}`; }
         }
     } catch(e) { showToast('خطا در اتصال به سرور.'); }
     updateLiveSummary();
 }
 
-let selectedTier = null;
+// ---------------- وسیله‌ی نقلیه: نوع ← نوعِ خودرو (گروه) ← مدل ----------------
+function renderKinds() {
+    document.getElementById('kind-grid').innerHTML = KINDS.map(k => `<div class="option-card ${veh.kind === k.key ? 'selected' : ''}" onclick="chooseKind('${k.key}')"><span class="ic">${k.icon}</span><span class="lbl">${k.fa}</span></div>`).join('');
+}
+async function chooseKind(k) {
+    if (veh.kind !== k) veh = { kind: k, grp: null, model: null };
+    renderKinds();
+    document.getElementById('veh-steps').style.display = 'block';
+    paintVeh();
+    pickGroup();
+}
+let groupsCache = {};
+async function loadGroups(kind) {
+    if (groupsCache[kind]) return groupsCache[kind];
+    const d = await (await fetch(`${VC}?action=groups&kind=${kind}`)).json();
+    return (groupsCache[kind] = d.ok ? d.groups : []);
+}
+async function pickGroup() {
+    if (!veh.kind) { showToast('ابتدا نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
+    const groups = await loadGroups(veh.kind);
+    const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa || '';
+    const it = await K.pick({ title: `نوعِ خودرو (${kfa})`, placeholder: 'جستجو...', value: veh.grp,
+        items: groups.map(g => ({ v: g.grp, label: g.grp, sub: `${toFa(g.n)} مدل${g.has_rate ? '' : ' · استعلام توسط کارشناس'}` })) });
+    if (!it) return;
+    if (veh.grp !== it.v) veh.model = null;
+    veh.grp = it.v;
+    paintVeh();
+    pickModel();
+}
+async function pickModel() {
+    if (!veh.kind) { showToast('ابتدا نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
+    if (!veh.grp) { pickGroup(); return; }
+    const it = await K.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید، مثلاً پژو یا ۲۰۶...', autofocus: false, value: veh.model && veh.model.id,
+        onSearch: async q => {
+            const d = await (await fetch(`${VC}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
+            return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: toFa(m.sub), raw: m }));
+        } });
+    if (!it) return;
+    veh.model = it.raw;
+    paintVeh();
+}
+function paintVeh() {
+    document.getElementById('grp-txt').textContent = veh.grp || 'انتخاب کنید';
+    document.getElementById('grp-btn').classList.toggle('on', !!veh.grp);
+    document.getElementById('model-txt').textContent = veh.model ? veh.model.title : 'جستجو و انتخاب';
+    document.getElementById('model-btn').classList.toggle('on', !!veh.model);
+    const w = document.getElementById('rate-warn');
+    if (veh.model && veh.model.rate == null) { w.style.display = 'block'; w.innerHTML = '⚠️ استعلامِ آنلاینِ این وسیله فعال نیست؛ با «محاسبه» درخواستِ شما برای کارشناس ثبت می‌شود تا مبلغ را اعلام کند.'; }
+    else w.style.display = 'none';
+    updateLiveSummary();
+}
+
 function renderTierGrid(tiers) {
-    const grid = document.getElementById('tier-grid');
-    grid.innerHTML = tiers.map(t => `<div class="tier-chip" onclick="selectTier(${t}, this)">${formatTierLabel(t, true)}</div>`).join('');
+    document.getElementById('tier-grid').innerHTML = tiers.map(t => `<div class="tier-chip" onclick="selectTier(${t}, this)">${formatTierLabel(t, true)}</div>`).join('');
 }
 function selectTier(t, el) {
     selectedTier = t;
@@ -394,220 +330,146 @@ function selectTier(t, el) {
     el.classList.add('selected');
     updateLiveSummary();
 }
-
-function onCarSearch() {
-    const q = document.getElementById('car-search').value.trim();
-    const box = document.getElementById('car-results');
-    if (q.length < 1) { box.classList.remove('active'); return; }
-    const matches = CAR_DB.filter(c => c.model.includes(q) || c.brand.includes(q)).slice(0, 20);
-    if (matches.length === 0) {
-        box.innerHTML = `<div class="car-result-item" onclick="selectManualCategory()">مدل پیدا نشد — انتخاب دستی رده‌ی خودرو</div>`;
-    } else {
-        box.innerHTML = matches.map((c,i) => `<div class="car-result-item" onclick='pickCar(${i})'><div>${c.model}</div><div class="brand">${c.brand}</div></div>`).join('');
-        window._carMatches = matches;
-    }
-    box.classList.add('active');
-}
-function pickCar(i) {
-    const c = window._carMatches[i];
-    selectedCategory = c.cat;
-    document.getElementById('car-results').classList.remove('active');
-    document.getElementById('manual-category-field').style.display = 'none';
-    const catName = (categories.find(x => x.code === c.cat) || {}).name || '';
-    document.getElementById('car-search').value = `${c.brand} - ${c.model}`;
-    const disp = document.getElementById('selected-car-display');
-    disp.style.display = 'block';
-    disp.innerHTML = `<div class="selected-car-chip"><span>رده: ${catName}</span><span>✅</span></div>`;
-    updateLiveSummary();
-}
-function selectManualCategory() {
-    document.getElementById('car-results').classList.remove('active');
-    document.getElementById('manual-category-field').style.display = 'block';
-    document.getElementById('selected-car-display').style.display = 'none';
-    selectedCategory = 'manual';
-    updateLiveSummary();
-}
-
-function selectPrevPolicy(val) {
-    hasPrevPolicy = val;
-    document.querySelectorAll('#screen-form .option-grid .option-card').forEach(c => c.classList.remove('selected'));
-    document.querySelector(`.option-card[data-val="${val?1:0}"]`).classList.add('selected');
-    document.getElementById('prev-policy-details').style.display = val ? 'block' : 'none';
-    document.getElementById('zero-km-details').style.display = val ? 'none' : 'block';
-    if (!val && !document.getElementById('purchase-date').value) {
-        // پیش‌فرض: تاریخ امروز
-        const [jy,jm,jd] = todayJalaliParts();
-        document.getElementById('purchase-date').value = toFa(`${jy}/${String(jm).padStart(2,'0')}/${String(jd).padStart(2,'0')}`);
-    }
-    updateLiveSummary();
-}
-function todayJalaliParts() {
-    const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
-    const now = new Date();
-    let gy = now.getFullYear(), gm = now.getMonth()+1, gd = now.getDate();
-    let jy = (gy <= 1600) ? 0 : 979;
-    gy -= (gy <= 1600) ? 621 : 1600;
-    const gy2 = (gm > 2) ? (gy + 1) : gy;
-    let days = (365*gy) + (Math.floor((gy2+3)/4)) - (Math.floor((gy2+99)/100)) + (Math.floor((gy2+399)/400)) - 80 + gd + g_d_m[gm-1];
-    jy += 33*Math.floor(days/12053); days %= 12053;
-    jy += 4*Math.floor(days/1461); days %= 1461;
-    let jm2, jd2;
-    if (days > 365) { jy += Math.floor((days-1)/365); days = (days-1)%365; }
-    if (days < 186) { jm2 = 1 + Math.floor(days/31); jd2 = 1 + (days % 31); }
-    else { jm2 = 7 + Math.floor((days-186)/30); jd2 = 1 + ((days-186) % 30); }
-    return [jy, jm2, jd2];
-}
-
-// خلاصه‌ی زنده‌ی همه‌ی ورودی‌ها - راهکار اصلیِ جلوگیری از اشتباهاتی مثل باقی‌ماندن
-// یک مقدار قدیمی از تست قبلی که کاربر متوجه‌اش نمی‌شود
-function updateLiveSummary() {
-    const box = document.getElementById('live-summary-content');
-    const carText = document.getElementById('car-search').value || 'هنوز انتخاب نشده';
-    const tierText = selectedTier ? formatTierLabel(selectedTier, false) : 'هنوز انتخاب نشده';
-    const yearText = toFa(document.getElementById('model-year-select').value);
-    let html = `🚗 خودرو: <b>${carText}</b><br>📅 سال ساخت: <b>${yearText}</b><br>🛡 سقف تعهد: <b>${tierText}</b><br>`;
-    if (!hasPrevPolicy) {
-        const pdate = document.getElementById('purchase-date').value || 'وارد نشده';
-        html += `📋 سابقه: <b>خودرو صفر کیلومتر (تخفیف صفر کیلومتر ۵٪)</b><br>📅 تاریخ خرید: <b>${toFa(pdate)}</b>`;
-    } else {
-        const tpY = parseInt(document.getElementById('tp-years').value)||0;
-        const tpM = parseInt(document.getElementById('tp-mali').value)||0;
-        const tpB = parseInt(document.getElementById('tp-badani').value)||0;
-        const drY = parseInt(document.getElementById('dr-years').value)||0;
-        const drM = parseInt(document.getElementById('dr-mali').value)||0;
-        const drB = parseInt(document.getElementById('dr-badani').value)||0;
-        const basePct = Math.min(70, tpY*5+5);
-        const drBasePct = Math.min(70, drY*5+5);
-        html += `📋 سابقه‌ی ثالث: <b>${toFa(tpY)} سال بدون خسارت</b> (تخفیف پایه ${toFa(basePct)}٪)`;
-        if (tpM>0 || tpB>0) html += ` — <span style="color:#fca5a5;">${toFa(tpM)} خسارت مالی، ${toFa(tpB)} خسارت بدنی</span>`;
-        html += `<br>📋 سابقه‌ی راننده: <b>${toFa(drY)} سال بدون خسارت</b> (تخفیف پایه ${toFa(drBasePct)}٪)`;
-        if (drM>0 || drB>0) html += ` — <span style="color:#fca5a5;">${toFa(drM)} خسارت مالی، ${toFa(drB)} خسارت بدنی</span>`;
-        const expiry = document.getElementById('prev-expiry').value;
-        html += `<br>📅 انقضای بیمه‌نامه‌ی قبلی: <b>${expiry || 'وارد نشده'}</b>`;
-    }
-    box.innerHTML = html;
-}
-
-async function submitCalculate() {
-    let catCode = selectedCategory;
-    if (catCode === 'manual') catCode = parseInt(document.getElementById('manual-category-select').value);
-    if (!catCode) { showToast('لطفاً نوع خودرو را انتخاب کنید.'); return; }
-    if (!selectedTier) { showToast('لطفاً سقف تعهد مالی را انتخاب کنید.'); return; }
-
-    const body = {
-        action: 'calculate', category_code: catCode, liability_tier: selectedTier,
-        has_prev_policy: hasPrevPolicy,
-    };
-
-    if (hasPrevPolicy) {
-        // سال ساخت فقط برای خودروهای غیرصفر معنا دارد
-        body.model_year = parseInt(document.getElementById('model-year-select').value);
-        body.prev_expiry_jalali = toEn(document.getElementById('prev-expiry').value.trim());
-        body.tp_years = document.getElementById('tp-years').value;
-        body.tp_mali = document.getElementById('tp-mali').value;
-        body.tp_badani = document.getElementById('tp-badani').value;
-        body.dr_years = document.getElementById('dr-years').value;
-        body.dr_mali = document.getElementById('dr-mali').value;
-        body.dr_badani = document.getElementById('dr-badani').value;
-    } else {
-        const purchaseDate = toEn(document.getElementById('purchase-date').value.trim());
-        const m = purchaseDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-        if (!m) { showToast('لطفاً تاریخ خرید را درست وارد کنید.'); return; }
-        const [ty, tm, td] = todayJalaliParts();
-        const y=parseInt(m[1]), mo=parseInt(m[2]), d=parseInt(m[3]);
-        const isFuture = (y > ty) || (y === ty && mo > tm) || (y === ty && mo === tm && d > td);
-        if (isFuture) { showToast('تاریخ خرید نمی‌تواند بعد از امروز باشد.'); return; }
-        body.purchase_date_jalali = purchaseDate;
-    }
-
-    try {
-        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error || 'خطا در محاسبه.'); return; }
-        renderResult(data);
-    } catch(e) { showToast('خطا در اتصال به سرور.'); }
-}
-
-function fmt(n) { return toFa(Math.round(n).toLocaleString()); }
-// سقف تعهد را به تومان نشان می‌دهد؛ فقط برای عدد ۱۰۰۰ (که همان یک میلیارد تومان است)
-// به‌جای «۱۰۰۰ میلیون» می‌نویسد «۱ میلیارد» - در همه‌جای برنامه یکسان
 function formatTierLabel(t, short) {
     if (t === 1000) return short ? 'یک میلیارد' : 'یک میلیارد تومان';
     return short ? `${toFa(t)} م` : `${toFa(t)} میلیون تومان`;
 }
-// عدد را در یک span مجزا و کاملاً ایزوله (از نظر جهت متن) قرار می‌دهد تا کلمه‌ی «ریال» که در
-// ادامه‌اش می‌آید، هرگز با خودِ رقم‌ها قاطی نشود و همیشه بعد از عدد (نه قبلش) نمایش داده شود
-function fmtRial(n) { return `<span class="num-isolate">${fmt(n)}</span> ریال`; }
-function brow(label, base, excess, driver, cls) {
-    return `<div class="breakdown-row ${cls||''}">
-        <div class="brow-label">${label}</div>
-        <div class="brow-values">
-            <div class="brow-chip"><span class="k">پایه</span><span class="v num-isolate">${base}</span></div>
-            <div class="brow-chip"><span class="k">مازاد</span><span class="v num-isolate">${excess}</span></div>
-            <div class="brow-chip"><span class="k">راننده</span><span class="v num-isolate">${driver}</span></div>
-        </div>
-    </div>`;
+const selTxt = id => { const s = document.getElementById(id); return s.options[s.selectedIndex] ? s.options[s.selectedIndex].text : ''; };
+function updateLiveSummary() {
+    const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa;
+    document.getElementById('live-summary-content').innerHTML =
+        `🚗 وسیله: <b>${veh.model ? esc(kfa + ' · ' + veh.model.title) : (kfa ? esc(kfa) + ' (مدل انتخاب نشده)' : 'هنوز انتخاب نشده')}</b><br>` +
+        `📅 سال ساخت: <b>${toFa(document.getElementById('model-year-select').value)}</b><br>` +
+        `🛡 سقف تعهد: <b>${selectedTier ? formatTierLabel(selectedTier, false) : 'هنوز انتخاب نشده'}</b><br>` +
+        `📋 بیمه‌نامه‌ی قبلی: <b>${esc(document.getElementById('prev-start').value || '—')} تا ${esc(document.getElementById('prev-expiry').value || '—')}</b><br>` +
+        `🏷 تخفیفِ ثالث: <b>${esc(selTxt('tp-percent'))}</b> · حوادث راننده: <b>${esc(selTxt('dr-percent'))}</b><br>` +
+        `⚠️ خسارتِ ثالث: <b>${esc(selTxt('tp-claims'))}</b> · حوادث راننده: <b>${esc(selTxt('dr-claims'))}</b>`;
 }
-function renderResult(r) {
-    document.getElementById('result-final').innerHTML = fmtRial(r.grand_total);
-    document.getElementById('result-category').textContent = `${r.category_name} — تعهد ${formatTierLabel(r.liability_tier, false)}`;
-    const b = r.breakdown;
-    let html = '';
-    html += brow('حق بیمه پایه', fmt(b.base_raw), fmt(b.excess_raw), fmt(b.driver_raw));
-    if (b.year_surcharge_percent > 0) {
-        html += brow(`جریمه‌ی سال ساخت (${toFa(b.year_surcharge_percent)}٪)`,
-            '+'+fmt(b.base_year_surcharge), '+'+fmt(b.excess_year_surcharge), '+'+fmt(b.driver_year_surcharge));
-    }
-    const tpLabel = r.thirdparty_percent >= 0 ? `تخفیف ${toFa(r.thirdparty_percent)}٪` : `جریمه ${toFa(Math.abs(r.thirdparty_percent))}٪`;
-    const drLabel = r.driver_percent >= 0 ? `تخفیف ${toFa(r.driver_percent)}٪` : `جریمه ${toFa(Math.abs(r.driver_percent))}٪`;
-    html += brow(`سابقه (ثالث: ${tpLabel} / راننده: ${drLabel})`,
-        fmt(b.base_raw+b.base_year_surcharge-b.base_before_zero_km), fmt(b.excess_raw+b.excess_year_surcharge-b.excess_before_zero_km), fmt(b.driver_raw+b.driver_year_surcharge-b.driver_before_zero_km));
-    if (b.fund_contribution > 0) {
-        html += brow('سهم صندوق تاخیر (بند ب ماده ۲۴)', '+'+fmt(b.fund_contribution), '-', '-');
-    }
-    if (b.zero_km_discount_percent > 0) {
-        html += brow(`تخفیف صفر کیلومتر (${toFa(b.zero_km_discount_percent)}٪)`,
-            fmt(b.base_before_zero_km-b.base_after_bm), fmt(b.excess_before_zero_km-b.excess_after_bm), fmt(b.driver_before_zero_km-b.driver_after_bm));
-    }
-    if (b.group_discount_percent > 0) {
-        html += brow(`تخفیف قرارداد گروهی (${toFa(b.group_discount_percent)}٪)`,
-            fmt(b.base_after_bm-b.base_final), fmt(b.excess_after_bm-b.excess_after_group), fmt(b.driver_after_bm-b.driver_final));
-    }
-    if (b.excess_discount_percent > 0) {
-        html += brow(`تخفیف مازاد تعهد بالا (${toFa(b.excess_discount_percent)}٪)`, '-', fmt(b.excess_after_group-b.excess_final), '-');
-    }
-    html += `
-        <div class="breakdown-row"><div class="brow-label">مالیات بر ارزش افزوده (۱۰٪)</div>
-            <div class="brow-values"><div class="brow-chip" style="flex:3;"><span class="v">${fmtRial(r.tax)}</span></div></div></div>
-        <div class="breakdown-row total"><div class="brow-label">💰 حق بیمه خالص</div>
-            <div class="brow-values"><div class="brow-chip" style="flex:3;"><span class="v">${fmtRial(r.net_total)}</span></div></div></div>`;
-    document.getElementById('result-table').innerHTML = html;
 
+async function submitCalculate() {
+    if (!veh.model) { showToast('لطفاً نوع، نوعِ خودرو و مدلِ وسیله را انتخاب کنید.'); if (!veh.kind) document.getElementById('kind-grid').scrollIntoView({behavior:'smooth'}); else pickModel(); return; }
+    if (!selectedTier) { showToast('لطفاً سقف تعهد مالی را انتخاب کنید.'); return; }
+    const [tpM, tpB] = document.getElementById('tp-claims').value.split('-');
+    const [drM, drB] = document.getElementById('dr-claims').value.split('-');
+    const body = {
+        action: 'calculate', token: TOKEN, init_data: INIT_DATA, model_id: veh.model.id, liability_tier: selectedTier,
+        model_year: parseInt(document.getElementById('model-year-select').value),
+        prev_start_jalali: toEn(document.getElementById('prev-start').value.trim()),
+        prev_expiry_jalali: toEn(document.getElementById('prev-expiry').value.trim()),
+        tp_prev_percent: document.getElementById('tp-percent').value, dr_prev_percent: document.getElementById('dr-percent').value,
+        tp_mali: tpM, tp_badani: tpB, dr_mali: drM, dr_badani: drB,
+    };
+    try {
+        const data = await (await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })).json();
+        if (data.no_rate) { lastInquiryId = data.inquiry_id; renderNoRate(data); return; }
+        if (!data.ok) { showToast(data.error || 'خطا در محاسبه.'); return; }
+        lastInquiryId = data.inquiry_id;
+        renderResult(data);
+    } catch(e) { showToast('خطا در اتصال به سرور.'); }
+}
+
+function fmt(n) { return toFa(Math.round(n).toLocaleString('en-US')); }
+function noticeHtml() {
+    const who = personName ? `${esc(personName)} عزیز` : 'کاربر عزیز';
+    return `<div class="notice-ic">ℹ️</div><p><b>${who}</b>، مبلغِ این استعلام <b>نهایی نمی‌باشد</b> و منوط به درست بودنِ اطلاعاتِ واردشده از سمتِ شما و همچنین تخفیف‌های بیمه‌نامه‌ی شما می‌باشد.
+        لطفاً برای استعلامِ دقیق از بخشِ <b>«ارتباط با کارشناس»</b> با ما در ارتباط باشید.</p>`;
+}
+function showResultScreen() {
+    document.getElementById('order-btn').style.display = 'flex';
+    document.getElementById('guest-guide').style.display = 'none';
     document.getElementById('screen-form').classList.remove('active');
     document.getElementById('screen-result').classList.add('active');
-    window.scrollTo(0,0);
+    window.scrollTo(0, 0);
 }
+function renderResult(r) {
+    document.getElementById('result-hero').style.display = '';
+    document.getElementById('result-final').innerHTML = `<span class="num-isolate">${fmt(r.grand_total)}</span> ریال`;
+    document.getElementById('result-category').textContent = `${veh.model ? veh.model.title + ' — ' : ''}تعهد ${formatTierLabel(r.liability_tier, false)}`;
+    document.getElementById('result-notice').innerHTML = noticeHtml();
+    showResultScreen();
+}
+function renderNoRate(r) {
+    document.getElementById('result-hero').style.display = 'none';
+    document.getElementById('result-notice').innerHTML = `<div class="notice-ic">🧑‍💼</div><p>${esc(r.error)}</p>`;
+    showResultScreen();
+}
+
+// «استعلامِ دقیق‌تر»: ثبت برای کارشناس؛ کاربرِ واردشده مستقیم به گفتگوی کارشناس می‌رود
+function openAccurate() {
+    if (!lastInquiryId) return;
+    const ov = document.createElement('div');
+    ov.className = 'mk-ov on';
+    ov.innerHTML = `<div class="mk-sheet" style="transform:none"><div class="mk-grab"></div><div class="mk-title">💬 استعلامِ دقیق‌تر از کارشناس</div>
+        <p style="font-size:12.5px;color:#cbd5e1;line-height:2;margin:0 0 10px">جزئیاتِ همین استعلام برای کارشناس فرستاده می‌شود تا مبلغِ دقیق را محاسبه و برایتان ارسال کند${loggedIn ? ' (در بخشِ «ارتباط با کارشناس»)' : ' (از طریقِ همین ربات بله)'}.</p>
+        <textarea id="acc-note" rows="3" placeholder="توضیحِ اضافه (اختیاری)؛ مثلاً تخفیف‌ها یا خسارت‌هایی که مطمئن نیستید" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:12px;color:#fff;font-family:inherit;font-size:13px"></textarea>
+        <div class="mk-foot"><button class="mk-btn mk-ok" id="acc-ok">✅ این استعلام را دقیق‌تر می‌خواهم</button><button class="mk-btn mk-ghost" id="acc-x" style="flex:0 0 90px">انصراف</button></div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector('#acc-x').onclick = close;
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    ov.querySelector('#acc-ok').onclick = async () => {
+        const b = ov.querySelector('#acc-ok'); b.disabled = true; b.textContent = 'در حال ارسال...';
+        let d;
+        try { d = await (await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'request_accurate', inquiry_id: lastInquiryId, note: ov.querySelector('#acc-note').value, token: TOKEN, init_data: INIT_DATA }) })).json(); }
+        catch(e) { d = { ok:false, error:'خطا در اتصال به سرور.' }; }
+        if (!d.ok) { showToast(d.error || 'خطا'); b.disabled = false; b.textContent = '✅ این استعلام را دقیق‌تر می‌خواهم'; return; }
+        close();
+        if (d.open_support && TOKEN) { location.href = `../app/index.html?t=${encodeURIComponent(TOKEN)}&open=support`; return; }
+        showToast('✅ درخواستِ شما ثبت شد؛ پاسخِ کارشناس از طریقِ ربات بله برایتان ارسال می‌شود.');
+    };
+}
+
+// ثبتِ درخواست: کاربرِ واردشده مستقیم؛ مهمان راهنمای ورود از ربات را می‌بیند
+function goOrder() {
+    if (TOKEN && loggedIn) { location.href = `../order/index_order.html?t=${encodeURIComponent(TOKEN)}`; return; }
+    const g = document.getElementById('guest-guide');
+    g.innerHTML = guestGuideHtml();
+    g.style.display = 'block';
+    document.getElementById('order-btn').style.display = 'none';
+    g.scrollIntoView({ behavior: 'smooth' });
+}
+function guestGuideHtml() {
+    return `<div class="card guide">
+      <h3>📝 ثبتِ درخواستِ بیمه چگونه انجام می‌شود؟</h3>
+      <ol class="steps">
+        <li><span>۱</span><div>با دکمه‌ی پایین به ربات <b>«دستیار بیمه ماموت»</b> (<b dir="ltr">@mammutbot</b>) بروید و دکمه‌ی <b>«شروع»</b> (<b>/start</b>) را بزنید.</div></li>
+        <li><span>۲</span><div><b>کد ملیِ ۱۰ رقمیِ</b> خود را بفرستید.</div></li>
+        <li><span>۳</span><div>با دکمه‌ی <b>«📱 اشتراکِ شماره‌ی تماس»</b>، شماره‌ی همراهِ خودتان را تأیید کنید.</div></li>
+        <li><span>۴</span><div>پس از تأییدِ هویت، دکمه‌ی <b>«🚀 ورود به پنل کاربری»</b> را بزنید و از <b>«ثبت درخواست بیمه جدید»</b> درخواستتان را ثبت کنید.</div></li>
+      </ol>
+      <a class="btn btn-bot" href="${BOT_START_LINK}" onclick="return openBot(event)">🤖 ورود به ربات و شروع (start)</a>
+      <div class="info-box amber" style="margin-top:14px;"><b>📄 هنوز معرفی‌نامه برایتان صادر نشده؟</b><br>ثبتِ درخواست برای همکارانی امکان‌پذیر است که معرفی‌نامه‌شان صادر شده باشد. لطفاً به <b>واحدِ منابعِ انسانیِ شرکتِ خود</b> مراجعه و صدورِ معرفی‌نامه را پیگیری کنید. در صورتِ صادر نشدنِ معرفی‌نامه با <b>آقای علی‌نیا</b> (مسئولِ صدورِ معرفی‌نامه در ویانا) تماس بگیرید:
+        <a class="tel" href="tel:09029020883">📞 ۰۹۰۲۹۰۲۰۸۸۳</a></div>
+      <div class="info-box sky"><b>🔐 معرفی‌نامه صادر شده ولی نمی‌توانید وارد شوید؟</b><br>با <b>آقای بهزادی</b> (مسئولِ بیمه‌ی اتومبیل) تماس بگیرید یا به <b>کانکسِ بیمه پاسارگاد</b> مراجعه فرمایید:
+        <a class="tel" href="tel:09029020893">📞 ۰۹۰۲۹۰۲۰۸۹۳</a></div>
+    </div>`;
+}
+// لینکِ ربات با پارامترِ start: داخلِ بله با openTelegramLink/openLink، بیرون از بله همان لینک
+const BOT_START_LINK = 'https://ble.ir/mammutbot?start=go';
+function openBot(ev) {
+    try {
+        const W = window.Bale && Bale.WebApp;
+        if (W && typeof W.openTelegramLink === 'function') { if (ev) ev.preventDefault(); W.openTelegramLink(BOT_START_LINK); setTimeout(() => { try { W.close(); } catch(e) {} }, 400); return false; }
+        if (W && typeof W.openLink === 'function') { if (ev) ev.preventDefault(); W.openLink(BOT_START_LINK); return false; }
+    } catch(e) {}
+    return true;
+}
+
 function backToForm() {
     resetForm();
     document.getElementById('screen-result').classList.remove('active');
     document.getElementById('screen-form').classList.add('active');
+    window.scrollTo(0, 0);
 }
-
-// راهکار اساسی برای جلوگیری از باقی‌ماندن مقادیر تست قبلی: با هر «استعلام جدید»، همه‌ی
-// فیلدها کاملاً به حالت پیش‌فرض برمی‌گردند - چون همین باقی‌ماندن یک انتخاب قدیمی (مثلاً
-// «۱ سال» به‌جای «۰ سال») می‌تواند نتیجه را کاملاً عوض کند بدون این‌که کاربر متوجه شود
+// هر «استعلام جدید» همه‌ی فیلدها را به پیش‌فرض برمی‌گرداند (مقدارِ جامانده‌ی قبلی نتیجه را بی‌صدا عوض نکند)
 function resetForm() {
-    document.getElementById('car-search').value = '';
-    document.getElementById('selected-car-display').style.display = 'none';
-    document.getElementById('manual-category-field').style.display = 'none';
-    selectedCategory = null;
+    veh = { kind: null, grp: null, model: null };
+    renderKinds(); document.getElementById('veh-steps').style.display = 'none'; paintVeh();
     document.querySelectorAll('.tier-chip').forEach(c => c.classList.remove('selected'));
-    selectedTier = null;
-    fillModelYearSelect();
-    selectPrevPolicy(true);
-    document.getElementById('prev-expiry').value = '';
-    document.getElementById('purchase-date').value = '';
-    ['tp-years','tp-mali','tp-badani','dr-years','dr-mali','dr-badani'].forEach(id => document.getElementById(id).value = '0');
+    selectedTier = null; lastInquiryId = null;
+    fillModelYearSelect(); resetDates();
+    ['tp-percent','dr-percent'].forEach(id => document.getElementById(id).value = '0');
+    ['tp-claims','dr-claims'].forEach(id => document.getElementById(id).value = '0-0');
     updateLiveSummary();
 }
 

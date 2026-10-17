@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌های دانلودی (بدونِ نویسه‌های نامرئی و «(ماه)»)
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_order_hours.php';
 
 // نکته‌ی مهم: فرانت‌اند برای اکشن‌های POST بدنه را به‌صورت JSON خام می‌فرستد
 // (Content-Type: application/json)، نه فرم معمولی؛ پس PHP آن را در $_POST پر نمی‌کند
@@ -67,6 +68,12 @@ try {
         $stmt->execute([$person['id']]);
         $healthEligibleCount = intval($stmt->fetchColumn());
 
+        // تعدادِ درخواست‌های «در انتظارِ بارگزاریِ مدارک» (برای کارتِ «بارگزاری مدارک» در صفحه‌ی اصلی)
+        $awaitingDocs = 0;
+        $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND status IN ('AWAITING_DOCS','DOCS_PENDING')");
+        $stmt->execute([$person['id']]);
+        foreach ($stmt->fetchAll() as $c) if (in_array(case_user_stage($pdo, $c), ['awaiting', 'needs_fix'], true)) $awaitingDocs++;
+
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM app_notifications WHERE person_id = ? AND is_read = 0");
         $stmt->execute([$person['id']]);
         $unreadCount = intval($stmt->fetchColumn());
@@ -92,6 +99,8 @@ try {
             'health_eligible_count' => $healthEligibleCount,
             'unread_notifications' => $unreadCount,
             'has_unread_support_reply' => $hasUnreadSupportReply,
+            'awaiting_docs' => $awaitingDocs,
+            'hours' => oh_status($pdo),
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -104,7 +113,23 @@ try {
 
         $stmt = $pdo->prepare("SELECT * FROM app_notifications WHERE person_id = ? ORDER BY created_at DESC LIMIT 100");
         $stmt->execute([$person['id']]);
-        echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$n) {   // زمانِ شمسی برای نمایش
+            $ts = strtotime((string)$n['created_at']);
+            if ($ts) { [$y, $m, $d] = jalali_from_gregorian_ts($ts); $n['created_j'] = oh_fa(sprintf('%04d/%02d/%02d', $y, $m, $d) . ' · ' . date('H:i', $ts)); $n['age_sec'] = max(0, time() - $ts); }
+        }
+        unset($n);
+        echo json_encode(['ok' => true, 'data' => $rows], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // شمارِ اعلان‌های خوانده‌نشده (برای به‌روزرسانیِ زنگوله بدونِ بارگذاریِ دوباره‌ی صفحه)
+    if ($action === 'notif_count') {
+        $person = resolve_main_session($pdo, $_GET['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false]); exit; }
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM app_notifications WHERE person_id = ? AND is_read = 0");
+        $stmt->execute([$person['id']]);
+        echo json_encode(['ok' => true, 'unread' => intval($stmt->fetchColumn())]);
         exit;
     }
 
@@ -124,7 +149,30 @@ try {
 
         $stmt = $pdo->prepare("SELECT * FROM policy_cases WHERE person_id = ? AND COALESCE(status, '') <> 'WITHDRAWN' ORDER BY created_at DESC");
         $stmt->execute([$person['id']]);
-        echo json_encode(['ok' => true, 'data' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+        // جزئیات + مرحله‌ی پیگیری (۴ مرحله) برای هر درخواست
+        require_once __DIR__ . '/_vehicle_catalog.php';
+        $fa = function ($s) { return strtr((string)$s, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']); };
+        $jd = function ($dt) use ($fa) { if (!$dt || strtotime($dt) === false) return ''; [$y, $m, $d] = jalali_from_gregorian_ts(strtotime($dt)); return $fa(sprintf('%04d/%02d/%02d', $y, $m, $d)); };
+        $out = [];
+        foreach ($stmt->fetchAll() as $c) {
+            $kind = $c['vehicle_kind'] ?? '';
+            $draft = $c['status'] === 'REGISTERED';
+            $stage = $draft ? 'draft' : case_user_stage($pdo, $c);
+            $out[] = [
+                'id' => intval($c['id']), 'unique_code' => $c['unique_code'], 'status' => $c['status'], 'insurance_type' => $c['insurance_type'],
+                'type_fa' => $c['insurance_type'] === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث', 'plate' => $c['plate'], 'no_plate' => !empty($c['no_plate']), 'chassis_num' => $c['chassis_num'],
+                'kind_fa' => VC_KINDS[$kind]['fa'] ?? '', 'kind_icon' => VC_KINDS[$kind]['icon'] ?? '🚗', 'car_system' => $c['car_system'], 'car_type' => $c['car_type'],
+                'insured_name' => $c['insured_name'], 'insured_relationship' => $c['insured_relationship'],
+                'liability_limit' => $c['liability_limit'] !== null ? intval($c['liability_limit']) : null,
+                'estimated_car_value' => $c['estimated_car_value'] !== null ? intval($c['estimated_car_value']) : null,
+                'policy_number' => $c['policy_number'], 'total_premium' => intval($c['final_premium'] ?: $c['total_premium']),
+                'issued_j' => $c['status'] === 'ISSUED' ? $jd($c['issued_at']) : '', 'end_date_j' => $fa($c['end_date_j'] ?? ''),
+                'created_j' => $jd($c['created_at']), 'is_cancelled' => !empty($c['is_cancelled']),
+                'stage' => $stage, 'stage_fa' => $draft ? 'ثبتِ درخواست تکمیل نشده' : CASE_USER_STAGE_FA[$stage],
+                'has_file' => $c['status'] === 'ISSUED' && !empty($c['issued_file_path']),
+            ];
+        }
+        echo json_encode(['ok' => true, 'data' => $out], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -271,7 +319,9 @@ try {
         $person = resolve_main_session($pdo, $data['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
-        $mode = ($data['mode'] ?? 'case') === 'free' ? 'free' : 'case';
+        // «بازدیدِ آزاد» (بدونِ درخواست) حذف شده است
+        if (($data['mode'] ?? 'case') === 'free') { echo json_encode(['ok' => false, 'error' => 'بازدیدِ سلامت فقط برای درخواستِ بیمه‌ی بدنه‌ی ثبت‌شده انجام می‌شود.'], JSON_UNESCAPED_UNICODE); exit; }
+        $mode = 'case';
         $caseId = $mode === 'case' ? intval($data['case_id'] ?? 0) : null;
         $freePlate = $mode === 'free' ? trim($data['plate'] ?? '') : null;
 

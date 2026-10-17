@@ -5,6 +5,7 @@ require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_bot_identity.php';   // قفلِ شماره ↔ کد ملی، خروج از حساب، سوییچِ مدیر کل
 require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_health_admin.php';  // بازدید توسط کاربر روشن/خاموش، نوبت‌دهی، ورودِ مخفیِ مدیر به مینی‌اپ
+require_once __DIR__ . '/_bot_guide.php';     // متنِ راهنمای ربات (/help) و راهنمای ورود
 
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -36,6 +37,8 @@ $chat_type  = $message['chat']['type'] ?? 'private';
 $chat_title = $message['chat']['title'] ?? null;
 $incoming_message_id = $message['message_id'] ?? null;
 $text = p2e_digits(trim($message['text'] ?? ''));
+// لینکِ «https://ble.ir/mammutbot?start=…» در بله به صورتِ «/start پارامتر» می‌رسد؛ مثلِ /start رفتار می‌شود
+if (preg_match('~^/start(@\w+)?(\s+\S*)?$~i', $text)) $text = '/start';
 
 $sender_user_id  = $message['from']['id'] ?? null;
 $first_name      = trim($message['from']['first_name'] ?? '');
@@ -632,7 +635,7 @@ function identify_and_route($pdo, $chat_id, $national_code, $mobile, $bot_token)
     if ($pendingQueueId) {
         send_msg($chat_id, "📋 معرفی‌نامه شما صادر شده است ولی هنوز توسط کارشناسان تایید نشده است.\nلطفاً در صورت عجله، از دکمه‌ی «ارتباط با کارشناس» استفاده کنید.", $bot_token, limited_menu_kb());
     } else {
-        send_msg($chat_id, "متاسفانه هنوز برای شما معرفی‌نامه‌ای ثبت نشده است.\nلطفاً از طریق واحد منابع انسانی (آقای علی‌نیا) پیگیر باشید.", $bot_token, limited_menu_kb());
+        send_msg($chat_id, "متاسفانه هنوز برای شما معرفی‌نامه‌ای ثبت نشده است. 📄\n\n" . bot_login_help_text(), $bot_token, limited_menu_kb());
     }
 }
 
@@ -1386,6 +1389,8 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
         return;
     }
     if ($text === '/switch') { bot_start_switch($pdo, $chat_id, $bot_token); return; }
+    // ---- راهنمای کاملِ ربات: از هر حالتی ----
+    if (in_array($text, ['/help', 'راهنما', '📖 راهنما', '/guide'], true)) { send_msg($chat_id, bot_guide_text(), $bot_token); return; }
 
     // ---- /start برای کاربر شناسایی‌شده: همیشه و از هر حالتی، به منوی اصلی برمی‌گردد و پیام تازه
     // (با دکمه‌های به‌روز) می‌فرستد - چون تا پیام جدیدی نیاید، دکمه‌های پیام‌های قبلی همان قبلی می‌مانند ----
@@ -1994,7 +1999,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                 ['text' => '💰 استعلام حق بیمه (بدون نیاز به ورود)', 'web_app' => ['url' => $siteUrlForPremium . '/webapp/premium/index_premium.html']],
             ]]];
         }
-        send_msg($chat_id, "سلام! به سامانه بیمه اتومبیل پاسارگاد ماموت خوش آمدید. 🐘\nلطفاً کد ملی خود را وارد کنید:", $bot_token, $premiumKb ?: kb_remove());
+        send_msg($chat_id, "سلام! 👋 به سامانه بیمه اتومبیل پاسارگاد ماموت خوش آمدید. 🐘\n\n🪪 لطفاً کد ملیِ ۱۰ رقمیِ خود را وارد کنید:\n\n" . bot_login_help_text() . "\n\n📖 راهنمای کامل: /help", $bot_token, $premiumKb ?: kb_remove());
         return;
     }
 

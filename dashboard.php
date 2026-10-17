@@ -173,6 +173,7 @@ function issuance_nav($active, $isLiaison) {
     if (!$isLiaison) $items[] = ['pasargad-recon', 'fa-scale-unbalanced', 'مغایرت با پاسارگاد', 'iss-n-recon'];
     if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی قبلی', 'iss-n-legacy'];
     if (!$isLiaison) $items[] = ['renewals', 'fa-bell', 'اعلام تمدید', 'iss-n-renew'];
+    if (($_SESSION['role'] ?? '') === 'ADMIN') $items[] = ['premium-inquiries', 'fa-calculator', 'استعلام‌ها', 'iss-n-pqi'];
     $h = '<div class="iss-hub"><div class="iss-hub-title"><span class="iss-hub-ic"><i class="fas fa-stamp"></i></span><div><b>مرکز صدور</b><small>همه‌ی ردیف‌های شرکتی و کارکنان، از درخواست تا صادره</small></div></div><div class="iss-nav">';
     foreach ($items as [$tab, $ic, $label, $badge]) {
         $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
@@ -1074,7 +1075,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         . ($canSeeCompanies ? $bmLink('issued-list', 'fa-file-circle-check', 'صادره‌ها', 'جستجو، اکسل، فایل') . $bmLink('endorsements', 'fa-file-pen', 'الحاقیه‌ها', 'اضافی، برگشتی، فسخ و اثرِ مالی') : '')
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('issue-group', 'fa-layer-group', 'صدورِ گروهی', 'فایلِ PDFِ بیمه‌گر') . $bmLink('import-archive', 'fa-box-archive', 'بایگانیِ وارداتی', 'اکسلِ بیمه‌گر') . $bmLink('renewals', 'fa-bell', 'اعلامِ تمدید', 'شرکت‌ها و اشخاص') : '')
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('pasargad-recon', 'fa-scale-unbalanced', 'مغایرت‌گیری با پاسارگاد', 'خروجیِ هفتگی/ماهانه با سایت') : '')
-                        . ($isAdminRole ? $bmLink('legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی‌های قبلی', 'اکسل‌ها، پوشه‌ها، ادغام') : '');
+                        . ($isAdminRole ? $bmLink('legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی‌های قبلی', 'اکسل‌ها، پوشه‌ها، ادغام') : '')
+                        . ($isAdminRole ? $bmLink('premium-inquiries', 'fa-calculator', 'استعلام‌های حق بیمه', 'لاگِ استعلام‌های مینی‌اپ و پاسخ به کاربر') : '');
                     $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
                         . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات') : '';
@@ -2315,6 +2317,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div data-scat="webapp" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-violet-100 pb-3"><i class="fas fa-business-time text-violet-500 ml-2"></i>ساعتِ کاریِ ثبتِ درخواستِ آنلاین (مینی‌اپ)</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">برای هر روزِ هفته ساعتِ شروع و پایان را تعیین کنید. بیرون از این ساعت‌ها «ثبت درخواست بیمه» و بارگذاریِ مدارک بسته است و صفحه‌ی متحرکِ پایانِ ساعتِ کاری با برنامه‌ی هفته و زمانِ بعدی نشان داده می‌شود؛ بیمه‌نامه‌های من، پلاک‌های من، ارتباط با کارشناس و دیدنِ وضعیتِ مدارک همیشه باز است.</p>
+                    <div id="ma-hours"></div>
+                </div>
+                <div data-scat="webapp" class="card p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-indigo-100 pb-3"><i class="fas fa-car-side text-indigo-500 ml-2"></i>انواعِ وسیله‌ی نقلیه (ثبتِ درخواست و استعلام)</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">فهرستِ «نوع ← گروه ← مدل» که کاربر در مینی‌اپ (ثبتِ درخواست و استعلامِ حق بیمه) از آن انتخاب می‌کند. «رده‌ی استعلام» تعیین می‌کند مبلغِ ثالث با کدام رده حساب شود؛ گروه/مدلی که رده ندارد در استعلام به کارشناس ارجاع می‌شود. وسیله‌ی انتخاب‌شده روی درخواست ثبت و در صفحه‌ی صدور دیده می‌شود.</p>
+                    <div id="ma-vehicles"></div>
+                </div>
+
                 <div data-scat="issue" class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-blue-100 pb-3"><i class="fas fa-layer-group text-blue-500 ml-2"></i>سقف بیمه‌نامه به ازای هر معرفی‌نامه</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-4">حداکثر تعداد بیمه‌نامه‌ای که با یک معرفی‌نامه قابل صدور است (پیش‌فرض: ۴ فقره).</p>
@@ -2884,6 +2897,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <?php echo issuance_nav('endorsements', $isLiaison); ?>
             <div id="endo-root" class="space-y-4"></div>
         </div>
+        <!-- ======================= استعلام‌های حق بیمه‌ی مینی‌اپ - miniapp-admin.js ======================= -->
+        <div id="tab-premium-inquiries" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
+            <?php echo issuance_nav('premium-inquiries', $isLiaison); ?>
+            <div id="pqi-root"></div>
+        </div>
         <!-- ======================= اعلام تمدید - renewals.js ======================= -->
         <div id="tab-renewals" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('renewals', $isLiaison); ?>
@@ -3262,8 +3280,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="">-- اول نوع فایل را انتخاب کنید --</option>
                     <option value="letter">نامه‌ی درخواست (روی خودِ درخواست می‌نشیند، نه یک پلاک)</option>
                     <option value="ownership_doc">سند</option>
-                    <option value="car_card_front">کارت ماشین رو</option>
-                    <option value="car_card_back">کارت ماشین پشت</option>
+                    <option value="car_card_front">روی کارت ماشین</option>
+                    <option value="car_card_back">پشت کارت ماشین</option>
                     <option value="sales_invoice">فاکتور فروش (صفر کیلومتر)</option>
                     <option value="prev_third_policy">بیمه ثالث قبل</option>
                     <option value="prev_body_policy">بیمه بدنه قبل</option>
@@ -4342,7 +4360,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=16"></script>
-    <script src="settings-nav.js?v=4"></script>
+    <script src="settings-nav.js?v=5"></script>
+    <script src="miniapp-admin.js?v=1"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
@@ -4368,7 +4387,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="endorse.js?v=5"></script>
     <script src="party-ui.js?v=2"></script>
     <script src="company-pick.js?v=1"></script>
-    <script src="legacy-import.js?v=1"></script>
+    <script src="legacy-import.js?v=2"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
     <script src="recon.js?v=1"></script>
@@ -6341,7 +6360,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // برچسبِ فارسیِ همه‌ی انواع مدرک (هم‌نام با company_doc_types در بک‌اند)
         const DOC_TYPE_FA = {
-            car_card_front: 'کارت ماشین رو', car_card_back: 'کارت ماشین پشت', ownership_doc: 'سند',
+            car_card_front: 'روی کارت ماشین', car_card_back: 'پشت کارت ماشین', ownership_doc: 'سند',
             prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
             policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
@@ -10535,6 +10554,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
+            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); }
+            if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
@@ -13418,7 +13439,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (type === 'BODY' && prev === 'بله') d.prev_body_insurance = 'بیمه بدنه قبل';
             d.identity_doc = 'کارت ملی یا گواهینامه (بیمه‌گذار)';
             if (own === 'سند') d.ownership_doc = 'سند مالکیت';
-            else { d.car_card_front = 'کارت ماشین رو'; d.car_card_back = 'کارت ماشین پشت'; }
+            else { d.car_card_front = 'روی کارت ماشین'; d.car_card_back = 'پشت کارت ماشین'; }
             if (rel && rel !== 'خودم') {
                 d.holder_birth_cert_p1 = 'شناسنامه دارنده معرفی‌نامه - صفحه اول';
                 d.holder_birth_cert_relation = 'شناسنامه دارنده معرفی‌نامه - صفحه مربوط به ' + rel;

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ثبت درخواست بیمه</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
-<script src="../doc-split.js?v=1"></script>
+<script src="/iran-time.js?v=1"></script>
+<script src="../mini-kit.js?v=2"></script>
 <script src="/maint-watch.js?v=1"></script>
 <style>
   :root {
@@ -92,10 +93,6 @@
   .cov-item .head { display:flex; justify-content:space-between; align-items:center; }
   .cov-item .lbl { font-size:12.5px; font-weight:800; }
   .cov-item .desc { font-size:10.5px; color:#94a3b8; margin-top:4px; line-height:1.7; }
-  .cov-item .tiers { display:none; gap:6px; margin-top:10px; flex-wrap:wrap; }
-  .cov-item.selected .tiers { display:flex; }
-  .tier-chip { background: rgba(255,255,255,0.08); border:1px solid var(--glass-b); border-radius:8px; padding:6px 10px; font-size:10.5px; cursor:pointer; }
-  .tier-chip.active { background: var(--accent); border-color: var(--accent); }
 
   .doc-btn { background: var(--glass); border: 1px solid var(--glass-b); border-radius: 14px; padding: 12px; text-align:center; cursor:pointer; font-size:11.5px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:6px; min-height: 64px; justify-content:center; }
   .doc-btn.approved { border-color: var(--success); background: rgba(16,185,129,0.12); }
@@ -115,6 +112,30 @@
   .summary-row b { color: #fff; }
   .summary-row span:first-child { color: #94a3b8; }
   input[type=file] { display: none; }
+  .kind-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+  .kind-grid .option-card { padding: 14px 6px; }
+  .kind-grid .option-card .lbl { font-size: 11.5px; }
+  .step-lbl { font-size: 11.5px; color: #a5b4fc; font-weight: 800; margin: 14px 0 6px; }
+  .pick-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; background: rgba(255,255,255,.06); border: 1px dashed rgba(165,180,252,.45); border-radius: 14px; padding: 13px 14px; color: #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: right; }
+  .pick-btn.on { border-style: solid; border-color: var(--accent); background: rgba(99,102,241,.14); color: #fff; }
+  .saved-note { font-size: 11.5px; line-height: 1.9; color: #a7f3d0; background: rgba(16,185,129,.12); border: 1px solid rgba(52,211,153,.35); border-radius: 12px; padding: 9px 12px; margin-bottom: 10px; }
+  .ncy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ncy-chip { border: 1px solid var(--glass-b); background: rgba(255,255,255,.05); color: #e2e8f0; border-radius: 12px; padding: 12px 6px; font-weight: 800; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .ncy-chip.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+  .cov-item .tiers { display: none; margin-top: 10px; background: rgba(0,0,0,.18); border-radius: 12px; padding: 10px; }
+  .cov-item.selected .tiers { display: block; }
+  .cov-item .tiers.need { box-shadow: inset 0 0 0 2px rgba(245,158,11,.7); animation: covPulse 1.4s ease-in-out infinite; }
+  .tier-ask { font-size: 11.5px; font-weight: 800; color: #fde68a; margin-bottom: 8px; }
+  .cov-item .tiers:not(.need) .tier-ask { color: #a7f3d0; }
+  .tier-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tier-chip { flex: 1; min-width: 90px; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-b); border-radius: 10px; padding: 11px 8px; font-size: 12.5px; font-weight: 800; color: #fff; cursor: pointer; font-family: inherit; }
+  .tier-chip.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; box-shadow: 0 6px 14px rgba(99,102,241,.35); }
+  .cov-item.need { border-color: rgba(245,158,11,.7); }
+  @keyframes covPulse { 0%,100% { box-shadow: inset 0 0 0 2px rgba(245,158,11,.4); } 50% { box-shadow: inset 0 0 0 2px rgba(245,158,11,1); } }
+  .note-box { width: 100%; max-width: 340px; font-size: 12px; line-height: 2; color: #fde68a; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); border-radius: 14px; padding: 10px 12px; }
+  .icon-badge.pop { animation: popIn .6s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes popIn { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .hidden-pk { display: none !important; }
 </style>
 <link rel="stylesheet" href="/plate.css?v=4">
 </head>
@@ -170,29 +191,15 @@
   <button class="btn btn-primary" onclick="submitRelativeInfo()">ادامه</button>
 </div>
 
-<!-- استفاده از پروفایل قبلی -->
-<div id="screen-profile-reuse" class="screen">
-  <div class="center-card">
-    <div class="icon-badge">📇</div>
-    <h1 class="title">اطلاعات قبلی پیدا شد</h1>
-    <p class="desc">اطلاعات هویتیِ ذخیره‌شده‌ی قبلیِ <b id="reuse-addressee"></b> پیدا شد. می‌خواهید از همان استفاده کنید؟</p>
-    <button class="btn btn-primary" onclick="useProfileReuse()">✅ استفاده از اطلاعات قبلی</button>
-    <button class="btn btn-outline" onclick="skipProfileReuse()">📝 وارد کردن اطلاعات جدید</button>
-    <button class="btn btn-outline btn-sm" onclick="goBack()">◀ بازگشت</button>
-  </div>
-</div>
-
 <!-- اطلاعات هویتی -->
 <div id="screen-personal-info" class="screen">
   <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>اطلاعات هویتی <span id="pi-addressee"></span></h2><div style="width:38px"></div></div>
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:30%"></div></div></div>
+  <div class="saved-note" id="pi-saved-note" style="display:none;">📇 اطلاعاتِ ذخیره‌شده‌ی قبلی پر شد؛ بررسی کنید و اگر لازم است ویرایش کنید.</div>
   <div class="form-card">
     <div class="field">
-      <label>تاریخ تولد</label>
-      <div class="field-row">
-        <input type="text" id="pi-birthdate" placeholder="۱۴۰۵/۰۲/۰۳" dir="ltr" style="text-align:center;flex:1;">
-        <button type="button" class="btn btn-outline btn-sm" style="flex:0 0 90px;margin-top:0;" onclick="openDatePicker()">📅 تقویم</button>
-      </div>
+      <label>تاریخ تولد (از روی تقویم انتخاب کنید)</label>
+      <input type="text" id="pi-birthdate" dir="ltr">
     </div>
     <div class="field"><label>آدرس محل سکونت</label><textarea id="pi-address" placeholder="آدرس کامل..."></textarea></div>
     <div class="field"><label>شماره موبایل</label><input type="tel" id="pi-phone" maxlength="11" inputmode="numeric" placeholder="09123456789" dir="ltr" style="text-align:center;"></div>
@@ -206,14 +213,29 @@
   <button class="btn btn-primary" onclick="submitPersonalInfo()">ادامه</button>
 </div>
 
+<!-- نوعِ وسیله‌ی نقلیه -->
+<div id="screen-vehicle" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>وسیله‌ی نقلیه</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:40%"></div></div></div>
+  <p class="desc" style="margin-bottom:12px;">۱. نوعِ وسیله‌ی نقلیه را انتخاب کنید:</p>
+  <div class="kind-grid" id="kind-grid"></div>
+  <div id="veh-steps" style="display:none; margin-top:14px;">
+    <p class="step-lbl">۲. نوعِ خودرو</p>
+    <button type="button" class="pick-btn" id="grp-btn" onclick="pickGroup()"><span id="grp-txt">انتخاب کنید</span><span>▾</span></button>
+    <p class="step-lbl">۳. مدلِ خودرو</p>
+    <button type="button" class="pick-btn" id="model-btn" onclick="pickModel()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+  </div>
+  <button class="btn btn-primary" style="margin-top:16px;" onclick="submitVehicle()">ادامه</button>
+</div>
+
 <!-- پلاک -->
 <div id="screen-plate" class="screen">
-  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پلاک خودرو / موتور</h2><div style="width:38px"></div></div>
-  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:45%"></div></div></div>
+  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2 id="plate-title">پلاک</h2><div style="width:38px"></div></div>
+  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:48%"></div></div></div>
   <div id="plate-vehicles-list"></div>
   <div class="form-card">
-    <div class="pk-switch" style="background:rgba(255,255,255,.08)"><button type="button" class="on" data-pk="car" onclick="setPlateKind('car')">🚗 خودرو</button><button type="button" data-pk="moto" onclick="setPlateKind('moto')">🏍 موتورسیکلت</button></div>
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;">پلاک را دقیقاً مثل روی <span id="pl-kind-word">خودرو</span> وارد کنید:</p>
+    <div class="pk-switch" id="agri-switch" style="background:rgba(255,255,255,.08);display:none"><button type="button" class="on" data-ag="plate" onclick="setAgriMode('plate')">🔢 پلاک دارد</button><button type="button" data-ag="chassis" onclick="setAgriMode('chassis')">🔧 شماره شاسی و موتور</button></div>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:10px;" id="plate-hint">پلاک را دقیقاً مثلِ روی خودرو وارد کنید:</p>
     <div id="pl-moto" class="mt-pin hidden-pk" dir="ltr" style="margin:0 auto"><span class="ip-flag"></span><span class="mt-rows">
       <input type="tel" id="pl-mcity" placeholder="کد شهر ۵۸۳" maxlength="3" inputmode="numeric">
       <input type="tel" id="pl-mnum" placeholder="۷۶۲۲۴" maxlength="5" inputmode="numeric"></span></div>
@@ -224,19 +246,12 @@
       <input type="tel" id="pl-suffix" placeholder="۷۱۱" maxlength="3" inputmode="numeric" class="ip-cell ip-wide">
       <span class="ip-ir"><small>ایران</small><input type="tel" id="pl-region" placeholder="۶۸" maxlength="2" inputmode="numeric"></span>
     </div>
+    <div id="pl-chassis" class="hidden-pk">
+      <div class="field"><label>شماره شاسی</label><input type="text" id="pl-ch" dir="ltr" style="text-align:center" placeholder="مثلاً NAAM..."></div>
+      <div class="field"><label>شماره موتور</label><input type="text" id="pl-en" dir="ltr" style="text-align:center"></div>
+    </div>
   </div>
-  <button class="btn btn-primary" onclick="submitNewPlate()">✅ ثبت این پلاک</button>
-</div>
-
-<!-- مالکیت -->
-<div id="screen-ownership" class="screen">
-  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>مدارک خودرو</h2><div style="width:38px"></div></div>
-  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:55%"></div></div></div>
-  <p class="desc" style="margin-bottom:14px;">کدام یک را در اختیار دارید؟</p>
-  <div class="option-grid">
-    <div class="option-card wide" onclick="submitOwnership('سند')"><span class="ic">📄</span><span class="lbl">سند مالکیت</span></div>
-    <div class="option-card wide" onclick="submitOwnership('کارت ماشین')"><span class="ic">🪪</span><span class="lbl">کارت ماشین (رو و پشت)</span></div>
-  </div>
+  <button class="btn btn-primary" onclick="submitNewPlate()" id="plate-submit">✅ ثبت و ادامه</button>
 </div>
 
 <!-- بیمه ثالث قبل + سقف تعهد -->
@@ -279,7 +294,8 @@
   <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>سابقه‌ی بدون خسارت</h2><div style="width:38px"></div></div>
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:70%"></div></div></div>
   <div class="form-card">
-    <div class="field"><label>چند سال متوالی بدون خسارت بوده‌اید؟</label><input type="number" id="ncy-years" min="0" max="50" placeholder="مثلاً 3" style="text-align:center;"></div>
+    <div class="field"><label>چند سال بدونِ خسارت بوده‌اید؟ (طبقِ بیمه‌نامه‌ی بدنه‌ی قبلی)</label>
+      <div class="ncy-grid" id="ncy-grid"></div></div>
     <div class="field-error" id="ncy-error"></div>
   </div>
   <button class="btn btn-primary" onclick="submitNoClaimYears()">ادامه</button>
@@ -289,7 +305,7 @@
 <div id="screen-coverages" class="screen">
   <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>پوشش‌های تکمیلی</h2><div style="width:38px"></div></div>
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:75%"></div></div></div>
-  <p class="desc" style="margin-bottom:10px;">هرکدام را می‌خواهید انتخاب کنید (چند مورد قابل انتخاب است):</p>
+  <p class="desc" style="margin-bottom:10px;">پوشش‌هایی را که می‌خواهید انتخاب کنید (چند مورد قابل انتخاب است). برای پوشش‌های چندگزینه‌ای مثلِ «نوسان قیمت» بعد از انتخاب، درصد/مبلغِ آن را هم حتماً انتخاب کنید.</p>
   <div id="coverages-list"></div>
   <button class="btn btn-primary" onclick="submitCoverages()">تایید و ادامه</button>
 </div>
@@ -305,37 +321,6 @@
   <button class="btn btn-outline" onclick="submitCarValue(true)">🧮 محاسبه خودکار توسط کارشناس</button>
 </div>
 
-<!-- مدارک -->
-<div id="screen-docs" class="screen">
-  <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>ارسال مدارک</h2><div style="width:38px"></div></div>
-  <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:90%"></div></div></div>
-  <p class="desc" style="margin-bottom:12px;" id="docs-hint">هرکدام از موارد زیر را که آماده دارید انتخاب و عکس/فایل آن را ارسال کنید:</p>
-  <div class="doc-grid" id="docs-grid"></div>
-  <!-- «چند مدرک در یک PDF» (webapp/doc-split.js) -->
-  <div id="multi-pdf-wrap" style="display:none; margin-top:12px; background:rgba(245,158,11,.12); border:1px dashed rgba(245,158,11,.6); border-radius:14px; padding:12px; text-align:center;">
-    <p style="font-size:11px; color:#fcd34d; margin:0 0 8px; line-height:1.8;">مدارکتان را در یک فایلِ PDF دارید؟ بفرستید؛ صفحه‌ها را نشان می‌دهیم تا بگویید هر صفحه کدام مدرک است.</p>
-    <button class="btn btn-outline" style="margin-top:0;" onclick="document.getElementById('multi-pdf-input').click()">📚 ارسال چند مدرک در یک PDF</button>
-    <input type="file" id="multi-pdf-input" accept="application/pdf,.pdf" style="display:none;" onchange="onMultiPdfPicked(event)">
-  </div>
-  <div id="docs-continue-wrap"></div>
-
-  <!-- گزینه‌های دریافت عکس (وقتی یک مدرک انتخاب شود نمایش داده می‌شود) -->
-  <div id="doc-capture-area" style="display:none; margin-top:14px;">
-    <p class="desc" id="doc-capture-title" style="margin-bottom:10px;"></p>
-    <!-- اولویت با دوربین است؛ گالری و PDF (تک‌صفحه یا چندصفحه) هم برای مدارک مجاز است -->
-    <button class="btn btn-primary" onclick="pickDocFromCamera()">📸 گرفتن عکس با دوربین</button>
-    <div class="btn-row" style="margin-top:10px;">
-      <button class="btn btn-outline" onclick="pickDocFromGallery()">🖼 انتخاب از گالری</button>
-      <button class="btn btn-outline" onclick="pickDocPdf()">📄 ارسال PDF</button>
-    </div>
-    <button class="btn btn-outline" onclick="openDocCameraInBrowser()" style="margin-top:10px;">📷 دوربینِ باکیفیت‌تر (در مرورگر)</button>
-    <input type="file" id="doc-camera-input" accept="image/*,.heic,.heif" capture="environment" onchange="onDocFileSelected(event)">
-    <input type="file" id="doc-gallery-input" accept="image/*,.heic,.heif" onchange="onDocFileSelected(event)">
-    <input type="file" id="doc-pdf-input" accept="application/pdf,.pdf" onchange="onDocFileSelected(event)">
-    <div id="doc-upload-progress-note" style="display:none; text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;">⏳ در حال بارگذاری...</div>
-  </div>
-</div>
-
 <!-- خلاصه و تایید نهایی -->
 <div id="screen-review" class="screen">
   <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>بازبینی و تایید نهایی</h2><div style="width:38px"></div></div>
@@ -347,28 +332,20 @@
 <!-- موفقیت -->
 <div id="screen-success" class="screen">
   <div class="center-card">
-    <div class="icon-badge" style="background:linear-gradient(135deg,#10b981,#059669)">🎉</div>
-    <h1 class="title">اطلاعات اولیه ثبت شد</h1>
-    <p class="desc">شناسه‌ی پرونده: <b id="success-code" style="direction:ltr;display:inline-block;"></b><br>برای بارگذاری مدارک و (در صورت بیمه بدنه) ثبت بازدید سلامت خودرو و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.</p>
-    <button class="btn btn-primary" onclick="goToVisitHub()">📎 بازدید مدارک و سلامت خودرو</button>
+    <div class="icon-badge pop" style="background:linear-gradient(135deg,#10b981,#059669)">🎉</div>
+    <h1 class="title">اطلاعاتِ درخواستِ شما ثبت شد</h1>
+    <p class="desc" id="success-desc"></p>
+    <div class="note-box" id="success-note"></div>
+    <button class="btn btn-primary" onclick="goToVisitHub()">📎 بارگذاری مدارک</button>
     <button class="btn btn-outline" onclick="exitToApp()">بازگشت به منوی اصلی</button>
   </div>
 </div>
 
-<!-- انتخاب‌گر تاریخ شمسی (روز/ماه/سال) -->
-<div id="date-picker-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; align-items:flex-end; justify-content:center;">
-  <div style="background:#1e1b4b; border-radius:20px 20px 0 0; padding:20px; width:100%; max-width:480px; animation:fadeIn .25s ease;">
-    <h3 style="font-size:14px; font-weight:800; margin:0 0 14px; text-align:center;">📅 انتخاب تاریخ تولد</h3>
-    <div class="field-row">
-      <select id="dp-day" style="flex:1;"></select>
-      <select id="dp-month" style="flex:1.4;"></select>
-      <select id="dp-year" style="flex:1;"></select>
-    </div>
-    <div class="btn-row" style="margin-top:14px;">
-      <button class="btn btn-primary" onclick="confirmDatePicker()">✅ تایید</button>
-      <button class="btn btn-outline btn-sm" style="flex:0 0 90px;" onclick="closeDatePicker()">انصراف</button>
-    </div>
-  </div>
+<!-- خارج از ساعتِ کاری -->
+<div id="screen-closed" class="screen">
+  <div class="topbar"><div class="back-btn" onclick="exitToApp()">›</div><h2>ثبت درخواست بیمه</h2><div style="width:38px"></div></div>
+  <div id="closed-box"></div>
+  <button class="btn btn-outline" onclick="exitToApp()">🏠 بازگشت به منوی اصلی</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -379,17 +356,20 @@ try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.
 const params = new URLSearchParams(location.search);
 const TOKEN = params.get('t') || params.get('token') || '';
 const API = '/api/webapp_order.php';
+const VC = '/api/vehicle_catalog.php';
 const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+const K = window.MiniKit;
 
 let caseId = null, caseData = null, personName = '';
 let navStack = [];
-let docsData = [];
-let activeDocKey = null;
 let selectedCoverages = {};
+let KINDS = [];
+let veh = { kind: null, grp: null, model: null };
 
 function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
 function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
-function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const esc = s => K.esc(s);
 function formatPlateHtml(plate) {
     if (!plate) return '';
     { const _mp = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
@@ -400,102 +380,31 @@ function formatPlateHtml(plate) {
     return `<span class="ir-plate"><span class="flag"></span><span>${toFa(prefix)}</span><span>${letter}</span><span>${toFa(suffix)}</span><span class="ir"><small>ایران</small>${toFa(region)}</span></span>`;
 }
 function fillLetterSelects() {
-    ['pl-letter'].forEach(id => { const sel=document.getElementById(id); if(sel) sel.innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join(''); });
+    const sel = document.getElementById('pl-letter'); if (sel) sel.innerHTML = PLATE_LETTERS.map(l=>`<option value="${l}">${l}</option>`).join('');
 }
 function exitToApp() { location.href = '../app/?t=' + TOKEN; }
 function goToVisitHub() {
-    // اینجا هم داخل WebView مینی‌اپیم؛ باید با openLink به مرورگر واقعیِ بله برویم
-    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}`;
-    try {
-        if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
-            Bale.WebApp.openLink(url);
-            return;
-        }
-    } catch(e) {}
+    // داخلِ WebView مینی‌اپیم؛ صفحه‌ی بارگذاریِ مدارک در مرورگرِ داخلیِ بله باز می‌شود (دوربینِ واقعی)
+    const url = `${location.origin}/webapp/visit/index_visit.html?t=${encodeURIComponent(TOKEN)}${caseId ? '&case=' + caseId : ''}`;
+    try { if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') { Bale.WebApp.openLink(url); return; } } catch(e) {}
     location.href = url;
 }
-function computeAddressee(relationship) {
-    return relationship === 'خودم' ? 'خودتان' : (relationship + 'تان');
+function computeAddressee(relationship) { return relationship === 'خودم' ? 'خودتان' : (relationship + 'تان'); }
+
+// ---- خارج از ساعتِ کاری: صفحه‌ی متحرک با برنامه‌ی هفته و زمانِ بعدی ----
+function showClosed(hours) {
+    K.closedScreen(document.getElementById('closed-box'), hours || {});
+    showScreenRaw('closed');
 }
 
 // ============================================================
-//  انتخاب‌گر تاریخ شمسی
-// ============================================================
-const JALALI_MONTHS_ORDER = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-function isJalaliLeap(jy) {
-    const r = (jy - (jy > 0 ? 474 : 473)) % 2820 + 474;
-    return ((r + 38) * 682) % 2816 < 682;
-}
-function daysInJalaliMonth(jy, jm) {
-    if (jm <= 6) return 31;
-    if (jm <= 11) return 30;
-    return isJalaliLeap(jy) ? 30 : 29;
-}
-function currentJalaliYear() {
-    const now = new Date();
-    // تبدیل ساده‌ی میلادی به شمسی فقط برای گرفتن سال جاری (همان الگوریتم صفحه‌ی اپ اصلی)
-    const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
-    let gy = now.getFullYear(), gm = now.getMonth()+1, gd = now.getDate();
-    let jy = (gy <= 1600) ? 0 : 979;
-    gy -= (gy <= 1600) ? 621 : 1600;
-    const gy2 = (gm > 2) ? (gy + 1) : gy;
-    let days = (365*gy) + (Math.floor((gy2+3)/4)) - (Math.floor((gy2+99)/100)) + (Math.floor((gy2+399)/400)) - 80 + gd + g_d_m[gm-1];
-    jy += 33*Math.floor(days/12053); days %= 12053;
-    jy += 4*Math.floor(days/1461); days %= 1461;
-    if (days > 365) { jy += Math.floor((days-1)/365); }
-    return jy;
-}
-function openDatePicker() {
-    const yearSel = document.getElementById('dp-year');
-    const curY = currentJalaliYear();
-    let yearsHtml = '';
-    for (let y = curY; y >= 1300; y--) yearsHtml += `<option value="${y}">${toFa(y)}</option>`;
-    yearSel.innerHTML = yearsHtml;
-
-    const monthSel = document.getElementById('dp-month');
-    monthSel.innerHTML = JALALI_MONTHS_ORDER.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
-
-    // اگر تاریخ قبلاً وارد شده، همان را پیش‌فرض بگذار
-    const existing = toEn(document.getElementById('pi-birthdate').value.trim());
-    const m = existing.match(/^(\d{4})\D(\d{1,2})\D(\d{1,2})$/);
-    if (m) { yearSel.value = m[1]; monthSel.value = parseInt(m[2]); }
-
-    fillDayOptions();
-    monthSel.onchange = fillDayOptions;
-    yearSel.onchange = fillDayOptions;
-    if (m) document.getElementById('dp-day').value = parseInt(m[3]);
-
-    document.getElementById('date-picker-overlay').style.display = 'flex';
-}
-function fillDayOptions() {
-    const y = parseInt(document.getElementById('dp-year').value);
-    const mo = parseInt(document.getElementById('dp-month').value);
-    const daySel = document.getElementById('dp-day');
-    const prevVal = daySel.value;
-    const maxDay = daysInJalaliMonth(y, mo);
-    let html = '';
-    for (let d = 1; d <= maxDay; d++) html += `<option value="${d}">${toFa(d)}</option>`;
-    daySel.innerHTML = html;
-    if (prevVal && parseInt(prevVal) <= maxDay) daySel.value = prevVal;
-}
-function closeDatePicker() { document.getElementById('date-picker-overlay').style.display = 'none'; }
-function confirmDatePicker() {
-    const y = document.getElementById('dp-year').value;
-    const mo = String(document.getElementById('dp-month').value).padStart(2,'0');
-    const d = String(document.getElementById('dp-day').value).padStart(2,'0');
-    document.getElementById('pi-birthdate').value = toFa(`${y}/${mo}/${d}`);
-    closeDatePicker();
-}
-
-// ============================================================
-//  ناوبری (پشته‌ی صفحات برای بازگشت واقعی به مرحله‌ی قبل)
+//  ناوبری
 // ============================================================
 function showScreenRaw(name) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const el = document.getElementById('screen-' + name);
-    // برخی «مرحله‌ها» (مثل profile-check) صفحه‌ی واقعی ندارند، فقط تصمیم می‌گیرند
-    // کدام صفحه‌ی واقعی را نشان بدهند؛ تا آن لحظه صفحه‌ی لودینگ نمایش داده می‌شود
     (el || document.getElementById('screen-loading')).classList.add('active');
+    window.scrollTo(0, 0);
 }
 function goToScreen(name, replace) {
     if (replace) navStack.pop();
@@ -517,36 +426,33 @@ function goBack() {
 async function initApp() {
     if (!TOKEN) { showAppError('لینک نامعتبر است.'); return; }
     fillLetterSelects();
-    const existingCaseId = params.get('case');
-    if (existingCaseId) {
-        caseId = parseInt(existingCaseId);
-        await loadCaseAndAdvance();
-        return;
-    }
+    K.dateField(document.getElementById('pi-birthdate'), () => ({ title: '🎂 تاریخ تولد', max: K.jToday(), startView: 'year', focus: [K.jToday()[0] - 30, 1, 1] }));
     try {
-        const res = await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`);
-        const data = await res.json();
+        const data = await (await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`)).json();
         if (!data.ok) { showAppError(data.error); return; }
         personName = data.person_name;
+        KINDS = data.kinds || [];
         document.getElementById('quota-info').textContent = data.quota_summary ? `سهمیه‌ی باقی‌مانده‌ی شما: ${toFa(data.quota_summary)}` : '';
         window._initData = data;
+        if (data.hours && !data.hours.open) { showClosed(data.hours); return; }
+        const existingCaseId = params.get('case');
+        if (existingCaseId) { caseId = parseInt(existingCaseId); await loadCaseAndAdvance(); return; }
         goToScreen('type');
     } catch (e) { showAppError('خطا در اتصال به سرور.'); }
 }
 function showAppError(msg) { document.getElementById('error-text').textContent = msg; showScreenRaw('error'); }
+function handleErr(res) {
+    if (res && res.closed) { showClosed(res.hours); return true; }
+    if (res && !res.ok) showToast(res.error || 'خطا');
+    return false;
+}
 
 async function chooseType(type) {
-    // اگر همین الان روی پرونده‌ای از همین نوع در حال کار هستیم (مثلاً کاربر با دکمه‌ی
-    // بازگشت به این صفحه برگشته)، دوباره پیام «درخواست ناتمام» نشان نده - مستقیم ادامه بده
-    if (caseId && caseData && caseData.insurance_type === type) {
-        await loadCaseAndAdvance();
-        return;
-    }
+    if (caseId && caseData && caseData.insurance_type === type) { await loadCaseAndAdvance(); return; }
     window._chosenType = type;
     try {
-        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:type }) });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error); return; }
+        const data = await (await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:type }) })).json();
+        if (!data.ok) { handleErr(data); return; }
         if (data.existing_case_id) {
             caseId = data.existing_case_id;
             document.getElementById('resume-type-label').textContent = type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث';
@@ -560,76 +466,53 @@ async function chooseType(type) {
 async function resumeExisting() { await loadCaseAndAdvance(); }
 async function discardAndStartNew() {
     try {
-        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:window._chosenType, discard_existing:true }) });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error); return; }
+        const data = await (await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'start_case', token:TOKEN, insurance_type:window._chosenType, discard_existing:true }) })).json();
+        if (!data.ok) { handleErr(data); return; }
         caseId = data.case_id;
         await loadCaseAndAdvance();
     } catch(e) { showToast('خطا در اتصال به سرور.'); }
 }
 
-// ============================================================
-//  گرفتن آخرین وضعیت پرونده و رفتن به مرحله‌ی درست بعدی
-// ============================================================
 async function loadCaseAndAdvance() {
     try {
-        const res = await fetch(`${API}?action=get_case&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
-        const data = await res.json();
+        const data = await (await fetch(`${API}?action=get_case&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`)).json();
         if (!data.ok) { showAppError(data.error); return; }
         caseData = data.case; personName = data.person_name;
-        const next = determineNextScreen(caseData);
-        goToScreen(next);
+        goToScreen(determineNextScreen(caseData));
     } catch(e) { showAppError('خطا در اتصال به سرور.'); }
 }
 
 function determineNextScreen(c) {
     if (!c.insured_relationship) return 'relationship';
     if (c.insured_relationship !== 'خودم' && !c.insured_name) return 'relative-info';
-    if (!c.insured_birth_date) return 'profile-check';
-    if (!c.plate) return 'plate';
-    if (!c.ownership_choice) return 'ownership';
+    if (!c.insured_birth_date) return 'personal-info';
+    if (!c.vehicle_kind) return 'vehicle';
+    if (!c.plate && !(Number(c.no_plate) && c.chassis_num)) return 'plate';
     if (c.insurance_type === 'THIRDPARTY' && !c.liability_limit) return 'liability';
     if (c.insurance_type === 'BODY' && c.prev_body_insurance === null) return 'prev-body';
     if (c.insurance_type === 'BODY' && c.prev_body_insurance === 'بله' && c.prev_body_claim === null) return 'prev-body-claim';
     if (c.insurance_type === 'BODY' && c.prev_body_claim === 'خیر' && c.no_claim_years === null) return 'no-claim-years';
-    if (c.insurance_type === 'BODY' && !c.selected_coverages) return 'coverages';
     if (c.insurance_type === 'BODY' && c.estimated_car_value === null) return 'car-value';
+    if (c.insurance_type === 'BODY' && !c.selected_coverages) return 'coverages';
     return 'review';
 }
 
-// «profile-check» یک صفحه‌ی نمایشی نیست؛ تصمیم می‌گیرد پروفایل قبلی را پیشنهاد بدهد یا مستقیم فرم خالی را باز کند
 async function renderScreen(name) {
-    if (name === 'profile-check') {
-        try {
-            const res = await fetch(`${API}?action=get_saved_profile&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
-            const data = await res.json();
-            const addr = computeAddressee(caseData.insured_relationship);
-            if (data.ok && data.profile) {
-                document.getElementById('reuse-addressee').textContent = addr;
-                showScreenRaw('profile-reuse');
-                navStack[navStack.length-1] = 'profile-reuse';
-                window._savedProfile = data.profile;
-            } else {
-                openPersonalInfoForm();
-            }
-        } catch(e) { openPersonalInfoForm(); }
-        return;
-    }
     if (name === 'relationship') renderRelationshipGrid();
     if (name === 'relative-info') {
         document.getElementById('rel-name').value = (caseData.insured_relationship !== 'خودم' ? (caseData.insured_name || '') : '');
         document.getElementById('rel-nid').value = (caseData.insured_relationship !== 'خودم' ? (caseData.insured_national_id || '') : '');
         const addr = computeAddressee(caseData.insured_relationship);
-        document.getElementById('ri-addressee').textContent = addr;
-        document.getElementById('ri-addressee2').textContent = addr;
-        document.getElementById('ri-addressee3').textContent = addr;
+        ['ri-addressee','ri-addressee2','ri-addressee3'].forEach(id => document.getElementById(id).textContent = addr);
     }
-    if (name === 'personal-info') openPersonalInfoForm();
+    if (name === 'personal-info') await openPersonalInfoForm();
+    if (name === 'vehicle') renderVehicleScreen();
     if (name === 'plate') renderPlateScreen();
     if (name === 'liability') renderLiabilityList();
-    if (name === 'coverages') { selectedCoverages = caseData.selected_coverages ? JSON.parse(caseData.selected_coverages) : {}; renderCoveragesList(); }
-    if (name === 'docs') renderDocsGrid();
+    if (name === 'no-claim-years') renderNcy();
+    if (name === 'car-value') { const v = Number(caseData.estimated_car_value || 0); document.getElementById('cv-value').value = v > 0 ? toFa(v.toLocaleString('en-US')) : ''; }
+    if (name === 'coverages') { try { selectedCoverages = caseData.selected_coverages ? JSON.parse(caseData.selected_coverages) : {}; } catch(e) { selectedCoverages = {}; } if (Array.isArray(selectedCoverages)) selectedCoverages = {}; renderCoveragesList(); }
     if (name === 'review') renderReviewSummary();
 }
 
@@ -639,111 +522,157 @@ async function renderScreen(name) {
 const RELATIONSHIPS = ['خودم', 'پدر', 'مادر', 'همسر', 'فرزند'];
 const REL_ICONS = {'خودم':'👤','پدر':'👨','مادر':'👩','همسر':'💑','فرزند':'👶'};
 function renderRelationshipGrid() {
-    const grid = document.getElementById('relationship-grid');
-    grid.innerHTML = RELATIONSHIPS.map(r => `<div class="option-card" onclick="submitRelationship('${r}')"><span class="ic">${REL_ICONS[r]}</span><span class="lbl">${r}</span></div>`).join('');
+    document.getElementById('relationship-grid').innerHTML = RELATIONSHIPS.map(r => `<div class="option-card ${caseData.insured_relationship === r ? 'selected' : ''}" onclick="submitRelationship('${r}')"><span class="ic">${REL_ICONS[r]}</span><span class="lbl">${r}</span></div>`).join('');
 }
 async function submitRelationship(rel) {
     const res = await saveStep({ step:'relationship', relationship:rel });
-    if (res.ok) await loadCaseAndAdvance();
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
-
 async function submitRelativeInfo() {
     const name = document.getElementById('rel-name').value.trim();
     const nid = toEn(document.getElementById('rel-nid').value.trim());
     const res = await saveStep({ step:'relative_info', name, national_id:nid });
     const errBox = document.getElementById('rel-error');
-    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    if (!res.ok) { if (handleErr(res)) return; errBox.textContent = res.error; errBox.style.display='block'; return; }
     errBox.style.display='none';
     await loadCaseAndAdvance();
 }
 
 // ============================================================
-//  پروفایل قبلی
+//  اطلاعات هویتی: اطلاعاتِ ذخیره‌شده‌ی قبلی خودکار پر می‌شود (بدونِ پرسش)؛ کاربر می‌بیند و ویرایش می‌کند
 // ============================================================
-function openPersonalInfoForm() {
+async function openPersonalInfoForm() {
     const addr = computeAddressee(caseData.insured_relationship);
     document.getElementById('pi-addressee').textContent = addr;
-    document.getElementById('pi-birthdate').value = caseData.insured_birth_date || '';
-    document.getElementById('pi-address').value = caseData.insured_address || '';
-    document.getElementById('pi-phone').value = caseData.insured_phone || '';
-    document.getElementById('pi-postal').value = caseData.insured_postal_code || '';
-    showScreenRaw('personal-info');
-    navStack[navStack.length-1] = 'personal-info';
+    let p = null;
+    if (!caseData.insured_birth_date) {
+        try { const d = await (await fetch(`${API}?action=get_saved_profile&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`)).json(); if (d.ok && d.profile) p = d.profile; } catch(e) {}
+    }
+    const v = (a, b) => a || (p && p[b]) || '';
+    document.getElementById('pi-birthdate').value = toFa(v(caseData.insured_birth_date, 'birth_date'));
+    document.getElementById('pi-address').value = v(caseData.insured_address, 'address');
+    document.getElementById('pi-phone').value = v(caseData.insured_phone, 'phone');
+    document.getElementById('pi-postal').value = v(caseData.insured_postal_code, 'postal_code');
+    document.getElementById('pi-saved-note').style.display = p ? 'block' : 'none';
 }
-function useProfileReuse() {
-    const p = window._savedProfile;
-    saveStep({ step:'personal_info', birth_date:p.birth_date, address:p.address, phone:p.phone, postal_code:p.postal_code }).then(res => {
-        if (res.ok) loadCaseAndAdvance();
-        else { showToast(res.error); openPersonalInfoForm(); }
-    });
-}
-function skipProfileReuse() { openPersonalInfoForm(); }
-
 async function submitPersonalInfo() {
     const birth_date = toEn(document.getElementById('pi-birthdate').value.trim());
     const address = document.getElementById('pi-address').value.trim();
     const phone = toEn(document.getElementById('pi-phone').value.trim());
     const postal_code = toEn(document.getElementById('pi-postal').value.trim());
-    const res = await saveStep({ step:'personal_info', birth_date, address, phone, postal_code });
     const errBox = document.getElementById('pi-error');
-    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    if (!birth_date) { errBox.textContent = 'تاریخ تولد را از روی تقویم انتخاب کنید.'; errBox.style.display = 'block'; return; }
+    const res = await saveStep({ step:'personal_info', birth_date, address, phone, postal_code });
+    if (!res.ok) { if (handleErr(res)) return; errBox.textContent = res.error; errBox.style.display='block'; return; }
     errBox.style.display='none';
     await loadCaseAndAdvance();
 }
 
 // ============================================================
-//  پلاک
+//  وسیله‌ی نقلیه: نوع ← نوعِ خودرو (گروه) ← مدل (قابلِ جستجو و پیمایش)
 // ============================================================
-async function renderPlateScreen() {
-    const box = document.getElementById('plate-vehicles-list');
-    box.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
-    try {
-        const res = await fetch(`/api/webapp_app.php?action=my_vehicles&token=${encodeURIComponent(TOKEN)}`);
-        const data = await res.json();
-        if (data.ok && data.data.length > 0) {
-            box.innerHTML = '<p class="desc" style="margin-bottom:8px;">یکی از پلاک‌های قبلی را انتخاب کنید:</p>' +
-                data.data.map(v => `<div class="list-card" onclick="chooseExistingPlate('${v.plate.replace(/'/g,"")}')">${formatPlateHtml(v.plate)}<span style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:4px;">انتخاب این پلاک ›</span></div>`).join('');
-        } else { box.innerHTML = ''; }
-    } catch(e) { box.innerHTML = ''; }
-}
-async function chooseExistingPlate(plate) {
-    const res = await saveStep({ step:'plate', plate });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
-}
-// «خودرو / موتورسیکلت»: پلاکِ موتور دوخطی است (کد شهر ۳ رقم + شماره‌ی ۵ رقم) و «583-76224» ذخیره می‌شود
-let PLATE_KIND = 'car';
-function setPlateKind(k) {
-    PLATE_KIND = k;
-    document.querySelectorAll('#screen-plate [data-pk]').forEach(b => b.classList.toggle('on', b.dataset.pk === k));
-    document.getElementById('pl-car').classList.toggle('hidden-pk', k === 'moto');
-    document.getElementById('pl-moto').classList.toggle('hidden-pk', k !== 'moto');
-    document.getElementById('pl-kind-word').textContent = k === 'moto' ? 'موتور' : 'خودرو';
-    (document.getElementById(k === 'moto' ? 'pl-mcity' : 'pl-prefix') || {}).focus?.();
-}
-async function submitNewPlate() {
-    if (PLATE_KIND === 'moto') {
-        const city = toEn(document.getElementById('pl-mcity').value.trim()), num = toEn(document.getElementById('pl-mnum').value.trim());
-        if (!/^\d{3}$/.test(city) || !/^\d{5}$/.test(num)) { showToast('پلاکِ موتور را کامل وارد کنید: کد شهر ۳ رقم و شماره ۵ رقم.'); return; }
-        const res = await saveStep({ step:'plate', plate: `${city}-${num}` });
-        if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
-        return;
+function renderVehicleScreen() {
+    if (caseData.vehicle_kind && veh.kind !== caseData.vehicle_kind) {
+        veh = { kind: caseData.vehicle_kind, grp: (caseData.car_type || '').split(' · ').slice(1).join(' · ') || null,
+                model: caseData.vehicle_model_id ? { id: Number(caseData.vehicle_model_id), title: caseData.car_system } : null };
     }
-    const region = toEn(document.getElementById('pl-region').value.trim());
-    const suffix = toEn(document.getElementById('pl-suffix').value.trim());
-    const prefix = toEn(document.getElementById('pl-prefix').value.trim());
-    const letter = document.getElementById('pl-letter').value;
-    if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
-    const plate = `${region}ایران - ${suffix} ${letter} ${prefix}`;
-    const res = await saveStep({ step:'plate', plate });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+    document.getElementById('kind-grid').innerHTML = KINDS.map(k => `<div class="option-card ${veh.kind === k.key ? 'selected' : ''}" onclick="chooseKind('${k.key}')"><span class="ic">${k.icon}</span><span class="lbl">${k.fa}</span></div>`).join('');
+    document.getElementById('veh-steps').style.display = veh.kind ? 'block' : 'none';
+    document.getElementById('grp-txt').textContent = veh.grp || 'انتخاب کنید';
+    document.getElementById('grp-btn').classList.toggle('on', !!veh.grp);
+    document.getElementById('model-txt').textContent = veh.model ? veh.model.title : 'جستجو و انتخاب';
+    document.getElementById('model-btn').classList.toggle('on', !!veh.model);
+}
+function chooseKind(k) {
+    if (veh.kind !== k) veh = { kind: k, grp: null, model: null };
+    renderVehicleScreen();
+    pickGroup();
+}
+const groupsCache = {};
+async function pickGroup() {
+    if (!veh.kind) return;
+    if (!groupsCache[veh.kind]) { try { const d = await (await fetch(`${VC}?action=groups&kind=${veh.kind}`)).json(); groupsCache[veh.kind] = d.ok ? d.groups : []; } catch(e) { groupsCache[veh.kind] = []; } }
+    const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa || '';
+    const it = await K.pick({ title: `نوعِ خودرو (${kfa})`, value: veh.grp, items: groupsCache[veh.kind].map(g => ({ v: g.grp, label: g.grp, sub: toFa(g.n) + ' مدل' })) });
+    if (!it) return;
+    if (veh.grp !== it.v) veh.model = null;
+    veh.grp = it.v;
+    renderVehicleScreen();
+    pickModel();
+}
+async function pickModel() {
+    if (!veh.kind) return;
+    if (!veh.grp) { pickGroup(); return; }
+    const it = await K.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید...', value: veh.model && veh.model.id,
+        onSearch: async q => { const d = await (await fetch(`${VC}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
+            return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: toFa(m.sub), raw: m })); } });
+    if (!it) return;
+    veh.model = it.raw;
+    renderVehicleScreen();
+}
+async function submitVehicle() {
+    if (!veh.kind) { showToast('نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
+    if (!veh.model) { showToast('نوع و مدلِ خودرو را از فهرست انتخاب کنید.'); pickModel(); return; }
+    const res = await saveStep({ step:'vehicle', vehicle_kind: veh.kind, model_id: veh.model.id });
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 
 // ============================================================
-//  مالکیت
+//  پلاک: قالب از روی نوعِ وسیله (موتورسیکلت = پلاکِ موتور؛ بقیه مثلِ سواری؛ ماشین‌آلات: پلاک یا شاسی و موتور)
 // ============================================================
-async function submitOwnership(choice) {
-    const res = await saveStep({ step:'ownership', ownership_choice:choice });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+let AGRI_MODE = 'plate';
+const isMotoPlate = p => /^\s*\d{3}\s*-\s*\d{5}\s*$/.test(toEn(p || ''));
+async function renderPlateScreen() {
+    const kind = caseData.vehicle_kind || 'CAR', moto = kind === 'MOTO', agri = kind === 'AGRI';
+    const kfa = (KINDS.find(x => x.key === kind) || {}).fa || 'خودرو';
+    document.getElementById('plate-title').textContent = moto ? 'پلاکِ موتورسیکلت' : agri ? 'پلاک / شاسیِ ماشین‌آلات' : `پلاکِ ${kfa}`;
+    document.getElementById('agri-switch').style.display = agri ? 'flex' : 'none';
+    if (agri && Number(caseData.no_plate)) { AGRI_MODE = 'chassis'; document.getElementById('pl-ch').value = caseData.chassis_num || ''; document.getElementById('pl-en').value = caseData.engine_num || ''; }
+    if (!agri) AGRI_MODE = 'plate';
+    applyPlateMode(moto);
+    const box = document.getElementById('plate-vehicles-list');
+    box.innerHTML = '';
+    if (agri && AGRI_MODE === 'chassis') return;
+    try {
+        const data = await (await fetch(`/api/webapp_app.php?action=my_vehicles&token=${encodeURIComponent(TOKEN)}`)).json();
+        const list = (data.ok ? data.data : []).filter(v => moto ? isMotoPlate(v.plate) : !isMotoPlate(v.plate));
+        if (list.length) box.innerHTML = '<p class="desc" style="margin-bottom:8px;">یکی از پلاک‌های قبلی را انتخاب کنید:</p>' +
+            list.map(v => `<div class="list-card" onclick="chooseExistingPlate('${v.plate.replace(/'/g,"")}')">${formatPlateHtml(v.plate)}<span style="font-size:12px;color:#94a3b8;">انتخاب ›</span></div>`).join('') +
+            '<p class="desc" style="margin:10px 0 6px;">یا پلاکِ تازه وارد کنید:</p>';
+    } catch(e) {}
+}
+function applyPlateMode(moto) {
+    const chassis = AGRI_MODE === 'chassis';
+    document.querySelectorAll('#agri-switch [data-ag]').forEach(b => b.classList.toggle('on', b.dataset.ag === AGRI_MODE));
+    document.getElementById('pl-moto').classList.toggle('hidden-pk', !moto || chassis);
+    document.getElementById('pl-car').classList.toggle('hidden-pk', moto || chassis);
+    document.getElementById('pl-chassis').classList.toggle('hidden-pk', !chassis);
+    document.getElementById('plate-hint').textContent = chassis ? 'شماره‌ی شاسی و موتور را دقیقاً مثلِ روی سند/کارت وارد کنید:' : moto ? 'پلاکِ موتور را دقیقاً مثلِ روی پلاک وارد کنید (کد شهر و شماره):' : 'پلاک را دقیقاً مثلِ روی پلاکِ خودرو وارد کنید:';
+}
+function setAgriMode(m) { AGRI_MODE = m; applyPlateMode(false); renderPlateScreenListOnly(); }
+function renderPlateScreenListOnly() { if (AGRI_MODE === 'chassis') document.getElementById('plate-vehicles-list').innerHTML = ''; else renderPlateScreen(); }
+async function chooseExistingPlate(plate) {
+    const res = await saveStep({ step:'plate', plate });
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
+}
+async function submitNewPlate() {
+    const kind = caseData.vehicle_kind || 'CAR';
+    let res;
+    if (kind === 'AGRI' && AGRI_MODE === 'chassis') {
+        res = await saveStep({ step:'plate', no_plate: 1, chassis: toEn(document.getElementById('pl-ch').value.trim()), engine: toEn(document.getElementById('pl-en').value.trim()) });
+    } else if (kind === 'MOTO') {
+        const city = toEn(document.getElementById('pl-mcity').value.trim()), num = toEn(document.getElementById('pl-mnum').value.trim());
+        if (!/^\d{3}$/.test(city) || !/^\d{5}$/.test(num)) { showToast('پلاکِ موتور را کامل وارد کنید: کد شهر ۳ رقم و شماره ۵ رقم.'); return; }
+        res = await saveStep({ step:'plate', plate: `${city}-${num}` });
+    } else {
+        const region = toEn(document.getElementById('pl-region').value.trim());
+        const suffix = toEn(document.getElementById('pl-suffix').value.trim());
+        const prefix = toEn(document.getElementById('pl-prefix').value.trim());
+        const letter = document.getElementById('pl-letter').value;
+        if (region.length !== 2 || suffix.length !== 3 || prefix.length !== 2) { showToast('لطفاً همه‌ی بخش‌های پلاک را کامل و صحیح وارد کنید.'); return; }
+        res = await saveStep({ step:'plate', plate: `${region}ایران - ${suffix} ${letter} ${prefix}` });
+    }
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 
 // ============================================================
@@ -751,78 +680,84 @@ async function submitOwnership(choice) {
 // ============================================================
 const LIABILITY_OPTIONS_RIAL = [700000000,800000000,1000000000,2000000000,2500000000,3000000000,4000000000,5000000000,6000000000,7000000000,8000000000,9000000000,10000000000];
 function renderLiabilityList() {
-    const box = document.getElementById('liability-list');
-    box.innerHTML = LIABILITY_OPTIONS_RIAL.map(r => {
-        const toman = r/10;
-        return `<div class="list-card" onclick="submitLiability(${r})"><b>${toFa(toman.toLocaleString('en-US'))} تومان</b><span>›</span></div>`;
-    }).join('');
+    document.getElementById('liability-list').innerHTML = LIABILITY_OPTIONS_RIAL.map(r => `<div class="list-card" onclick="submitLiability(${r})"><b>${toFa((r/10).toLocaleString('en-US'))} تومان</b><span>›</span></div>`).join('');
 }
 async function submitLiability(amountRial) {
     const res = await saveStep({ step:'liability', liability_limit:amountRial });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 
 // ============================================================
-//  بدنه: سابقه، سال بدون خسارت
+//  بدنه: سابقه، سال‌های عدمِ خسارت (۰ تا ۵ سال و بیشتر)
 // ============================================================
 async function submitPrevBody(val) {
     const res = await saveStep({ step:'prev_body', prev_body_insurance:val });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 async function submitPrevBodyClaim(val) {
     const res = await saveStep({ step:'prev_body_claim', prev_body_claim:val });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
+let ncySel = null;
+function renderNcy() {
+    ncySel = caseData.no_claim_years !== null && caseData.no_claim_years !== undefined ? Number(caseData.no_claim_years) : null;
+    const lbl = y => y === 0 ? 'بدونِ سابقه‌ی عدمِ خسارت' : y === 5 ? '۵ سال و بیشتر' : `${toFa(y)} سال`;
+    document.getElementById('ncy-grid').innerHTML = [0,1,2,3,4,5].map(y => `<button type="button" class="ncy-chip ${ncySel === y ? 'on' : ''}" onclick="ncyPick(${y})">${lbl(y)}</button>`).join('');
+}
+function ncyPick(y) { ncySel = y; document.querySelectorAll('.ncy-chip').forEach((b, i) => b.classList.toggle('on', i === y)); }
 async function submitNoClaimYears() {
-    const years = toEn(document.getElementById('ncy-years').value.trim());
-    const res = await saveStep({ step:'no_claim_years', no_claim_years:parseInt(years||-1) });
     const errBox = document.getElementById('ncy-error');
-    if (!res.ok) { errBox.textContent = res.error; errBox.style.display='block'; return; }
+    if (ncySel === null) { errBox.textContent = 'یکی از گزینه‌ها را انتخاب کنید.'; errBox.style.display = 'block'; return; }
+    const res = await saveStep({ step:'no_claim_years', no_claim_years: ncySel });
+    if (!res.ok) { if (handleErr(res)) return; errBox.textContent = res.error; errBox.style.display='block'; return; }
     errBox.style.display='none';
     await loadCaseAndAdvance();
 }
 
 // ============================================================
-//  بدنه: پوشش‌های تکمیلی
+//  بدنه: پوشش‌های تکمیلی (هیچ‌کدام پیش‌فرض انتخاب نیست؛ گزینه‌ی چندگزینه‌ای‌ها را خودِ کاربر انتخاب می‌کند)
 // ============================================================
 const BODY_COVERAGES = {
     war_damage: {label:'پوشش خسارت ناشی از جنگ', desc:'خسارت وارده در اثر عملیات جنگی را پوشش می‌دهد.'},
-    price_fluctuation: {label:'پوشش نوسان قیمت (افزایش ارزش خودرو)', desc:'مابه‌التفاوت افزایش قیمت روز خودرو را جبران می‌کند.', tiers:{'50':'۵۰٪','100':'۱۰۰٪'}},
+    price_fluctuation: {label:'پوشش نوسان قیمت (افزایش ارزش خودرو)', desc:'مابه‌التفاوت افزایش قیمت روز خودرو را جبران می‌کند.', ask:'درصدِ پوششِ نوسانِ قیمت را انتخاب کنید:', tiers:{'50':'۵۰ درصد','100':'۱۰۰ درصد'}},
     paint_acid: {label:'پاشیدگی رنگ، مواد اسیدی، شیمیایی', desc:'خسارت ناشی از پاشیده‌شدن رنگ یا مواد شیمیایی.'},
     glass_break: {label:'شکست شیشه بدون برخورد اشیاء', desc:'شکستن شیشه بدون برخورد جسم خارجی.'},
     natural_disaster: {label:'سیل، زلزله، آتشفشان، تگرگ، طوفان و بهمن', desc:'خسارت ناشی از بلایای طبیعی.'},
-    parts_theft: {label:'سرقت لوازم و قطعات', desc:'در صورت سرقت لوازم (نه کل خودرو).', tiers:{'10':'تا ۱۰٪','15':'تا ۱۵٪'}},
-    transport_cost: {label:'هزینه ایاب‌وذهاب در مدت تعمیر', desc:'هزینه‌ی رفت‌وآمد در مدت تعمیر خودرو.', tiers:{'750000':'۷۵۰هزار ریال','1200000':'۱.۲میلیون ریال','1500000':'۱.۵میلیون ریال'}},
+    parts_theft: {label:'سرقت لوازم و قطعات', desc:'در صورت سرقت لوازم (نه کل خودرو).', ask:'سقفِ پوششِ سرقتِ لوازم را انتخاب کنید:', tiers:{'10':'تا ۱۰ درصد','15':'تا ۱۵ درصد'}},
+    transport_cost: {label:'هزینه ایاب‌وذهاب در مدت تعمیر', desc:'هزینه‌ی رفت‌وآمد در مدت تعمیر خودرو.', ask:'مبلغِ روزانه‌ی ایاب‌وذهاب را انتخاب کنید:', tiers:{'750000':'۷۵۰ هزار ریال','1200000':'۱٫۲ میلیون ریال','1500000':'۱٫۵ میلیون ریال'}},
     depreciation_waiver: {label:'پوشش حذف استهلاک', desc:'کسر استهلاک قطعات تعویضی (به‌جز باتری و لاستیک) اعمال نمی‌شود.'},
     deductible_adjust: {label:'پوشش تعدیل فرانشیز خسارت‌های جزئی', desc:'فرانشیز در خسارت‌های جزئی کاهش می‌یابد.'},
 };
 function renderCoveragesList() {
-    // توجه: اینجا selectedCoverages را دوباره از caseData نمی‌خوانیم؛ چون این تابع هر بار
-    // بعد از هر تیک‌زدن هم صدا زده می‌شود و caseData هنوز به‌روز نشده (تا وقتی ذخیره شود) -
-    // بازخوانی از caseData اینجا یعنی هر انتخاب بلافاصله پاک شود (همان باگ قبلی)
     const box = document.getElementById('coverages-list');
-    box.innerHTML = Object.entries(BODY_COVERAGES).map(([key,o]) => {
-        const isSel = selectedCoverages.hasOwnProperty(key);
-        const tiersHtml = o.tiers ? `<div class="tiers">${Object.entries(o.tiers).map(([tk,tl]) => `<div class="tier-chip ${selectedCoverages[key]===tk?'active':''}" onclick="event.stopPropagation();selectTier('${key}','${tk}')">${tl}</div>`).join('')}</div>` : '';
-        return `<div class="cov-item ${isSel?'selected':''}" id="cov-${key}" onclick="toggleCoverage('${key}')">
-            <div class="head"><span class="lbl">${o.label}</span><span>${isSel?'✅':'⬜'}</span></div>
-            <div class="desc">${o.desc}</div>
+    box.innerHTML = Object.entries(BODY_COVERAGES).map(([key, o]) => {
+        const isSel = Object.prototype.hasOwnProperty.call(selectedCoverages, key);
+        const need = isSel && o.tiers && !o.tiers[selectedCoverages[key]];
+        const tiersHtml = o.tiers ? `<div class="tiers ${need ? 'need' : ''}"><div class="tier-ask">${need ? '⚠️ ' : '✔️ '}${o.ask}</div><div class="tier-row">${Object.entries(o.tiers).map(([tk, tl]) => `<button type="button" class="tier-chip ${String(selectedCoverages[key]) === tk ? 'active' : ''}" onclick="event.stopPropagation();selectTier('${key}','${tk}')">${tl}</button>`).join('')}</div></div>` : '';
+        return `<div class="cov-item ${isSel ? 'selected' : ''} ${need ? 'need' : ''}" id="cov-${key}" onclick="toggleCoverage('${key}')">
+            <div class="head"><span class="lbl">${o.label}</span><span class="cov-check">${isSel ? '✅' : '⬜'}</span></div>
+            <div class="desc">${o.desc}${o.tiers && !isSel ? ' <b style="color:#c7d2fe">(بعد از انتخاب، گزینه‌اش را هم انتخاب کنید)</b>' : ''}</div>
             ${tiersHtml}
         </div>`;
     }).join('');
 }
 function toggleCoverage(key) {
-    if (selectedCoverages.hasOwnProperty(key)) delete selectedCoverages[key];
-    else selectedCoverages[key] = BODY_COVERAGES[key].tiers ? Object.keys(BODY_COVERAGES[key].tiers)[0] : true;
+    if (Object.prototype.hasOwnProperty.call(selectedCoverages, key)) delete selectedCoverages[key];
+    else {
+        selectedCoverages[key] = BODY_COVERAGES[key].tiers ? '' : true;
+        if (BODY_COVERAGES[key].tiers) showToast(BODY_COVERAGES[key].ask);
+    }
     renderCoveragesList();
+    if (BODY_COVERAGES[key].tiers && selectedCoverages[key] === '') { const el = document.getElementById('cov-' + key); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 function selectTier(key, tier) { selectedCoverages[key] = tier; renderCoveragesList(); }
 async function submitCoverages() {
+    const missing = Object.keys(selectedCoverages).find(k => BODY_COVERAGES[k] && BODY_COVERAGES[k].tiers && !BODY_COVERAGES[k].tiers[selectedCoverages[k]]);
+    if (missing) { showToast('⚠️ ' + BODY_COVERAGES[missing].ask); document.getElementById('cov-' + missing).scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     const res = await saveStep({ step:'coverages', coverages:selectedCoverages });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 
-// جداکننده‌ی سه‌رقمی زنده هنگام تایپ ارزش خودرو - ذخیره‌سازی همچنان با عدد خام انگلیسی انجام می‌شود
 function formatCarValueInput(el) {
     const raw = toEn(el.value).replace(/\D/g, '');
     el.value = raw ? toFa(Number(raw).toLocaleString('en-US')) : '';
@@ -831,103 +766,7 @@ async function submitCarValue(auto) {
     const value = toEn(document.getElementById('cv-value').value).replace(/\D/g, '');
     if (!auto && (!value || parseInt(value) <= 0)) { showToast('مبلغ را درست وارد کنید یا از محاسبه‌ی خودکار استفاده کنید.'); return; }
     const res = await saveStep({ step:'car_value', car_value: auto ? undefined : parseInt(value), auto_calc: auto });
-    if (res.ok) await loadCaseAndAdvance(); else showToast(res.error);
-}
-
-// ============================================================
-//  مدارک
-// ============================================================
-const STATUS_LABEL = {PENDING:'⏳ در انتظار بررسی', APPROVED:'✅ تایید شده', REJECTED:'❌ رد شده'};
-async function renderDocsGrid() {
-    const grid = document.getElementById('docs-grid');
-    grid.innerHTML = '<div class="spinner">در حال بارگذاری...</div>';
-    try {
-        const res = await fetch(`${API}?action=required_docs&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`);
-        const data = await res.json();
-        if (!data.ok) { grid.innerHTML = `<div class="spinner">${data.error}</div>`; return; }
-        docsData = data.docs;
-        grid.innerHTML = docsData.map(d => {
-            const cls = d.status === 'APPROVED' ? 'approved' : d.status === 'PENDING' ? 'pending' : d.status === 'REJECTED' ? 'rejected' : '';
-            const statusLine = d.status ? `<span style="font-size:9.5px;opacity:.8;">${STATUS_LABEL[d.status]}</span>` : '';
-            return `<div class="doc-btn ${cls}" onclick="selectDoc('${d.key}')"><span>${d.label}</span>${statusLine}${d.status==='REJECTED' && d.reject_reason ? `<span style="font-size:9px;color:#fca5a5;">${d.reject_reason}</span>`:''}</div>`;
-        }).join('');
-        const openCount = docsData.filter(d => d.status !== 'APPROVED' && d.status !== 'PENDING').length;
-        document.getElementById('multi-pdf-wrap').style.display = openCount > 1 ? 'block' : 'none';
-        if (data.all_done) {
-            document.getElementById('docs-hint').innerHTML = '✅ همه‌ی مدارک لازم دریافت شد.';
-            document.getElementById('docs-continue-wrap').innerHTML = '<button class="btn btn-primary" onclick="goToScreen(\'review\')">ادامه به بازبینی نهایی ›</button>';
-        } else {
-            document.getElementById('docs-continue-wrap').innerHTML = '';
-        }
-    } catch(e) { grid.innerHTML = '<div class="spinner">خطا در اتصال به سرور.</div>'; }
-}
-function selectDoc(key) {
-    const doc = docsData.find(d => d.key === key);
-    if (doc.status === 'PENDING' || doc.status === 'APPROVED') {
-        showToast(doc.status === 'APPROVED' ? 'این مدرک تایید شده و قابل تغییر نیست.' : 'این مدرک ارسال شده و در انتظار بررسی است؛ تا مشخص شدن نتیجه قابل تغییر نیست.');
-        return;
-    }
-    activeDocKey = key;
-    document.getElementById('doc-capture-title').textContent = `ارسال «${doc.label}»:`;
-    document.getElementById('doc-capture-area').style.display = 'block';
-    document.getElementById('doc-upload-progress-note').style.display = 'none';
-    document.getElementById('doc-capture-area').scrollIntoView({behavior:'smooth'});
-}
-function pickDocFromCamera() { document.getElementById('doc-camera-input').click(); }
-
-// گرفتن عکس زنده با دوربین در یک صفحه‌ی مرورگر واقعی (نه WebView محدود بله) - چون getUserMedia
-// معمولاً در مرورگر واقعی کامل پشتیبانی می‌شود
-function openDocCameraInBrowser() {
-  const doc = docsData.find(d => d.key === activeDocKey);
-  const url = `${location.origin}/webapp/capture/index_capture.html?t=${encodeURIComponent(TOKEN)}&mode=doc&case=${caseId}&doc=${encodeURIComponent(activeDocKey)}&label=${encodeURIComponent(doc ? doc.label : '')}`;
-  try {
-    if (window.Bale && window.Bale.WebApp && typeof window.Bale.WebApp.openLink === 'function') {
-      Bale.WebApp.openLink(url);
-      return;
-    }
-  } catch(e) {}
-  window.open(url, '_blank');
-}
-
-// وقتی از صفحه‌ی مرورگر دوربین به این مینی‌اپ برمی‌گردیم، لیست مدارک را دوباره می‌خوانیم
-// تا اگر آنجا مدرکی ثبت شده بود، این‌جا هم به‌روز شود
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  if (document.getElementById('screen-docs') && document.getElementById('screen-docs').classList.contains('active') && caseId) {
-    renderDocsGrid();
-  }
-});
-
-function pickDocFromGallery() { document.getElementById('doc-gallery-input').click(); }
-function pickDocPdf() { document.getElementById('doc-pdf-input').click(); }
-// «چند مدرک در یک PDF»
-function onMultiPdfPicked(ev) {
-    const file = ev.target.files[0];
-    ev.target.value = '';
-    if (!file) return;
-    DocSplit.start({ api: API, token: TOKEN, caseId, docs: docsData, file, toast: showToast, onDone: () => renderDocsGrid() });
-}
-function onDocFileSelected(ev) {
-    const file = ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    uploadDocFile(file);
-}
-async function uploadDocFile(file) {
-    if (!activeDocKey) return;
-    document.getElementById('doc-upload-progress-note').style.display = 'block';
-    const fd = new FormData();
-    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-    fd.append('token', TOKEN); fd.append('case_id', caseId); fd.append('doc_key', activeDocKey); fd.append('file', file, isPdf ? 'doc.pdf' : (file.name || 'doc.jpg'));
-    try {
-        const res = await fetch(`${API}?action=upload_doc`, { method:'POST', body: fd });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error || 'خطا در ارسال.'); document.getElementById('doc-upload-progress-note').style.display = 'none'; return; }
-        showToast('✅ ثبت شد');
-        activeDocKey = null;
-        document.getElementById('doc-capture-area').style.display = 'none';
-        renderDocsGrid();
-    } catch(e) { showToast('خطا در اتصال به سرور.'); document.getElementById('doc-upload-progress-note').style.display = 'none'; }
+    if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
 
 // ============================================================
@@ -937,84 +776,48 @@ function renderReviewSummary() {
     const c = caseData;
     const typeFa = c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث';
     const addr = computeAddressee(c.insured_relationship);
-
-    let personRows = [
-        ['نسبت بیمه‌گذار', c.insured_relationship],
-        ['نام بیمه‌گذار', c.insured_name],
-        ['کد ملی', c.insured_national_id ? toFa(c.insured_national_id) : ''],
-        ['تاریخ تولد', c.insured_birth_date ? toFa(c.insured_birth_date) : ''],
-        ['آدرس', c.insured_address],
-        ['موبایل', c.insured_phone ? toFa(c.insured_phone) : ''],
+    const kfa = (KINDS.find(x => x.key === c.vehicle_kind) || {}).fa || '';
+    const personRows = [
+        ['نسبت بیمه‌گذار', c.insured_relationship], ['نام بیمه‌گذار', c.insured_name], ['کد ملی', c.insured_national_id ? toFa(c.insured_national_id) : ''],
+        ['تاریخ تولد', c.insured_birth_date ? toFa(c.insured_birth_date) : ''], ['آدرس', c.insured_address], ['موبایل', c.insured_phone ? toFa(c.insured_phone) : ''],
         ['کد پستی', c.insured_postal_code ? toFa(c.insured_postal_code) : ''],
     ];
-
-    let policyRows = [
-        ['نوع بیمه', 'بیمه ' + typeFa],
-        ['مدرک مالکیت ارائه‌شده', c.ownership_choice],
-    ];
-    if (c.insurance_type === 'THIRDPARTY') {
-        if (c.liability_limit) policyRows.push(['سقف تعهد مالی', toFa((c.liability_limit/10).toLocaleString('en-US')) + ' تومان']);
-    }
+    const policyRows = [['نوع بیمه', 'بیمه ' + typeFa], ['نوعِ وسیله', kfa], ['نوعِ خودرو', (c.car_type || '').split(' · ').slice(1).join(' · ')], ['مدل', c.car_system]];
+    if (Number(c.no_plate)) policyRows.push(['شماره شاسی', c.chassis_num], ['شماره موتور', c.engine_num]);
+    if (c.insurance_type === 'THIRDPARTY' && c.liability_limit) policyRows.push(['سقف تعهد مالی', toFa((c.liability_limit/10).toLocaleString('en-US')) + ' تومان']);
     if (c.insurance_type === 'BODY') {
         if (c.prev_body_insurance) policyRows.push(['بیمه بدنه‌ی قبلی', c.prev_body_insurance]);
         if (c.prev_body_insurance === 'بله' && c.prev_body_claim) policyRows.push(['خسارت بیمه بدنه‌ی قبلی', c.prev_body_claim]);
-        if (c.prev_body_claim === 'خیر' && c.no_claim_years !== null && c.no_claim_years !== undefined) policyRows.push(['سابقه‌ی بدون خسارت', toFa(c.no_claim_years) + ' سال']);
-        if (c.selected_coverages) {
-            try {
-                const cov = JSON.parse(c.selected_coverages);
-                const labels = Object.keys(cov).map(k => BODY_COVERAGES[k] ? BODY_COVERAGES[k].label : k);
-                if (labels.length) policyRows.push(['پوشش‌های تکمیلی', labels.join('، ')]);
-            } catch(e) {}
-        }
-        if (c.estimated_car_value) policyRows.push(['ارزش خودرو', toFa(Number(c.estimated_car_value).toLocaleString('en-US')) + ' تومان']);
-        else policyRows.push(['ارزش خودرو', 'محاسبه‌ی خودکار توسط کارشناس']);
+        if (c.prev_body_claim === 'خیر' && c.no_claim_years !== null && c.no_claim_years !== undefined) policyRows.push(['سابقه‌ی عدمِ خسارت', Number(c.no_claim_years) >= 5 ? '۵ سال و بیشتر' : toFa(c.no_claim_years) + ' سال']);
+        policyRows.push(['ارزش خودرو', c.estimated_car_value > 0 ? toFa(Number(c.estimated_car_value).toLocaleString('en-US')) + ' تومان' : 'محاسبه‌ی خودکار توسط کارشناس']);
+        if (c.selected_coverages) { try { const cov = JSON.parse(c.selected_coverages);
+            const labels = Object.keys(cov).map(k => BODY_COVERAGES[k] ? BODY_COVERAGES[k].label + (BODY_COVERAGES[k].tiers && BODY_COVERAGES[k].tiers[cov[k]] ? ' (' + BODY_COVERAGES[k].tiers[cov[k]] + ')' : '') : k);
+            policyRows.push(['پوشش‌های تکمیلی', labels.length ? labels.join('، ') : 'بدونِ پوششِ تکمیلی']); } catch(e) {} }
     }
-
-    const renderRows = rows => rows.filter(r=>r[1]).map(([l,v]) => `<div class="summary-row"><span>${l}</span><b>${v}</b></div>`).join('');
-
+    const renderRows = rows => rows.filter(r=>r[1]).map(([l,v]) => `<div class="summary-row"><span>${l}</span><b>${esc(v)}</b></div>`).join('');
     document.getElementById('review-summary').innerHTML = `
         <div style="margin-bottom:6px;"><b style="font-size:12px;color:#a5b4fc;">🚘 مشخصات خودرو و بیمه‌نامه</b></div>
-        <div class="summary-row"><span>پلاک</span><b>${formatPlateHtml(c.plate)}</b></div>
+        ${c.plate ? `<div class="summary-row"><span>پلاک</span><b>${formatPlateHtml(c.plate)}</b></div>` : ''}
         ${renderRows(policyRows)}
         <div style="margin:14px 0 6px;"><b style="font-size:12px;color:#a5b4fc;">👤 مشخصات ${addr === 'خودتان' ? 'بیمه‌گذار (خودتان)' : 'بیمه‌گذار'}</b></div>
-        ${renderRows(personRows)}
-    `;
-
-    // متن راهنمای زیر خلاصه، بسته به نوع بیمه فرق می‌کند: ثالث فقط نیاز به بازدید مدارک دارد،
-    // ولی بدنه به بازدید سلامت خودرو هم نیاز دارد
-    const reviewDescEl = document.querySelector('#screen-review .desc');
-    if (reviewDescEl) {
-        reviewDescEl.textContent = c.insurance_type === 'BODY'
-            ? 'بعد از تایید، برای بارگذاری مدارک و ثبت بازدید سلامت خودرو و تکمیل نهایی، به بخش «بازدید مدارک و سلامت خودرو» هدایت می‌شوید.'
-            : 'بعد از تایید، برای بارگذاری مدارک و تکمیل نهایی، به بخش «بازدید مدارک» هدایت می‌شوید.';
-    }
+        ${renderRows(personRows)}`;
+    const d = document.querySelector('#screen-review .desc');
+    if (d) d.textContent = 'بعد از تایید، از دکمه‌ی «📎 بارگذاری مدارک» مدارکِ این درخواست را ارسال کنید' + (c.insurance_type === 'BODY' ? ' (بیمه‌ی بدنه بازدیدِ سلامتِ خودرو هم لازم دارد).' : '.');
 }
 async function submitFinalize() {
     try {
-        const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'finalize', token:TOKEN, case_id:caseId }) });
-        const data = await res.json();
-        if (!data.ok) { showToast(data.error); return; }
-        document.getElementById('success-code').textContent = data.unique_code;
-
-        // متن و برچسب دکمه‌ی صفحه‌ی موفقیت هم بسته به نوع بیمه فرق می‌کند
+        const data = await (await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'finalize', token:TOKEN, case_id:caseId }) })).json();
+        if (!data.ok) { handleErr(data); return; }
         const isBody = caseData.insurance_type === 'BODY';
-        const successDescEl = document.querySelector('#screen-success .desc');
-        if (successDescEl) {
-            successDescEl.innerHTML = `شناسه‌ی پرونده: <b id="success-code" style="direction:ltr;display:inline-block;">${data.unique_code}</b><br>` +
-                (isBody
-                    ? 'برای بارگذاری مدارک و ثبت بازدید سلامت خودرو و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.'
-                    : 'برای بارگذاری مدارک و تکمیل نهایی درخواست، از دکمه‌ی زیر استفاده کنید.');
-        }
-        const successBtn = document.querySelector('#screen-success .btn-primary');
-        if (successBtn) successBtn.textContent = isBody ? '📎 بازدید مدارک و سلامت خودرو' : '📎 بازدید مدارک';
-
+        document.getElementById('success-desc').innerHTML = `شناسه‌ی پرونده: <b style="direction:ltr;display:inline-block;">${esc(data.unique_code)}</b><br>` +
+            'گامِ بعد: مدارکِ این درخواست را از دکمه‌ی زیر بارگذاری کنید. مدارکِ شما توسطِ کارشناس بررسی و پس از تأیید، بیمه‌نامه صادر می‌شود و در بخشِ «بیمه‌نامه‌های من» قابلِ دانلود است.';
+        document.getElementById('success-note').innerHTML = isBody
+            ? '⚠️ <b>توجه:</b> صدورِ بیمه‌نامه منوط به تأییدِ مدارک و بازدیدِ کارشناس از خودروی شما می‌باشد.'
+            : '⚠️ <b>توجه:</b> صدورِ بیمه‌نامه‌ی شما منوط به تأییدِ تمامیِ مدارکِ شما می‌باشد.';
         showScreenRaw('success');
     } catch(e) { showToast('خطا در اتصال به سرور.'); }
 }
 
-// ============================================================
-//  کمکی مشترک: ذخیره‌ی هر مرحله
-// ============================================================
 async function saveStep(body) {
     try {
         const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'save_step', token:TOKEN, case_id:caseId, ...body }) });
