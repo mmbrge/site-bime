@@ -252,6 +252,9 @@ function perm_api_map() {
         'contacts_actions' => ['pages' => ['contacts'], 'elevate' => true, 'actions' => [
             'meta' => 'contacts:view', 'list' => 'contacts:view', 'get' => 'contacts:view', 'update' => 'contacts:edit', 'sample' => 'contacts:view',
             'export' => 'contacts:export', 'import_preview' => 'contacts:create', 'import_commit' => 'contacts:create',
+            'phone_default' => 'contacts:edit', 'phone_remove' => 'contacts:edit', 'phone_add' => 'contacts:edit', 'stats' => 'contacts:view',
+            'bc_count' => 'contacts:view', 'bc_list' => 'contacts:view', 'bc_create' => 'contacts:create', 'bc_step' => 'contacts:create', 'bc_cancel' => 'contacts:create',
+            'bc_export' => 'contacts:export',
         ]],
         'legacy_actions' => ['pages' => ['legacy-import'], 'elevate' => true, 'actions' => [
             'preview' => 'legacy-import:create', 'commit' => 'legacy-import:create', 'batches' => 'legacy-import:view', 'rollback' => 'legacy-import:delete',

@@ -10,6 +10,7 @@ require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require_once __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_sms.php';
+require_once __DIR__ . '/_contacts.php';   // چند شماره برای هر شخص + پیامِ همگانی
 
 $out = function ($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') $out(['ok' => false, 'error' => 'دسترسی ندارید.']);
@@ -76,17 +77,23 @@ function ct_where($pdo, array $f, array &$a) {
     $intro = (string)($f['intro'] ?? '');
     if ($intro === 'has') $w[] = 'EXISTS (SELECT 1 FROM introductions i WHERE i.person_id = p.id)';
     elseif ($intro === 'none') $w[] = 'NOT EXISTS (SELECT 1 FROM introductions i WHERE i.person_id = p.id)';
+    // کد ملی‌ای که بیش از یک ردیف در سایت دارد
+    if ((string)($f['dup'] ?? '') === '1') $w[] = "p.national_code IN (SELECT national_code FROM persons WHERE national_code <> '' GROUP BY national_code HAVING COUNT(*) > 1)";
     return implode(' AND ', $w);
 }
 const CT_SELECT = "SELECT p.id, p.national_code, p.full_name, p.mobile_number, p.personnel_code, p.company_id, c.name AS company_name, p.bale_chat_id, p.bot_phone, p.bot_linked_at,
         p.created_at, p.saved_profile,
         (SELECT COUNT(*) FROM introductions i WHERE i.person_id = p.id) AS intro_count,
         (SELECT MAX(i.created_at) FROM introductions i WHERE i.person_id = p.id) AS last_intro_at,
-        (SELECT CONCAT(i.used_quota, '/', i.max_quota) FROM introductions i WHERE i.person_id = p.id ORDER BY i.created_at DESC LIMIT 1) AS quota
+        (SELECT CONCAT(i.used_quota, '/', i.max_quota) FROM introductions i WHERE i.person_id = p.id ORDER BY i.created_at DESC LIMIT 1) AS quota,
+        (SELECT COUNT(*) FROM person_phones pp WHERE pp.person_id = p.id) AS phone_count,
+        (SELECT COUNT(*) FROM persons d WHERE d.national_code = p.national_code) AS nid_rows
     FROM persons p LEFT JOIN companies c ON c.id = p.company_id";
 
 try {
     otp_ensure($pdo);
+    ct_phones_ensure($pdo);
+    ct_bc_ensure($pdo);
 
     if ($action === 'meta') {
         $cos = $pdo->query("SELECT c.id, c.name, COUNT(p.id) n FROM companies c LEFT JOIN persons p ON p.company_id = c.id WHERE COALESCE(c.is_import, 0) = 0 GROUP BY c.id, c.name ORDER BY c.name")->fetchAll(PDO::FETCH_ASSOC);
@@ -135,6 +142,7 @@ try {
         $r['bot_linked_j'] = ct_jd($r['bot_linked_at']); $r['created_j'] = ct_jd($r['created_at']); $r['last_intro_j'] = ct_jd($r['last_intro_at']);
         unset($r['saved_profile'], $r['bale_chat_id']);
         $r['otp_logs'] = otp_log_rows($pdo, 'person_id = ? OR (person_id IS NULL AND national_code = ?)', [$id, $r['national_code']], 100);
+        $r['phones'] = ct_phone_list($pdo, $id);
         $out(['ok' => true, 'person' => $r]);
     }
 
@@ -152,9 +160,132 @@ try {
             if ($o = $q->fetch()) $out(['ok' => false, 'error' => 'این شماره برای شخصِ دیگری ثبت است: ' . ($o['full_name'] ?: '') . ' (' . $o['national_code'] . ')']);
         }
         $cid = intval($in['company_id'] ?? 0) ?: null;
-        $pdo->prepare("UPDATE persons SET full_name = ?, mobile_number = ?, personnel_code = ?, company_id = ? WHERE id = ?")
-            ->execute([mb_substr($name, 0, 100), $mob ?: null, mb_substr(trim(p2e_digits((string)($in['personnel_code'] ?? ''))), 0, 20) ?: null, $cid, $id]);
+        $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = ?, company_id = ? WHERE id = ?")
+            ->execute([mb_substr($name, 0, 100), mb_substr(trim(p2e_digits((string)($in['personnel_code'] ?? ''))), 0, 20) ?: null, $cid, $id]);
+        // شماره‌ی تازه پیش‌فرض می‌شود و قبلی در فهرستِ شماره‌ها می‌ماند؛ خالی = بدونِ شماره‌ی پیش‌فرض (فهرست می‌ماند)
+        if ($mob !== '') ct_phone_add($pdo, $id, $mob, 'PANEL', true);
+        else { ct_phone_list($pdo, $id); $pdo->prepare("UPDATE persons SET mobile_number = NULL WHERE id = ?")->execute([$id]); }
         $out(['ok' => true]);
+    }
+
+    // ---------------- شماره‌های یک شخص ----------------
+    if (in_array($action, ['phone_default', 'phone_remove', 'phone_add'], true)) {
+        $id = intval($in['id'] ?? 0);
+        if (!$pdo->query("SELECT COUNT(*) FROM persons WHERE id = " . $id)->fetchColumn()) $out(['ok' => false, 'error' => 'شخص پیدا نشد.']);
+        if ($action === 'phone_add') {
+            $mob = sms_norm_phone((string)($in['phone'] ?? ''));
+            if ($mob === '') $out(['ok' => false, 'error' => 'شماره‌ی موبایل معتبر نیست (۱۱ رقم، با ۰۹).']);
+            $q = $pdo->prepare("SELECT national_code, full_name FROM persons WHERE mobile_number = ? AND id <> ? LIMIT 1"); $q->execute([$mob, $id]);
+            if ($o = $q->fetch()) $out(['ok' => false, 'error' => 'این شماره شماره‌ی پیش‌فرضِ شخصِ دیگری است: ' . ($o['full_name'] ?: '') . ' (' . $o['national_code'] . ')']);
+            ct_phone_add($pdo, $id, $mob, 'PANEL', !empty($in['make_default']));
+            $out(['ok' => true, 'phones' => ct_phone_list($pdo, $id)]);
+        }
+        $st = $pdo->prepare("SELECT phone FROM person_phones WHERE id = ? AND person_id = ?");
+        $st->execute([intval($in['phone_id'] ?? 0), $id]);
+        $ph = $st->fetchColumn();
+        if ($ph === false) $out(['ok' => false, 'error' => 'شماره پیدا نشد.']);
+        $cur = (string)$pdo->query("SELECT mobile_number FROM persons WHERE id = " . $id)->fetchColumn();
+        if ($action === 'phone_default') {
+            $q = $pdo->prepare("SELECT national_code, full_name FROM persons WHERE mobile_number = ? AND id <> ? LIMIT 1"); $q->execute([$ph, $id]);
+            if ($o = $q->fetch()) $out(['ok' => false, 'error' => 'این شماره الان شماره‌ی پیش‌فرضِ شخصِ دیگری است: ' . ($o['full_name'] ?: '') . ' (' . $o['national_code'] . ')']);
+            ct_phone_add($pdo, $id, $ph, 'PANEL', true);
+        } else {
+            if ($ph === $cur) $out(['ok' => false, 'error' => 'شماره‌ی پیش‌فرض حذف نمی‌شود؛ اول شماره‌ی دیگری را پیش‌فرض کنید.']);
+            $pdo->prepare("DELETE FROM person_phones WHERE id = ? AND person_id = ?")->execute([intval($in['phone_id']), $id]);
+        }
+        $out(['ok' => true, 'phones' => ct_phone_list($pdo, $id)]);
+    }
+
+    // ---------------- آمارِ بالای صفحه ----------------
+    if ($action === 'stats') {
+        $base = "FROM persons p WHERE p.national_code IS NOT NULL AND p.national_code <> ''";
+        $t = $pdo->query("SELECT COUNT(*) persons, COUNT(DISTINCT p.national_code) nids, SUM(p.mobile_number IS NOT NULL AND p.mobile_number <> '') with_phone,
+                                 SUM(p.bale_chat_id IS NOT NULL) bot, SUM(p.company_id IS NULL OR p.company_id = 0) nocompany,
+                                 SUM(EXISTS (SELECT 1 FROM introductions i WHERE i.person_id = p.id)) with_intro $base")->fetch(PDO::FETCH_ASSOC);
+        $t['phones'] = (int)$pdo->query("SELECT COUNT(*) FROM (SELECT phone FROM person_phones UNION SELECT mobile_number FROM persons WHERE mobile_number IS NOT NULL AND mobile_number <> '') x")->fetchColumn();
+        $t['multi_phone'] = (int)$pdo->query("SELECT COUNT(*) FROM (SELECT person_id FROM person_phones GROUP BY person_id HAVING COUNT(*) > 1) x")->fetchColumn();
+        $t['dup_nids'] = (int)$pdo->query("SELECT COUNT(*) FROM (SELECT national_code FROM persons WHERE national_code <> '' GROUP BY national_code HAVING COUNT(*) > 1) x")->fetchColumn();
+        $bc = $pdo->query("SELECT COUNT(*) n, COALESCE(SUM(sent), 0) sent, COALESCE(SUM(failed), 0) failed FROM contact_broadcasts")->fetch(PDO::FETCH_ASSOC);
+        $otp = $pdo->query("SELECT COUNT(*) n, COALESCE(SUM(send_ok = 1), 0) sent, COALESCE(SUM(status = 'VERIFIED'), 0) verified FROM otp_codes")->fetch(PDO::FETCH_ASSOC);
+        $cos = $pdo->query("SELECT c.id, c.name, COUNT(p.id) persons, SUM(p.mobile_number IS NOT NULL AND p.mobile_number <> '') with_phone, SUM(p.bale_chat_id IS NOT NULL) bot,
+                                   SUM(EXISTS (SELECT 1 FROM introductions i WHERE i.person_id = p.id)) with_intro
+                            FROM companies c JOIN persons p ON p.company_id = c.id AND p.national_code <> '' WHERE COALESCE(c.is_import, 0) = 0
+                            GROUP BY c.id, c.name ORDER BY persons DESC, c.name")->fetchAll(PDO::FETCH_ASSOC);
+        $out(['ok' => true, 'totals' => $t, 'broadcasts' => $bc, 'otp' => $otp, 'companies' => $cos]);
+    }
+
+    // ---------------- پیامِ همگانی (به کسانی که در ربات هستند) ----------------
+    // گیرنده‌ها: همان فیلترهای فهرست + فقط متصل به ربات. ارسال تکه‌تکه (bc_step) تا درخواست طولانی نشود.
+    if ($action === 'bc_count' || $action === 'bc_create') {
+        $f = (array)($in['filters'] ?? []); $f['bot'] = 'linked';
+        $a = [];
+        $where = ct_where($pdo, $f, $a);
+        if ($action === 'bc_count') { $st = $pdo->prepare("SELECT COUNT(*) FROM persons p WHERE $where"); $st->execute($a); $out(['ok' => true, 'count' => (int)$st->fetchColumn()]); }
+        $text = trim((string)($in['text'] ?? ''));
+        if (mb_strlen($text) < 2) $out(['ok' => false, 'error' => 'متنِ پیام را بنویسید.']);
+        if (mb_strlen($text) > 3500) $out(['ok' => false, 'error' => 'متنِ پیام خیلی بلند است (حداکثر ۳۵۰۰ نویسه).']);
+        if (!bale_get_token($pdo)) $out(['ok' => false, 'error' => 'توکنِ رباتِ بله در تنظیمات ثبت نشده است.']);
+        $st = $pdo->prepare("SELECT p.id, p.bale_chat_id, p.full_name, p.national_code, c.name AS company FROM persons p LEFT JOIN companies c ON c.id = p.company_id WHERE $where");
+        $st->execute($a);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) $out(['ok' => false, 'error' => 'با این فیلترها کسی در ربات نیست.']);
+        $pdo->prepare("INSERT INTO contact_broadcasts (created_by, text, filters_json, total) VALUES (?, ?, ?, ?)")
+            ->execute([intval($_SESSION['user_id']), $text, json_encode($f, JSON_UNESCAPED_UNICODE), count($rows)]);
+        $bid = (int)$pdo->lastInsertId();
+        $ins = $pdo->prepare("INSERT INTO contact_broadcast_recipients (broadcast_id, person_id, chat_id, full_name, national_code, company) VALUES (?, ?, ?, ?, ?, ?)");
+        $seen = [];
+        foreach ($rows as $r) { if (isset($seen[$r['bale_chat_id']])) continue; $seen[$r['bale_chat_id']] = 1; $ins->execute([$bid, $r['id'], (string)$r['bale_chat_id'], $r['full_name'], $r['national_code'], $r['company']]); }
+        $pdo->prepare("UPDATE contact_broadcasts SET total = ? WHERE id = ?")->execute([count($seen), $bid]);
+        $out(['ok' => true, 'id' => $bid, 'total' => count($seen)]);
+    }
+    if ($action === 'bc_step') {
+        $bid = intval($in['id'] ?? 0);
+        $b = $pdo->query("SELECT * FROM contact_broadcasts WHERE id = " . $bid)->fetch(PDO::FETCH_ASSOC);
+        if (!$b) $out(['ok' => false, 'error' => 'پیام پیدا نشد.']);
+        if ($b['status'] === 'RUNNING') {
+            $token = bale_get_token($pdo);
+            @set_time_limit(120);
+            $list = $pdo->query("SELECT * FROM contact_broadcast_recipients WHERE broadcast_id = $bid AND status = 'PENDING' ORDER BY id LIMIT 15")->fetchAll(PDO::FETCH_ASSOC);
+            $up = $pdo->prepare("UPDATE contact_broadcast_recipients SET status = ?, error = ?, message_id = ?, sent_at = NOW() WHERE id = ?");
+            foreach ($list as $r) {
+                $name = trim((string)$r['full_name']) ?: 'همکار گرامی';
+                $res = ct_bot_send($token, $r['chat_id'], strtr($b['text'], ['{name}' => $name, '{company}' => (string)$r['company']]));
+                $up->execute([$res['ok'] ? 'SENT' : 'FAILED', $res['ok'] ? null : $res['error'], $res['message_id'] ?? null, $r['id']]);
+                usleep(60000);   // سقفِ ارسالِ بله
+            }
+            $c = $pdo->query("SELECT SUM(status = 'SENT') s, SUM(status = 'FAILED') f, SUM(status = 'PENDING') p FROM contact_broadcast_recipients WHERE broadcast_id = $bid")->fetch(PDO::FETCH_ASSOC);
+            $done = (int)$c['p'] === 0;
+            $pdo->prepare("UPDATE contact_broadcasts SET sent = ?, failed = ?, status = IF(?, 'DONE', status), finished_at = IF(?, NOW(), finished_at) WHERE id = ?")
+                ->execute([(int)$c['s'], (int)$c['f'], $done ? 1 : 0, $done ? 1 : 0, $bid]);
+            $b = $pdo->query("SELECT * FROM contact_broadcasts WHERE id = " . $bid)->fetch(PDO::FETCH_ASSOC);
+        }
+        $out(['ok' => true, 'broadcast' => $b]);
+    }
+    if ($action === 'bc_cancel') {
+        $bid = intval($in['id'] ?? 0);
+        $pdo->prepare("UPDATE contact_broadcast_recipients SET status = 'CANCELED' WHERE broadcast_id = ? AND status = 'PENDING'")->execute([$bid]);
+        $pdo->prepare("UPDATE contact_broadcasts SET status = 'CANCELED', finished_at = NOW() WHERE id = ? AND status = 'RUNNING'")->execute([$bid]);
+        $out(['ok' => true]);
+    }
+    if ($action === 'bc_list') {
+        $rows = $pdo->query("SELECT b.*, u.full_name AS by_name FROM contact_broadcasts b LEFT JOIN users u ON u.id = b.created_by ORDER BY b.id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$r) { $r['created_j'] = ct_jd($r['created_at']) . ' ' . date('H:i', strtotime($r['created_at'])); $r['filters'] = json_decode((string)$r['filters_json'], true) ?: []; unset($r['filters_json']); }
+        unset($r);
+        $out(['ok' => true, 'rows' => $rows]);
+    }
+    if ($action === 'bc_export') {
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $bid = intval($_GET['id'] ?? 0);
+        $b = $pdo->query("SELECT * FROM contact_broadcasts WHERE id = " . $bid)->fetch(PDO::FETCH_ASSOC);
+        if (!$b) $out(['ok' => false, 'error' => 'پیام پیدا نشد.']);
+        $stFa = ['SENT' => 'ارسال شد', 'FAILED' => 'ناموفق', 'PENDING' => 'در صف', 'CANCELED' => 'لغو شد'];
+        $rows = [];
+        foreach ($pdo->query("SELECT * FROM contact_broadcast_recipients WHERE broadcast_id = $bid ORDER BY id") as $i => $r)
+            $rows[] = [$i + 1, $r['full_name'], $r['national_code'], $r['company'], $stFa[$r['status']] ?? $r['status'], $r['sent_at'] ? ct_jd($r['sent_at']) . ' ' . date('H:i:s', strtotime($r['sent_at'])) : '', (string)$r['error']];
+        $rows[] = []; $rows[] = ['', 'متنِ پیام:', $b['text']];
+        $path = xlsx_build(['ردیف', 'نام', 'کد ملی', 'شرکت', 'وضعیت', 'زمانِ ارسال', 'خطا'], $rows, 'گزارش ارسال', [0]);
+        xlsx_send($path, 'گزارش پیام همگانی ' . $bid . ' - ' . str_replace('/', '-', ct_jd($b['created_at'])) . '.xlsx');
+        exit;
     }
 
     // ---------------- اکسلِ نمونه ----------------
@@ -203,6 +334,8 @@ try {
         if (!isset($map['national_code'])) $out(['ok' => false, 'error' => 'ستونِ «کد ملی» در ردیفِ اولِ اکسل پیدا نشد. از اکسلِ نمونه استفاده کنید.']);
         $exist = $pdo->prepare("SELECT p.id, p.full_name, p.mobile_number, p.personnel_code, p.company_id, c.name AS company_name FROM persons p LEFT JOIN companies c ON c.id = p.company_id WHERE p.national_code = ?");
         $phoneOwner = $pdo->prepare("SELECT national_code FROM persons WHERE mobile_number = ? AND national_code <> ? LIMIT 1");
+        $histQ = $pdo->prepare("SELECT 1 FROM person_phones WHERE person_id = ? AND phone = ? LIMIT 1");
+        $inHist = function ($pid, $ph) use ($histQ) { $histQ->execute([$pid, $ph]); return (bool)$histQ->fetchColumn(); };
         $cache = []; $seen = []; $seenPhone = []; $items = [];
         $cnt = ['new' => 0, 'update' => 0, 'same' => 0, 'error' => 0, 'new_company' => 0];
         $newCos = [];
@@ -242,7 +375,16 @@ try {
                 // در چه فیلدهایی فرق دارد (خانه‌ی خالیِ اکسل = بدونِ تغییر)
                 $diff = [];
                 if ($it['full_name'] !== '' && $it['full_name'] !== (string)$e['full_name']) $diff[] = 'full_name';
-                if ($it['mobile'] !== '' && $it['mobile'] !== (string)$e['mobile_number']) $diff[] = 'mobile';
+                if ($it['mobile'] !== '' && $it['mobile'] === (string)$e['mobile_number']) $it['dup_phone'] = 1;   // کد ملی و شماره هر دو تکراری
+                elseif ($it['mobile'] !== '' && $inHist($e['id'], $it['mobile'])) {
+                    // شماره‌ی قدیمیِ همین شخص (مثلاً اکسلِ قدیمی دوباره وارد شده): پیش‌فرض عوض نمی‌شود
+                    $it['dup_phone'] = 1;
+                    $it['warn'][] = 'این شماره قبلاً در فهرستِ شماره‌های همین شخص هست؛ پیش‌فرض عوض نمی‌شود (از پنجره‌ی شخص می‌شود پیش‌فرضش کرد)';
+                    $it['mobile'] = '';
+                } elseif ($it['mobile'] !== '') {
+                    $diff[] = 'mobile';
+                    if ((string)$e['mobile_number'] !== '') $it['warn'][] = 'شماره‌ی تازه پیش‌فرض می‌شود؛ شماره‌ی قبلی (' . $e['mobile_number'] . ') در فهرستِ شماره‌های این شخص می‌ماند';
+                }
                 if ($it['personnel_code'] !== '' && $it['personnel_code'] !== (string)$e['personnel_code']) $diff[] = 'personnel_code';
                 if ($it['company'] !== '' && ($it['company_match'] ?? '') !== (string)$e['company_name']) $diff[] = 'company';
                 $it['diff'] = $diff;
@@ -281,6 +423,7 @@ try {
                 if (!$e) {
                     $pdo->prepare("INSERT INTO persons (national_code, full_name, mobile_number, personnel_code, company_id, conversation_state) VALUES (?, ?, ?, ?, ?, 'START')")
                         ->execute([$it['national_code'], mb_substr($it['full_name'], 0, 100), $mob ?: null, mb_substr($it['personnel_code'], 0, 20) ?: null, $cid]);
+                    if ($mob !== '') ct_phone_add($pdo, (int)$pdo->lastInsertId(), $mob, 'IMPORT', true);
                     $res['created']++;
                     continue;
                 }
@@ -292,14 +435,16 @@ try {
                     $set[] = "$col = ?"; $args[] = $new;
                 };
                 $put('full_name', mb_substr($it['full_name'], 0, 100), $e['full_name']);
-                $put('mobile_number', $mob, $e['mobile_number']);
+                // شماره‌ی تازه در هر حالت پیش‌فرض می‌شود و شماره‌ی قبلی در فهرستِ شماره‌ها می‌ماند
+                $phoneChanged = $mob !== '' && $mob !== (string)$e['mobile_number'];
+                if ($phoneChanged) ct_phone_add($pdo, (int)$e['id'], $mob, 'IMPORT', true);
                 $put('personnel_code', mb_substr($it['personnel_code'], 0, 20), $e['personnel_code']);
                 $put('company_id', $cid, $e['company_id']);
                 if ($set) {
                     $args[] = $e['id'];
                     $pdo->prepare("UPDATE persons SET " . implode(', ', $set) . " WHERE id = ?")->execute($args);
-                    $res['updated']++;
-                } else $res['skipped']++;
+                }
+                if ($set || $phoneChanged) $res['updated']++; else $res['skipped']++;
             }
             $res['companies'] = (int)$pdo->query("SELECT COUNT(*) FROM companies")->fetchColumn() - $coBefore;
             $pdo->commit();

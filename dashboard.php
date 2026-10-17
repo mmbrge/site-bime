@@ -4387,7 +4387,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=1"></script>
-    <script src="contacts.js?v=1"></script>
+    <script src="contacts.js?v=2"></script>
     <script src="trash.js?v=1"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>

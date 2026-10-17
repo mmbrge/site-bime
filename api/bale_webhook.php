@@ -7,6 +7,7 @@ require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_health_admin.php';  // بازدید توسط کاربر روشن/خاموش، نوبت‌دهی، ورودِ مخفیِ مدیر به مینی‌اپ
 require_once __DIR__ . '/_bot_guide.php';     // متنِ راهنمای ربات (/help) و راهنمای ورود
 require_once __DIR__ . '/_sms.php';           // پنل‌های پیامک و کدِ تأیید (ورود با OTP)
+require_once __DIR__ . '/_contacts.php';      // فهرستِ شماره‌های هر شخص (بانک مخاطبین)
 
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -668,9 +669,13 @@ function bot_otp_code_input($pdo, $chat_id, $session, $text, $bot_token) {
     if (!$p) {
         $pdo->prepare("INSERT INTO persons (national_code, full_name, mobile_number, conversation_state) VALUES (?, '', ?, 'START')")->execute([$nid, $phone]);
         $pid = (int)$pdo->lastInsertId();
+        try { ct_phone_add($pdo, $pid, $phone, 'BOT', true); } catch (Throwable $e) { error_log('[otp phones] ' . $e->getMessage()); }
     } else {
         $pid = (int)$p['id'];
-        if (sms_norm_phone($p['mobile_number'] ?? '') === '') $pdo->prepare("UPDATE persons SET mobile_number = ? WHERE id = ?")->execute([$phone, $pid]);
+        if (sms_norm_phone($p['mobile_number'] ?? '') === '') {
+            $pdo->prepare("UPDATE persons SET mobile_number = ? WHERE id = ?")->execute([$phone, $pid]);
+            try { ct_phone_add($pdo, $pid, $phone, 'BOT', true); } catch (Throwable $e) { error_log('[otp phones] ' . $e->getMessage()); }
+        }
         if (!botid_is_admin_phone($pdo, $phone) && (string)($p['bot_phone'] ?? '') !== '' && botid_norm_phone($p['bot_phone']) !== botid_norm_phone($phone))
             $pdo->prepare("UPDATE persons SET bot_phone = ? WHERE id = ?")->execute([botid_norm_phone($phone), $pid]);
     }
