@@ -133,13 +133,16 @@ function recon_compare(array $p, array $s, $hasEndo, array $pEndos) {
 }
 
 // اجرای یک مغایرت‌گیری روی فایل‌های بارگذاری‌شده
-function recon_run($pdo, $siteRoot, array $files, $title, $userId) {
+// $mode = '' : اگر همین فایل قبلاً مغایرت‌گیری شده و فایلِ اصلی‌اش روی سایت نیست، اول پرسیده می‌شود (need_choice) که به همان وصل شود یا نه
+//         'new': مغایرت‌گیریِ تازه در هر حال
+function recon_run($pdo, $siteRoot, array $files, $title, $userId, $mode = '') {
     recon_ensure($pdo);
     $pv = legacy_preview($pdo, $siteRoot, $files);
     @unlink(legacy_tmp_dir($siteRoot) . '/p_' . $pv['token'] . '.json');
     $rows = $pv['rows'] ?? [];
     $endos = $pv['endorsements'] ?? [];
     if (!$rows && !$endos) return ['ok' => false, 'error' => implode(' ', $pv['errors'] ?? []) ?: 'ردیفی در فایل‌ها پیدا نشد.'];
+    if ($mode !== 'new' && ($m = recon_find_old_run($pdo, $pv))) return ['ok' => false, 'need_choice' => true, 'match' => $m];
     $hasEndo = (bool)array_filter($pv['files'] ?? [], fn($f) => $f['kind'] === 'endorse');
     $endoBy = [];
     foreach ($endos as $e) if (!empty($e['ok'])) $endoBy[$e['key']][] = $e;
@@ -214,7 +217,7 @@ function recon_run($pdo, $siteRoot, array $files, $title, $userId) {
     $pdo->prepare("UPDATE recon_runs SET counts = ? WHERE id = ?")->execute([json_encode($cnt, JSON_UNESCAPED_UNICODE), $run]);
     $stored = recon_store_src($siteRoot, $run, $files, $pv, '');
     $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($stored, JSON_UNESCAPED_UNICODE), $run]);
-    return ['ok' => true, 'run_id' => $run, 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
+    return ['ok' => true, 'run_id' => $run, 'src_files' => recon_src_list($stored, $title ?: ('خروجیِ پاسارگاد ' . $from . ' تا ' . $to)), 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
 }
 
 // نگه‌داشتنِ فایل‌های اصلی (نوعِ بیمه‌نامه‌ی هر فایل از ردیف‌هایش)
@@ -235,19 +238,48 @@ function recon_store_src($siteRoot, $run, array $files, array $pv, $prefix) {
     return $stored;
 }
 
+function recon_src_list(array $stored, $title) {
+    $out = [];
+    foreach (array_values($stored) as $i => $f) $out[] = ['idx' => $i, 'name' => $f['name'], 'kind' => $f['kind'], 'label' => recon_export_label($f, (string)$title), 'can' => $f['ext'] === 'xlsx'];
+    return $out;
+}
+
+function recon_file_keys(array $pv) {
+    $keys = [];
+    foreach ($pv['rows'] ?? [] as $r) if (($r['key'] ?? '') !== '') $keys[$r['key']] = true;
+    foreach ($pv['endorsements'] ?? [] as $e) if (($e['key'] ?? '') !== '') $keys[$e['key']] = true;
+    return $keys;
+}
+
+// مغایرت‌گیریِ قبلیِ بدونِ فایلِ اصلی که تقریباً همین بیمه‌نامه‌ها را دارد (دست‌کم ۸۰٪ از هر دو طرف)
+function recon_find_old_run($pdo, array $pv) {
+    $keys = recon_file_keys($pv);
+    if (!$keys) return null;
+    $best = null;
+    $q = $pdo->prepare("SELECT policy_key FROM recon_items WHERE run_id = ? AND category <> 'ONLY_S'");
+    foreach ($pdo->query("SELECT id, title, created_at FROM recon_runs WHERE src_files IS NULL OR src_files IN ('', '[]') ORDER BY id DESC LIMIT 50")->fetchAll() as $r) {
+        $q->execute([$r['id']]);
+        $rk = array_fill_keys($q->fetchAll(PDO::FETCH_COLUMN), true);
+        if (!$rk) continue;
+        $hit = count(array_intersect_key($keys, $rk));
+        if ($hit < 0.8 * count($keys) || $hit < 0.8 * count($rk)) continue;
+        if (!$best || $hit > $best['matched']) $best = ['id' => (int)$r['id'], 'title' => $r['title'], 'matched' => $hit, 'total' => count($keys),
+            'created_jalali' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at']))];
+    }
+    return $best;
+}
+
 // برای مغایرت‌گیری‌های قدیمی (پیش از نگه‌داشتنِ فایل): همان فایلِ اکسلِ بیمه‌گر به همین مغایرت‌گیری وصل می‌شود تا «خروجیِ اصلاح‌شده»
 // ساخته شود، بدونِ اجرای دوباره. فایل باید بیمه‌نامه‌های همین مغایرت‌گیری را داشته باشد؛ تصمیم‌های قبلی همان می‌مانند.
 function recon_attach_src($pdo, $siteRoot, $runId, array $files) {
     recon_ensure($pdo);
-    $st = $pdo->prepare("SELECT id, src_files FROM recon_runs WHERE id = ?");
+    $st = $pdo->prepare("SELECT id, title, src_files FROM recon_runs WHERE id = ?");
     $st->execute([$runId]);
     $run = $st->fetch();
     if (!$run) return ['ok' => false, 'error' => 'مغایرت‌گیری پیدا نشد.'];
     $pv = legacy_preview($pdo, $siteRoot, $files);
     @unlink(legacy_tmp_dir($siteRoot) . '/p_' . $pv['token'] . '.json');
-    $keys = [];
-    foreach ($pv['rows'] ?? [] as $r) if (($r['key'] ?? '') !== '') $keys[$r['key']] = true;
-    foreach ($pv['endorsements'] ?? [] as $e) if (($e['key'] ?? '') !== '') $keys[$e['key']] = true;
+    $keys = recon_file_keys($pv);
     if (!$keys) return ['ok' => false, 'error' => implode(' ', $pv['errors'] ?? []) ?: 'ردیفی با شماره‌ی بیمه‌نامه در فایل پیدا نشد.'];
     $q = $pdo->prepare("SELECT policy_key FROM recon_items WHERE run_id = ? AND category <> 'ONLY_S'");
     $q->execute([$runId]);
@@ -257,8 +289,9 @@ function recon_attach_src($pdo, $siteRoot, $runId, array $files) {
     $old = json_decode((string)($run['src_files'] ?? ''), true) ?: [];
     $new = recon_store_src($siteRoot, $runId, $files, $pv, 'a' . time() . '_');
     if (!$new) return ['ok' => false, 'error' => 'فایل روی هاست ذخیره نشد.'];
-    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode(array_merge($old, $new), JSON_UNESCAPED_UNICODE), $runId]);
-    return ['ok' => true, 'matched' => $hit, 'total' => count($keys), 'files' => count($new)];
+    $all = array_merge($old, $new);
+    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($all, JSON_UNESCAPED_UNICODE), $runId]);
+    return ['ok' => true, 'run_id' => (int)$runId, 'title' => (string)$run['title'], 'matched' => $hit, 'total' => count($keys), 'files' => count($new), 'src_files' => recon_src_list($all, (string)$run['title'])];
 }
 
 function recon_runs($pdo) {
@@ -269,8 +302,7 @@ function recon_runs($pdo) {
     foreach ($rows as &$r) {
         $r['files'] = json_decode((string)$r['files'], true) ?: [];
         $r['counts'] = json_decode((string)$r['counts'], true) ?: [];
-        $r['src_files'] = array_map(function ($f, $i) use ($r) { return ['idx' => $i, 'name' => $f['name'], 'kind' => $f['kind'], 'label' => recon_export_label($f, (string)$r['title']),
-                                                                       'can' => $f['ext'] === 'xlsx']; }, json_decode((string)($r['src_files'] ?? ''), true) ?: [], array_keys(json_decode((string)($r['src_files'] ?? ''), true) ?: []));
+        $r['src_files'] = recon_src_list(json_decode((string)($r['src_files'] ?? ''), true) ?: [], (string)$r['title']);
         $r['created_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at']));
     }
     return $rows;
@@ -566,9 +598,13 @@ function recon_corrected($pdo, $siteRoot, $runId, $idx, $dry = true) {
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $person[(int)$r['id']] = $r;
     }
     $resolved = [];
-    $q = $pdo->prepare("SELECT policy_key, diffs FROM recon_items WHERE run_id = ? AND diffs IS NOT NULL");
+    $openDiffs = 0;   // مغایرت‌هایی که هنوز تصمیمی برایشان گرفته نشده (در خروجی همان مقدارِ بیمه‌گر می‌مانند)
+    $q = $pdo->prepare("SELECT policy_key, diffs, status FROM recon_items WHERE run_id = ? AND diffs IS NOT NULL");
     $q->execute([$runId]);
-    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $it) foreach (json_decode((string)$it['diffs'], true) ?: [] as $d) if (!empty($d['res'])) $resolved[$it['policy_key']][$d['f']] = $d['res'];
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $it) foreach (json_decode((string)$it['diffs'], true) ?: [] as $d) {
+        if (!empty($d['res'])) $resolved[$it['policy_key']][$d['f']] = $d['res'];
+        elseif ($it['status'] === 'OPEN' && ($d['f'] ?? '') !== 'endo') $openDiffs++;
+    }
 
     $setCell = function ($rowEl, $col, $value) use ($doc, $xp, $NS) {
         $rn = $rowEl->getAttribute('r');
@@ -639,6 +675,7 @@ function recon_corrected($pdo, $siteRoot, $runId, $idx, $dry = true) {
         }
     }
     $name = recon_export_label($f, (string)$run['title']) . '.xlsx';
+    $stat['open'] = $openDiffs;
     if ($dry) { $zip->close(); @unlink($tmp); return ['ok' => true, 'name' => $name, 'stats' => $stat, 'changes' => array_slice($changes, 0, 1000), 'total_changes' => count($changes)]; }
     $zip->addFromString($sheetPath, $doc->saveXML());
     $zip->close();

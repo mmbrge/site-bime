@@ -45,7 +45,12 @@ try {
             }
         }
         if (!$files) $out(['ok' => false, 'error' => 'فایلِ اکسلی دریافت نشد (xlsx/xls/csv).']);
-        $r = recon_run($pdo, $siteRoot, $files, trim((string)($data['title'] ?? '')), $actor['user_id']);
+        // mode: '' (اگر فایل مالِ مغایرت‌گیریِ قبلیِ بی‌فایل باشد می‌پرسد) | new (تازه) | attach (وصل به run_id، تصمیم‌ها می‌ماند)
+        $mode = (string)($data['mode'] ?? '');
+        if ($mode === 'attach') {
+            $xf = array_values(array_filter($files, fn($f) => strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)) === 'xlsx'));
+            $r = $xf ? recon_attach_src($pdo, $siteRoot, intval($data['run_id'] ?? 0), $xf) : ['ok' => false, 'error' => 'برای خروجیِ اکسلِ بیمه‌گر فایل باید xlsx باشد.'];
+        } else $r = recon_run($pdo, $siteRoot, $files, trim((string)($data['title'] ?? '')), $actor['user_id'], $mode === 'new' ? 'new' : '');
         foreach ($files as $f) @unlink($f['path']);
         $out($r);
     }

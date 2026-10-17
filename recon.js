@@ -74,7 +74,7 @@
                 <div class="rc-up"><div class="rc-drop" id="rc-drop"><b>اکسل‌های خروجیِ پاسارگاد را اینجا بکشید یا کلیک کنید</b><br>بدنه، ثالث و الحاقیه‌ها — با هم یا جدا<input type="file" id="rc-file" accept=".xlsx,.xls,.csv" multiple class="hidden"></div>
                 <input id="rc-title" class="rc-in" placeholder="عنوان (اختیاری): مثلاً هفته‌ی دوم مهر">
                 <button class="rc-btn p" id="rc-go" disabled><i class="fas fa-magnifying-glass-chart"></i>شروع</button></div>
-                <div class="text-[11px] text-slate-500" id="rc-fnames"></div></div>` : ''}
+                <div class="text-[11px] text-slate-500" id="rc-fnames"></div><div id="rc-result"></div></div>` : ''}
             <div class="rc-card"><h3><i class="fas fa-clock-rotate-left text-slate-500"></i>مغایرت‌گیری‌های قبلی</h3><div class="rc-runs" id="rc-runs"></div></div>
             <div id="rc-view" class="space-y-3"></div>`;
             const drop = root.querySelector('#rc-drop');
@@ -86,19 +86,36 @@
                 drop.ondragleave = () => drop.classList.remove('on');
                 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); inp.files = e.dataTransfer.files; show(); };
                 inp.onchange = show;
-                go.onclick = async () => {
+                const send = async (mode, runId) => {
                     const fd = new FormData();
                     fd.append('action', 'run'); fd.append('title', root.querySelector('#rc-title').value.trim());
+                    if (mode) fd.append('mode', mode);
+                    if (runId) fd.append('run_id', runId);
                     [...inp.files].forEach(f => fd.append('files[]', f));
                     go.disabled = true; go.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ مقایسه...';
                     const r = await post(fd, true);
                     go.innerHTML = '<i class="fas fa-magnifying-glass-chart"></i>شروع';
+                    if (r.need_choice) {
+                        // همین فایل قبلاً مغایرت‌گیری شده و فایلِ اصلی‌اش روی سایت نیست
+                        const c = await chooseOld(r.match);
+                        if (c === 'attach') return send('attach', r.match.id);
+                        if (c === 'new') return send('new');
+                        go.disabled = false; return;
+                    }
                     if (!r.ok) { go.disabled = false; return toast(r.error || 'خطا', 'error'); }
                     inp.value = ''; show();
-                    toast(`مقایسه شد: ${fa(r.counts.MATCH)} منطبق، ${fa(r.counts.DIFF)} مغایر، ${fa(r.counts.ONLY_P)} فقط پاسارگاد، ${fa(r.counts.ONLY_S)} فقط سایت.`, 'success');
-                    S.run = r.run_id; S.cat = r.counts.DIFF ? 'DIFF' : (r.counts.ONLY_P ? 'ONLY_P' : 'MATCH'); S.status = 'OPEN'; S.field = '';
+                    if (mode === 'attach') {
+                        toast(`فایل به مغایرت‌گیریِ «${fa(r.title || '')}» وصل شد؛ تصمیم‌های قبلی سرِ جایش است.`, 'success');
+                        S.run = r.run_id; S.status = 'OPEN'; S.field = '';
+                    } else {
+                        toast(`مقایسه شد: ${fa(r.counts.MATCH)} منطبق، ${fa(r.counts.DIFF)} مغایر، ${fa(r.counts.ONLY_P)} فقط پاسارگاد، ${fa(r.counts.ONLY_S)} فقط سایت.`, 'success');
+                        S.run = r.run_id; S.cat = r.counts.DIFF ? 'DIFF' : (r.counts.ONLY_P ? 'ONLY_P' : 'MATCH'); S.status = 'OPEN'; S.field = '';
+                    }
+                    showResult(r.run_id, r.src_files || [], mode === 'attach');
+                    const v = S.root.querySelector('#rc-view'); if (v) v.dataset.run = '';
                     await loadRuns(); loadItems();
                 };
+                go.onclick = () => send('');
             }
         }
         loadRuns().then(() => { if (S.run) loadItems(); });
@@ -111,7 +128,7 @@
         const box = S.root.querySelector('#rc-runs');
         box.innerHTML = S.runs.map(x => {
             const c = x.counts || {};
-            return `<button class="rc-run ${x.id === S.run ? 'on' : ''}" data-run="${x.id}"><b>${esc(fa(x.title))}</b>${esc(fa(x.period_from || ''))} تا ${esc(fa(x.period_to || ''))} · ${esc(fa(x.created_jalali))}<br>
+            return `<button class="rc-run ${+x.id === +S.run ? 'on' : ''}" data-run="${x.id}"><b>${esc(fa(x.title))}</b>${esc(fa(x.period_from || ''))} تا ${esc(fa(x.period_to || ''))} · ${esc(fa(x.created_jalali))}<br>
                 <span class="rc-pill r">${fa(c.DIFF || 0)} مغایر</span> <span class="rc-pill w">${fa(c.ONLY_P || 0)} پاسارگاد</span> <span class="rc-pill c">${fa(c.ONLY_S || 0)} سایت</span>
                 ${+x.open_count ? `<span class="rc-pill n">${fa(x.open_count)} باز</span>` : '<span class="rc-pill p">همه بررسی شد</span>'}</button>`;
         }).join('') || '<div class="text-[12px] text-slate-400">هنوز مغایرت‌گیری‌ای انجام نشده.</div>';
@@ -121,9 +138,9 @@
     async function loadItems() {
         const view = S.root.querySelector('#rc-view');
         if (!S.run) { view.innerHTML = ''; return; }
-        const run = S.runs.find(x => x.id === S.run) || {};
+        const run = S.runs.find(x => +x.id === +S.run) || {};
         const c = run.counts || {};
-        if (!view.dataset.run || +view.dataset.run !== S.run) {
+        if (!view.dataset.run || +view.dataset.run !== +S.run) {
             view.dataset.run = S.run;
             view.innerHTML = `<div class="rc-card">
                 <div class="rc-kpi">${['DIFF', 'ONLY_P', 'ONLY_S', 'MATCH'].map(k => `<button data-cat="${k}"><small><i class="fas ${CAT[k][2]} ml-1"></i>${CAT[k][0]}</small><b>${fa(c[k] || 0)}</b></button>`).join('')}
@@ -134,8 +151,8 @@
                     <span class="mr-auto flex gap-2 flex-wrap" id="rc-bulk"></span>
                     <button id="rc-xls" class="rc-btn s sm" style="border-radius:999px" title="فهرستِ مغایرت‌ها و تصمیم‌ها (قالبِ سایت)"><i class="fas fa-file-excel"></i>اکسلِ فهرستِ مغایرت‌ها</button>
                     ${isAdmin() ? '<button id="rc-del" class="rc-btn d sm" style="border-radius:999px"><i class="fas fa-trash"></i>حذفِ این مغایرت‌گیری</button>' : ''}</div>
-                <div class="rc-flt" style="border-top:1px dashed #e2e8f0;padding-top:8px;margin-top:6px"><span class="text-[11px] text-slate-500"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>خروجیِ اصلاح‌شده (همان اکسلِ بیمه‌گر با اطلاعاتِ درست):</span>
-                    ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn s sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
+                <div class="rc-flt" style="border-top:1px dashed #e2e8f0;padding-top:8px;margin-top:6px"><span class="text-[11px] text-slate-500"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>خروجیِ اکسلِ بیمه‌گرِ جدید (همان اکسلِ ورودی با اطلاعاتِ به‌روزِ سایت):</span>
+                    ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn g sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
                         : '<span class="text-[11px] text-amber-700">فایلِ اصلیِ این مغایرت‌گیری روی سایت نیست (قبل از این امکان انجام شده). همان اکسلی را که از پاسارگاد گرفته بودید این‌جا بارگذاری کنید؛ تصمیم‌های قبلی سرِ جایش می‌ماند و نیازی به مغایرت‌گیریِ دوباره نیست.</span>'}
                     <button id="rc-attach" class="rc-btn ${(run.src_files || []).length ? 's' : 'p'} sm" style="border-radius:999px"><i class="fas fa-upload"></i>${(run.src_files || []).length ? 'افزودنِ فایلِ اصلیِ دیگر' : 'بارگذاریِ فایلِ اصلیِ بیمه‌گر (xlsx)'}</button>
                     <input type="file" id="rc-attach-f" accept=".xlsx" multiple class="hidden"></div></div>
@@ -182,6 +199,36 @@
     }
 
     // پیش‌نمایشِ تغییراتِ «خروجیِ اصلاح‌شده» و دانلود (نام: «نوع - عنوانِ مغایرت‌گیری»)
+    // پرسش: فایل به مغایرت‌گیریِ قبلیِ بی‌فایل وصل شود یا مغایرت‌گیریِ تازه؟  → 'attach' | 'new' | null
+    function chooseOld(m) {
+        return new Promise(res => {
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
+                <h3 class="font-black text-base mb-2"><i class="fas fa-link text-emerald-600 ml-1"></i>این فایل قبلاً مغایرت‌گیری شده</h3>
+                <p class="text-[12px] text-slate-600 leading-7">بیمه‌نامه‌های این فایل همان‌هایی است که در مغایرت‌گیریِ <b>«${esc(fa(m.title))}»</b> (${esc(fa(m.created_jalali))}) بررسی شده‌اند (${fa(m.matched)} از ${fa(m.total)})، ولی فایلِ اصلیِ آن روی سایت نیست.</p>
+                <p class="text-[11.5px] text-emerald-800 bg-emerald-50 rounded-xl p-3 mt-2 leading-6">با «وصل به همان» فایل به همان مغایرت‌گیری اضافه می‌شود، تصمیم‌های قبلی سرِ جایش می‌ماند و دکمه‌ی «خروجیِ اکسلِ بیمه‌گرِ جدید» ساخته می‌شود.</p>
+                <button data-c="attach" class="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-link ml-1"></i>وصل به همان مغایرت‌گیری (پیشنهادی)</button>
+                <button data-c="new" class="w-full mt-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl">نه، مغایرت‌گیریِ تازه</button>
+                <button data-c="" class="w-full mt-2 text-slate-400 hover:text-slate-600 text-xs py-1">انصراف</button></div>`;
+            document.body.appendChild(box);
+            box.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { box.remove(); res(b.dataset.c || null); });
+        });
+    }
+
+    // بعد از مغایرت‌گیری (یا وصل کردنِ فایل) زیرِ همان بخشِ ورود: دکمه‌های «خروجیِ اکسلِ بیمه‌گرِ جدید»
+    function showResult(runId, files, attached) {
+        const box = S.root.querySelector('#rc-result');
+        if (!box) return;
+        const ok = files.filter(f => f.can);
+        box.innerHTML = `<div class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <div class="text-[11.5px] font-bold text-emerald-800 mb-2"><i class="fas fa-circle-check ml-1"></i>${attached ? 'فایل به مغایرت‌گیریِ قبلی وصل شد.' : 'مغایرت‌گیری انجام شد.'}
+              ${ok.length ? 'همان اکسلِ ورودی با اطلاعاتِ به‌روزِ سایت (همان ستون‌ها):' : 'خروجیِ اکسلِ بیمه‌گر فقط برای فایلِ xlsx ساخته می‌شود.'}</div>
+            <div class="flex flex-wrap gap-2">${ok.map(f => `<button class="rc-btn g" data-rcorr="${f.idx}"><i class="fas fa-file-excel"></i>خروجیِ اکسلِ بیمه‌گرِ جدید — ${esc(fa(f.label))}</button>`).join('')}</div>
+            <div class="text-[10.5px] text-slate-500 mt-2">بعد از تصمیم‌گیری روی مغایرت‌ها دوباره همین دکمه را بزنید؛ خروجی هر بار با آخرین اطلاعاتِ سایت ساخته می‌شود.</div></div>`;
+        box.querySelectorAll('[data-rcorr]').forEach(b => b.onclick = () => { S.run = runId; corrected(+b.dataset.rcorr); });
+    }
+
     async function corrected(idx) {
         const d = await post({action: 'corrected_preview', run_id: S.run, idx});
         if (!d.ok) return toast(d.error || 'خطا', 'error');
@@ -195,6 +242,7 @@
             <div class="flex flex-wrap gap-2 text-[11px] font-bold mb-3">
               <span class="rc-pill c">${fa(st.rows || 0)} ردیف در فایل</span><span class="rc-pill p">${fa(st.matched || 0)} ردیف در سایت پیدا شد</span>
               <span class="rc-pill n">${fa(st.payer || 0)} خانه‌ی پرداخت‌کننده/کد پرسنلی</span><span class="rc-pill r">${fa(st.fixed || 0)} خانه‌ی اصلاح‌شده</span></div>
+            ${st.open ? `<p class="text-[11px] text-amber-800 bg-amber-50 rounded-xl p-2.5 mb-3"><i class="fas fa-triangle-exclamation ml-1"></i>${fa(st.open)} مغایرت هنوز تصمیم ندارد؛ آن خانه‌ها همان مقدارِ بیمه‌گر می‌مانند. بعد از تعیینِ «کدام درست است» دوباره خروجی بگیرید.</p>` : ''}
             ${d.changes.length ? `<div class="overflow-x-auto border rounded-xl"><table class="w-full text-[11px]"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-2 text-right">ردیف</th><th class="p-2 text-right">بیمه‌نامه</th><th class="p-2 text-right">ستون</th><th class="p-2 text-right">قبلی</th><th class="p-2 text-right">جدید</th></tr></thead>
               <tbody>${d.changes.map(c => `<tr class="border-t"><td class="p-2">${fa(c.row)}</td><td class="p-2" dir="ltr">${esc(c.policy)}</td><td class="p-2 font-bold ${c.payer ? 'text-indigo-700' : 'text-rose-700'}">${esc(c.col)}</td>
                 <td class="p-2 text-slate-400 line-through">${esc(fa(c.old))}</td><td class="p-2 font-bold text-emerald-700">${esc(fa(c.new))}</td></tr>`).join('')}</tbody></table></div>`
