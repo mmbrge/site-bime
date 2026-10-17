@@ -133,7 +133,10 @@
                     <input id="rc-q" class="rc-in" style="max-width:260px" placeholder="جستجو: شماره بیمه‌نامه، پلاک، بیمه‌گذار">
                     <span class="mr-auto flex gap-2 flex-wrap" id="rc-bulk"></span>
                     <button id="rc-xls" class="rc-btn s sm" style="border-radius:999px"><i class="fas fa-file-excel"></i>اکسل</button>
-                    ${isAdmin() ? '<button id="rc-del" class="rc-btn d sm" style="border-radius:999px"><i class="fas fa-trash"></i>حذفِ این مغایرت‌گیری</button>' : ''}</div></div>
+                    ${isAdmin() ? '<button id="rc-del" class="rc-btn d sm" style="border-radius:999px"><i class="fas fa-trash"></i>حذفِ این مغایرت‌گیری</button>' : ''}</div>
+                <div class="rc-flt" style="border-top:1px dashed #e2e8f0;padding-top:8px;margin-top:6px"><span class="text-[11px] text-slate-500"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>خروجیِ اصلاح‌شده (همان اکسلِ بیمه‌گر با اطلاعاتِ درست):</span>
+                    ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn s sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
+                        : '<span class="text-[11px] text-slate-400">فایلِ اصلیِ این مغایرت‌گیری نگه داشته نشده (قبل از این امکان)؛ برای خروجیِ اصلاح‌شده یک بار دوباره همان فایل را مغایرت‌گیری کنید.</span>'}</div></div>
                 <div id="rc-list" class="space-y-2"></div>`;
             view.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { S.cat = b.dataset.cat; S.sel = {}; if (S.cat !== 'DIFF') S.field = ''; loadItems(); });
             view.querySelectorAll('[data-fld]').forEach(b => b.onclick = () => { S.field = S.field === b.dataset.fld ? '' : b.dataset.fld; if (S.field) S.cat = 'DIFF'; loadItems(); });
@@ -141,6 +144,7 @@
             let t = null;
             view.querySelector('#rc-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { S.q = e.target.value.trim(); loadItems(); }, 300); };
             view.querySelector('#rc-xls').onclick = () => { location.href = API + '?' + new URLSearchParams({action: 'export', run_id: S.run, category: S.cat, status: S.status, field: S.field, q: S.q}).toString(); };
+            view.querySelectorAll('[data-corr]').forEach(b => b.onclick = () => corrected(+b.dataset.corr));
             const del = view.querySelector('#rc-del');
             if (del) del.onclick = async () => {
                 if (!await ask('این مغایرت‌گیری و تصمیم‌هایش از فهرست حذف شود؟ (تغییراتی که روی سایت اعمال شده سرِ جایش می‌ماند)')) return;
@@ -158,6 +162,30 @@
         if (!r.ok) { list.innerHTML = `<div class="rc-info">${esc(r.error || 'خطا')}</div>`; return; }
         S.rows = r.rows || [];
         renderList();
+    }
+
+    // پیش‌نمایشِ تغییراتِ «خروجیِ اصلاح‌شده» و دانلود (نام: «نوع - عنوانِ مغایرت‌گیری»)
+    async function corrected(idx) {
+        const d = await post({action: 'corrected_preview', run_id: S.run, idx});
+        if (!d.ok) return toast(d.error || 'خطا', 'error');
+        const st = d.stats || {};
+        const box = document.createElement('div');
+        box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+        box.innerHTML = `<div class="modal-content w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-base mb-1"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>${esc(fa(d.name))}</h3>
+            <p class="text-[11.5px] text-slate-500 leading-6 mb-3">همان فایلِ بیمه‌گر با همان ستون‌ها و قالب؛ فقط خانه‌های زیر عوض می‌شوند: برای بیمه‌نامه‌های کارکنان «کد پرسنلی»، «کد پرسنلی پرداخت کننده» و نام، نام خانوادگی و کد ملیِ پرداخت‌کننده از دارنده‌ی معرفی‌نامه، و هر فیلدی که در این مغایرت‌گیری تصمیمش گرفته شد با مقدارِ درستِ سایت.</p>
+            <div class="flex flex-wrap gap-2 text-[11px] font-bold mb-3">
+              <span class="rc-pill c">${fa(st.rows || 0)} ردیف در فایل</span><span class="rc-pill p">${fa(st.matched || 0)} ردیف در سایت پیدا شد</span>
+              <span class="rc-pill n">${fa(st.payer || 0)} خانه‌ی پرداخت‌کننده/کد پرسنلی</span><span class="rc-pill r">${fa(st.fixed || 0)} خانه‌ی اصلاح‌شده</span></div>
+            ${d.changes.length ? `<div class="overflow-x-auto border rounded-xl"><table class="w-full text-[11px]"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-2 text-right">ردیف</th><th class="p-2 text-right">بیمه‌نامه</th><th class="p-2 text-right">ستون</th><th class="p-2 text-right">قبلی</th><th class="p-2 text-right">جدید</th></tr></thead>
+              <tbody>${d.changes.map(c => `<tr class="border-t"><td class="p-2">${fa(c.row)}</td><td class="p-2" dir="ltr">${esc(c.policy)}</td><td class="p-2 font-bold ${c.payer ? 'text-indigo-700' : 'text-rose-700'}">${esc(c.col)}</td>
+                <td class="p-2 text-slate-400 line-through">${esc(fa(c.old))}</td><td class="p-2 font-bold text-emerald-700">${esc(fa(c.new))}</td></tr>`).join('')}</tbody></table></div>`
+              : '<p class="text-xs text-slate-400 text-center py-4">تغییری لازم نیست؛ فایل همان فایلِ بیمه‌گر است.</p>'}
+            <a href="${API}?${new URLSearchParams({action: 'corrected', run_id: S.run, idx})}" class="block text-center w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-download ml-1"></i>دانلودِ ${esc(fa(d.name))}</a></div>`;
+        document.body.appendChild(box);
+        box.querySelector('[data-x]').onclick = () => box.remove();
+        box.addEventListener('click', e => { if (e.target === box) box.remove(); });
     }
 
     function renderBulk() {

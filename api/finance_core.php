@@ -1845,6 +1845,8 @@ function fin_plan_build($premium, $issueJ, array $plan, $receiptsJson, $detected
         if ($premium && $sum !== (int)$premium) $check['diffs'][] = ['type' => 'total', 'computed' => (int)$premium, 'slip' => $sum];
     }
     $useSlips = $slips && ($plan['prefer'] === 'slips' || ($plan['prefer'] === 'auto' && $contractOk));
+    // ویرایشِ دستیِ حق بیمه در «صادره‌ها»: فیش‌های فایلِ قدیمی دیگر با حق بیمه جور نیستند → فرمول
+    if ($useSlips && !empty($GLOBALS['FIN_FORMULA_IF_SLIPS_MISMATCH']) && $premium && array_sum(array_map(fn($s) => (int)$s['amount'], $slips)) !== (int)$premium) $useSlips = false;
     $rows = [];
     if ($useSlips) {
         foreach ($slips as $k => $s) {

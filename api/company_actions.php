@@ -656,6 +656,14 @@ try {
         if ($info !== null) {
             $clean = issue_info_decode($old['issue_info'] ?? null);
             foreach (issue_info_fields() as $k => $label) if (array_key_exists($k, $info)) { $v = trim(mb_substr((string)$info[$k], 0, 500)); if ($v === '') unset($clean[$k]); else $clean[$k] = $v; }
+            // تاریخِ شروع و انقضای بیمه‌نامه (همان کلیدهایی که مغایرت‌گیری، تمدید و الحاقیه‌ها می‌خوانند)
+            foreach (['start_date' => 'تاریخ شروع', 'end_date' => 'تاریخ انقضا'] as $k => $lbl) {
+                if (!array_key_exists($k, $info)) continue;
+                $v = $jdate(trim(p2e_digits((string)$info[$k])));
+                if ($v === '') { unset($clean[$k]); continue; }
+                if (!preg_match('#^1[34]\d\d/(\d\d)/(\d\d)$#', $v, $dm) || (int)$dm[1] < 1 || (int)$dm[1] > 12 || (int)$dm[2] < 1 || (int)$dm[2] > 31 || ((int)$dm[1] > 6 && (int)$dm[2] > 30)) { echo json_encode(['ok' => false, 'error' => $lbl . ' را درست و به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+                $clean[$k] = $v;
+            }
             $json = $clean ? json_encode($clean, JSON_UNESCAPED_UNICODE) : null;
             if ($json !== ($old['issue_info'] ?? null)) { $set[] = "issue_info = ?"; $args[] = $json; $changed['issue_info'] = true; }
         }
@@ -700,7 +708,32 @@ try {
         if ($src === 'P' && !empty($old['introduction_id'])) {
             try { sync_intro_folder($pdo, $siteRoot, intval($old['introduction_id'])); } catch (Throwable $e) { error_log('[issued_edit sync] ' . $e->getMessage()); }
         }
-        $finNote = (isset($changed['total_premium']) || isset($changed['policy_issue_date'])) ? ' اقساطِ ثبت‌شده عوض نشد؛ اگر لازم است از مرکزِ اقساط اصلاح کنید.' : '';
+        // حق بیمه‌ی نهایی (با الحاقیه‌ها) و تاریخِ انقضای مؤثر دوباره حساب می‌شود
+        try { if (!function_exists('endo_recompute')) require_once __DIR__ . '/_endorse.php'; endo_ensure($pdo); endo_recompute($pdo, $src, $id); } catch (Throwable $e) { error_log('[issued_edit endo] ' . $e->getMessage()); }
+        // حق بیمه یا تاریخِ صدور عوض شد: اقساط با مقدارِ تازه دوباره ساخته می‌شود، فقط اگر هنوز هیچ دریافت/تسویه‌ای ثبت نشده
+        $finNote = '';
+        if (isset($changed['total_premium']) || isset($changed['policy_issue_date'])) {
+            try {
+                if (!function_exists('fin_generate_installments')) require_once __DIR__ . '/finance_core.php';
+                $GLOBALS['FIN_FORMULA_IF_SLIPS_MISMATCH'] = true;
+                if ($src === 'P') {
+                    $hasInst = (int)$pdo->query("SELECT COUNT(*) FROM policy_installments WHERE case_id = " . $id)->fetchColumn();
+                    $g = empty($new['no_installments']) ? fin_generate_installments($pdo, $id) : ['ok' => false, 'error' => ''];
+                } else {
+                    $hasInst = (int)$pdo->query("SELECT COUNT(*) FROM company_installments WHERE plate_id = " . $id)->fetchColumn();
+                    $paid = (int)$pdo->query("SELECT (SELECT COUNT(*) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id WHERE ci.plate_id = $id)
+                                                   + (SELECT COUNT(*) FROM company_installments WHERE plate_id = $id AND COALESCE(settled_to_pasargad, 0) = 1)")->fetchColumn();
+                    $g = $paid ? ['ok' => false, 'error' => 'برای اقساطِ این بیمه‌نامه دریافت یا تسویه ثبت شده؛ اقساط دوباره ساخته نشد.'] : company_generate_installments($pdo, $id);
+                }
+                if (!empty($g['ok'])) $finNote = ' اقساط با مقدارِ تازه دوباره ساخته شد (' . fa_digits($g['count'] ?? 0) . ' قسط).';
+                elseif ($hasInst && !empty($g['error'])) $finNote = ' ' . $g['error'] . ' اگر لازم است از مرکزِ اقساط اصلاح کنید.';
+            } catch (Throwable $e) { error_log('[issued_edit inst] ' . $e->getMessage()); $finNote = ' اقساط دوباره ساخته نشد؛ از مرکزِ اقساط بررسی کنید.'; }
+        }
+        // فایلِ «اطلاعات درخواستی» داخلِ پوشه‌ی پرونده‌ی کارکنان با داده‌ی تازه
+        if ($src === 'P') {
+            $dir = (string)$pdo->query("SELECT folder_path FROM policy_cases WHERE id = " . $id)->fetchColumn();
+            if ($dir !== '' && is_dir($dir) && function_exists('write_case_info_file')) { try { write_case_info_file($pdo, $dir, $id); } catch (Throwable $e) {} }
+        }
         echo json_encode(['ok' => true, 'message' => 'ذخیره شد' . ($renamed ? '؛ ' . fa_digits($renamed) . ' پوشه/فایل در بایگانی هم‌نام شد' : '') . '.' . $finNote], JSON_UNESCAPED_UNICODE);
         exit;
     }

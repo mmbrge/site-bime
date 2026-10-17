@@ -19,7 +19,7 @@ $uid = intval($_SESSION['user_id']);
 $kind = (string)($data['kind'] ?? '');
 $id = intval($data['id'] ?? 0);
 $siteRoot = dirname(__DIR__);
-if (!in_array($kind, ['case', 'intro', 'creq'], true) || $id <= 0) pout(['ok' => false, 'error' => 'مورد نامعتبر است.']);
+if (!in_array($kind, ['case', 'intro', 'creq', 'cplate'], true) || $id <= 0) pout(['ok' => false, 'error' => 'مورد نامعتبر است.']);
 
 $count = function ($sql, $args) use ($pdo) { try { $st = $pdo->prepare($sql); $st->execute($args); return intval($st->fetchColumn()); } catch (Throwable $e) { return 0; } };
 
@@ -40,6 +40,22 @@ try {
             $out['invoiced'] = $count("SELECT COUNT(*) FROM policy_cases pc WHERE $where AND pc.is_invoiced = 1", [$id]);
             $out['endorsements'] = $count("SELECT COUNT(*) FROM policy_endorsements e JOIN policy_cases pc ON pc.id = e.ref_id AND e.source = 'P' WHERE $where", [$id]);
             $out['endo_linked'] = 0;
+        } elseif ($kind === 'cplate') {
+            $st = $pdo->prepare("SELECT crp.*, cr.ref_code, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+            $st->execute([$id]);
+            $pl = $st->fetch();
+            if (!$pl) pout(['ok' => false, 'error' => 'مورد یافت نشد.']);
+            $out['title'] = (company_plate_display($pl['plate_p1'], $pl['plate_p2'], $pl['plate_letter'], $pl['plate_p4']) ?: ($pl['chassis_no'] ?: '#' . $id))
+                . ($pl['policy_number'] ? ' · ' . $pl['policy_number'] : '') . ' - ' . ($pl['company_name'] ?? '');
+            $out['others'] = $count("SELECT COUNT(*) FROM company_request_plates WHERE request_id = ? AND id <> ?", [$pl['request_id'], $id]);
+            $out['cases'] = 1;
+            $out['issued'] = $pl['status'] === 'ISSUED' ? 1 : 0;
+            $out['documents'] = $count("SELECT COUNT(*) FROM company_documents WHERE plate_id = ?", [$id]);
+            $out['installments'] = $count("SELECT COUNT(*) FROM company_installments WHERE plate_id = ?", [$id]);
+            $out['paid'] = $count("SELECT COALESCE(SUM(a.amount), 0) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id WHERE ci.plate_id = ?", [$id]);
+            $out['invoiced'] = 0;
+            $out['endorsements'] = $count("SELECT COUNT(*) FROM policy_endorsements WHERE source = 'C' AND ref_id = ?", [$id]);
+            $out['endo_linked'] = $count("SELECT COUNT(*) FROM policy_endorsements WHERE request_plate_id = ? AND NOT (source = 'C' AND ref_id = ?)", [$id, $id]);
         } else {
             $out['title'] = (string)$pdo->query("SELECT CONCAT(COALESCE(cr.ref_code, CONCAT('#', cr.id)), ' - ', COALESCE(c.name, '')) FROM company_requests cr LEFT JOIN companies c ON c.id = cr.company_id WHERE cr.id = " . $id)->fetchColumn();
             if ($out['title'] === '') pout(['ok' => false, 'error' => 'مورد یافت نشد.']);
@@ -64,6 +80,7 @@ try {
         @set_time_limit(300);
         if ($kind === 'case') pout(purge_policy_case($pdo, $siteRoot, $id, $uid));
         if ($kind === 'intro') pout(purge_introduction($pdo, $siteRoot, $id, $uid));
+        if ($kind === 'cplate') pout(purge_company_plate($pdo, $siteRoot, $id, $uid));
         pout(purge_company_request($pdo, $siteRoot, $id, $uid));
     }
     pout(['ok' => false, 'error' => 'عملیات نامعتبر.']);

@@ -23,6 +23,8 @@ function recon_ensure($pdo) {
         resolved_by INT NULL, resolved_at DATETIME NULL,
         INDEX (run_id, category), INDEX (policy_key)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // فایل‌های اصلیِ هر مغایرت‌گیری نگه داشته می‌شوند تا «خروجیِ اصلاح‌شده» با همان ستون‌ها ساخته شود
+    try { if (!$pdo->query("SHOW COLUMNS FROM recon_runs LIKE 'src_files'")->fetch()) $pdo->exec("ALTER TABLE recon_runs ADD COLUMN src_files TEXT NULL"); } catch (Throwable $e) { error_log('[recon src_files] ' . $e->getMessage()); }
 }
 
 function recon_cat_fa($c) {
@@ -210,6 +212,21 @@ function recon_run($pdo, $siteRoot, array $files, $title, $userId) {
         }
     }
     $pdo->prepare("UPDATE recon_runs SET counts = ? WHERE id = ?")->execute([json_encode($cnt, JSON_UNESCAPED_UNICODE), $run]);
+    // نگه‌داشتنِ فایل‌های اصلی (نوعِ بیمه‌نامه‌ی هر فایل از ردیف‌هایش)
+    $stored = [];
+    $dir = recon_store_dir($siteRoot, $run);
+    foreach ($files as $k => $f) {
+        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+        $dst = $dir . '/' . $k . '.' . $ext;
+        if (!@copy($f['path'], $dst)) continue;
+        $kind = 'policy';
+        foreach ($pv['files'] ?? [] as $fi) if ($fi['name'] === $f['name']) $kind = $fi['kind'];
+        $ft = [];
+        foreach ($rows as $r) if (($r['file'] ?? '') === $f['name'] && $r['type']) $ft[$r['type']] = true;
+        foreach ($endos as $e) if (($e['file'] ?? '') === $f['name'] && !empty($e['type'])) $ft[$e['type']] = true;
+        $stored[] = ['name' => $f['name'], 'file' => basename($dst), 'ext' => $ext, 'kind' => $kind, 'types' => array_keys($ft)];
+    }
+    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($stored, JSON_UNESCAPED_UNICODE), $run]);
     return ['ok' => true, 'run_id' => $run, 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
 }
 
@@ -221,6 +238,8 @@ function recon_runs($pdo) {
     foreach ($rows as &$r) {
         $r['files'] = json_decode((string)$r['files'], true) ?: [];
         $r['counts'] = json_decode((string)$r['counts'], true) ?: [];
+        $r['src_files'] = array_map(function ($f, $i) use ($r) { return ['idx' => $i, 'name' => $f['name'], 'kind' => $f['kind'], 'label' => recon_export_label($f, (string)$r['title']),
+                                                                       'can' => $f['ext'] === 'xlsx']; }, json_decode((string)($r['src_files'] ?? ''), true) ?: [], array_keys(json_decode((string)($r['src_files'] ?? ''), true) ?: []));
         $r['created_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at']));
     }
     return $rows;
@@ -403,9 +422,194 @@ function recon_import($pdo, $siteRoot, array $itemIds, array $opts, $userId) {
     return $res;
 }
 
-function recon_delete_run($pdo, $runId) {
+function recon_delete_run($pdo, $runId, $siteRoot = null) {
     recon_ensure($pdo);
+    if ($siteRoot) {
+        $d = rtrim($siteRoot, '/') . '/_recon_files/run_' . intval($runId);
+        if (is_dir($d)) { foreach ((array)glob($d . '/*') as $f) @unlink($f); @rmdir($d); }
+    }
     $pdo->prepare("DELETE FROM recon_items WHERE run_id = ?")->execute([$runId]);
     $pdo->prepare("DELETE FROM recon_runs WHERE id = ?")->execute([$runId]);
     return ['ok' => true];
+}
+
+// =====================================================================
+//  «خروجیِ اصلاح‌شده»: همان اکسلِ بیمه‌گر (همان ستون‌ها، ترتیب و قالب؛ فقط مقدارِ خانه‌ها) با اطلاعاتِ درستِ سایت:
+//   - برای بیمه‌نامه‌های کارکنان: «کد پرسنلی» و «کد پرسنلی پرداخت کننده» از کد پرسنلیِ دارنده‌ی معرفی‌نامه، و
+//     «نام / نام خانوادگی / کد ملی پرداخت کننده» از همان شخص
+//   - برای هر فیلدی که در این مغایرت‌گیری تصمیم گرفته شد (سایت درست است / پاسارگاد / دستی): مقدارِ نهاییِ سایت
+//     (تاریخ صدور، شروع، انقضا، حق بیمه، پلاک، شاسی، بیمه‌گذار)
+//  فایلِ اصلی در _recon_files/run_<id>/ (بسته از وب) نگه داشته می‌شود؛ خانه‌ها مستقیم در XMLِ شیت عوض می‌شوند.
+// =====================================================================
+function recon_store_dir($siteRoot, $runId) {
+    $base = rtrim($siteRoot, '/') . '/_recon_files';
+    if (!is_dir($base)) { @mkdir($base, 0775, true); @file_put_contents($base . '/.htaccess', "Require all denied\nDeny from all\n"); @file_put_contents($base . '/index.html', ''); }
+    $d = $base . '/run_' . intval($runId);
+    if (!is_dir($d)) @mkdir($d, 0775, true);
+    return $d;
+}
+function recon_export_label(array $f, $title) {
+    if (($f['kind'] ?? '') === 'endorse') $t = 'الحاقیه';
+    else { $t = implode(' و ', array_unique(array_map('insurance_type_fa', $f['types'] ?? []))) ?: 'بیمه‌نامه'; }
+    return $t . ' - ' . trim($title);
+}
+function recon_hnorm($s) { return mb_strtolower(preg_replace('/[\s\x{200B}-\x{200F}\x{202A}-\x{202E}:]+/u', '', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$s))); }
+function recon_col_idx($letters) { $n = 0; foreach (str_split(strtoupper($letters)) as $ch) $n = $n * 26 + (ord($ch) - 64); return $n; }
+function recon_col_letter($n) { $s = ''; while ($n > 0) { $m = ($n - 1) % 26; $s = chr(65 + $m) . $s; $n = intdiv($n - 1, 26); } return $s; }
+// نامِ کامل → [نام، نام خانوادگی] (نام‌های دوبخشیِ رایج مثلِ «محمد علی»، «سید محمد» با هم می‌مانند)
+function recon_split_name($full) {
+    $t = array_values(array_filter(preg_split('/\s+/u', trim(str_replace("\xE2\x80\x8C", ' ', (string)$full))), 'strlen'));
+    if (count($t) < 2) return [implode(' ', $t), ''];
+    $pre = ['سید', 'سیده', 'میر', 'ابو', 'عبد', 'غلام', 'محمد', 'علی', 'امیر', 'حاج'];
+    $second = ['علی', 'حسین', 'حسن', 'رضا', 'مهدی', 'جواد', 'صادق', 'اکبر', 'اصغر', 'باقر', 'کاظم', 'تقی', 'هادی', 'امین', 'محمد', 'عباس', 'الله', 'اله', 'الدین', 'ابراهیم', 'اسماعیل', 'قاسم', 'جعفر', 'مصطفی', 'مرتضی', 'حمید', 'سعید', 'مجید', 'رسول', 'کریم', 'رحیم', 'یوسف'];
+    $n = 1;
+    if (count($t) >= 3 && in_array($t[0], $pre, true) && (in_array($t[1], $second, true) || in_array($t[0], ['سید', 'سیده', 'میر', 'حاج'], true))) $n = 2;
+    return [implode(' ', array_slice($t, 0, $n)), implode(' ', array_slice($t, $n))];
+}
+function recon_plate_insurer($core, $sample) {
+    if (!preg_match('/^(\d{2})(\d{3})(\D+)(\d{2})$/u', (string)$core, $m)) return '';
+    $fa = function ($s) { return $s; };
+    return mb_strpos((string)$sample, '- ایران -') !== false ? "{$m[2]}{$m[3]}{$m[4]} - ایران - {$m[1]}(ایران)" : "{$m[2]}{$m[3]}{$m[4]} - {$m[1]}(ایران)";
+}
+
+// $dry = true: فقط فهرستِ تغییرات (برای پیش‌نمایش)؛ false: فایلِ ساخته‌شده هم برگردانده می‌شود
+function recon_corrected($pdo, $siteRoot, $runId, $idx, $dry = true) {
+    recon_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM recon_runs WHERE id = ?");
+    $st->execute([$runId]);
+    $run = $st->fetch();
+    if (!$run) return ['ok' => false, 'error' => 'مغایرت‌گیری پیدا نشد.'];
+    $files = json_decode((string)($run['src_files'] ?? ''), true) ?: [];
+    if (!$files) return ['ok' => false, 'error' => 'فایلِ اصلیِ این مغایرت‌گیری نگه داشته نشده (پیش از این امکان انجام شده)؛ یک بار دوباره همان فایل را مغایرت‌گیری کنید.'];
+    $f = $files[intval($idx)] ?? null;
+    if (!$f) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
+    if ($f['ext'] !== 'xlsx') return ['ok' => false, 'error' => 'خروجیِ اصلاح‌شده فقط برای فایلِ xlsx ساخته می‌شود.'];
+    $src = recon_store_dir($siteRoot, $runId) . '/' . $f['file'];
+    if (!is_file($src) || !class_exists('ZipArchive')) return ['ok' => false, 'error' => 'فایلِ اصلی روی هاست پیدا نشد.'];
+    $tmp = tempnam(sys_get_temp_dir(), 'rcx') . '.xlsx';
+    copy($src, $tmp);
+    $zip = new ZipArchive();
+    if ($zip->open($tmp) !== true) return ['ok' => false, 'error' => 'فایلِ اکسل باز نشد.'];
+    // شیتِ اول
+    $sheetPath = 'xl/worksheets/sheet1.xml';
+    $wb = (string)$zip->getFromName('xl/workbook.xml');
+    $rels = (string)$zip->getFromName('xl/_rels/workbook.xml.rels');
+    if (preg_match('/<sheet\b[^>]*\br:id="([^"]+)"/', $wb, $m) && preg_match('/<Relationship\b[^>]*Id="' . preg_quote($m[1], '/') . '"[^>]*Target="([^"]+)"/', $rels, $t)) {
+        $sheetPath = 'xl/' . ltrim(preg_replace('#^/?xl/#', '', $t[1]), '/');
+    }
+    $xml = $zip->getFromName($sheetPath);
+    if ($xml === false) { $zip->close(); @unlink($tmp); return ['ok' => false, 'error' => 'شیتِ اکسل پیدا نشد.']; }
+    $shared = [];
+    $ss = $zip->getFromName('xl/sharedStrings.xml');
+    if ($ss !== false && preg_match_all('/<si>(.*?)<\/si>/s', $ss, $sm)) foreach ($sm[1] as $si) { preg_match_all('/<t[^>]*>(.*?)<\/t>/s', $si, $tm); $shared[] = html_entity_decode(implode('', $tm[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'); }
+
+    $NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    $doc = new DOMDocument();
+    $doc->preserveWhiteSpace = true;
+    if (!@$doc->loadXML($xml)) { $zip->close(); @unlink($tmp); return ['ok' => false, 'error' => 'شیتِ اکسل خوانده نشد.']; }
+    $xp = new DOMXPath($doc); $xp->registerNamespace('m', $NS);
+    $val = function ($c) use ($xp, $shared) {
+        $t = $c->getAttribute('t');
+        if ($t === 's') { $v = $xp->query('m:v', $c)->item(0); return $v ? (string)($shared[(int)$v->textContent] ?? '') : ''; }
+        if ($t === 'inlineStr') { $o = ''; foreach ($xp->query('.//m:t', $c) as $n) $o .= $n->textContent; return $o; }
+        $v = $xp->query('m:v', $c)->item(0); return $v ? $v->textContent : '';
+    };
+    $rowsEl = []; foreach ($xp->query('//m:sheetData/m:row') as $r) $rowsEl[] = $r;
+    // سرستون‌ها: ردیفی که «شماره بیمه‌نامه» دارد
+    $hdrRow = null; $cols = [];
+    foreach (array_slice($rowsEl, 0, 12) as $r) {
+        $map = [];
+        foreach ($xp->query('m:c', $r) as $c) { if (!preg_match('/^([A-Z]+)/', $c->getAttribute('r'), $cm)) continue; $h = recon_hnorm($val($c)); if ($h !== '' && !isset($map[$h])) $map[$h] = $cm[1]; }
+        if (isset($map[recon_hnorm('شماره بیمه‌نامه')])) { $hdrRow = $r; $cols = $map; break; }
+    }
+    if (!$hdrRow) { $zip->close(); @unlink($tmp); return ['ok' => false, 'error' => 'ستونِ «شماره بیمه‌نامه» در اکسل پیدا نشد.']; }
+    $C = function ($name) use ($cols) { return $cols[recon_hnorm($name)] ?? null; };
+    $colPol = $C('شماره بیمه‌نامه');
+
+    // اطلاعاتِ سایت (بعد از اصلاح‌ها) + دارنده‌ی معرفی‌نامه برای بیمه‌نامه‌های کارکنان + تصمیم‌های همین مغایرت‌گیری
+    $site = recon_site_index($pdo);
+    $person = [];
+    $pids = []; foreach ($site as $x) if ($x['source'] === 'P') $pids[] = (int)$x['ref_id'];
+    if ($pids) {
+        $q = $pdo->query("SELECT pc.id, per.full_name, per.national_code, per.personnel_code FROM policy_cases pc JOIN persons per ON per.id = pc.person_id WHERE pc.id IN (" . implode(',', array_unique($pids)) . ")");
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $person[(int)$r['id']] = $r;
+    }
+    $resolved = [];
+    $q = $pdo->prepare("SELECT policy_key, diffs FROM recon_items WHERE run_id = ? AND diffs IS NOT NULL");
+    $q->execute([$runId]);
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $it) foreach (json_decode((string)$it['diffs'], true) ?: [] as $d) if (!empty($d['res'])) $resolved[$it['policy_key']][$d['f']] = $d['res'];
+
+    $setCell = function ($rowEl, $col, $value) use ($doc, $xp, $NS) {
+        $rn = $rowEl->getAttribute('r');
+        $ref = $col . $rn;
+        $cell = null; $before = null;
+        foreach ($xp->query('m:c', $rowEl) as $c) {
+            $cr = $c->getAttribute('r');
+            if ($cr === $ref) { $cell = $c; break; }
+            if (preg_match('/^([A-Z]+)/', $cr, $cm) && recon_col_idx($cm[1]) > recon_col_idx($col) && !$before) $before = $c;
+        }
+        if (!$cell) { $cell = $doc->createElementNS($NS, 'c'); $cell->setAttribute('r', $ref); $before ? $rowEl->insertBefore($cell, $before) : $rowEl->appendChild($cell); }
+        while ($cell->firstChild) $cell->removeChild($cell->firstChild);
+        $cell->setAttribute('t', 'inlineStr');
+        $is = $doc->createElementNS($NS, 'is'); $t = $doc->createElementNS($NS, 't');
+        $t->setAttribute('xml:space', 'preserve'); $t->appendChild($doc->createTextNode((string)$value));
+        $is->appendChild($t); $cell->appendChild($is);
+    };
+    $changes = []; $stat = ['rows' => 0, 'matched' => 0, 'payer' => 0, 'fixed' => 0];
+    $hdrIdx = (int)$hdrRow->getAttribute('r');
+    foreach ($rowsEl as $r) {
+        $rn = (int)$r->getAttribute('r');
+        if ($rn <= $hdrIdx) continue;
+        $cells = [];
+        foreach ($xp->query('m:c', $r) as $c) if (preg_match('/^([A-Z]+)/', $c->getAttribute('r'), $cm)) $cells[$cm[1]] = $c;
+        $pol = isset($cells[$colPol]) ? trim($val($cells[$colPol])) : '';
+        if ($pol === '') continue;
+        $stat['rows']++;
+        $key = endo_policy_key($pol);
+        $s = $site[$key] ?? null;
+        if (!$s) continue;
+        $stat['matched']++;
+        $want = [];
+        if ($s['source'] === 'P' && isset($person[(int)$s['ref_id']])) {
+            $pr = $person[(int)$s['ref_id']];
+            [$fn, $ln] = recon_split_name($pr['full_name']);
+            $pc = trim((string)$pr['personnel_code']);
+            if ($pc !== '') { $want['کد پرسنلی'] = $pc; $want['کد پرسنلی پرداخت کننده'] = $pc; }
+            if ($fn !== '') $want['نام پرداخت کننده'] = $fn;
+            if ($ln !== '') $want['نام خانوادگی پرداخت کننده'] = $ln;
+            if (trim((string)$pr['national_code']) !== '') $want['کد ملی پرداخت کننده'] = trim((string)$pr['national_code']);
+        }
+        $payerKeys = array_keys($want);
+        foreach ($resolved[$key] ?? [] as $fld => $res) {
+            switch ($fld) {
+                case 'issue': if ($s['issue'] !== '') $want['تاریخ صدور'] = $s['issue']; break;
+                case 'start': if ($s['start'] !== '') $want['تاریخ شروع'] = $s['start']; break;
+                case 'end': if ($s['end'] !== '') $want['تاریخ انقضا'] = $s['end']; break;
+                case 'premium': if ((int)$s['premium'] > 0) { $want['حق بیمه'] = (string)(int)$s['premium']; $want['حق بیمه به عدد'] = number_format((int)$s['premium']); } break;
+                case 'plate':
+                    $sample = ($cp = $C('شماره انتظامی')) && isset($cells[$cp]) ? $val($cells[$cp]) : '';
+                    if (($pt = recon_plate_insurer($s['plate'], $sample)) !== '') $want['شماره انتظامی'] = $pt;
+                    break;
+                case 'vin': if (trim((string)$s['vin_text']) !== '') $want['شماره شاسی'] = trim((string)$s['vin_text']); break;
+                case 'insured': if (trim((string)$s['insured']) !== '') $want['بیمه گذار'] = trim((string)$s['insured']); break;
+            }
+        }
+        $rowChanged = false;
+        foreach ($want as $hdr => $v) {
+            $col = $C($hdr);
+            if (!$col) continue;
+            $old = isset($cells[$col]) ? trim($val($cells[$col])) : '';
+            $cmp = function ($x) { return preg_replace('/[\s,٬]+/u', '', p2e_digits(str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$x))); };
+            if ($cmp($old) === $cmp($v)) continue;
+            $setCell($r, $col, $v);
+            $changes[] = ['row' => $rn, 'policy' => $pol, 'col' => $hdr, 'old' => $old, 'new' => (string)$v, 'payer' => in_array($hdr, $payerKeys, true)];
+            $rowChanged = true;
+            $stat[in_array($hdr, $payerKeys, true) ? 'payer' : 'fixed']++;
+        }
+    }
+    $name = recon_export_label($f, (string)$run['title']) . '.xlsx';
+    if ($dry) { $zip->close(); @unlink($tmp); return ['ok' => true, 'name' => $name, 'stats' => $stat, 'changes' => array_slice($changes, 0, 1000), 'total_changes' => count($changes)]; }
+    $zip->addFromString($sheetPath, $doc->saveXML());
+    $zip->close();
+    return ['ok' => true, 'path' => $tmp, 'name' => $name, 'stats' => $stat];
 }

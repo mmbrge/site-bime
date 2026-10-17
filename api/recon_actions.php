@@ -85,7 +85,20 @@ try {
     }
     if ($action === 'delete_run') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
-        $out(recon_delete_run($pdo, intval($data['run_id'] ?? 0)));
+        $out(recon_delete_run($pdo, intval($data['run_id'] ?? 0), $siteRoot));
+    }
+    // خروجیِ اصلاح‌شده‌ی اکسلِ بیمه‌گر: corrected_preview = فهرستِ تغییرات؛ corrected = دانلود (نام: «نوع - عنوانِ مغایرت‌گیری»)
+    if ($action === 'corrected_preview') $out(recon_corrected($pdo, $siteRoot, intval($data['run_id'] ?? 0), intval($data['idx'] ?? 0), true));
+    if ($action === 'corrected') {
+        $r = recon_corrected($pdo, $siteRoot, intval($data['run_id'] ?? 0), intval($data['idx'] ?? 0), false);
+        if (empty($r['ok'])) $out($r);
+        require_once __DIR__ . '/_dl_name.php';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header("Content-Disposition: attachment; filename=\"recon.xlsx\"; filename*=UTF-8''" . rawurlencode(dl_name(str_replace(['/', '\\', '"'], ['-', '-', ''], $r['name']))));
+        header('Content-Length: ' . filesize($r['path']));
+        readfile($r['path']);
+        @unlink($r['path']);
+        exit;
     }
     $out(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {

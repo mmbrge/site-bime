@@ -312,3 +312,51 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
     purge_finish($pdo, $T, $userId, $summary);
     return ['ok' => true, 'message' => $summary . ' با ' . fa_digits(count($plates)) . ' ردیف، ' . fa_digits($nDocs) . ' مدرک، ' . fa_digits($nInst) . ' قسط' . ($nEndo ? ' و ' . fa_digits($nEndo) . ' الحاقیه' : '') . ' کامل حذف شد.', 'trash' => basename($T['dir'])];
 }
+
+// ---------------- یک ردیفِ شرکتی (یک بیمه‌نامه‌ی صادره) ----------------
+// همان «حذفِ کامل» ولی فقط برای همین ردیف: اقساط و تخصیصِ دریافت‌ها، الحاقیه‌ها، مدارکِ همین ردیف، پوشه و کپیِ صادره.
+// اگر این آخرین ردیفِ درخواست باشد، خودِ درخواست (و نامه‌اش) هم همراهش حذف می‌شود.
+function purge_company_plate($pdo, $siteRoot, $plateId, $userId) {
+    $plateId = intval($plateId);
+    $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.ref_code, c.name AS company_name FROM company_request_plates crp
+                           JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+    $st->execute([$plateId]);
+    $pl = $st->fetch();
+    if (!$pl) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
+    $others = (int)$pdo->query("SELECT COUNT(*) FROM company_request_plates WHERE request_id = " . intval($pl['request_id']) . " AND id <> " . $plateId)->fetchColumn();
+    if (!$others) return purge_company_request($pdo, $siteRoot, (int)$pl['request_id'], $userId);
+    $T = purge_begin($siteRoot, 'cplate_' . $plateId);
+    $nInst = 0; $nDocs = 0; $nEndo = 0;
+    purge_endo_prepare($pdo);
+    $pdo->beginTransaction();
+    try {
+        $inst = [];
+        try { $inst = $pdo->query("SELECT id FROM company_installments WHERE plate_id = " . $plateId)->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) {}
+        if ($inst) {
+            $in = purge_ids_in($inst);
+            purge_take($pdo, $T, 'company_payment_allocations', "installment_id IN ($in)");
+            purge_take($pdo, $T, 'fin_receipt_lines', "source = 'C' AND installment_id IN ($in)");
+        }
+        $nInst = purge_take($pdo, $T, 'company_installments', 'plate_id = ?', [$plateId]);
+        $nEndo = purge_endo_linked($pdo, $siteRoot, [$plateId], $T);
+        $nEndo += purge_endo_of_policies($pdo, $siteRoot, "source = 'C' AND ref_id = ?", [$plateId], $T);
+        try {
+            $q = $pdo->prepare("SELECT file_path FROM company_documents WHERE plate_id = ?"); $q->execute([$plateId]);
+            foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) purge_path($T, $p);
+        } catch (Throwable $e) {}
+        $nDocs = purge_take($pdo, $T, 'company_documents', 'plate_id = ?', [$plateId]);
+        purge_unlink($pdo, $T, 'visit_reports', 'company_plate_id', 'company_plate_id = ?', [$plateId]);
+        purge_take($pdo, $T, 'legacy_items', "kind = 'C' AND ref_id = ?", [$plateId]);
+        purge_take($pdo, $T, 'company_request_plates', 'id = ?', [$plateId]);
+        $pdo->commit();
+    } catch (Throwable $e) { $pdo->rollBack(); error_log('[purge_cplate] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خطا در حذف: ' . $e->getMessage()]; }
+    foreach (['folder_path', 'issued_file_path', 'pending_policy_temp_path', 'statement_file'] as $c) if (!empty($pl[$c])) purge_path($T, $pl[$c]);
+    if ($pl['status'] === 'ISSUED' && !empty($pl['folder_path']) && company_kind_goes_to_sadere($pl['request_kind'])) {
+        $ts = policy_issue_ts($pl['policy_issue_date'] ?? '', strtotime((string)$pl['issued_at']) ?: time());
+        purge_path($T, build_sadere_base_path($siteRoot, $ts, $pl['insurance_type']) . '/' . basename($pl['folder_path']));
+    }
+    $plate = company_plate_display($pl['plate_p1'], $pl['plate_p2'], $pl['plate_letter'], $pl['plate_p4']) ?: ($pl['chassis_no'] ?: ('#' . $plateId));
+    $summary = 'ردیفِ ' . $plate . ($pl['policy_number'] ? ' (بیمه‌نامه‌ی ' . $pl['policy_number'] . ')' : '') . ' از درخواستِ ' . ($pl['ref_code'] ?: '#' . $pl['request_id']) . ' - ' . ($pl['company_name'] ?? '');
+    purge_finish($pdo, $T, $userId, $summary);
+    return ['ok' => true, 'message' => $summary . ' کامل حذف شد (' . fa_digits($nDocs) . ' مدرک، ' . fa_digits($nInst) . ' قسط' . ($nEndo ? '، ' . fa_digits($nEndo) . ' الحاقیه' : '') . ').', 'trash' => basename($T['dir'])];
+}

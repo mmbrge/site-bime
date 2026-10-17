@@ -2452,6 +2452,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <?php if (perm_real_role() === 'ADMIN'): ?>
+                <div data-scat="data" class="card p-6 md:col-span-2 border-rose-100 bg-gradient-to-br from-white to-rose-50/30">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-rose-100 pb-3"><i class="fas fa-trash-can-arrow-up text-rose-500 ml-2"></i>حذف‌شده‌ها <small class="text-[11px] text-slate-400 font-bold mr-1">هر «حذفِ کامل» این‌جا می‌ماند: برگرداندن با همه‌ی جزئیات یا پاک کردنِ دائمی</small></h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">معرفی‌نامه، درخواستِ کارکنان، درخواستِ شرکتی و بیمه‌نامه‌ی صادره‌ای که «حذفِ کامل» شده، با اطلاعات، اقساط و تخصیصِ دریافت‌ها، الحاقیه‌ها، مدارک و پوشه‌های بایگانی‌اش این‌جا نگه داشته می‌شود. «برگرداندن» همه را با همان شناسه‌ها سرِ جایش برمی‌گرداند؛ «پاک کردنِ دائمی» فایل‌ها را هم از روی هاست پاک می‌کند.</p>
+                    <div id="trash-root"></div>
+                </div>
+                <?php endif; ?>
                 <div data-scat="data" class="card p-0 overflow-hidden md:col-span-2 border-indigo-100">
                     <div class="bg-gradient-to-l from-indigo-600 via-violet-600 to-fuchsia-600 p-6 text-white relative overflow-hidden">
                         <div class="absolute -left-10 -top-10 w-40 h-40 rounded-full bg-white/10"></div>
@@ -2856,6 +2863,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <th class="p-3">نوع</th><th class="p-3">شماره بیمه‌نامه</th><th class="p-3">خودرو</th>
                             <th class="p-3">حق بیمه</th><th class="p-3">تاریخ درخواست</th><th class="p-3">انقضا</th>
                             <th class="p-3">تاریخ صدور</th><th class="p-3">وضعیت</th><th class="p-3">فایل</th>
+                            <?php if (perm_real_role() === 'ADMIN'): ?><th class="p-3">عملیات</th><?php endif; ?>
                         </tr></thead>
                         <tbody id="il-body"><tr><td colspan="15" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr></tbody>
                     </table>
@@ -4380,6 +4388,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=1"></script>
     <script src="contacts.js?v=1"></script>
+    <script src="trash.js?v=1"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
@@ -4408,7 +4417,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="legacy-import.js?v=2"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
-    <script src="recon.js?v=1"></script>
+    <script src="recon.js?v=2"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=6"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=2"></script><?php endif; ?>
@@ -4442,7 +4451,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             try { pv = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview', kind, id})})).json(); }
             catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
             if (!pv.ok) { showToast(pv.error || 'خطا', 'error'); return; }
-            const KIND = {case: 'درخواستِ کارکنان', intro: 'معرفی‌نامه و همه‌ی درخواست‌هایش', creq: 'درخواستِ شرکتی'}[kind];
+            const KIND = {case: 'درخواستِ کارکنان', intro: 'معرفی‌نامه و همه‌ی درخواست‌هایش', creq: 'درخواستِ شرکتی', cplate: 'بیمه‌نامه‌ی شرکتی (همین ردیف)'}[kind];
             const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
             const li = (icon, t) => `<li class="flex items-center gap-2"><i class="fas ${icon} text-rose-500 w-4 text-center"></i>${t}</li>`;
             const box = document.createElement('div');
@@ -4452,7 +4461,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex items-center gap-3 mb-3"><span class="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-lg"><i class="fas fa-dumpster-fire"></i></span>
                   <div><h3 class="font-black text-base text-slate-800">حذفِ کامل</h3><p class="text-[11px] text-slate-500">${KIND}: <b>${esc(pv.title || '')}</b></p></div></div>
                 <ul class="text-xs text-slate-600 space-y-1.5 bg-rose-50/60 border border-rose-100 rounded-xl p-3 mb-3">
-                  ${kind !== 'case' ? li('fa-layer-group', (kind === 'creq' ? 'ردیف‌ها: ' : 'درخواست‌ها: ') + e2pNum(pv.cases) + (pv.issued ? ' (' + e2pNum(pv.issued) + ' صادرشده)' : '')) : (pv.issued ? li('fa-certificate', 'بیمه‌نامه‌ی صادرشده') : '')}
+                  ${kind !== 'case' && kind !== 'cplate' ? li('fa-layer-group', (kind === 'creq' ? 'ردیف‌ها: ' : 'درخواست‌ها: ') + e2pNum(pv.cases) + (pv.issued ? ' (' + e2pNum(pv.issued) + ' صادرشده)' : '')) : (pv.issued ? li('fa-certificate', 'بیمه‌نامه‌ی صادرشده') : '')}
+                  ${kind === 'cplate' ? li('fa-building', pv.others ? 'بقیه‌ی ردیف‌های همین درخواست (' + e2pNum(pv.others) + ' ردیف) دست نمی‌خورند' : 'این آخرین ردیفِ درخواست است؛ خودِ درخواست هم حذف می‌شود') : ''}
                   ${li('fa-file-lines', 'مدارک: ' + e2pNum(pv.documents))}
                   ${li('fa-calendar-days', 'اقساط: ' + e2pNum(pv.installments) + (pv.paid ? ' - تخصیصِ ' + e2pNum(Number(pv.paid).toLocaleString('en-US')) + ' ریال دریافتی برداشته می‌شود (خودِ دریافت می‌ماند)' : ''))}
                   ${pv.endorsements ? li('fa-file-circle-plus', 'الحاقیه‌های این بیمه‌نامه‌ها: ' + e2pNum(pv.endorsements) + ' (با فایلِ الحاقیه و بیمه‌نامه‌ی نهایی)') : ''}
@@ -4460,7 +4470,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                   ${li('fa-box-archive', 'پوشه‌ها و فایل‌ها در بایگانی (کسر از حقوق، صادره، موقت) و شمارِ معرفی‌نامه')}
                   ${pv.invoiced ? li('fa-file-invoice', 'صورتحساب‌های صادرشده دست نمی‌خورند') : ''}
                 </ul>
-                <p class="text-[11px] text-slate-500 leading-6 mb-3"><i class="fas fa-life-ring text-emerald-500 ml-1"></i>هیچ چیز واقعاً پاک نمی‌شود: فایل‌ها و یک نسخه از اطلاعات در پوشه‌ی بسته‌ی <b dir="ltr">_trash</b> روی هاست نگه داشته می‌شود تا اگر اشتباه شد برگردانده شود.</p>
+                <p class="text-[11px] text-slate-500 leading-6 mb-3"><i class="fas fa-life-ring text-emerald-500 ml-1"></i>هیچ چیز واقعاً پاک نمی‌شود: همه‌چیز در «تنظیمات ← داده‌ها ← حذف‌شده‌ها» نگه داشته می‌شود و از همان‌جا با همه‌ی جزئیات برمی‌گردد یا برای همیشه پاک می‌شود.</p>
                 <label class="text-[11px] font-bold text-slate-500 block mb-1">برای تأیید، رمزِ ورودِ خودتان را وارد کنید</label>
                 <input type="password" data-pw class="w-full border rounded-xl px-3 py-2.5 text-sm mb-3" autocomplete="current-password">
                 <button type="button" data-ok class="w-full bg-rose-600 hover:bg-rose-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-dumpster-fire ml-1"></i>حذفِ کامل</button></div>`;
@@ -8131,6 +8141,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
                     <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
+                    ${IS_REAL_ADMIN ? `<td class="p-3 whitespace-nowrap">${!r.is_import ? `<button onclick="event.stopPropagation(); editIssued(${i})" title="ویرایشِ کامل (پایگاه داده، بایگانی، اقساط)" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-pen"></i></button>` : ''}${issuedPurgeBtn(r)}</td>` : ''}
                 </tr>`).join('');
         }
 
@@ -8138,12 +8149,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const ISSUE_INFO_FA = {owner_name: 'نام مالک', owner_national_id: 'کد/شناسه ملی مالک', owner_phone: 'تلفن مالک', owner_address: 'نشانی مالک',
             beneficiary: 'نام ذینفع', beneficiary_national_id: 'کد/شناسه ملی ذینفع',
             insured_birth_date: 'تاریخ تولد بیمه‌گذار', car_kind: 'نوع خودرو', car_capacity: 'ظرفیت', car_cylinders: 'تعداد سیلندر',
-            prev_insurer: 'بیمه‌گر قبلی', prev_policy_number: 'شماره بیمه‌نامه‌ی قبلی', no_claim_years: 'سال‌های عدم خسارت', note: 'یادداشت صدور'};
+            prev_insurer: 'بیمه‌گر قبلی', prev_policy_number: 'شماره بیمه‌نامه‌ی قبلی', no_claim_years: 'سال‌های عدم خسارت', note: 'یادداشت صدور',
+            start_date: 'تاریخ شروع بیمه‌نامه', end_date: 'تاریخ انقضای بیمه‌نامه'};
         const REL_FA = {'خودم': 'خود', SELF: 'خودش', SPOUSE: 'همسر', CHILD: 'فرزند', FATHER: 'پدر', MOTHER: 'مادر', PARENT: 'والدین', SIBLING: 'خواهر/برادر', OTHER: 'سایر'};
         const relFa = v => v ? (REL_FA[v] || v) : '';
         // نسبتِ بیمه‌گذار با پرسنل: نسبتِ ثبت‌شده، وگرنه از کد ملی (یکی = خودش)
         const issuedRel = r => r.relationship && r.relationship !== 'خودم' ? relFa(r.relationship)
             : ((!r.national_id || !r.holder_nid || r.national_id === r.holder_nid) && (r.relationship === 'خودم' || !r.relationship || r.national_id === r.holder_nid) ? 'خودش' : 'بستگان');
+
+        // حذفِ کاملِ یک بیمه‌نامه‌ی صادره (فقط مدیر کل): کارکنان = همان درخواست؛ شرکتی = فقط همین ردیف (آخرین ردیف = کلِ درخواست)
+        const issuedPurgeBtn = r => (Number(r.row_id) > 0) ? purgeBtn(r.source === 'PERSONNEL' ? 'case' : 'cplate', Number(r.row_id), "() => { document.getElementById('il-detail-modal').classList.remove('active'); loadIssuedList(); }") : '';
 
         // ویرایشِ کاملِ بیمه‌نامه‌ی صادرشده (فقط مدیر کل): company_actions.php → issued_edit
         function editIssued(idx) {
@@ -8158,7 +8173,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             box.innerHTML = `<div class="modal-content w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
                 <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
                 <h3 class="font-black text-base mb-1"><i class="fas fa-pen text-amber-600 ml-1"></i>ویرایشِ بیمه‌نامه‌ی صادرشده</h3>
-                <p class="text-[11px] text-slate-500 mb-4 leading-6">با ذخیره، پایگاه داده به‌روز می‌شود و اگر پلاک${P ? '، نامِ بیمه‌گذار' : ''}، شماره‌ی بیمه‌نامه یا VIN عوض شود، نامِ پوشه و فایل‌ها در بایگانی (و کپیِ «بایگانی صادره») هم عوض می‌شود. اقساطِ ثبت‌شده دست نمی‌خورند.</p>
+                <p class="text-[11px] text-slate-500 mb-4 leading-6">با ذخیره، پایگاه داده به‌روز می‌شود و اگر پلاک${P ? '، نامِ بیمه‌گذار' : ''}، شماره‌ی بیمه‌نامه یا VIN عوض شود، نامِ پوشه و فایل‌ها در بایگانی (و کپیِ «بایگانی صادره» و ماهِ صدور) هم عوض می‌شود. اگر حق بیمه یا تاریخِ صدور عوض شود و هنوز قسطی پرداخت نشده باشد، اقساط با مقدارِ تازه دوباره ساخته می‌شوند؛ حق بیمه‌ی نهایی (با الحاقیه‌ها) هم دوباره حساب می‌شود.</p>
                 <h4 class="text-[11px] font-black text-slate-600 mb-2">بیمه‌نامه</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                     ${f('policy_number', 'شماره بیمه‌نامه', r.policy_number, {ltr: true})}
@@ -8185,7 +8200,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${f('car_value', 'ارزش خودرو (ریال)', m(r.car_value), {money: true, ltr: true})}
                 </div>
                 <h4 class="text-[11px] font-black text-slate-600 mb-2">مالک و سایر اطلاعاتِ صدور</h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">${Object.entries(ISSUE_INFO_FA).map(([k, l]) => f(k, l, ii[k] || '', {info: true, ltr: /national_id|phone|policy_number/.test(k)})).join('')}</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">${Object.entries(P ? ISSUE_INFO_FA : Object.assign({insured_name: 'نام بیمه‌گذار', insured_national_id: 'کد/شناسه ملی بیمه‌گذار'}, ISSUE_INFO_FA)).map(([k, l]) => f(k, l, k.indexOf('_date') > 0 ? e2p(ii[k] || '') : (ii[k] || ''), {info: true, ltr: /national_id|phone|policy_number|_date/.test(k)})).join('')}</div>
                 <button type="button" data-ok class="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره</button></div>`;
             document.body.appendChild(box);
             const close = () => box.remove();
@@ -8217,7 +8232,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
                 </div>
 
-                ${IS_REAL_ADMIN && !r.is_import ? `<div class="flex justify-end -mt-1 mb-2"><button onclick="editIssued(${idx})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl"><i class="fas fa-pen ml-1"></i>ویرایش اطلاعات (پایگاه داده و نامِ بایگانی)</button></div>` : ''}
+                ${IS_REAL_ADMIN ? `<div class="flex justify-end gap-1 -mt-1 mb-2">${!r.is_import ? `<button onclick="editIssued(${idx})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl"><i class="fas fa-pen ml-1"></i>ویرایش اطلاعات (پایگاه داده، بایگانی و اقساط)</button>` : ''}${issuedPurgeBtn(r)}</div>` : ''}
                 ${r.source === 'PERSONNEL' ? `
                 <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-id-badge text-blue-400 ml-1"></i>پرسنل (دارنده‌ی معرفی‌نامه)</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
@@ -10658,6 +10673,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
             if (tabId === 'settings' && window.SmsOtp) SmsOtp.settingsCard(document.getElementById('sms-otp-root'));
+            if (tabId === 'settings' && window.TrashBin) TrashBin.card(document.getElementById('trash-root'));
             if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
