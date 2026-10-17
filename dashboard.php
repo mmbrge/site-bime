@@ -4307,6 +4307,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </select>
                     <label>نوع مدرک تشخیص داده شده</label>
                 </div>
+                <!-- هشدارهای معرفی‌نامه: تکراری (قرمز) و تاریخِ متفاوت با امروز (زرد) -->
+                <div id="review-intro-warn" class="space-y-2 mb-4"></div>
 
                 <div class="float-input"><input type="text" id="review-full-name" placeholder=" " autocomplete="off"><label>نام شخص / بیمه‌گذار</label></div>
                 <div class="float-input"><input type="text" id="review-national-code" placeholder=" " dir="ltr" autocomplete="off"><label>کد ملی</label></div>
@@ -5659,6 +5661,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (ext.insured_name || ext.national_id) {
                     identifiedHtml = `<div>${ext.insured_name || ''}</div><div class="text-[10px] text-slate-400 font-mono" dir="ltr">${e2p(ext.national_id || '')}</div>`;
                 }
+                // معرفی‌نامه: تکراری (قرمز) و تاریخِ متفاوت با امروز (زرد)
+                const fl = row.intro_flags;
+                if (fl) {
+                    if (fl.dup && fl.dup.length) identifiedHtml += `<span class="qi-flag red" title="${fl.dup.map(d => 'معرفی‌نامه #' + d.id + (d.letter_date ? ' · ' + d.letter_date : '') + ' · ' + d.month).join('\n')}"><i class="fas fa-circle-exclamation"></i>تکراری: ${e2p(fl.dup.length)} معرفی‌نامه‌ی قبلی</span>`;
+                    if (fl.date) identifiedHtml += `<span class="qi-flag amber" title="${fl.date.text}"><i class="fas fa-calendar-xmark"></i>${fl.date.letter ? 'تاریخ ' + e2p(fl.date.letter) + ' ≠ امروز' : 'تاریخ خوانده نشد'}</span>`;
+                }
 
                 tbody.innerHTML += `
                     <tr class="border-b border-slate-50 hover:bg-purple-50/30 transition">
@@ -5774,11 +5782,46 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('review-premium').value = mfmt(g('premium', 'total_premium'));
 
             applyReviewFieldVisibility();
+            document.getElementById('review-intro-warn').innerHTML = '';
+            reviewIntroWarn();
             document.getElementById('ocr-review-modal').classList.add('active');
         }
 
+        // ---- هشدارهای معرفی‌نامه در پنجره‌ی تایید (با تغییرِ کد ملی/تاریخ دوباره بررسی می‌شود) ----
+        (function () {
+            const st = document.createElement('style');
+            st.textContent = `.qi-flag{display:inline-flex;align-items:center;gap:4px;margin-top:4px;margin-left:4px;font-size:10px;font-weight:800;border-radius:8px;padding:2px 7px;border:1px solid;white-space:nowrap}
+                .qi-flag.red{background:#fef2f2;color:#b91c1c;border-color:#fecaca}.qi-flag.amber{background:#fffbeb;color:#b45309;border-color:#fde68a}
+                .riw{border-radius:14px;padding:10px 12px;font-size:12px;line-height:1.9;border:1px solid;display:flex;gap:10px;align-items:flex-start}
+                .riw i.ic{font-size:18px;margin-top:3px}.riw b{font-weight:900}
+                .riw.red{background:#fef2f2;border-color:#fca5a5;color:#991b1b}.riw.amber{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+                .riw ul{margin:4px 0 0;padding:0 16px 0 0}.riw li{font-size:11px}`;
+            document.head.appendChild(st);
+        })();
+        let riwTimer = null, riwSeq = 0;
+        function reviewIntroWarnSchedule() { clearTimeout(riwTimer); riwTimer = setTimeout(reviewIntroWarn, 350); }
+        async function reviewIntroWarn() {
+            const box = document.getElementById('review-intro-warn');
+            if (!box) return;
+            if (document.getElementById('review-doc-type').value !== 'معرفی‌نامه') { box.innerHTML = ''; return; }
+            const seq = ++riwSeq;
+            let d;
+            try { d = await (await fetch('api/queue_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_check', national_code: p2e(document.getElementById('review-national-code').value), letter_date: p2e(document.getElementById('review-letterdate').value)})})).json(); } catch (e) { return; }
+            if (seq !== riwSeq || !d || !d.ok) return;
+            let h = '';
+            if (d.dup && d.dup.length) h += `<div class="riw red"><i class="fas fa-circle-exclamation ic"></i><div><b>تکراری: برای این شخص (${d.dup[0].name || ''}) قبلاً ${e2p(d.dup.length)} معرفی‌نامه ثبت شده است.</b>
+                <ul>${d.dup.map(x => `<li>معرفی‌نامه #${e2p(x.id)} · ${x.letter_date ? 'تاریخ نامه ' + x.letter_date : 'بدونِ تاریخ'} · ماهِ ${x.month} · ثبت ${x.registered} · سهمیه ${x.quota}${x.company ? ' · ' + x.company : ''}</li>`).join('')}</ul>
+                <div style="font-size:11px;margin-top:4px">اگر نامه‌ی تازه است ادامه دهید؛ اگر همان نامه‌ی قبلی است «رد» کنید.</div></div></div>`;
+            if (d.date) h += `<div class="riw amber"><i class="fas fa-calendar-xmark ic"></i><div><b>تاریخ با امروز فرق دارد.</b> ${d.date.text}</div></div>`;
+            box.innerHTML = h;
+        }
+        document.addEventListener('input', e => { if (e.target && (e.target.id === 'review-national-code' || e.target.id === 'review-letterdate')) reviewIntroWarnSchedule(); });
+        document.addEventListener('change', e => { if (e.target && e.target.id === 'review-doc-type') reviewIntroWarnSchedule(); });
+
         async function approveOcrData() {
             // معرفی‌نامه بدونِ تاریخِ صدور: ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود؛ پیش از ثبت پرسیده می‌شود
+            if (document.getElementById('review-doc-type').value === 'معرفی‌نامه' && document.querySelector('#review-intro-warn .riw.red')
+                && !(await uiConfirm('معرفی‌نامه‌ی تکراری', 'برای این شخص قبلاً معرفی‌نامه ثبت شده است. مطمئنید این یک معرفی‌نامه‌ی تازه است و ثبت شود؟', {ok: 'بله، ثبت شود', danger: true}))) return;
             if (document.getElementById('review-doc-type').value === 'معرفی‌نامه' && !document.getElementById('review-letterdate').value.trim()
                 && !(await uiConfirm('تاریخِ صدور خالی است', 'تاریخِ صدورِ معرفی‌نامه وارد نشده و در فهرست «ثبت نشده» نشان داده می‌شود (ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود). بدونِ تاریخ ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
             const payload = {

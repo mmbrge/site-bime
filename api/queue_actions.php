@@ -24,6 +24,49 @@ if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
 $data = json_decode(file_get_contents('php://input'), true);
 $action = $_GET['action'] ?? ($data['action'] ?? '');
 
+
+// هشدارهای معرفی‌نامه در صفِ پردازش:
+//   date: تاریخِ نامه با امروز فرق دارد (یا خوانده نشد) => زرد
+//   dup:  این کد ملی از قبل معرفی‌نامه دارد => قرمز (فهرستِ معرفی‌نامه‌های قبلی)
+function queue_intro_flags($pdo, $nid, $letterDate) {
+    $out = ['date' => null, 'dup' => []];
+    $now = new DateTime('now', new DateTimeZone('Asia/Tehran'));
+    [$ty, $tm, $td] = jalali_from_gregorian_ts(strtotime($now->format('Y-m-d 12:00:00')));
+    $todayJ = sprintf('%04d/%02d/%02d', $ty, $tm, $td);
+    $sql = jalali_input_to_sql($letterDate);
+    if (!$sql) {
+        $out['date'] = ['level' => 'warn', 'text' => 'تاریخِ صدورِ معرفی‌نامه خوانده نشد؛ آن را از روی نامه وارد کنید.', 'today' => $todayJ];
+    } else {
+        $lj = str_replace('-', '/', $sql);
+        if ($lj !== $todayJ) {
+            // فاصله به روز (تقریبی با تبدیلِ هر دو تاریخ به میلادی)
+            [$y, $m, $d] = array_map('intval', explode('-', $sql));
+            $lts = jalali_to_gregorian_ts($y, $m, $d);
+            $days = $lts ? (int)round((strtotime($now->format('Y-m-d') . ' 12:00:00') - strtotime(date('Y-m-d', $lts) . ' 12:00:00')) / 86400) : null;
+            $rel = $days === null ? '' : ($days > 0 ? ' (' . fa_digits($days) . ' روز پیش)' : ($days < 0 ? ' (' . fa_digits(-$days) . ' روز بعد از امروز!)' : ''));
+            $out['date'] = ['level' => 'warn', 'text' => 'تاریخِ معرفی‌نامه ' . fa_digits($lj) . $rel . ' است و با امروز (' . fa_digits($todayJ) . ') فرق دارد.', 'today' => $todayJ, 'letter' => $lj, 'days' => $days];
+        }
+    }
+    $nid = preg_replace('/\D/', '', p2e_digits((string)$nid));
+    if (strlen($nid) >= 8) {
+        $nid = str_pad($nid, 10, '0', STR_PAD_LEFT);
+        $st = $pdo->prepare("SELECT i.id, i.letter_date, i.created_at, i.used_quota, i.max_quota, p.full_name, c.name AS company_name
+                               FROM introductions i JOIN persons p ON p.id = i.person_id LEFT JOIN companies c ON c.id = p.company_id
+                              WHERE p.national_code = ? ORDER BY i.id DESC LIMIT 10");
+        $st->execute([$nid]);
+        foreach ($st->fetchAll() as $r) {
+            [$cy, $cm, $cd] = jalali_from_gregorian_ts(strtotime((string)$r['created_at']) ?: time());
+            [$ly, $lm] = intro_letter_month(['letter_date' => $r['letter_date'], 'created_at' => $r['created_at']]);
+            $out['dup'][] = ['id' => intval($r['id']), 'name' => $r['full_name'], 'company' => $r['company_name'],
+                             'letter_date' => $r['letter_date'] ? fa_digits(str_replace('-', '/', $r['letter_date'])) : '',
+                             'registered' => fa_digits(sprintf('%04d/%02d/%02d', $cy, $cm, $cd)),
+                             'month' => jalali_month_name($lm) . ' ' . fa_digits($ly),
+                             'quota' => fa_digits(intval($r['used_quota']) . '/' . intval($r['max_quota'] ?: 4))];
+        }
+    }
+    return $out;
+}
+
 function clean_path_string($str) {
     return trim(preg_replace('/[\\\\\\/*?:"<>|\r\n\t]/', '', (string)$str));
 }
@@ -146,7 +189,19 @@ try {
     if ($action === 'list') {
         $stmt = $pdo->query("SELECT * FROM processing_queue ORDER BY uploaded_at DESC");
         $records = $stmt->fetchAll();
-        echo json_encode(['ok' => true, 'data' => $records]);
+        foreach ($records as &$r) {   // هشدارِ تاریخ (زرد) و تکراری (قرمز) برای معرفی‌نامه‌ها
+            $ex = json_decode((string)($r['extracted_data'] ?? ''), true) ?: [];
+            if (($ex['ins_type'] ?? '') === 'معرفی‌نامه' && in_array($r['status'], ['DONE', 'FAILED'], true))
+                $r['intro_flags'] = queue_intro_flags($pdo, $ex['national_id'] ?? ($ex['national_code'] ?? ''), $ex['letter_date'] ?? '');
+        }
+        unset($r);
+        echo json_encode(['ok' => true, 'data' => $records], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // بررسیِ زنده در پنجره‌ی تایید (با تغییرِ کد ملی یا تاریخ)
+    if ($action === 'intro_check') {
+        echo json_encode(['ok' => true] + queue_intro_flags($pdo, $data['national_code'] ?? '', $data['letter_date'] ?? ''), JSON_UNESCAPED_UNICODE);
         exit;
     }
 
