@@ -13,9 +13,9 @@
 // منوی کلیک‌راست (و لمسِ طولانی در موبایل)، خوانده‌شدن، «در حال نوشتن»، ایموجی، کشیدن و رها کردن و چسباندنِ عکس.
 (function () {
     'use strict';
-    const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
-    const en = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fa = s => String(s == null ? '' : s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    const en = s => String(s == null ? '' : s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     // نتیجه‌ی جستجو: متن با بخشِ پیداشده‌ی زردرنگ
     const highlight = (s, q) => { const t = esc(s), k = esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return t.replace(new RegExp(k, 'gi'), x => `<mark class="cx-mark">${x}</mark>`).replace(/\n/g, '<br>'); };
     const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
@@ -301,7 +301,7 @@
 .cx-th-l p{margin:0;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cx-badge{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;font-size:10.5px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;animation:cxPop .4s both}
 .cx-main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;background:var(--bg)}
-.cx-main::before{content:'';position:absolute;inset:0;opacity:.5;pointer-events:none;background-image:radial-gradient(circle at 20% 20%,rgba(99,102,241,.08),transparent 40%),radial-gradient(circle at 80% 70%,rgba(168,85,247,.08),transparent 40%)}
+.cx-main::before{content:'';position:absolute;top:0;right:0;bottom:0;left:0;opacity:.5;pointer-events:none;background-image:radial-gradient(circle at 20% 20%,rgba(99,102,241,.08),transparent 40%),radial-gradient(circle at 80% 70%,rgba(168,85,247,.08),transparent 40%)}
 .cx-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);text-align:center;padding:20px;position:relative}
 .cx-empty .cx-big{width:90px;height:90px;border-radius:30px;display:flex;align-items:center;justify-content:center;font-size:38px;color:#fff;background:linear-gradient(135deg,var(--me1),var(--me2));box-shadow:var(--shadow);animation:cxFloat 3.5s ease-in-out infinite}
 .cx-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);position:relative;z-index:2}
@@ -432,21 +432,21 @@
 .cx-menu .cx-mh{font-size:10.5px;font-weight:900;color:#94a3b8;padding:6px 10px 2px}
 .cx-menu .cx-react{display:flex;justify-content:space-between;padding:2px 4px 6px}
 .cx-menu .cx-react button{width:34px;justify-content:center;padding:6px;font-size:18px}
-.cx-lb{position:fixed;inset:0;z-index:2147483601;background:rgba(2,6,23,.9);display:flex;align-items:center;justify-content:center;animation:cxFade .2s both;cursor:zoom-out}
+.cx-lb{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483601;background:rgba(2,6,23,.9);display:flex;align-items:center;justify-content:center;animation:cxFade .2s both;cursor:zoom-out}
 .cx-lb img{max-width:92vw;max-height:88vh;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.6);animation:cxPop .3s both}
-.cx-modal{position:absolute;inset:0;z-index:30;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:40px 14px;animation:cxFade .2s both}
+.cx-modal{position:absolute;top:0;right:0;bottom:0;left:0;z-index:30;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:40px 14px;animation:cxFade .2s both}
 .cx-modal>div{width:min(460px,100%);background:var(--panel);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;animation:cxPop .3s both;display:flex;flex-direction:column;max-height:100%}
 .cx-modal .cx-mhd{display:flex;align-items:center;gap:8px;padding:14px;border-bottom:1px solid var(--line)}
 .cx-modal .cx-mhd b{flex:1;font-size:14px}
 .cx-modal .cx-mbd{padding:10px;overflow-y:auto}
-.cx-drop{position:absolute;inset:8px;z-index:25;border:3px dashed var(--acc);border-radius:20px;background:rgba(99,102,241,.1);display:none;align-items:center;justify-content:center;color:var(--acc);font-weight:900;font-size:15px;pointer-events:none}
+.cx-drop{position:absolute;top:8px;right:8px;bottom:8px;left:8px;z-index:25;border:3px dashed var(--acc);border-radius:20px;background:rgba(99,102,241,.1);display:none;align-items:center;justify-content:center;color:var(--acc);font-weight:900;font-size:15px;pointer-events:none}
 .cx-drop.show{display:flex;animation:cxFade .2s both}
 .cx-skel{height:52px;border-radius:14px;margin:6px;background:linear-gradient(90deg,var(--soft),var(--hover),var(--soft));background-size:200% 100%;animation:cxShim 1.2s infinite}
 .cx-back{display:none}
 .cx-full .cx-back{display:inline-flex}
 .cx-head .cx-av,.cx-head-b b{cursor:pointer}
 .cx-head-b b:hover{text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px}
-.cx-prof{position:absolute;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;animation:cxProfIn .28s cubic-bezier(.2,.9,.3,1) both}
+.cx-prof{position:absolute;top:0;right:0;bottom:0;left:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;animation:cxProfIn .28s cubic-bezier(.2,.9,.3,1) both}
 @keyframes cxProfIn{from{transform:translateX(-28px);opacity:0}to{transform:none;opacity:1}}
 .cx-prof-top{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);padding-top:max(10px,env(safe-area-inset-top,0px))}
 .cx-prof-top b{flex:1;font-size:14px;font-weight:900}
@@ -496,7 +496,7 @@
 .cx-fdates .cx-chip{padding:4px 9px;font-size:10.5px}
 .cx-fdates .cx-fn{margin-right:auto;font-weight:900;color:var(--acc)}
 mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
-.cx-dlg-ov{position:fixed;inset:0;z-index:2147483602;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;transition:opacity .2s;direction:rtl;font-family:inherit}
+.cx-dlg-ov{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483602;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;transition:opacity .2s;direction:rtl;font-family:inherit}
 .cx-dlg-ov.on{opacity:1}
 .cx-dlg{width:min(380px,100%);background:#fff;color:#0f172a;border-radius:24px;padding:22px 20px 16px;text-align:center;box-shadow:0 30px 70px -20px rgba(15,23,42,.55);transform:scale(.88) translateY(14px);transition:transform .28s cubic-bezier(.2,.9,.3,1.3)}
 .cx-dlg-ov.on .cx-dlg{transform:none}
@@ -611,7 +611,7 @@ mark.cx-mark{background:#fde047;color:#0f172a;border-radius:4px;padding:0 2px}
 @keyframes jDrive{0%{transform:translateX(60px);opacity:0}50%{transform:translateX(-8px);opacity:1}70%{transform:translateX(4px)}100%{transform:none}}
 @keyframes jBounce{0%{transform:scale(.3)}40%{transform:scale(1.3) translateY(-10px)}65%{transform:scale(.92)}85%{transform:scale(1.05)}100%{transform:none}}
 /* موبایل: گفتگوی باز تمام‌صفحه با سرتیتر و نوارِ نوشتنِ جمع‌وجور؛ فاصله‌ی امن برای ناچ و نوارِ پایینِ گوشی */
-.cx-mobfull{position:fixed!important;inset:0!important;width:100%!important;height:100vh!important;height:100dvh!important;min-height:0!important;z-index:9500;margin:0!important;animation:cxMobIn .28s cubic-bezier(.2,.9,.3,1)}
+.cx-mobfull{position:fixed!important;top:0;right:0;bottom:0;left:0!important;width:100%!important;height:100vh!important;height:100dvh!important;min-height:0!important;z-index:9500;margin:0!important;animation:cxMobIn .28s cubic-bezier(.2,.9,.3,1)}
 @keyframes cxMobIn{from{transform:translateX(-24px);opacity:.4}to{transform:none;opacity:1}}
 .cx-mobfull .cx{border-radius:0;height:100%}
 html.cx-mob-lock,html.cx-mob-lock body{overflow:hidden!important;overscroll-behavior:none}
@@ -1000,7 +1000,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             this.$('.cx-file-in').onchange = e => { if (e.target.files[0]) this.attach(e.target.files[0]); e.target.value = ''; };
             this.$('.cx-emo-btn').onclick = e => { e.stopPropagation(); this.emoji(); };
             const cn = this.$('.cx-canned-btn');
-            if (cn) cn.onclick = e => { e.stopPropagation(); window.CFCanned.pick(cn, txt => { const t = this.$('.cx-ta'); const pos = t.selectionStart ?? t.value.length; t.value = t.value.slice(0, pos) + txt + t.value.slice(t.selectionEnd ?? pos); t.focus(); t.dispatchEvent(new Event('input')); }); };
+            if (cn) cn.onclick = e => { e.stopPropagation(); window.CFCanned.pick(cn, txt => { const t = this.$('.cx-ta'); const pos = (t.selectionStart != null ? t.selectionStart : t.value.length); t.value = t.value.slice(0, pos) + txt + t.value.slice((t.selectionEnd != null ? t.selectionEnd : pos)); t.focus(); t.dispatchEvent(new Event('input')); }); };
             this.bindFind();
             // منوی خودِ گفتگو: ⋮، کلیک‌راست روی سرِ گفتگو یا جای خالیِ گفتگو
             const more = this.$('.cx-more'); more.onclick = e => { e.stopPropagation(); const r = more.getBoundingClientRect(); this.threadMenu(r.left + r.width, r.bottom + 4, this.key); };
@@ -1355,8 +1355,8 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             this.$('.cx-compose').appendChild(p);
             p.querySelectorAll('button').forEach(b => b.onclick = e => {
                 e.stopPropagation();
-                const ta = this.$('.cx-ta'), s = ta.selectionStart ?? ta.value.length;
-                ta.value = ta.value.slice(0, s) + b.textContent + ta.value.slice(ta.selectionEnd ?? s);
+                const ta = this.$('.cx-ta'), s = (ta.selectionStart != null ? ta.selectionStart : ta.value.length);
+                ta.value = ta.value.slice(0, s) + b.textContent + ta.value.slice((ta.selectionEnd != null ? ta.selectionEnd : s));
                 ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.textContent.length;
             });
         }

@@ -989,7 +989,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     .iic-cov{font-size:10.5px;background:#ecfdf5;border:1px solid #d1fae5;color:#065f46;border-radius:999px;padding:1px 8px}
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
-<script src="iran-time.js?v=1"></script>
+<script src="iran-time.js?v=2"></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="plate.css?v=4">
@@ -4369,7 +4369,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=12"></script>
+    <script src="chat-ui.js?v=13"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=7"></script>
     <script>

@@ -5,9 +5,9 @@
 //   MiniKit.closedScreen(el, info)  صفحه‌ی متحرکِ «ساعتِ کاریِ ثبتِ درخواست تمام شده»
 //   MiniKit.jToday() / jAddDays / jFmt / jParse / g2j / j2g
 (function () {
-    const FA = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
-    const EN = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const FA = s => String(s == null ? '' : s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    const EN = s => String(s == null ? '' : s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
     const WD = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
 
@@ -61,7 +61,7 @@
         if (cssDone) return; cssDone = true;
         const st = document.createElement('style');
         st.textContent = `
-.mk-ov{position:fixed;inset:0;z-index:2147482000;background:rgba(2,6,23,.66);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s;font-family:'Vazir',Tahoma,sans-serif;direction:rtl}
+.mk-ov{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147482000;background:rgba(2,6,23,.66);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s;font-family:'Vazir',Tahoma,sans-serif;direction:rtl}
 .mk-ov.on{opacity:1}
 .mk-sheet{width:100%;max-width:480px;background:linear-gradient(170deg,#262262,#111633 60%,#0b1024);border:1px solid rgba(255,255,255,.12);border-bottom:0;border-radius:26px 26px 0 0;padding:14px 16px calc(16px + env(safe-area-inset-bottom,0px));color:#f1f5f9;transform:translateY(40px);transition:transform .25s cubic-bezier(.2,.9,.3,1.2);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 -20px 50px rgba(0,0,0,.45)}
 .mk-ov.on .mk-sheet{transform:none}
@@ -110,7 +110,7 @@
 /* صفحه‌ی خارج از ساعتِ کاری */
 .mk-closed{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:10px 4px 20px}
 .mk-clock{width:118px;height:118px;border-radius:50%;position:relative;background:radial-gradient(circle at 30% 25%,#4c1d95,#1e1b4b 70%);box-shadow:0 0 0 6px rgba(139,92,246,.18),0 18px 40px rgba(76,29,149,.5);animation:mkFloat 3.4s ease-in-out infinite}
-.mk-clock:before{content:'';position:absolute;inset:10px;border-radius:50%;border:2px dashed rgba(196,181,253,.35);animation:mkSpin 18s linear infinite}
+.mk-clock:before{content:'';position:absolute;top:10px;right:10px;bottom:10px;left:10px;border-radius:50%;border:2px dashed rgba(196,181,253,.35);animation:mkSpin 18s linear infinite}
 .mk-clock i{position:absolute;left:50%;bottom:50%;transform-origin:50% 100%;border-radius:4px;background:#e9d5ff}
 .mk-clock i.h{width:5px;height:30px;margin-left:-2.5px;animation:mkSpin 24s linear infinite}
 .mk-clock i.m{width:3px;height:42px;margin-left:-1.5px;background:#f0abfc;animation:mkSpin 3s linear infinite}

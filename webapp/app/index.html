@@ -2,16 +2,17 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>بیمه با ما</title>
 <link rel="icon" href="/brand_icon.php">
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-<script src="/iran-time.js?v=1"></script>
+<script src="/iran-time.js?v=2"></script>
 <link rel="stylesheet" href="/plate.css?v=4">
-<script src="/chat-ui.js?v=12"></script>
+<script src="/chat-ui.js?v=13"></script>
 <script src="/maint-watch.js?v=1"></script>
-<script src="../mini-kit.js?v=2"></script>
+<script src="../mini-kit.js?v=3"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -25,11 +26,11 @@
   @font-face { font-family: 'Vazir'; src: url('/Font/Vazir-Medium.woff2') format('woff2'); font-weight: 500; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   button, select, textarea, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
-  html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: none; }
+  html, body { margin: 0; padding: 0; height: 100%; height: var(--app-h, 100%); overscroll-behavior: none; }
   body {
     font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
     background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
-    color: #f1f5f9; min-height: 100vh; min-height: 100dvh;
+    color: #f1f5f9; min-height: 100vh; min-height: 100dvh; min-height: var(--app-h, 100dvh);
     display: flex; flex-direction: column;
     padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
   }
@@ -124,6 +125,17 @@
   .notif-icon-wrap.has-unread .notif-badge { animation: badgePulse 1.4s ease-in-out infinite; }
   @keyframes bellShake { 0%,62%,100% { transform: rotate(0); } 66% { transform: rotate(14deg); } 72% { transform: rotate(-12deg); } 78% { transform: rotate(9deg); } 84% { transform: rotate(-6deg); } 90% { transform: rotate(3deg); } }
   @keyframes badgePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.6); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+  /* بنرِ اعلانِ تازه در صفحه‌ی اصلی */
+  .nb { display: flex; align-items: center; gap: 12px; margin: -4px 0 16px; padding: 13px 14px; border-radius: 18px; cursor: pointer; position: relative; overflow: hidden;
+        background: linear-gradient(120deg, #f59e0b, #ef4444 55%, #db2777); color: #fff; box-shadow: 0 10px 28px rgba(239,68,68,.38); animation: nbIn .45s cubic-bezier(.2,.9,.3,1.3), nbGlow 2.2s ease-in-out infinite; }
+  .nb::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: nbShine 2.6s ease-in-out infinite; }
+  .nb-ic { font-size: 24px; width: 42px; height: 42px; border-radius: 14px; background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; animation: bellShake 2.2s ease-in-out infinite; transform-origin: 50% 10%; flex-shrink: 0; }
+  .nb-t { flex: 1; min-width: 0; } .nb-t b { display: block; font-size: 14px; font-weight: 900; } .nb-t small { display: block; font-size: 11px; opacity: .92; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nb-go { font-size: 11.5px; font-weight: 900; background: #fff; color: #dc2626; border-radius: 999px; padding: 6px 12px; flex-shrink: 0; }
+  @keyframes nbIn { from { opacity: 0; transform: translateY(-10px) scale(.97); } to { opacity: 1; transform: none; } }
+  @keyframes nbGlow { 0%,100% { box-shadow: 0 10px 28px rgba(239,68,68,.35); } 50% { box-shadow: 0 10px 34px rgba(245,158,11,.6); } }
+  @keyframes nbShine { 0% { left: -60%; } 60%,100% { left: 130%; } }
+  .notif-icon-wrap.has-unread .notif-badge { min-width: 20px; height: 20px; font-size: 11px; top: -7px; left: -7px; border: 2px solid #1e1b4b; }
   .nt-card { display: flex; gap: 12px; align-items: flex-start; background: var(--glass); border: 1px solid var(--glass-b); border-radius: 16px; padding: 13px 14px; margin-bottom: 12px; position: relative; }
   .nt-card .nt-ic { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
   .nt-card.success .nt-ic { background: rgba(16,185,129,.18); } .nt-card.warning .nt-ic { background: rgba(245,158,11,.18); }
@@ -193,6 +205,11 @@
       <span id="live-date">-</span>
       <span id="live-time" dir="ltr">--:--:--</span>
     </div>
+  </div>
+  <div id="notif-banner" class="nb" style="display:none;" onclick="nav('notifications')">
+    <span class="nb-ic">🔔</span>
+    <div class="nb-t"><b id="nb-title">اعلانِ جدید دارید</b><small id="nb-sub">برای دیدن بزنید</small></div>
+    <span class="nb-go">مشاهده ‹</span>
   </div>
   <div class="grid-cards">
     <div class="card-btn wide" onclick="goOrder()">
@@ -299,6 +316,20 @@
 
 <script>
 try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch(e) {}
+// داخلِ بله ارتفاعِ صفحه قبل از بازشدنِ کاملِ مینی‌اپ اندازه گرفته می‌شد و پایینِ صفحه خالی می‌ماند؛
+// ارتفاعِ واقعیِ دیدرس هر بار که بله یا گوشی اندازه را عوض می‌کند دوباره تنظیم می‌شود
+(function fitAppHeight() {
+    const apply = () => {
+        let h = window.innerHeight;
+        try { const W = window.Bale && Bale.WebApp; if (W && W.viewportHeight > 100) h = Math.max(h, Math.round(W.viewportHeight)); } catch (e) {}
+        if (h > 100) document.documentElement.style.setProperty('--app-h', h + 'px');
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', () => setTimeout(apply, 300));
+    try { if (window.Bale && Bale.WebApp && Bale.WebApp.onEvent) Bale.WebApp.onEvent('viewportChanged', apply); } catch (e) {}
+    [150, 500, 1200, 2500].forEach(t => setTimeout(apply, t));   // بعد از expand
+})();
 
 const params = new URLSearchParams(location.search);
 let TOKEN = params.get('t') || params.get('token') || '';
@@ -313,7 +344,7 @@ function uiConfirm(title, message, opts = {}) {
     if (!document.getElementById('ui-confirm-style')) {
       const st = document.createElement('style'); st.id = 'ui-confirm-style';
       st.textContent = `
-        .uic-ov { position: fixed; inset: 0; z-index: 2147483000; background: rgba(2,6,23,.72); display: flex; align-items: center; justify-content: center;
+        .uic-ov { position: fixed; top:0;right:0;bottom:0;left:0; z-index: 2147483000; background: rgba(2,6,23,.72); display: flex; align-items: center; justify-content: center;
                   padding: 20px; opacity: 0; transition: opacity .2s; font-family: 'Vazir', Tahoma, sans-serif; direction: rtl; }
         .uic-ov.on { opacity: 1; }
         .uic-box { width: 100%; max-width: 340px; background: linear-gradient(160deg, #1e1b4b, #0f172a); border: 1px solid rgba(255,255,255,.14);
@@ -749,6 +780,24 @@ function setUnread(n) {
     badge.textContent = toFa(n > 99 ? '99+' : n);
     badge.style.display = n > 0 ? 'flex' : 'none';
     wrap.classList.toggle('has-unread', n > 0);
+    const nb = document.getElementById('notif-banner');
+    if (nb) {
+        nb.style.display = n > 0 ? 'flex' : 'none';
+        if (n > 0) {
+            document.getElementById('nb-title').textContent = toFa(n) + ' اعلانِ جدید دارید';
+            if (setUnread.last !== undefined && n > setUnread.last) { try { navigator.vibrate && navigator.vibrate(120); } catch (e) {} }
+            fetchLatestNotifTitle();
+        }
+    }
+    setUnread.last = n;
+}
+// عنوانِ آخرین اعلانِ خوانده‌نشده زیرِ بنر
+let nbFetching = false;
+async function fetchLatestNotifTitle() {
+    if (nbFetching) return; nbFetching = true;
+    try { const d = await (await fetch(`${API}?action=notifications&token=${encodeURIComponent(TOKEN)}`)).json();
+          const u = (d.data || []).find(x => x.is_read == 0); if (u) document.getElementById('nb-sub').textContent = (u.title || '') + (u.message ? ' — ' + u.message : ''); } catch (e) {}
+    nbFetching = false;
 }
 async function pollUnread() {
     if (document.hidden) return;

@@ -12,7 +12,7 @@
     const IR = 12600000;
     const MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
     const WD = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
-    const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    const fa = s => String(s == null ? '' : s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const p2 = n => String(n).padStart(2, '0');
     const boot = window.__SRV;   // {s: میلی‌ثانیه‌ی سرور هنگامِ ساختِ صفحه, c: ساعتِ مرورگر همان لحظه}
     let offset = boot && boot.s ? boot.s - boot.c : 0;

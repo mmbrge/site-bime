@@ -2,6 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>بارگزاری مدارک</title>
 <style>
@@ -69,8 +70,8 @@
   .spinner { text-align: center; padding: 24px; color: #64748b; }
 
   /* ===== دوربین تمام‌صفحه‌ی مدارک (عمودی) ===== */
-  #fs-doc { position: fixed; inset: 0; z-index: 9000; background: #000; }
-  #fs-doc-video, #fs-doc-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #fs-doc { position: fixed; top:0;right:0;bottom:0;left:0; z-index: 9000; background: #000; }
+  #fs-doc-video, #fs-doc-shot { position: absolute; top:0;right:0;bottom:0;left:0; width: 100%; height: 100%; object-fit: cover; }
   .fsd-zoom { position: absolute; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 5; display: none; }
   .fsd-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: 10px;
              padding: 12px 14px; background: linear-gradient(180deg, rgba(0,0,0,.8), transparent); z-index: 3; }
@@ -109,17 +110,17 @@
   .fsd-confirm { background: #10b981; color: #fff; }
   .fsd-retake { background: rgba(255,255,255,.22); color: #fff; }
   .fsd-exit-yes { background: #ef4444; color: #fff; }
-  #fsd-upload { position: absolute; inset: 0; z-index: 15; background: rgba(2,6,23,.75); display: flex; align-items: center; justify-content: center; }
+  #fsd-upload { position: absolute; top:0;right:0;bottom:0;left:0; z-index: 15; background: rgba(2,6,23,.75); display: flex; align-items: center; justify-content: center; }
   .fsd-up-box { width: 70%; max-width: 380px; text-align: center; }
   .fsd-up-title { color: #fff; font-size: 13px; font-weight: 800; margin: 0 0 10px; }
   .fsd-up-track { height: 8px; background: rgba(255,255,255,.22); border-radius: 6px; overflow: hidden; }
   .fsd-up-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#6366f1,#8b5cf6); transition: width .15s; }
   .fsd-up-pct { color: #c7d2fe; font-size: 12px; font-weight: 800; margin: 8px 0 0; }
-  #fsd-exit-confirm { position: absolute; inset: 0; z-index: 20; background: rgba(2,6,23,.9); display: flex; align-items: center; justify-content: center; }
+  #fsd-exit-confirm { position: absolute; top:0;right:0;bottom:0;left:0; z-index: 20; background: rgba(2,6,23,.9); display: flex; align-items: center; justify-content: center; }
   .fsd-exit-box { text-align: center; padding: 18px; }
   .fsd-exit-title { color: #fff; font-size: 15px; font-weight: 900; margin: 0 0 16px; }
   .fsd-exit-actions { display: flex; gap: 10px; justify-content: center; }
-  #doc-curtain { position: fixed; inset: 0; z-index: 9400; background: #0b1220; display: flex; align-items: center; justify-content: center; }
+  #doc-curtain { position: fixed; top:0;right:0;bottom:0;left:0; z-index: 9400; background: #0b1220; display: flex; align-items: center; justify-content: center; }
   .dc-inner { text-align: center; }
   .dc-spin { width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 50%; border: 4px solid rgba(255,255,255,.18);
              border-top-color: #8b5cf6; animation: dcSpin .9s linear infinite; }
@@ -236,7 +237,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="../camera-lib.js?v=4"></script>
-<script src="../mini-kit.js?v=2"></script>
+<script src="../mini-kit.js?v=3"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -520,7 +521,7 @@ function takeShot(ev) {
     if (fsOpen) {
         const camEl = document.getElementById('fs-doc');
         const fl = document.createElement('div');
-        fl.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.85;z-index:18;pointer-events:none;transition:opacity .18s;';
+        fl.style.cssText = 'position:absolute;top:0;right:0;bottom:0;left:0;background:#fff;opacity:.85;z-index:18;pointer-events:none;transition:opacity .18s;';
         camEl.appendChild(fl);
         requestAnimationFrame(() => { fl.style.opacity = '0'; setTimeout(() => fl.remove(), 200); });
     }
