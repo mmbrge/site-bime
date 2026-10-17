@@ -10,6 +10,7 @@ require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌ها
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+intro_letter_col_ensure($pdo);   // تاریخِ شمسیِ معرفی‌نامه در ستونِ متنی (نه DATEِ میلادی)
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.']);

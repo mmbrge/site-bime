@@ -6,6 +6,7 @@ require_once __DIR__ . '/_dl_name.php';   // نامِ درستِ فایل‌ها
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+intro_letter_col_ensure($pdo);   // تاریخِ شمسیِ معرفی‌نامه در ستونِ متنی (نه DATEِ میلادی)
 require_once __DIR__ . '/finance_core.php';     // سررسیدِ اقساط و ستون‌های فیشِ اقساط
 require_once __DIR__ . '/_company_helpers.php';
 require_once __DIR__ . '/_company_issue.php';   // خواندنِ فایلِ بیمه‌نامه با الگوریتمِ جای متن + جدا کردنِ فیش‌ها

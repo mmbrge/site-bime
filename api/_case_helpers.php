@@ -1077,6 +1077,22 @@ function period_month_of($jy, $jm, $jd, $pdo = null) {
 }
 
 // ماهِ معرفی‌نامه: تاریخِ خودِ نامه (letter_date که شمسی ذخیره می‌شود)، وگرنه تاریخِ ثبت - طبقِ دوره‌ی مالی
+// introductions.letter_date تاریخِ شمسی («1405-06-31») نگه می‌دارد، ولی ستون از اول DATE (میلادی) ساخته شده بود؛ روزهایی که در
+// تقویمِ میلادی وجود ندارند (۳۱ خرداد/شهریور، ۳۰ و ۳۱ اردیبهشت، ...) در دیتابیس «0000-00-00» می‌شدند و «ثبت نشده» دیده می‌شد.
+// یک بار ستون به متن (VARCHAR) تبدیل می‌شود؛ همه‌ی تاریخ‌های درستِ قبلی همان‌طور می‌مانند و «0000-00-00»ها خالی می‌شوند تا دوباره وارد شوند.
+function intro_letter_col_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $t = strtolower((string)$pdo->query("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'introductions' AND COLUMN_NAME = 'letter_date'")->fetchColumn());
+        if ($t === 'date' || $t === 'datetime') {
+            $pdo->exec("ALTER TABLE introductions MODIFY letter_date VARCHAR(10) NULL");
+            $pdo->exec("UPDATE introductions SET letter_date = NULL WHERE letter_date LIKE '0000%' OR letter_date = ''");
+        }
+    } catch (Throwable $e) { error_log('[intro_letter_col_ensure] ' . $e->getMessage()); }
+}
+
 // تاریخِ شمسیِ واردشده (تایپی یا خوانده‌شده از نامه) => «YYYY-MM-DD» برای ستونِ letter_date؛ نامعتبر => null
 // رقمِ فارسی/عربی، نویسه‌های نامرئی (LRM/RLM/ZWNJ)، فاصله، هر جداکننده، ترتیبِ روز/ماه/سال و شکلِ ۸ رقمی (۱۴۰۵۰۷۰۴) پذیرفته می‌شود
 function jalali_input_to_sql($s) {

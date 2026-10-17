@@ -4,6 +4,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);   // دسترسیِ سفارشیِ کاربر (صفحه به صفحه)
 require __DIR__ . '/_case_helpers.php';
+intro_letter_col_ensure($pdo);   // تاریخِ شمسیِ معرفی‌نامه در ستونِ متنی (نه DATEِ میلادی)
 require_once __DIR__ . '/_import_schema.php'; imp_ensure($pdo);   // فیلترِ شرکت‌های «بایگانی وارداتی»
 companies_extra_ensure($pdo);   // شرکت‌های ساخته‌شده از معرفی‌نامه (auto_created)
 

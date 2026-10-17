@@ -333,6 +333,7 @@ function legacy_commit($pdo, $siteRoot, $tok, array $choice, $userId) {
             }
             // معرفی‌نامه: یکی برای همه‌ی بیمه‌نامه‌های همین شخص در این ورود؛ تاریخش = اولین تاریخِ صدور
             [$jy, $jm, $jd] = array_map('intval', explode('/', $first['issue']));
+            intro_letter_col_ensure($pdo);   // ۳۱ شهریور و ... در ستونِ DATE «0000-00-00» می‌شد
             $quota = max($quotaDefault, count($list));
             $pdo->prepare("INSERT INTO introductions (person_id, file_path, letter_date, max_quota, used_quota, created_at) VALUES (?, 'بایگانی_قبلی', ?, ?, ?, FROM_UNIXTIME(?))")
                 ->execute([$personId, sprintf('%04d-%02d-%02d', $jy, $jm, $jd), $quota, count($list), policy_issue_ts($first['issue'], time())]);
