@@ -1079,7 +1079,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         . ($isAdminRole ? $bmLink('premium-inquiries', 'fa-calculator', 'استعلام‌های حق بیمه', 'لاگِ استعلام‌های مینی‌اپ و پاسخ به کاربر') : '');
                     $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
-                        . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات') : '';
+                        . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات')
+                        . ($isAdminRole ? $bmLink('contacts', 'fa-address-book', 'بانک مخاطبین', 'ورود و خروجِ اکسل، شماره‌ها، لاگِ کدِ تأیید') : '') : '';
                     $g4 = $vrAccess ? $bmLink('vr-build', 'fa-file-circle-plus', 'ساختِ گزارشِ بازدید') . $bmLink('vr-list', 'fa-folder-open', 'گزارش‌های صادرشده') : '';
                     $g5 = $bmLink('fin-dashboard', 'fa-chart-pie', 'داشبوردِ مالی') . $bmLink('fin-installments', 'fa-list-ol', 'مرکزِ اقساط', 'دریافت و پرداخت روی هر قسط') . $bmLink('fin-payments', 'fa-arrow-right-arrow-left', 'دریافت‌ها، پرداخت‌ها و چک‌ها')
                         . $bmLink('fin-tracking', 'fa-magnifying-glass-location', 'پیگیری', 'کدِ رهگیریِ قسط') . $bmLink('fin-invoices', 'fa-file-invoice', 'صورتحساب‌ها') . $bmLink('fin-reconcile', 'fa-scale-balanced', 'مغایرت‌گیری با اکسل')
@@ -1748,6 +1749,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
         </div>
 
+        <!-- ======================= بانک مخاطبین - contacts.js ======================= -->
+        <div id="tab-contacts" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden">
+            <div id="ct-root"></div>
+        </div>
         <div id="tab-cases" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
                 <div>
@@ -2240,6 +2245,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="tools-set-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             <?php endif; ?>
+            <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-comment-sms text-violet-500 ml-2"></i>پیامک و ورود با کدِ تأیید (OTP) <small class="text-[11px] text-slate-400 font-bold mr-1">چند پنلِ پیامک (فعال + پشتیبان)، متنِ الگو، ارسالِ آزمایشی، ورودِ کارکنان در ربات با کد</small></h3>
+                <div id="sms-otp-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
             <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
                 <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
@@ -4369,6 +4378,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="comfort.js?v=16"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
+    <script src="sms-otp.js?v=1"></script>
+    <script src="contacts.js?v=1"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
@@ -4479,7 +4490,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
-        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
@@ -10646,6 +10657,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
+            if (tabId === 'settings' && window.SmsOtp) SmsOtp.settingsCard(document.getElementById('sms-otp-root'));
             if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
@@ -10667,6 +10679,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
             if (tabId === 'endorsements' && window.Endorse) Endorse.init(document.getElementById('endo-root'));
             if (tabId === 'legacy-import' && window.LegacyImport) LegacyImport.init(document.getElementById('legacy-root'));
+            if (tabId === 'contacts' && window.Contacts) Contacts.init(document.getElementById('ct-root'));
             if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);

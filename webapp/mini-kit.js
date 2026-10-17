@@ -2,6 +2,7 @@
 // ابزارهای مشترکِ صفحه‌های مینی‌اپ (تمِ تیره):
 //   MiniKit.dateField(input, opts)  تقویمِ شمسیِ زیبا؛ خانه‌ی تاریخ فقط از روی تقویم پر می‌شود (تایپِ دستی بسته است)
 //   MiniKit.pick(opts)              فهرستِ انتخابیِ قابلِ جستجو و پیمایش (bottom sheet)
+//   MiniKit.vehiclePick(o)          انتخابِ خودرو با نام (برند ← مدل)، دسته‌ی بیمه از دیتابیس
 //   MiniKit.closedScreen(el, info)  صفحه‌ی متحرکِ «ساعتِ کاریِ ثبتِ درخواست تمام شده»
 //   MiniKit.jToday() / jAddDays / jFmt / jParse / g2j / j2g
 (function () {
@@ -291,9 +292,37 @@
                 draw(nq ? items.filter(it => norm(it.label + ' ' + (it.sub || '') + ' ' + (it.group || '')).includes(nq)) : items, q);
             }
             inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, opts.onSearch ? 250 : 60); });
+            if (opts.query) inp.value = opts.query;   // جستجوی آماده (مثلاً نامِ برندِ انتخاب‌شده)
             run();
             if (opts.autofocus) setTimeout(() => inp.focus(), 250);
         });
+    }
+
+    // انتخابِ خودرو با نام (بدونِ انتخابِ گروه): جستجوی خالی = فهرستِ برندها (پژو، تویوتا، …)؛ انتخابِ برند = همه‌ی مدل‌های همان برند؛
+    // تایپ = جستجو در همه‌ی مدل‌های آن نوع، گروه‌بندی‌شده بر اساسِ برند. دسته‌ی بیمه (سیلندر/تناژ/ظرفیت) از دیتابیس می‌آید.
+    // o = {kind, kindFa, value, api} → مدلِ انتخاب‌شده {id, title, grp, brand, sub, rate} یا null
+    function vehicleCaption(m) {
+        if (!m) return '';
+        const grp = FA(m.grp || '');
+        const extra = String(m.sub || '').split(' · ').map(x => FA(x.trim())).filter(x => x && grp.indexOf(x) < 0);
+        return [grp].concat(extra).filter(Boolean).join(' · ');
+    }
+    async function vehiclePick(o = {}) {
+        const api = o.api || '/api/vehicle_catalog.php';
+        const get = async qs => { try { return await (await fetch(api + '?action=vsearch&kind=' + encodeURIComponent(o.kind) + qs)).json(); } catch (e) { return {}; } };
+        let query = '';
+        for (;;) {
+            const it = await pick({ title: '🚗 نامِ خودرو' + (o.kindFa ? ' (' + o.kindFa + ')' : ''), placeholder: 'نامِ خودرو را بنویسید، مثلاً پژو یا ۲۰۶...', query, value: o.value, max: 600,
+                empty: 'موردی پیدا نشد؛ فقط نامِ برند یا بخشی از نام را بنویسید.',
+                onSearch: async q => {
+                    if (!q) { const d = await get(''); return (d.brands || []).map(b => ({ v: 'b:' + b.brand, label: b.brand, sub: FA(b.n) + ' مدل', icon: '‹', brand: b.brand })); }
+                    const d = await get('&q=' + encodeURIComponent(q));
+                    return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: vehicleCaption(m), group: m.brand, raw: m }));
+                } });
+            if (!it) return null;
+            if (it.brand) { query = it.brand; continue; }
+            return it.raw;
+        }
     }
 
     // صفحه‌ی «خارج از ساعتِ کاری»: info = {message, week:[{day, hours, off, today}], next}
@@ -324,5 +353,5 @@
     const STAGE_FA = { awaiting: '🟡 در انتظار بارگزاری مدارک', needs_fix: '🔴 نیاز به اصلاحِ مدارک', received: '🟢 مدارک دریافت شد · در انتظار تایید کارشناس', approved: '🔵 تایید شده · در انتظار صدور', issued: '🔵 تایید شده · بیمه‌نامه صادر شد' };
     function stagePill(stage) { css(); return `<span class="mk-pill ${esc(stage)}">${STAGE_FA[stage] || ''}</span>`; }
 
-    window.MiniKit = { calendar, dateField, pick, closedScreen, stages, stagePill, STAGE_FA, jToday, jAddDays, jAddYears, jFmt, jParse, jCmp, g2j, j2g, fa: FA, en: EN, esc, MONTHS };
+    window.MiniKit = { calendar, dateField, pick, vehiclePick, vehicleCaption, closedScreen, stages, stagePill, STAGE_FA, jToday, jAddDays, jAddYears, jFmt, jParse, jCmp, g2j, j2g, fa: FA, en: EN, esc, MONTHS };
 })();

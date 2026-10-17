@@ -97,6 +97,8 @@
   .step-lbl { font-size: 11.5px; color: #a5b4fc; font-weight: 800; margin: 14px 0 6px; }
   .pick-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; background: rgba(255,255,255,.06); border: 1px dashed rgba(165,180,252,.45); border-radius: 14px; padding: 13px 14px; color: #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: right; }
   .pick-btn.on { border-style: solid; border-color: var(--accent); background: rgba(99,102,241,.14); color: #fff; }
+  .veh-cap { margin: 7px 4px 0; font-size: 11.5px; color: #a5b4fc; font-weight: 700; line-height: 1.8; }
+  .veh-cap b { color: #e0e7ff; }
   .warn-box { margin-top: 10px; font-size: 11.5px; line-height: 1.9; color: #fcd34d; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); border-radius: 12px; padding: 10px 12px; }
   .hint { font-size: 10.5px; color: #64748b; margin: 2px 0 6px; }
   .sub-h { font-size: 12px; color: #a5b4fc; font-weight: 800; margin: 16px 0 8px; }
@@ -140,10 +142,9 @@
     <p class="step-lbl">۱. نوعِ وسیله‌ی نقلیه را انتخاب کنید</p>
     <div class="kind-grid" id="kind-grid"></div>
     <div id="veh-steps" style="display:none;">
-      <p class="step-lbl">۲. نوعِ خودرو</p>
-      <button type="button" class="pick-btn" id="grp-btn" onclick="pickGroup()"><span id="grp-txt">انتخاب کنید</span><span>▾</span></button>
-      <p class="step-lbl">۳. مدلِ خودرو</p>
-      <button type="button" class="pick-btn" id="model-btn" onclick="pickModel()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+      <p class="step-lbl">۲. نامِ خودرو (مثلاً پژو یا ۲۰۶)</p>
+      <button type="button" class="pick-btn" id="model-btn" onclick="pickVehicle()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+      <div id="veh-cap" class="veh-cap" style="display:none;"></div>
       <div id="rate-warn" class="warn-box" style="display:none;"></div>
     </div>
     <div class="field" style="margin-top:12px;">
@@ -199,7 +200,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="/iran-time.js?v=2"></script>
-<script src="../mini-kit.js?v=3"></script>
+<script src="../mini-kit.js?v=4"></script>
 <script>
 try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.expand(); } } catch(e) {}
 
@@ -281,42 +282,22 @@ async function chooseKind(k) {
     renderKinds();
     document.getElementById('veh-steps').style.display = 'block';
     paintVeh();
-    pickGroup();
+    pickVehicle();
 }
-let groupsCache = {};
-async function loadGroups(kind) {
-    if (groupsCache[kind]) return groupsCache[kind];
-    const d = await (await fetch(`${VCAT_API}?action=groups&kind=${kind}`)).json();
-    return (groupsCache[kind] = d.ok ? d.groups : []);
-}
-async function pickGroup() {
+// نامِ خودرو را می‌نویسد (یا برند را از فهرست انتخاب می‌کند)؛ دسته (سیلندر/تناژ/ظرفیت) از دیتابیس می‌آید
+async function pickVehicle() {
     if (!veh.kind) { showToast('ابتدا نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
-    const groups = await loadGroups(veh.kind);
     const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa || '';
-    const it = await MKIT.pick({ title: `نوعِ خودرو (${kfa})`, placeholder: 'جستجو...', value: veh.grp,
-        items: groups.map(g => ({ v: g.grp, label: g.grp, sub: `${toFa(g.n)} مدل${g.has_rate ? '' : ' · استعلام توسط کارشناس'}` })) });
-    if (!it) return;
-    if (veh.grp !== it.v) veh.model = null;
-    veh.grp = it.v;
-    paintVeh();
-    pickModel();
-}
-async function pickModel() {
-    if (!veh.kind) { showToast('ابتدا نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
-    if (!veh.grp) { pickGroup(); return; }
-    const it = await MKIT.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید، مثلاً پژو یا ۲۰۶...', autofocus: false, value: veh.model && veh.model.id,
-        onSearch: async q => {
-            const d = await (await fetch(`${VCAT_API}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
-            return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: toFa(m.sub), raw: m }));
-        } });
-    if (!it) return;
-    veh.model = it.raw;
+    const m = await MKIT.vehiclePick({ kind: veh.kind, kindFa: kfa, value: veh.model && veh.model.id, api: VCAT_API });
+    if (!m) return;
+    veh.model = m; veh.grp = m.grp;
     paintVeh();
 }
 function paintVeh() {
-    document.getElementById('grp-txt').textContent = veh.grp || 'انتخاب کنید';
-    document.getElementById('grp-btn').classList.toggle('on', !!veh.grp);
     document.getElementById('model-txt').textContent = veh.model ? veh.model.title : 'جستجو و انتخاب';
+    const cap = document.getElementById('veh-cap');
+    cap.style.display = veh.model ? 'block' : 'none';
+    cap.innerHTML = veh.model ? '📌 دسته: <b>' + esc(MKIT.vehicleCaption(veh.model)) + '</b>' : '';
     document.getElementById('model-btn').classList.toggle('on', !!veh.model);
     const w = document.getElementById('rate-warn');
     if (veh.model && veh.model.rate == null) { w.style.display = 'block'; w.innerHTML = '⚠️ استعلامِ آنلاینِ این وسیله فعال نیست؛ با «محاسبه» درخواستِ شما برای کارشناس ثبت می‌شود تا مبلغ را اعلام کند.'; }
@@ -350,7 +331,7 @@ function updateLiveSummary() {
 }
 
 async function submitCalculate() {
-    if (!veh.model) { showToast('لطفاً نوع، نوعِ خودرو و مدلِ وسیله را انتخاب کنید.'); if (!veh.kind) document.getElementById('kind-grid').scrollIntoView({behavior:'smooth'}); else pickModel(); return; }
+    if (!veh.model) { showToast('لطفاً نوع و نامِ خودرو را انتخاب کنید.'); if (!veh.kind) document.getElementById('kind-grid').scrollIntoView({behavior:'smooth'}); else pickVehicle(); return; }
     if (!selectedTier) { showToast('لطفاً سقف تعهد مالی را انتخاب کنید.'); return; }
     const [tpM, tpB] = document.getElementById('tp-claims').value.split('-');
     const [drM, drB] = document.getElementById('dr-claims').value.split('-');

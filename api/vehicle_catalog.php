@@ -27,6 +27,15 @@ try {
         $out(['ok' => true, 'models' => array_map(fn($r) => ['id' => (int)$r['id'], 'grp' => $r['grp'], 'title' => $r['title'], 'sub' => vc_sub($r), 'rate' => $r['premium_cat'] !== null ? (int)$r['premium_cat'] : null], $rows)]);
     }
 
+    if ($action === 'vsearch') {
+        $kind = (string)($_GET['kind'] ?? '');
+        if (!isset(VC_KINDS[$kind])) $out(['ok' => false, 'error' => 'نوعِ وسیله نامعتبر است.']);
+        $r = vc_search($pdo, $kind, (string)($_GET['q'] ?? ''), (string)($_GET['brand'] ?? ''));
+        if (isset($r['brands'])) $out(['ok' => true, 'brands' => $r['brands']]);
+        $out(['ok' => true, 'total' => $r['total'], 'models' => array_map(fn($m) => ['id' => (int)$m['id'], 'grp' => $m['grp'], 'brand' => $m['brand'], 'title' => $m['title'],
+            'sub' => vc_sub($m), 'rate' => $m['premium_cat'] !== null ? (int)$m['premium_cat'] : null], $r['models'])]);
+    }
+
     // ---------------- مدیریت (پنل) ----------------
     session_start();
     if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') $out(['ok' => false, 'error' => 'فقط مدیر کل.']);

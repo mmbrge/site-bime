@@ -6,6 +6,7 @@ require_once __DIR__ . '/_bot_identity.php';   // قفلِ شماره ↔ کد �
 require_once __DIR__ . '/_chat_state.php';
 require_once __DIR__ . '/_health_admin.php';  // بازدید توسط کاربر روشن/خاموش، نوبت‌دهی، ورودِ مخفیِ مدیر به مینی‌اپ
 require_once __DIR__ . '/_bot_guide.php';     // متنِ راهنمای ربات (/help) و راهنمای ورود
+require_once __DIR__ . '/_sms.php';           // پنل‌های پیامک و کدِ تأیید (ورود با OTP)
 
 $content = file_get_contents("php://input");
 $update = json_decode($content, true);
@@ -382,6 +383,8 @@ define('BTN_SELF',     'خودم هستم');
 define('BTN_OTHER',    'یکی از بستگان درجه یک');
 define('BTN_USE_SAVED', '✅ استفاده از اطلاعات قبلی');
 define('BTN_ENTER_NEW', '📝 وارد کردن اطلاعات جدید');
+define('BTN_OTP_RESEND', '🔁 ارسالِ دوباره‌ی کد');
+define('BTN_OTP_CANCEL', '✖️ انصراف');
 
 function kb_grid($items, $perRow = 2) {
     $rows = []; $r = [];
@@ -563,6 +566,116 @@ function log_ticket_message($pdo, $ticket_id, $message_text, $file_path, $tg_mes
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_type, message, file_path, tg_message_id) VALUES (?, 'CUSTOMER', ?, ?, ?)");
     $stmt->execute([$ticket_id, $message_text, $file_path, $tg_message_id]);
     $pdo->prepare("UPDATE tickets SET last_message_at = NOW() WHERE id = ?")->execute([$ticket_id]);
+}
+
+// =====================================================================
+//  ورود با کدِ تأیید (OTP) - وقتی در تنظیمات روشن است (api/_sms.php):
+//  کد ملی ← اگر در بانک شماره دارد: پیامکِ کد به همان شماره؛ وگرنه شماره پرسیده می‌شود (تایپ یا اشتراک) ← کد ← ورود.
+//  شماره‌ی تایپ‌شده بعد از تأییدِ کد روی کد ملی ثبت می‌شود (تا کسی نتواند شماره‌ی خودش را روی کد ملیِ دیگری بنشاند).
+// =====================================================================
+function bot_otp_cols($pdo) {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try {
+        $cols = $pdo->query("SHOW COLUMNS FROM bot_sessions")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('temp_otp_id', $cols, true)) $pdo->exec("ALTER TABLE bot_sessions ADD COLUMN temp_phone VARCHAR(20) NULL, ADD COLUMN temp_phone_src VARCHAR(10) NULL, ADD COLUMN temp_otp_id INT NULL");
+        $ok = true;
+    } catch (Throwable $e) { error_log('[bot_otp_cols] ' . $e->getMessage()); $ok = false; }
+    return $ok;
+}
+function kb_otp() { return kb([[BTN_OTP_RESEND], [BTN_OTP_CANCEL]]); }
+function kb_otp_phone() { return kb([[['text' => '📱 اشتراک‌گذاری شماره تماس', 'request_contact' => true]], [BTN_OTP_CANCEL]]); }
+function bot_otp_person($pdo, $nid) {
+    $st = $pdo->prepare("SELECT id, full_name, mobile_number, bot_phone FROM persons WHERE national_code = ?");
+    $st->execute([$nid]);
+    return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+function bot_otp_restart($pdo, $chat_id, $bot_token, $msg) {
+    $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_NATIONAL_CODE', temp_national_code = NULL, temp_phone = NULL, temp_phone_src = NULL, temp_otp_id = NULL WHERE chat_id = ?")->execute([$chat_id]);
+    send_msg($chat_id, $msg, $bot_token, kb_remove());
+}
+function bot_otp_start($pdo, $chat_id, $nid, $bot_token) {
+    if (!bot_otp_cols($pdo)) return false;
+    $p = bot_otp_person($pdo, $nid);
+    $phone = $p ? (sms_norm_phone($p['mobile_number'] ?? '') ?: sms_norm_phone($p['bot_phone'] ?? '')) : '';
+    if ($phone !== '') { bot_otp_send($pdo, $chat_id, $nid, $p, $phone, 'DB', $bot_token); return true; }
+    $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_OTP_PHONE', temp_national_code = ?, temp_phone = NULL, temp_phone_src = NULL, temp_otp_id = NULL WHERE chat_id = ?")->execute([$nid, $chat_id]);
+    $greet = ($p && trim((string)$p['full_name']) !== '') ? trim($p['full_name']) . ' عزیز، ' : '';
+    send_msg($chat_id, "📱 {$greet}برای کد ملیِ " . e2p_php($nid) . " شماره‌ی موبایلی در سامانه ثبت نشده است.\n\nلطفاً شماره‌ی موبایلِ خودتان را بنویسید (مثلاً ۰۹۱۲۳۴۵۶۷۸۹) یا با دکمه‌ی زیر به اشتراک بگذارید تا کدِ تأیید برایتان پیامک شود:", $bot_token, kb_otp_phone());
+    return true;
+}
+function bot_otp_send($pdo, $chat_id, $nid, $p, $phone, $src, $bot_token) {
+    $r = otp_issue($pdo, ['purpose' => 'BOT_LOGIN', 'person_id' => $p['id'] ?? null, 'national_code' => $nid, 'full_name' => $p['full_name'] ?? '',
+                          'phone' => $phone, 'phone_source' => $src, 'chat_id' => (string)$chat_id]);
+    if (!$r['ok'] && !empty($r['wait'])) {
+        send_msg($chat_id, "⏳ کدِ قبلی همین چند لحظه پیش فرستاده شد؛ " . e2p_php($r['wait']) . " ثانیه‌ی دیگر می‌توانید «ارسالِ دوباره‌ی کد» را بزنید.", $bot_token, kb_otp());
+        return;
+    }
+    if (!$r['ok'] && !empty($r['send_failed'])) {
+        // پیامک نرفت: ورود مثلِ قبل با اشتراکِ شماره (بله مالکیتِ شماره را تأیید می‌کند)
+        $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_CONTACT_SHARE', temp_national_code = ?, temp_otp_id = NULL WHERE chat_id = ?")->execute([$nid, $chat_id]);
+        send_msg($chat_id, "⚠️ ارسالِ پیامکِ کدِ تأیید الان ممکن نشد.\nبرای تأیید هویت، شماره تماسِ خود را با دکمه‌ی زیر به اشتراک بگذارید:", $bot_token, kb_request_contact());
+        return;
+    }
+    if (!$r['ok']) { bot_otp_restart($pdo, $chat_id, $bot_token, "⛔ " . $r['error'] . "\n\nبرای شروعِ دوباره /start را بزنید."); return; }
+    $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_OTP_CODE', temp_national_code = ?, temp_phone = ?, temp_phone_src = ?, temp_otp_id = ? WHERE chat_id = ?")
+        ->execute([$nid, $r['phone'], $src, $r['id'], $chat_id]);
+    $name = trim((string)($p['full_name'] ?? ''));
+    send_msg($chat_id, "🔐 " . ($name !== '' ? "{$name} عزیز، " : 'کاربرِ گرامی، ') . "کدِ تأیید به شماره‌ی " . e2p_php($r['masked']) . " شما پیامک شد.\n"
+        . "لطفاً با ارسالِ کدِ " . e2p_php($r['len']) . " رقمی، هویتِ خود را تأیید کنید.\n⏱ اعتبارِ کد: " . e2p_php($r['ttl']) . " دقیقه", $bot_token, kb_otp());
+}
+// شماره‌ای که کاربر نوشت/فرستاد (وقتی در بانک شماره نداشت)
+function bot_otp_phone_input($pdo, $chat_id, $session, $text, $contact, $sender_user_id, $bot_token) {
+    if ($text === BTN_OTP_CANCEL) { bot_otp_restart($pdo, $chat_id, $bot_token, "انصراف داده شد. 🪪 کد ملیِ ۱۰ رقمیِ خود را وارد کنید:"); return; }
+    $src = 'TYPED';
+    if ($contact) {
+        if (!bale_contact_is_own($contact, $sender_user_id)) { send_msg($chat_id, "لطفاً فقط شماره‌ی خودتان را بفرستید (بنویسید یا با دکمه‌ی زیر).", $bot_token, kb_otp_phone()); return; }
+        $phone = sms_norm_phone($contact['phone_number'] ?? ''); $src = 'CONTACT';
+    } else $phone = sms_norm_phone($text);
+    if ($phone === '') { send_msg($chat_id, "شماره‌ی موبایل معتبر نیست. مثلاً ۰۹۱۲۳۴۵۶۷۸۹ بنویسید یا از دکمه‌ی زیر استفاده کنید:", $bot_token, kb_otp_phone()); return; }
+    $nid = (string)$session['temp_national_code'];
+    $chk = botid_check($pdo, $nid, $phone);
+    if (!$chk['ok']) { send_msg($chat_id, $chk['error'], $bot_token, kb_otp_phone()); return; }
+    if (empty($chk['admin'])) {
+        $st = $pdo->prepare("SELECT national_code FROM persons WHERE mobile_number = ? AND national_code <> ? LIMIT 1");
+        $st->execute([$phone, $nid]);
+        if ($other = $st->fetchColumn()) {
+            send_msg($chat_id, "⛔ این شماره در سامانه برای کد ملیِ دیگری (" . botid_mask_nc($other) . ") ثبت است.\nشماره‌ی خودتان را بفرستید، یا اگر اشتباهی پیش آمده با کارشناس تماس بگیرید.", $bot_token, kb_otp_phone());
+            return;
+        }
+    }
+    bot_otp_send($pdo, $chat_id, $nid, bot_otp_person($pdo, $nid), $phone, $src, $bot_token);
+}
+// کدی که کاربر فرستاد
+function bot_otp_code_input($pdo, $chat_id, $session, $text, $bot_token) {
+    $nid = (string)$session['temp_national_code'];
+    if ($text === BTN_OTP_CANCEL) { otp_cancel($pdo, $session['temp_otp_id']); bot_otp_restart($pdo, $chat_id, $bot_token, "انصراف داده شد. 🪪 کد ملیِ ۱۰ رقمیِ خود را وارد کنید:"); return; }
+    if ($text === BTN_OTP_RESEND) { bot_otp_send($pdo, $chat_id, $nid, bot_otp_person($pdo, $nid), $session['temp_phone'], $session['temp_phone_src'] ?: 'DB', $bot_token); return; }
+    $code = preg_replace('/\D/', '', sms_norm_digits($text));
+    if ($code === '') { send_msg($chat_id, "کدِ تأییدی را که پیامک شده بفرستید، یا «ارسالِ دوباره‌ی کد» را بزنید.", $bot_token, kb_otp()); return; }
+    $v = otp_verify($pdo, $session['temp_otp_id'], $code);
+    if (!$v['ok']) {
+        if ($v['reason'] === 'WRONG') send_msg($chat_id, "❌ کد اشتباه است. " . e2p_php($v['left']) . " بارِ دیگر می‌توانید امتحان کنید.", $bot_token, kb_otp());
+        elseif ($v['reason'] === 'EXPIRED') send_msg($chat_id, "⌛ اعتبارِ کد تمام شد؛ «ارسالِ دوباره‌ی کد» را بزنید.", $bot_token, kb_otp());
+        elseif ($v['reason'] === 'LOCKED') bot_otp_restart($pdo, $chat_id, $bot_token, "⛔ تعدادِ تلاشِ اشتباه زیاد شد و این کد باطل شد.\nبرای شروعِ دوباره /start را بزنید.");
+        else send_msg($chat_id, "این کد دیگر معتبر نیست؛ «ارسالِ دوباره‌ی کد» را بزنید.", $bot_token, kb_otp());
+        return;
+    }
+    $phone = sms_norm_phone($session['temp_phone']);
+    $pdo->prepare("DELETE FROM bot_sessions WHERE chat_id = ?")->execute([$chat_id]);
+    // شماره‌ی تأییدشده روی کد ملی می‌نشیند (اگر شماره نداشت) و اتصالِ ربات هم با همین شماره یکی می‌شود
+    $p = bot_otp_person($pdo, $nid);
+    if (!$p) {
+        $pdo->prepare("INSERT INTO persons (national_code, full_name, mobile_number, conversation_state) VALUES (?, '', ?, 'START')")->execute([$nid, $phone]);
+        $pid = (int)$pdo->lastInsertId();
+    } else {
+        $pid = (int)$p['id'];
+        if (sms_norm_phone($p['mobile_number'] ?? '') === '') $pdo->prepare("UPDATE persons SET mobile_number = ? WHERE id = ?")->execute([$phone, $pid]);
+        if (!botid_is_admin_phone($pdo, $phone) && (string)($p['bot_phone'] ?? '') !== '' && botid_norm_phone($p['bot_phone']) !== botid_norm_phone($phone))
+            $pdo->prepare("UPDATE persons SET bot_phone = ? WHERE id = ?")->execute([botid_norm_phone($phone), $pid]);
+    }
+    $pdo->prepare("UPDATE otp_codes SET person_id = ? WHERE id = ? AND person_id IS NULL")->execute([$pid, $session['temp_otp_id']]);
+    identify_and_route($pdo, $chat_id, $nid, $phone, $bot_token);
 }
 
 // ---- شناسایی مشتری بر اساس کد ملی + اشتراک شماره، و مسیردهی نهایی ----
@@ -2030,6 +2143,8 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                 identify_and_route($pdo, $chat_id, $normalized, $adminPhone, $bot_token);
                 return;
             }
+            // ورود با کدِ تأیید (پیامک) اگر در تنظیمات روشن است
+            if (sms_settings($pdo)['otp_bot'] && bot_otp_start($pdo, $chat_id, $normalized, $bot_token)) return;
             $pdo->prepare("UPDATE bot_sessions SET conversation_state = 'AWAITING_CONTACT_SHARE', temp_national_code = ? WHERE chat_id = ?")
                 ->execute([$normalized, $chat_id]);
             send_msg($chat_id, "لطفاً برای تایید هویت، شماره تماس خود را با دکمه‌ی زیر به اشتراک بگذارید:", $bot_token, kb_request_contact());
@@ -2038,6 +2153,9 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
         }
         return;
     }
+
+    if ($session['conversation_state'] === 'AWAITING_OTP_PHONE') { bot_otp_phone_input($pdo, $chat_id, $session, $text, $contact, $sender_user_id, $bot_token); return; }
+    if ($session['conversation_state'] === 'AWAITING_OTP_CODE') { bot_otp_code_input($pdo, $chat_id, $session, $text, $bot_token); return; }
 
     if ($session['conversation_state'] === 'AWAITING_CONTACT_SHARE') {
         // شماره فقط وقتی تأییدشده است که خودِ کاربر شماره‌ی خودش را فرستاده باشد (contact.user_id == from.id)؛

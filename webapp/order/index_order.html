@@ -8,7 +8,7 @@
 <title>ثبت درخواست بیمه</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
 <script src="/iran-time.js?v=2"></script>
-<script src="../mini-kit.js?v=3"></script>
+<script src="../mini-kit.js?v=4"></script>
 <script src="/maint-watch.js?v=1"></script>
 <style>
   :root {
@@ -119,6 +119,8 @@
   .kind-grid .option-card .lbl { font-size: 11.5px; }
   .step-lbl { font-size: 11.5px; color: #a5b4fc; font-weight: 800; margin: 14px 0 6px; }
   .pick-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; background: rgba(255,255,255,.06); border: 1px dashed rgba(165,180,252,.45); border-radius: 14px; padding: 13px 14px; color: #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: right; }
+  .veh-cap { margin: 7px 4px 0; font-size: 11.5px; color: #a5b4fc; font-weight: 700; line-height: 1.8; }
+  .veh-cap b { color: #e0e7ff; }
   .pick-btn.on { border-style: solid; border-color: var(--accent); background: rgba(99,102,241,.14); color: #fff; }
   .saved-note { font-size: 11.5px; line-height: 1.9; color: #a7f3d0; background: rgba(16,185,129,.12); border: 1px solid rgba(52,211,153,.35); border-radius: 12px; padding: 9px 12px; margin-bottom: 10px; }
   .ncy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -222,10 +224,9 @@
   <p class="desc" style="margin-bottom:12px;">۱. نوعِ وسیله‌ی نقلیه را انتخاب کنید:</p>
   <div class="kind-grid" id="kind-grid"></div>
   <div id="veh-steps" style="display:none; margin-top:14px;">
-    <p class="step-lbl">۲. نوعِ خودرو</p>
-    <button type="button" class="pick-btn" id="grp-btn" onclick="pickGroup()"><span id="grp-txt">انتخاب کنید</span><span>▾</span></button>
-    <p class="step-lbl">۳. مدلِ خودرو</p>
-    <button type="button" class="pick-btn" id="model-btn" onclick="pickModel()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+    <p class="step-lbl">۲. نامِ خودرو (مثلاً پژو یا ۲۰۶)</p>
+    <button type="button" class="pick-btn" id="model-btn" onclick="pickVehicle()"><span id="model-txt">جستجو و انتخاب</span><span>🔎</span></button>
+    <div id="veh-cap" class="veh-cap" style="display:none;"></div>
   </div>
   <button class="btn btn-primary" style="margin-top:16px;" onclick="submitVehicle()">ادامه</button>
 </div>
@@ -581,41 +582,30 @@ function renderVehicleScreen() {
     }
     document.getElementById('kind-grid').innerHTML = KINDS.map(k => `<div class="option-card ${veh.kind === k.key ? 'selected' : ''}" onclick="chooseKind('${k.key}')"><span class="ic">${k.icon}</span><span class="lbl">${k.fa}</span></div>`).join('');
     document.getElementById('veh-steps').style.display = veh.kind ? 'block' : 'none';
-    document.getElementById('grp-txt').textContent = veh.grp || 'انتخاب کنید';
-    document.getElementById('grp-btn').classList.toggle('on', !!veh.grp);
     document.getElementById('model-txt').textContent = veh.model ? veh.model.title : 'جستجو و انتخاب';
     document.getElementById('model-btn').classList.toggle('on', !!veh.model);
+    const cap = document.getElementById('veh-cap');
+    const capTxt = veh.model ? MKIT.vehicleCaption({ grp: veh.model.grp || veh.grp, sub: veh.model.sub }) : '';
+    cap.style.display = capTxt ? 'block' : 'none';
+    cap.innerHTML = capTxt ? '📌 دسته: <b>' + esc(capTxt) + '</b>' : '';
 }
 function chooseKind(k) {
     if (veh.kind !== k) veh = { kind: k, grp: null, model: null };
     renderVehicleScreen();
-    pickGroup();
+    pickVehicle();
 }
-const groupsCache = {};
-async function pickGroup() {
+// نامِ خودرو را می‌نویسد (یا برند را از فهرست انتخاب می‌کند)؛ دسته (سیلندر/تناژ/ظرفیت) از دیتابیس می‌آید
+async function pickVehicle() {
     if (!veh.kind) return;
-    if (!groupsCache[veh.kind]) { try { const d = await (await fetch(`${VCAT_API}?action=groups&kind=${veh.kind}`)).json(); groupsCache[veh.kind] = d.ok ? d.groups : []; } catch(e) { groupsCache[veh.kind] = []; } }
     const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa || '';
-    const it = await MKIT.pick({ title: `نوعِ خودرو (${kfa})`, value: veh.grp, items: groupsCache[veh.kind].map(g => ({ v: g.grp, label: g.grp, sub: toFa(g.n) + ' مدل' })) });
-    if (!it) return;
-    if (veh.grp !== it.v) veh.model = null;
-    veh.grp = it.v;
-    renderVehicleScreen();
-    pickModel();
-}
-async function pickModel() {
-    if (!veh.kind) return;
-    if (!veh.grp) { pickGroup(); return; }
-    const it = await MKIT.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید...', value: veh.model && veh.model.id,
-        onSearch: async q => { const d = await (await fetch(`${VCAT_API}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
-            return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: toFa(m.sub), raw: m })); } });
-    if (!it) return;
-    veh.model = it.raw;
+    const m = await MKIT.vehiclePick({ kind: veh.kind, kindFa: kfa, value: veh.model && veh.model.id, api: VCAT_API });
+    if (!m) return;
+    veh.model = m; veh.grp = m.grp;
     renderVehicleScreen();
 }
 async function submitVehicle() {
     if (!veh.kind) { showToast('نوعِ وسیله‌ی نقلیه را انتخاب کنید.'); return; }
-    if (!veh.model) { showToast('نوع و مدلِ خودرو را از فهرست انتخاب کنید.'); pickModel(); return; }
+    if (!veh.model) { showToast('نامِ خودرو را از فهرست انتخاب کنید.'); pickVehicle(); return; }
     const res = await saveStep({ step:'vehicle', vehicle_kind: veh.kind, model_id: veh.model.id });
     if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }

@@ -22,6 +22,7 @@ function perm_catalog() {
             'health' => ['بازدید سلامت و مدارک', ['view', 'edit', 'export']],
             'approved-reviews' => ['بازدیدهای تاییدشده', ['view', 'export']],
             'cases' => ['صدور بیمه‌نامه‌ی کارکنان', ['view', 'edit', 'delete', 'export']],
+            'contacts' => ['بانک مخاطبین (کارکنان، ورود/خروجِ اکسل، لاگِ کدِ تأیید)', ['view', 'create', 'edit', 'export']],
         ]],
         ['ثالث و بدنه › شرکت‌ها', [
             'companies-requests' => ['درخواست‌های شرکتی', $all],
@@ -247,6 +248,10 @@ function perm_api_map() {
             'policy_info' => 'endorsements:view|issued-list:view|issue-queue:edit|companies-requests:view', 'preview' => 'endorsements:create|issue-queue:edit|companies-requests:edit',
             'create' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
             'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export',
+        ]],
+        'contacts_actions' => ['pages' => ['contacts'], 'elevate' => true, 'actions' => [
+            'meta' => 'contacts:view', 'list' => 'contacts:view', 'get' => 'contacts:view', 'update' => 'contacts:edit', 'sample' => 'contacts:view',
+            'export' => 'contacts:export', 'import_preview' => 'contacts:create', 'import_commit' => 'contacts:create',
         ]],
         'legacy_actions' => ['pages' => ['legacy-import'], 'elevate' => true, 'actions' => [
             'preview' => 'legacy-import:create', 'commit' => 'legacy-import:create', 'batches' => 'legacy-import:view', 'rollback' => 'legacy-import:delete',
