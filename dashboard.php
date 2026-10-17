@@ -4374,7 +4374,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=13"></script>
+    <script src="chat-ui.js?v=14"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=7"></script>
     <script>
