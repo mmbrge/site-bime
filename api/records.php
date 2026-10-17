@@ -44,7 +44,7 @@ function rec_letter_date($intro) {
 function rec_rows($pdo) {
     $records = $pdo->query("
         SELECT ir.id, ir.introduction_id, p.id AS person_id, p.full_name, p.national_code, p.personnel_code, p.mobile_number,
-               c.name AS company_name, ir.created_at, i.created_at AS intro_created_at, i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file
+               c.name AS company_name, ir.created_at, i.id AS intro_exists, i.created_at AS intro_created_at, i.letter_date, i.max_quota, i.used_quota, i.file_path AS intro_file
           FROM insurance_requests ir
           JOIN persons p ON ir.person_id = p.id
           LEFT JOIN companies c ON p.company_id = c.id

@@ -178,7 +178,7 @@ try {
         if ($action === 'intro_get') {
             $hasFile = $I['file_path'] && !in_array($I['file_path'], ['ثبت_دستی', 'بایگانی_قبلی'], true);
             echo json_encode(['ok' => true, 'intro' => ['id' => intval($I['id']), 'full_name' => $I['full_name'], 'national_code' => $I['national_code'], 'personnel_code' => $I['personnel_code'],
-                'company_name' => (string)$I['company_name'], 'mobile' => (string)$I['mobile_number'], 'letter_date' => $I['letter_date'] ? str_replace('-', '/', $I['letter_date']) : '',
+                'company_name' => (string)$I['company_name'], 'mobile' => (string)$I['mobile_number'], 'letter_date' => preg_match('/^1[34]\d\d-/', (string)$I['letter_date']) ? str_replace('-', '/', substr($I['letter_date'], 0, 10)) : '',
                 'max_quota' => intval($I['max_quota']), 'used_quota' => intval($I['used_quota']), 'issued' => intval($I['issued_n']), 'has_file' => $hasFile]], JSON_UNESCAPED_UNICODE);
             exit;
         }
@@ -216,6 +216,7 @@ try {
             // خانه‌ی خالی = همان مقدارِ قبلی (هیچ اطلاعاتی با خالی گذاشتن پاک نمی‌شود)
             $pdo->prepare("UPDATE persons SET full_name = ?, company_id = ?, mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")->execute([$fullName, $companyId, $mobile, $personId]);
             $pdo->prepare("UPDATE introductions SET letter_date = COALESCE(?, letter_date), max_quota = ? WHERE id = ?")->execute([$letterDate, max(1, $quota), $introId]);
+            if ($letterDate) $pdo->prepare("UPDATE introductions SET letter_date = ? WHERE id = ?")->execute([$letterDate, $introId]);   // حتی اگر مقدارِ قبلی «۰۰۰۰-۰۰-۰۰» بوده
             foreach ($selfCases as $c) $pdo->prepare("UPDATE policy_cases SET insured_name = ? WHERE id = ?")->execute([$fullName, $c['id']]);
             try {
                 $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'UPDATE', 'introductions', ?, ?)")
@@ -267,7 +268,18 @@ try {
             }
         }
         foreach ($introIds as $iid) { try { sync_intro_group_message($pdo, $iid); } catch (Throwable $e) {} }
-        echo json_encode(['ok' => true, 'message' => 'معرفی‌نامه ویرایش شد' . ($renamed ? '؛ ' . fa_digits($renamed) . ' پوشه/فایل در بایگانی هم‌نام شد' : '') . ($selfCases ? '؛ نامِ بیمه‌گذارِ ' . fa_digits(count($selfCases)) . ' درخواست هم عوض شد' : '') . ($filed ? '؛ فایلِ تازه‌ی معرفی‌نامه بایگانی شد' : '') . '.'], JSON_UNESCAPED_UNICODE);
+        // بررسیِ نهایی: تاریخی که واقعاً در دیتابیس نشسته (اگر نشسته باشد خطای روشن برمی‌گردد، نه «ویرایش شد»)
+        $chk = $pdo->prepare("SELECT letter_date FROM introductions WHERE id = ?");
+        $chk->execute([$introId]);
+        $savedRaw = (string)$chk->fetchColumn();
+        $savedOk = preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', $savedRaw);
+        if ($letterDate && (!$savedOk || substr($savedRaw, 0, 10) !== $letterDate)) {
+            error_log('[intro_edit] letter_date not stored: intro=' . $introId . ' want=' . $letterDate . ' got=' . $savedRaw);
+            echo json_encode(['ok' => false, 'error' => 'تاریخ ذخیره نشد (در دیتابیس: «' . ($savedRaw === '' ? 'خالی' : $savedRaw) . '»، درخواست: ' . fa_digits(str_replace('-', '/', $letterDate)) . '). لطفاً این پیام را برای پشتیبانی بفرستید.', 'field' => 'letter_date'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $dateNote = $savedOk ? '؛ تاریخِ معرفی‌نامه: ' . fa_digits(str_replace('-', '/', substr($savedRaw, 0, 10))) : '؛ تاریخِ معرفی‌نامه وارد نشده است';
+        echo json_encode(['ok' => true, 'letter_date' => $savedOk ? str_replace('-', '/', substr($savedRaw, 0, 10)) : '', 'message' => 'معرفی‌نامه ویرایش شد' . $dateNote . ($renamed ? '؛ ' . fa_digits($renamed) . ' پوشه/فایل در بایگانی هم‌نام شد' : '') . ($selfCases ? '؛ نامِ بیمه‌گذارِ ' . fa_digits(count($selfCases)) . ' درخواست هم عوض شد' : '') . ($filed ? '؛ فایلِ تازه‌ی معرفی‌نامه بایگانی شد' : '') . '.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

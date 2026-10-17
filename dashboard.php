@@ -5330,7 +5330,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="p-4 text-slate-700">${row.full_name || '-'}${row.company_name ? `<span class="block text-[10px] text-slate-400 font-normal">${row.company_name}</span>` : ''}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.personnel_code) || '-'}</td>
-                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : `<button type="button" class="text-amber-600 hover:text-amber-700 font-bold underline decoration-dotted" title="ثبتِ تاریخِ صدورِ معرفی‌نامه" onclick="event.stopPropagation(); openIntroEdit(${row.introduction_id})"><i class="fas fa-pen ml-1 text-[10px]"></i>ثبت نشده</button>`}</span>
+                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : !row.intro_exists ? `<span class="text-rose-600 font-bold" title="این ردیف به معرفی‌نامه‌ای وصل است که دیگر وجود ندارد (شناسه‌ی ${e2p(String(row.introduction_id || '-'))})">معرفی‌نامه پیدا نشد</span>` : `<button type="button" class="text-amber-600 hover:text-amber-700 font-bold underline decoration-dotted" title="ثبتِ تاریخِ صدورِ معرفی‌نامه" onclick="event.stopPropagation(); openIntroEdit(${row.introduction_id})"><i class="fas fa-pen ml-1 text-[10px]"></i>ثبت نشده</button>`}</span>
                             <span class="block text-[10px] text-slate-400 font-normal mt-0.5" title="تاریخ ثبت در سامانه"><i class="fas fa-clock-rotate-left ml-1"></i>${e2p(row.registered_j || '-')}</span></td>
                         <td class="p-4 whitespace-nowrap"><span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-3 py-1 text-xs">${row.letter_month_fa} ${e2p(row.letter_year)}</span></td>
                         <td class="p-4 text-blue-600 text-xs">${e2p(row.issued_summary) || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span>
@@ -13967,12 +13967,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (x.letter_date) q('letter_date').value = e2p(x.letter_date);  // e2p('') = «-»؛ اینجا همیشه مقدار دارد
             };
             box.querySelector('[data-ok]').onclick = async () => {
+                if (!I.letter_date && !q('letter_date').value.trim()) { showToast('تاریخِ معرفی‌نامه را وارد کنید (مثل ۱۴۰۵/۰۷/۰۴).', 'warning'); q('letter_date').focus(); return; }
                 const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره...';
                 const payload = {action: 'intro_edit', intro_id: introId, full_name: q('full_name').value, company_name: q('company_name').value,
                     letter_date: p2e(q('letter_date').value), max_quota: p2e(q('max_quota').value), mobile: p2e(q('mobile').value), file_token: token};
                 let r; try { r = await (await fetch(R, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
                 if (!r.ok) { showToast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی'; if (r.field && q(r.field)) q(r.field).focus(); return; }
                 close(); showToast(r.message || 'ذخیره شد.', 'success');
+                if (window.tabInvalidate) tabInvalidate();   // بقیه‌ی صفحه‌ها هم با تاریخِ تازه بارگذاری شوند
                 if (typeof loadRecords === 'function') loadRecords();
                 const im = document.getElementById('intro-detail-modal');
                 if (im && !im.classList.contains('hidden') && window._introDetailId === introId) openIntroDetail(introId, q('full_name').value);
