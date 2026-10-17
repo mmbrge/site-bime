@@ -153,6 +153,47 @@
     // =====================================================================
     //  نمای کارکردِ یک نفر (برای «کارکرد من»، و برای مدیر داخلِ «کارکرد پرسنل»)
     // =====================================================================
+    // تنظیمِ مانده‌ی مرخصی (مدیر برای هر نفر، هر زمان؛ خودِ کاربر فقط بارِ اول). عدد همان لحظه مانده می‌شود و سهمِ ماهانه
+    // از آخرِ همین ماه اضافه می‌شود؛ «منفی» یعنی کاربر بیشتر از سهمش مرخصی رفته است.
+    function openBalanceDialog(o) {
+        const t = todayJ();
+        const box = document.createElement('div');
+        box.className = 'modal-overlay active';
+        box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
+            <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+            <h3 class="font-black text-base mb-1"><i class="fas fa-sliders text-indigo-600 ml-1"></i>تنظیمِ مانده‌ی مرخصی${o.name ? ' · ' + esc(o.name) : ''}</h3>
+            <p class="text-[11px] text-slate-500 mb-3 leading-6">مانده‌ی مرخصیِ <b>همین الان</b> را وارد کنید؛ همین عدد مانده می‌شود، مرخصی‌های قبلی دیگر از آن کم نمی‌شوند (در کارکرد می‌مانند) و از آخرِ ${MONTHS[t[1] - 1]} ${fa(t[0])} هر ماه ${esc(o.accrual_fa || '')} اضافه می‌شود.${o.balance_fa ? `<br>مانده‌ی فعلی: <b>${esc(o.balance_fa)}</b>` : ''}</p>
+            <div class="flex gap-2 mb-3" data-sign>
+              <button type="button" class="flex-1 text-xs font-black rounded-xl py-2 border-2 border-emerald-500 bg-emerald-50 text-emerald-700" data-s="+">➕ مثبت (طلبکار)</button>
+              <button type="button" class="flex-1 text-xs font-black rounded-xl py-2 border-2 border-slate-200 text-slate-500" data-s="-">➖ منفی (بدهکار)</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label><span class="wk-lbl">روز</span><input class="wk-in" data-f="d" inputmode="decimal" placeholder="۰"></label>
+              <label><span class="wk-lbl">ساعت (مثل ۳:۳۰)</span><input class="wk-in" data-f="h" dir="ltr" placeholder="0:00"></label>
+            </div>
+            ${o.once ? '<p class="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">⚠️ مانده را فقط یک بار می‌توانید ثبت کنید؛ بعد از آن فقط مدیر می‌تواند تغییرش دهد.</p>' : ''}
+            <button type="button" class="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black py-2.5 rounded-xl" data-ok>ثبت</button></div>`;
+        document.body.appendChild(box);
+        let neg = false;
+        box.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+            neg = b.dataset.s === '-';
+            box.querySelectorAll('[data-s]').forEach(x => { const on = x === b, red = x.dataset.s === '-';
+                x.className = 'flex-1 text-xs font-black rounded-xl py-2 border-2 ' + (on ? (red ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-emerald-500 bg-emerald-50 text-emerald-700') : 'border-slate-200 text-slate-500'); });
+        });
+        const close = () => box.remove();
+        box.querySelector('[data-x]').onclick = close;
+        box.addEventListener('click', e => { if (e.target === box) close(); });
+        box.querySelector('[data-ok]').onclick = async () => {
+            const q = f => en(box.querySelector(`[data-f="${f}"]`).value || '0').trim();
+            let d = q('d'), h = q('h');
+            if (/^-/.test(d) || /^-/.test(h)) { neg = true; d = d.replace(/^-/, ''); h = h.replace(/^-/, ''); }
+            const r = await api('profile_save', {days: d || '0', hours: h || '0', negative: neg ? 1 : 0, user_id: o.uid || undefined});
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+            toast('مانده‌ی مرخصی ثبت شد: ' + (r.balance ? r.balance.balance_fa : '') + '؛ از آخرِ همین ماه سهمِ ماهانه اضافه می‌شود.', 'success');
+            close(); if (o.onDone) o.onDone(r);
+        };
+    }
+
     function PersonView(root, opts) {
         const S = {root, uid: opts.userId || 0, staff: !!opts.staff, jy: 0, jm: 0, data: null, sel: null, day: null, timeline: [], editTasks: [], draft: null};
         const t0 = todayJ(); S.jy = opts.jy || t0[0]; S.jm = opts.jm || t0[1];
@@ -207,9 +248,7 @@
                 <div class="flex flex-wrap items-end gap-3">
                   <div class="flex-1 min-w-[220px]"><h3><i class="fas fa-flag-checkered text-indigo-600"></i>شروعِ محاسبه‌ی مرخصی</h3>
                     <p class="text-[11px] text-slate-600 mt-1 leading-6">مانده‌ی مرخصیِ <b>همین الانِ</b> خودتان را وارد کنید؛ مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند و از آخرِ ${MONTHS[t[1] - 1]} به بعد خودکار حساب می‌شود (هر ماه ${leaveFa(b.accrual)} اضافه و هر مرخصیِ تازه کم می‌شود؛ هر ${fa(d.settings.work_leave_day_hours)} ساعت مرخصیِ ساعتی = یک روز).</p></div>
-                  <label><span class="wk-lbl">روز</span><input class="wk-in w-24" data-f="op-days" inputmode="decimal" placeholder="مثلاً ۵"></label>
-                  <label><span class="wk-lbl">ساعت (مثل ۳:۳۰)</span><input class="wk-in w-28" data-f="op-hours" dir="ltr" placeholder="0:00"></label>
-                  <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2.5 rounded-xl" data-a="op-save">ثبت</button>
+                  <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2.5 rounded-xl" data-a="op-save"><i class="fas fa-flag-checkered ml-1"></i>ثبتِ مانده (فقط یک بار)</button>
                   <button type="button" class="text-xs font-bold text-slate-500 px-2 py-2.5" data-a="op-skip">فعلاً نه</button>
                 </div>
               </div>` : ''}
@@ -289,7 +328,7 @@
             const d = S.data, b = d.balance_now, ed = canEdit();
             return `
                 <div class="flex flex-wrap items-center gap-2"><h3><i class="fas fa-umbrella-beach text-emerald-600"></i>مرخصی</h3>
-                  ${ed ? `<button type="button" class="mr-auto text-[11px] font-bold text-indigo-700 hover:underline" data-a="op-edit"><i class="fas fa-sliders ml-1"></i>ثبتِ مانده‌ی فعلی</button>` : ''}</div>
+                  ${!d.is_me && d.can_manage ? `<button type="button" class="mr-auto text-[11px] font-bold text-indigo-700 hover:underline" data-a="op-edit"><i class="fas fa-sliders ml-1"></i>تنظیمِ مانده‌ی مرخصی</button>` : ''}</div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-center">
                   <div class="rounded-2xl p-3" style="background:linear-gradient(140deg,#ecfdf5,#d1fae5)"><p class="text-[10px] font-bold text-emerald-700">مانده تا امروز</p><b class="text-sm text-emerald-900">${esc(b.balance_fa)}</b></div>
                   <div class="rounded-2xl p-3 bg-slate-50"><p class="text-[10px] font-bold text-slate-500">سهمِ هر ماه</p><b class="text-sm">${esc(b.accrual_fa)}</b></div>
@@ -343,8 +382,8 @@
             on('pdf-month', () => { const n = monthLen(S.jy, S.jm); exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, n), user_id: S.uid || ''}, 'pdf'); });
             on('leave', () => { const f = root.querySelector('[data-box="leave-form"]'); if (f) { f.scrollIntoView({behavior: 'smooth', block: 'center'}); f.classList.add('ring-2', 'ring-emerald-300'); setTimeout(() => f.classList.remove('ring-2', 'ring-emerald-300'), 1600); } });
             on('op-skip', () => { try { localStorage.setItem('wk-open-dismiss-' + (S.data.user || {}).id, '1'); } catch (e) {} root.querySelector('[data-box="opening"]').remove(); });
-            on('op-save', () => saveOpening(root.querySelector('[data-f="op-days"]').value, root.querySelector('[data-f="op-hours"]').value));
-            on('op-edit', openOpeningDialog);
+            on('op-save', () => openBalanceDialog({uid: S.uid, once: !S.data.can_manage, accrual_fa: S.data.balance_now.accrual_fa, onDone: () => load(true)}));
+            on('op-edit', () => openBalanceDialog({uid: S.uid, name: S.data.user && S.data.user.name, balance_fa: S.data.balance_now.balance_fa, accrual_fa: S.data.balance_now.accrual_fa, onDone: () => load(true)}));
             // فرمِ مرخصی
             const lf = root.querySelector('[data-box="leave-form"]');
             if (lf) {
@@ -401,37 +440,6 @@
                 if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
                 toast(ok ? 'مرخصی تأیید شد.' : 'مرخصی رد شد.', 'success'); load(true);
             }));
-        }
-
-        async function saveOpening(days, hours) {
-            const r = await api('profile_save', {days: en(days || '0'), hours: en(hours || '0'), user_id: S.uid || undefined});
-            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
-            toast('مانده‌ی مرخصی ثبت شد؛ از آخرِ همین ماه خودکار اضافه می‌شود.', 'success');
-            load(true);
-        }
-        function openOpeningDialog() {
-            const b = S.data.balance_now, t = todayJ();
-            const box = document.createElement('div');
-            box.className = 'modal-overlay active';
-            box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
-                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
-                <h3 class="font-black text-base mb-1"><i class="fas fa-flag-checkered text-indigo-600 ml-1"></i>مانده‌ی مرخصیِ فعلی</h3>
-                <p class="text-[11px] text-slate-500 mb-3 leading-6">مانده‌ی مرخصیِ <b>همین الان</b> را وارد کنید. همه‌ی مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند (در کارکرد می‌مانند)، مانده همین عدد می‌شود و از آخرِ ${MONTHS[t[1] - 1]} ${fa(t[0])} هر ماه ${leaveFa(b.accrual)} اضافه می‌شود.${b.opening_set ? ` (مانده‌ی فعلی: ${esc(b.balance_fa)})` : ''}</p>
-                <div class="grid grid-cols-2 gap-2">
-                  <label><span class="wk-lbl">روز</span><input class="wk-in" data-f="d" inputmode="decimal" placeholder="۰"></label>
-                  <label><span class="wk-lbl">ساعت (مثل ۳:۳۰)</span><input class="wk-in" data-f="h" dir="ltr" placeholder="0:00"></label>
-                </div>
-                <button type="button" class="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black py-2.5 rounded-xl" data-ok>ثبت</button></div>`;
-            document.body.appendChild(box);
-            const close = () => box.remove();
-            box.querySelector('[data-x]').onclick = close;
-            box.addEventListener('click', e => { if (e.target === box) close(); });
-            box.querySelector('[data-ok]').onclick = async () => {
-                const q = f => box.querySelector(`[data-f="${f}"]`).value;
-                const r = await api('profile_save', {days: en(q('d') || '0'), hours: en(q('h') || '0'), user_id: S.uid || undefined});
-                if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
-                toast('مانده‌ی مرخصی ثبت شد؛ از آخرِ همین ماه خودکار اضافه می‌شود.', 'success'); close(); load(true);
-            };
         }
 
         // ---------------- پنلِ یک روز ----------------
@@ -731,7 +739,8 @@
                     <td class="font-bold">${esc(x.name)} <span class="text-[10px] text-slate-400 font-normal">${esc((typeof ROLE_FA !== 'undefined' ? ROLE_FA : {})[x.role] || '')}</span></td>
                     <td>${x.today_in ? `${x.today_live ? '<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-1"></span>' : ''}${fa(x.today_in)}${x.today_out ? ' تا ' + fa(x.today_out) : ''}` : (x.today_type === 'LEAVE' ? '<span class="wk-chip bg-emerald-100 text-emerald-700">مرخصی</span>' : '<span class="text-slate-300">—</span>')}</td>
                     <td>${fa(x.present)} از ${fa(x.work_days)}</td><td>${fa(x.worked_fa)}</td><td class="${x.over < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fa(x.over_fa)}</td>
-                    <td>${esc(fa(x.leave_fa))}</td><td class="${x.balance < 0 ? 'text-rose-600 font-bold' : ''}">${esc(fa(x.balance_fa))}${x.pending ? ' <span class="wk-chip bg-amber-100 text-amber-700">در انتظار</span>' : ''}</td>
+                    <td>${esc(fa(x.leave_fa))}</td><td class="${x.balance < 0 ? 'text-rose-600 font-bold' : ''}">${esc(fa(x.balance_fa))}${x.pending ? ' <span class="wk-chip bg-amber-100 text-amber-700">در انتظار</span>' : ''}
+                      ${r.can_manage ? `<button type="button" class="block mt-1 text-[10px] font-black text-indigo-700 hover:underline" data-bal="${x.id}" title="تنظیمِ مانده‌ی مرخصی"><i class="fas fa-sliders ml-1"></i>تنظیمِ مانده</button>` : ''}</td>
                     <td class="text-base">${x.mood_avg ? MOODS[Math.round(x.mood_avg)][0] : '—'}</td><td>${fa(x.acts)}</td>
                     <td class="whitespace-nowrap"><button type="button" class="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-3 py-1" data-p="${x.id}">مشاهده</button>
                       <button type="button" class="text-[11px] font-black text-white rounded-lg px-2.5 py-1" style="background:linear-gradient(90deg,#be123c,#7c3aed)" data-ppdf="${x.id}" title="گزارشِ PDFِ ${MONTHS[S.jm - 1]}"><i class="fas fa-file-pdf ml-1"></i>PDF</button></td></tr>`).join('')}
@@ -748,6 +757,10 @@
             on('pdf-all', () => exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, monthLen(S.jy, S.jm)), all: 1}, 'pdf'));
             on('settings', () => { const b = root.querySelector('[data-box="settings"]'); b.classList.toggle('hidden'); if (!b.classList.contains('hidden')) renderSettings(b.querySelector('[data-f="settings"]')); });
             root.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => openPerson(+b.dataset.p)));
+            root.querySelectorAll('[data-bal]').forEach(b => b.addEventListener('click', () => {
+                const x = r.rows.find(y => String(y.id) === b.dataset.bal) || {};
+                openBalanceDialog({uid: x.id, name: x.name, balance_fa: fa(x.balance_fa || ''), accrual_fa: r.accrual_fa || '', onDone: () => load()});
+            }));
             root.querySelectorAll('[data-ppdf]').forEach(b => b.addEventListener('click', () => exportUrl({from: jstr(S.jy, S.jm, 1), to: jstr(S.jy, S.jm, monthLen(S.jy, S.jm)), user_id: b.dataset.ppdf}, 'pdf')));
             root.querySelectorAll('[data-ok],[data-no]').forEach(b => b.addEventListener('click', async () => {
                 const ok = !!b.dataset.ok; let note = '';

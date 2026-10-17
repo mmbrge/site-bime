@@ -196,10 +196,20 @@ try {
 
     // ---- مانده‌ی مرخصیِ فعلی: هر بار که ثبت شود، مرخصی‌های قبلی دیگر از مانده کم نمی‌شوند و همین عدد مانده می‌شود؛
     //      سهمِ ماهانه از آخرِ همین ماه اضافه می‌شود (ردیف‌های مرخصی پاک نمی‌شوند، فقط در مانده حساب نمی‌شوند) ----
+    // خودِ کاربر فقط بارِ اول مانده را ثبت می‌کند؛ بعد از آن فقط مدیر (کسی که «کارکرد پرسنل: ویرایش» دارد) تغییرش می‌دهد. مانده می‌تواند منفی باشد.
     if ($action === 'profile_save') {
         $s = wk_settings($pdo);
-        $daysIn = floatval(p2e_digits((string)($data['days'] ?? '0')));
-        $hoursIn = (string)($data['hours'] ?? '0');
+        if (!$canManage) {
+            $st = $pdo->prepare("SELECT (opening_at IS NOT NULL OR COALESCE(opening_jy, 0) > 0) FROM work_profiles WHERE user_id = ?");
+            $st->execute([$uid]);
+            if ((int)$st->fetchColumn() === 1) wout(['ok' => false, 'error' => 'مانده‌ی مرخصی قبلاً ثبت شده و فقط مدیر می‌تواند آن را تغییر دهد.']);
+        }
+        $daysRaw = trim(p2e_digits((string)($data['days'] ?? '0')));
+        $hoursRaw = trim(p2e_digits((string)($data['hours'] ?? '0')));
+        if (preg_match('/^[-−]/u', $daysRaw) || preg_match('/^[-−]/u', $hoursRaw)) $data['negative'] = 1;
+        $daysRaw = preg_replace('/^[-−]\s*/u', '', $daysRaw); $hoursRaw = preg_replace('/^[-−]\s*/u', '', $hoursRaw);
+        $daysIn = abs(floatval($daysRaw));
+        $hoursIn = $hoursRaw;
         $hm = wk_time($hoursIn);
         $hourMin = $hm ? wk_minutes_between('00:00', $hm) : intval(round(floatval(p2e_digits($hoursIn)) * 60));
         $min = intval(round($daysIn * floatval($s['work_leave_day_hours']) * 60)) + $hourMin;
@@ -307,7 +317,9 @@ try {
             $id = intval($u['id']);
             $days = wk_days($pdo, $id, $from, $to);
             $sm = wk_summary($pdo, $days);
-            $b = wk_balance($pdo, $id, $jy, $jm);
+            // ماهِ جاری: مانده‌ی همین الان (عددی که مدیر تنظیم کرده همان دیده می‌شود؛ سهمِ ماه آخرِ ماه اضافه می‌شود)؛ ماه‌های دیگر: مانده‌ی آخرِ آن ماه
+            [$cyy, $cmm] = jalali_from_gregorian_ts(time());
+            $b = ($jy === $cyy && $jm === $cmm) ? wk_balance($pdo, $id) : wk_balance($pdo, $id, $jy, $jm);
             $t = wk_days($pdo, $id, $today, $today)[$today];
             $rows[] = ['id' => $id, 'name' => $u['full_name'], 'role' => $u['role'], 'present' => $sm['present'], 'work_days' => $sm['work_days'], 'worked' => $sm['worked'],
                        'worked_fa' => wk_dur_fa($sm['worked']), 'over_fa' => wk_dur_fa($sm['over']), 'over' => $sm['over'], 'leave_fa' => wk_leave_fa($pdo, $sm['leave_min']),
@@ -315,7 +327,9 @@ try {
                        'today_in' => $t['check_in'], 'today_out' => $t['live'] ? null : $t['check_out'], 'today_live' => $t['live'], 'today_type' => $t['day_type']];
         }
         $pending = intval($pdo->query("SELECT COUNT(*) FROM work_leaves WHERE status = 'PENDING'")->fetchColumn());
-        wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'rows' => $rows, 'pending' => $pending]);
+        $acc = intval(round(floatval(wk_settings($pdo)['work_leave_days_month']) * floatval(wk_settings($pdo)['work_leave_day_hours']) * 60));
+        wout(['ok' => true, 'jy' => $jy, 'jm' => $jm, 'month_name' => jalali_month_name($jm), 'rows' => $rows, 'pending' => $pending,
+              'can_manage' => $canManage, 'accrual_fa' => wk_leave_fa($pdo, $acc)]);
     }
 
     // ---- سرویسِ رفت‌وآمد: هر نفر برای خودش (کارکرد من)؛ «گزارش سرویس‌ها» برای دیدن/ویرایشِ همه؛ تعریفِ سرویس فقط مدیر کل ----
