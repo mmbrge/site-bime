@@ -212,22 +212,53 @@ function recon_run($pdo, $siteRoot, array $files, $title, $userId) {
         }
     }
     $pdo->prepare("UPDATE recon_runs SET counts = ? WHERE id = ?")->execute([json_encode($cnt, JSON_UNESCAPED_UNICODE), $run]);
-    // نگه‌داشتنِ فایل‌های اصلی (نوعِ بیمه‌نامه‌ی هر فایل از ردیف‌هایش)
+    $stored = recon_store_src($siteRoot, $run, $files, $pv, '');
+    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($stored, JSON_UNESCAPED_UNICODE), $run]);
+    return ['ok' => true, 'run_id' => $run, 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
+}
+
+// نگه‌داشتنِ فایل‌های اصلی (نوعِ بیمه‌نامه‌ی هر فایل از ردیف‌هایش)
+function recon_store_src($siteRoot, $run, array $files, array $pv, $prefix) {
     $stored = [];
     $dir = recon_store_dir($siteRoot, $run);
     foreach ($files as $k => $f) {
         $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-        $dst = $dir . '/' . $k . '.' . $ext;
+        $dst = $dir . '/' . $prefix . $k . '.' . $ext;
         if (!@copy($f['path'], $dst)) continue;
         $kind = 'policy';
         foreach ($pv['files'] ?? [] as $fi) if ($fi['name'] === $f['name']) $kind = $fi['kind'];
         $ft = [];
-        foreach ($rows as $r) if (($r['file'] ?? '') === $f['name'] && $r['type']) $ft[$r['type']] = true;
-        foreach ($endos as $e) if (($e['file'] ?? '') === $f['name'] && !empty($e['type'])) $ft[$e['type']] = true;
+        foreach ($pv['rows'] ?? [] as $r) if (($r['file'] ?? '') === $f['name'] && $r['type']) $ft[$r['type']] = true;
+        foreach ($pv['endorsements'] ?? [] as $e) if (($e['file'] ?? '') === $f['name'] && !empty($e['type'])) $ft[$e['type']] = true;
         $stored[] = ['name' => $f['name'], 'file' => basename($dst), 'ext' => $ext, 'kind' => $kind, 'types' => array_keys($ft)];
     }
-    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($stored, JSON_UNESCAPED_UNICODE), $run]);
-    return ['ok' => true, 'run_id' => $run, 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
+    return $stored;
+}
+
+// برای مغایرت‌گیری‌های قدیمی (پیش از نگه‌داشتنِ فایل): همان فایلِ اکسلِ بیمه‌گر به همین مغایرت‌گیری وصل می‌شود تا «خروجیِ اصلاح‌شده»
+// ساخته شود، بدونِ اجرای دوباره. فایل باید بیمه‌نامه‌های همین مغایرت‌گیری را داشته باشد؛ تصمیم‌های قبلی همان می‌مانند.
+function recon_attach_src($pdo, $siteRoot, $runId, array $files) {
+    recon_ensure($pdo);
+    $st = $pdo->prepare("SELECT id, src_files FROM recon_runs WHERE id = ?");
+    $st->execute([$runId]);
+    $run = $st->fetch();
+    if (!$run) return ['ok' => false, 'error' => 'مغایرت‌گیری پیدا نشد.'];
+    $pv = legacy_preview($pdo, $siteRoot, $files);
+    @unlink(legacy_tmp_dir($siteRoot) . '/p_' . $pv['token'] . '.json');
+    $keys = [];
+    foreach ($pv['rows'] ?? [] as $r) if (($r['key'] ?? '') !== '') $keys[$r['key']] = true;
+    foreach ($pv['endorsements'] ?? [] as $e) if (($e['key'] ?? '') !== '') $keys[$e['key']] = true;
+    if (!$keys) return ['ok' => false, 'error' => implode(' ', $pv['errors'] ?? []) ?: 'ردیفی با شماره‌ی بیمه‌نامه در فایل پیدا نشد.'];
+    $q = $pdo->prepare("SELECT policy_key FROM recon_items WHERE run_id = ? AND category <> 'ONLY_S'");
+    $q->execute([$runId]);
+    $runKeys = array_fill_keys($q->fetchAll(PDO::FETCH_COLUMN), true);
+    $hit = count(array_intersect_key($keys, $runKeys));
+    if (!$hit) return ['ok' => false, 'error' => 'بیمه‌نامه‌های این فایل در این مغایرت‌گیری نیستند؛ همان فایلی را بزنید که این مغایرت‌گیری با آن انجام شده بود.'];
+    $old = json_decode((string)($run['src_files'] ?? ''), true) ?: [];
+    $new = recon_store_src($siteRoot, $runId, $files, $pv, 'a' . time() . '_');
+    if (!$new) return ['ok' => false, 'error' => 'فایل روی هاست ذخیره نشد.'];
+    $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode(array_merge($old, $new), JSON_UNESCAPED_UNICODE), $runId]);
+    return ['ok' => true, 'matched' => $hit, 'total' => count($keys), 'files' => count($new)];
 }
 
 function recon_runs($pdo) {
@@ -480,7 +511,7 @@ function recon_corrected($pdo, $siteRoot, $runId, $idx, $dry = true) {
     $run = $st->fetch();
     if (!$run) return ['ok' => false, 'error' => 'مغایرت‌گیری پیدا نشد.'];
     $files = json_decode((string)($run['src_files'] ?? ''), true) ?: [];
-    if (!$files) return ['ok' => false, 'error' => 'فایلِ اصلیِ این مغایرت‌گیری نگه داشته نشده (پیش از این امکان انجام شده)؛ یک بار دوباره همان فایل را مغایرت‌گیری کنید.'];
+    if (!$files) return ['ok' => false, 'error' => 'فایلِ اصلیِ این مغایرت‌گیری نگه داشته نشده (پیش از این امکان انجام شده)؛ با دکمه‌ی «بارگذاریِ فایلِ اصلی» همان اکسلِ بیمه‌گر را به این مغایرت‌گیری وصل کنید.'];
     $f = $files[intval($idx)] ?? null;
     if (!$f) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
     if ($f['ext'] !== 'xlsx') return ['ok' => false, 'error' => 'خروجیِ اصلاح‌شده فقط برای فایلِ xlsx ساخته می‌شود.'];

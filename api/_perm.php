@@ -264,6 +264,7 @@ function perm_api_map() {
         'recon_actions' => ['pages' => ['pasargad-recon'], 'elevate' => true, 'actions' => [
             'run' => 'pasargad-recon:create', 'runs' => 'pasargad-recon:view', 'items' => 'pasargad-recon:view', 'export' => 'pasargad-recon:export',
             'resolve' => 'pasargad-recon:edit', 'mark' => 'pasargad-recon:edit', 'import' => 'pasargad-recon:create', 'delete_run' => 'pasargad-recon:create',
+            'attach_src' => 'pasargad-recon:create', 'corrected_preview' => 'pasargad-recon:export', 'corrected' => 'pasargad-recon:export',
         ]],
         'import_actions' => ['pages' => ['import-archive'], 'elevate' => true, 'actions' => [
             'meta' => 'import-archive:view', 'list' => 'import-archive:view', 'preview' => 'import-archive:create', 'commit' => 'import-archive:create',

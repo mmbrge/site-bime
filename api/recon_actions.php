@@ -49,6 +49,23 @@ try {
         foreach ($files as $f) @unlink($f['path']);
         $out($r);
     }
+    if ($action === 'attach_src') {
+        $files = [];
+        $tmp = legacy_tmp_dir($siteRoot);
+        $up = $_FILES['files'] ?? null;
+        if ($up && is_array($up['name'])) {
+            foreach ($up['name'] as $k => $name) {
+                if (($up['error'][$k] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($up['tmp_name'][$k])) continue;
+                if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'xlsx') continue;
+                $dest = $tmp . '/r_' . bin2hex(random_bytes(6)) . '.xlsx';
+                if (move_uploaded_file($up['tmp_name'][$k], $dest)) $files[] = ['path' => $dest, 'name' => $name];
+            }
+        }
+        if (!$files) $out(['ok' => false, 'error' => 'فایلِ xlsx دریافت نشد (خروجیِ اصلاح‌شده فقط برای xlsx ساخته می‌شود).']);
+        $r = recon_attach_src($pdo, $siteRoot, intval($data['run_id'] ?? 0), $files);
+        foreach ($files as $f) @unlink($f['path']);
+        $out($r);
+    }
     if ($action === 'runs') $out(['ok' => true, 'runs' => recon_runs($pdo)]);
     if ($action === 'items' || $action === 'export') {
         $runId = intval($data['run_id'] ?? 0);

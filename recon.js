@@ -132,11 +132,13 @@
                 <div class="rc-flt"><button data-st="OPEN">باز</button><button data-st="RESOLVED">بررسی‌شده</button><button data-st="">همه</button>
                     <input id="rc-q" class="rc-in" style="max-width:260px" placeholder="جستجو: شماره بیمه‌نامه، پلاک، بیمه‌گذار">
                     <span class="mr-auto flex gap-2 flex-wrap" id="rc-bulk"></span>
-                    <button id="rc-xls" class="rc-btn s sm" style="border-radius:999px"><i class="fas fa-file-excel"></i>اکسل</button>
+                    <button id="rc-xls" class="rc-btn s sm" style="border-radius:999px" title="فهرستِ مغایرت‌ها و تصمیم‌ها (قالبِ سایت)"><i class="fas fa-file-excel"></i>اکسلِ فهرستِ مغایرت‌ها</button>
                     ${isAdmin() ? '<button id="rc-del" class="rc-btn d sm" style="border-radius:999px"><i class="fas fa-trash"></i>حذفِ این مغایرت‌گیری</button>' : ''}</div>
                 <div class="rc-flt" style="border-top:1px dashed #e2e8f0;padding-top:8px;margin-top:6px"><span class="text-[11px] text-slate-500"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>خروجیِ اصلاح‌شده (همان اکسلِ بیمه‌گر با اطلاعاتِ درست):</span>
                     ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn s sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
-                        : '<span class="text-[11px] text-slate-400">فایلِ اصلیِ این مغایرت‌گیری نگه داشته نشده (قبل از این امکان)؛ برای خروجیِ اصلاح‌شده یک بار دوباره همان فایل را مغایرت‌گیری کنید.</span>'}</div></div>
+                        : '<span class="text-[11px] text-amber-700">فایلِ اصلیِ این مغایرت‌گیری روی سایت نیست (قبل از این امکان انجام شده). همان اکسلی را که از پاسارگاد گرفته بودید این‌جا بارگذاری کنید؛ تصمیم‌های قبلی سرِ جایش می‌ماند و نیازی به مغایرت‌گیریِ دوباره نیست.</span>'}
+                    <button id="rc-attach" class="rc-btn ${(run.src_files || []).length ? 's' : 'p'} sm" style="border-radius:999px"><i class="fas fa-upload"></i>${(run.src_files || []).length ? 'افزودنِ فایلِ اصلیِ دیگر' : 'بارگذاریِ فایلِ اصلیِ بیمه‌گر (xlsx)'}</button>
+                    <input type="file" id="rc-attach-f" accept=".xlsx" multiple class="hidden"></div></div>
                 <div id="rc-list" class="space-y-2"></div>`;
             view.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { S.cat = b.dataset.cat; S.sel = {}; if (S.cat !== 'DIFF') S.field = ''; loadItems(); });
             view.querySelectorAll('[data-fld]').forEach(b => b.onclick = () => { S.field = S.field === b.dataset.fld ? '' : b.dataset.fld; if (S.field) S.cat = 'DIFF'; loadItems(); });
@@ -145,6 +147,21 @@
             view.querySelector('#rc-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { S.q = e.target.value.trim(); loadItems(); }, 300); };
             view.querySelector('#rc-xls').onclick = () => { location.href = API + '?' + new URLSearchParams({action: 'export', run_id: S.run, category: S.cat, status: S.status, field: S.field, q: S.q}).toString(); };
             view.querySelectorAll('[data-corr]').forEach(b => b.onclick = () => corrected(+b.dataset.corr));
+            // وصل کردنِ فایلِ اصلیِ بیمه‌گر به مغایرت‌گیریِ قدیمی (بدونِ اجرای دوباره)
+            const att = view.querySelector('#rc-attach'), attF = view.querySelector('#rc-attach-f');
+            att.onclick = () => attF.click();
+            attF.onchange = async () => {
+                if (!attF.files.length) return;
+                const fd = new FormData();
+                fd.append('action', 'attach_src'); fd.append('run_id', S.run);
+                [...attF.files].forEach(f => fd.append('files[]', f));
+                att.disabled = true; att.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ بررسیِ فایل...';
+                const r = await post(fd, true);
+                attF.value = '';
+                if (!r.ok) { att.disabled = false; att.innerHTML = '<i class="fas fa-upload"></i>بارگذاریِ فایلِ اصلیِ بیمه‌گر (xlsx)'; return toast(r.error || 'خطا', 'error'); }
+                toast(`فایل وصل شد (${fa(r.matched)} بیمه‌نامه از ${fa(r.total)} در این مغایرت‌گیری). حالا روی دکمه‌ی خروجیِ اصلاح‌شده بزنید.`, 'success');
+                await loadRuns(); view.dataset.run = ''; loadItems();
+            };
             const del = view.querySelector('#rc-del');
             if (del) del.onclick = async () => {
                 if (!await ask('این مغایرت‌گیری و تصمیم‌هایش از فهرست حذف شود؟ (تغییراتی که روی سایت اعمال شده سرِ جایش می‌ماند)')) return;
