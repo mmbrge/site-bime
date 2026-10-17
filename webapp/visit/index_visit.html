@@ -131,7 +131,8 @@ const params = new URLSearchParams(location.search);
 const TOKEN = params.get('t') || '';
 const FOCUS_CASE = params.get('case') || '';
 const API = '/api/webapp_visit.php';
-const K = window.MiniKit;
+// نامِ «K» عمداً نیست: اسکریپتِ خودِ بله (miniapp.js) متغیرِ سراسریِ K دارد و «const K» کلِ این اسکریپت را از کار می‌انداخت
+const MKIT = window.MiniKit;
 
 function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -228,7 +229,7 @@ function awaitingCard(r) {
     const reason = r.health_status === 'needs_fix' && r.health_reject_reason && !r.appointment ? `<p style="font-size:10.5px;color:#fca5a5;margin:8px 0 0;">علت اصلاح بازدید: ${esc(r.health_reject_reason)}</p>` : '';
     return `<div class="req-card ${String(r.id) === String(FOCUS_CASE) ? 'hl' : ''}" id="case-${r.id}">
         ${head(r)}
-        ${K.stagePill(r.stage)}
+        ${MKIT.stagePill(r.stage)}
         ${detailRows(r)}
         ${docsNeed ? `<div class="progress"><i style="width:${pct}%"></i></div><div class="prog-lbl">${toFa(r.docs_sent)} از ${toFa(r.docs_total)} مدرک ارسال شده</div>` : ''}
         <div class="action-row">${docsBtn}${healthBtn}</div>
@@ -245,8 +246,8 @@ function uploadedCard(r) {
     </div>`).join('');
     return `<div class="req-card">
         ${head(r)}
-        ${K.stagePill(r.stage)}
-        ${K.stages(r.stage)}
+        ${MKIT.stagePill(r.stage)}
+        ${MKIT.stages(r.stage)}
         ${detailRows(r)}
         <div class="doc-rows">${docs || '<div class="empty-state" style="padding:12px;">مدرکی ثبت نشده.</div>'}</div>
         ${r.stage === 'issued' ? `<button class="btn btn-primary" onclick="location.href='../app/?t=${encodeURIComponent(TOKEN)}&open=policies'">📁 دانلود از بیمه‌نامه‌های من</button>` : ''}

@@ -142,10 +142,10 @@
 
 <script>
 const API = '/api/webapp_admin.php';
-const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
-const en = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+const faNum = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const enNum = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-const money = v => v ? fa(Number(v).toLocaleString('en-US')) : '';
+const money = v => v ? faNum(Number(v).toLocaleString('en-US')) : '';
 function toast(msg, type) {
   document.querySelectorAll('.toast').forEach(t => t.remove());
   const t = document.createElement('div'); t.className = 'toast ' + (type || ''); t.textContent = msg; document.body.appendChild(t);
@@ -158,14 +158,14 @@ async function call(action, body = {}, url = API) {
   } catch (e) { return {ok: false, error: 'خطا در اتصال به سرور.'}; }
 }
 function plateHtml(p) {
-  const mp = en(p || '').match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
-  if (mp) return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${fa(mp[1])}</b><span>${fa(mp[2])}</span></span><span class="mt-ic">🏍</span></span>`;
-  const m = en(p || '').match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
+  const mp = enNum(p || '').match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
+  if (mp) return `<span class="mt-plate"><span class="flag"></span><span class="mt-n"><b>${faNum(mp[1])}</b><span>${faNum(mp[2])}</span></span><span class="mt-ic">🏍</span></span>`;
+  const m = enNum(p || '').match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
   if (!m) return `<b dir="ltr">${esc(p || 'بدونِ پلاک')}</b>`;
-  return `<span class="ir-plate"><span class="flag"></span><span>${fa(m[4])}</span><span>${esc(m[3])}</span><span>${fa(m[2])}</span><span class="ir"><small>ایران</small>${fa(m[1])}</span></span>`;
+  return `<span class="ir-plate"><span class="flag"></span><span>${faNum(m[4])}</span><span>${esc(m[3])}</span><span>${faNum(m[2])}</span><span class="ir"><small>ایران</small>${faNum(m[1])}</span></span>`;
 }
 function plateFrom(prefix) {
-  const g = i => en(document.getElementById(prefix + i).value.trim());
+  const g = i => enNum(document.getElementById(prefix + i).value.trim());
   const [a, l, b, c] = [g(1), document.getElementById(prefix + '2').value.trim(), g(3), g(4)];
   if (!a && !l && !b && !c) return '';
   if (!/^\d{2}$/.test(a) || !l || !/^\d{3}$/.test(b) || !/^\d{2}$/.test(c)) return null;
@@ -212,8 +212,8 @@ async function loadQueue() {
   renderQueue();
 }
 function renderQueue() {
-  const q = en(document.getElementById('q').value.trim()).toLowerCase();
-  const rows = QUEUE.filter(r => !q || [r.plate, r.insured, r.holder, r.holder_nid, r.insured_nid, r.personnel_code, r.company, r.code, r.mobile].some(v => en(v || '').toLowerCase().includes(q)));
+  const q = enNum(document.getElementById('q').value.trim()).toLowerCase();
+  const rows = QUEUE.filter(r => !q || [r.plate, r.insured, r.holder, r.holder_nid, r.insured_nid, r.personnel_code, r.company, r.code, r.mobile].some(v => enNum(v || '').toLowerCase().includes(q)));
   const box = document.getElementById('queue');
   if (!rows.length) { box.innerHTML = `<div class="empty"><b>✅</b>${QUEUE.length ? 'موردی با این جستجو نیست.' : 'درخواستی منتظرِ بازدید نیست.'}</div>`; return; }
   box.innerHTML = rows.map((r, i) => `
@@ -223,10 +223,10 @@ function renderQueue() {
       <div class="kv">
         <div><span>بیمه‌گذار</span><b>${esc(r.insured || '—')}</b></div>
         <div><span>پرسنل (معرفی‌نامه)</span><b>${esc(r.holder || '—')}</b></div>
-        <div><span>کد پرسنلی · شرکت</span><b>${fa(r.personnel_code || '—')} · ${esc(r.company || '—')}</b></div>
-        <div><span>تاریخ معرفی‌نامه</span><b>${fa(r.letter_date || '—')}</b></div>
+        <div><span>کد پرسنلی · شرکت</span><b>${faNum(r.personnel_code || '—')} · ${esc(r.company || '—')}</b></div>
+        <div><span>تاریخ معرفی‌نامه</span><b>${faNum(r.letter_date || '—')}</b></div>
         <div><span>ارزش خودرو</span><b>${r.car_value ? money(r.car_value) + ' ریال' : '—'}</b></div>
-        <div><span>موبایل</span><b dir="ltr">${fa(r.mobile || '—')}</b></div>
+        <div><span>موبایل</span><b dir="ltr">${faNum(r.mobile || '—')}</b></div>
       </div>
       <div class="row" style="margin-bottom:10px"><span class="chip">${esc(r.status_fa || r.status)}</span>${r.last_insp && INSP[r.last_insp] ? `<span class="chip ${INSP[r.last_insp][1]}">بازدیدِ کاربر: ${INSP[r.last_insp][0]}</span>` : ''}${r.docs_status && DOCS[r.docs_status] ? `<span class="chip ${DOCS[r.docs_status][1]}">${DOCS[r.docs_status][0]}</span>` : ''}</div>
       <div class="btns"><button class="btn" onclick="startCase(${r.case_id}, this)">📸 شروعِ بازدید</button><button class="btn ghost" style="flex:.6" onclick="this.closest('.card').querySelector('.slotf').style.display='grid'">🗓 تغییرِ نوبت</button></div>
@@ -248,7 +248,7 @@ async function changeSlot(caseId, btn) {
   const box = btn.closest('.slotf');
   const date = box.querySelector('[data-d]').value.trim(), time = box.querySelector('[data-t]').value.trim();
   if (!date || !time) { toast('تاریخ و ساعت را وارد کنید.', 'err'); return; }
-  const d = await call('set_appt', {case_id: caseId, date: en(date), time: en(time)});
+  const d = await call('set_appt', {case_id: caseId, date: enNum(date), time: enNum(time)});
   if (!d.ok) { toast(d.error || 'خطا', 'err'); return; }
   toast('نوبت ثبت شد و به کاربر خبر داده شد: ' + d.slot_fa, 'ok'); loadQueue();
 }
@@ -257,7 +257,7 @@ async function changeSlot(caseId, btn) {
 async function startFree() {
   let plate = plateFrom('fp');
   if (plate === null) { toast('پلاک کامل نیست.', 'err'); return; }
-  if (!plate) plate = en(document.getElementById('fvin').value.trim()).toUpperCase();
+  if (!plate) plate = enNum(document.getElementById('fvin').value.trim()).toUpperCase();
   if (!plate) { toast('پلاک یا شماره‌ی شاسی را وارد کنید.', 'err'); return; }
   const d = await call('start_free', {plate});
   if (!d.ok) { toast(d.error || 'خطا', 'err'); return; }
@@ -275,7 +275,7 @@ async function detectIntro(inp) {
   FILE_TOKEN = r.token || '';
   st.textContent = r.detected ? '✅ خوانده شد؛ اطلاعات را بررسی کنید.' : (r.warning || 'فایل پیوست شد؛ اطلاعات را وارد کنید.');
   const x = r.fields || {};
-  const set = (id, v) => { if (v) document.getElementById(id).value = fa(v); };
+  const set = (id, v) => { if (v) document.getElementById(id).value = faNum(v); };
   document.getElementById('i-name').value = x.full_name || '';
   set('i-nid', x.national_code); set('i-pc', x.personnel_code); set('i-date', x.letter_date); set('i-mob', x.mobile);
   document.getElementById('i-co').value = x.company_name || '';
@@ -283,7 +283,7 @@ async function detectIntro(inp) {
 }
 async function createIntro() {
   const b = document.getElementById('intro-save'); b.disabled = true;
-  const g = id => en(document.getElementById(id).value.trim());
+  const g = id => enNum(document.getElementById(id).value.trim());
   const r = await call('create_intro', {full_name: document.getElementById('i-name').value.trim(), national_code: g('i-nid'), personnel_code: g('i-pc'),
     company_name: document.getElementById('i-co').value.trim(), letter_date: g('i-date'), mobile: g('i-mob'), max_quota: g('i-quota'), file_token: FILE_TOKEN}, '/api/record_actions.php');
   b.disabled = false;
@@ -304,7 +304,7 @@ async function createCase() {
   if (!r.ok) { b.disabled = false; toast(r.error || 'خطا', 'err'); return; }
   const self = NEW_REL === 'self';
   const nm = self ? document.getElementById('s2-name').textContent : document.getElementById('o-name').value.trim();
-  const nid = self ? en(document.getElementById('i-nid').value.trim()) : en(document.getElementById('o-nid').value.trim());
+  const nid = self ? enNum(document.getElementById('i-nid').value.trim()) : enNum(document.getElementById('o-nid').value.trim());
   await call('set_naming', {case_id: r.case_id, plate: plate || '', insured_name: nm, insured_national_id: nid}, '/api/case_actions.php');
   b.disabled = false;
   toast('درخواست ثبت شد؛ برای همین معرفی‌نامه درخواستِ دیگری هم می‌توانید ثبت کنید.', 'ok');

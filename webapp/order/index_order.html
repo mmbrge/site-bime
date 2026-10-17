@@ -358,9 +358,10 @@ try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.
 const params = new URLSearchParams(location.search);
 const TOKEN = params.get('t') || params.get('token') || '';
 const API = '/api/webapp_order.php';
-const VC = '/api/vehicle_catalog.php';
+const VCAT_API = '/api/vehicle_catalog.php';
 const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
-const K = window.MiniKit;
+// نامِ «K» عمداً نیست: اسکریپتِ خودِ بله (miniapp.js) متغیرِ سراسریِ K دارد و «const K» کلِ این اسکریپت را از کار می‌انداخت
+const MKIT = window.MiniKit;
 
 let caseId = null, caseData = null, personName = '';
 let navStack = [];
@@ -371,7 +372,7 @@ let veh = { kind: null, grp: null, model: null };
 function toFa(n) { return String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); }
 function toEn(s) { return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
-const esc = s => K.esc(s);
+const esc = s => MKIT.esc(s);
 function formatPlateHtml(plate) {
     if (!plate) return '';
     { const _mp = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);   // پلاکِ موتورسیکلت
@@ -395,7 +396,7 @@ function computeAddressee(relationship) { return relationship === 'خودم' ? '
 
 // ---- خارج از ساعتِ کاری: صفحه‌ی متحرک با برنامه‌ی هفته و زمانِ بعدی ----
 function showClosed(hours) {
-    K.closedScreen(document.getElementById('closed-box'), hours || {});
+    MKIT.closedScreen(document.getElementById('closed-box'), hours || {});
     showScreenRaw('closed');
 }
 
@@ -428,7 +429,7 @@ function goBack() {
 async function initApp() {
     if (!TOKEN) { showAppError('لینک نامعتبر است.'); return; }
     fillLetterSelects();
-    K.dateField(document.getElementById('pi-birthdate'), () => ({ title: '🎂 تاریخ تولد', max: K.jToday(), startView: 'year', focus: [K.jToday()[0] - 30, 1, 1] }));
+    MKIT.dateField(document.getElementById('pi-birthdate'), () => ({ title: '🎂 تاریخ تولد', max: MKIT.jToday(), startView: 'year', focus: [MKIT.jToday()[0] - 30, 1, 1] }));
     try {
         const data = await (await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`)).json();
         if (!data.ok) { showAppError(data.error); return; }
@@ -593,9 +594,9 @@ function chooseKind(k) {
 const groupsCache = {};
 async function pickGroup() {
     if (!veh.kind) return;
-    if (!groupsCache[veh.kind]) { try { const d = await (await fetch(`${VC}?action=groups&kind=${veh.kind}`)).json(); groupsCache[veh.kind] = d.ok ? d.groups : []; } catch(e) { groupsCache[veh.kind] = []; } }
+    if (!groupsCache[veh.kind]) { try { const d = await (await fetch(`${VCAT_API}?action=groups&kind=${veh.kind}`)).json(); groupsCache[veh.kind] = d.ok ? d.groups : []; } catch(e) { groupsCache[veh.kind] = []; } }
     const kfa = (KINDS.find(x => x.key === veh.kind) || {}).fa || '';
-    const it = await K.pick({ title: `نوعِ خودرو (${kfa})`, value: veh.grp, items: groupsCache[veh.kind].map(g => ({ v: g.grp, label: g.grp, sub: toFa(g.n) + ' مدل' })) });
+    const it = await MKIT.pick({ title: `نوعِ خودرو (${kfa})`, value: veh.grp, items: groupsCache[veh.kind].map(g => ({ v: g.grp, label: g.grp, sub: toFa(g.n) + ' مدل' })) });
     if (!it) return;
     if (veh.grp !== it.v) veh.model = null;
     veh.grp = it.v;
@@ -605,8 +606,8 @@ async function pickGroup() {
 async function pickModel() {
     if (!veh.kind) return;
     if (!veh.grp) { pickGroup(); return; }
-    const it = await K.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید...', value: veh.model && veh.model.id,
-        onSearch: async q => { const d = await (await fetch(`${VC}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
+    const it = await MKIT.pick({ title: `مدلِ خودرو · ${veh.grp}`, placeholder: 'نامِ مدل را بنویسید...', value: veh.model && veh.model.id,
+        onSearch: async q => { const d = await (await fetch(`${VCAT_API}?action=models&kind=${veh.kind}&grp=${encodeURIComponent(veh.grp)}&q=${encodeURIComponent(q)}`)).json();
             return (d.models || []).map(m => ({ v: m.id, label: m.title, sub: toFa(m.sub), raw: m })); } });
     if (!it) return;
     veh.model = it.raw;
