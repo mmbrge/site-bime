@@ -532,6 +532,19 @@ function get_or_create_main_app_token($pdo, $personId) {
     return create_webapp_session($pdo, $personId, null, 'main', null, 60 * 24 * 14); // ۱۴ روز
 }
 
+// نسخه‌ی فایل‌های مینی‌اپ (از تاریخِ آخرین تغییرشان) برای ?v= در لینک‌های web_app: WebViewِ بله صفحه را کش می‌کند
+// و با هر آپلودِ تازه، آدرسِ تازه باعث می‌شود همیشه نسخه‌ی جدید باز شود
+function miniapp_v() {
+    static $v = null;
+    if ($v !== null) return $v;
+    $m = 0;
+    foreach (['webapp/app/index.html', 'webapp/order/index_order.html', 'webapp/premium/index_premium.html', 'webapp/mini-kit.js', 'webapp/diag.js', 'chat-ui.js', 'iran-time.js'] as $f) {
+        $t = @filemtime(dirname(__DIR__) . '/' . $f);
+        if ($t > $m) $m = $t;
+    }
+    return $v = base_convert((string)$m, 10, 36);
+}
+
 // دکمه‌ی همیشگیِ کنار جعبه‌ی تایپ پیام در بله (مثل دکمه‌ی «مجانی بخوان» در بات‌های دیگر) که با یک لمس
 // مستقیماً صفحه‌ی اصلیِ مینی‌اپ را باز می‌کند - کاملاً جدا از دکمه‌های inline زیر پیام‌هاست، فقط یک‌بار
 // برای هر چت لازم است تنظیم شود (تا وقتی تغییر نکند، ثابت می‌ماند)
@@ -546,7 +559,7 @@ function set_chat_menu_button($pdo, $chatId, $personId, $bot_token = null) {
             'menu_button' => [
                 'type' => 'web_app',
                 'text' => '🚀 باز کردن',
-                'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token],
+                'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token . '&v=' . miniapp_v()],
             ],
         ], $bot_token);
     } catch (Exception $e) {}

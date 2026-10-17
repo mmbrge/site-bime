@@ -2327,6 +2327,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">فهرستِ «نوع ← گروه ← مدل» که کاربر در مینی‌اپ (ثبتِ درخواست و استعلامِ حق بیمه) از آن انتخاب می‌کند. «رده‌ی استعلام» تعیین می‌کند مبلغِ ثالث با کدام رده حساب شود؛ گروه/مدلی که رده ندارد در استعلام به کارشناس ارجاع می‌شود. وسیله‌ی انتخاب‌شده روی درخواست ثبت و در صفحه‌ی صدور دیده می‌شود.</p>
                     <div id="ma-vehicles"></div>
                 </div>
+                <div data-scat="webapp" class="card p-6 border-rose-100 bg-gradient-to-br from-white to-rose-50/30 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-rose-100 pb-3"><i class="fas fa-bug text-rose-500 ml-2"></i>گزارشِ خطاهای مینی‌اپ (از گوشیِ کاربران)</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">اگر مینی‌اپ روی گوشیِ کاربری (داخلِ بله) درست اجرا نشود، متنِ خطا و مشخصاتِ دستگاه (نسخه‌ی مرورگر، اندازه‌ی صفحه) خودکار اینجا ثبت می‌شود. برای عیب‌یابیِ دستی در ربات <b>/debug</b> را بفرستید: صفحه‌ها با کادرِ «اطلاعاتِ دستگاه» باز می‌شوند و گزارش اینجا هم می‌آید. فقط ۳۰ روزِ اخیر نگه داشته می‌شود.</p>
+                    <div id="ma-client-errors"></div>
+                </div>
 
                 <div data-scat="issue" class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-blue-100 pb-3"><i class="fas fa-layer-group text-blue-500 ml-2"></i>سقف بیمه‌نامه به ازای هر معرفی‌نامه</h3>
@@ -4363,7 +4368,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="tools.js?v=2"></script>
     <script src="comfort.js?v=16"></script>
     <script src="settings-nav.js?v=5"></script>
-    <script src="miniapp-admin.js?v=1"></script>
+    <script src="miniapp-admin.js?v=2"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
@@ -10641,7 +10646,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'tickets') openMessenger(tabKey);
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
-            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); }
+            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }

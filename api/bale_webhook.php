@@ -399,8 +399,8 @@ function main_menu_kb($pdo, $chat_id) {
     $siteUrl = get_site_url($pdo);
     if ($personId && $siteUrl) {
         $token = get_or_create_main_app_token($pdo, $personId);
-        $row1[] = ['text' => '🚀 ورود به پنل کاربری', 'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token]];
-        $rows = [$row1, [['text' => '📝 ثبت درخواست بیمه', 'web_app' => ['url' => $siteUrl . '/webapp/order/index_order.html?t=' . $token]]]];
+        $row1[] = ['text' => '🚀 ورود به پنل کاربری', 'web_app' => ['url' => $siteUrl . '/webapp/app/?t=' . $token . '&v=' . miniapp_v()]];
+        $rows = [$row1, [['text' => '📝 ثبت درخواست بیمه', 'web_app' => ['url' => $siteUrl . '/webapp/order/index_order.html?t=' . $token . '&v=' . miniapp_v()]]]];
         // دکمه‌ی معمولیِ url (نه web_app) عمداً است: در مرورگر داخلیِ بله باز می‌شود، نه WebView
         // محدودِ مینی‌اپ - چون دوربین واقعی آنجا کار می‌کند (تایید شده)
         $rows[] = [['text' => '📎 بازدید مدارک و سلامت خودرو', 'url' => $siteUrl . '/webapp/visit/index_visit.html?t=' . $token]];
@@ -1394,7 +1394,25 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
 
     // ---- /start برای کاربر شناسایی‌شده: همیشه و از هر حالتی، به منوی اصلی برمی‌گردد و پیام تازه
     // (با دکمه‌های به‌روز) می‌فرستد - چون تا پیام جدیدی نیاید، دکمه‌های پیام‌های قبلی همان قبلی می‌مانند ----
+    // ---- عیب‌یابیِ مینی‌اپ روی گوشیِ خودِ کاربر: صفحه‌ها با کادرِ «اطلاعاتِ دستگاه» باز می‌شوند ----
+    if ($text === '/debug' && $person) {
+        $siteUrl = get_site_url($pdo);
+        if (!$siteUrl) { send_msg($chat_id, 'آدرسِ سایت تنظیم نشده است.', $bot_token); return; }
+        $tk = get_or_create_main_app_token($pdo, $person['id']);
+        $q = 't=' . $tk . '&v=' . miniapp_v() . '&debug=1';
+        send_msg($chat_id, "🛠 عیب‌یابیِ مینی‌اپ\nهر دکمه را بزنید؛ پایینِ صفحه کادرِ «اطلاعاتِ دستگاه» (و اگر خطایی باشد، متنِ خطا) نشان داده می‌شود. از آن عکس بگیرید و برای پشتیبانی بفرستید.", $bot_token,
+            ['inline_keyboard' => [
+                [['text' => '🏠 صفحه‌ی اصلی', 'web_app' => ['url' => $siteUrl . '/webapp/app/?' . $q]]],
+                [['text' => '📝 ثبت درخواست', 'web_app' => ['url' => $siteUrl . '/webapp/order/index_order.html?' . $q]]],
+                [['text' => '💰 استعلام', 'web_app' => ['url' => $siteUrl . '/webapp/premium/index_premium.html?' . $q]]],
+                [['text' => '🌐 استعلام در مرورگرِ بله', 'url' => $siteUrl . '/webapp/premium/index_premium.html?' . $q]],
+            ]]);
+        return;
+    }
+
     if ($text === '/start' && $person) {
+        // دکمه‌ی ثابتِ کنارِ جعبه‌ی پیام هم با آدرسِ تازه (نسخه‌ی جدیدِ مینی‌اپ) دوباره تنظیم می‌شود
+        try { set_chat_menu_button($pdo, $chat_id, $person['id'], $bot_token); } catch (Throwable $e) {}
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM introductions WHERE person_id = ?");
         $stmt->execute([$person['id']]);
         $hasIntro = $stmt->fetchColumn() > 0;
@@ -1996,7 +2014,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
         $siteUrlForPremium = get_site_url($pdo);
         if ($siteUrlForPremium) {
             $premiumKb = ['inline_keyboard' => [[
-                ['text' => '💰 استعلام حق بیمه (بدون نیاز به ورود)', 'web_app' => ['url' => $siteUrlForPremium . '/webapp/premium/index_premium.html']],
+                ['text' => '💰 استعلام حق بیمه (بدون نیاز به ورود)', 'web_app' => ['url' => $siteUrlForPremium . '/webapp/premium/index_premium.html?v=' . miniapp_v()]],
             ]]];
         }
         send_msg($chat_id, "سلام! 👋 به سامانه بیمه اتومبیل پاسارگاد ماموت خوش آمدید. 🐘\n\n🪪 لطفاً کد ملیِ ۱۰ رقمیِ خود را وارد کنید:\n\n" . bot_login_help_text() . "\n\n📖 راهنمای کامل: /help", $bot_token, $premiumKb ?: kb_remove());

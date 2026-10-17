@@ -20,6 +20,23 @@ try {
     if ($action === 'hours_get') $out(['ok' => true, 'cfg' => oh_get($pdo), 'status' => oh_status($pdo)]);
     if ($action === 'hours_save') { $cfg = oh_save($pdo, (array)($in['cfg'] ?? [])); $out(['ok' => true, 'cfg' => $cfg, 'status' => oh_status($pdo)]); }
 
+    // ---------------- گزارشِ خطاهای مینی‌اپ (از گوشیِ کاربر - webapp/diag.js → api/webapp_client_log.php) ----------------
+    if ($action === 'client_errors' || $action === 'client_errors_clear') {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS webapp_client_errors (id INT AUTO_INCREMENT PRIMARY KEY, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            person_id INT NULL, page VARCHAR(190) NULL, ua VARCHAR(400) NULL, errors_text TEXT NULL, info_json TEXT NULL, ip VARCHAR(45) NULL,
+            KEY k_created (created_at)) DEFAULT CHARSET=utf8mb4");
+        if ($action === 'client_errors_clear') { $pdo->exec("DELETE FROM webapp_client_errors"); $out(['ok' => true]); }
+        $rows = $pdo->query("SELECT e.*, p.full_name AS person_name, p.mobile_number FROM webapp_client_errors e LEFT JOIN persons p ON p.id = e.person_id ORDER BY e.id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$r) {
+            [$y, $m, $d] = jalali_from_gregorian_ts(strtotime($r['created_at']));
+            $r['created_j'] = sprintf('%04d/%02d/%02d', $y, $m, $d) . ' ' . date('H:i:s', strtotime($r['created_at']));
+            $r['info'] = json_decode((string)$r['info_json'], true) ?: [];
+            unset($r['info_json'], $r['ip']);
+        }
+        unset($r);
+        $out(['ok' => true, 'rows' => $rows]);
+    }
+
     // ---------------- استعلام‌ها ----------------
     if (in_array($action, ['inq_list', 'inq_get', 'inq_reply', 'inq_status'], true)) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS premium_inquiries (id INT AUTO_INCREMENT PRIMARY KEY, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, person_id INT NULL, bale_user_id BIGINT NULL,

@@ -630,7 +630,7 @@ function chat_notify_client($pdo, $type, $id, $ticketId, $text, $fileRel) {
         $recent->execute([$id]);
         if (intval($recent->fetchColumn()) > 1) return;
         $site = get_site_url($pdo);
-        $markup = $site ? ['inline_keyboard' => [[['text' => '💬 مشاهده و پاسخ در پنل کاربری', 'web_app' => ['url' => $site . '/webapp/app/?t=' . get_or_create_main_app_token($pdo, $id) . '&open=support']]]]] : null;
+        $markup = $site ? ['inline_keyboard' => [[['text' => '💬 مشاهده و پاسخ در پنل کاربری', 'web_app' => ['url' => $site . '/webapp/app/?t=' . get_or_create_main_app_token($pdo, $id) . '&open=support' . (function_exists('miniapp_v') ? '&v=' . miniapp_v() : '')]]]]] : null;
         $payload = ['chat_id' => $chat, 'text' => "📩 پیام تازه از کارشناسِ «بیمه با ما» دارید.\nبرای دیدن و پاسخ، دکمه‌ی زیر را بزنید."];
         if ($markup) $payload['reply_markup'] = $markup;
         bale_curl_call('sendMessage', $payload, $bot);

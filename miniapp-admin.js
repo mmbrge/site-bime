@@ -224,5 +224,35 @@
         if (done) done.onclick = async () => { await post(API, { action: 'inq_status', id: r.id, status: 'ANSWERED' }); close(); iLoad(); };
     }
 
-    window.MiniAppAdmin = { hoursCard, vehicleCard, inquiries };
+    // =====================================================================
+    //  گزارشِ خطاهای مینی‌اپ (از گوشیِ کاربران - webapp/diag.js)
+    // =====================================================================
+    async function clientErrors(el) {
+        if (!el) return;
+        el.innerHTML = '<p class="text-xs text-slate-400">در حال بارگذاری…</p>';
+        const d = await post(API, { action: 'client_errors' });
+        if (!d.ok) { el.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
+        const rows = d.rows || [];
+        el.innerHTML = `<div class="flex items-center gap-2 mb-3">
+              <span class="text-[11px] font-bold text-slate-500">${fa(rows.length)} گزارشِ اخیر</span>
+              <button data-re class="mr-auto bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[11px] font-bold"><i class="fas fa-sync-alt ml-1"></i>تازه‌سازی</button>
+              ${rows.length ? '<button data-clr class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-[11px] font-bold"><i class="fas fa-trash ml-1"></i>پاک کردنِ همه</button>' : ''}</div>
+            ${rows.length ? '' : '<p class="text-xs text-slate-400 text-center py-6">گزارشی نیست ✅</p>'}
+            <div class="space-y-2 max-h-[520px] overflow-y-auto">${rows.map(r => `
+              <details class="border border-slate-200 rounded-xl bg-white">
+                <summary class="cursor-pointer p-3 text-xs flex flex-wrap items-center gap-2">
+                  <b class="text-slate-700">${esc(r.person_name || 'کاربرِ ناشناس')}</b>
+                  <span class="text-slate-400" dir="ltr">${esc(r.page || '')}</span>
+                  <span class="text-rose-600 truncate max-w-full">${esc((r.errors_text || '').split('\n')[0] || 'اطلاعاتِ دستگاه')}</span>
+                  <span class="mr-auto text-slate-400">${fa(r.created_j)}</span></summary>
+                <div class="px-3 pb-3 text-[11px]">
+                  <pre class="bg-rose-50 rounded-lg p-2 whitespace-pre-wrap break-all text-rose-800" dir="ltr">${esc(r.errors_text || '—')}</pre>
+                  <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 text-slate-600" dir="ltr">${Object.keys(r.info || {}).map(k => `<div class="break-all"><b>${esc(k)}</b>: ${esc(r.info[k])}</div>`).join('')}</div>
+                </div></details>`).join('')}</div>`;
+        el.querySelector('[data-re]').onclick = () => clientErrors(el);
+        const c = el.querySelector('[data-clr]');
+        if (c) c.onclick = async () => { const r = await post(API, { action: 'client_errors_clear' }); if (r.ok) { toast('پاک شد.', 'success'); clientErrors(el); } };
+    }
+
+    window.MiniAppAdmin = { hoursCard, vehicleCard, inquiries, clientErrors };
 })();

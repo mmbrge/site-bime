@@ -74,7 +74,8 @@
         toggle(key) { const m = this.get(); m.keys = m.keys || {}; if (key) { if (m.keys[key]) delete m.keys[key]; else m.keys[key] = 1; } else m.all = !m.all; LS.set(this.k, m); },
     };
     // ایموجیِ تکی: بزرگ و با انیمیشنِ مخصوصِ خودش
-    const JUMBO_RE = /^(?:\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|[\u2600-\u27BF])(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|[\u2600-\u27BF])(?:\uFE0F|\p{Emoji_Modifier})?)*)$/u;
+    // با new RegExp داخلِ try: WebViewهای قدیمی (مثلِ بله روی برخی گوشی‌ها) \p{…} را نمی‌شناسند و کلِ فایل از کار می‌افتاد
+    const JUMBO_RE = (() => { try { return new RegExp('^(?:\\p{Regional_Indicator}{2}|(?:\\p{Extended_Pictographic}|[\\u2600-\\u27BF])(?:\\uFE0F|\\p{Emoji_Modifier})?(?:\\u200D(?:\\p{Extended_Pictographic}|[\\u2600-\\u27BF])(?:\\uFE0F|\\p{Emoji_Modifier})?)*)$', 'u'); } catch (e) { return /^(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?$/; } })();
     const isJumbo = t => { t = String(t || '').trim(); return !!t && t.length <= 16 && JUMBO_RE.test(t); };
     const JUMBO_ANIM = e => {
         const M = [['❤️💖💗💓💕♥️😍🥰😘', 'beat'], ['😂🤣😆😁😀😃😄', 'laugh'], ['👍👌✅💯🤝', 'thumb'], ['🔥', 'flame'], ['🎉🥳🎊✨⭐🌟', 'party'],

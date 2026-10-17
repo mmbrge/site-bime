@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<script src="/webapp/diag.js?v=1"></script>
 <title>بیمه با ما</title>
 <link rel="icon" href="/brand_icon.php">
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
@@ -27,6 +28,7 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   button, select, textarea, input { font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif; }
   html, body { margin: 0; padding: 0; height: 100%; height: var(--app-h, 100%); overscroll-behavior: none; }
+  html { background: #020617; }   /* اگر WebViewِ بله بلندتر از بدنه باشد، پایینِ صفحه سفید/خالی دیده نشود */
   body {
     font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
     background: radial-gradient(circle at 20% 0%, #312e81 0%, var(--bg1) 45%, #020617 100%);
@@ -219,7 +221,7 @@
     <div class="card-btn" onclick="openVisitHub()"><span class="ic">📎</span><span class="lbl">بارگزاری مدارک</span><span class="sub" id="docs-count-badge"></span></div>
     <div class="card-btn" onclick="nav('policies')"><span class="ic">📁</span><span class="lbl">بیمه‌نامه‌های من</span><span class="sub" id="policies-count-badge"></span></div>
     <div class="card-btn" onclick="nav('vehicles')"><span class="ic">🚙</span><span class="lbl">پلاک‌های من</span><span class="sub" id="vehicles-count-badge"></span></div>
-    <div class="card-btn" onclick="location.href='../premium/index_premium.html?t='+TOKEN"><span class="ic">💰</span><span class="lbl">استعلام حق بیمه</span></div>
+    <div class="card-btn" onclick="location.href='../premium/index_premium.html?t='+TOKEN+mvq()"><span class="ic">💰</span><span class="lbl">استعلام حق بیمه</span></div>
     <div class="card-btn wide" onclick="nav('support')">
       <span class="ic">💬</span><span class="lbl">ارتباط با کارشناس</span>
       <span id="support-reply-badge" style="display:none; position:absolute; top:8px; left:8px; font-size:9px; background:var(--success); color:#fff; padding:2px 6px; border-radius:8px; font-weight:800;">پاسخ جدید</span>
@@ -332,6 +334,8 @@ try { if (window.Bale && window.Bale.WebApp) { Bale.WebApp.ready(); Bale.WebApp.
 })();
 
 const params = new URLSearchParams(location.search);
+// نسخه‌ی مینی‌اپ (?v= از لینکِ ربات) به صفحه‌های بعدی هم داده می‌شود تا WebViewِ بله نسخه‌ی کش‌شده‌ی قدیمی را باز نکند
+function mvq() { const v = params.get('v'); return v ? '&v=' + encodeURIComponent(v) : ''; }
 let TOKEN = params.get('t') || params.get('token') || '';
 const API = '/api/webapp_app.php';
 const PLATE_LETTERS = ['ب','پ','ت','ث','ج','د','ز','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
@@ -500,7 +504,7 @@ async function goOrder() {
         if (window.MiniKit) MiniKit.closedScreen(document.getElementById('closed-box'), HOURS);
         return;
     }
-    location.href = '../order/index_order.html?t=' + encodeURIComponent(TOKEN);
+    location.href = '../order/index_order.html?t=' + encodeURIComponent(TOKEN) + mvq();
 }
 
 // ======================= بیمه‌نامه‌های من =======================
@@ -536,7 +540,7 @@ async function loadPolicies() {
             } else if (!draft) {
                 actions.push(`<button class="btn btn-outline btn-sm" onclick="openVisitHub(0, 'uploaded')">📂 مشاهده‌ی مدارکِ بارگزاری‌شده</button>`);
             }
-            if (draft) actions.push(`<button class="btn btn-outline btn-sm" onclick="location.href='../order/index_order.html?t=${encodeURIComponent(TOKEN)}&case=${c.id}'">✏️ ادامه‌ی ثبتِ درخواست</button>`);
+            if (draft) actions.push(`<button class="btn btn-outline btn-sm" onclick="location.href='../order/index_order.html?t=${encodeURIComponent(TOKEN)}&case=${c.id}${mvq()}'">✏️ ادامه‌ی ثبتِ درخواست</button>`);
             return `<div class="pol-card">
                 <div class="pol-head"><b>${escH(c.kind_icon)} ${escH(c.type_fa)}</b>${formatPlateHtml(c.plate) || ''}</div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
