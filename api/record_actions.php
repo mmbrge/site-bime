@@ -109,7 +109,7 @@ try {
         $companyName = trim($data['company_name'] ?? '');
         $mobile = preg_replace('/\D/', '', p2e_digits($data['mobile'] ?? ''));
         $ld = p2e_digits(trim($data['letter_date'] ?? ''));
-        $letterDate = preg_match('/^(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+        $letterDate = jalali_input_to_sql($ld);
         $quota = intval(p2e_digits($data['max_quota'] ?? 0));
         $token = basename((string)($data['file_token'] ?? ''));
         if (mb_strlen($fullName) < 3) { echo json_encode(['ok' => false, 'error' => 'نام و نام خانوادگیِ پرسنل را وارد کنید.', 'field' => 'full_name'], JSON_UNESCAPED_UNICODE); exit; }
@@ -188,7 +188,7 @@ try {
         $companyName = trim(preg_replace('/\s+/u', ' ', (string)($data['company_name'] ?? '')));
         $mobile = preg_replace('/\D/', '', p2e_digits((string)($data['mobile'] ?? '')));
         $ld = p2e_digits(trim((string)($data['letter_date'] ?? '')));
-        $letterDate = preg_match('/^(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+        $letterDate = jalali_input_to_sql($ld);
         $quota = intval(p2e_digits((string)($data['max_quota'] ?? $I['max_quota'])));
         if (mb_strlen($fullName) < 3) { echo json_encode(['ok' => false, 'error' => 'نام و نام خانوادگی را وارد کنید.', 'field' => 'full_name'], JSON_UNESCAPED_UNICODE); exit; }
         if ($ld !== '' && !$letterDate) { echo json_encode(['ok' => false, 'error' => 'تاریخ معرفی‌نامه را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.', 'field' => 'letter_date'], JSON_UNESCAPED_UNICODE); exit; }
@@ -505,9 +505,14 @@ try {
                 $stmt = $pdo->prepare("SELECT * FROM introductions WHERE person_id = ? AND COALESCE(used_quota, 0) < COALESCE(max_quota, 4) ORDER BY id DESC LIMIT 1");
                 $stmt->execute([$personId]);
                 $intro = $stmt->fetch();
+                $ldIn = trim((string)($data['letter_date'] ?? ''));
+                $letterDateIn = jalali_input_to_sql($ldIn);
+                if ($ldIn !== '' && !$letterDateIn) throw new RuntimeException('تاریخ معرفی‌نامه را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.');
                 if ($intro) {
                     $introId = intval($intro['id']);
                     $note = 'این شخص از قبل معرفی‌نامه داشت؛ درخواست به همان معرفی‌نامه اضافه شد.';
+                    // معرفی‌نامه‌ی قبلی تاریخ نداشت: تاریخِ واردشده برایش ثبت می‌شود
+                    if (empty($intro['letter_date']) && $letterDateIn) $pdo->prepare("UPDATE introductions SET letter_date = ? WHERE id = ?")->execute([$letterDateIn, $introId]);
                 } else {
                     $quota = intval(p2e_digits($data['max_quota'] ?? 0));
                     if ($quota <= 0) {
@@ -515,8 +520,7 @@ try {
                         $quota = intval($q->fetchColumn() ?: 4);
                     }
                     // تاریخ معرفی‌نامه در این جدول به‌صورت شمسی نگه داشته می‌شود (مثل مسیر صف)
-                    $ld = p2e_digits(trim($data['letter_date'] ?? ''));
-                    $letterDate = preg_match('/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/', $ld, $m) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+                    $letterDate = $letterDateIn;
                     $pdo->prepare("INSERT INTO introductions (person_id, file_path, letter_date, max_quota) VALUES (?, 'ثبت_دستی', ?, ?)")
                         ->execute([$personId, $letterDate, $quota]);
                     $introId = intval($pdo->lastInsertId());

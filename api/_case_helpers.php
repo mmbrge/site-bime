@@ -1077,6 +1077,22 @@ function period_month_of($jy, $jm, $jd, $pdo = null) {
 }
 
 // ماهِ معرفی‌نامه: تاریخِ خودِ نامه (letter_date که شمسی ذخیره می‌شود)، وگرنه تاریخِ ثبت - طبقِ دوره‌ی مالی
+// تاریخِ شمسیِ واردشده (تایپی یا خوانده‌شده از نامه) => «YYYY-MM-DD» برای ستونِ letter_date؛ نامعتبر => null
+// رقمِ فارسی/عربی، نویسه‌های نامرئی (LRM/RLM/ZWNJ)، فاصله، هر جداکننده، ترتیبِ روز/ماه/سال و شکلِ ۸ رقمی (۱۴۰۵۰۷۰۴) پذیرفته می‌شود
+function jalali_input_to_sql($s) {
+    $s = p2e_digits((string)$s);
+    $s = preg_replace('/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u', '', $s);
+    $s = trim($s);
+    if ($s === '') return null;
+    if (preg_match('/^(1[34]\d\d)(\d{2})(\d{2})$/', $s, $m)) { $y = $m[1]; $mo = $m[2]; $d = $m[3]; }
+    elseif (preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', $s, $m)) { $y = $m[1]; $mo = $m[2]; $d = $m[3]; }
+    elseif (preg_match('/(\d{1,2})\D+(\d{1,2})\D+(1[34]\d\d)/', $s, $m)) { $y = $m[3]; $mo = $m[2]; $d = $m[1]; }
+    else return null;
+    $mo = intval($mo); $d = intval($d);
+    if ($mo < 1 || $mo > 12 || $d < 1 || $d > 31 || ($mo > 6 && $d > 30)) return null;
+    return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+}
+
 function intro_letter_month($intro) {
     if (!empty($intro['letter_date']) && preg_match('/^(1[34]\d\d)-(\d{1,2})-(\d{1,2})/', (string)$intro['letter_date'], $m)
         && intval($m[2]) >= 1 && intval($m[2]) <= 12) return period_month_of($m[1], $m[2], $m[3]);

@@ -4369,7 +4369,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
     <script src="chat-ui.js?v=12"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
-    <script src="table-count.js?v=6"></script>
+    <script src="table-count.js?v=7"></script>
     <script>
         // ساعتِ سربرگ: «چهارشنبه ۱۴۰۵/۰۷/۰۹ - ۱۴:۰۵:۲۳» به وقتِ ایران، ثانیه‌به‌ثانیه
         if (window.IrTime) IrTime.mountClock(document.getElementById('hdr-clock'), {render: (el, p, date, time) => {
@@ -5328,7 +5328,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <td class="p-4 text-slate-700">${row.full_name || '-'}${row.company_name ? `<span class="block text-[10px] text-slate-400 font-normal">${row.company_name}</span>` : ''}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
                         <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.personnel_code) || '-'}</td>
-                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : '<span class="text-slate-300">ثبت نشده</span>'}</span>
+                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : `<button type="button" class="text-amber-600 hover:text-amber-700 font-bold underline decoration-dotted" title="ثبتِ تاریخِ صدورِ معرفی‌نامه" onclick="event.stopPropagation(); openIntroEdit(${row.introduction_id})"><i class="fas fa-pen ml-1 text-[10px]"></i>ثبت نشده</button>`}</span>
                             <span class="block text-[10px] text-slate-400 font-normal mt-0.5" title="تاریخ ثبت در سامانه"><i class="fas fa-clock-rotate-left ml-1"></i>${e2p(row.registered_j || '-')}</span></td>
                         <td class="p-4 whitespace-nowrap"><span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-3 py-1 text-xs">${row.letter_month_fa} ${e2p(row.letter_year)}</span></td>
                         <td class="p-4 text-blue-600 text-xs">${e2p(row.issued_summary) || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span>
@@ -5414,6 +5414,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!/^\d{10}$/.test(v('national_code'))) return bad('national_code', 'کد ملی باید ۱۰ رقم باشد.');
             if (v('letter_date') && !/^1[34]\d\d\D+\d{1,2}\D+\d{1,2}$/.test(v('letter_date'))) return bad('letter_date', 'تاریخ معرفی‌نامه را مثل ۱۴۰۵/۰۷/۰۱ وارد کنید.');
             if (v('mobile') && !/^09\d{9}$/.test(v('mobile'))) return bad('mobile', 'موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (!v('letter_date') && !(await uiConfirm('تاریخِ صدور خالی است', 'تاریخِ صدورِ معرفی‌نامه وارد نشده و در فهرست «ثبت نشده» نشان داده می‌شود. بدونِ تاریخ ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
             if (!miToken && !(await uiConfirm('بدونِ فایل', 'فایلِ معرفی‌نامه بارگذاری نشده. بدون فایل ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
             const btn = document.getElementById('mi-submit'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
             try {
@@ -5777,6 +5778,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         async function approveOcrData() {
+            // معرفی‌نامه بدونِ تاریخِ صدور: ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود؛ پیش از ثبت پرسیده می‌شود
+            if (document.getElementById('review-doc-type').value === 'معرفی‌نامه' && !document.getElementById('review-letterdate').value.trim()
+                && !(await uiConfirm('تاریخِ صدور خالی است', 'تاریخِ صدورِ معرفی‌نامه وارد نشده و در فهرست «ثبت نشده» نشان داده می‌شود (ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود). بدونِ تاریخ ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
             const payload = {
                 action: 'approve',
                 queue_id: document.getElementById('review-queue-id').value,
@@ -10487,11 +10491,44 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             else showToast(data.error || 'خطا', 'error');
         }
 
+        // ---- ماندگاریِ هر زبانه: برگشت به زبانه‌ای که همین الان دیده شده دوباره بارگذاری نمی‌شود (فیلتر، صفحه‌ی جدول، انتخاب‌ها،
+        // فرمِ نیمه‌کاره و جای اسکرول همان می‌ماند). اگر در این فاصله تغییری ذخیره شده باشد یا ۲ دقیقه گذشته باشد، دوباره بارگذاری می‌شود.
+        const TAB_KEEP_MS = 120000;
+        const TAB_ALWAYS_LOAD = new Set(['settings', 'tickets']);   // تنظیمات (کارت‌های امانتی) و گفتگوها همیشه تازه
+        const tabSeen = {}, tabScroll = {};
+        window.__dataVer = window.__dataVer || 0;
+        (function trackWrites() {
+            // درخواستِ «نوشتنی» (ذخیره/حذف/ثبت) که کاربر همین الان زده نسخه‌ی داده را جلو می‌برد؛ خواندن‌ها و درخواست‌های پس‌زمینه نه
+            const READ = /^(get|list|load|search|stats|detail|read|init|boot|bootstrap|fetch|check|preview|count|poll|ping|presence|typing|options|lookup|find|export|download|view|summary|history|analytics|items|events|messages|batches|contracts|invoices|runs|staging|stream|track|file|login_logs|issue_queue|issued_list|health_list|health_detail|dashboard_alerts|finance_chart|finance_summary|company_names|filter_facets|manual_form_options|last_trace|scan_result|policy_info|policy_search|policy_conditions|request_detail|invoice_detail|intro_info|intro_get|inq_list|hours_get|perm_get|perm_peek|chat_offline|archive_threads|archive_messages|approved_reviews|approved_review_detail)$|^(list_|download_|export_|zip_|ledger_(list|meta|groups|history|installments|policy_insts)|tpl_(list|preview))|(_list|_get|_detail|_info|_preview|_search|_options|_zip|_summary|_chart|_page|_pages|_text|_peek|_export|_sample|_headers|_columns|_facets)$/;
+            let lastAct = 0;
+            ['pointerdown', 'keydown', 'submit'].forEach(ev => document.addEventListener(ev, () => { lastAct = Date.now(); }, true));
+            const bump = action => { if (Date.now() - lastAct < 8000 && !READ.test(String(action || ''))) window.__dataVer++; };
+            const actOf = (url, body) => {
+                let a = '';
+                try { if (typeof body === 'string') a = (JSON.parse(body) || {}).action || ''; else if (body instanceof FormData) a = body.get('action') || ''; } catch (e) {}
+                if (!a) { const m = String(url).match(/[?&]action=([^&#]+)/); if (m) a = decodeURIComponent(m[1]); }
+                return a;
+            };
+            const of = window.fetch;
+            window.fetch = function (input, init) {
+                try { const m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase(); const u = String((input && input.url) || input);
+                      if (m !== 'GET' && u.indexOf('/api/') !== -1) bump(actOf(u, init && init.body)); } catch (e) {}
+                return of.apply(this, arguments);
+            };
+            const xo = XMLHttpRequest.prototype.open, xs = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (m, u) { this.__m = String(m || '').toUpperCase(); this.__u = String(u || ''); return xo.apply(this, arguments); };
+            XMLHttpRequest.prototype.send = function (body) { try { if (this.__m !== 'GET' && this.__u.indexOf('/api/') !== -1) bump(actOf(this.__u, body)); } catch (e) {} return xs.apply(this, arguments); };
+        })();
+        // برای دکمه‌ی «تازه‌سازی» یا کدهایی که بخواهند زبانه‌ای حتماً دوباره بارگذاری شود
+        window.tabInvalidate = id => { if (id) delete tabSeen[id]; else Object.keys(tabSeen).forEach(k => delete tabSeen[k]); };
+
         function switchTab(tabId, tabKey) {
             // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
             if (tabId === 'users') { tabId = 'staff-users'; setUserTypeFilter('BOT'); }   // صفحه‌ی قدیمیِ «کاربران ربات بله» => «کاربران» › کارکنان
             if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
+            const scroller = document.scrollingElement || document.documentElement;
+            if (permTab) tabScroll[permTab] = scroller.scrollTop;   // جای اسکرولِ زبانه‌ی قبلی
             permTab = tabId;
             if (window.SettingsNav && SettingsNav.release) SettingsNav.release();   // تنظیماتِ بخشی که داخلِ «تنظیماتِ سامانه» باز بود به زبانه‌ی خودش برمی‌گردد
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -10527,7 +10564,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
             // زبانه‌ی فعالِ مرکز صدور/مالی در موبایل دیده شود (نوار کشیدنی است)
             setTimeout(() => { const on = document.querySelector('#tab-' + tabId + ' .iss-nav button.on'); if (on && on.parentElement.scrollWidth > on.parentElement.clientWidth) on.parentElement.scrollLeft += on.getBoundingClientRect().left - on.parentElement.getBoundingClientRect().left - (on.parentElement.clientWidth - on.offsetWidth) / 2; }, 30);
-            tabLoad(tabId, tabKey);
+            const seen = tabSeen[tabId];
+            const keep = !tabKey && seen && !TAB_ALWAYS_LOAD.has(tabId) && Date.now() - seen.at < TAB_KEEP_MS && seen.ver === window.__dataVer;
+            if (keep) {
+                requestAnimationFrame(() => { scroller.scrollTop = tabScroll[tabId] || 0; });
+            } else {
+                tabLoad(tabId, tabKey);
+                tabSeen[tabId] = {at: Date.now(), ver: window.__dataVer};
+            }
             permSchedule();
         }
         // جستجو در منوی درختیِ «بیمه با ما»

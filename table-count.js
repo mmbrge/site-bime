@@ -49,6 +49,8 @@
         return null;
     }
     function place(t) {
+        // جایِ شمارنده یک بار حساب می‌شود (getComputedStyle در هر به‌روزرسانی برای جدول‌های بزرگ کند بود)
+        if (t._tc && t._tc.isConnected && t._tcOk) return t._tc;
         const scroller = scrollerOf(t);
         const anchor = scroller || t;
         let box = t._tc;
@@ -60,6 +62,7 @@
             box.classList.remove('inside');
             if (anchor.nextElementSibling !== box) anchor.after(box);
         }
+        t._tcOk = true;
         return box;
     }
     const boxes = new Set();
@@ -111,9 +114,9 @@
         let page = Math.min(Math.max(1, t._pg || 1), pages);
         t._pg = page;
         const from = (page - 1) * size, to = from + size;
-        const keep = new Set(rows.slice(from, to));
+        const keep = new Set(rows.slice(from, to)), inRows = new Set(rows);   // Set: با هزاران ردیف هم سریع (قبلاً includes => n²)
         allRows.forEach(tr => {
-            const hide = rows.includes(tr) && !keep.has(tr);
+            const hide = inRows.has(tr) && !keep.has(tr);
             if (hide !== tr.hasAttribute('data-pg-hide')) hide ? tr.setAttribute('data-pg-hide', '') : tr.removeAttribute('data-pg-hide');
         });
         return {pages, page, size, show: true};
@@ -123,6 +126,8 @@
         document.querySelectorAll('table').forEach(t => {
             if (skip(t)) return;
             const tb = t.tBodies[0]; if (!tb) return;
+            // جدولِ زبانه‌های پنهان حساب نمی‌شود؛ با باز شدنِ زبانه (تغییرِ class) دوباره به‌روز می‌شود
+            if (!t.getClientRects().length) return;
             const box = place(t);
             const rows = [...tb.rows].filter(tr => !isPlaceholder(tr) && tr.style.display !== 'none' && !tr.classList.contains('hidden'));
             const loading = !rows.length && isLoading(tb);
