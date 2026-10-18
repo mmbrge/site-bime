@@ -67,9 +67,17 @@ try {
         $txt = trim((string)($in['otp_text'] ?? ''));
         if ($txt !== '' && strpos($txt, '{code}') === false) $out(['ok' => false, 'error' => 'متنِ پیامک باید {code} (جای کد) را داشته باشد.']);
         sms_set($pdo, 'sms_otp_text', mb_substr($txt ?: SMS_DEFAULT_OTP_TEXT, 0, 500));
-        $botOn = !empty($in['otp_bot']);
-        if ($botOn && !isset(SMS_PROVIDERS[$pv])) $out(['ok' => false, 'error' => 'برای روشن کردنِ ورود با کدِ تأیید، اول یک پنلِ پیامک انتخاب و تنظیم کنید.']);
-        sms_set($pdo, 'otp_bot_enabled', $botOn ? '1' : '0');
+        // راهِ ارسالِ کد: ورودِ کارکنان در ربات (off|sms|sapi) و ورود به پنل با کد (bot|sms|sapi)
+        $botCh = in_array($in['otp_bot_channel'] ?? '', ['off', 'sms', 'sapi'], true) ? $in['otp_bot_channel'] : (!empty($in['otp_bot']) ? 'sms' : 'off');
+        $panCh = in_array($in['panel_otp_channel'] ?? '', ['bot', 'sms', 'sapi'], true) ? $in['panel_otp_channel'] : panel_otp_channel($pdo);
+        if (($botCh === 'sms' || $panCh === 'sms') && !isset(SMS_PROVIDERS[$pv])) $out(['ok' => false, 'error' => 'برای ارسالِ کد با پنلِ پیامک، اول یک پنلِ پیامک انتخاب و تنظیم کنید.']);
+        if ($botCh === 'sapi' || $panCh === 'sapi') {
+            require_once __DIR__ . '/_apis.php';
+            if (!sapi_ready($pdo, 'sapi_otp')) $out(['ok' => false, 'error' => 'برای «پیامکی OTP» اول کلیدِ s.api.ir را در «تنظیمات ← کلیدهای API» وارد کنید.']);
+        }
+        sms_set($pdo, 'otp_bot_channel', $botCh);
+        sms_set($pdo, 'otp_bot_enabled', $botCh !== 'off' ? '1' : '0');
+        sms_set($pdo, 'panel_otp_channel', $panCh);
         sms_set($pdo, 'otp_ttl_min', max(1, min(15, intval($in['otp_ttl'] ?? 2))));
         sms_set($pdo, 'otp_len', max(4, min(6, intval($in['otp_len'] ?? 5))));
         sms_set($pdo, 'otp_max_attempts', max(2, min(10, intval($in['otp_attempts'] ?? 5))));

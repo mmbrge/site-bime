@@ -16,6 +16,8 @@ const HADM_DEFAULTS = [
     'hadm_lead' => '1',                  // اولین نوبت چند روز بعد
     'hadm_place' => '',                  // نشانی/توضیحِ محلِ بازدید
     'hadm_bot_cmd' => '',                // دستورِ مخفیِ ورودِ مدیر در ربات (خالی = غیرفعال)
+    'hadm_pick' => '1',                  // ۱ = کاربر خودش زمانِ بازدید را از نوبت‌های آزاد انتخاب می‌کند؛ ۰ = نوبتِ خودکار (روشِ قبلی)
+    'hadm_window' => '7',                // کاربر تا چند روزِ آینده می‌تواند نوبت انتخاب کند
 ];
 const HADM_WEEKDAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
 
@@ -36,6 +38,12 @@ function hadm_ensure($pdo) {
         try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` INT NULL"); }
         catch (Throwable $e) { error_log('[hadm_ensure col] ' . $e->getMessage()); }
     }
+    // نوبتِ بازدید: چه کسی گرفت (USER = خودِ کاربر، STAFF = دستی در پنل، خالی = خودکار)، وضعیت (BOOKED | DONE | CANCELED) و گزارشِ بازدیدِ مربوط
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM health_appointments LIKE 'status'")->fetch())
+            $pdo->exec("ALTER TABLE health_appointments ADD COLUMN source VARCHAR(8) NULL, ADD COLUMN status VARCHAR(10) NOT NULL DEFAULT 'BOOKED', ADD COLUMN staff_id INT NULL,
+                        ADD COLUMN note VARCHAR(300) NULL, ADD COLUMN vr_id INT NULL, ADD COLUMN done_at DATETIME NULL, ADD COLUMN updated_at DATETIME NULL, ADD KEY k_status (status, slot_at)");
+    } catch (Throwable $e) { error_log('[hadm_ensure appt cols] ' . $e->getMessage()); }
 }
 
 function hadm_settings($pdo) {
@@ -59,6 +67,8 @@ function hadm_save_settings($pdo, array $in) {
         'hadm_cap' => (string)max(1, min(50, intval(p2e_digits((string)($in['cap'] ?? $cur['hadm_cap']))))),
         'hadm_lead' => (string)max(0, min(30, intval(p2e_digits((string)($in['lead'] ?? $cur['hadm_lead']))))),
         'hadm_place' => mb_substr(trim((string)($in['place'] ?? $cur['hadm_place'])), 0, 300),
+        'hadm_pick' => array_key_exists('pick', $in) ? (!empty($in['pick']) ? '1' : '0') : $cur['hadm_pick'],
+        'hadm_window' => (string)max(1, min(30, intval(p2e_digits((string)($in['window'] ?? $cur['hadm_window']))))),
     ];
     if (array_key_exists('bot_cmd', $in)) {
         $cmd = trim((string)$in['bot_cmd']);
@@ -84,9 +94,17 @@ function hadm_appt_get($pdo, $caseId) {
     $st->execute([intval($caseId)]);
     return $st->fetch() ?: null;
 }
+function hadm_user_picks($pdo) { return hadm_settings($pdo)['hadm_pick'] !== '0'; }
+// نوبتِ فعال (لغوشده حساب نمی‌شود)
+function hadm_appt_active($pdo, $caseId) {
+    $a = hadm_appt_get($pdo, $caseId);
+    return $a && ($a['status'] ?? 'BOOKED') !== 'CANCELED' ? $a : null;
+}
 
 // نوبتِ این درخواست (اگر ندارد، اولین نوبتِ آزاد طبقِ برنامه ساخته می‌شود)؛ null یعنی برنامه نوبتی ندارد
+// در حالتِ «انتخابِ نوبت توسط کاربر» نوبتِ خودکار ساخته نمی‌شود (تا کاربر یا کارشناس انتخاب کند)
 function hadm_appt_assign($pdo, $caseId) {
+    if (hadm_user_picks($pdo)) return hadm_appt_active($pdo, $caseId);
     $cur = hadm_appt_get($pdo, $caseId);
     if ($cur && strtotime($cur['slot_at']) >= strtotime('today')) return $cur;
     $s = hadm_settings($pdo);
@@ -131,9 +149,96 @@ function hadm_case_appt_info($pdo, $case) {
     if (($case['insurance_type'] ?? '') !== 'BODY' || hadm_self_enabled($pdo)) return null;
     if (in_array((string)($case['status'] ?? ''), ['ISSUED', 'WITHDRAWN', 'CANCELLED', 'REGISTERED'], true)) return null;
     $a = hadm_appt_assign($pdo, $case['id']);
-    return ['slot_at' => $a['slot_at'] ?? null, 'slot_fa' => $a ? hadm_appt_fa($pdo, $a) : ''];
+    $pick = hadm_user_picks($pdo);
+    $past = $a && strtotime($a['slot_at']) < time() && ($a['status'] ?? 'BOOKED') === 'BOOKED';
+    return ['slot_at' => $a['slot_at'] ?? null, 'slot_fa' => $a ? hadm_appt_fa($pdo, $a) : '', 'status' => $a['status'] ?? null, 'source' => $a['source'] ?? null,
+            'can_pick' => $pick && (!$a || ($a['status'] ?? 'BOOKED') === 'BOOKED'), 'need_pick' => $pick && (!$a || $past), 'past' => $past];
 }
-const HADM_DOCS_HINT = 'بازدیدِ سلامتِ خودرو حضوری و با نوبت است؛ مدارک را (با عکس یا فایل) از «بارگزاری مدارک» همین حالا ارسال کنید تا روزِ نوبت فقط خودرو بازدید شود و مدرکی جا نماند.';
+
+// ---------------- انتخابِ نوبت (تقویمِ کاری) ----------------
+// روزهای کاری از «اولین نوبت چند روز بعد» تا «چند روزِ آینده» با همه‌ی نوبت‌های هر روز و ظرفیتِ خالی
+// $staff = true: همه‌ی روزها (حتی تعطیل) و نوبت‌های پر هم برای نوبتِ دستی برمی‌گردد
+function hadm_slots($pdo, $excludeCase = 0, $fromDays = null, $days = null, $staff = false) {
+    hadm_ensure($pdo);
+    $s = hadm_settings($pdo);
+    $work = array_map('intval', array_filter(explode(',', $s['hadm_days']), 'strlen'));
+    $slot = max(5, intval($s['hadm_slot'])) * 60; $cap = max(1, intval($s['hadm_cap']));
+    [$sh, $sm] = array_map('intval', explode(':', $s['hadm_start'])); [$eh, $em] = array_map('intval', explode(':', $s['hadm_end']));
+    $holidays = [];
+    try { $hs = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'work_holidays'")->fetchColumn(); foreach (preg_split('/[\s,،]+/u', (string)$hs) as $h) if ($h !== '') $holidays[p2e_digits($h)] = true; } catch (Throwable $e) {}
+    $from = $fromDays === null ? max(0, intval($s['hadm_lead'])) : intval($fromDays);
+    $n = $days === null ? max(1, intval($s['hadm_window'])) : intval($days);
+    $t0 = strtotime('today') + $from * 86400;
+    $t1 = $t0 + $n * 86400;
+    $q = $pdo->prepare("SELECT slot_at, COUNT(*) n FROM health_appointments WHERE status = 'BOOKED' AND slot_at >= ? AND slot_at < ? AND case_id <> ? GROUP BY slot_at");
+    $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1), intval($excludeCase)]);
+    $used = $q->fetchAll(PDO::FETCH_KEY_PAIR);
+    $out = [];
+    for ($d = 0; $d < $n; $d++) {
+        $dayTs = strtotime(date('Y-m-d', $t0 + $d * 86400 + 43200));
+        [$jy, $jm, $jd] = jalali_from_gregorian_ts($dayTs + 43200);
+        $jdate = sprintf('%04d/%02d/%02d', $jy, $jm, $jd);
+        $wd = hadm_weekday($dayTs);
+        $closed = !in_array($wd, $work, true) ? 'روزِ کاری نیست' : (isset($holidays[$jdate]) ? 'تعطیل' : '');
+        $slots = [];
+        if ($closed === '' || $staff) {
+            for ($t = $dayTs + $sh * 3600 + $sm * 60; $t + $slot <= $dayTs + $eh * 3600 + $em * 60; $t += $slot) {
+                $at = date('Y-m-d H:i:s', $t);
+                $u = intval($used[$at] ?? 0);
+                $slots[] = ['at' => $at, 'time' => date('H:i', $t), 'used' => $u, 'cap' => $cap, 'free' => $u < $cap && $t > time() && $closed === ''];
+            }
+        }
+        $out[] = ['date' => date('Y-m-d', $dayTs), 'jdate' => $jdate, 'weekday' => HADM_WEEKDAYS[$wd], 'day' => $jd, 'month_fa' => jalali_month_name($jm), 'closed' => $closed, 'slots' => $slots,
+                  'free' => count(array_filter($slots, fn($x) => $x['free']))];
+    }
+    return ['days' => $out, 'place' => trim($s['hadm_place']), 'slot_min' => intval($s['hadm_slot'])];
+}
+
+// ثبتِ نوبت. $source: USER (کاربر از نوبت‌های آزاد) | STAFF (کارشناس؛ هر زمانی، حتی خارج از برنامه/پر)
+function hadm_book($pdo, $caseId, $at, $source, $staffId = null, $note = '') {
+    hadm_ensure($pdo);
+    $st = $pdo->prepare("SELECT pc.id, pc.status, pc.insurance_type, pc.plate, p.bale_chat_id, p.id AS person_id FROM policy_cases pc JOIN persons p ON p.id = pc.person_id WHERE pc.id = ?");
+    $st->execute([intval($caseId)]);
+    $c = $st->fetch();
+    if (!$c) return ['ok' => false, 'error' => 'درخواست پیدا نشد.'];
+    if ($c['insurance_type'] !== 'BODY') return ['ok' => false, 'error' => 'نوبتِ بازدید فقط برای بیمه‌ی بدنه است.'];
+    if (in_array($c['status'], ['ISSUED', 'WITHDRAWN', 'CANCELLED'], true)) return ['ok' => false, 'error' => 'این درخواست بسته شده است.'];
+    $ts = strtotime((string)$at);
+    if (!$ts) return ['ok' => false, 'error' => 'زمانِ نوبت نامعتبر است.'];
+    $at = date('Y-m-d H:i:s', $ts);
+    if ($source === 'USER') {
+        $cur = hadm_appt_active($pdo, $caseId);
+        if ($cur && ($cur['status'] ?? '') === 'DONE') return ['ok' => false, 'error' => 'بازدیدِ این خودرو انجام شده است.'];
+        $ok = false;
+        foreach (hadm_slots($pdo, $caseId)['days'] as $d) foreach ($d['slots'] as $x) if ($x['at'] === $at && $x['free']) $ok = true;
+        if (!$ok) return ['ok' => false, 'error' => 'این نوبت دیگر آزاد نیست؛ زمانِ دیگری انتخاب کنید.'];
+    } elseif ($ts < time() - 86400 * 60) return ['ok' => false, 'error' => 'تاریخِ نوبت خیلی قدیمی است.'];
+    $pdo->prepare("INSERT INTO health_appointments (case_id, slot_at, notified, source, status, staff_id, note, vr_id, done_at, updated_at) VALUES (?, ?, 0, ?, 'BOOKED', ?, ?, NULL, NULL, NOW())
+                   ON DUPLICATE KEY UPDATE slot_at = VALUES(slot_at), notified = 0, source = VALUES(source), status = 'BOOKED', staff_id = VALUES(staff_id), note = VALUES(note), vr_id = NULL, done_at = NULL, updated_at = NOW()")
+        ->execute([intval($caseId), $at, $source === 'STAFF' ? 'STAFF' : 'USER', $staffId ?: null, mb_substr(trim((string)$note), 0, 300) ?: null]);
+    $a = hadm_appt_get($pdo, $caseId);
+    $fa = hadm_appt_fa($pdo, $a);
+    // نوبتِ دستیِ کارشناس: به کاربر خبر داده می‌شود
+    if ($source === 'STAFF' && $c['bale_chat_id'] && function_exists('bale_curl_call') && function_exists('bale_get_token')) {
+        try { bale_curl_call('sendMessage', ['chat_id' => $c['bale_chat_id'], 'text' => "🗓 نوبتِ بازدیدِ خودروی " . ($c['plate'] ?: '') . " ثبت شد:
+" . $fa . "
+
+صدورِ بیمه‌نامه‌ی بدنه منوط به انجامِ بازدیدِ خودرو است."], bale_get_token($pdo)); } catch (Throwable $e) {}
+    }
+    return ['ok' => true, 'appointment' => $a, 'slot_fa' => $fa];
+}
+function hadm_cancel($pdo, $caseId) {
+    hadm_ensure($pdo);
+    $pdo->prepare("UPDATE health_appointments SET status = 'CANCELED', updated_at = NOW() WHERE case_id = ? AND status = 'BOOKED'")->execute([intval($caseId)]);
+    return ['ok' => true];
+}
+// گزارشِ بازدیدِ این درخواست صادر و وصل شد => نوبت «انجام شد» (اگر نوبتی نداشت، یک ردیفِ «انجام شد» برای سابقه ساخته می‌شود)
+function hadm_mark_done($pdo, $caseId, $vrId = null) {
+    hadm_ensure($pdo);
+    $pdo->prepare("INSERT INTO health_appointments (case_id, slot_at, notified, source, status, vr_id, done_at, updated_at) VALUES (?, NOW(), 1, 'STAFF', 'DONE', ?, NOW(), NOW())
+                   ON DUPLICATE KEY UPDATE status = 'DONE', vr_id = COALESCE(VALUES(vr_id), vr_id), done_at = NOW(), updated_at = NOW()")->execute([intval($caseId), $vrId ?: null]);
+}
+const HADM_DOCS_HINT = 'بازدیدِ خودرو حضوری و با نوبت است؛ مدارک را (با عکس یا فایل) از «بارگزاری مدارک» همین حالا ارسال کنید تا روزِ نوبت فقط خودرو بازدید شود و مدرکی جا نماند.';
 
 // ---------------- صفِ بازدیدِ مینی‌اپِ مدیر ----------------
 // درخواست‌های بدنه‌ی بازی که بازدیدِ تاییدشده ندارند، با اطلاعاتِ درخواست و معرفی‌نامه؛ مرتب به ترتیبِ نوبت
@@ -149,7 +254,7 @@ function hadm_queue($pdo) {
           JOIN persons p ON p.id = pc.person_id
           LEFT JOIN companies c ON c.id = p.company_id
           LEFT JOIN introductions i ON i.id = pc.introduction_id
-          LEFT JOIN health_appointments ha ON ha.case_id = pc.id
+          LEFT JOIN health_appointments ha ON ha.case_id = pc.id AND COALESCE(ha.status, 'BOOKED') <> 'CANCELED'
          WHERE pc.insurance_type = 'BODY' AND pc.status NOT IN ('ISSUED', 'WITHDRAWN', 'CANCELLED')
          ORDER BY pc.id DESC LIMIT 400")->fetchAll();
     $out = [];

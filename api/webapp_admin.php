@@ -77,23 +77,17 @@ try {
         $d = p2e_digits(trim((string)($data['date'] ?? ''))); $tm = p2e_digits(trim((string)($data['time'] ?? '')));
         if (!preg_match('/^(1[34]\d\d)\D(\d{1,2})\D(\d{1,2})$/', $d, $m) || !preg_match('/^(\d{1,2}):(\d{2})$/', $tm, $hm)) wa_out(['ok' => false, 'error' => 'تاریخ و ساعت را درست وارد کنید (۱۴۰۵/۰۷/۲۰ و ۱۰:۳۰).']);
         $ts = jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])) + intval($hm[1]) * 3600 + intval($hm[2]) * 60;
-        $pdo->prepare("INSERT INTO health_appointments (case_id, slot_at, notified) VALUES (?, ?, 0) ON DUPLICATE KEY UPDATE slot_at = VALUES(slot_at), notified = 0")
-            ->execute([$caseId, date('Y-m-d H:i:s', $ts)]);
-        // خبر به کاربر در ربات
-        try {
-            $st = $pdo->prepare("SELECT p.bale_chat_id, pc.plate FROM policy_cases pc JOIN persons p ON p.id = pc.person_id WHERE pc.id = ?");
-            $st->execute([$caseId]);
-            $r = $st->fetch();
-            if ($r && $r['bale_chat_id']) bale_curl_call('sendMessage', ['chat_id' => $r['bale_chat_id'], 'text' => "🗓 نوبتِ بازدیدِ سلامتِ خودروی " . ($r['plate'] ?: '') . ":\n" . hadm_appt_fa($pdo, hadm_appt_get($pdo, $caseId))], bale_get_token($pdo));
-        } catch (Throwable $e) {}
-        wa_out(['ok' => true, 'slot_fa' => hadm_appt_fa($pdo, hadm_appt_get($pdo, $caseId))]);
+        // نوبتِ دستی (خبر به کاربر در ربات همان‌جا فرستاده می‌شود)
+        $r = hadm_book($pdo, $caseId, date('Y-m-d H:i:s', $ts), 'STAFF', intval($_SESSION['user_id'] ?? 0));
+        if (!$r['ok']) wa_out($r);
+        wa_out(['ok' => true, 'slot_fa' => $r['slot_fa']]);
     }
 
     if ($action === 'settings_get') {
         $s = hadm_settings($pdo);
         wa_out(['ok' => true, 'settings' => ['self_enabled' => $s['hadm_self_enabled'] !== '0', 'days' => array_map('intval', array_filter(explode(',', $s['hadm_days']), 'strlen')),
             'start' => $s['hadm_start'], 'end' => $s['hadm_end'], 'slot' => intval($s['hadm_slot']), 'cap' => intval($s['hadm_cap']), 'lead' => intval($s['hadm_lead']),
-            'place' => $s['hadm_place'], 'bot_cmd' => $s['hadm_bot_cmd']]]);
+            'place' => $s['hadm_place'], 'bot_cmd' => $s['hadm_bot_cmd'], 'pick' => $s['hadm_pick'] !== '0', 'window' => intval($s['hadm_window'])]]);
     }
     if ($action === 'settings_save') wa_out(hadm_save_settings($pdo, is_array($data['settings'] ?? null) ? $data['settings'] : []));
 

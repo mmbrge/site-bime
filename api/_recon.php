@@ -25,6 +25,35 @@ function recon_ensure($pdo) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     // فایل‌های اصلیِ هر مغایرت‌گیری نگه داشته می‌شوند تا «خروجیِ اصلاح‌شده» با همان ستون‌ها ساخته شود
     try { if (!$pdo->query("SHOW COLUMNS FROM recon_runs LIKE 'src_files'")->fetch()) $pdo->exec("ALTER TABLE recon_runs ADD COLUMN src_files TEXT NULL"); } catch (Throwable $e) { error_log('[recon src_files] ' . $e->getMessage()); }
+    // پوشه‌ی بایگانیِ هر مغایرت‌گیری (Archive/بایگانی/بایگانی مغایرت‌گیری/…) و نیاز به به‌روزرسانیِ فایل‌هایش
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM recon_runs LIKE 'archive_dir'")->fetch())
+            $pdo->exec("ALTER TABLE recon_runs ADD COLUMN archive_dir VARCHAR(700) NULL, ADD COLUMN archive_dirty TINYINT(1) NOT NULL DEFAULT 0");
+    } catch (Throwable $e) { error_log('[recon archive_dir] ' . $e->getMessage()); }
+}
+
+// =====================================================================
+//  دسترسی: هر کاربر فقط مغایرت‌گیری‌های خودش را می‌بیند؛ مدیر کل (نقشِ واقعی) همه را
+// =====================================================================
+function recon_sees_all() { return function_exists('perm_real_role') ? perm_real_role() === 'ADMIN' : (($_SESSION['role'] ?? '') === 'ADMIN'); }
+function recon_run_for($pdo, $runId, $uid) {
+    $st = $pdo->prepare("SELECT * FROM recon_runs WHERE id = ?");
+    $st->execute([intval($runId)]);
+    $r = $st->fetch();
+    if (!$r) return null;
+    if (!recon_sees_all() && (int)$r['created_by'] !== (int)$uid) return null;
+    return $r;
+}
+function recon_item_run_id($pdo, $itemId) {
+    $st = $pdo->prepare("SELECT run_id FROM recon_items WHERE id = ?");
+    $st->execute([intval($itemId)]);
+    return (int)$st->fetchColumn();
+}
+// سال/ماهِ شمسیِ مغایرت‌گیری: از ابتدای بازه‌ی خروجیِ بیمه‌گر، وگرنه روزِ انجام
+function recon_run_ym(array $r) {
+    if (preg_match('/^(1[34]\d{2})\D(\d{1,2})/', p2e_digits((string)$r['period_from']), $m)) return [(int)$m[1], (int)$m[2]];
+    [$jy, $jm] = jalali_from_gregorian_ts(strtotime((string)$r['created_at']) ?: time());
+    return [(int)$jy, (int)$jm];
 }
 
 function recon_cat_fa($c) {
@@ -142,7 +171,7 @@ function recon_run($pdo, $siteRoot, array $files, $title, $userId, $mode = '') {
     $rows = $pv['rows'] ?? [];
     $endos = $pv['endorsements'] ?? [];
     if (!$rows && !$endos) return ['ok' => false, 'error' => implode(' ', $pv['errors'] ?? []) ?: 'ردیفی در فایل‌ها پیدا نشد.'];
-    if ($mode !== 'new' && ($m = recon_find_old_run($pdo, $pv))) return ['ok' => false, 'need_choice' => true, 'match' => $m];
+    if ($mode !== 'new' && ($m = recon_find_old_run($pdo, $pv, $userId))) return ['ok' => false, 'need_choice' => true, 'match' => $m];
     $hasEndo = (bool)array_filter($pv['files'] ?? [], fn($f) => $f['kind'] === 'endorse');
     $endoBy = [];
     foreach ($endos as $e) if (!empty($e['ok'])) $endoBy[$e['key']][] = $e;
@@ -217,6 +246,7 @@ function recon_run($pdo, $siteRoot, array $files, $title, $userId, $mode = '') {
     $pdo->prepare("UPDATE recon_runs SET counts = ? WHERE id = ?")->execute([json_encode($cnt, JSON_UNESCAPED_UNICODE), $run]);
     $stored = recon_store_src($siteRoot, $run, $files, $pv, '');
     $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($stored, JSON_UNESCAPED_UNICODE), $run]);
+    recon_archive_later($pdo, $siteRoot, $run);
     return ['ok' => true, 'run_id' => $run, 'src_files' => recon_src_list($stored, $title ?: ('خروجیِ پاسارگاد ' . $from . ' تا ' . $to)), 'counts' => $cnt, 'period_from' => $from, 'period_to' => $to, 'errors' => $pv['errors'] ?? []];
 }
 
@@ -252,12 +282,13 @@ function recon_file_keys(array $pv) {
 }
 
 // مغایرت‌گیریِ قبلیِ بدونِ فایلِ اصلی که تقریباً همین بیمه‌نامه‌ها را دارد (دست‌کم ۸۰٪ از هر دو طرف)
-function recon_find_old_run($pdo, array $pv) {
+function recon_find_old_run($pdo, array $pv, $uid = 0) {
     $keys = recon_file_keys($pv);
     if (!$keys) return null;
     $best = null;
     $q = $pdo->prepare("SELECT policy_key FROM recon_items WHERE run_id = ? AND category <> 'ONLY_S'");
-    foreach ($pdo->query("SELECT id, title, created_at FROM recon_runs WHERE src_files IS NULL OR src_files IN ('', '[]') ORDER BY id DESC LIMIT 50")->fetchAll() as $r) {
+    $own = recon_sees_all() ? '' : ' AND created_by = ' . intval($uid);
+    foreach ($pdo->query("SELECT id, title, created_at FROM recon_runs WHERE (src_files IS NULL OR src_files IN ('', '[]'))$own ORDER BY id DESC LIMIT 50")->fetchAll() as $r) {
         $q->execute([$r['id']]);
         $rk = array_fill_keys($q->fetchAll(PDO::FETCH_COLUMN), true);
         if (!$rk) continue;
@@ -291,21 +322,57 @@ function recon_attach_src($pdo, $siteRoot, $runId, array $files) {
     if (!$new) return ['ok' => false, 'error' => 'فایل روی هاست ذخیره نشد.'];
     $all = array_merge($old, $new);
     $pdo->prepare("UPDATE recon_runs SET src_files = ? WHERE id = ?")->execute([json_encode($all, JSON_UNESCAPED_UNICODE), $runId]);
+    recon_archive_later($pdo, $siteRoot, $runId);
     return ['ok' => true, 'run_id' => (int)$runId, 'title' => (string)$run['title'], 'matched' => $hit, 'total' => count($keys), 'files' => count($new), 'src_files' => recon_src_list($all, (string)$run['title'])];
 }
 
-function recon_runs($pdo) {
+// فهرستِ مغایرت‌گیری‌ها با جستجو/فیلتر و صفحه‌بندی. $f: q, year, month, status (open|done), creator, page, per
+function recon_runs($pdo, array $f = [], $uid = 0) {
     recon_ensure($pdo);
-    $rows = $pdo->query("SELECT r.*, u.full_name AS creator,
-                                (SELECT COUNT(*) FROM recon_items i WHERE i.run_id = r.id AND i.status = 'OPEN') AS open_count
-                           FROM recon_runs r LEFT JOIN users u ON u.id = r.created_by ORDER BY r.id DESC LIMIT 200")->fetchAll();
-    foreach ($rows as &$r) {
-        $r['files'] = json_decode((string)$r['files'], true) ?: [];
-        $r['counts'] = json_decode((string)$r['counts'], true) ?: [];
-        $r['src_files'] = recon_src_list(json_decode((string)($r['src_files'] ?? ''), true) ?: [], (string)$r['title']);
-        $r['created_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at']));
+    $all = recon_sees_all();
+    $w = $all ? '' : ' WHERE r.created_by = ' . intval($uid);
+    $rows = $pdo->query("SELECT r.*, u.full_name AS creator FROM recon_runs r LEFT JOIN users u ON u.id = r.created_by$w ORDER BY r.id DESC")->fetchAll();
+    $open = [];
+    foreach ($pdo->query("SELECT run_id, SUM(status = 'OPEN') o, COUNT(*) n FROM recon_items GROUP BY run_id")->fetchAll() as $x) $open[(int)$x['run_id']] = [(int)$x['o'], (int)$x['n']];
+    $q = mb_strtolower(trim(p2e_digits((string)($f['q'] ?? ''))));
+    $year = intval($f['year'] ?? 0); $month = intval($f['month'] ?? 0); $status = (string)($f['status'] ?? ''); $creator = intval($f['creator'] ?? 0);
+    $years = []; $creators = []; $months = []; $sel = [];
+    foreach ($rows as $r) {
+        [$jy, $jm] = recon_run_ym($r);
+        $r['jy'] = $jy; $r['jm'] = $jm;
+        [$r['open_count'], $r['items_total']] = $open[(int)$r['id']] ?? [0, 0];
+        $years[$jy] = ($years[$jy] ?? 0) + 1;
+        if ($r['created_by']) $creators[(int)$r['created_by']] = $r['creator'] ?: ('کاربر ' . $r['created_by']);
+        if ($year && $jy !== $year) continue;
+        if ($year) $months[$jm] = ($months[$jm] ?? 0) + 1;
+        if ($month && $jm !== $month) continue;
+        if ($status === 'open' && !$r['open_count']) continue;
+        if ($status === 'done' && $r['open_count']) continue;
+        if ($creator && (int)$r['created_by'] !== $creator) continue;
+        if ($q !== '' && mb_strpos(mb_strtolower(p2e_digits($r['title'] . ' ' . $r['files'] . ' ' . $r['creator'] . ' ' . $r['period_from'] . ' ' . $r['period_to'])), $q) === false) continue;
+        $sel[] = $r;
     }
-    return $rows;
+    $per = min(100, max(5, intval($f['per'] ?? 12)));
+    $total = count($sel);
+    $page = intval($f['page'] ?? 1);
+    // focus: صفحه‌ای که این مغایرت‌گیری در آن است (بعد از مغایرت‌گیریِ تازه یا وصل کردنِ فایل)
+    if ($focus = intval($f['focus'] ?? 0)) foreach ($sel as $i => $r) if ((int)$r['id'] === $focus) { $page = intdiv($i, $per) + 1; break; }
+    $page = max(1, min($page, max(1, (int)ceil($total / $per))));
+    $out = [];
+    foreach (array_slice($sel, ($page - 1) * $per, $per) as $r) {
+        $out[] = ['id' => (int)$r['id'], 'title' => $r['title'], 'period_from' => $r['period_from'], 'period_to' => $r['period_to'], 'types' => $r['types'], 'has_endo' => (int)$r['has_endo'],
+                  'files' => json_decode((string)$r['files'], true) ?: [], 'counts' => json_decode((string)$r['counts'], true) ?: [],
+                  'src_files' => recon_src_list(json_decode((string)($r['src_files'] ?? ''), true) ?: [], (string)$r['title']),
+                  'creator' => $r['creator'], 'created_by' => (int)$r['created_by'], 'open_count' => $r['open_count'], 'items_total' => $r['items_total'],
+                  'jy' => $r['jy'], 'jm' => $r['jm'], 'month_fa' => jalali_month_name($r['jm']) . ' ' . $r['jy'],
+                  'archive' => $r['archive_dir'] ? recon_archive_rel($r['archive_dir']) : '',
+                  'created_jalali' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at'])) . ' ' . date('H:i', strtotime($r['created_at']))];
+    }
+    krsort($years); ksort($months); asort($creators);
+    return ['runs' => $out, 'total' => $total, 'page' => $page, 'per' => $per, 'all' => $all,
+            'years' => array_map(fn($y, $n) => ['y' => $y, 'n' => $n], array_keys($years), $years),
+            'months' => array_map(fn($m, $n) => ['m' => $m, 'fa' => jalali_month_name($m), 'n' => $n], array_keys($months), $months),
+            'creators' => $all ? array_map(fn($id, $n) => ['id' => $id, 'name' => $n], array_keys($creators), $creators) : []];
 }
 
 function recon_items($pdo, $runId, array $f) {
@@ -488,6 +555,13 @@ function recon_import($pdo, $siteRoot, array $itemIds, array $opts, $userId) {
 function recon_delete_run($pdo, $runId, $siteRoot = null) {
     recon_ensure($pdo);
     if ($siteRoot) {
+        $st = $pdo->prepare("SELECT * FROM recon_runs WHERE id = ?");
+        $st->execute([intval($runId)]);
+        if ($run = $st->fetch()) {
+            // اگر بایگانی هنوز ساخته نشده یا عقب است، پیش از انتقال به «حذف‌شده» کامل می‌شود
+            if (!$run['archive_dir'] || $run['archive_dirty']) { recon_archive_sync($pdo, $siteRoot, $runId); $st->execute([intval($runId)]); $run = $st->fetch(); }
+            recon_archive_trash($siteRoot, $run);
+        }
         $d = rtrim($siteRoot, '/') . '/_recon_files/run_' . intval($runId);
         if (is_dir($d)) { foreach ((array)glob($d . '/*') as $f) @unlink($f); @rmdir($d); }
     }
@@ -680,4 +754,115 @@ function recon_corrected($pdo, $siteRoot, $runId, $idx, $dry = true) {
     $zip->addFromString($sheetPath, $doc->saveXML());
     $zip->close();
     return ['ok' => true, 'path' => $tmp, 'name' => $name, 'stats' => $stat];
+}
+
+// جدولِ «فهرستِ مغایرت‌ها» (همان اکسلِ سایت؛ برای دانلود و بایگانی)
+function recon_export_table($pdo, $runId, array $f) {
+    $res = recon_items($pdo, $runId, $f);
+    $choiceFa = ['SITE' => 'سایت درست است', 'PASARGAD' => 'پاسارگاد اعمال شد', 'CUSTOM' => 'اصلاحِ دستی'];
+    $rows = []; $n = 0;
+    foreach ($res['rows'] as $r) {
+        $base = [$r['category_fa'], $r['policy_number'], $r['type_fa'], $r['issue_date'], $r['label'], $r['insured'], $r['status'] === 'OPEN' ? 'باز' : 'بررسی‌شده', $r['note']];
+        if (!$r['diffs']) { $rows[] = array_merge([++$n], $base, ['', '', '', '']); continue; }
+        foreach ($r['diffs'] as $d) $rows[] = array_merge([++$n], $base, [$d['label'], (string)$d['site'], (string)$d['pas'], $choiceFa[$d['res'] ?? ''] ?? '']);
+    }
+    return [['ردیف', 'وضعیت', 'شماره بیمه‌نامه', 'نوع', 'تاریخ صدور', 'پلاک/شاسی', 'بیمه‌گذار', 'بررسی', 'توضیح', 'فیلد', 'سایت', 'پاسارگاد', 'تصمیم'], $rows];
+}
+
+// =====================================================================
+//  بایگانی: Archive/بایگانی/بایگانی مغایرت‌گیری/{سال}/{ماه سال}/{عنوانِ مغایرت‌گیری}/
+//    «ورودیِ بیمه‌گر - …»  فایل‌های اصلیِ پاسارگاد
+//    «خروجیِ بیمه‌گرِ جدید - …»  همان اکسلِ بیمه‌گر با اطلاعاتِ به‌روزِ سایت
+//    «اکسلِ سایت - فهرستِ مغایرت‌ها - …»
+//  با هر تصمیم/ورود فایل‌های خروجی دوباره ساخته می‌شوند؛ با حذف، پوشه به «حذف‌شده/{تاریخ}/» می‌رود.
+// =====================================================================
+function recon_archive_base($siteRoot) { return archive_root($siteRoot) . '/بایگانی مغایرت‌گیری'; }
+function recon_archive_rel($dir) {
+    $p = strpos($dir, '/Archive/بایگانی/');
+    return $p === false ? '' : substr($dir, $p + strlen('/Archive/بایگانی/'));
+}
+function recon_unique_dir($path) {
+    if (!file_exists($path)) return $path;
+    for ($i = 2; $i < 500; $i++) if (!file_exists($path . ' (' . $i . ')')) return $path . ' (' . $i . ')';
+    return $path . ' (' . time() . ')';
+}
+function recon_archive_dir($pdo, $siteRoot, array $run) {
+    $dir = (string)($run['archive_dir'] ?? '');
+    if ($dir !== '' && is_dir($dir)) return $dir;
+    [$jy, $jm] = recon_run_ym($run);
+    $parent = recon_archive_base($siteRoot) . '/' . $jy . '/' . jalali_month_name($jm) . ' ' . $jy;
+    $name = sanitize_folder_name(trim((string)$run['title']) ?: ('مغایرت‌گیری ' . $run['id']));
+    $dir = ($dir !== '' && dirname($dir) === $parent) ? $dir : recon_unique_dir($parent . '/' . $name);
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $pdo->prepare("UPDATE recon_runs SET archive_dir = ? WHERE id = ?")->execute([$dir, $run['id']]);
+    return $dir;
+}
+
+// فایل‌های پوشه‌ی بایگانیِ یک مغایرت‌گیری را (دوباره) می‌سازد
+function recon_archive_sync($pdo, $siteRoot, $runId) {
+    recon_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM recon_runs WHERE id = ?");
+    $st->execute([intval($runId)]);
+    $run = $st->fetch();
+    if (!$run) return false;
+    $dir = recon_archive_dir($pdo, $siteRoot, $run);
+    if (!is_dir($dir)) return false;
+    $lock = @fopen(recon_store_dir($siteRoot, $run['id']) . '/.archive.lock', 'c');
+    if ($lock) flock($lock, LOCK_EX);
+    $pdo->prepare("UPDATE recon_runs SET archive_dirty = 0 WHERE id = ?")->execute([$run['id']]);
+    try {
+        // فایل‌هایی که سایت می‌سازد پاک و از نو ساخته می‌شوند (نام‌ها ممکن است عوض شده باشند)؛ فایل‌های دیگرِ پوشه دست نمی‌خورند
+        foreach ((array)glob($dir . '/*') as $old)
+            if (is_file($old) && preg_match('/^(ورودیِ بیمه‌گر|خروجیِ بیمه‌گرِ جدید|اکسلِ سایت)/u', basename($old))) @unlink($old);
+        $title = trim((string)$run['title']);
+        $used = [];
+        $uniq = function ($name) use (&$used) { $k = $name; for ($i = 2; isset($used[$k]); $i++) $k = $name . ' (' . $i . ')'; $used[$k] = true; return $k; };
+        $files = json_decode((string)($run['src_files'] ?? ''), true) ?: [];
+        foreach ($files as $i => $f) {
+            $src = recon_store_dir($siteRoot, $run['id']) . '/' . $f['file'];
+            if (!is_file($src)) continue;
+            $label = recon_export_label($f, $title);
+            @copy($src, $dir . '/' . sanitize_folder_name($uniq(name_join(['ورودیِ بیمه‌گر', $label]))) . '.' . $f['ext']);
+            if ($f['ext'] !== 'xlsx') continue;
+            $c = recon_corrected($pdo, $siteRoot, $run['id'], $i, false);
+            if (!empty($c['ok']) && is_file($c['path'])) {
+                @copy($c['path'], $dir . '/' . sanitize_folder_name($uniq(name_join(['خروجیِ بیمه‌گرِ جدید', $label]))) . '.xlsx');
+                @unlink($c['path']);
+            }
+        }
+        require_once __DIR__ . '/_xlsx_writer.php';
+        [$hdr, $rows] = recon_export_table($pdo, $run['id'], []);
+        $x = xlsx_build($hdr, $rows, 'مغایرت‌ها');
+        if ($x && is_file($x)) { @copy($x, $dir . '/' . sanitize_folder_name(name_join(['اکسلِ سایت', 'فهرستِ مغایرت‌ها', $title ?: ('مغایرت‌گیری ' . $run['id'])])) . '.xlsx'); @unlink($x); }
+    } catch (Throwable $e) {
+        error_log('[recon_archive_sync] ' . $e->getMessage());
+        $pdo->prepare("UPDATE recon_runs SET archive_dirty = 1 WHERE id = ?")->execute([$run['id']]);
+    }
+    if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
+    return true;
+}
+
+// تغییر در تصمیم‌ها: بایگانی بعد از پاسخ دادن به کاربر به‌روز می‌شود (تا دکمه‌ها کند نشوند)
+function recon_archive_later($pdo, $siteRoot, $runId) {
+    static $queued = [];
+    $runId = intval($runId);
+    if (!$runId || isset($queued[$runId])) return;
+    $queued[$runId] = true;
+    try { $pdo->prepare("UPDATE recon_runs SET archive_dirty = 1 WHERE id = ?")->execute([$runId]); } catch (Throwable $e) {}
+    if (count($queued) > 1) return;
+    register_shutdown_function(function () use ($pdo, $siteRoot, &$queued) {
+        if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+        @set_time_limit(300);
+        foreach (array_keys($queued) as $id) { try { recon_archive_sync($pdo, $siteRoot, $id); } catch (Throwable $e) { error_log('[recon archive later] ' . $e->getMessage()); } }
+    });
+}
+
+// حذف: پوشه‌ی بایگانی به «بایگانی مغایرت‌گیری/حذف‌شده/{تاریخ}/» منتقل می‌شود
+function recon_archive_trash($siteRoot, array $run) {
+    $dir = (string)($run['archive_dir'] ?? '');
+    if ($dir === '' || !is_dir($dir)) return '';
+    $dest = recon_archive_base($siteRoot) . '/حذف‌شده/' . jalali_from_gregorian_ts_dotted(time());
+    if (!is_dir($dest)) @mkdir($dest, 0775, true);
+    $to = recon_unique_dir($dest . '/' . basename($dir));
+    return @rename($dir, $to) ? $to : '';
 }

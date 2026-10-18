@@ -238,7 +238,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="../camera-lib.js?v=4"></script>
-<script src="../mini-kit.js?v=4"></script>
+<script src="../mini-kit.js?v=5"></script>
 <script>
 // ============================================================
 //  انتخاب لنز اصلی دوربین (نه اولترا-واید ۰.۵x)
@@ -362,12 +362,24 @@ function showSuccess() {
     exitDocCam();
     const c = INFO && INFO.case;
     const body = c && c.insurance_type === 'BODY';
-    document.getElementById('ok-body-note').textContent = body ? ' در بیمه‌ی بدنه، بازدیدِ کارشناس از خودرو هم لازم است.' : '';
+    document.getElementById('ok-body-note').textContent = body ? ' صدورِ بیمه‌نامه‌ی بدنه همچنین منوط به انجامِ بازدیدِ خودرو می‌باشد.' : '';
     const needHealth = body && INFO && ['not_started', 'needs_fix'].includes(INFO.health_status);
-    document.getElementById('ok-health').innerHTML = needHealth ? `<button class="btn btn-success" onclick="location.href='index_visit.html?t=${encodeURIComponent(TOKEN)}'">🚗 ادامه: بازدید سلامت خودرو</button>` : '';
+    const ap = INFO && INFO.appointment;
+    // حالتِ نوبتی: کاربر زمانِ بازدیدِ حضوری را از نوبت‌های آزادِ هفته‌ی پیشِ رو انتخاب می‌کند
+    if (needHealth && ap && ap.can_pick) renderApptBox(ap);
+    else document.getElementById('ok-health').innerHTML = needHealth && !ap ? `<button class="btn btn-success" onclick="location.href='index_visit.html?t=${encodeURIComponent(TOKEN)}'">🚗 ادامه: بازدید خودرو</button>` : '';
     document.getElementById('main-view').style.display = 'none';
     document.getElementById('success-screen').classList.add('on');
     window.scrollTo(0, 0);
+}
+function renderApptBox(ap) {
+    const box = document.getElementById('ok-health');
+    const has = ap.slot_fa && !ap.need_pick;
+    box.innerHTML = `<div style="background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.35);border-radius:16px;padding:12px;margin:10px 0;text-align:right;font-size:12.5px;line-height:2">
+        ${has ? `🗓 <b>نوبتِ بازدیدِ خودروی شما:</b><br>${esc(ap.slot_fa)}` : (ap.past ? '⏰ زمانِ نوبتِ قبلی گذشته است؛ لطفاً زمانِ تازه‌ای انتخاب کنید.' : '🚗 برای بازدیدِ خودرو، یکی از نوبت‌های آزادِ روزهای پیشِ رو را انتخاب کنید.')}</div>
+        <button class="btn btn-success" id="appt-pick-btn">${has ? '🔁 تغییرِ زمانِ بازدید' : '🗓 انتخابِ زمانِ بازدیدِ خودرو'}</button>`;
+    document.getElementById('appt-pick-btn').onclick = () => MiniKit.apptPicker({ api: API, token: TOKEN, caseId: CASE_ID, plate: INFO && INFO.plate,
+        onDone: r => { showToast('✅ نوبت ثبت شد: ' + r.slot_fa); if (INFO) INFO.appointment = r.appointment; renderApptBox(r.appointment || { slot_fa: r.slot_fa, can_pick: true }); } });
 }
 function goPolicies() { location.href = `../app/?t=${encodeURIComponent(TOKEN)}&open=policies`; }
 function goHome() { location.href = `../app/?t=${encodeURIComponent(TOKEN)}`; }

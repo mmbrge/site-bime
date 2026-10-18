@@ -320,7 +320,7 @@ try {
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
 
         // «بازدیدِ آزاد» (بدونِ درخواست) حذف شده است
-        if (($data['mode'] ?? 'case') === 'free') { echo json_encode(['ok' => false, 'error' => 'بازدیدِ سلامت فقط برای درخواستِ بیمه‌ی بدنه‌ی ثبت‌شده انجام می‌شود.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (($data['mode'] ?? 'case') === 'free') { echo json_encode(['ok' => false, 'error' => 'بازدیدِ خودرو فقط برای درخواستِ بیمه‌ی بدنه‌ی ثبت‌شده انجام می‌شود.'], JSON_UNESCAPED_UNICODE); exit; }
         $mode = 'case';
         $caseId = $mode === 'case' ? intval($data['case_id'] ?? 0) : null;
         $freePlate = $mode === 'free' ? trim($data['plate'] ?? '') : null;

@@ -39,9 +39,21 @@
     .rc-btn{border:0;border-radius:13px;padding:8px 14px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
     .rc-btn.p{background:linear-gradient(120deg,#be123c,#4338ca);color:#fff}.rc-btn.s{background:#e2e8f0;color:#334155}.rc-btn.g{background:#059669;color:#fff}.rc-btn.i{background:#eef2ff;color:#4338ca}
     .rc-btn.d{background:#fee2e2;color:#b91c1c}.rc-btn.sm{padding:4px 9px;font-size:10.5px;border-radius:9px}.rc-btn:disabled{opacity:.45;cursor:not-allowed}
-    .rc-runs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
-    .rc-run{min-width:220px;border:1px solid #e2e8f0;border-radius:16px;padding:9px 11px;cursor:pointer;font-size:11px;background:#fff;text-align:right;font-family:inherit}
-    .rc-run.on{border-color:#be123c;box-shadow:0 0 0 2px #fecdd3;background:#fff1f2}.rc-run b{font-size:12px;display:block;color:#0f172a;margin-bottom:2px}
+    .rc-rbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.rc-rbar .rc-in{width:auto}.rc-rbar select.rc-in{padding:6px 8px}
+    .rc-seg{display:inline-flex;background:#f1f5f9;border-radius:12px;padding:3px;gap:2px}.rc-seg button{border:0;background:transparent;border-radius:9px;padding:4px 10px;font-size:11px;font-weight:800;color:#475569;cursor:pointer;font-family:inherit}
+    .rc-seg button.on{background:#fff;color:#be123c;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+    .rc-mchips{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px}.rc-mchips button{border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:3px 10px;font-size:10.5px;font-weight:800;color:#475569;cursor:pointer;white-space:nowrap;font-family:inherit}
+    .rc-mchips button.on{background:#0f172a;color:#fff;border-color:#0f172a}.rc-mchips small{opacity:.6;margin-right:3px}
+    .rc-mhead{font-size:11px;font-weight:900;color:#64748b;margin:8px 2px 2px;display:flex;align-items:center;gap:6px}.rc-mhead:after{content:'';flex:1;height:1px;background:#e2e8f0}
+    .rc-runs{display:flex;flex-direction:column;gap:6px}
+    .rc-run{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) 150px auto;gap:10px;align-items:center;border:1px solid #e2e8f0;border-radius:16px;padding:9px 12px;cursor:pointer;font-size:11px;background:#fff;text-align:right;font-family:inherit;width:100%;transition:border-color .15s,box-shadow .15s}
+    .rc-run:hover{border-color:#fda4af}.rc-run.on{border-color:#be123c;box-shadow:0 0 0 2px #fecdd3;background:#fff7f8}
+    .rc-run b{font-size:12.5px;color:#0f172a;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rc-run .m{color:#64748b;font-size:10.5px;margin-top:2px}
+    .rc-run .pills{display:flex;flex-wrap:wrap;gap:4px}.rc-prog{height:6px;border-radius:99px;background:#f1f5f9;overflow:hidden}.rc-prog i{display:block;height:100%;background:linear-gradient(90deg,#059669,#10b981);border-radius:99px}
+    .rc-run .pct{font-size:10px;color:#475569;font-weight:800;margin-top:3px}.rc-run .act{display:flex;gap:4px}
+    .rc-ico{border:1px solid #e2e8f0;background:#fff;border-radius:10px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;color:#475569;cursor:pointer}.rc-ico:hover{background:#f8fafc;color:#be123c}
+    @media(max-width:820px){.rc-run{grid-template-columns:1fr auto}.rc-run .pills,.rc-run .pg{grid-column:span 2}}
+    .rc-pager{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:#475569;margin-top:4px}
     .rc-kpi{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}@media(max-width:820px){.rc-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .rc-kpi button{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:9px;text-align:center;cursor:pointer;font-family:inherit}
     .rc-kpi button.on{border-color:#be123c;background:#fff1f2}.rc-kpi small{display:block;font-size:10.5px;color:#64748b}.rc-kpi b{font-size:17px;color:#0f172a}
@@ -59,7 +71,8 @@
     .rc-info{background:#f0f9ff;border:1px solid #bae6fd;color:#075985;border-radius:12px;padding:8px 10px;font-size:11.5px;line-height:1.9}`;
     function css() { if (!document.getElementById('rc-css')) { const s = document.createElement('style'); s.id = 'rc-css'; s.textContent = CSS; document.head.appendChild(s); } }
 
-    const S = {root: null, runs: [], run: null, cat: 'DIFF', status: 'OPEN', field: '', q: '', rows: [], sel: {}};
+    const S = {root: null, runs: [], run: null, cur: null, cat: 'DIFF', status: 'OPEN', field: '', q: '', rows: [], sel: {},
+               rf: {q: '', year: '', month: '', status: '', creator: '', page: 1}};
 
     function init(root) {
         css();
@@ -75,7 +88,14 @@
                 <input id="rc-title" class="rc-in" placeholder="عنوان (اختیاری): مثلاً هفته‌ی دوم مهر">
                 <button class="rc-btn p" id="rc-go" disabled><i class="fas fa-magnifying-glass-chart"></i>شروع</button></div>
                 <div class="text-[11px] text-slate-500" id="rc-fnames"></div><div id="rc-result"></div></div>` : ''}
-            <div class="rc-card"><h3><i class="fas fa-clock-rotate-left text-slate-500"></i>مغایرت‌گیری‌های قبلی</h3><div class="rc-runs" id="rc-runs"></div></div>
+            <div class="rc-card"><h3><i class="fas fa-clock-rotate-left text-slate-500"></i>مغایرت‌گیری‌های قبلی <small id="rc-rcount"></small></h3>
+                <div class="rc-rbar">
+                    <input id="rc-rq" class="rc-in" style="flex:1;min-width:180px" placeholder="جستجو: عنوان، نامِ فایل، تاریخ، کاربر">
+                    <select id="rc-ry" class="rc-in"><option value="">همه‌ی سال‌ها</option></select>
+                    <div class="rc-seg" id="rc-rst"><button data-v="" class="on">همه</button><button data-v="open">باز دارد</button><button data-v="done">بررسی‌شده</button></div>
+                    <select id="rc-rc" class="rc-in hidden"><option value="">همه‌ی کاربران</option></select></div>
+                <div class="rc-mchips" id="rc-rm"></div>
+                <div class="rc-runs" id="rc-runs"></div><div class="rc-pager" id="rc-rpg"></div></div>
             <div id="rc-view" class="space-y-3"></div>`;
             const drop = root.querySelector('#rc-drop');
             if (drop) {
@@ -111,6 +131,7 @@
                         toast(`مقایسه شد: ${fa(r.counts.MATCH)} منطبق، ${fa(r.counts.DIFF)} مغایر، ${fa(r.counts.ONLY_P)} فقط پاسارگاد، ${fa(r.counts.ONLY_S)} فقط سایت.`, 'success');
                         S.run = r.run_id; S.cat = r.counts.DIFF ? 'DIFF' : (r.counts.ONLY_P ? 'ONLY_P' : 'MATCH'); S.status = 'OPEN'; S.field = '';
                     }
+                    S.focus = r.run_id;
                     showResult(r.run_id, r.src_files || [], mode === 'attach');
                     const v = S.root.querySelector('#rc-view'); if (v) v.dataset.run = '';
                     await loadRuns(); loadItems();
@@ -118,27 +139,71 @@
                 go.onclick = () => send('');
             }
         }
+        // فیلترهای فهرستِ مغایرت‌گیری‌ها
+        let rt = null;
+        root.querySelector('#rc-rq').oninput = e => { clearTimeout(rt); rt = setTimeout(() => { S.rf.q = e.target.value.trim(); S.rf.page = 1; loadRuns(); }, 300); };
+        root.querySelector('#rc-ry').onchange = e => { S.rf.year = e.target.value; S.rf.month = ''; S.rf.page = 1; loadRuns(); };
+        root.querySelector('#rc-rc').onchange = e => { S.rf.creator = e.target.value; S.rf.page = 1; loadRuns(); };
+        root.querySelectorAll('#rc-rst button').forEach(b => b.onclick = () => { S.rf.status = b.dataset.v; S.rf.page = 1; root.querySelectorAll('#rc-rst button').forEach(x => x.classList.toggle('on', x === b)); loadRuns(); });
         loadRuns().then(() => { if (S.run) loadItems(); });
     }
 
+    // باز کردنِ پوشه‌ی بایگانیِ مغایرت‌گیری در «بایگانی فایل‌ها»
+    function openArchive(rel) {
+        if (!rel || typeof switchTab !== 'function') return toast('پوشه‌ی بایگانی هنوز ساخته نشده؛ چند لحظه بعد دوباره امتحان کنید.', 'info');
+        switchTab('filemanager');
+        setTimeout(() => { if (typeof fmOpen === 'function') fmOpen(rel); }, 80);
+    }
+
     async function loadRuns() {
-        const r = await post({action: 'runs'});
+        const f = S.rf;
+        const r = await post({action: 'runs', q: f.q, year: f.year, month: f.month, status: f.status, creator: f.creator, page: f.page, per: 12, focus: S.focus || ''});
+        S.focus = null;
+        if (!r.ok) return toast(r.error || 'خطا', 'error');
         S.runs = r.runs || [];
+        S.rf.page = r.page;
         if (!S.run && S.runs.length) S.run = S.runs[0].id;
-        const box = S.root.querySelector('#rc-runs');
+        const cur = S.runs.find(x => +x.id === +S.run); if (cur) S.cur = cur;
+        const root = S.root;
+        root.querySelector('#rc-rcount').textContent = r.total ? `(${fa(r.total)} مورد${r.all ? '' : ' — فقط مغایرت‌گیری‌های شما'})` : '';
+        const ys = root.querySelector('#rc-ry');
+        ys.innerHTML = '<option value="">همه‌ی سال‌ها</option>' + (r.years || []).map(y => `<option value="${y.y}" ${String(y.y) === String(f.year) ? 'selected' : ''}>${fa(y.y)} (${fa(y.n)})</option>`).join('');
+        const cs = root.querySelector('#rc-rc');
+        cs.classList.toggle('hidden', !(r.creators || []).length);
+        cs.innerHTML = '<option value="">همه‌ی کاربران</option>' + (r.creators || []).map(c => `<option value="${c.id}" ${String(c.id) === String(f.creator) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+        const mc = root.querySelector('#rc-rm');
+        mc.innerHTML = f.year ? `<button data-m="" class="${f.month ? '' : 'on'}">همه‌ی ماه‌های ${fa(f.year)}</button>` + (r.months || []).map(m => `<button data-m="${m.m}" class="${String(m.m) === String(f.month) ? 'on' : ''}">${esc(m.fa)}<small>${fa(m.n)}</small></button>`).join('') : '';
+        mc.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.rf.month = b.dataset.m; S.rf.page = 1; loadRuns(); });
+        const box = root.querySelector('#rc-runs');
+        let lastM = '';
         box.innerHTML = S.runs.map(x => {
             const c = x.counts || {};
-            return `<button class="rc-run ${+x.id === +S.run ? 'on' : ''}" data-run="${x.id}"><b>${esc(fa(x.title))}</b>${esc(fa(x.period_from || ''))} تا ${esc(fa(x.period_to || ''))} · ${esc(fa(x.created_jalali))}<br>
-                <span class="rc-pill r">${fa(c.DIFF || 0)} مغایر</span> <span class="rc-pill w">${fa(c.ONLY_P || 0)} پاسارگاد</span> <span class="rc-pill c">${fa(c.ONLY_S || 0)} سایت</span>
-                ${+x.open_count ? `<span class="rc-pill n">${fa(x.open_count)} باز</span>` : '<span class="rc-pill p">همه بررسی شد</span>'}</button>`;
-        }).join('') || '<div class="text-[12px] text-slate-400">هنوز مغایرت‌گیری‌ای انجام نشده.</div>';
-        box.querySelectorAll('[data-run]').forEach(b => b.onclick = () => { S.run = +b.dataset.run; S.field = ''; box.querySelectorAll('.rc-run').forEach(x => x.classList.toggle('on', x === b)); loadItems(); });
+            const tot = +x.items_total || 0, done = Math.max(0, tot - (+x.open_count || 0)), pct = tot ? Math.round(done * 100 / tot) : 100;
+            const head = x.month_fa !== lastM ? `<div class="rc-mhead"><i class="fas fa-calendar"></i>${esc(fa(x.month_fa))}</div>` : '';
+            lastM = x.month_fa;
+            return head + `<div class="rc-run ${+x.id === +S.run ? 'on' : ''}" data-run="${x.id}" role="button">
+                <div><b title="${esc(x.title)}">${esc(fa(x.title))}</b><div class="m">${x.period_from ? esc(fa(x.period_from)) + ' تا ' + esc(fa(x.period_to || '')) + ' · ' : ''}${esc(fa(x.created_jalali))}${x.creator ? ' · ' + esc(x.creator) : ''}</div></div>
+                <div class="pills"><span class="rc-pill r">${fa(c.DIFF || 0)} مغایر</span><span class="rc-pill w">${fa(c.ONLY_P || 0)} پاسارگاد</span><span class="rc-pill c">${fa(c.ONLY_S || 0)} سایت</span><span class="rc-pill p">${fa(c.MATCH || 0)} منطبق</span></div>
+                <div class="pg"><div class="rc-prog"><i style="width:${pct}%"></i></div><div class="pct">${+x.open_count ? fa(x.open_count) + ' باز · ' + fa(pct) + '٪ بررسی‌شده' : '✓ همه بررسی شد'}</div></div>
+                <div class="act">${x.archive ? `<span class="rc-ico" data-arch="${esc(x.archive)}" title="پوشه‌ی بایگانی"><i class="fas fa-folder-open"></i></span>` : ''}</div></div>`;
+        }).join('') || `<div class="text-[12px] text-slate-400 text-center py-4">${f.q || f.year || f.status || f.creator ? 'موردی با این فیلترها پیدا نشد.' : 'هنوز مغایرت‌گیری‌ای انجام نشده.'}</div>`;
+        box.querySelectorAll('[data-arch]').forEach(b => b.onclick = e => { e.stopPropagation(); openArchive(b.dataset.arch); });
+        box.querySelectorAll('[data-run]').forEach(b => b.onclick = () => {
+            S.run = +b.dataset.run; S.field = ''; S.cur = S.runs.find(x => +x.id === S.run) || null;
+            box.querySelectorAll('.rc-run').forEach(x => x.classList.toggle('on', x === b)); loadItems();
+            const v = root.querySelector('#rc-view'); if (v) setTimeout(() => v.scrollIntoView({behavior: 'smooth', block: 'start'}), 60);
+        });
+        const pages = Math.max(1, Math.ceil((r.total || 0) / (r.per || 12)));
+        const pg = root.querySelector('#rc-rpg');
+        pg.innerHTML = pages > 1 ? `<button class="rc-btn s sm" data-pg="${r.page - 1}" ${r.page <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-right"></i>قبلی</button>
+            <span>صفحه‌ی ${fa(r.page)} از ${fa(pages)}</span><button class="rc-btn s sm" data-pg="${r.page + 1}" ${r.page >= pages ? 'disabled' : ''}>بعدی<i class="fas fa-chevron-left"></i></button>` : '';
+        pg.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { S.rf.page = +b.dataset.pg; loadRuns(); });
     }
 
     async function loadItems() {
         const view = S.root.querySelector('#rc-view');
         if (!S.run) { view.innerHTML = ''; return; }
-        const run = S.runs.find(x => +x.id === +S.run) || {};
+        const run = S.runs.find(x => +x.id === +S.run) || (S.cur && +S.cur.id === +S.run ? S.cur : {});
         const c = run.counts || {};
         if (!view.dataset.run || +view.dataset.run !== +S.run) {
             view.dataset.run = S.run;
@@ -150,6 +215,7 @@
                     <input id="rc-q" class="rc-in" style="max-width:260px" placeholder="جستجو: شماره بیمه‌نامه، پلاک، بیمه‌گذار">
                     <span class="mr-auto flex gap-2 flex-wrap" id="rc-bulk"></span>
                     <button id="rc-xls" class="rc-btn s sm" style="border-radius:999px" title="فهرستِ مغایرت‌ها و تصمیم‌ها (قالبِ سایت)"><i class="fas fa-file-excel"></i>اکسلِ فهرستِ مغایرت‌ها</button>
+                    <button id="rc-arch" class="rc-btn i sm" style="border-radius:999px" title="ورودی‌ها، خروجی‌های بیمه‌گر و اکسلِ سایت در بایگانی"><i class="fas fa-folder-open"></i>پوشه‌ی بایگانی</button>
                     ${isAdmin() ? '<button id="rc-del" class="rc-btn d sm" style="border-radius:999px"><i class="fas fa-trash"></i>حذفِ این مغایرت‌گیری</button>' : ''}</div>
                 <div class="rc-flt" style="border-top:1px dashed #e2e8f0;padding-top:8px;margin-top:6px"><span class="text-[11px] text-slate-500"><i class="fas fa-file-circle-check text-emerald-600 ml-1"></i>خروجیِ اکسلِ بیمه‌گرِ جدید (همان اکسلِ ورودی با اطلاعاتِ به‌روزِ سایت):</span>
                     ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn g sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
@@ -164,6 +230,7 @@
             view.querySelector('#rc-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { S.q = e.target.value.trim(); loadItems(); }, 300); };
             view.querySelector('#rc-xls').onclick = () => { location.href = API + '?' + new URLSearchParams({action: 'export', run_id: S.run, category: S.cat, status: S.status, field: S.field, q: S.q}).toString(); };
             view.querySelectorAll('[data-corr]').forEach(b => b.onclick = () => corrected(+b.dataset.corr));
+            view.querySelector('#rc-arch').onclick = () => openArchive(S.archive || run.archive);
             // وصل کردنِ فایلِ اصلیِ بیمه‌گر به مغایرت‌گیریِ قدیمی (بدونِ اجرای دوباره)
             const att = view.querySelector('#rc-attach'), attF = view.querySelector('#rc-attach-f');
             att.onclick = () => attF.click();
@@ -177,7 +244,7 @@
                 attF.value = '';
                 if (!r.ok) { att.disabled = false; att.innerHTML = '<i class="fas fa-upload"></i>بارگذاریِ فایلِ اصلیِ بیمه‌گر (xlsx)'; return toast(r.error || 'خطا', 'error'); }
                 toast(`فایل وصل شد (${fa(r.matched)} بیمه‌نامه از ${fa(r.total)} در این مغایرت‌گیری). حالا روی دکمه‌ی خروجیِ اصلاح‌شده بزنید.`, 'success');
-                await loadRuns(); view.dataset.run = ''; loadItems();
+                S.focus = S.run; await loadRuns(); view.dataset.run = ''; loadItems();
             };
             const del = view.querySelector('#rc-del');
             if (del) del.onclick = async () => {
@@ -194,6 +261,7 @@
         list.innerHTML = '<div class="rc-card text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></div>';
         const r = await post({action: 'items', run_id: S.run, category: S.cat, status: S.status, field: S.field, q: S.q});
         if (!r.ok) { list.innerHTML = `<div class="rc-info">${esc(r.error || 'خطا')}</div>`; return; }
+        S.archive = r.archive || '';
         S.rows = r.rows || [];
         renderList();
     }

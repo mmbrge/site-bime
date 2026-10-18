@@ -720,6 +720,20 @@ function vr_link_health($pdo, $siteRoot, $report, $inspId, $userId) {
     $caseId = $st->fetchColumn() ?: null;
     $pdo->prepare("UPDATE visit_reports SET health_inspection_id = ?, case_id = COALESCE(?, case_id), linked_at = NOW(), linked_by = ? WHERE id = ?")
         ->execute([$inspId, $caseId, $userId, $report['id']]);
+    if ($caseId) {
+        // عکس‌های همین گزارش (زیپ) کنارِ گزارش در پوشه‌ی بایگانیِ درخواست هم می‌نشیند
+        try {
+            $zip = vr_abs($siteRoot, $report['zip_path'] ?? '');
+            if ($zip && is_file($zip)) {
+                $c = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+                $c->execute([$caseId]);
+                $dir = resolve_case_folder($pdo, $siteRoot, $c->fetch());
+                if ($dir && strpos($dir, $siteRoot . '/') === 0) { if (!is_dir($dir)) @mkdir($dir, 0775, true); @copy($zip, $dir . '/' . basename($zip)); }
+            }
+        } catch (Throwable $e) { error_log('[vr_link_health zip] ' . $e->getMessage()); }
+        // نوبتِ بازدیدِ این درخواست «انجام شد» (با شماره‌ی گزارش)
+        try { require_once __DIR__ . '/_health_admin.php'; hadm_mark_done($pdo, $caseId, $report['id']); } catch (Throwable $e) { error_log('[vr_link_health appt] ' . $e->getMessage()); }
+    }
     return $r + ['target' => 'health'];
 }
 

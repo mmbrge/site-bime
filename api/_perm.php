@@ -219,6 +219,7 @@ function perm_api_map() {
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
+            'company_inquiry' => 'companies-manage:create|companies-manage:edit',
             'create_portal_user' => 'companies-manage:create|staff-users:create', 'update_portal_user' => 'companies-manage:edit|staff-users:edit',
             'delete_portal_user' => 'companies-manage:delete|staff-users:delete', 'list_portal_users' => 'companies-manage:view|staff-users:view',
             'list_requests' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view',
@@ -289,6 +290,10 @@ function perm_api_map() {
             'reconcile' => 'fin-reconcile:edit', 'reconcile_status' => 'fin-reconcile:view', 'override_reconcile' => 'fin-reconcile:edit',
             'invoice_preview' => 'fin-invoices:view', 'create_invoice' => 'fin-invoices:create', 'invoices' => 'fin-invoices:view|fin-dashboard:view',
             'invoice_detail' => 'fin-invoices:view', 'deactivate_invoice' => 'fin-invoices:delete',
+        ]],
+        'visit_appt_actions' => ['pages' => ['health', 'cases'], 'elevate' => true, 'actions' => [
+            'calendar' => 'health:view|cases:view', 'list' => 'health:view|cases:view', 'case' => 'health:view|cases:view', 'search' => 'health:view|cases:view',
+            'book' => 'health:edit|cases:edit', 'cancel' => 'health:edit|cases:edit',
         ]],
         'case_actions' => ['pages' => ['cases'], 'elevate' => true, 'actions' => [
             'delete_case' => 'cases:delete|records:delete', 'admin_upload_case_doc' => 'cases:edit|health:edit|records:edit',

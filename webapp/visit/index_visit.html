@@ -125,7 +125,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="../mini-kit.js?v=4"></script>
+<script src="../mini-kit.js?v=5"></script>
 <script>
 const params = new URLSearchParams(location.search);
 const TOKEN = params.get('t') || '';
@@ -218,13 +218,16 @@ function awaitingCard(r) {
     else docsBtn = `<button class="action-btn ${r.docs_status === 'approved' ? 'approved' : 'received'}"><span>${r.docs_status === 'approved' ? '🔵' : '🟢'} مدارک</span><span class="sub">${r.docs_status === 'approved' ? 'تایید شده' : 'دریافت شد · در انتظار تایید'}</span></button>`;
     let healthBtn = '';
     if (r.health_status !== 'not_applicable') {
-        if (r.appointment) healthBtn = `<button class="action-btn appt" onclick="showToast('نوبتِ بازدیدِ حضوری: ' + (this.dataset.slot || 'به‌زودی اعلام می‌شود'))" data-slot="${esc(r.appointment.slot_fa || '')}"><span>🗓 بازدید سلامت (حضوری)</span><span class="sub">${esc(r.appointment.slot_fa || 'نوبت به‌زودی اعلام می‌شود')}</span></button>`;
+        if (r.appointment && r.appointment.can_pick) healthBtn = r.appointment.need_pick
+            ? `<button class="action-btn awaiting" onclick="pickAppt(${r.id})"><span>🗓 انتخابِ زمانِ بازدید</span><span class="sub">${r.appointment.past ? 'زمانِ قبلی گذشت؛ دوباره انتخاب کنید' : 'نوبت‌های آزادِ روزهای پیشِ رو'}</span></button>`
+            : `<button class="action-btn appt" onclick="pickAppt(${r.id})"><span>🗓 بازدیدِ خودرو (حضوری)</span><span class="sub">${esc(r.appointment.slot_fa || '')} · تغییر</span></button>`;
+        else if (r.appointment) healthBtn = `<button class="action-btn appt" onclick="showToast('نوبتِ بازدیدِ حضوری: ' + (this.dataset.slot || 'به‌زودی اعلام می‌شود'))" data-slot="${esc(r.appointment.slot_fa || '')}"><span>🗓 بازدید خودرو (حضوری)</span><span class="sub">${esc(r.appointment.slot_fa || 'نوبت به‌زودی اعلام می‌شود')}</span></button>`;
         else if (['not_started', 'needs_fix'].includes(r.health_status)) {
             const ready = !docsNeed;
-            healthBtn = !ready ? `<button class="action-btn locked"><span>🚗 بازدید سلامت</span><span class="sub">بعد از ارسالِ مدارک</span></button>`
-                : closed ? `<button class="action-btn locked" onclick="showToast('خارج از ساعتِ کاری.')"><span>🔒 بازدید سلامت</span><span class="sub">در ساعتِ کاری</span></button>`
-                : `<button class="action-btn ${r.health_status === 'needs_fix' ? 'fix' : 'awaiting'}" onclick="goHealth(${r.id})"><span>🚗 بازدید سلامت خودرو</span><span class="sub">${r.health_status === 'needs_fix' ? 'نیاز به اصلاح' : 'در انتظار انجام'}</span></button>`;
-        } else healthBtn = `<button class="action-btn ${r.health_status === 'approved' ? 'approved' : 'received'}"><span>🚗 بازدید سلامت</span><span class="sub">${r.health_status === 'approved' ? 'تایید شده' : 'در انتظار تایید'}</span></button>`;
+            healthBtn = !ready ? `<button class="action-btn locked"><span>🚗 بازدید خودرو</span><span class="sub">بعد از ارسالِ مدارک</span></button>`
+                : closed ? `<button class="action-btn locked" onclick="showToast('خارج از ساعتِ کاری.')"><span>🔒 بازدید خودرو</span><span class="sub">در ساعتِ کاری</span></button>`
+                : `<button class="action-btn ${r.health_status === 'needs_fix' ? 'fix' : 'awaiting'}" onclick="goHealth(${r.id})"><span>🚗 بازدید خودرو</span><span class="sub">${r.health_status === 'needs_fix' ? 'نیاز به اصلاح' : 'در انتظار انجام'}</span></button>`;
+        } else healthBtn = `<button class="action-btn ${r.health_status === 'approved' ? 'approved' : 'received'}"><span>🚗 بازدید خودرو</span><span class="sub">${r.health_status === 'approved' ? 'تایید شده' : 'در انتظار تایید'}</span></button>`;
     }
     const reason = r.health_status === 'needs_fix' && r.health_reject_reason && !r.appointment ? `<p style="font-size:10.5px;color:#fca5a5;margin:8px 0 0;">علت اصلاح بازدید: ${esc(r.health_reject_reason)}</p>` : '';
     return `<div class="req-card ${String(r.id) === String(FOCUS_CASE) ? 'hl' : ''}" id="case-${r.id}">
@@ -234,7 +237,16 @@ function awaitingCard(r) {
         ${docsNeed ? `<div class="progress"><i style="width:${pct}%"></i></div><div class="prog-lbl">${toFa(r.docs_sent)} از ${toFa(r.docs_total)} مدرک ارسال شده</div>` : ''}
         <div class="action-row">${docsBtn}${healthBtn}</div>
         ${reason}
+        ${visitNote(r)}
     </div>`;
+}
+// «صدورِ بیمه‌نامه منوط به انجامِ بازدیدِ خودرو می‌باشد» برای بدنه‌ای که بازدیدش هنوز تایید نشده
+function visitNote(r) {
+    return r.visit_required ? `<p style="font-size:11px;line-height:1.9;color:#fde68a;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:6px 10px;margin:8px 0 0;">⚠️ صدورِ بیمه‌نامه منوط به انجامِ بازدیدِ خودرو می‌باشد.</p>` : '';
+}
+function pickAppt(caseId) {
+    const r = ROWS.find(x => String(x.id) === String(caseId));
+    MiniKit.apptPicker({ api: API, token: TOKEN, caseId: caseId, plate: r && r.plate, onDone: d => { showToast('✅ نوبت ثبت شد: ' + d.slot_fa); loadRequests(); } });
 }
 
 const DOC_ST = { PENDING: '🟢 دریافت شد · در انتظار تایید کارشناس', APPROVED: '🔵 تایید شده', REJECTED: '🔴 رد شده' };
@@ -250,6 +262,7 @@ function uploadedCard(r) {
         ${MKIT.stages(r.stage)}
         ${detailRows(r)}
         <div class="doc-rows">${docs || '<div class="empty-state" style="padding:12px;">مدرکی ثبت نشده.</div>'}</div>
+        ${visitNote(r)}
         ${r.stage === 'issued' ? `<button class="btn btn-primary" onclick="location.href='../app/?t=${encodeURIComponent(TOKEN)}&open=policies'">📁 دانلود از بیمه‌نامه‌های من</button>` : ''}
     </div>`;
 }

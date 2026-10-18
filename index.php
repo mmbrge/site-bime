@@ -21,6 +21,8 @@ if (isset($_GET['idle'])) $notice = 'به دلیلِ عدمِ فعالیت از 
 if (isset($_GET['forced'])) $notice = 'مدیر سامانه نشستِ شما را بست؛ برای ادامه دوباره وارد شوید.';
 if (isset($_GET['kicked'])) $notice = 'با این حساب از دستگاهِ دیگری وارد شدند و این دستگاه از حساب خارج شد. اگر شما نبودید، فوراً رمز را عوض کنید و به مدیر خبر دهید.';
 $authReady = auth_schema_ready($pdo);
+require_once __DIR__ . '/api/_sms.php';
+$otpVia = panel_otp_channel($pdo);   // راهِ ارسالِ کدِ ورود: bot | sms | sapi
 
 // ورود با نام کاربری و رمز. (ورود با کد، جدا و با api/otp_login.php انجام می‌شود.)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
@@ -487,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div id="otp-login" class="otp-wrap" style="display:none;">
                 <!-- ۱) شماره تلفن -->
                 <div id="otp-step-phone">
-                    <p class="otp-hint">شماره موبایلی که در پنل برای شما ثبت شده را وارد کنید؛ کد ورود در <b>ربات بله‌ی شرکت</b> برایتان فرستاده می‌شود.</p>
+                    <p class="otp-hint">شماره موبایلی که در پنل برای شما ثبت شده را وارد کنید؛ کد ورود <?= $otpVia === 'bot' ? 'در <b>ربات بله‌ی شرکت</b>' : 'با <b>پیامک</b> به همین شماره' ?> برایتان فرستاده می‌شود.</p>
                     <label class="phone-box" id="phone-box" for="otp-phone">
                         <i class="fas fa-mobile-screen-button phone-ico"></i>
                         <span class="phone-digits" id="phone-digits" dir="ltr"></span>
@@ -504,7 +506,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <div class="otp-who">
                         <span class="otp-role" id="otp-role"></span>
                         <div class="otp-name" id="otp-name"></div>
-                        <div class="otp-sub">کد ۵ رقمی که در ربات بله برایتان فرستاده شد را وارد کنید</div>
+                        <div class="otp-sub" id="otp-sub">کد ۵ رقمی که <?= $otpVia === 'bot' ? 'در ربات بله' : 'با پیامک' ?> برایتان فرستاده شد را وارد کنید</div>
                     </div>
                     <div class="otp-boxes" id="otp-boxes" dir="ltr">
                         <input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1">
@@ -905,7 +907,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 otpMsg('otp-code-msg', '');
                 otpClearBoxes();
                 otpStartTimer(d.ttl || 120);
-                if (resend) showToast('کد تازه در ربات بله فرستاده شد.', 'success');
+                const viaSms = d.via && d.via !== 'bot';
+                document.getElementById('otp-sub').textContent = viaSms
+                    ? 'کد ۵ رقمی که با پیامک به ' + (d.masked ? d.masked.replace(/\d/g, x => '۰۱۲۳۴۵۶۷۸۹'[x]) : 'شماره‌ی شما') + ' فرستاده شد را وارد کنید'
+                    : 'کد ۵ رقمی که در ربات بله برایتان فرستاده شد را وارد کنید';
+                if (resend) showToast(viaSms ? 'کد تازه با پیامک فرستاده شد.' : 'کد تازه در ربات بله فرستاده شد.', 'success');
             } catch (e) {
                 otpMsg(resend ? 'otp-code-msg' : 'otp-msg', 'خطا در ارتباط با سرور.');
             } finally {

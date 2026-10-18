@@ -4,6 +4,7 @@
 //   MiniKit.pick(opts)              فهرستِ انتخابیِ قابلِ جستجو و پیمایش (bottom sheet)
 //   MiniKit.vehiclePick(o)          انتخابِ خودرو با نام (برند ← مدل)، دسته‌ی بیمه از دیتابیس
 //   MiniKit.closedScreen(el, info)  صفحه‌ی متحرکِ «ساعتِ کاریِ ثبتِ درخواست تمام شده»
+//   MiniKit.apptPicker(o)           انتخابِ زمانِ بازدیدِ خودرو (بدنه) از نوبت‌های آزادِ تقویمِ کاری
 //   MiniKit.jToday() / jAddDays / jFmt / jParse / g2j / j2g
 (function () {
     const FA = s => String(s == null ? '' : s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
@@ -353,5 +354,62 @@
     const STAGE_FA = { awaiting: '🟡 در انتظار بارگزاری مدارک', needs_fix: '🔴 نیاز به اصلاحِ مدارک', received: '🟢 مدارک دریافت شد · در انتظار تایید کارشناس', approved: '🔵 تایید شده · در انتظار صدور', issued: '🔵 تایید شده · بیمه‌نامه صادر شد' };
     function stagePill(stage) { css(); return `<span class="mk-pill ${esc(stage)}">${STAGE_FA[stage] || ''}</span>`; }
 
-    window.MiniKit = { calendar, dateField, pick, vehiclePick, vehicleCaption, closedScreen, stages, stagePill, STAGE_FA, jToday, jAddDays, jAddYears, jFmt, jParse, jCmp, g2j, j2g, fa: FA, en: EN, esc, MONTHS };
+    // انتخابِ زمانِ بازدیدِ خودرو از نوبت‌های آزادِ تقویمِ کاری (روزها بالا، ساعت‌ها پایین)
+    //   o = {api, token, caseId, plate, onDone(info)}  → api?action=appt_slots / appt_book (webapp_visit.php)
+    function apptCss() {
+        if (document.getElementById('mk-appt-css')) return;
+        const st = document.createElement('style'); st.id = 'mk-appt-css';
+        st.textContent = `
+.mk-ap-days{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}.mk-ap-days::-webkit-scrollbar{display:none}
+.mk-ap-day{flex:0 0 auto;min-width:64px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:14px;padding:7px 6px;text-align:center;color:#e2e8f0;font-family:inherit;cursor:pointer}
+.mk-ap-day b{display:block;font-size:17px;line-height:1.2}.mk-ap-day small{display:block;font-size:10px;opacity:.75}
+.mk-ap-day.on{background:linear-gradient(135deg,#0ea5e9,#6366f1);border-color:transparent;color:#fff}.mk-ap-day.off{opacity:.38;cursor:not-allowed}
+.mk-ap-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;overflow-y:auto;max-height:40vh;padding:2px}
+.mk-ap-slot{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#f1f5f9;border-radius:12px;padding:9px 0;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer}
+.mk-ap-slot.on{background:#10b981;border-color:#10b981;color:#fff}.mk-ap-slot:disabled{opacity:.3;text-decoration:line-through;cursor:not-allowed}
+.mk-ap-note{font-size:11px;line-height:1.9;color:#bae6fd;background:rgba(56,189,248,.10);border:1px solid rgba(56,189,248,.28);border-radius:12px;padding:8px 10px;margin:8px 0}
+.mk-ap-go{width:100%;margin-top:10px;border:0;border-radius:14px;padding:13px;font-weight:900;font-size:14px;font-family:inherit;color:#fff;background:linear-gradient(135deg,#10b981,#0ea5e9);cursor:pointer}
+.mk-ap-go:disabled{opacity:.45;cursor:not-allowed}
+`;
+        document.head.appendChild(st);
+    }
+    function apptPicker(o) {
+        apptCss();
+        const sh = sheet('🗓 انتخابِ زمانِ بازدیدِ خودرو' + (o.plate ? ' — ' + esc(o.plate) : ''), '<div class="mk-ap-body" style="overflow-y:auto"><p style="text-align:center;opacity:.7;font-size:12px;padding:20px 0">در حالِ دریافتِ نوبت‌های آزاد…</p></div>');
+        const body = sh.box.querySelector('.mk-ap-body');
+        let D = null, day = -1, at = '';
+        const render = () => {
+            const d = D.days[day];
+            body.innerHTML = `<div class="mk-ap-days">${D.days.map((x, i) => `<button type="button" class="mk-ap-day ${i === day ? 'on' : ''} ${x.free ? '' : 'off'}" data-d="${i}" ${x.free ? '' : 'disabled'}><small>${esc(x.weekday)}</small><b>${FA(x.day)}</b><small>${x.closed ? esc(x.closed) : (x.free ? FA(x.free) + ' نوبت' : 'پُر')}</small></button>`).join('')}</div>
+                ${d ? `<div class="mk-ap-slots">${d.slots.map(x => `<button type="button" class="mk-ap-slot ${x.at === at ? 'on' : ''}" data-at="${esc(x.at)}" ${x.free ? '' : 'disabled'}>${FA(x.time)}</button>`).join('')}</div>` : '<p style="text-align:center;opacity:.7;font-size:12px;padding:14px 0">در روزهای پیشِ رو نوبتِ آزادی نیست؛ لطفاً با کارشناس تماس بگیرید.</p>'}
+                <div class="mk-ap-note">📍 ${D.place ? esc(D.place) + ' · ' : ''}هر نوبت حدودِ ${FA(D.slot_min)} دقیقه. صدورِ بیمه‌نامه‌ی بدنه منوط به انجامِ بازدیدِ خودرو است؛ لطفاً سرِ وقت حاضر شوید.</div>
+                <button type="button" class="mk-ap-go" ${at ? '' : 'disabled'}>${at ? '✅ ثبتِ نوبت: ' + esc(d.weekday) + ' ' + FA(d.jdate) + ' ساعت ' + FA(at.slice(11, 16)) : 'یک ساعت را انتخاب کنید'}</button>`;
+            body.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { day = +b.dataset.d; at = ''; render(); });
+            body.querySelectorAll('[data-at]').forEach(b => b.onclick = () => { at = b.dataset.at; render(); });
+            const go = body.querySelector('.mk-ap-go');
+            go.onclick = async () => {
+                if (!at) return;
+                go.disabled = true; go.textContent = '⏳ در حالِ ثبت…';
+                let r;
+                try { r = await (await fetch(o.api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'appt_book', token: o.token, case_id: o.caseId, at: at }) })).json(); }
+                catch (e) { r = { ok: false, error: 'خطا در اتصال به سرور.' }; }
+                if (!r.ok) { alert(r.error || 'خطا'); load(); return; }
+                sh.close();
+                if (o.onDone) o.onDone(r);
+            };
+        };
+        const load = async () => {
+            let r;
+            try { r = await (await fetch(o.api + '?action=appt_slots&token=' + encodeURIComponent(o.token) + '&case_id=' + encodeURIComponent(o.caseId))).json(); }
+            catch (e) { r = { ok: false, error: 'خطا در اتصال به سرور.' }; }
+            if (!r.ok) { body.innerHTML = `<p style="text-align:center;color:#fca5a5;font-size:12px;padding:16px 0">${esc(r.error || 'خطا')}</p>`; return; }
+            D = r; at = ''; day = -1;
+            for (let i = 0; i < D.days.length; i++) if (D.days[i].free) { day = i; break; }
+            render();
+        };
+        load();
+        return sh;
+    }
+
+    window.MiniKit = { calendar, dateField, pick, vehiclePick, vehicleCaption, closedScreen, stages, stagePill, STAGE_FA, jToday, jAddDays, jAddYears, jFmt, jParse, jCmp, g2j, j2g, fa: FA, en: EN, esc, MONTHS, apptPicker };
 })();

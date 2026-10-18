@@ -1119,6 +1119,24 @@ try {
         exit;
     }
 
+    // ---- استعلامِ شخصِ حقوقی با شناسه‌ی ملی (s.api.ir؛ کلید در «تنظیمات ← کلیدهای API») ----
+    if ($action === 'company_inquiry') {
+        require_once __DIR__ . '/_apis.php';
+        if (!sapi_ready($pdo, 'sapi_company')) { echo json_encode(['ok' => false, 'error' => 'سرویسِ استعلام هنوز تنظیم نشده؛ مدیر کل باید کلیدِ s.api.ir را در «تنظیمات ← کلیدهای API» وارد کند. تا آن موقع اطلاعات را دستی وارد کنید.']); exit; }
+        $r = sapi_company_info($pdo, $data['national_id'] ?? '');
+        if (!$r['ok']) { echo json_encode(['ok' => false, 'error' => $r['error']], JSON_UNESCAPED_UNICODE); exit; }
+        // شرکتِ دیگری با همین شناسه‌ی ملی در سایت هست؟
+        $dup = null;
+        try {
+            companies_extra_ensure($pdo);
+            $st = $pdo->prepare("SELECT id, name FROM companies WHERE (national_id = ? OR economic_code = ?) AND id <> ? AND is_import = 0 LIMIT 1");
+            $st->execute([$r['company']['national_id'], $r['company']['national_id'], intval($data['id'] ?? 0)]);
+            $dup = $st->fetch() ?: null;
+        } catch (Throwable $e) {}
+        echo json_encode(['ok' => true, 'company' => $r['company'], 'duplicate' => $dup], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- ساخت/ویرایش شرکت (create_company بدون id، update_company با id) ----
     if ($action === 'create_company' || $action === 'update_company') {
         $name = trim($data['name'] ?? '');
@@ -1137,8 +1155,21 @@ try {
         companies_extra_ensure($pdo);
         $ownerGiven = array_key_exists('other_owner_mode', $data);
         $otherOwner = in_array($data['other_owner_mode'] ?? '', ['BENEFICIARY', 'OWNER'], true) ? $data['other_owner_mode'] : null;
-        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address) {
+        // مشخصاتِ ثبتی (فقط اگر فرم فرستاده باشد؛ فرم‌های قدیمی/درون‌ریزی دست نمی‌زنند)
+        $legal = [];
+        foreach (['national_id' => 11, 'company_type' => 120, 'register_number' => 40, 'register_date' => 10, 'postal_code' => 10, 'province' => 60, 'city' => 60] as $k => $len) {
+            if (!array_key_exists($k, $data)) continue;
+            $v = trim(preg_replace('/\s+/u', ' ', (string)$data[$k]));
+            if (in_array($k, ['national_id', 'postal_code', 'register_number'], true)) $v = preg_replace('/\D/', '', p2e_digits($v));
+            if ($k === 'register_date') $v = p2e_digits($v);
+            $legal[$k] = mb_substr($v, 0, $len) ?: null;
+        }
+        if (!empty($legal['national_id']) && strlen($legal['national_id']) !== 11) { echo json_encode(['ok' => false, 'error' => 'شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد.']); exit; }
+        if (array_key_exists('legal_active', $data)) $legal['legal_active'] = $data['legal_active'] === '' || $data['legal_active'] === null ? null : (int)!empty($data['legal_active']);
+        if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
+        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address, $legal) {
             if ($ownerGiven) $pdo->prepare("UPDATE companies SET other_owner_mode = ? WHERE id = ?")->execute([$otherOwner, $cid]);
+            if ($legal) $pdo->prepare("UPDATE companies SET " . implode(', ', array_map(fn($k) => "$k = ?", array_keys($legal))) . " WHERE id = ?")->execute(array_merge(array_values($legal), [$cid]));
             if ($economicCode && $phone && $address) $pdo->prepare("UPDATE companies SET auto_created = NULL WHERE id = ?")->execute([$cid]);   // تکمیل شد
         };
         // قراردادِ پرداخت: نقد/اقساط و تعدادِ قسط از قرارداد می‌آید (ستون‌های قدیمی هم برای سازگاری هم‌شکل می‌شوند)

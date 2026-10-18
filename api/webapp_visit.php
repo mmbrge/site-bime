@@ -9,12 +9,18 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require __DIR__ . '/_case_helpers.php';
 require_once __DIR__ . '/_case_doc_upload.php';   // عکس/گالری/PDF برای مدارک + «چند مدرک در یک PDF»
-require_once __DIR__ . '/_health_admin.php';      // حالتِ نوبتی: فقط بازدیدِ سلامت حضوری است
+require_once __DIR__ . '/_health_admin.php';      // حالتِ نوبتی: فقط بازدیدِ خودرو حضوری است
 require_once __DIR__ . '/_order_hours.php';       // ساعتِ کاری: بیرون از آن ارسالِ مدرک بسته است
 require_once __DIR__ . '/_vehicle_catalog.php';
 
 $jsonBody = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? ($jsonBody['action'] ?? '');
+
+// بدنه‌ای که بازدیدِ خودرویش هنوز تایید نشده: صدور منوط به بازدید است
+function wv_visit_required($case, $healthStatus) {
+    return ($case['insurance_type'] ?? '') === 'BODY' && !in_array((string)($case['status'] ?? ''), ['ISSUED', 'WITHDRAWN', 'CANCELLED'], true)
+        && !in_array($healthStatus, ['approved', 'not_applicable'], true);
+}
 
 // توکن معمولیِ «اپ اصلی» (mode='main') را می‌پذیرد؛ اگر توکن نامعتبر/خالی بود، یعنی کاربر مهمان است
 function resolve_visit_person($pdo, $token) {
@@ -121,6 +127,8 @@ try {
                 'awaiting' => $stage !== 'issued' && (in_array($docsStatus, ['not_started', 'partial', 'needs_fix'], true) || in_array($healthStatus, ['not_started', 'needs_fix'], true)),
                 // حالتِ نوبتی: بازدیدِ سلامتِ این درخواست حضوری است (مدارک مثلِ قبل از همین‌جا)
                 'appointment' => in_array($healthStatus, ['not_started', 'needs_fix'], true) ? hadm_case_appt_info($pdo, $c) : null,
+                // «صدورِ بیمه‌نامه منوط به انجامِ بازدیدِ خودرو است» (بدنه‌ای که بازدیدش هنوز تایید نشده)
+                'visit_required' => wv_visit_required($c, $healthStatus),
             ];
         }
         $apptMode = !hadm_self_enabled($pdo);
@@ -143,7 +151,35 @@ try {
         echo json_encode(['ok' => true, 'docs' => $docs, 'plate' => $case['plate'], 'unique_code' => $case['unique_code'], 'case' => wv_case_info($pdo, $case),
                           'needs_ownership' => !$case['ownership_choice'], 'ownership_choice' => $case['ownership_choice'], 'ownership_locked' => $ownLocked,
                           'docs_status' => $docsStatus, 'health_status' => $healthStatus, 'stage' => $stage, 'stage_fa' => CASE_USER_STAGE_FA[$stage],
+                          'visit_required' => wv_visit_required($case, $healthStatus),
+                          'appointment' => in_array($healthStatus, ['not_started', 'needs_fix'], true) ? hadm_case_appt_info($pdo, $case) : null,
                           'hours' => oh_status($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // نوبت‌های آزادِ بازدیدِ خودرو (تقویمِ کاری، تا چند روزِ آینده) برای یک درخواستِ بدنه
+    if ($action === 'appt_slots') {
+        $person = resolve_visit_person($pdo, $_GET['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        $case = wv_case_for_person($pdo, $_GET['case_id'] ?? 0, $person);
+        if (!$case || ($case['insurance_type'] ?? '') !== 'BODY') { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        if (!in_array(compute_health_status($pdo, $case), ['not_started', 'needs_fix'], true)) { echo json_encode(['ok' => false, 'error' => 'بازدیدِ این خودرو انجام یا ثبت شده است.']); exit; }
+        $info = hadm_case_appt_info($pdo, $case);
+        if (!$info || !$info['can_pick']) { echo json_encode(['ok' => false, 'error' => 'انتخابِ زمانِ بازدید برای این درخواست فعال نیست.', 'appointment' => $info]); exit; }
+        echo json_encode(['ok' => true, 'appointment' => $info] + hadm_slots($pdo, $case['id']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'appt_book') {
+        $person = resolve_visit_person($pdo, $jsonBody['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        $case = wv_case_for_person($pdo, $jsonBody['case_id'] ?? 0, $person);
+        if (!$case || ($case['insurance_type'] ?? '') !== 'BODY') { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        if (!in_array(compute_health_status($pdo, $case), ['not_started', 'needs_fix'], true)) { echo json_encode(['ok' => false, 'error' => 'بازدیدِ این خودرو انجام یا ثبت شده است.']); exit; }
+        $info = hadm_case_appt_info($pdo, $case);
+        if (!$info || !$info['can_pick']) { echo json_encode(['ok' => false, 'error' => 'انتخابِ زمانِ بازدید برای این درخواست فعال نیست.']); exit; }
+        $r = hadm_book($pdo, $case['id'], (string)($jsonBody['at'] ?? ''), 'USER');
+        if (!$r['ok']) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'slot_fa' => $r['slot_fa'], 'appointment' => hadm_case_appt_info($pdo, $case)], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

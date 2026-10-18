@@ -144,22 +144,36 @@ function auth_unlink_bot($pdo, $type, $id, $message = null) {
 
 // ---------------- کدِ ۵ رقمیِ ورود ----------------
 const OTP5_TTL = 120;
+// راهِ ارسال از «تنظیمات ← پیامک و OTP ← ورود به پنل با کد»: ربات بله (پیش‌فرض) | پنلِ پیامک | پیامکی OTP (s.api.ir)
 function otp5_issue($pdo, $acc, $ip = null) {
+    require_once __DIR__ . '/_sms.php';
     $u = $acc['user'];
-    if (!auth_account_linked($acc)) return ['ok' => false, 'error' => 'ابتدا در ربات بله با شماره‌ی خود وارد شوید.'];
+    $ch = panel_otp_channel($pdo);
+    if ($ch === 'bot' && !auth_account_linked($acc)) return ['ok' => false, 'error' => 'ابتدا در ربات بله با شماره‌ی خود وارد شوید.'];
     $st = $pdo->prepare("SELECT COUNT(*) FROM phone_otps WHERE user_type = ? AND user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
     $st->execute([$acc['type'], $u['id']]);
     if (intval($st->fetchColumn()) >= 4) return ['ok' => false, 'error' => 'تعداد درخواستِ کد زیاد بود؛ چند دقیقه‌ی دیگر دوباره امتحان کنید.'];
 
     $pdo->prepare("UPDATE phone_otps SET is_used = 1 WHERE user_type = ? AND user_id = ? AND is_used = 0")->execute([$acc['type'], $u['id']]);
     $code = str_pad((string)random_int(0, 99999), 5, '0', STR_PAD_LEFT);
-    $text = "🔐 کد ورود به پنل «بیمه با ما»:\n\n{$code}\n\nاین کد تا " . OTP5_TTL / 60 . " دقیقه معتبر است. اگر شما درخواست نداده‌اید، این پیام را نادیده بگیرید و کد را به کسی ندهید.";
-    if (!cbot_send($pdo, $u['bale_chat_id'], $text)) {
-        return ['ok' => false, 'error' => 'ارسال کد با ربات بله ممکن نشد. دوباره تلاش کنید.'];
+    if ($ch === 'bot') {
+        $text = "🔐 کد ورود به پنل «بیمه با ما»:\n\n{$code}\n\nاین کد تا " . OTP5_TTL / 60 . " دقیقه معتبر است. اگر شما درخواست نداده‌اید، این پیام را نادیده بگیرید و کد را به کسی ندهید.";
+        if (!cbot_send($pdo, $u['bale_chat_id'], $text)) {
+            return ['ok' => false, 'error' => 'ارسال کد با ربات بله ممکن نشد. دوباره تلاش کنید.'];
+        }
+    } else {
+        $phone = sms_norm_phone($u['mobile_number'] ?? '');
+        if ($phone === '') return ['ok' => false, 'error' => 'شماره‌ی موبایلِ این حساب ثبت نشده است.'];
+        $text = "کد ورود به پنل «بیمه با ما»: {$code}\nاعتبار: " . OTP5_TTL / 60 . " دقیقه\nاین کد را به کسی ندهید.";
+        $r = otp_send_via($pdo, $ch, $phone, $text, $code);
+        if (empty($r['ok'])) {
+            error_log('[otp5 sms] ' . ($r['status'] ?? ''));
+            return ['ok' => false, 'error' => 'ارسالِ پیامکِ کد ممکن نشد؛ کمی بعد دوباره تلاش کنید یا با نام کاربری و رمز وارد شوید.'];
+        }
     }
     $pdo->prepare("INSERT INTO phone_otps (user_type, user_id, code_hash, ip, expires_at) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))")
         ->execute([$acc['type'], $u['id'], password_hash($code, PASSWORD_DEFAULT), $ip, OTP5_TTL]);
-    return ['ok' => true, 'ttl' => OTP5_TTL];
+    return ['ok' => true, 'ttl' => OTP5_TTL, 'via' => $ch, 'masked' => $ch === 'bot' ? '' : sms_mask_phone(sms_norm_phone($u['mobile_number'] ?? ''))];
 }
 function otp5_verify($pdo, $acc, $code) {
     $code = auth_digits($code);

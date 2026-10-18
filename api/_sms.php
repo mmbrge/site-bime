@@ -57,7 +57,9 @@ function sms_settings($pdo) {
         'fallback' => (string)sms_get($pdo, 'sms_fallback', ''),
         'cfg' => $cfg,
         'otp_text' => (string)sms_get($pdo, 'sms_otp_text', SMS_DEFAULT_OTP_TEXT),
-        'otp_bot' => sms_get($pdo, 'otp_bot_enabled', '0') === '1',
+        'otp_bot' => otp_bot_channel($pdo) !== 'off',
+        'otp_bot_channel' => otp_bot_channel($pdo),
+        'panel_otp_channel' => panel_otp_channel($pdo),
         'otp_ttl' => max(1, min(15, intval(sms_get($pdo, 'otp_ttl_min', 2)))),
         'otp_len' => max(4, min(6, intval(sms_get($pdo, 'otp_len', 5)))),
         'otp_attempts' => max(2, min(10, intval(sms_get($pdo, 'otp_max_attempts', 5)))),
@@ -217,6 +219,27 @@ function sms_send($pdo, $phone, $text, $code = null) {
 }
 
 // ---------------------------------------------------------------------
+//  راهِ ارسالِ کدِ تأیید
+//   ورودِ کارکنان در ربات (otp_bot_channel): off (مثلِ قبل: اشتراکِ شماره) | sms (پنلِ پیامک) | sapi (پیامکی OTP)
+//   ورود به پنل با کد (panel_otp_channel): bot (ربات بله‌ی شرکت‌ها؛ مثلِ قبل) | sms | sapi
+// ---------------------------------------------------------------------
+const OTP_CHANNELS_FA = ['off' => 'غیرفعال (حالتِ عادی)', 'bot' => 'ربات بله', 'sms' => 'پنلِ پیامک', 'sapi' => 'پیامکی OTP (s.api.ir)'];
+function otp_bot_channel($pdo) {
+    $v = (string)sms_get($pdo, 'otp_bot_channel', '');
+    if (in_array($v, ['off', 'sms', 'sapi'], true)) return $v;
+    return sms_get($pdo, 'otp_bot_enabled', '0') === '1' ? 'sms' : 'off';   // سازگاری با تنظیمِ قبلی
+}
+function panel_otp_channel($pdo) {
+    $v = (string)sms_get($pdo, 'panel_otp_channel', 'bot');
+    return in_array($v, ['bot', 'sms', 'sapi'], true) ? $v : 'bot';
+}
+// ارسالِ کد با یک راهِ پیامکی؛ $text برای پنلِ پیامک (حالتِ متنِ ساده)، s.api.ir متن را خودش می‌سازد
+function otp_send_via($pdo, $channel, $phone, $text, $code) {
+    if ($channel === 'sapi') { require_once __DIR__ . '/_apis.php'; return sapi_send_otp($pdo, $phone, $code); }
+    return sms_send($pdo, $phone, $text, $code);
+}
+
+// ---------------------------------------------------------------------
 //  کدِ یک‌بارمصرف (OTP) + لاگ
 // ---------------------------------------------------------------------
 function otp_ensure($pdo) {
@@ -265,7 +288,9 @@ function otp_issue($pdo, array $p) {
     $id = (int)$pdo->lastInsertId();
     $name = trim((string)($p['full_name'] ?? '')) ?: 'کاربر';
     $text = strtr($s['otp_text'], ['{name}' => $name, '{code}' => $code, '{ttl}' => $s['otp_ttl']]);
-    $r = sms_send($pdo, $phone, $text, $code);
+    // راهِ ارسال: برای ورود در ربات از تنظیمِ «ورودِ کارکنان در ربات» (پنلِ پیامک یا پیامکی OTP)
+    $channel = (string)($p['channel'] ?? ($purpose === 'BOT_LOGIN' ? otp_bot_channel($pdo) : 'sms'));
+    $r = otp_send_via($pdo, $channel === 'sapi' ? 'sapi' : 'sms', $phone, $text, $code);
     $pdo->prepare("UPDATE otp_codes SET provider = ?, send_ok = ?, send_status = ?, send_ref = ?, send_ms = ?, status = IF(?, status, 'FAILED') WHERE id = ?")
         ->execute([$r['provider'] ?? null, $r['ok'] ? 1 : 0, mb_substr((string)($r['status'] ?? ''), 0, 255), $r['ref'] ?? null, $r['ms'] ?? null, $r['ok'] ? 1 : 0, $id]);
     if (!$r['ok']) return ['ok' => false, 'id' => $id, 'send_failed' => true, 'error' => 'ارسالِ پیامک ناموفق بود.', 'detail' => $r['status'] ?? ''];
@@ -314,7 +339,7 @@ function otp_log_rows($pdo, $where, array $args, $limit = 50) {
         if ($r['status'] === 'SENT' && (int)$r['left_sec'] <= 0) $r['status'] = 'EXPIRED';
         $r['status_fa'] = OTP_STATUS_FA[$r['status']] ?? $r['status'];
         $r['left_sec'] = $r['status'] === 'SENT' ? max(0, (int)$r['left_sec']) : 0;
-        $r['provider_fa'] = SMS_PROVIDERS[$r['provider']]['fa'] ?? ($r['provider'] ?: '—');
+        $r['provider_fa'] = SMS_PROVIDERS[$r['provider']]['fa'] ?? ($r['provider'] === 'sapi_otp' ? 'پیامکی OTP (s.api.ir)' : ($r['provider'] ?: '—'));
         $r['phone_masked'] = sms_mask_phone($r['phone']);
         foreach (['created_at' => 'created_j', 'verified_at' => 'verified_j', 'last_try_at' => 'last_try_j'] as $src => $dst) {
             $r[$dst] = '';

@@ -1822,6 +1822,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center"><p class="text-[11px] text-rose-700">ناقص (منتظر ارسالِ دوباره‌ی کاربر)</p><p id="hs-rejected" class="font-black text-xl text-rose-700">۰</p></div>
             </div>
 
+            <!-- نوبت‌های بازدیدِ خودرو (بدنه): تقویمِ کاری، فهرست، نوبتِ دستی، صدورِ گزارش از روی نوبت (visit-appt.js) -->
+            <div class="card p-4 border-sky-100" id="va-root"></div>
+
             <div class="card p-4 border-indigo-100">
                 <h2 class="font-bold text-indigo-700 text-sm mb-3"><i class="fas fa-file-lines ml-1"></i>مدارک در انتظار بررسی <span class="text-[11px] font-normal text-slate-400">(هر مدرک جداگانه تایید یا رد می‌شود)</span></h2>
                 <div id="docs-review-body" class="grid md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
@@ -2246,9 +2249,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <?php endif; ?>
             <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
-                <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-comment-sms text-violet-500 ml-2"></i>پیامک و ورود با کدِ تأیید (OTP) <small class="text-[11px] text-slate-400 font-bold mr-1">چند پنلِ پیامک (فعال + پشتیبان)، متنِ الگو، ارسالِ آزمایشی، ورودِ کارکنان در ربات با کد</small></h3>
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-comment-sms text-violet-500 ml-2"></i>پیامک و ورود با کدِ تأیید (OTP) <small class="text-[11px] text-slate-400 font-bold mr-1">راهِ ارسالِ کد (ربات / پنلِ پیامک / پیامکی OTP) برای ورود در ربات و ورود به پنل، چند پنلِ پیامک (فعال + پشتیبان)، متنِ الگو، ارسالِ آزمایشی</small></h3>
                 <div id="sms-otp-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
+            <?php if ($realRole === 'ADMIN'): ?>
+            <div data-scat="general" class="card p-6 border-sky-100 bg-gradient-to-br from-white to-sky-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-sky-100 pb-3"><i class="fas fa-key text-sky-500 ml-2"></i>کلیدهای API (وب‌سرویس‌ها) <small class="text-[11px] text-slate-400 font-bold mr-1">s.api.ir: کلیدِ مشترک، پیامکی OTP، استعلامِ شخصِ حقوقی · کلیدِ جدا و تنظیمِ هر سرویس · آزمایش</small></h3>
+                <div id="api-keys-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
+            <?php endif; ?>
             <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
                 <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
@@ -2275,6 +2284,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <label class="font-bold text-slate-500">خودرو در هر نوبت<input id="hadm-cap" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs"></label>
                                 <label class="font-bold text-slate-500">اولین نوبت چند روز بعد<input id="hadm-lead" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs"></label>
                                 <label class="font-bold text-slate-500 col-span-2">محل/توضیحِ بازدید (در پیامِ نوبت)<input id="hadm-place" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" placeholder="مثلاً: پارکینگ دفتر، خیابان ..."></label>
+                                <label class="font-bold text-slate-500 col-span-2 flex items-center gap-2 mt-1"><input type="checkbox" id="hadm-pick" class="w-4 h-4 accent-indigo-600"><span>کاربر بعد از ارسالِ مدارک، خودش زمانِ بازدید را از نوبت‌های آزاد انتخاب کند (خاموش = نوبتِ خودکار)</span></label>
+                                <label class="font-bold text-slate-500">انتخابِ نوبت تا چند روزِ آینده<input id="hadm-window" dir="ltr" inputmode="numeric" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" placeholder="7"></label>
                             </div>
                             <p class="text-[10.5px] text-slate-400 mt-2 leading-5">روزهای «تعطیلات» (تنظیماتِ کارکرد) نوبت نمی‌گیرند. نوبتِ هر درخواست را در مینی‌اپِ مدیر می‌شود دستی عوض کرد (به کاربر خبر داده می‌شود).</p>
                         </div>
@@ -3620,6 +3631,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="float-input !mb-0"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
                 </div>
                 <div class="cmx-sec">
+                    <h4><i class="fas fa-building-circle-check ml-1"></i>مشخصاتِ ثبتی <small class="text-[10.5px] text-slate-400 font-bold">استعلام با شناسه‌ی ملی یا ورودِ دستی</small></h4>
+                    <div class="flex gap-2 items-start">
+                        <div class="float-input flex-1"><input type="text" id="cm-national-id" dir="ltr" inputmode="numeric" maxlength="14" placeholder=" "><label>شناسه‌ی ملیِ شرکت (۱۱ رقم)</label></div>
+                        <button type="button" id="cm-inquiry-btn" onclick="cmInquiry()" class="shrink-0 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-4 rounded-xl h-[46px]"><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه</button>
+                    </div>
+                    <div id="cm-inquiry-msg" class="hidden text-[11px] rounded-xl p-2.5 mb-3 leading-6"></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="float-input"><input type="text" id="cm-company-type" placeholder=" "><label>نوعِ شرکت</label></div>
+                        <div class="float-input"><input type="text" id="cm-register-number" dir="ltr" placeholder=" "><label>شماره‌ی ثبت</label></div>
+                        <div class="float-input"><input type="text" id="cm-register-date" dir="ltr" placeholder=" "><label>تاریخِ ثبت (۱۴۰۰/۰۱/۰۱)</label></div>
+                        <div class="float-input"><input type="text" id="cm-postal-code" dir="ltr" inputmode="numeric" placeholder=" "><label>کدپستی</label></div>
+                        <div class="float-input"><input type="text" id="cm-province" placeholder=" "><label>استان</label></div>
+                        <div class="float-input"><input type="text" id="cm-city" placeholder=" "><label>شهر</label></div>
+                    </div>
+                    <div class="float-input !mb-0">
+                        <select id="cm-legal-active"><option value="">نامشخص</option><option value="1">فعال</option><option value="0">غیرفعال (منحل / تعلیق)</option></select>
+                        <label>وضعیتِ ثبتی</label>
+                    </div>
+                    <input type="hidden" id="cm-legal-checked" value="">
+                </div>
+                <div class="cmx-sec">
                     <h4><i class="fas fa-sitemap ml-1"></i>ارتباط‌ها</h4>
                     <div class="float-input">
                         <select id="cm-parent-company"><option value="">شرکت مستقل / خودش مادر است</option></select>
@@ -4386,7 +4418,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="comfort.js?v=16"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
-    <script src="sms-otp.js?v=1"></script>
+    <script src="sms-otp.js?v=2"></script>
+    <script src="api-keys.js?v=1"></script>
+    <script src="visit-appt.js?v=1"></script>
     <script src="contacts.js?v=2"></script>
     <script src="trash.js?v=1"></script>
     <script src="announce.js?v=3"></script>
@@ -4417,7 +4451,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="legacy-import.js?v=2"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
-    <script src="recon.js?v=4"></script>
+    <script src="recon.js?v=5"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=6"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=2"></script><?php endif; ?>
@@ -9641,10 +9675,46 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </tbody></table></div>`;
         }
 
+        // مشخصاتِ ثبتیِ شرکت: [شناسه‌ی فیلد، ستون]
+        const CM_LEGAL = [['cm-national-id', 'national_id'], ['cm-company-type', 'company_type'], ['cm-register-number', 'register_number'], ['cm-register-date', 'register_date'],
+                          ['cm-postal-code', 'postal_code'], ['cm-province', 'province'], ['cm-city', 'city']];
+        function cmInquiryMsg(html, kind) {
+            const m = document.getElementById('cm-inquiry-msg');
+            if (!m) return;
+            m.className = html ? 'text-[11px] rounded-xl p-2.5 mb-3 leading-6 ' + ({ok: 'bg-emerald-50 text-emerald-800', err: 'bg-rose-50 text-rose-700', warn: 'bg-amber-50 text-amber-800'}[kind] || 'bg-slate-50 text-slate-600') : 'hidden';
+            m.innerHTML = html || '';
+        }
+        // استعلامِ شخصِ حقوقی (s.api.ir) و نشاندنِ نتیجه در فیلدها؛ نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
+        async function cmInquiry() {
+            const nid = (document.getElementById('cm-national-id').value || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
+            if (nid.length !== 11) { cmInquiryMsg('شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد.', 'err'); return; }
+            const btn = document.getElementById('cm-inquiry-btn');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…';
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0})})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه';
+            if (!d.ok) { cmInquiryMsg(iiEsc(d.error || 'خطا'), 'err'); return; }
+            const c = d.company, set = (id, v) => { if (v !== undefined && v !== null && String(v).trim() !== '') document.getElementById(id).value = v; };
+            set('cm-national-id', c.national_id); set('cm-company-type', c.company_type); set('cm-register-number', c.register_number); set('cm-register-date', c.register_date);
+            set('cm-postal-code', c.postal_code); set('cm-province', c.province); set('cm-city', c.city);
+            if (c.address) set('cm-address', [c.address, c.postal_code ? 'کدپستی ' + c.postal_code : ''].filter(Boolean).join('، '));
+            if (!document.getElementById('cm-economic-code').value.trim()) set('cm-economic-code', c.national_id);
+            document.getElementById('cm-legal-active').value = c.active === false ? '0' : (c.active === true ? '1' : '');
+            document.getElementById('cm-legal-checked').value = '1';
+            const nameEl = document.getElementById('cm-company-name');
+            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
+            if (!nameEl.value.trim()) nameEl.value = c.name;
+            else if (c.name && nameEl.value.trim() !== c.name) note += `<br>نامِ ثبتی با نامِ فعلی فرق دارد: <button type="button" class="text-sky-700 font-bold underline" onclick="document.getElementById('cm-company-name').value=${iiEsc(JSON.stringify(c.name))};this.parentNode.removeChild(this)">استفاده از «${iiEsc(c.name)}»</button>`;
+            if (d.duplicate) note += `<br><b class="text-amber-800">⚠️ شرکتِ «${iiEsc(d.duplicate.name)}» با همین شناسه‌ی ملی قبلاً در سایت ثبت شده است.</b>`;
+            cmInquiryMsg(note, d.duplicate || c.active === false ? 'warn' : 'ok');
+        }
+
         function resetCompanyForm() {
             document.getElementById('cm-form-title').textContent = 'افزودن شرکت جدید';
             document.getElementById('cm-company-id').value = '';
-            ['cm-company-name','cm-economic-code','cm-phone','cm-address','cm-group-manual'].forEach(id => document.getElementById(id).value = '');
+            ['cm-company-name','cm-economic-code','cm-phone','cm-address','cm-group-manual'].concat(CM_LEGAL.map(x => x[0]), ['cm-legal-active', 'cm-legal-checked']).forEach(id => document.getElementById(id).value = '');
+            cmInquiryMsg('');
             document.getElementById('cm-parent-company').value = '';
             document.getElementById('cm-group-select').value = '';
             cmLoadContracts('');
@@ -9680,6 +9750,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-economic-code').value = c.economic_code || '';
             document.getElementById('cm-phone').value = c.phone || '';
             document.getElementById('cm-address').value = c.address || '';
+            CM_LEGAL.forEach(([id, k]) => document.getElementById(id).value = c[k] || '');
+            document.getElementById('cm-legal-active').value = c.legal_active === null || c.legal_active === undefined ? '' : String(+c.legal_active);
+            document.getElementById('cm-legal-checked').value = '';
+            cmInquiryMsg(c.legal_checked_at ? `<i class="fas fa-circle-check text-emerald-600 ml-1"></i>آخرین استعلام: ${faDigits(toJalali(c.legal_checked_at))}` : '', 'info');
             document.getElementById('cm-parent-company').value = c.parent_id || '';
             cmLoadContracts(c.contract_id || '');
             document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
@@ -9711,10 +9785,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),
+                legal_active: document.getElementById('cm-legal-active').value,
+                legal_checked: document.getElementById('cm-legal-checked').value,
                 parent_company_id: document.getElementById('cm-parent-company').value,
                 bale_group_chat_id: groupChatId,
 
             };
+            CM_LEGAL.forEach(([id, k]) => payload[k] = document.getElementById(id).value.trim());
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
             if (data.ok) { showToast(companyId ? 'شرکت به‌روزرسانی شد.' : 'شرکت ثبت شد.', 'success'); resetCompanyForm(); closeModal('add-company-modal'); loadCompanyManage(); }
@@ -10673,6 +10750,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
             if (tabId === 'settings') cxlLoad();
             if (tabId === 'settings' && window.SmsOtp) SmsOtp.settingsCard(document.getElementById('sms-otp-root'));
+            if (tabId === 'settings' && window.ApiKeys && document.getElementById('api-keys-root')) ApiKeys.card(document.getElementById('api-keys-root'));
             if (tabId === 'settings' && window.TrashBin) TrashBin.card(document.getElementById('trash-root'));
             if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
@@ -10685,7 +10763,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'announcements' && window.AnnounceAdmin) AnnounceAdmin.render(document.getElementById('ann-root'));
             if (tabId === 'security' && window.SecShield) SecShield.init(document.getElementById('sec-root'));
             if (tabId === 'cases') loadCases();
-            if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); }
+            if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); if (window.VisitAppt) VisitAppt.card(document.getElementById('va-root')); }
             if (tabId === 'approved-reviews') loadApprovedReviews();
             if (tabId.startsWith('fin-')) initFinance(tabId);
             if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
@@ -11733,6 +11811,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <span class="block font-normal text-[10px] text-slate-500 mt-0.5">اطلاعاتِ همین درخواست خودکار در فرم می‌نشیند و قالبِ سواری/سنگین خودکار انتخاب می‌شود؛ اگر بازدیدِ سلامتِ تاییدشده دارد، از همان عکس‌ها ساخته می‌شود.</span></p>
                         <button onclick="openCaseVisitReport(${caseId})" class="text-[11px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>
                     </div>` : ''}
+                    ${c.insurance_type === 'BODY' && window.VisitAppt ? `<div id="case-appt-box"></div>` : ''}
 
                     ${!isIssueMode && CAN_MANUAL ? `
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
@@ -11786,6 +11865,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     pfRender(document.getElementById('final-pf'), window._issuePrefill, {});
                     propCheck(document.getElementById('final-pf'));
                 }
+                // نوبتِ بازدیدِ خودرو (بدنه) در صفحه‌ی همین درخواست
+                if (document.getElementById('case-appt-box') && window.VisitAppt && c.status !== 'WITHDRAWN') VisitAppt.caseBox(document.getElementById('case-appt-box'), caseId);
                 // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
                 if (c.status === 'WITHDRAWN') {
                     body.querySelectorAll('button[onclick], input[type="file"], select, textarea').forEach(el => {
@@ -14025,7 +14106,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const s = d.settings;
             document.getElementById('hadm-self').checked = !!s.self_enabled;
             document.getElementById('hadm-days').innerHTML = HADM_DAYS.map((n, i) => `<label class="cursor-pointer"><input type="checkbox" value="${i}" class="peer hidden" ${s.days.includes(i) ? 'checked' : ''}><span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full border border-slate-200 text-slate-500 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">${n}</span></label>`).join('');
-            [['start', s.start], ['end', s.end], ['slot', s.slot], ['cap', s.cap], ['lead', s.lead], ['place', s.place], ['cmd', s.bot_cmd]].forEach(([k, v]) => { document.getElementById('hadm-' + k).value = v ?? ''; });
+            [['start', s.start], ['end', s.end], ['slot', s.slot], ['cap', s.cap], ['lead', s.lead], ['place', s.place], ['cmd', s.bot_cmd], ['window', s.window]].forEach(([k, v]) => { document.getElementById('hadm-' + k).value = v ?? ''; });
+            document.getElementById('hadm-pick').checked = s.pick !== false;
         }
         function hadmGenCmd() {
             const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let x = '/adm_';
@@ -14035,7 +14117,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function hadmSave() {
             const v = id => p2e(document.getElementById('hadm-' + id).value.trim());
             const settings = {self_enabled: document.getElementById('hadm-self').checked, days: [...document.querySelectorAll('#hadm-days input:checked')].map(i => +i.value),
-                start: v('start'), end: v('end'), slot: v('slot'), cap: v('cap'), lead: v('lead'), place: document.getElementById('hadm-place').value.trim(), bot_cmd: document.getElementById('hadm-cmd').value.trim()};
+                start: v('start'), end: v('end'), slot: v('slot'), cap: v('cap'), lead: v('lead'), place: document.getElementById('hadm-place').value.trim(), bot_cmd: document.getElementById('hadm-cmd').value.trim(),
+                pick: document.getElementById('hadm-pick').checked, window: v('window')};
             let d; try { d = await (await fetch('api/webapp_admin.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'settings_save', settings})})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
             showToast(d.ok ? 'تنظیماتِ بازدید ذخیره شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
         }

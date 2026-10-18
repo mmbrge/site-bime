@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/plate.css?v=4">
 <script src="/chat-ui.js?v=14"></script>
 <script src="/maint-watch.js?v=1"></script>
-<script src="../mini-kit.js?v=4"></script>
+<script src="../mini-kit.js?v=5"></script>
 <style>
   :root {
     --bg1: #0f172a; --bg2: #1e1b4b; --accent: #6366f1; --accent2: #8b5cf6;
@@ -272,7 +272,7 @@
 
 <!-- ==================== بازدید سلامت ==================== -->
 <div id="screen-health" class="screen">
-  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚗 بازدید سلامت</h2><div style="width:38px"></div></div>
+  <div class="topbar"><div class="back-btn" onclick="nav('home')">›</div><h2>🚗 بازدید خودرو</h2><div style="width:38px"></div></div>
   <div id="health-case-list"></div>
   <div id="free-health-wrap" style="display:none;">
   <p style="font-size:12px;color:#94a3b8;margin:14px 0 8px;">یا برای خودروی دیگری غیر از موارد بالا:</p>
@@ -688,13 +688,19 @@ async function loadHealthCases() {
         box.innerHTML = hint + data.data.map(c => c.appointment ? `
             <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
                 ${formatPlateHtml(c.plate) || c.unique_code}
-                <span style="font-size:11.5px;color:#7dd3fc;text-align:left;">🗓 نوبتِ بازدیدِ حضوری<br><b>${c.appointment.slot_fa || 'به‌زودی اعلام می‌شود'}</b></span>
+                ${c.appointment.can_pick
+                    ? `<span style="font-size:11.5px;color:#7dd3fc;text-align:left;cursor:pointer" onclick="pickApptApp(${c.id}, ${JSON.stringify(String(c.plate || '')).replace(/"/g, '&quot;')})">🗓 ${c.appointment.need_pick ? 'انتخابِ زمانِ بازدید' : 'نوبتِ بازدیدِ حضوری'}<br><b>${c.appointment.need_pick ? 'نوبت‌های آزادِ روزهای پیشِ رو ›' : (c.appointment.slot_fa || '') + ' · تغییر'}</b></span>`
+                    : `<span style="font-size:11.5px;color:#7dd3fc;text-align:left;">🗓 نوبتِ بازدیدِ حضوری<br><b>${c.appointment.slot_fa || 'به‌زودی اعلام می‌شود'}</b></span>`}
             </div>` : data.appt_mode ? '' : `
             <div class="list-card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="startCaseHealthSession(${c.id})">
                 ${formatPlateHtml(c.plate) || c.unique_code}
                 <span style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:4px;">انجام بازدید <span style="font-size:18px;">›</span></span>
             </div>`).join('');
     } catch(e) { box.innerHTML = '<div class="empty-state">خطا در اتصال به سرور.</div>'; }
+}
+// انتخابِ زمانِ بازدیدِ حضوری (همان بک‌اندِ «بارگزاری مدارک»)
+function pickApptApp(caseId, plate) {
+    MiniKit.apptPicker({ api: '/api/webapp_visit.php', token: TOKEN, caseId: caseId, plate: plate, onDone: r => { showToast('✅ نوبت ثبت شد: ' + r.slot_fa); loadHealthCases(); } });
 }
 async function startCaseHealthSession(caseId) {
     try {

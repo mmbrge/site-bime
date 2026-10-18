@@ -28,7 +28,14 @@ $data = $data + $_GET;
 $action = $data['action'] ?? '';
 $out = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 $siteRoot = dirname(__DIR__);
-$isAdmin = ($actor['role'] ?? '') === 'ADMIN';
+$isAdmin = recon_sees_all();   // نقشِ واقعی (نه نقشِ موقتِ دسترسیِ سفارشی)
+$uid = intval($actor['user_id']);
+// هر کاربر فقط مغایرت‌گیری‌های خودش را می‌بیند؛ مدیر کل همه را
+$need = function ($runId) use ($pdo, $uid, $out) {
+    $r = recon_run_for($pdo, $runId, $uid);
+    if (!$r) $out(['ok' => false, 'error' => 'این مغایرت‌گیری پیدا نشد یا مالِ شما نیست.']);
+    return $r;
+};
 
 try {
     if ($action === 'run') {
@@ -48,6 +55,7 @@ try {
         // mode: '' (اگر فایل مالِ مغایرت‌گیریِ قبلیِ بی‌فایل باشد می‌پرسد) | new (تازه) | attach (وصل به run_id، تصمیم‌ها می‌ماند)
         $mode = (string)($data['mode'] ?? '');
         if ($mode === 'attach') {
+            $need(intval($data['run_id'] ?? 0));
             $xf = array_values(array_filter($files, fn($f) => strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)) === 'xlsx'));
             $r = $xf ? recon_attach_src($pdo, $siteRoot, intval($data['run_id'] ?? 0), $xf) : ['ok' => false, 'error' => 'برای خروجیِ اکسلِ بیمه‌گر فایل باید xlsx باشد.'];
         } else $r = recon_run($pdo, $siteRoot, $files, trim((string)($data['title'] ?? '')), $actor['user_id'], $mode === 'new' ? 'new' : '');
@@ -67,30 +75,29 @@ try {
             }
         }
         if (!$files) $out(['ok' => false, 'error' => 'فایلِ xlsx دریافت نشد (خروجیِ اصلاح‌شده فقط برای xlsx ساخته می‌شود).']);
+        $need(intval($data['run_id'] ?? 0));
         $r = recon_attach_src($pdo, $siteRoot, intval($data['run_id'] ?? 0), $files);
         foreach ($files as $f) @unlink($f['path']);
         $out($r);
     }
-    if ($action === 'runs') $out(['ok' => true, 'runs' => recon_runs($pdo)]);
+    if ($action === 'runs') $out(['ok' => true] + recon_runs($pdo, $data, $uid));
     if ($action === 'items' || $action === 'export') {
         $runId = intval($data['run_id'] ?? 0);
+        $run = $need($runId);
+        // مغایرت‌گیری‌های قبلی هم پوشه‌ی بایگانی می‌گیرند (بعد از پاسخ)
+        if ($action === 'items' && (!$run['archive_dir'] || $run['archive_dirty'])) recon_archive_later($pdo, $siteRoot, $runId);
         $f = ['category' => in_array($data['category'] ?? '', ['MATCH', 'DIFF', 'ONLY_P', 'ONLY_S'], true) ? $data['category'] : '',
               'status' => in_array($data['status'] ?? '', ['OPEN', 'RESOLVED'], true) ? $data['status'] : '', 'field' => (string)($data['field'] ?? ''), 'q' => (string)($data['q'] ?? '')];
-        $res = recon_items($pdo, $runId, $f);
-        if ($action === 'items') $out(['ok' => true] + $res);
-        $choiceFa = ['SITE' => 'سایت درست است', 'PASARGAD' => 'پاسارگاد اعمال شد', 'CUSTOM' => 'اصلاحِ دستی'];
-        $rows = []; $n = 0;
-        foreach ($res['rows'] as $r) {
-            $base = [$r['category_fa'], $r['policy_number'], $r['type_fa'], $r['issue_date'], $r['label'], $r['insured'], $r['status'] === 'OPEN' ? 'باز' : 'بررسی‌شده', $r['note']];
-            if (!$r['diffs']) { $rows[] = array_merge([++$n], $base, ['', '', '', '']); continue; }
-            foreach ($r['diffs'] as $d) $rows[] = array_merge([++$n], $base, [$d['label'], (string)$d['site'], (string)$d['pas'], $choiceFa[$d['res'] ?? ''] ?? '']);
-        }
-        fin_send_excel('مغایرت پاسارگاد', ['ردیف', 'وضعیت', 'شماره بیمه‌نامه', 'نوع', 'تاریخ صدور', 'پلاک/شاسی', 'بیمه‌گذار', 'بررسی', 'توضیح', 'فیلد', 'سایت', 'پاسارگاد', 'تصمیم'], $rows, []);
+        if ($action === 'items') $out(['ok' => true, 'archive' => $run['archive_dir'] ? recon_archive_rel($run['archive_dir']) : ''] + recon_items($pdo, $runId, $f));
+        [$hdr, $rows] = recon_export_table($pdo, $runId, $f);
+        fin_send_excel(name_join(['فهرستِ مغایرت‌ها', trim((string)$run['title']) ?: 'مغایرت پاسارگاد']), $hdr, $rows, []);
         exit;
     }
     if ($action === 'resolve') {
         $choice = in_array($data['choice'] ?? '', ['SITE', 'PASARGAD', 'CUSTOM'], true) ? $data['choice'] : '';
         if ($choice === '') $out(['ok' => false, 'error' => 'تصمیم نامعتبر.']);
+        $rid = recon_item_run_id($pdo, intval($data['item_id'] ?? 0));
+        $need($rid);
         $fields = (array)($data['fields'] ?? [$data['field'] ?? '']);
         $last = ['ok' => false, 'error' => 'فیلدی انتخاب نشده.'];
         foreach ($fields as $fld) {
@@ -98,18 +105,30 @@ try {
             $last = recon_resolve($pdo, $siteRoot, intval($data['item_id'] ?? 0), (string)$fld, $choice, (string)($data['value'] ?? ''), (string)($data['note'] ?? ''), $actor['user_id']);
             if (empty($last['ok'])) break;
         }
+        recon_archive_later($pdo, $siteRoot, $rid);
         $out($last);
     }
-    if ($action === 'mark') $out(recon_mark($pdo, intval($data['item_id'] ?? 0), (string)($data['status'] ?? 'RESOLVED'), (string)($data['note'] ?? ''), $actor['user_id']));
+    if ($action === 'mark') {
+        $rid = recon_item_run_id($pdo, intval($data['item_id'] ?? 0));
+        $need($rid);
+        $r = recon_mark($pdo, intval($data['item_id'] ?? 0), (string)($data['status'] ?? 'RESOLVED'), (string)($data['note'] ?? ''), $actor['user_id']);
+        recon_archive_later($pdo, $siteRoot, $rid);
+        $out($r);
+    }
     if ($action === 'import') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'ورود به سایت فقط کارِ مدیر کل است.']);
-        $out(recon_import($pdo, $siteRoot, (array)($data['item_ids'] ?? []), ['finance' => $data['finance'] ?? 'PREMIUM', 'quota' => $data['quota'] ?? 0], $actor['user_id']));
+        $ids = (array)($data['item_ids'] ?? []);
+        $r = recon_import($pdo, $siteRoot, $ids, ['finance' => $data['finance'] ?? 'PREMIUM', 'quota' => $data['quota'] ?? 0], $actor['user_id']);
+        foreach (array_unique(array_map(fn($i) => recon_item_run_id($pdo, $i), $ids)) as $rid) recon_archive_later($pdo, $siteRoot, $rid);
+        $out($r);
     }
     if ($action === 'delete_run') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        $need(intval($data['run_id'] ?? 0));
         $out(recon_delete_run($pdo, intval($data['run_id'] ?? 0), $siteRoot));
     }
     // خروجیِ اصلاح‌شده‌ی اکسلِ بیمه‌گر: corrected_preview = فهرستِ تغییرات؛ corrected = دانلود (نام: «نوع - عنوانِ مغایرت‌گیری»)
+    if ($action === 'corrected_preview' || $action === 'corrected') $need(intval($data['run_id'] ?? 0));
     if ($action === 'corrected_preview') $out(recon_corrected($pdo, $siteRoot, intval($data['run_id'] ?? 0), intval($data['idx'] ?? 0), true));
     if ($action === 'corrected') {
         $r = recon_corrected($pdo, $siteRoot, intval($data['run_id'] ?? 0), intval($data['idx'] ?? 0), false);

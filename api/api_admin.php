@@ -1,0 +1,86 @@
+<?php
+// فایل: api/api_admin.php
+// پنل (فقط مدیر کل): «تنظیمات ← کلیدهای API» — کلیدِ دسترسی و تنظیماتِ هر وب‌سرویسِ بیرونی (api/_apis.php) و آزمایشِ هر کدام
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+session_start();
+require '../config/db.php';
+require_once __DIR__ . '/_case_helpers.php';
+require_once __DIR__ . '/_apis.php';
+
+$out = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
+if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+$in = json_decode(file_get_contents('php://input'), true) ?: [];
+$action = $_GET['action'] ?? ($in['action'] ?? '');
+const API_MASK = '••••••';
+
+// کلیدها کامل به مرورگر فرستاده نمی‌شوند (فقط ۴ نویسه‌ی آخر)
+function aa_masked(array $cfg) {
+    foreach (API_SERVICES as $k => $sv) foreach ($sv['fields'] as $f)
+        if ($f[2] === 'secret' && !empty($cfg[$k][$f[0]])) $cfg[$k][$f[0]] = API_MASK . mb_substr((string)$cfg[$k][$f[0]], -4);
+    return $cfg;
+}
+function aa_public($pdo) {
+    $cfg = api_cfg($pdo);
+    $list = [];
+    foreach (API_SERVICES as $k => $sv) $list[] = ['key' => $k, 'fa' => $sv['fa'], 'icon' => $sv['icon'], 'desc' => $sv['desc'], 'endpoint' => $sv['endpoint'] ?? '',
+                                                 'fields' => $sv['fields'], 'ready' => $k === 'sapi' ? sapi_conf($pdo, 'sapi')['token'] !== '' : sapi_ready($pdo, $k),
+                                                 'own_key' => trim((string)($cfg[$k]['token'] ?? '')) !== ''];
+    return ['services' => $list, 'cfg' => aa_masked($cfg), 'curl' => function_exists('curl_init'),
+            'usage' => ['otp_bot' => otp_bot_channel($pdo), 'panel_otp' => panel_otp_channel($pdo)]];
+}
+
+try {
+    if ($action === 'get') $out(['ok' => true] + aa_public($pdo));
+
+    if ($action === 'save') {
+        $old = api_cfg($pdo);
+        $cfg = $old;
+        foreach ((array)($in['cfg'] ?? []) as $k => $c) {
+            if (!isset(API_SERVICES[$k]) || !is_array($c)) continue;
+            $row = (array)($old[$k] ?? []);
+            foreach (API_SERVICES[$k]['fields'] as $f) {
+                if (!array_key_exists($f[0], $c)) continue;
+                $v = trim((string)$c[$f[0]]);
+                if ($f[2] === 'secret') {
+                    if (strpos($v, API_MASK) === 0) continue;   // دست‌نخورده = همان قبلی
+                    $v = preg_replace('/^Bearer\s+/i', '', $v);
+                }
+                if ($f[0] === 'base_url' && $v !== '' && !preg_match('~^https?://~i', $v)) $out(['ok' => false, 'error' => 'آدرسِ پایه باید با https:// شروع شود.']);
+                $row[$f[0]] = mb_substr($v, 0, $f[2] === 'secret' ? 2000 : 300);
+            }
+            $cfg[$k] = $row;
+        }
+        api_save_cfg($pdo, $cfg);
+        $out(['ok' => true] + aa_public($pdo));
+    }
+
+    // آزمایش‌ها (با تنظیماتِ ذخیره‌شده)
+    if ($action === 'test') {
+        $svc = (string)($in['service'] ?? '');
+        if ($svc === 'sapi') {
+            $r = sapi_echo($pdo, 'بیمه با ما');
+            $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'کلید درست است ✓' . (is_array($r['data']) && !empty($r['data']['greeting']) ? ' — پاسخ: ' . $r['data']['greeting'] : '') : $r['error'],
+                                             'http' => $r['http'], 'raw' => $r['raw'], 'ms' => $r['ms'] ?? null]]);
+        }
+        if ($svc === 'sapi_otp') {
+            $phone = sms_norm_phone($in['phone'] ?? '');
+            if ($phone === '') $out(['ok' => false, 'error' => 'شماره‌ی موبایل را درست وارد کنید (۰۹…).']);
+            $code = (string)random_int(10000, 99999);
+            $r = sapi_send_otp($pdo, $phone, $code);
+            $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'کدِ ' . $code . ' فرستاده شد.' : $r['status'], 'http' => $r['http'] ?? 0, 'raw' => $r['raw'] ?? '', 'ms' => $r['ms'] ?? null]]);
+        }
+        if ($svc === 'sapi_company') {
+            $r = sapi_company_info($pdo, $in['national_id'] ?? '');
+            $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? ($r['company']['name'] . ' — ' . $r['company']['company_type']) : $r['error'], 'company' => $r['company'] ?? null, 'raw' => $r['raw'] ?? '']]);
+        }
+        $out(['ok' => false, 'error' => 'سرویس نامعتبر.']);
+    }
+
+    $out(['ok' => false, 'error' => 'عملیات نامعتبر.']);
+} catch (Throwable $e) {
+    error_log('[api_admin] ' . $e->getMessage());
+    $out(['ok' => false, 'error' => 'خطای سرور: ' . $e->getMessage()]);
+}

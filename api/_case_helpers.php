@@ -1824,13 +1824,13 @@ function case_try_advance_to_issuing($pdo, $siteRoot, $caseId) {
     $ctx = 'بیمه ' . insurance_type_fa($case['insurance_type']) . ' پلاک ' . ($case['plate'] ?: 'بدون پلاک');
     if (!case_health_ready($pdo, $case)) {
         notify_customer_app($pdo, $case['person_id'], $case['bale_chat_id'], 'مدارک تایید شد',
-            "✅ مدارک مربوط به {$ctx} تایید شد. بعد از تاییدِ بازدید سلامت، پرونده وارد مرحله‌ی «در حال صدور» می‌شود.", 'success', $caseId);
+            "✅ مدارک مربوط به {$ctx} تایید شد. بعد از تاییدِ بازدید خودرو، پرونده وارد مرحله‌ی «در حال صدور» می‌شود.", 'success', $caseId);
         return 'docs_done';
     }
     $pdo->prepare("UPDATE policy_cases SET status = 'ISSUING' WHERE id = ?")->execute([$caseId]);
     intro_msg_refresh($pdo, $caseId);
     notify_customer_app($pdo, $case['person_id'], $case['bale_chat_id'], 'پرونده در حال صدور',
-        "✅ مدارک" . ($case['insurance_type'] === 'BODY' ? ' و بازدید سلامتِ' : ' ') . " مربوط به {$ctx} تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.", 'success', $caseId);
+        "✅ مدارک" . ($case['insurance_type'] === 'BODY' ? ' و بازدیدِ خودرو' : ' ') . " مربوط به {$ctx} تایید شد و پرونده وارد مرحله‌ی «در حال صدور» شد.", 'success', $caseId);
     return 'issuing';
 }
 
@@ -1990,10 +1990,10 @@ function health_review_photo($pdo, $siteRoot, $inspId, $key, $decision, $note, $
         if ($row = $st->fetch()) {
             $ctx = ($row['insurance_type'] ? 'بیمه ' . insurance_type_fa($row['insurance_type']) . ' ' : '') . 'پلاک ' . ($insp['plate'] ?: 'بدون پلاک');
             if ($status === 'APPROVED') {
-                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت تایید شد', "✅ بازدید سلامت مربوط به {$ctx} تایید شد.", 'success');
+                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید خودرو تایید شد', "✅ بازدید خودرو مربوط به {$ctx} تایید شد.", 'success');
             } else {
-                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت ناقص است',
-                    "⚠️ بازدید سلامت مربوط به {$ctx} ناقص است.\n{$reason}\nلطفاً از «بازدید سلامت خودرو» فقط همین عکس‌ها را دوباره بگیرید و بفرستید.", 'error');
+                notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید خودرو ناقص است',
+                    "⚠️ بازدید خودرو مربوط به {$ctx} ناقص است.\n{$reason}\nلطفاً از «بازدید سلامت خودرو» فقط همین عکس‌ها را دوباره بگیرید و بفرستید.", 'error');
             }
         }
     }
@@ -2053,7 +2053,7 @@ function health_attach_report_and_finalize($pdo, $siteRoot, $inspId, $file, $use
         $p->execute([$inspId]);
         if ($row = $p->fetch()) {
             $ctx = ($row['insurance_type'] ? 'بیمه ' . insurance_type_fa($row['insurance_type']) . ' ' : '') . 'پلاک ' . ($insp['plate'] ?: 'بدون پلاک');
-            notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید سلامت تایید شد', "✅ بازدید سلامت مربوط به {$ctx} به‌طور نهایی تایید شد.", 'success');
+            notify_customer_app($pdo, $row['person_id'], $row['bale_chat_id'], 'بازدید خودرو تایید شد', "✅ بازدید خودرو مربوط به {$ctx} به‌طور نهایی تایید شد.", 'success');
         }
         if ($insp['case_id']) $stage = case_try_advance_to_issuing($pdo, $siteRoot, intval($insp['case_id']));
     }
@@ -2154,13 +2154,17 @@ function policy_issue_ts($jalali, $fallback = null) {
 //  شرکت‌ها: ستون‌های افزودنی (خودکار، بی‌آسیب به داده‌های قبلی)
 //   auto_created     : 'INTRO' = از معرفی‌نامه ساخته شده و باید در صفحه‌ی شرکت‌ها تکمیل شود
 //   other_owner_mode : وقتی مالکِ مدرکِ خودرو کسِ دیگری است: BENEFICIARY (ذینفع؛ بیمه‌گذار = شرکت، پیش‌فرض) یا OWNER (بیمه‌گذار = همان مالک)
+//   national_id … legal_checked_at : مشخصاتِ ثبتی (شناسه‌ی ملی، نوع، شماره/تاریخِ ثبت، کدپستی، استان/شهر، فعال بودن، زمانِ آخرین استعلام)
 // =====================================================================
 // ALTER داخلِ تراکنش آن را بی‌صدا commit می‌کند: داخلِ تراکنش فقط بررسی می‌شود (ستون‌ها را فراخوانیِ اولِ فایل‌ها می‌سازد)
 function companies_extra_ensure($pdo) {
     static $ok = null;
     if ($ok) return true;
     $ok = true;
-    foreach (['auto_created' => 'VARCHAR(16) NULL', 'other_owner_mode' => 'VARCHAR(16) NULL'] as $c => $def) {
+    // + مشخصاتِ ثبتیِ شخصِ حقوقی (دستی یا از «استعلامِ شخصِ حقوقی» در تعریفِ شرکت)
+    foreach (['auto_created' => 'VARCHAR(16) NULL', 'other_owner_mode' => 'VARCHAR(16) NULL', 'national_id' => 'VARCHAR(11) NULL', 'company_type' => 'VARCHAR(120) NULL',
+              'register_number' => 'VARCHAR(40) NULL', 'register_date' => 'VARCHAR(10) NULL', 'postal_code' => 'VARCHAR(10) NULL', 'province' => 'VARCHAR(60) NULL',
+              'city' => 'VARCHAR(60) NULL', 'legal_active' => 'TINYINT(1) NULL', 'legal_checked_at' => 'DATETIME NULL'] as $c => $def) {
         try {
             if ($pdo->query("SHOW COLUMNS FROM companies LIKE '$c'")->fetch()) continue;
             if ($pdo->inTransaction()) { $ok = false; continue; }

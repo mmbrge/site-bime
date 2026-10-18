@@ -15,7 +15,9 @@ $action = $data['action'] ?? '';
 function out($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 
 if (!auth_schema_ready($pdo)) out(['ok' => false, 'error' => 'ورود با کد هنوز راه‌اندازی نشده است. (' . AUTH_SCHEMA_MSG . ')']);
-if (!cbot_token($pdo)) out(['ok' => false, 'error' => 'ربات بله‌ی شرکت‌ها هنوز در تنظیمات وصل نشده است.']);
+require_once __DIR__ . '/_sms.php';
+$otpVia = panel_otp_channel($pdo);   // ربات بله | پنلِ پیامک | پیامکی OTP (s.api.ir)
+if ($otpVia === 'bot' && !cbot_token($pdo)) out(['ok' => false, 'error' => 'ربات بله‌ی شرکت‌ها هنوز در تنظیمات وصل نشده است.']);
 
 $phone = auth_norm_phone($data['phone'] ?? '');
 if ($phone === '') out(['ok' => false, 'code' => 'BAD_PHONE', 'error' => 'شماره موبایل را درست وارد کنید (۱۱ رقم، با ۰۹).']);
@@ -53,7 +55,7 @@ try {
         $acc = pick_account($accounts, (string)($data['account'] ?? ''));
         if (!$acc) out(['ok' => true, 'choose' => array_map('acc_public', $accounts)]);   // یک شماره، چند حساب
         $pub = acc_public($acc);
-        if (!$pub['linked']) {
+        if ($otpVia === 'bot' && !$pub['linked']) {
             $botUser = '';
             try { $botUser = (string)$pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'company_bot_username'")->fetchColumn(); } catch (Throwable $e) {}
             out(['ok' => false, 'code' => 'NOT_LINKED', 'account' => $pub,
@@ -62,7 +64,7 @@ try {
         }
         $r = otp5_issue($pdo, $acc, $_SERVER['REMOTE_ADDR'] ?? null);
         if (!$r['ok']) out(['ok' => false, 'error' => $r['error'], 'account' => $pub]);
-        out(['ok' => true, 'sent' => true, 'account' => $pub, 'ttl' => $r['ttl']]);
+        out(['ok' => true, 'sent' => true, 'account' => $pub, 'ttl' => $r['ttl'], 'via' => $r['via'] ?? 'bot', 'masked' => $r['masked'] ?? '']);
     }
 
     if ($action === 'verify') {

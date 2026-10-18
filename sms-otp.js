@@ -49,11 +49,18 @@
           ${ST.data.curl ? '' : '<p class="bg-rose-50 text-rose-700 text-xs font-bold rounded-xl p-3 mb-3">⚠️ افزونه‌ی curl روی سرور فعال نیست؛ تا فعال نشود پیامکی ارسال نمی‌شود.</p>'}
           <div class="grid md:grid-cols-2 gap-4">
             <div class="bg-violet-50 border border-violet-100 rounded-2xl p-4">
-              <label class="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" data-g="otp_bot" ${s.otp_bot ? 'checked' : ''} class="w-5 h-5 mt-0.5 accent-violet-600">
-                <span><b class="text-sm text-slate-700">ورود با کدِ تأیید (OTP) در ربات برای کارکنان</b>
-                <small class="block text-[11px] text-slate-500 leading-5 mt-1">بعد از فرستادنِ کد ملی: اگر برای این کد ملی در «بانک مخاطبین» شماره باشد، کد به همان شماره پیامک می‌شود؛ اگر نباشد، شماره پرسیده می‌شود (تایپ یا دکمه‌ی اشتراک‌گذاری) و کد به آن شماره می‌رود. با وارد کردنِ کد، شخص وارد می‌شود. اگر ارسالِ پیامک ناموفق باشد، ورود مثلِ قبل با اشتراکِ شماره انجام می‌شود.</small></span>
-              </label>
+              <label class="block"><b class="text-sm text-slate-700"><i class="fas fa-robot text-violet-500 ml-1"></i>ورودِ کارکنان در ربات (کد ملی ← کدِ تأیید)</b>
+                <select data-g="otp_bot_channel" class="w-full border rounded-xl px-3 py-2 text-xs mt-2 font-bold">
+                  <option value="off" ${s.otp_bot_channel === 'off' ? 'selected' : ''}>غیرفعال — حالتِ عادی (اشتراکِ شماره در ربات)</option>
+                  <option value="sms" ${s.otp_bot_channel === 'sms' ? 'selected' : ''}>کدِ تأیید با پنلِ پیامک (تنظیماتِ پایین)</option>
+                  <option value="sapi" ${s.otp_bot_channel === 'sapi' ? 'selected' : ''}>کدِ تأیید با «پیامکی OTP» (s.api.ir — از «کلیدهای API»)</option></select>
+                <small class="block text-[11px] text-slate-500 leading-5 mt-1">بعد از فرستادنِ کد ملی: اگر برای این کد ملی در «بانک مخاطبین» شماره باشد، کد به همان شماره پیامک می‌شود؛ اگر نباشد، شماره پرسیده می‌شود و کد به آن شماره می‌رود. اگر ارسالِ پیامک ناموفق باشد، ورود مثلِ قبل با اشتراکِ شماره انجام می‌شود.</small></label>
+              <label class="block mt-3 pt-3 border-t border-violet-100"><b class="text-sm text-slate-700"><i class="fas fa-right-to-bracket text-violet-500 ml-1"></i>ورود به پنل با کد (صفحه‌ی ورود ← «ورود با کد»)</b>
+                <select data-g="panel_otp_channel" class="w-full border rounded-xl px-3 py-2 text-xs mt-2 font-bold">
+                  <option value="bot" ${s.panel_otp_channel === 'bot' ? 'selected' : ''}>با ربات بله‌ی شرکت‌ها (مثلِ قبل)</option>
+                  <option value="sms" ${s.panel_otp_channel === 'sms' ? 'selected' : ''}>با پیامک از پنلِ پیامک</option>
+                  <option value="sapi" ${s.panel_otp_channel === 'sapi' ? 'selected' : ''}>با «پیامکی OTP» (s.api.ir)</option></select>
+                <small class="block text-[11px] text-slate-500 leading-5 mt-1">در حالتِ پیامکی، کد به شماره‌ی ثبت‌شده‌ی کاربر (کاربرِ پنل یا کاربرِ شرکت) پیامک می‌شود و لازم نیست قبلاً در ربات وارد شده باشد.</small></label>
               <div class="grid grid-cols-2 gap-2 mt-3 text-[11px]">
                 <label class="font-bold text-slate-500">اعتبارِ کد (دقیقه)<input data-g="otp_ttl" type="number" min="1" max="15" value="${s.otp_ttl}" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" dir="ltr"></label>
                 <label class="font-bold text-slate-500">تعدادِ رقمِ کد<input data-g="otp_len" type="number" min="4" max="6" value="${s.otp_len}" class="w-full border rounded-lg px-2 py-1.5 mt-1 text-xs" dir="ltr"></label>
@@ -119,7 +126,7 @@
             cfg[p.key] = cfg[p.key] || {};
             el.querySelectorAll('[data-pv]').forEach(i => { cfg[i.dataset.pv][i.dataset.k] = i.value; });
             const m = el.querySelector('[data-mode]:checked'); if (m) cfg[p.key].mode = m.value;
-            ST.data.settings = Object.assign(ST.data.settings, { cfg, provider: g('provider').value, fallback: g('fallback').value, otp_text: g('otp_text').value, otp_bot: g('otp_bot').checked,
+            ST.data.settings = Object.assign(ST.data.settings, { cfg, provider: g('provider').value, fallback: g('fallback').value, otp_text: g('otp_text').value, otp_bot_channel: g('otp_bot_channel').value, panel_otp_channel: g('panel_otp_channel').value,
                 otp_ttl: +g('otp_ttl').value, otp_len: +g('otp_len').value, otp_attempts: +g('otp_attempts').value, otp_resend: +g('otp_resend').value });
             return ST.data.settings;
         };
