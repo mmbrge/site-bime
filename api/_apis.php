@@ -60,13 +60,16 @@ function sapi_call($pdo, $service, $path, array $body) {
 }
 
 // ارسالِ کد با «پیامکی OTP»؛ خروجی هم‌شکلِ sms_send (برای لاگِ otp_codes)
-function sapi_send_otp($pdo, $phone, $code) {
+// $template = null یعنی قالبِ ذخیره‌شده در تنظیمات (برای آزمایشِ قالب‌ها پیش از ذخیره، قالب داده می‌شود)
+function sapi_send_otp($pdo, $phone, $code, $template = null) {
     $phone = sms_norm_phone($phone);
     if ($phone === '') return ['ok' => false, 'status' => 'شماره‌ی موبایل نامعتبر است.', 'provider' => 'sapi_otp'];
-    $tpl = sapi_conf($pdo, 'sapi_otp')['svc']['template'] ?? '1';
-    $r = sapi_call($pdo, 'sapi_otp', '/api/sw1/SmsOTP', ['code' => (string)$code, 'mobile' => $phone, 'template' => intval($tpl)]);
+    $tpl = $template !== null && $template !== '' ? $template : (sapi_conf($pdo, 'sapi_otp')['svc']['template'] ?? '1');
+    $tpl = max(0, min(4, intval($tpl)));
+    $body = ['code' => (string)$code, 'mobile' => $phone, 'template' => $tpl];
+    $r = sapi_call($pdo, 'sapi_otp', '/api/sw1/SmsOTP', $body);
     return ['ok' => $r['ok'], 'status' => mb_substr($r['ok'] ? ($r['message'] ?: 'ارسال شد') : $r['error'], 0, 250), 'ref' => '', 'raw' => $r['raw'],
-            'http' => $r['http'], 'ms' => $r['ms'] ?? null, 'provider' => 'sapi_otp'];
+            'http' => $r['http'], 'ms' => $r['ms'] ?? null, 'provider' => 'sapi_otp', 'template' => $tpl, 'sent' => json_encode($body, JSON_UNESCAPED_UNICODE)];
 }
 
 // استعلامِ شخصِ حقوقی. خروجی: ok + company (فیلدهای آماده‌ی فرمِ شرکت) + raw

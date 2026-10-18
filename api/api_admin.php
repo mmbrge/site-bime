@@ -69,8 +69,10 @@ try {
             $phone = sms_norm_phone($in['phone'] ?? '');
             if ($phone === '') $out(['ok' => false, 'error' => 'شماره‌ی موبایل را درست وارد کنید (۰۹…).']);
             $code = (string)random_int(10000, 99999);
-            $r = sapi_send_otp($pdo, $phone, $code);
-            $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'کدِ ' . $code . ' فرستاده شد.' : $r['status'], 'http' => $r['http'] ?? 0, 'raw' => $r['raw'] ?? '', 'ms' => $r['ms'] ?? null]]);
+            $r = sapi_send_otp($pdo, $phone, $code, isset($in['template']) ? (string)$in['template'] : null);
+            $tf = isset($r['template']) ? ' با قالبِ ' . $r['template'] : '';
+            $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'کدِ ' . $code . $tf . ' فرستاده شد.' : $r['status'] . $tf, 'http' => $r['http'] ?? 0,
+                                             'raw' => $r['raw'] ?? '', 'sent' => $r['sent'] ?? '', 'ms' => $r['ms'] ?? null]]);
         }
         if ($svc === 'sapi_company') {
             $r = sapi_company_info($pdo, $in['national_id'] ?? '');
