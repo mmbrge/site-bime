@@ -35,7 +35,7 @@ function ltp_letter($pdo, $id, array $cids, $ph) {
 }
 function ltp_send($abs, $name, $inline) {
     if (!$abs || !is_file($abs)) { http_response_code(404); echo 'فایل پیدا نشد.'; exit; }
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif',
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'zip' => 'application/zip'];
     while (ob_get_level()) ob_end_clean();

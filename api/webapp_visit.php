@@ -208,7 +208,7 @@ try {
         $root = realpath(dirname(__DIR__));
         $abs = $rel !== '' ? realpath($root . '/' . ltrim($rel, '/')) : false;
         if (!$abs || strpos($abs, $root . DIRECTORY_SEPARATOR) !== 0 || !is_file($abs)) { http_response_code(404); exit; }
-        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        $ext = upload_ext($abs);
         $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream';
         while (ob_get_level() > 0) ob_end_clean();
         header_remove('Content-Type');

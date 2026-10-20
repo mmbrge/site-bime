@@ -61,7 +61,7 @@ function lt_get_visible($pdo, $id, $uid, $canSecret, $canEdit) {
 }
 function lt_send_file($abs, $name, $inline = false) {
     if (!$abs || !is_file($abs)) { http_response_code(404); echo 'فایل پیدا نشد.'; exit; }
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif',
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'doc' => 'application/msword', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               'zip' => 'application/zip', 'txt' => 'text/plain; charset=utf-8'];

@@ -1,22 +1,14 @@
 <?php
 // فایل: api/_pdf_split.php
-// جدا کردنِ PDFهای چندصفحه‌ای به یک PDF برای هر صفحه (با همان PyMuPDF ابزارها: api/py/pdf_tools.py op=pages)
+// جدا کردنِ PDFهای چندصفحه‌ای به یک PDF برای هر صفحه (موتورِ PHPِ api/_pdf_tools.php op=pages)
 // کاربرد: وقتی شرکت یا خودمان چند مدرک را در یک PDF می‌فرستیم، هر صفحه جدا بررسی و نوع‌گذاری می‌شود.
 //   - مدارکِ شرکت‌ها: هر صفحه یک ردیفِ «تخصیص‌نیافته» در company_documents (همان صندوقِ تگ‌گذاری)
 //   - مدارکِ کارکنان: صفحه‌ها در یک پوشه‌ی موقت می‌مانند تا در پنجره‌ی «تفکیکِ صفحه‌ها» نوعِ هرکدام انتخاب شود
 
 const PDF_SPLIT_MAX_PAGES = 60;
 
-function pdf_split_python($pdo) {
-    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    try {
-        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'");
-        $st->execute();
-        $v = trim((string)$st->fetchColumn());
-        if ($v !== '') return $v;
-    } catch (Throwable $e) {}
-    return is_file($def) ? $def : 'python3';
-}
+// (قبلاً با پایتون؛ حالا موتورِ PHPِ api/_pdf_tools.php — بدونِ برنامه‌ی بیرونی)
+function pdf_split_python($pdo) { return ''; }
 
 function pdf_split_rrmdir($dir) {
     if (!is_dir($dir)) return;
@@ -24,41 +16,18 @@ function pdf_split_rrmdir($dir) {
     @rmdir($dir);
 }
 
-// اجرای pdf_tools.py؛ خروجی JSONِ آخرین خط یا ['ok'=>false, 'error'=>...]
+// اجرای یکی از ابزارهای PDF؛ خروجی همان JSONِ قبلی یا ['ok'=>false, 'error'=>...]
 function pdf_split_run($pdo, $op, $outDir, $params, $files, $timeout = 180) {
-    if (!function_exists('proc_open')) return ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست (proc_open غیرفعال است).'];
+    require_once __DIR__ . '/_pdf_tools.php';
     if (!is_dir($outDir)) @mkdir($outDir, 0755, true);
-    $pj = $outDir . '/.params.json';
-    @file_put_contents($pj, json_encode((object)$params, JSON_UNESCAPED_UNICODE));
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore'];
-    $proc = @proc_open(array_merge([pdf_split_python($pdo), __DIR__ . '/py/pdf_tools.py', $op, $outDir, $pj], $files), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    if (!is_resource($proc)) { @unlink($pj); return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.']; }
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = ''; $err = ''; $start = time();
-    while (true) {
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        $s = proc_get_status($proc);
-        if (!$s['running']) break;
-        if (time() - $start > $timeout) { proc_terminate($proc, 9); @unlink($pj); return ['ok' => false, 'error' => 'پردازشِ PDF بیش از حد طول کشید.']; }
-        usleep(50000);
-    }
-    $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    @unlink($pj);
-    $j = json_decode(trim((string)substr($out, strrpos("\n" . trim($out), "\n"))), true);
-    if (!is_array($j)) return ['ok' => false, 'error' => 'خروجیِ پردازشگرِ PDF خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -500)];
-    return $j;
+    return pdftool_run($op, $outDir, (array)$params, array_values($files));
 }
 
 // شمارِ صفحه‌های یک PDF (null یعنی معلوم نشد)
 function pdf_page_count($pdo, $abs) {
-    if (!is_file($abs) || strtolower(pathinfo($abs, PATHINFO_EXTENSION)) !== 'pdf') return null;
-    $tmp = sys_get_temp_dir() . '/pgc_' . uniqid();
-    $r = pdf_split_run($pdo, 'pages', $tmp, ['max' => 100000, 'count_only' => 1], [$abs], 60);
-    pdf_split_rrmdir($tmp);
-    return !empty($r['ok']) ? intval($r['pages']) : null;
+    if (!is_file($abs) || upload_ext($abs) !== 'pdf') return null;
+    require_once __DIR__ . '/_pdf.php';
+    return pdfx_page_count($abs);
 }
 
 // PDFِ $abs را صفحه‌به‌صفحه داخلِ $destDir می‌نویسد.
@@ -66,7 +35,7 @@ function pdf_page_count($pdo, $abs) {
 // $baseName: پیشوندِ نامِ فایل‌ها («... - صفحه ۲ از ۵.pdf»)؛ خالی => p001.pdf, p002.pdf, ...
 function pdf_split_pages($pdo, $abs, $destDir, $baseName = '', $max = PDF_SPLIT_MAX_PAGES) {
     if (!is_file($abs)) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
-    if (strtolower(pathinfo($abs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => true, 'pages' => 1, 'files' => []];
+    if (upload_ext($abs) !== 'pdf') return ['ok' => true, 'pages' => 1, 'files' => []];
     $tmp = rtrim($destDir, '/') . '/.split_' . uniqid();
     $r = pdf_split_run($pdo, 'pages', $tmp, ['max' => $max], [$abs]);
     if (empty($r['ok'])) { pdf_split_rrmdir($tmp); return ['ok' => false, 'error' => $r['error'] ?? 'جدا کردنِ صفحه‌ها ممکن نشد.', 'pages' => $r['pages'] ?? null]; }
@@ -91,7 +60,7 @@ function policy_conditions_path($policyAbs) {
     return dirname($policyAbs) . '/شرایط عمومی و خصوصی' . $sep . pathinfo($policyAbs, PATHINFO_FILENAME) . '.pdf';
 }
 function policy_conditions_make($pdo, $policyAbs) {
-    if (!is_file($policyAbs) || strtolower(pathinfo($policyAbs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'error' => 'فایلِ PDFِ بیمه‌نامه پیدا نشد.'];
+    if (!is_file($policyAbs) || upload_ext($policyAbs) !== 'pdf') return ['ok' => false, 'error' => 'فایلِ PDFِ بیمه‌نامه پیدا نشد.'];
     $dest = policy_conditions_path($policyAbs);
     if (is_file($dest)) return ['ok' => true, 'path' => $dest, 'existed' => true];
     $tmp = dirname($policyAbs) . '/.cond_' . uniqid();
@@ -117,7 +86,7 @@ function policy_extras_path($policyAbs) {
     return dirname($policyAbs) . '/صفحه‌های تکمیلی' . $sep . pathinfo($policyAbs, PATHINFO_FILENAME) . '.pdf';
 }
 function policy_finalize_file($pdo, $policyAbs, $insuranceType) {
-    if (!is_file($policyAbs) || strtolower(pathinfo($policyAbs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'skipped' => true];
+    if (!is_file($policyAbs) || upload_ext($policyAbs) !== 'pdf') return ['ok' => false, 'skipped' => true];
     if (!empty($GLOBALS['POLICY_KEEP_ALL_PAGES'])) return ['ok' => true, 'skipped' => true];   // «صفحه‌های پرداخت هم بیاید» در صدورِ گروهی
     $n = policy_pages_setting($pdo);
     $tmp = dirname($policyAbs) . '/.trim_' . uniqid();
@@ -160,7 +129,7 @@ function company_split_document($pdo, $siteRoot, $docId, $force = false) {
     if (!$doc) return ['ok' => false, 'error' => 'مدرک پیدا نشد.'];
     if (!$force && ($doc['status'] !== 'UNASSIGNED' || $doc['file_kind'] === 'LETTER')) return null;
     $abs = $siteRoot . '/' . ltrim($doc['file_path'], '/');
-    if (!is_file($abs) || strtolower(pathinfo($abs, PATHINFO_EXTENSION)) !== 'pdf') return $force ? ['ok' => false, 'error' => 'فقط فایلِ PDF صفحه‌به‌صفحه جدا می‌شود.'] : null;
+    if (!is_file($abs) || upload_ext($abs) !== 'pdf') return $force ? ['ok' => false, 'error' => 'فقط فایلِ PDF صفحه‌به‌صفحه جدا می‌شود.'] : null;
 
     $destDir = company_unassigned_temp_path($siteRoot, $doc['company_name'] ?: 'نامشخص');
     if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
@@ -220,7 +189,7 @@ function pdf_split_job_create($pdo, $siteRoot, $file, $ownerId) {
 // $allowImages: عکس (jpg/png/webp) هم پذیرفته و اول به PDFِ یک‌صفحه‌ای تبدیل می‌شود
 function pdf_split_job_create_ex($pdo, $siteRoot, $file, $ownerId, $allowImages = false, $meta = []) {
     if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) return ['ok' => false, 'error' => 'فایل دریافت نشد (شاید حجمش زیاد است).'];
-    $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $ext = upload_ext($file['name'] ?? '');
     $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
     if ($ext !== 'pdf' && !($allowImages && $isImg)) return ['ok' => false, 'error' => $allowImages ? 'فقط PDF یا عکس.' : 'فقط فایلِ PDF.'];
     if (($file['size'] ?? 0) > 41943040) return ['ok' => false, 'error' => 'حجمِ فایل بیشتر از ۴۰ مگابایت است.'];
@@ -238,7 +207,7 @@ function pdf_split_job_create_ex($pdo, $siteRoot, $file, $ownerId, $allowImages 
 // همان کار برای فایلی که از قبل روی سرور است (دکمه‌ی «جداسازی» زیرِ هر PDFِ بارگذاری‌شده) — فایلِ اصلی دست نمی‌خورد
 // $meta کنارِ job.json نگه داشته می‌شود (مثلاً doc_id تا هنگامِ ثبت معلوم باشد این صفحه‌ها از کدام مدرک‌اند)
 function pdf_split_job_from_path($pdo, $siteRoot, $abs, $name, $ownerId, $meta = []) {
-    if (!is_file($abs) || strtolower(pathinfo($abs, PATHINFO_EXTENSION)) !== 'pdf') return ['ok' => false, 'error' => 'فقط فایلِ PDF صفحه‌به‌صفحه جدا می‌شود.'];
+    if (!is_file($abs) || upload_ext($abs) !== 'pdf') return ['ok' => false, 'error' => 'فقط فایلِ PDF صفحه‌به‌صفحه جدا می‌شود.'];
     $token = bin2hex(random_bytes(12));
     $dir = pdf_split_job_root($siteRoot) . '/s_' . $token;
     @mkdir($dir, 0755, true);

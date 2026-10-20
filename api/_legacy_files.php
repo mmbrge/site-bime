@@ -44,7 +44,7 @@ function legacy_tokens($text) {
 function legacy_file_type($name, $dir = '') {
     $n = str_replace(['ي', 'ك', "\xE2\x80\x8C"], ['ی', 'ک', ' '], mb_strtolower($name));
     $d = str_replace(['ي', 'ك', "\xE2\x80\x8C"], ['ی', 'ک', ' '], mb_strtolower($dir));
-    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    $ext = upload_ext($name);
     if (preg_match('/اطلاعات درخواستی|desktop\.ini|thumbs\.db/u', $n)) return 'skip';
     if (preg_match('/الحاق/u', $n)) return 'endorsement';
     if (preg_match('/فاکتور|invoice/u', $n)) return 'sales_invoice';
@@ -149,7 +149,7 @@ function legacy_scan($pdo, $siteRoot, $scanId, $sub, $offset, $limit) {
         $state['files'][$i]['t'] = $ft ?: $grpT; $state['files'][$i]['by'] = $ft ? $fby : $grpBy;
         $state['files'][$i]['pol_name'] = (bool)$nameTok['policies'];
         // PDFهایی که صاحب یا نوعشان از نام معلوم نشد: متنِ صفحه‌های اول خوانده می‌شود
-        if ((!$state['files'][$i]['t'] || $state['files'][$i]['type'] === 'other') && strtolower(pathinfo($f['rel'], PATHINFO_EXTENSION)) === 'pdf') $needText[$i] = $root . '/' . $f['rel'];
+        if ((!$state['files'][$i]['t'] || $state['files'][$i]['type'] === 'other') && upload_ext($f['rel']) === 'pdf') $needText[$i] = $root . '/' . $f['rel'];
     }
     // متنِ PDFهایی که از نامشان پیدا نشد
     if ($needText) {
@@ -247,7 +247,7 @@ function legacy_target_ctx($pdo, $siteRoot, $t) {
 
 // کپیِ یک فایل به پوشه‌ی بیمه‌نامه با نام‌گذاریِ سایت و ثبتش (مدرکِ شرکتی / مدرکِ کارکنان / فایلِ بیمه‌نامه)
 function legacy_place_file($pdo, $siteRoot, array $ctx, $abs, $type, $relInGroup = '') {
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+    $ext = upload_ext($abs) ?: 'pdf';
     $orig = basename($abs);
     $dir = $ctx['dir'];
     // زیرپوشه‌های داخلِ گروه (مثلِ «عکس‌های بازدید») همان‌طور می‌مانند

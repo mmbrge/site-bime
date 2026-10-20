@@ -57,7 +57,7 @@ function safe_resolve($archiveRoot, $relative) {
 }
 
 function icon_for_file($filename) {
-    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $ext = upload_ext($filename);
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) return 'image';
     if ($ext === 'pdf') return 'pdf';
     return 'file';
@@ -115,7 +115,7 @@ try {
         // «فقط دیدن»: باز کردن در مرورگر بله، دانلود نه
         if (!$inline && fm_level($archiveRoot, $target) !== 'download') { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo 'شما فقط اجازه‌ی دیدنِ این پوشه را دارید (دانلود ممکن نیست).'; exit; }
         if (!empty($_GET['exact']) && !$inline) dl_send_exact_zip($target);   // دانلود با نامِ دقیق (ZIP)
-        $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
+        $ext = upload_ext($target);
         $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'txt' => 'text/plain; charset=utf-8'][$ext] ?? 'application/octet-stream';
         header('Content-Type: ' . ($inline ? $mime : 'application/octet-stream'));
         header('X-Content-Type-Options: nosniff');

@@ -100,7 +100,7 @@ try {
         $abs = realpath(dirname(__DIR__) . '/' . ltrim($rel, '/'));
         $root = realpath(archive_root(dirname(__DIR__)));
         if (!$rel || !$abs || !$root || strpos($abs, $root) !== 0 || !is_file($abs)) { echo json_encode(['ok' => false, 'error' => 'فایلِ معرفی‌نامه پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
-        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        $ext = upload_ext($abs);
         header('Content-Type: ' . (['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream'));
         header("Content-Disposition: attachment; filename=\"intro.$ext\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($abs))));
         header('Content-Length: ' . filesize($abs));

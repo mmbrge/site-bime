@@ -892,7 +892,7 @@ function hl_is_receipt_group($pdo, $chatId) {
 // فایلِ ذخیره‌شده‌ی ربات را با نامِ «تاریخِ دریافت» به پوشه‌ی موقت می‌برد و ردیفِ صندوق را می‌سازد
 function hl_inbox_add($pdo, $tmpAbs, array $meta) {
     hl_ensure($pdo);
-    $ext = strtolower(pathinfo($tmpAbs, PATHINFO_EXTENSION)) ?: 'jpg';
+    $ext = upload_ext($tmpAbs) ?: 'jpg';
     [$y, $m, $d] = jalali_from_gregorian_ts(time());
     $base = sprintf('رسید %04d-%02d-%02d ساعت %s', $y, $m, $d, date('H-i-s')) . (!empty($meta['chat_title']) ? ' - ' . hl_clean_name(mb_substr($meta['chat_title'], 0, 50)) : '');
     $dest = hl_unique_path(hl_inbox_dir(), $base, $ext);
@@ -932,7 +932,7 @@ function hl_payment_create($pdo, array $c, array $d, $fileAbs, $uid, array $S) {
     if ($billId) { $st = $pdo->prepare("SELECT * FROM hl_installments WHERE id = ? AND contract_id = ?"); $st->execute([$billId, $c['id']]); $bill = $st->fetch() ?: null; if (!$bill) $billId = 0; }
     $rel = null;
     if ($fileAbs && is_file($fileAbs)) {
-        $ext = strtolower(pathinfo($fileAbs, PATHINFO_EXTENSION)) ?: 'jpg';
+        $ext = upload_ext($fileAbs) ?: 'jpg';
         $label = $bill ? ($bill['period_j'] ? hl_period_fa($bill['period_j']) : 'قسط ' . hl_fa($bill['seq'])) : '';
         $base = 'رسید ' . hl_clean_name($c['company_name']) . ($label !== '' ? ' - ' . $label : '') . ' - پرداخت ' . str_replace('/', '-', $pj) . ' - ' . number_format($amt) . ' ریال';
         $dest = hl_unique_path(hl_contract_dir($c, 'رسیدهای دریافتی'), p2e_digits($base), $ext);

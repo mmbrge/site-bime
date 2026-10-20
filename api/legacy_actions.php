@@ -40,7 +40,7 @@ try {
         if ($up && is_array($up['name'])) {
             foreach ($up['name'] as $k => $name) {
                 if (($up['error'][$k] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($up['tmp_name'][$k])) continue;
-                $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                $ext = upload_ext($name);
                 if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) continue;
                 $dest = $tmp . '/x_' . bin2hex(random_bytes(6)) . '.' . $ext;
                 if (move_uploaded_file($up['tmp_name'][$k], $dest)) $files[] = ['path' => $dest, 'name' => $name];

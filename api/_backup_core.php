@@ -183,7 +183,7 @@ function bk_create($pdo, $mode = 'full', $tag = 'manual', $note = '', $userName 
         foreach ($files as $rel => $full) {
             $name = 'files/' . $rel;
             $zip->addFile($full, $name);
-            if (method_exists($zip, 'setCompressionName') && in_array(strtolower(pathinfo($rel, PATHINFO_EXTENSION)), $store, true)) {
+            if (method_exists($zip, 'setCompressionName') && in_array(upload_ext($rel), $store, true)) {
                 @$zip->setCompressionName($name, ZipArchive::CM_STORE);
             }
         }

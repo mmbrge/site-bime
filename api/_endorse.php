@@ -97,28 +97,22 @@ function endo_jdate($s) {
     return preg_match('/(1[34]\d{2})\D+(\d{1,2})\D+(\d{1,2})/', $s, $m) ? sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]) : '';
 }
 
-// اجرای پایتون (همان مسیرِ تنظیماتِ گزارش‌ها) => JSONِ آخرین خط
+// خواننده‌های فایل با PHP (قبلاً اسکریپت‌های پایتونیِ api/py/؛ همان ورودی و همان خروجیِ JSON)
 function endo_py($pdo, $script, array $args, $timeout = 120) {
-    if (!function_exists('pdf_split_python')) require_once __DIR__ . '/_pdf_split.php';
-    if (!function_exists('proc_open')) return ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست (proc_open غیرفعال است).'];
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore'];
-    $proc = @proc_open(array_merge([pdf_split_python($pdo), __DIR__ . '/py/' . $script], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    if (!is_resource($proc)) return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.'];
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = ''; $err = ''; $start = time();
-    while (true) {
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        $s = proc_get_status($proc);
-        if (!$s['running']) break;
-        if (time() - $start > $timeout) { proc_terminate($proc, 9); return ['ok' => false, 'error' => 'خواندنِ فایل بیش از حد طول کشید.']; }
-        usleep(50000);
+    require_once __DIR__ . '/_endorse_reader.php';
+    @set_time_limit(max(120, (int)$timeout));
+    try {
+        switch ($script) {
+            case 'endorse_reader.py': return er_read_file($args[0]);
+            case 'endorse_bundle.py': return er_bundle($args[0], $args[1]);
+            case 'policy_bundle.py': return pb_bundle($args[0], $args[1]);
+            case 'legacy_scan.py': return lgs_scan((array)json_decode((string)@file_get_contents($args[0]), true));
+        }
+        return ['ok' => false, 'error' => 'خواننده‌ی ناشناخته.'];
+    } catch (Throwable $e) {
+        error_log('[endo_py ' . $script . '] ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.', 'debug' => mb_substr($e->getMessage(), 0, 300)];
     }
-    $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    $j = json_decode(trim((string)substr($out, strrpos("\n" . trim($out), "\n"))), true);
-    return is_array($j) ? $j : ['ok' => false, 'error' => 'خروجیِ خواننده‌ی فایل خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -400)];
 }
 
 function endo_read_pdf($pdo, $abs) { return endo_py($pdo, 'endorse_reader.py', [$abs]); }

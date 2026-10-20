@@ -399,7 +399,7 @@ function legacy_personnel_folders($pdo, $siteRoot, $caseId, $policyFile = null) 
     if (!is_dir($target)) @mkdir($target, 0777, true);
     $pdo->prepare("UPDATE policy_cases SET folder_path = ? WHERE id = ?")->execute([$target, $caseId]);
     if ($policyFile && is_file($policyFile)) {
-        $ext = strtolower(pathinfo($policyFile, PATHINFO_EXTENSION)) ?: 'pdf';
+        $ext = upload_ext($policyFile) ?: 'pdf';
         $dest = unique_dest_path($target . '/' . build_final_policy_filename($plateForName, $case['insured_name'], $polForName, $case['vin'], $ext));
         if (@copy($policyFile, $dest)) $pdo->prepare("UPDATE policy_cases SET issued_file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $dest), '/'), $caseId]);
     }

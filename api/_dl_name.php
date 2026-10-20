@@ -52,7 +52,7 @@ if (!function_exists('dl_name')) {
     // سربرگِ دانلود با نامِ فارسیِ درست (نامِ لاتینِ جایگزین برای مرورگرهای قدیمی)
     function dl_disposition($type, $name, $fallback = 'file') {
         $name = dl_name($name);
-        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $ext = upload_ext($name);
         $fb = preg_replace('/[^A-Za-z0-9._-]/', '', $fallback) ?: 'file';
         if ($ext !== '' && strpos($fb, '.') === false) $fb .= '.' . $ext;
         return 'Content-Disposition: ' . $type . '; filename="' . $fb . '"; filename*=UTF-8\'\'' . rawurlencode($name);

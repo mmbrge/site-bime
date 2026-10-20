@@ -42,7 +42,7 @@ try {
         require_once __DIR__ . '/_proposal.php';
         $f = $_FILES['file'] ?? null;
         if (!$f || empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
-        if (strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ پیشنهاد باید PDF باشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (upload_ext($f['name'] ?? '') !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ پیشنهاد باید PDF باشد.'], JSON_UNESCAPED_UNICODE); exit; }
         $tmpDir = dirname(__DIR__) . '/tmp_ocr';
         if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
         $tmp = $tmpDir . '/' . uniqid('propr_') . '.pdf';
@@ -62,7 +62,7 @@ try {
         $siteRoot = dirname(__DIR__);
         $f = $_FILES['file'] ?? null;
         if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
-        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name']);
         if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط PDF یا عکس (JPG/PNG).'], JSON_UNESCAPED_UNICODE); exit; }
         if ($f['size'] > 15 * 1048576) { echo json_encode(['ok' => false, 'error' => 'حجم فایل بیشتر از ۱۵ مگابایت است.'], JSON_UNESCAPED_UNICODE); exit; }
         $dir = temp_archive_root($siteRoot) . '/معرفی‌نامه‌های دستی';
@@ -546,7 +546,7 @@ try {
                         $introFolder = sync_intro_folder($pdo, $siteRoot, $introId);
                         $dir = $introFolder . '/معرفی‌نامه';
                         if (!is_dir($dir)) @mkdir($dir, 0777, true);
-                        $ext = strtolower(pathinfo($_FILES['intro_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+                        $ext = upload_ext($_FILES['intro_file']['name']) ?: 'pdf';
                         $dest = unique_dest_path($dir . '/' . build_intro_folder_name($fullName, $nationalCode, $personnelCode, $companyName) . '.' . $ext);
                         if (move_uploaded_file($_FILES['intro_file']['tmp_name'], $dest)) {
                             $pdo->prepare("UPDATE introductions SET file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $dest), '/'), $introId]);

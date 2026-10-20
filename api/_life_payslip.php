@@ -82,7 +82,7 @@ function life_slip_logo_path($pdo, array $s) {
 function life_slip_logo_data($pdo, array $s) {
     $p = life_slip_logo_path($pdo, $s);
     if (!$p || filesize($p) > 2 * 1048576) return '';
-    $ext = strtolower(pathinfo($p, PATHINFO_EXTENSION));
+    $ext = upload_ext($p);
     $mime = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'svg' => 'image/svg+xml', 'gif' => 'image/gif'][$ext] ?? '';
     return $mime ? 'data:' . $mime . ';base64,' . base64_encode((string)file_get_contents($p)) : '';
 }
@@ -385,10 +385,10 @@ function life_slip_builtin_docx($pdo, $dest, $sample = false) {
     // لوگو (فقط PNG/JPG در Word)
     $logoXml = ''; $media = null;
     $lp = life_slip_logo_path($pdo, $s);
-    if ($lp && in_array(strtolower(pathinfo($lp, PATHINFO_EXTENSION)), ['png', 'jpg', 'jpeg'], true) && ($sz = @getimagesize($lp))) {
+    if ($lp && in_array(upload_ext($lp), ['png', 'jpg', 'jpeg'], true) && ($sz = @getimagesize($lp))) {
         $hEmu = 640080; $wEmu = intval($hEmu * $sz[0] / max(1, $sz[1]));
         if ($wEmu > 2286000) { $wEmu = 2286000; $hEmu = intval($wEmu * $sz[1] / max(1, $sz[0])); }
-        $media = ['path' => $lp, 'name' => 'logo.' . (strtolower(pathinfo($lp, PATHINFO_EXTENSION)) === 'png' ? 'png' : 'jpeg')];
+        $media = ['path' => $lp, 'name' => 'logo.' . (upload_ext($lp) === 'png' ? 'png' : 'jpeg')];
         $logoXml = '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' . $wEmu . '" cy="' . $hEmu . '"/><wp:docPr id="1" name="Logo"/>'
                  . '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
                  . '<pic:nvPicPr><pic:cNvPr id="1" name="logo"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'

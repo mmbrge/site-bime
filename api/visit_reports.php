@@ -219,7 +219,7 @@ function vr_files_list($key) {
 function vr_uploaded_images() {
     $out = [];
     foreach (vr_files_list('photos') as [$tmp, $n]) {
-        $ext = strtolower(pathinfo($n, PATHINFO_EXTENSION));
+        $ext = upload_ext($n);
         if ($ext === 'jpeg') $ext = 'jpg';
         if ($ext === 'tif') $ext = 'tiff';
         if (in_array($ext, ['heic', 'heif'], true) || vr_is_heif($tmp)) {
@@ -239,7 +239,7 @@ function vr_uploaded_images() {
 function vr_uploaded_attachments() {
     $out = [];
     foreach (vr_files_list('attachments') as [$tmp, $n]) {
-        $ext = strtolower(pathinfo($n, PATHINFO_EXTENSION));
+        $ext = upload_ext($n);
         if (!in_array($ext, VR_ATT_EXT, true)) continue;
         $out[] = ['tmp' => $tmp, 'name' => $n, 'ext' => $ext];
     }
@@ -268,7 +268,7 @@ function vr_list_attachments($siteRoot, $r) {
     $out = [];
     foreach (scandir($dir) as $f) {
         if ($f[0] === '.' || !is_file($dir . '/' . $f) || strpos($f, '(old') !== false) continue;
-        $out[] = ['name' => $f, 'size' => filesize($dir . '/' . $f), 'ext' => strtolower(pathinfo($f, PATHINFO_EXTENSION))];
+        $out[] = ['name' => $f, 'size' => filesize($dir . '/' . $f), 'ext' => upload_ext($f)];
     }
     return $out;
 }
@@ -436,7 +436,7 @@ function vr_health_photos_pick($pdo, $siteRoot, $inspId, array $keys) {
         if (!is_file($abs)) continue;
         $parts = explode('-', $k);
         $label = ($steps[$parts[0]]['label'] ?? $k) . (isset($parts[1]) ? ' ' . $parts[1] : '');
-        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'jpg';
+        $ext = upload_ext($abs) ?: 'jpg';
         $out[] = ['abs' => $abs, 'ext' => $ext === 'jpeg' ? 'jpg' : $ext, 'label' => $label];
     }
     return $out;
@@ -465,7 +465,7 @@ function vr_link_titles($pdo, $r) {
 function vr_send_file($abs, $downloadName, $inline = false) {
     while (ob_get_level()) ob_end_clean();
     if (!$abs || !is_file($abs)) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'فایل پیدا نشد.'; exit; }
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'zip' => 'application/zip',
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               'py' => 'text/x-python; charset=utf-8'];
@@ -545,10 +545,10 @@ try {
         if (!$cat || !vr_can_issue($cat, $user)) vr_fail('اجازه‌ی صدور این نوع گزارش را ندارید.');
         $f = $_FILES['file'] ?? null;
         if (!$f || $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) vr_fail('فایل PDF دریافت نشد.');
-        if (strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)) !== 'pdf') vr_fail('فقط فایل PDF قابل استخراج است.');
+        if (upload_ext($f['name']) !== 'pdf') vr_fail('فقط فایل PDF قابل استخراج است.');
         $tmp = sys_get_temp_dir() . '/vr_parse_' . bin2hex(random_bytes(6)) . '.pdf';
         move_uploaded_file($f['tmp_name'], $tmp);
-        $parser = $cat['parser_path'] ? $siteRoot . '/' . ltrim($cat['parser_path'], '/') : null;
+        $parser = $cat['parser_path'] ? $siteRoot . '/' . ltrim(preg_replace('/\.py$/i', '.php', $cat['parser_path']), '/') : null;   // پارسرهای قدیمیِ .py همان نام با .php
         $res = vr_run_parser($pdo, $tmp, ($parser && is_file($parser)) ? $parser : null);
         @unlink($tmp);
         if (empty($res['ok'])) vr_fail($res['error'] ?? 'استخراج ناموفق بود.', ['debug' => $res['debug'] ?? null]);

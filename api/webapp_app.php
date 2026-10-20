@@ -446,7 +446,7 @@ try {
         if (!is_dir($destDir) && !@mkdir($destDir, 0777, true) && !is_dir($destDir)) {
             echo json_encode(['ok' => false, 'error' => 'خطا در آماده‌سازی پوشه‌ی ذخیره‌سازی.']); exit;
         }
-        $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION)) ?: 'jpg';
+        $ext = upload_ext($_FILES['file']['name']) ?: 'jpg';
         $destPath = unique_dest_path($destDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext);
         if (!move_uploaded_file($_FILES['file']['tmp_name'], $destPath)) {
             echo json_encode(['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.']); exit;

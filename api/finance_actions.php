@@ -646,7 +646,7 @@ try {
         if (!$isAdmin) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر می‌تواند قالب را تغییر دهد.']); exit; }
         // هر سه نوع (تجمیعی، تلفیقی، تفکیکی) قالب جداگانه دارند؛ قبلاً قالب «تلفیقی» اشتباهاً به‌جای «تفکیکی» ذخیره می‌شد
         $kind = fin_kind($_POST['kind'] ?? '');
-        $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+        $ext = upload_ext($_FILES['file']['name']);
         if ($ext !== 'docx') { echo json_encode(['ok' => false, 'error' => 'فقط فایل docx پذیرفته می‌شود.']); exit; }
 
         $siteRoot = dirname(__DIR__);
@@ -747,7 +747,7 @@ try {
         $siteRoot = dirname(__DIR__);
         $dir = $siteRoot . '/tmp_recon';
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
-        $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION)) ?: 'xlsx';
+        $ext = upload_ext($_FILES['file']['name']) ?: 'xlsx';
         $tmp = $dir . '/rec_' . uniqid() . '.' . $ext;
         if (!move_uploaded_file($_FILES['file']['tmp_name'], $tmp)) {
             echo json_encode(['ok' => false, 'error' => 'خطا در دریافت فایل.']); exit;

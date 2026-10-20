@@ -1,6 +1,6 @@
 <?php
 // فایل: api/_vdoc.php
-// شناساییِ خودکارِ مدارکِ خودرو (فاکتور/سند فروش، سند مالکیت، کارت خودرو، بیمه‌نامه‌ی قبلی) با api/py/vehicle_doc_reader.py
+// شناساییِ خودکارِ مدارکِ خودرو (فاکتور/سند فروش، سند مالکیت، کارت خودرو، بیمه‌نامه‌ی قبلی) با api/_vdoc_reader.php (فقط PDFِ متنی)
 //  - مدارکِ تازه‌ی شرکت‌ها (هر صفحه‌ی PDF جدا) با ai_status = 'PENDING' صف می‌شوند و یکی‌یکی (هر درخواست یک صفحه) خوانده می‌شوند
 //  - شناخته‌شده و هم‌خوان با یک ردیف (شاسی/موتور) => خودکار روی همان ردیف می‌نشیند (AUTO)
 //  - فاکتور/سندِ کامل که ردیفی ندارد => ردیفِ تازه ساخته می‌شود و مدرک رویش می‌نشیند (AUTO_NEW)
@@ -26,83 +26,20 @@ function vdoc_sql_clean($col) {
     return "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE($col, ''), '-', ''), '.', ''), '*', ''), ' ', ''), '/', ''), '_', ''))";
 }
 
-// اجرای خواننده روی یک فایل (PDFِ تک‌صفحه یا عکس). مسیرِ فارسی برای پایتونِ هاست مشکل دارد => کپیِ موقتِ لاتین
+// اجرای خواننده روی یک فایل (PHP: api/_vdoc_reader.php). فقط PDFِ متنی خوانده می‌شود؛ عکس/اسکن => «خوانده نشد» (ورودِ دستی)
 function vdoc_run($pdo, $abs, $page = 1, $timeout = 280) {
-    if (!function_exists('proc_open')) return ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست.'];
     if (!is_file($abs)) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
-    if (!function_exists('pdf_split_python')) require_once __DIR__ . '/_pdf_split.php';
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'bmp'], true)) return ['ok' => false, 'error' => 'این نوع فایل خوانده نمی‌شود.'];
-    $dir = dirname(__DIR__) . '/tmp_ocr';
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
-    $tmp = $dir . '/vd_' . bin2hex(random_bytes(6)) . '.' . $ext;
-    if (!@copy($abs, $tmp)) return ['ok' => false, 'error' => 'آماده‌سازیِ فایل ممکن نشد.'];
-    @set_time_limit($timeout + 30);
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore',
-            'OMP_NUM_THREADS' => '2', 'OMP_THREAD_LIMIT' => '1', 'FLAGS_allocator_strategy' => 'auto_growth'];
-    $proc = @proc_open([pdf_split_python($pdo), __DIR__ . '/py/vehicle_doc_reader.py', $tmp, (string)intval($page)], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    if (!is_resource($proc)) { @unlink($tmp); return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.']; }
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = ''; $err = ''; $t0 = time();
-    while (true) {
-        $out .= (string)stream_get_contents($pipes[1]); $err .= (string)stream_get_contents($pipes[2]);
-        $st = proc_get_status($proc);
-        if (!$st['running']) break;
-        if (time() - $t0 > $timeout) { proc_terminate($proc); break; }
-        usleep(150000);
-    }
-    $out .= (string)stream_get_contents($pipes[1]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    @unlink($tmp);
-    $line = trim((string)substr($out, (int)strrpos("\n" . trim($out), "\n")));
-    $j = json_decode($line, true);
-    if (is_array($j)) return $j;
-    return ['ok' => false, 'error' => time() - $t0 > $timeout ? 'خواندنِ فایل بیش از حد طول کشید.' : 'خروجیِ خواننده خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -300)];
+    require_once __DIR__ . '/_vdoc_reader.php';
+    try { return vdr_read($abs, intval($page) ?: 1); }
+    catch (Throwable $e) { error_log('[vdoc_run] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.']; }
 }
 
-// چند فایلِ تک‌صفحه‌ای در یک اجرای پایتون (مدلِ OCR یک بار بارگذاری می‌شود) => [i => نتیجه]
+// چند فایلِ تک‌صفحه‌ای => [i => نتیجه]
 function vdoc_run_many($pdo, array $files, $timeout = 420) {
-    if (count($files) <= 1) { $out = []; foreach ($files as $i => $f) $out[$i] = vdoc_run($pdo, $f); return $out; }
-    if (!function_exists('proc_open')) return array_fill_keys(array_keys($files), ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست.']);
-    if (!function_exists('pdf_split_python')) require_once __DIR__ . '/_pdf_split.php';
-    $dir = dirname(__DIR__) . '/tmp_ocr';
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
-    $keys = array_keys($files); $tmps = [];
-    foreach ($keys as $k) {
-        $ext = strtolower(pathinfo($files[$k], PATHINFO_EXTENSION));
-        $t = $dir . '/vd_' . bin2hex(random_bytes(6)) . '.' . $ext;
-        if (!is_file($files[$k]) || !@copy($files[$k], $t)) { foreach ($tmps as $x) @unlink($x); $out = []; foreach ($files as $i => $f) $out[$i] = vdoc_run($pdo, $f); return $out; }
-        $tmps[] = $t;
-    }
-    @set_time_limit($timeout + 30);
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore',
-            'OMP_NUM_THREADS' => '2', 'OMP_THREAD_LIMIT' => '1', 'FLAGS_allocator_strategy' => 'auto_growth'];
-    $proc = @proc_open(array_merge([pdf_split_python($pdo), __DIR__ . '/py/vehicle_doc_reader.py', '--files'], $tmps), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    $res = null;
-    if (is_resource($proc)) {
-        stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-        $o = ''; $t0 = time();
-        while (true) {
-            $o .= (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
-            $st = proc_get_status($proc);
-            if (!$st['running']) break;
-            if (time() - $t0 > $timeout) { proc_terminate($proc); break; }
-            usleep(150000);
-        }
-        $o .= (string)stream_get_contents($pipes[1]);
-        fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-        $res = json_decode(trim((string)substr($o, (int)strrpos("\n" . trim($o), "\n"))), true);
-    }
-    foreach ($tmps as $x) @unlink($x);
     $out = [];
-    foreach ($keys as $i => $k) {
-        $r = is_array($res) ? ($res['pages'][$i] ?? null) : null;
-        $out[$k] = is_array($r) ? $r : ['ok' => false, 'error' => 'خروجیِ خواننده خوانده نشد.'];
-    }
+    foreach ($files as $i => $f) $out[$i] = vdoc_run($pdo, $f);
     return $out;
 }
 

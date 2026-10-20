@@ -160,7 +160,7 @@ function fin_ledger_save_files($pdo, $field, $direction, $paidJalali, $companyNa
     $n = is_array($files['name']) ? count($files['name']) : 0;
     for ($i = 0; $i < $n; $i++) {
         if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
-        $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+        $ext = upload_ext($files['name'][$i]) ?: 'jpg';
         if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) continue;
         $base = sanitize_folder_name(p2e_digits($paidJalali ?: jalali_from_gregorian_ts_dotted(time())) . ' - ' . ($ref ?: 'فیش') . ' - ' . number_format($amount));
         $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);

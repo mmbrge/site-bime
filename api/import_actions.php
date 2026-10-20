@@ -52,7 +52,7 @@ try {
     if ($action === 'preview') {
         $f = $_FILES['file'] ?? null;
         if (!$f || empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) $out(['ok' => false, 'error' => 'فایلِ اکسل دریافت نشد.']);
-        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name'] ?? '');
         if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) $out(['ok' => false, 'error' => 'فایل باید اکسل (xlsx) یا CSV باشد.']);
         if (($f['size'] ?? 0) > 25 * 1048576) $out(['ok' => false, 'error' => 'حجمِ فایل بیش از ۲۵ مگابایت است.']);
         @mkdir($tmpRoot, 0775, true);

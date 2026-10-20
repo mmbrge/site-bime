@@ -45,7 +45,7 @@ try {
         if ($up && is_array($up['name'])) {
             foreach ($up['name'] as $k => $name) {
                 if (($up['error'][$k] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($up['tmp_name'][$k])) continue;
-                $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                $ext = upload_ext($name);
                 if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) continue;
                 $dest = $tmp . '/r_' . bin2hex(random_bytes(6)) . '.' . $ext;
                 if (move_uploaded_file($up['tmp_name'][$k], $dest)) $files[] = ['path' => $dest, 'name' => $name];
@@ -56,7 +56,7 @@ try {
         $mode = (string)($data['mode'] ?? '');
         if ($mode === 'attach') {
             $need(intval($data['run_id'] ?? 0));
-            $xf = array_values(array_filter($files, fn($f) => strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)) === 'xlsx'));
+            $xf = array_values(array_filter($files, fn($f) => upload_ext($f['name']) === 'xlsx'));
             $r = $xf ? recon_attach_src($pdo, $siteRoot, intval($data['run_id'] ?? 0), $xf) : ['ok' => false, 'error' => 'برای خروجیِ اکسلِ بیمه‌گر فایل باید xlsx باشد.'];
         } else $r = recon_run($pdo, $siteRoot, $files, trim((string)($data['title'] ?? '')), $actor['user_id'], $mode === 'new' ? 'new' : '');
         foreach ($files as $f) @unlink($f['path']);
@@ -69,7 +69,7 @@ try {
         if ($up && is_array($up['name'])) {
             foreach ($up['name'] as $k => $name) {
                 if (($up['error'][$k] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($up['tmp_name'][$k])) continue;
-                if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'xlsx') continue;
+                if (upload_ext($name) !== 'xlsx') continue;
                 $dest = $tmp . '/r_' . bin2hex(random_bytes(6)) . '.xlsx';
                 if (move_uploaded_file($up['tmp_name'][$k], $dest)) $files[] = ['path' => $dest, 'name' => $name];
             }

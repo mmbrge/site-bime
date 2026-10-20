@@ -81,7 +81,7 @@ try {
     if ($action === 'excel_headers') {
         $f = $_FILES['file'] ?? null;
         if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل را انتخاب کنید.']); exit; }
-        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name'] ?? '');
         if (!in_array($ext, ['xlsx', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط xlsx یا csv.']); exit; }
         $tmp = sys_get_temp_dir() . '/' . uniqid('chdr_') . '.' . $ext;
         @copy($f['tmp_name'], $tmp);
@@ -1103,7 +1103,7 @@ try {
     if (($_POST['action'] ?? '') === 'company_import') {
         require_admin_only();
         if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'فایلی دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
-        $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+        $ext = upload_ext($_FILES['file']['name']);
         if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ اکسل (xlsx) یا CSV.'], JSON_UNESCAPED_UNICODE); exit; }
         $tmp = dirname(__DIR__) . '/tmp_ocr/' . uniqid('cimport_') . '.' . $ext;
         if (!is_dir(dirname($tmp))) @mkdir(dirname($tmp), 0777, true);
@@ -1744,7 +1744,7 @@ try {
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
         if (!$plateId) {
             $abs = $siteRoot . '/' . $relPath;
-            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($abs) ?: 'pdf';
             $placed = company_place_letter($pdo, $siteRoot, $requestId, $abs, $ext);
             if ($placed) {
                 $relPath = $placed;
@@ -2070,7 +2070,7 @@ try {
             if (!$st->fetchColumn()) $plateId = null;
         }
         $f = $_FILES['file'] ?? [];
-        if (strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ PDF.']); exit; }
+        if (upload_ext($f['name'] ?? '') !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ PDF.']); exit; }
         $siteRoot = dirname(__DIR__);
         $saved = company_store_uploaded_file($f, company_unassigned_temp_path($siteRoot, $rq['company_name']), 41943040);
         if (!$saved['ok']) { echo json_encode($saved, JSON_UNESCAPED_UNICODE); exit; }
@@ -2267,7 +2267,7 @@ try {
                 $pdo->prepare("UPDATE company_requests SET requested_counts = ?, request_kind = ? WHERE id = ?")
                     ->execute([json_encode($counts), $newKind, $requestId]);
             }
-            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($absOld) ?: 'pdf';
             $newRelPath = company_place_letter($pdo, $siteRoot, $requestId, $absOld, $ext) ?: $doc['file_path'];
             $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = NULL, file_kind = 'LETTER', doc_type = 'letter', status = 'ASSIGNED', assigned_by = ?, assigned_at = NOW(), file_path = ? WHERE id = ?")
                 ->execute([$requestId, $actor['user_id'], $newRelPath, $docId]);
@@ -2587,7 +2587,7 @@ try {
         // مسیرِ OCR باید کاملاً انگلیسی و بی‌فاصله باشد (اسکریپت پایتون مسیر فارسی را باز نمی‌کند)
         $tempDir = $siteRoot . '/tmp_ocr';
         if (!is_dir($tempDir)) @mkdir($tempDir, 0777, true);
-        $ext = strtolower(pathinfo($_FILES['policy_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+        $ext = upload_ext($_FILES['policy_file']['name']) ?: 'pdf';
         if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {
             echo json_encode(['ok' => false, 'error' => 'فقط فایل PDF یا عکس مجاز است.']); exit;
         }
@@ -2744,7 +2744,7 @@ try {
         }
         $name = (string)$_FILES['bundle']['name'];
         $head = (string)@file_get_contents($_FILES['bundle']['tmp_name'], false, null, 0, 5);
-        if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'pdf' || $head !== '%PDF-') {
+        if (upload_ext($name) !== 'pdf' || $head !== '%PDF-') {
             echo json_encode(['ok' => false, 'error' => 'فایل باید PDF باشد (همان فایلِ خروجیِ سایتِ بیمه‌گر).'], JSON_UNESCAPED_UNICODE); exit;
         }
         $token = bin2hex(random_bytes(8));
@@ -2908,7 +2908,7 @@ try {
         } elseif (!empty($_FILES['issued_file']['tmp_name']) && is_uploaded_file($_FILES['issued_file']['tmp_name'])) {
             $tmpDir = dirname(__DIR__) . '/tmp_ocr';
             if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);
-            $ext = strtolower(pathinfo($_FILES['issued_file']['name'], PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($_FILES['issued_file']['name']) ?: 'pdf';
             $tmp = $tmpDir . '/' . uniqid('cissued_') . '.' . preg_replace('/[^a-z0-9]/', '', $ext);
             if (move_uploaded_file($_FILES['issued_file']['tmp_name'], $tmp)) {
                 $src = $tmp; $srcName = $_FILES['issued_file']['name'];
@@ -3000,7 +3000,7 @@ try {
             $n = is_array($files['name']) ? count($files['name']) : 0;
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
-                $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+                $ext = upload_ext($files['name'][$i]) ?: 'jpg';
                 $base = sanitize_folder_name(p2e_digits(trim($_POST['paid_jalali'] ?? date('Y-m-d'))) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($amount));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {
@@ -3080,7 +3080,7 @@ try {
             $n = is_array($files['name']) ? count($files['name']) : 0;
             for ($i = 0; $i < $n; $i++) {
                 if (($files['error'][$i] ?? 1) !== UPLOAD_ERR_OK) continue;
-                $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION)) ?: 'jpg';
+                $ext = upload_ext($files['name'][$i]) ?: 'jpg';
                 $base = sanitize_folder_name(p2e_digits(trim($_POST['paid_jalali'] ?? date('Y-m-d'))) . ' - ' . trim($_POST['reference_no'] ?? 'فیش') . ' - ' . number_format($total));
                 $dest = unique_dest_path($dir . '/' . $base . '.' . $ext);
                 if (move_uploaded_file($files['tmp_name'][$i], $dest)) {

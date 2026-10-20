@@ -39,7 +39,7 @@ function brand_url($pdo, $kind, $prefix = '') {
 function brand_favicon_tag($pdo, $prefix = '') {
     $b = brand_get($pdo)['favicon'];
     if (!$b) return '';
-    $ext = strtolower(pathinfo($b['file'], PATHINFO_EXTENSION));
+    $ext = upload_ext($b['file']);
     $type = BRAND_TYPES['favicon'][$ext] ?? 'image/png';
     $u = htmlspecialchars(brand_url($pdo, 'favicon', $prefix), ENT_QUOTES);
     return '<link rel="icon" type="' . $type . '" href="' . $u . '">' . ($ext === 'png' ? '<link rel="apple-touch-icon" href="' . $u . '">' : '');

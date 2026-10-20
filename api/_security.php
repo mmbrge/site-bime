@@ -8,8 +8,11 @@
 //  - خروجِ خودکار بعد از عدمِ فعالیت (پیش‌فرض ۳ ساعت) و خروجِ اجباری توسطِ مدیر
 //  - محدودیتِ تلاشِ ناموفقِ ورود، و ثبتِ همه‌ی رخدادها در security_events برای گزارشِ «سپر امنیتی»
 
-const SEC_DEFAULTS = ['sec_idle_hours' => '3', 'sec_max_attempts' => '5', 'sec_lock_minutes' => '15', 'sec_notify' => '1', 'sec_waf' => '1'];
+const SEC_DEFAULTS = ['sec_idle_hours' => '3', 'sec_max_attempts' => '5', 'sec_lock_minutes' => '15', 'sec_notify' => '1', 'sec_waf' => '1', 'sec_devtools_guard' => '1'];
 const SEC_BAD_EXT = '/\.(php\d?|phtml|phar|pht|phps|pgif|shtml|cgi|pl|py|sh|bash|asp|aspx|jsp|jspx|exe|bat|cmd|com|scr|htaccess|htpasswd|ini|svg|svgz|html?|xhtml|js|mjs)(\.|$)/i';
+// پسوندِ اجرایی در وسطِ نام («x.php.jpg») هم رد می‌شود؛ ولی نقطه‌های عادیِ نام («اسکن ۲۵.۲.pdf»، «..fdds.jpg») ایرادی ندارند
+const SEC_BAD_LAST = '/\.(php\d?|phtml|phar|pht|phps|pgif|shtml|cgi|pl|py|sh|bash|asp|aspx|jsp|jspx|exe|bat|cmd|com|scr|htaccess|htpasswd|ini|svg|svgz|html?|xhtml|js|mjs)\s*$/i';
+const SEC_BAD_MID = '/\.(php\d?|phtml|phar|pht|phps|pgif|shtml|cgi|pl|py|sh|bash|asp|aspx|jsp|jspx)\./i';
 const SEC_EVENT_FA = [
     'LOGIN_FAIL' => 'ورودِ ناموفق', 'LOGIN_LOCK' => 'قفلِ ورود (تلاشِ زیاد)', 'LOGIN_BLOCKED' => 'تلاشِ ورود در زمانِ قفل', 'NEW_IP' => 'ورود از IP تازه',
     'IDLE_LOGOUT' => 'خروجِ خودکار (عدمِ فعالیت)', 'FORCED_LOGOUT' => 'خروجِ اجباری توسطِ مدیر', 'CSRF_BLOCK' => 'درخواستِ جعلی از سایتِ دیگر',
@@ -17,6 +20,12 @@ const SEC_EVENT_FA = [
     'PERM_DENIED' => 'تلاش برای دسترسیِ غیرمجاز', 'FILE_DENIED' => 'دسترسیِ بدونِ ورود به فایلِ بایگانی', 'ADMIN_ACTION' => 'تغییرِ تنظیماتِ امنیتی',
     'DEVICE_KICK' => 'خروجِ دستگاهِ قبلی (ورود از دستگاهِ تازه)', 'DEVICE_END' => 'بستنِ دستگاه توسطِ مدیر',
 ];
+
+// پسوندِ واقعیِ نامِ فایل (فقط تکه‌ی بعد از آخرین نقطه؛ نقطه‌های وسطِ نام مثلِ «۲۵.۲» و فاصله‌ی آخرِ نام اثری ندارند)
+function upload_ext($name) {
+    $b = (string)preg_replace('~^.*[/\\\\]~su', '', (string)$name);
+    return preg_match('/\.([A-Za-z0-9]{1,10})\s*$/', $b, $m) ? strtolower($m[1]) : '';
+}
 
 function sec_ip() { return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45); }
 function sec_is_api() { return strpos(str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '')), '/api/') !== false; }
@@ -419,14 +428,16 @@ function sec_boot($pdo) {
     if (!empty($_FILES)) {
         $names = [];
         array_walk_recursive($_FILES, function ($v, $k) use (&$names) { if ($k === 'name' && is_string($v) && $v !== '') $names[] = $v; });
-        $adminPy = $script === 'visit_reports.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
+        // الگوریتمِ استخراجِ گزارشِ بازدید (فایلِ .php فقط برای مدیرِ کل؛ محتوایش آنجا بررسی می‌شود که فقط پردازشِ متن باشد)
+        $adminPy = $script === 'visit_report_settings.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
         // لوگوی SVG فقط برای مدیرِ کل در «تنظیمات ← لوگو و فاوآیکن» (محتوایش آنجا بررسی می‌شود که اسکریپت نداشته باشد)
         $adminSvg = $script === 'brand_actions.php' && session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'ADMIN';
         foreach ($names as $n) {
             $b = (string)preg_replace('~^.*[/\\\\]~su', '', $n);   // نه basename(): در PHP 7.4 حروفِ فارسیِ اولِ نام را می‌اندازد
-            if ($adminPy && preg_match('/^[^.]+\.py$/i', $b)) continue;
+            if ($adminPy && preg_match('/^[A-Za-z_][A-Za-z0-9_]*\.php$/', $b)) continue;
             if ($adminSvg && preg_match('/^[^.]+\.svg$/i', $b)) continue;
-            if ($b === '' || $b[0] === '.' || preg_match(SEC_BAD_EXT, $b) || preg_match('/[<>"\x00-\x1f]/', $b)) {   // < > " در نامِ فایل در ویندوز هم مجاز نیست
+            $bt = ltrim(trim($b), '. ');
+            if ($bt === '' || preg_match(SEC_BAD_LAST, '.' . $bt) || preg_match(SEC_BAD_MID, $bt) || preg_match('/^\.?(htaccess|htpasswd|user\.ini)$/i', trim($b)) || preg_match('/[<>"\x00-\x1f]/', $b)) {   // < > " در نامِ فایل در ویندوز هم مجاز نیست
                 sec_event($pdo, 'UPLOAD_BLOCK', 'فایل: ' . $b . ' · ' . $script);
                 sec_deny(400, 'این نوع فایل برای بارگذاری مجاز نیست (' . $b . ').');
             }

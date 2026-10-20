@@ -377,7 +377,7 @@ function rpt_save_image($zipName, $ctx) {
     if (isset($ctx->savedImages[$zipName])) return $ctx->savedImages[$zipName];
     $data = $ctx->zip->getFromName($zipName);
     if ($data === false) { $ctx->savedImages[$zipName] = null; return null; }
-    $ext = strtolower(pathinfo($zipName, PATHINFO_EXTENSION));
+    $ext = upload_ext($zipName);
     if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif'], true)) {
         $ctx->warnings[] = "تصویرِ {$ext} در قالب پشتیبانی نمی‌شود و نمایش داده نمی‌شود (" . basename($zipName) . '). بهتر است در Word به PNG یا JPG تبدیل شود.';
         $ctx->savedImages[$zipName] = null; return null;

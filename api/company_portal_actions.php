@@ -46,7 +46,7 @@ try {
         require_once __DIR__ . '/finance_core.php';
         $f = $_FILES['file'] ?? null;
         if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل را انتخاب کنید.']); exit; }
-        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name'] ?? '');
         if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ اکسل (xlsx) یا csv.']); exit; }
         $parsed = company_read_import_input([], $f);
         if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
@@ -84,7 +84,7 @@ try {
     if ($action === 'zk_parse_excel') {
         require_once __DIR__ . '/_zerokm.php';
         $f = $_FILES['file'] ?? null;
-        $ext = strtolower(pathinfo($f['name'] ?? '', PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name'] ?? '');
         if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK || !in_array($ext, ['xlsx', 'xls', 'csv'], true)) { echo json_encode(['ok' => false, 'error' => 'فایلِ اکسل (xlsx) یا csv را انتخاب کنید.']); exit; }
         $tmp = sys_get_temp_dir() . '/' . uniqid('zk_') . '.' . $ext;
         if (!@move_uploaded_file($f['tmp_name'], $tmp)) { echo json_encode(['ok' => false, 'error' => 'فایل دریافت نشد.']); exit; }
@@ -404,7 +404,7 @@ try {
         if (!$abs || !is_file($abs)) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'فایل بیمه‌نامه یافت نشد.']); exit; }
 
         $plateDisplay = company_row_label($row);
-        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+        $ext = upload_ext($abs) ?: 'pdf';
         $name = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename($plateDisplay) ?: 'بدون پلاک',
                  policy_number_for_filename($row['policy_number'])])) . '.' . $ext;
         header('Content-Type: ' . ($ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
@@ -434,7 +434,7 @@ try {
         foreach ($stmt->fetchAll() as $row) {
             $abs = $siteRoot . '/' . $row['issued_file_path'];
             if (!is_file($abs)) continue;
-            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($abs) ?: 'pdf';
             $dir = sanitize_folder_name('درخواست ' . ($row['ref_code'] ?: $row['rid']));
             $base = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename(company_row_label($row)), policy_number_for_filename($row['policy_number'])]));
             $name = $dir . '/' . $base . '.' . $ext;
@@ -477,7 +477,7 @@ try {
         foreach ($stmt->fetchAll() as $row) {
             $abs = $siteRoot . '/' . $row['issued_file_path'];
             if (!is_file($abs)) continue;
-            $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($abs) ?: 'pdf';
             $base = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename(company_row_label($row)),
                      policy_number_for_filename($row['policy_number'])]));
             $name = $base . '.' . $ext;
@@ -698,7 +698,7 @@ try {
         $docId = $pdo->lastInsertId();
 
         if ($isLetter) {
-            $ext = strtolower(pathinfo($saved['path'], PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($saved['path']) ?: 'pdf';
             $placed = company_place_letter($pdo, $siteRoot, $requestId, $saved['path'], $ext);
             if ($placed) {
                 $relPath = $placed;

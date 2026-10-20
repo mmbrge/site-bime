@@ -1059,5 +1059,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         });
     </script>
+<script>window.PAGE_GUARD_DETECT = <?= (sec_settings($pdo)['sec_devtools_guard'] ?? '1') === '1' ? 'true' : 'false' ?>;</script><script src="page-guard.js?v=1"></script>
 </body>
 </html>

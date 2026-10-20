@@ -6,7 +6,6 @@
 // پیش‌نیاز: _case_helpers.php و _company_helpers.php قبل از این فایل include شده باشند.
 require_once __DIR__ . '/_report_engine.php';
 
-const VR_DEFAULT_PYTHON = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
 
 function vr_ready($pdo) {
     static $ok = null;
@@ -549,44 +548,16 @@ function vr_write_register($pdo, $siteRoot) {
 }
 
 // ---------------------------------------------------------------------
-//  پارسرِ PDF (الگوریتم‌های استخراجِ پایتونی - همان فایل‌های .py برنامه‌ی ویندوزی)
+//  پارسرِ PDF با PHP (api/_vr_parser.php؛ قبلاً report_assets/parser_runner.py). الگوریتم‌های اختصاصی فایل‌های .php در
+//  report_assets/parsers‌اند؛ مسیرِ قدیمیِ .py خودکار به همان نام با .php می‌رسد.
 // ---------------------------------------------------------------------
-function vr_python_path($pdo) { return vr_setting($pdo, 'report_python_path', VR_DEFAULT_PYTHON); }
-// پوشه‌ی خانگیِ کاربرِ هاست (مثلاً /home/besiteir). محیطِ پایتونِ سی‌پنل (CloudLinux) موقعِ اجرا متغیرِ HOME را
-// لازم دارد و PHP آن را به برنامه‌ها نمی‌دهد؛ بدونش یک Traceback بی‌ضرر چاپ می‌شود.
-function vr_home_dir($pdo) {
-    $h = getenv('HOME');
-    if ($h && is_dir($h)) return $h;
-    if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) { $pw = @posix_getpwuid(posix_geteuid()); if (!empty($pw['dir']) && is_dir($pw['dir'])) return $pw['dir']; }
-    if (preg_match('#^(/home\d*/[^/]+)/#', vr_python_path($pdo) . '/', $m) && is_dir($m[1])) return $m[1];
-    if (preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) return $m[1];
-    return sys_get_temp_dir();
-}
+function vr_python_path($pdo) { return ''; }
+function vr_home_dir($pdo) { return sys_get_temp_dir(); }
 function vr_run_parser($pdo, $pdfAbs, $parserAbs = null) {
-    $py = vr_python_path($pdo);
-    $runner = dirname(__DIR__) . '/report_assets/parser_runner.py';
-    if (!function_exists('proc_open')) return ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست (proc_open غیرفعال است).'];
-    if (!is_file($py) && strpos($py, '/') !== false) return ['ok' => false, 'error' => "پایتون در مسیرِ تنظیم‌شده پیدا نشد: {$py} (از تنظیمات گزارش اصلاح کنید)."];
-    $cmd = [$py, $runner, $pdfAbs];
-    if ($parserAbs) $cmd[] = $parserAbs;
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => vr_home_dir($pdo), 'PYTHONWARNINGS' => 'ignore'];
-    $proc = @proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    if (!is_resource($proc)) return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.'];
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = ''; $err = ''; $start = time();
-    while (true) {
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        $s = proc_get_status($proc);
-        if (!$s['running']) break;
-        if (time() - $start > 45) { proc_terminate($proc, 9); return ['ok' => false, 'error' => 'استخراج بیش از حد طول کشید (بیش از ۴۵ ثانیه).']; }
-        usleep(60000);
-    }
-    $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    $line = trim((string)substr($out, strrpos("\n" . trim($out), "\n")));
-    $j = json_decode($line, true);
-    if (!is_array($j)) return ['ok' => false, 'error' => 'خروجیِ پایتون خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -1500)];
-    return $j;
+    require_once __DIR__ . '/_vr_parser.php';
+    @set_time_limit(90);
+    try { return vrp_run($pdfAbs, $parserAbs); }
+    catch (Throwable $e) { error_log('[vr_run_parser] ' . $e->getMessage()); return ['ok' => false, 'error' => 'استخراج ممکن نشد: ' . mb_substr($e->getMessage(), 0, 200)]; }
 }
 
 // ---------------------------------------------------------------------

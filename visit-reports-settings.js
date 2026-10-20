@@ -1,7 +1,7 @@
 // فایل: visit-reports-settings.js
 // «تنظیمات گزارش» (فقط مدیر کل): هر چیزی که در برنامه‌ی ویندوزی در fields_config.xlsx و پوشه‌ی Config بود:
 // انواع گزارش و دسترسی‌ها، قالب Word (آپلود، بررسیِ متغیرها، پیش‌نمایش، جابه‌جاییِ کادرها)، الگوریتمِ
-// استخراج (.py) و آزمایشش، فیلدها، بازدیدکننده‌ها، بیمه‌گذاران، قلم‌ها، تنظیماتِ عمومی، تاریخچه و راهنما.
+// استخراج (.php) و آزمایشش، فیلدها، بازدیدکننده‌ها، بیمه‌گذاران، قلم‌ها، تنظیماتِ عمومی، تاریخچه و راهنما.
 (function () {
     'use strict';
     const VR = window.VR;
@@ -245,16 +245,16 @@
         const files = await api('set_parser_files');
         sb.innerHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div class="vr-card p-5 vr-fade-up space-y-3">
-                <p class="vr-sec-title !text-xs"><i class="fab fa-python text-sky-600"></i> الگوریتمِ استخراجِ این نوع</p>
+                <p class="vr-sec-title !text-xs"><i class="fas fa-code text-sky-600"></i> الگوریتمِ استخراجِ این نوع</p>
                 <p class="text-xs font-bold ${p.exists ? 'text-slate-600' : 'text-slate-400'}">${p.exists ? esc(p.orig_name) : 'فقط الگوریتمِ عمومی (بدونِ فایلِ اختصاصی)'}</p>
                 <div class="flex gap-2"><select class="vr-in !py-2 vrs-pfile"><option value="">فقط الگوریتمِ عمومی</option>${(files.files || []).map(f => `<option ${p.orig_name === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
                 <button type="button" class="vr-btn vr-btn-s shrink-0 vrs-psel">اعمال</button></div>
                 <label class="vr-drop p-4 flex flex-col items-center gap-1.5 cursor-pointer text-center"><i class="fas fa-file-code text-2xl text-sky-500"></i>
-                    <p class="text-xs font-black text-slate-600">بارگذاریِ فایلِ .py</p><p class="text-[10px] text-slate-400 font-bold">با همان نامِ اصلی ذخیره می‌شود (پارسرها با نام همدیگر را صدا می‌زنند)؛ نسخه‌ی قبلی (old) می‌شود</p>
-                    <input type="file" accept=".py" class="hidden vrs-py-in"></label>
+                    <p class="text-xs font-black text-slate-600">بارگذاریِ فایلِ .php</p><p class="text-[10px] text-slate-400 font-bold">با همان نامِ اصلی ذخیره می‌شود (پارسرها با نام همدیگر را صدا می‌زنند)؛ نسخه‌ی قبلی (old) می‌شود</p>
+                    <input type="file" accept=".php" class="hidden vrs-py-in"></label>
                 <p class="vrs-py-st text-[11px] font-bold"></p>
                 ${p.exists ? `<a class="vr-btn vr-btn-s" href="${API}?action=set_parser_download&id=${cat.id}"><i class="fas fa-download"></i> دانلودِ فایلِ فعلی</a>` : ''}
-                <p class="text-[10px] text-slate-400 font-bold leading-5">فایل باید تابعِ <code dir="ltr">parse_pdf_fields(raw_text)</code> داشته باشد و یک dict برگرداند. کلیدهایی که پارسرِ اختصاصی پیدا نکند از الگوریتمِ عمومی پُر می‌شود.</p>
+                <p class="text-[10px] text-slate-400 font-bold leading-5">فایل باید با <code dir="ltr">return function ($raw_text, $checkboxes) { … return [...]; };</code> یک تابع برگرداند که آرایه‌ی کلید ← مقدار بدهد (فایل‌های .py قدیمی دیگر اجرا نمی‌شوند؛ نسخه‌ی PHP همان قالب‌ها آماده است). کلیدهایی که پارسرِ اختصاصی پیدا نکند از الگوریتمِ عمومی پُر می‌شود.</p>
             </div>
             <div class="vr-card p-5 vr-fade-up space-y-3">
                 <p class="vr-sec-title !text-xs"><i class="fas fa-flask text-violet-500"></i> آزمایش با یک PDF</p>
@@ -430,9 +430,8 @@
         const s = S.boot.settings;
         body.innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div class="vr-card p-5 vr-fade-up space-y-3">
-                <p class="vr-sec-title !text-xs"><i class="fab fa-python text-sky-600"></i> پایتون (فقط برای استخراج از PDF)</p>
-                <p class="text-[10px] text-slate-400 font-bold leading-5">ساختِ PDF و Word هیچ نیازی به پایتون، ویندوز یا Word ندارد و کاملاً روی همین هاست انجام می‌شود. پایتون فقط برای «استخراجِ خودکار از PDF» استفاده می‌شود و باید PyMuPDF (fitz) داشته باشد.</p>
-                <div><label class="vr-lbl">مسیرِ پایتون روی هاست</label><input class="vr-in vrs-py" dir="ltr" value="${esc(s.python_path)}"></div>
+                <p class="vr-sec-title !text-xs"><i class="fas fa-microchip text-sky-600"></i> موتورِ استخراج از PDF</p>
+                <p class="text-[10px] text-slate-400 font-bold leading-5">ساختِ PDF و Word و همچنین «استخراجِ خودکار از PDF» کاملاً با PHP روی همین هاست انجام می‌شود و هیچ نیازی به پایتون ندارد.</p>
                 <div class="flex gap-2"><button type="button" class="vr-btn vr-btn-s vrs-pycheck"><i class="fas fa-stethoscope"></i> بررسی</button></div>
                 <pre class="vrs-pyout bg-slate-900 text-emerald-300 rounded-xl p-3 text-[10px] hidden" dir="ltr"></pre>
             </div>
@@ -445,7 +444,6 @@
             </div>
             <div class="lg:col-span-2"><button type="button" class="vr-btn vr-btn-p vrs-gsave"><i class="fas fa-floppy-disk"></i> ذخیره‌ی تنظیمات</button></div></div>`;
         body.querySelector('.vrs-pycheck').onclick = async () => {
-            await api('set_options_save', { python_path: body.querySelector('.vrs-py').value });
             const d = await api('set_python_check');
             const o = body.querySelector('.vrs-pyout'); o.classList.remove('hidden'); o.textContent = d.output || 'خروجی‌ای نیامد (مسیر درست نیست یا اجرای برنامه روی هاست بسته است).';
             o.className = `vrs-pyout ${d.ok ? 'bg-slate-900 text-emerald-300' : 'bg-red-950 text-red-200'} rounded-xl p-3 text-[10px]`;
@@ -453,7 +451,7 @@
         body.querySelector('.vrs-reg').onclick = async () => { const d = await api('rebuild_register'); toast(d.ok ? 'دفترِ اکسل دوباره ساخته شد.' : 'ساخت ممکن نشد.', d.ok ? 'info' : 'error'); };
         body.querySelector('.vrs-arch').onclick = () => { if (typeof window.switchTab === 'function') { switchTab('filemanager'); if (typeof window.fmOpen === 'function') fmOpen(S.boot.archive_path); } };
         body.querySelector('.vrs-gsave').onclick = async () => {
-            const d = await api('set_options_save', { python_path: body.querySelector('.vrs-py').value, excel_password: body.querySelector('.vrs-xp').value });
+            const d = await api('set_options_save', { excel_password: body.querySelector('.vrs-xp').value });
             if (!d.ok) return toast(d.error, 'error'); toast('ذخیره شد.', 'info'); await loadBoot();
         };
     }
@@ -503,7 +501,7 @@
                 <li><b>مواضعِ آسیب‌دیده</b>: «گزینه» تعدادِ ردیف است؛ متغیرها ${code('damage_location_1')} و ${code('damage_description_1')} تا آخر.</li>
                 <li><b>بازدیدکننده</b>: از فهرستِ «بازدیدکننده‌ها» انتخاب می‌شود.</li></ul>
                 «بخش» فیلدها را در فرم گروه می‌کند؛ «ستونِ دفترِ اکسل» مقدار را در دفترِ گزارشات و جستجو می‌آورد؛ «شرطِ نمایش» یعنی فیلد فقط وقتی دیده و چاپ شود که شرط برقرار باشد (مثل ${code('plate_type=سایر')}). برای افزودنِ «یک بخشِ اضافه» کافی است فیلدهایش را با بخشِ تازه اضافه کنید و Text Boxهایش را در قالب بگذارید.`)}
-            ${step(5, 'استخراجِ خودکار از PDF (اختیاری)', `بدونِ هیچ فایلی، الگوریتمِ عمومی پلاک، شاسی، موتور، ارزش، نام، کد ملی، تلفن، رنگ و... را پیدا می‌کند. برای دقتِ بیشتر یک فایلِ پایتون با تابعِ ${code('parse_pdf_fields(raw_text)')} بنویسید که dictی با کلیدهای هم‌نامِ فیلدها (یا «کلیدهای پارسر»ِ هر فیلد) برگرداند. فایل‌ها با همان نامِ اصلی کنارِ هم ذخیره می‌شوند، پس پارسری که پارسرِ دیگری را صدا می‌زند (مثل template_truck که template_car را می‌خواند) بدونِ تغییر کار می‌کند. با «آزمایش با یک PDF» نتیجه را ببینید.`)}
+            ${step(5, 'استخراجِ خودکار از PDF (اختیاری)', `بدونِ هیچ فایلی، الگوریتمِ عمومی پلاک، شاسی، موتور، ارزش، نام، کد ملی، تلفن، رنگ و... را پیدا می‌کند. برای دقتِ بیشتر یک فایلِ PHP بنویسید که با ${code('return function ($raw_text, $checkboxes) {…};')} تابعی برگرداند و آرایه‌ای با کلیدهای هم‌نامِ فیلدها (یا «کلیدهای پارسر»ِ هر فیلد) برگرداند. فایل‌ها با همان نامِ اصلی کنارِ هم ذخیره می‌شوند، پس پارسری که پارسرِ دیگری را صدا می‌زند (مثل template_truck که template_car را می‌خواند) بدونِ تغییر کار می‌کند. با «آزمایش با یک PDF» نتیجه را ببینید.`)}
             ${step(6, 'بازدیدکننده‌ها و بیمه‌گذاران', `برای هر نوع گزارش بازدیدکننده‌ها را مشخص کنید. بیمه‌گذارانِ پرتکرار را از صفر یا از «اشخاص و شرکت‌های» موجود تعریف کنید تا صادرکننده با یک کلیک انتخاب کند (یا دستی بنویسد).`)}
             ${step(7, 'دسترسی و فعال‌سازی', `نوع را «فعال» کنید و مشخص کنید کدام نقش‌ها/کاربران می‌توانند صادر کنند. «کاربر پارسیان» فقط انواعی را می‌بیند که به او داده شده و فقط گزارش‌های خودش را؛ ویرایش با رمزِ پنلِ خودش انجام می‌شود و فایل‌های قبلی با «(old)» نگه داشته می‌شوند.`)}
             <div class="rounded-2xl bg-indigo-50 p-4 text-xs text-indigo-800 font-bold leading-7"><i class="fas fa-folder-tree ml-1"></i> بایگانی: ${code('بایگانی گزارشات بازدید/سال/ماه/بیمه‌گر/(تاریخ) پلاک - بیمه‌گذار/')} شاملِ «(تاریخ)(گزارش بازدید خودرو) پلاک.pdf/.docx» و پوشه و ZIPِ «(تاریخ)(عکس‌های بازدید خودرو) پلاک». گزارشِ متصل به بازدید سلامت یا درخواست، با همین نام‌گذاری در پوشه‌ی همان درخواست هم قرار می‌گیرد.</div>

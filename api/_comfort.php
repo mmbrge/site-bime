@@ -348,7 +348,7 @@ function cf_quota_state($pdo, $type, $id) {
 function cf_max_mb_fa($bytes) { return str_replace(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'], (string)intval($bytes / 1048576)); }
 function cf_add_track($pdo, $srcPath, $origName, array $owner, array $uploader, $genre = '', $maxBytes = CF_MAX_TRACK) {
     cf_ensure($pdo);
-    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+    $ext = upload_ext($origName);
     if (!isset(CF_AUDIO[$ext])) return ['ok' => false, 'skip' => true, 'error' => 'قالبِ فایل پشتیبانی نمی‌شود (' . $origName . ').'];
     $size = filesize($srcPath);
     if ($size <= 1024) return ['ok' => false, 'skip' => true, 'error' => 'فایل خالی است (' . $origName . ').'];

@@ -292,7 +292,7 @@ try {
 
         $tmpDir = build_temp_plate_path($siteRoot, time(), $nationalId, $plate);
         if (!file_exists($tmpDir)) mkdir($tmpDir, 0777, true);
-        $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION)) ?: 'jpg';
+        $ext = upload_ext($_FILES['photo']['name']) ?: 'jpg';
         if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) $ext = 'jpg';
 
         // نام فایل بر اساس عنوانِ فارسیِ همان مرحله ذخیره می‌شود (نه timestamp)، تا در بایگانی

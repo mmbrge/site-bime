@@ -101,7 +101,7 @@ try {
                     ? 'حجم فایل از سقف آپلود هاست بیشتر است؛ فایل را با File Manager هاست در پوشه‌ی backup بگذارید تا در فهرست بیاید و از همان‌جا بازیابی کنید.'
                     : 'فایلی آپلود نشد.']);
             }
-            if (strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)) !== 'zip') bk_json(['ok' => false, 'error' => 'فقط فایل ZIP بکاپ پذیرفته می‌شود.']);
+            if (upload_ext($f['name']) !== 'zip') bk_json(['ok' => false, 'error' => 'فقط فایل ZIP بکاپ پذیرفته می‌شود.']);
             $dir = bk_prepare_root() . '/' . bk_today_folder();
             if (!is_dir($dir)) @mkdir($dir, 0775, true);
             $path = $dir . '/uploaded_' . date('Hi') . '_' . bin2hex(random_bytes(4)) . '.zip';

@@ -194,7 +194,7 @@ function life_inst_status(array $i, $today = null) {
 //  خواندنِ اکسل: همه‌ی شیت‌ها (شیتِ اقساط + شیتِ «شرایط جستجو» برای بازه‌ی سررسیدِ گزارش)
 // ---------------------------------------------------------------------
 function life_read_xlsx_all($path) {
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $ext = upload_ext($path);
     if ($ext === 'csv') {
         $rows = [];
         if (($h = fopen($path, 'r')) !== false) {

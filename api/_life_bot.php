@@ -92,7 +92,7 @@ function lbot_download($pdo, array $message, $destDir, $baseName) {
     elseif (!empty($message['photo'])) { $p = end($message['photo']); $fileId = $p['file_id']; $size = intval($p['file_size'] ?? 0); }
     if (!$fileId) return ['error' => 'فایلی دریافت نشد.'];
     if ($size > 20 * 1048576) return ['error' => 'حجمِ فایل بیشتر از ۲۰ مگابایت است.'];
-    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'jpg';
+    $ext = upload_ext($name) ?: 'jpg';
     if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true)) return ['error' => 'فقط عکس یا PDF پذیرفته می‌شود.'];
     $info = lbot_api($pdo, 'getFile', ['file_id' => $fileId]);
     if (empty($info['file_path'])) return ['error' => 'دریافتِ فایل از بله ممکن نشد؛ دوباره بفرستید.'];

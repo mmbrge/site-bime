@@ -1350,5 +1350,6 @@ window.addEventListener('load', () => {
     window.addEventListener('blur', () => setHover(false));
 })();
 </script>
+<script>window.PAGE_GUARD_DETECT = <?= (sec_settings($pdo)['sec_devtools_guard'] ?? '1') === '1' ? 'true' : 'false' ?>;</script><script src="../page-guard.js?v=1"></script>
 </body>
 </html>

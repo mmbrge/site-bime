@@ -600,7 +600,7 @@ function fin_norm_policy($s) {
 //  خروجی: آرایه‌ای از سطرها (هر سطر آرایه‌ای از مقادیر ستون‌ها)
 // =====================================================================
 function fin_read_spreadsheet($path) {
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $ext = upload_ext($path);
 
     if ($ext === 'csv') {
         $rows = [];
@@ -1179,7 +1179,7 @@ function fin_tpl_starter_docx($kind, $dest) {
 function fin_pdf_converter_available() {
     if (!function_exists('shell_exec')) return false;
     foreach (['soffice', 'libreoffice'] as $bin) { $w = @shell_exec("command -v $bin 2>/dev/null"); if ($w && trim($w)) return true; }
-    return file_exists('/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3') && file_exists('/home/besiteir/ocr-paddle/docx_to_pdf.py');
+    return false;
 }
 
 // تبدیل docx به pdf - چند روش به‌ترتیب اولویت
@@ -1195,16 +1195,6 @@ function fin_docx_to_pdf($docxPath, $folder, $destPdf, $siteRoot) {
                         . escapeshellarg($folder) . ' ' . escapeshellarg($docxPath) . ' 2>&1');
             if (file_exists($destPdf)) return ltrim(str_replace($siteRoot, '', $destPdf), '/');
         }
-    }
-
-    // روش ۲: پایتون با docx2pdf یا docx→pdf از طریق همان محیط مجازیِ OCR
-    $pythonPath = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    $converter  = '/home/besiteir/ocr-paddle/docx_to_pdf.py';
-    if (file_exists($pythonPath) && file_exists($converter)) {
-        @shell_exec('export PYTHONIOENCODING=utf8; ' . escapeshellarg($pythonPath) . ' '
-                    . escapeshellarg($converter) . ' ' . escapeshellarg($docxPath) . ' '
-                    . escapeshellarg($destPdf) . ' 2>&1');
-        if (file_exists($destPdf)) return ltrim(str_replace($siteRoot, '', $destPdf), '/');
     }
 
     return null;

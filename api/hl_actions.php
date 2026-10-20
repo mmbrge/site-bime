@@ -108,7 +108,7 @@ function hl_tmp_load($kind, $tok) {
 }
 function hl_send_file($abs, $name) {
     if (!$abs) { http_response_code(404); echo 'فایل پیدا نشد.'; exit; }
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     while (ob_get_level()) ob_end_clean();
     header('Content-Type: ' . (['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'application/octet-stream'));
     header('X-Content-Type-Options: nosniff');
@@ -631,7 +631,7 @@ case 'inbox_attach':
     $abs = hl_abs($x['file_path']);
     if (!$abs) throw new RuntimeException('فایلِ رسید پیدا نشد.');
     $base = 'رسید ' . hl_clean_name($c['company_name']) . ($py['period_j'] ? ' - ' . hl_period_fa($py['period_j']) : '') . ' - پرداخت ' . str_replace('/', '-', $py['pay_j']) . ' - ' . number_format(intval($py['amount'])) . ' ریال';
-    $dest = hl_unique_path(hl_contract_dir($c, 'رسیدهای دریافتی'), p2e_digits($base), strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'jpg');
+    $dest = hl_unique_path(hl_contract_dir($c, 'رسیدهای دریافتی'), p2e_digits($base), upload_ext($abs) ?: 'jpg');
     if (!@rename($abs, $dest)) throw new RuntimeException('انتقالِ فایل ناموفق بود.');
     $rel = hl_rel($dest);
     if (!$py['file_path']) $pdo->prepare("UPDATE hl_payments SET file_path = ?, inbox_id = ? WHERE id = ?")->execute([$rel, $x['id'], $py['id']]);

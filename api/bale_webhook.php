@@ -447,17 +447,11 @@ function handle_staff_group_message($pdo, $message, $chat_id, $chat_type, $chat_
                                       $incoming_message_id, $sender_user_id, $sender_name,
                                       $sender_username, $bot_token) {
 
+    // (پایتون کنار گذاشته شد) همان موتورِ PHP: معرفی‌نامه/بیمه‌نامه‌ی متنی؛ عکس و اسکن خوانده نمی‌شوند
     function runExtractionPipeline($absoluteFilePath) {
-        $python_env  = "/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3";
-        $script_path = "/home/besiteir/ocr-paddle/test_pipeline.py";
-        $command = "export PYTHONIOENCODING=utf8; " . escapeshellarg($python_env) . " " .
-                   escapeshellarg($script_path) . " " . escapeshellarg($absoluteFilePath) . " 2>&1";
-        $output = shell_exec($command);
-        if ($output !== null && preg_match('/\{.*\}/s', $output, $matches)) {
-            $decoded = json_decode($matches[0], true);
-            if (is_array($decoded)) return $decoded;
-        }
-        return ['ok' => false, 'error' => 'خروجی نامعتبر از پایپ‌لاین پایتون', 'raw' => $output];
+        $r = run_document_ocr_verbose($absoluteFilePath);
+        if (!empty($r['data'])) return ['ok' => true, 'extracted' => $r['data']];
+        return ['ok' => false, 'error' => $r['debug'] ?: 'خطای نامشخص پردازش'];
     }
 
     $file_id = null;

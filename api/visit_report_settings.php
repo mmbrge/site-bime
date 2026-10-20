@@ -30,8 +30,9 @@ function vrs_template_info($pdo, $cat, $siteRoot) {
             'updated_at' => $cat['layout_updated_at']];
 }
 function vrs_parser_info($cat, $siteRoot) {
-    $p = $cat['parser_path'] ? $siteRoot . '/' . ltrim($cat['parser_path'], '/') : null;
-    return ['exists' => $p && is_file($p), 'orig_name' => $cat['parser_orig_name'], 'path' => $cat['parser_path']];
+    $path = $cat['parser_path'] ? preg_replace('/\.py$/i', '.php', $cat['parser_path']) : null;
+    $p = $path ? $siteRoot . '/' . ltrim($path, '/') : null;
+    return ['exists' => $p && is_file($p), 'orig_name' => $cat['parser_orig_name'] ? preg_replace('/\.py$/i', '.php', $cat['parser_orig_name']) : null, 'path' => $path];
 }
 function vrs_cat_out($pdo, $c, $siteRoot) {
     $fields = vr_fields($pdo, $c['id']);
@@ -53,7 +54,7 @@ function vrs_audit($pdo, $user, $note) { vr_audit($pdo, $user['id'], 'VR_SETTING
 function vrs_upload($key, array $exts) {
     $f = $_FILES[$key] ?? null;
     if (!$f || $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) vr_fail('فایل دریافت نشد (شاید حجمش زیاد است).');
-    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    $ext = upload_ext($f['name']);
     if (!in_array($ext, $exts, true)) vr_fail('پسوندِ فایل باید ' . implode(' یا ', $exts) . ' باشد.');
     return $f + ['ext' => $ext];
 }
@@ -296,7 +297,7 @@ if ($a === 'set_layout_sample') {
 if ($a === 'set_layout_asset') {
     $c = vrs_cat($pdo, $_GET['id'] ?? 0);
     $abs = vr_asset_dir($c['id']) . '/' . basename((string)($_GET['file'] ?? ''));
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     if (!is_file($abs) || !in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'], true)) { http_response_code(404); exit; }
     header('Content-Type: ' . ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'bmp' => 'image/bmp', 'webp' => 'image/webp'][$ext]);
     header('Cache-Control: private, max-age=3600');
@@ -406,19 +407,7 @@ if ($a === 'set_layout_render') {
     $tmp = sys_get_temp_dir() . '/vr_edit_' . bin2hex(random_bytes(6));
     rpt_render_pdf($one, $assetDir, $values, $tmp . '.pdf', vr_render_opts($pdo, $c, $extra));
     $zoom = max(0.5, min(4, floatval($data['zoom'] ?? 2)));
-    $png = null;
-    if (function_exists('proc_open')) {
-        $py = vr_python_path($pdo);
-        $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => vr_home_dir($pdo), 'PYTHONWARNINGS' => 'ignore'];
-        $proc = @proc_open([$py, $siteRoot . '/report_assets/pdf_page_png.py', $tmp . '.pdf', '0', (string)$zoom, $tmp . '.png'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-        if (is_resource($proc)) {
-            $start = time();
-            while (($s = proc_get_status($proc)) && $s['running'] && time() - $start < 25) usleep(40000);
-            if (!empty($s['running'])) proc_terminate($proc, 9);
-            @fclose($pipes[1]); @fclose($pipes[2]); proc_close($proc);
-            if (is_file($tmp . '.png') && filesize($tmp . '.png') > 0) $png = base64_encode(file_get_contents($tmp . '.png'));
-        }
-    }
+    $png = null;   // تصویرِ صفحه را مرورگر (pdf.js) از خودِ PDF می‌کشد
     // اگر پایتون/PyMuPDF روی هاست نبود، خودِ PDF فرستاده می‌شود تا مرورگر (pdf.js) آن را بکشد
     $out = ['ok' => true, 'png' => $png, 'pdf' => $png ? null : base64_encode((string)@file_get_contents($tmp . '.pdf'))];
     @unlink($tmp . '.pdf'); @unlink($tmp . '.png');
@@ -440,26 +429,26 @@ if ($a === 'set_layout_adjust') {
     vr_out(['ok' => true, 'saved' => $n]);
 }
 
-// ---- الگوریتمِ استخراج (فایل‌های .py با همان نامِ اصلی، همه در یک پوشه) ----
+// ---- الگوریتمِ استخراج (فایل‌های .php در report_assets/parsers؛ هر فایل یک تابع برمی‌گرداند) ----
 if ($a === 'set_parser_upload') {
+    if (($user['role'] ?? '') !== 'ADMIN') vr_fail('فقط مدیر کل می‌تواند الگوریتمِ استخراج بارگذاری کند.');
     $c = vrs_cat($pdo, $data['id'] ?? 0);
-    $f = vrs_upload('file', ['py']);
+    $f = vrs_upload('file', ['php']);
     $name = basename($f['name']);
-    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*\.py$/', $name)) vr_fail('نامِ فایلِ پارسر فقط باید حروف و عدد لاتین و _ باشد (مثل template_car.py) چون پارسرها با همین نام همدیگر را صدا می‌زنند.');
-    if ($name === 'parser_runner.py') vr_fail('این نام رزرو شده است.');
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*\.php$/', $name)) vr_fail('نامِ فایلِ پارسر فقط باید حروف و عدد لاتین و _ باشد (مثل template_car.php).');
     $src = file_get_contents($f['tmp_name']);
-    if (strpos($src, 'def parse_pdf_fields') === false) vr_fail('در این فایل تابعِ parse_pdf_fields(raw_text) پیدا نشد.');
+    if (!preg_match('/return\s+function\s*\(/', $src)) vr_fail('فایلِ پارسر باید یک تابع برگرداند: return function ($raw_text, $checkboxes) { ... return [...]; };');
+    // فقط این دو include مجاز است: کتابخانه‌ی متنِ سایت و پارسرِ دیگری در همین پوشه (مثلِ template_truck که template_car را می‌خواند)
+    $srcChk = preg_replace(['/require_once\s+dirname\(__DIR__,\s*2\)\s*\.\s*\'\/api\/_policy_reader\.php\';/', '/\binclude\s+__DIR__\s*\.\s*\'\/[A-Za-z0-9_]+\.php\'\s*;/'], '', $src);
+    if (strpos($srcChk, '`') !== false || preg_match('/\b(include|require)(_once)?\b/i', $srcChk)
+        || preg_match('/\b(exec|shell_exec|system|passthru|proc_open|popen|eval|assert|create_function|call_user_func\w*|pcntl_\w+|curl_\w+|fsockopen|stream_socket_\w+|file_get_contents|file_put_contents|file|readfile|unlink|rename|mkdir|rmdir|copy|fopen|fwrite|ini_set|putenv|mail|header|setcookie|session_\w+)\s*\(/i', $srcChk))
+        vr_fail('در فایلِ پارسر فقط پردازشِ متن مجاز است (دستورهای فایل، شبکه و اجرای برنامه پذیرفته نمی‌شوند).');
+    try { token_get_all($src, TOKEN_PARSE); } catch (Throwable $e) { vr_fail('فایلِ PHP خطای نگارشی دارد: ' . $e->getMessage()); }
     $dir = $siteRoot . '/report_assets/parsers';
     @mkdir($dir, 0775, true);
     $abs = $dir . '/' . $name;
-    $tmpCheck = sys_get_temp_dir() . '/vr_chk_' . bin2hex(random_bytes(4)) . '.py';
-    copy($f['tmp_name'], $tmpCheck);
-    $chk = @shell_exec('HOME=' . escapeshellarg(vr_home_dir($pdo)) . ' ' . escapeshellarg(vr_python_path($pdo)) . ' -m py_compile ' . escapeshellarg($tmpCheck) . ' 2>&1');
-    @unlink($tmpCheck);
-    if (trim((string)$chk) !== '') vr_fail('فایلِ پایتون خطای نگارشی دارد:' . "\n" . mb_substr(trim($chk), -800));
-    $shared = [];
-    $st = $pdo->prepare("SELECT name FROM report_categories WHERE parser_path = ? AND id <> ?");
-    $st->execute(['report_assets/parsers/' . $name, $c['id']]);
+    $st = $pdo->prepare("SELECT name FROM report_categories WHERE (parser_path = ? OR parser_path = ?) AND id <> ?");
+    $st->execute(['report_assets/parsers/' . $name, 'report_assets/parsers/' . preg_replace('/\.php$/', '.py', $name), $c['id']]);
     $shared = $st->fetchAll(PDO::FETCH_COLUMN);
     if (is_file($abs)) @rename($abs, vr_old_name($abs));
     if (!move_uploaded_file($f['tmp_name'], $abs)) vr_fail('ذخیره‌ی فایل ممکن نشد.');
@@ -470,7 +459,7 @@ if ($a === 'set_parser_upload') {
 if ($a === 'set_parser_select') {
     // استفاده از یکی از فایل‌هایی که از قبل در پوشه‌ی پارسرها هست (یا هیچ‌کدام = فقط پارسرِ عمومی)
     $c = vrs_cat($pdo, $data['id'] ?? 0);
-    $name = basename((string)($data['name'] ?? ''));
+    $name = preg_replace('/\.py$/i', '.php', basename((string)($data['name'] ?? '')));
     if ($name !== '' && !is_file($siteRoot . '/report_assets/parsers/' . $name)) vr_fail('این فایل در پوشه‌ی پارسرها نیست.');
     $pdo->prepare("UPDATE report_categories SET parser_path = ?, parser_orig_name = ? WHERE id = ?")->execute([$name ? 'report_assets/parsers/' . $name : null, $name ?: null, $c['id']]);
     vrs_audit($pdo, $user, "الگوریتم استخراجِ «{$c['name']}»: " . ($name ?: 'فقط عمومی'));
@@ -478,12 +467,12 @@ if ($a === 'set_parser_select') {
 }
 if ($a === 'set_parser_files') {
     $files = [];
-    foreach (glob($siteRoot . '/report_assets/parsers/*.py') ?: [] as $p) if (strpos(basename($p), '(old') === false) $files[] = basename($p);
+    foreach (glob($siteRoot . '/report_assets/parsers/*.php') ?: [] as $p) if (strpos(basename($p), '(old') === false) $files[] = basename($p);
     vr_out(['ok' => true, 'files' => $files]);
 }
 if ($a === 'set_parser_download') {
     $c = vrs_cat($pdo, $_GET['id'] ?? 0);
-    $abs = $c['parser_path'] ? $siteRoot . '/' . ltrim($c['parser_path'], '/') : null;
+    $abs = $c['parser_path'] ? $siteRoot . '/' . ltrim(preg_replace('/\.py$/i', '.php', $c['parser_path']), '/') : null;
     vr_send_file($abs, basename((string)$abs));
 }
 if ($a === 'set_parser_test') {
@@ -491,7 +480,7 @@ if ($a === 'set_parser_test') {
     $f = vrs_upload('file', ['pdf']);
     $tmp = sys_get_temp_dir() . '/vr_test_' . bin2hex(random_bytes(6)) . '.pdf';
     move_uploaded_file($f['tmp_name'], $tmp);
-    $parser = $c['parser_path'] ? $siteRoot . '/' . ltrim($c['parser_path'], '/') : null;
+    $parser = $c['parser_path'] ? $siteRoot . '/' . ltrim(preg_replace('/\.py$/i', '.php', $c['parser_path']), '/') : null;
     $t0 = microtime(true);
     $res = vr_run_parser($pdo, $tmp, ($parser && is_file($parser)) ? $parser : null);
     @unlink($tmp);
@@ -500,19 +489,10 @@ if ($a === 'set_parser_test') {
     vr_out($res + ['ok' => false]);
 }
 if ($a === 'set_python_check') {
-    $py = vr_python_path($pdo);
-    $envPrefix = 'HOME=' . escapeshellarg(vr_home_dir($pdo)) . ' PYTHONWARNINGS=ignore PYTHONIOENCODING=utf8 ';
-    $out = @shell_exec($envPrefix . escapeshellarg($py) . ' -c ' . escapeshellarg('import sys, warnings; warnings.simplefilter("ignore"); print("Python " + sys.version.split()[0])
-for m, label in (("pymupdf", "PyMuPDF (لازم)"), ("pdfplumber", "pdfplumber (اختیاری)"), ("PyPDF2", "PyPDF2 (اختیاری)")):
-    try:
-        __import__(m); print(label + ": OK")
-    except Exception:
-        if m == "pymupdf":
-            try:
-                import fitz; print(label + ": OK"); continue
-            except Exception: pass
-        print(label + ": -")') . ' 2>&1');
-    vr_out(['ok' => $out !== null && strpos((string)$out, 'PyMuPDF (لازم): OK') !== false, 'output' => trim((string)$out), 'python' => $py]);
+    // (پایتون کنار گذاشته شد) بررسیِ موتورِ PHP برای خواندنِ PDF
+    require_once __DIR__ . '/_pdf_text.php';
+    $ok = class_exists('PdfDoc') && function_exists('gzuncompress') && function_exists('mb_substr');
+    vr_out(['ok' => $ok, 'output' => "موتورِ خواندنِ PDF: PHP " . PHP_VERSION . "\nzlib: " . (function_exists('gzuncompress') ? 'OK' : '-') . "\nmbstring: " . (function_exists('mb_substr') ? 'OK' : '-') . "\nopenssl (PDFِ رمزدار): " . (function_exists('openssl_decrypt') ? 'OK' : '-'), 'python' => '']);
 }
 
 // ---- فیلدها (جایگزینِ fields_config.xlsx) ----
@@ -660,9 +640,7 @@ if ($a === 'set_font_delete') {
 
 // ---- تنظیماتِ عمومی ----
 if ($a === 'set_options_save') {
-    $py = trim((string)($data['python_path'] ?? ''));
     $pwd = trim((string)($data['excel_password'] ?? ''));
-    if ($py !== '') vr_set_setting($pdo, 'report_python_path', $py);
     if ($pwd !== '') { vr_set_setting($pdo, 'report_excel_password', $pwd); vr_write_register($pdo, $siteRoot); }
     vrs_audit($pdo, $user, 'تنظیمات عمومی گزارش ذخیره شد');
     vr_out(['ok' => true]);

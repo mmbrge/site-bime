@@ -587,7 +587,7 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
 
     if ($docType === 'health_inspection') {
         if (!is_dir($healthDir)) @mkdir($healthDir, 0755, true);
-        if (is_file($absOld) && strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) === 'zip') {
+        if (is_file($absOld) && upload_ext($absOld) === 'zip') {
             // زیپِ بازدید داخل همان پوشه باز می‌شود (خودِ زیپ نگه داشته نمی‌شود)
             if (company_extract_zip_to_dir($absOld, $healthDir) !== false) {
                 @unlink($absOld);
@@ -598,7 +598,7 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
             $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
         } elseif (is_file($absOld)) {
             // یک عکس/فایل تکی از بازدید: داخل همان پوشه با نام استاندارد می‌نشیند
-            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'jpg';
+            $ext = upload_ext($absOld) ?: 'jpg';
             $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_inspection', $plateDisplay, $ext));
             if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
         } else {
@@ -608,13 +608,13 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
         // گزارش بازدید کنار عکس‌های بازدید، داخل همان پوشه‌ی «بازدید سلامت»
         if (!is_dir($healthDir)) @mkdir($healthDir, 0755, true);
         if (is_file($absOld)) {
-            $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext = upload_ext($absOld) ?: 'pdf';
             $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_report', $plateDisplay, $ext));
             if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
         }
     } elseif (is_file($absOld)) {
         // بقیه‌ی مدارک: مستقیم داخل پوشه‌ی خودِ پلاک، با نام «(نوع مدرک) پلاک»
-        $ext = strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) ?: 'pdf';
+        $ext = upload_ext($absOld) ?: 'pdf';
         $dest = unique_dest_path($plateFolder . '/' . company_doc_filename($docType ?: 'other', $plateDisplay, $ext));
         if (realpath($absOld) !== realpath($dest) && @rename($absOld, $dest)) {
             $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
@@ -1051,7 +1051,7 @@ function company_read_import_input($data, $file) {
 
     if (!empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
         if (($file['size'] ?? 0) > 5242880) return ['error' => 'حجم فایل بیشتر از ۵ مگابایت است.'];
-        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        $ext = upload_ext($file['name'] ?? '');
         if (in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
             // اکسل/CSV باید با پسوندِ درست روی دیسک باشد تا خواننده بتواند تشخیص دهد
             $tmp = sys_get_temp_dir() . '/' . uniqid('cimport_') . '.' . $ext;
@@ -1283,7 +1283,7 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     if (($fileArr['size'] ?? 0) > $maxBytes) {
         return ['ok' => false, 'error' => 'حجم فایل بیشتر از حد مجاز (۱۵ مگابایت) است.'];
     }
-    $ext = strtolower(pathinfo($fileArr['name'], PATHINFO_EXTENSION));
+    $ext = upload_ext($fileArr['name']);
     $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     if ($allowZip) $allowedExts[] = 'zip';
     if (!in_array($ext, $allowedExts, true)) {

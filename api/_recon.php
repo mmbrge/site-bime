@@ -255,7 +255,7 @@ function recon_store_src($siteRoot, $run, array $files, array $pv, $prefix) {
     $stored = [];
     $dir = recon_store_dir($siteRoot, $run);
     foreach ($files as $k => $f) {
-        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+        $ext = upload_ext($f['name']);
         $dst = $dir . '/' . $prefix . $k . '.' . $ext;
         if (!@copy($f['path'], $dst)) continue;
         $kind = 'policy';

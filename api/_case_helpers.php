@@ -169,37 +169,12 @@ function plate_core($plate) {
 // ---- معرفی‌نامه‌ی پرسنلی (api/py/intro_reader.py): خواندنِ PDFِ متنی بدونِ OCR ----
 // حروفِ نمایشی، کشیده‌ها (عــــلی) و «شاغل در این شرکت» (نامِ شرکت از امضای نامه) را درست می‌خواند.
 const INTRO_COMPANY_ALIASES = ['ویانا' => 'گروه ویانا'];   // باید با ALIASES در intro_reader.py یکی باشد
-function intro_python_path() { $l = intro_python_paths(); return $l[0]; }
-// پایتون‌های قابلِ امتحان: تنظیمِ «مسیر پایتون» (گزارش بازدید)، محیطِ موتورِ OCR، python3ِ سیستم
-function intro_python_paths() {
-    $list = [];
-    try {
-        if (!empty($GLOBALS['pdo'])) {
-            $v = trim((string)$GLOBALS['pdo']->query("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'")->fetchColumn());
-            if ($v !== '') $list[] = $v;
-        }
-    } catch (Throwable $e) {}
-    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    if (is_file($def)) $list[] = $def;
-    $list[] = 'python3';
-    return array_values(array_unique($list));
-}
-// خروجی: ['has_text' => bool, 'is_intro' => bool, 'score' => int, 'data' => [...]] یا null (پایتون/فایل در دسترس نبود)
-// اگر پایتونِ اول PyMuPDF نداشت، بعدی امتحان می‌شود (تا معرفی‌نامه بی‌دلیل به موتورِ OCR نرود)
+// خروجی: ['has_text' => bool, 'is_intro' => bool, 'score' => int, 'data' => [...]] یا null (فایل خوانده نشد) — با PHP (api/_intro_reader.php)
 function intro_read_pdf($absFilePath) {
-    if (strtolower(pathinfo($absFilePath, PATHINFO_EXTENSION)) !== 'pdf' || !is_file($absFilePath) || !function_exists('proc_open')) return null;
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    foreach (intro_python_paths() as $py) {
-        $proc = @proc_open([$py, __DIR__ . '/py/intro_reader.py', $absFilePath], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
-                           ['HOME' => $home ?: '/tmp', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'PYTHONIOENCODING' => 'utf8']);
-        if (!is_resource($proc)) continue;
-        $out = (string)stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
-        fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-        $j = preg_match('/\{.*\}/s', $out, $m) ? json_decode($m[0], true) : null;
-        if (is_array($j) && !empty($j['ok'])) return $j;
-    }
-    return null;
+    if (upload_ext($absFilePath) !== 'pdf' || !is_file($absFilePath)) return null;
+    require_once __DIR__ . '/_intro_reader.php';
+    $j = ir_read_pdf($absFilePath);
+    return !empty($j['ok']) ? $j : null;
 }
 // پاک‌سازیِ نام و شرکتِ معرفی‌نامه (برای خروجیِ موتورِ OCR هم): کشیده، نیم‌فاصله‌ی اضافه، «شرکت»ِ اول، نام‌های شناخته‌شده
 function intro_clean_fields(array $d) {
@@ -226,59 +201,32 @@ function queue_ensure_cols($pdo) {
     catch (Throwable $e) { error_log('[queue_ensure_cols] ' . $e->getMessage()); }
 }
 
+// شناساییِ یک مدرک (معرفی‌نامه یا بیمه‌نامه) از متنِ PDF با PHP — بدونِ پایتون و بدونِ OCR.
+// عکس و PDFِ اسکن‌شده خوانده نمی‌شوند (پردازشِ تصویر غیرفعال است) => data = null با توضیح، تا کارشناس دستی وارد کند.
+// خروجیِ data همان کلیدهای قبلی است: ins_company, ins_type, policy_num, insured_name, vin, plate, national_id, personnel_id, company_name, premium و ...
 function run_document_ocr_verbose($absFilePath) {
-    $pythonEnv = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    $scriptPath = '/home/besiteir/ocr-paddle/test_pipeline.py';
-
-    // معرفی‌نامه‌ی متنی: خواننده‌ی اختصاصی (دقیق‌تر و سریع‌تر از موتورِ OCR)
+    if (!file_exists($absFilePath)) return ['data' => null, 'debug' => "فایل ورودی پیدا نشد: {$absFilePath}"];
+    $ext = upload_ext($absFilePath);
+    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) return ['data' => null, 'debug' => 'فرمتِ فایل برای شناسایی مناسب نیست (فقط PDF/عکس).'];
+    if ($ext !== 'pdf') return ['data' => null, 'debug' => 'عکس با سایت خوانده نمی‌شود (پردازشِ تصویر غیرفعال است)؛ اطلاعات را دستی وارد کنید.', 'scan' => true];
+    // معرفی‌نامه‌ی متنی
     $ir = intro_read_pdf($absFilePath);
     if ($ir && !empty($ir['is_intro'])) return ['data' => intro_clean_fields($ir['data']), 'debug' => null];
-
-    if (!function_exists('shell_exec') || in_array('shell_exec', array_map('trim', explode(',', (string)ini_get('disable_functions'))), true)) {
-        return ['data' => null, 'debug' => 'تابع shell_exec روی این سرور غیرفعال است.'];
+    if ($ir && empty($ir['has_text'])) return ['data' => null, 'debug' => 'این PDF اسکن/عکس است و متن ندارد؛ با سایت خوانده نمی‌شود — اطلاعات را دستی وارد کنید.', 'scan' => true];
+    // بیمه‌نامه (همان قاعده‌های خواننده‌ی صدورِ گروهی، روی صفحه‌ی اول)
+    try {
+        require_once __DIR__ . '/_policy_reader.php';
+        $doc = PdfDoc::open($absFilePath);
+        $pt = new PdfText($doc);
+        $sp = pb_page_spans($pt, 0, $w, $h);
+        $text = $pt->text(0);
+        if (mb_strlen(trim(pb_norm($text))) < 30) return ['data' => null, 'debug' => 'این PDF متن ندارد (اسکن است)؛ اطلاعات را دستی وارد کنید.', 'scan' => true];
+        [$data, $missing] = pb_extract_policy($sp, $w, $h, $text);
+        if (($data['ins_type'] ?? '') === 'معرفی‌نامه') $data = intro_clean_fields($data);
+        return ['data' => $data, 'debug' => null, 'missing' => $missing];
+    } catch (Throwable $e) {
+        return ['data' => null, 'debug' => 'خواندنِ PDF ممکن نشد: ' . mb_substr($e->getMessage(), 0, 200)];
     }
-    if (!file_exists($pythonEnv)) return ['data' => null, 'debug' => "محیط پایتون پیدا نشد: {$pythonEnv}"];
-    if (!file_exists($scriptPath)) return ['data' => null, 'debug' => "اسکریپت OCR پیدا نشد: {$scriptPath}"];
-    if (!file_exists($absFilePath)) return ['data' => null, 'debug' => "فایل ورودی پیدا نشد: {$absFilePath}"];
-
-    // موتور (مثل ربات و صفحه‌ی تست OCR) فایل را از یک مسیرِ لاتین می‌خواند؛ مسیرهای فارسیِ بایگانی
-    // (مثل «موقت/...») را خوب باز نمی‌کند. پس همیشه یک کپیِ موقت با نامِ لاتین در queue/pending ساخته
-    // می‌شود. عکسِ WEBP هم به JPG تبدیل می‌شود (موتور فقط PDF/JPG/PNG می‌خواند).
-    $ext = strtolower(pathinfo($absFilePath, PATHINFO_EXTENSION));
-    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) return ['data' => null, 'debug' => 'فرمتِ فایل برای موتورِ تشخیص مناسب نیست (فقط PDF/عکس).'];
-    $stageDir = dirname(__DIR__) . '/queue/pending';
-    if (!is_dir($stageDir)) @mkdir($stageDir, 0777, true);
-    $stage = $stageDir . '/ocr_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . ($ext === 'webp' ? 'jpg' : ($ext === 'jpeg' ? 'jpg' : $ext));
-    $staged = false;
-    if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
-        $im = @imagecreatefromwebp($absFilePath);
-        if ($im) { $staged = @imagejpeg($im, $stage, 92); imagedestroy($im); }
-    } elseif ($ext !== 'webp') {
-        $staged = @copy($absFilePath, $stage);
-    }
-    if (!$staged) return ['data' => null, 'debug' => 'آماده‌سازیِ فایل برای موتورِ تشخیص ممکن نشد.'];
-
-    $command = "export PYTHONIOENCODING=utf8; " . escapeshellarg($pythonEnv) . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($stage) . " 2>&1";
-    $output = shell_exec($command);
-    @unlink($stage);
-    if ($output === null || trim($output) === '') {
-        return ['data' => null, 'debug' => 'اسکریپت پایتون هیچ خروجی‌ای برنگرداند.'];
-    }
-    if (!preg_match('/\{.*\}/s', $output, $matches)) {
-        return ['data' => null, 'debug' => 'خروجی اسکریپت JSON نبود: ' . mb_substr(trim($output), 0, 300)];
-    }
-    $result = json_decode($matches[0], true);
-    if (!$result) return ['data' => null, 'debug' => 'خروجی JSON قابل تجزیه نبود.'];
-    if (empty($result['ok'])) {
-        return ['data' => null, 'debug' => 'اسکریپت خطا داد: ' . ($result['error'] ?? 'نامشخص')];
-    }
-    $extracted = $result['extracted'] ?? null;
-    // اگر خودِ اسکریپت گفته نتوانسته استخراج کند (PDF اسکن‌شده/فرمت نامعتبر)، آن را شکست حساب می‌کنیم
-    if (is_array($extracted) && isset($extracted['error'])) {
-        return ['data' => null, 'debug' => $extracted['error']];
-    }
-    if (is_array($extracted) && ($extracted['ins_type'] ?? '') === 'معرفی‌نامه') $extracted = intro_clean_fields($extracted);
-    return ['data' => $extracted, 'debug' => null];
 }
 
 // نسخه‌ی ساده برای سازگاری با فراخوانی‌های قبلی
@@ -647,7 +595,7 @@ function compress_image_if_needed($absolutePath, $maxBytes = 1048576, $maxDim = 
     if (!function_exists('imagecreatefromjpeg') || !file_exists($absolutePath)) return;
     if (filesize($absolutePath) <= $maxBytes) return;
 
-    $ext = strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION));
+    $ext = upload_ext($absolutePath);
     if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) return; // مدارک PDF و غیره دست‌نخورده می‌مانند
 
     try {
@@ -1850,7 +1798,7 @@ function admin_store_case_doc($pdo, $siteRoot, $caseId, $docKey, $docLabel, $fil
     if (empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
         return ['ok' => false, 'error' => 'فایلِ «' . $docLabel . '» دریافت نشد (شاید حجمش زیاد است).'];
     }
-    return admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel, $file['tmp_name'], strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'jpg', $userId, true);
+    return admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel, $file['tmp_name'], upload_ext($file['name']) ?: 'jpg', $userId, true);
 }
 
 // همان، برای فایلی که از قبل روی سرور است (مثلاً یک صفحه‌ی جداشده از PDFِ چند مدرکی — api/_pdf_split.php)

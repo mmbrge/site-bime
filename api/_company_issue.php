@@ -105,16 +105,6 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
 // ---------------------------------------------------------------------
 //  صدورِ گروهی
 // ---------------------------------------------------------------------
-function cbundle_python($pdo) {
-    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    try {
-        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'");
-        $st->execute();
-        $v = trim((string)$st->fetchColumn());
-        if ($v !== '') return $v;
-    } catch (Throwable $e) {}
-    return is_file($def) ? $def : 'python3';
-}
 function cbundle_root() {
     $d = dirname(__DIR__) . '/tmp_ocr/bundles';
     if (!is_dir($d)) @mkdir($d, 0777, true);
@@ -128,30 +118,11 @@ function cbundle_rrmdir($dir) {
     foreach ((array)scandir($dir) as $f) { if ($f === '.' || $f === '..') continue; $p = $dir . '/' . $f; is_dir($p) ? cbundle_rrmdir($p) : @unlink($p); }
     @rmdir($dir);
 }
+// خواندن و جدا کردنِ فایلِ چند بیمه‌نامه‌ای با PHP (api/_policy_reader.php؛ قبلاً api/py/policy_bundle.py)
 function cbundle_run($pdo, $pdf, $outDir) {
-    $py = cbundle_python($pdo);
-    $script = __DIR__ . '/py/policy_bundle.py';
-    if (!function_exists('proc_open')) return ['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست (proc_open غیرفعال است).'];
-    $home = getenv('HOME');
-    if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-    $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore'];
-    $proc = @proc_open([$py, $script, $pdf, $outDir], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-    if (!is_resource($proc)) return ['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.'];
-    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-    $out = ''; $err = ''; $start = time();
-    while (true) {
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        $s = proc_get_status($proc);
-        if (!$s['running']) break;
-        if (time() - $start > 420) { proc_terminate($proc, 9); return ['ok' => false, 'error' => 'پردازشِ فایل بیش از حد طول کشید.']; }
-        usleep(80000);
-    }
-    $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-    $line = trim((string)substr($out, strrpos("\n" . trim($out), "\n")));
-    $j = json_decode($line, true);
-    if (!is_array($j)) return ['ok' => false, 'error' => 'خروجیِ پردازشگرِ فایل خوانده نشد.', 'debug' => mb_substr(trim($err ?: $out), -800)];
-    return $j;
+    require_once __DIR__ . '/_policy_reader.php';
+    try { return pb_bundle($pdf, $outDir); }
+    catch (Throwable $e) { error_log('[cbundle_run] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خطای پیش‌بینی‌نشده در پردازشِ فایل.', 'debug' => mb_substr($e->getMessage(), 0, 300)]; }
 }
 function cbundle_pol_norm($v) { return preg_replace('/[^0-9A-Za-z]/', '', p2e_digits((string)$v)); }
 function cbundle_norm_vin($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); }
@@ -363,7 +334,7 @@ function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, 
 // خواندنِ یک فایلِ بیمه‌نامه (تکی) با همان الگوریتمِ صدورِ گروهی: همه‌ی فیلدها + صفحه‌های بیمه‌نامه جدا از فیش‌های اقساط.
 // خروجی: ['data' => [...], 'single' => ['dir', 'pol', 'receipts', 'statement', 'missing']] یا null (فایلِ اسکن‌شده/خطا)
 function policy_layout_extract($pdo, $pdfPath) {
-    if (strtolower(pathinfo($pdfPath, PATHINFO_EXTENSION)) !== 'pdf' || !is_file($pdfPath)) return null;
+    if (upload_ext($pdfPath) !== 'pdf' || !is_file($pdfPath)) return null;
     $dir = dirname(__DIR__) . '/tmp_ocr/single_' . bin2hex(random_bytes(6));
     @mkdir($dir, 0777, true);
     $res = cbundle_run($pdo, $pdfPath, $dir);

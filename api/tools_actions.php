@@ -53,17 +53,6 @@ function tl_dir() {
     foreach ((array)glob($d . '/*') as $f) if (@filemtime($f) < time() - 86400) { if (is_dir($f)) { array_map('unlink', (array)glob($f . '/*')); @rmdir($f); } else @unlink($f); }
     return $d;
 }
-function tl_python($pdo) {
-    $def = '/home/besiteir/virtualenv/ocr-paddle/3.11/bin/python3';
-    try {
-        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'report_python_path'");
-        $st->execute();
-        $v = trim((string)$st->fetchColumn());
-        if ($v !== '') return $v;
-    } catch (Throwable $e) {}
-    return is_file($def) ? $def : 'python3';
-}
-
 try {
     if ($action === 'boot') {
         tlo(['ok' => true, 'enabled' => !empty($F['tools']), 'tools' => $tools, 'settings' => tl_settings($pdo), 'is_admin' => $isAdmin, 'kind' => $AT]);
@@ -138,7 +127,6 @@ try {
         if ($op === 'merge' && count($ids) < 2) tlo(['ok' => false, 'error' => 'برای ادغام دست‌کم دو فایل لازم است.']);
         if ($op !== 'merge') $ids = [$ids[0]];
         if (count($ids) > 40) tlo(['ok' => false, 'error' => 'حداکثر ۴۰ فایل.']);
-        if (!function_exists('proc_open')) tlo(['ok' => false, 'error' => 'اجرای پایتون روی این سرور مجاز نیست (proc_open غیرفعال است).']);
         $dir = tl_dir();
         $job = $dir . '/job_' . $AT . $AID . '_' . bin2hex(random_bytes(6));
         @mkdir($job, 0777, true);
@@ -152,27 +140,10 @@ try {
         $params = ['base' => trim(mb_substr(preg_replace('/\.pdf$/i', '', (string)($data['base'] ?? 'خروجی')), 0, 80)) ?: 'خروجی',
                    'pages' => mb_substr((string)($data['pages'] ?? ''), 0, 200), 'quality' => intval($data['quality'] ?? 60), 'dpi' => intval($data['dpi'] ?? 0),
                    'format' => ($data['format'] ?? '') === 'png' ? 'png' : 'jpg', 'angle' => intval($data['angle'] ?? 90)];
-        file_put_contents($job . '/params.json', json_encode($params, JSON_UNESCAPED_UNICODE));
-        @set_time_limit(400);
-        $home = getenv('HOME');
-        if (!$home && preg_match('#^(/home\d*/[^/]+)/#', __DIR__ . '/', $m)) $home = $m[1];
-        $env = ['PYTHONIOENCODING' => 'utf8', 'PATH' => getenv('PATH') ?: '/usr/bin:/bin', 'HOME' => $home ?: sys_get_temp_dir(), 'PYTHONWARNINGS' => 'ignore'];
-        $proc = @proc_open(array_merge([tl_python($pdo), __DIR__ . '/py/pdf_tools.py', $op, $job, $job . '/params.json'], $files), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
-        if (!is_resource($proc)) tlo(['ok' => false, 'error' => 'اجرای پایتون ممکن نشد.']);
-        stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false);
-        $out = ''; $err = ''; $t0 = time();
-        while (true) {
-            $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-            $s = proc_get_status($proc);
-            if (!$s['running']) break;
-            if (time() - $t0 > 360) { proc_terminate($proc, 9); tlo(['ok' => false, 'error' => 'پردازش بیش از حد طول کشید.']); }
-            usleep(80000);
-        }
-        $out .= stream_get_contents($pipes[1]); $err .= stream_get_contents($pipes[2]);
-        fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
+        // پردازش با موتورِ PHP (api/_pdf_tools.php)؛ عکسِ صفحه‌ها (toimg) در مرورگر ساخته می‌شود
+        require_once __DIR__ . '/_pdf_tools.php';
+        $j = pdftool_run($op, $job, $params, $files);
         foreach ($files as $f) @unlink($f);
-        $j = json_decode(trim((string)substr($out, strrpos("\n" . trim($out), "\n"))), true);
-        if (!is_array($j)) { error_log('[tools pdf] ' . mb_substr($err ?: $out, -600)); tlo(['ok' => false, 'error' => 'خروجیِ پردازشگرِ PDF خوانده نشد.']); }
         if (empty($j['ok'])) { if (!empty($j['debug'])) error_log('[tools pdf] ' . $j['debug']); tlo(['ok' => false, 'error' => $j['error'] ?? 'خطا']); }
         $token = basename($job) . '__' . basename((string)$j['file']);
         file_put_contents($job . '/name.txt', (string)$j['name']);

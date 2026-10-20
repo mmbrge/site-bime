@@ -887,7 +887,7 @@ try {
         $st->execute([$caseId]);
         $case = $st->fetch();
         if (!$case) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
-        if (strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION)) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ PDFِ پیشنهاد یا پیش‌نویس (خروجیِ سایتِ بیمه‌گر) را بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (upload_ext($_FILES['file']['name']) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایلِ PDFِ پیشنهاد یا پیش‌نویس (خروجیِ سایتِ بیمه‌گر) را بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
         $siteRoot = dirname(__DIR__);
         $tmpDir = $siteRoot . '/tmp_ocr';
         if (!is_dir($tmpDir)) @mkdir($tmpDir, 0777, true);

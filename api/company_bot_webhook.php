@@ -168,7 +168,7 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
     }
     if (!$fileId) return ['ok' => false, 'error' => 'فایلی دریافت نشد.'];
     if ($size > 20 * 1024 * 1024) return ['ok' => false, 'error' => 'حجم فایل بیشتر از ۲۰ مگابایت است.'];
-    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'jpg';
+    $ext = upload_ext($name) ?: 'jpg';
     $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']; if ($allowZip) $allowed[] = 'zip';
     if (!in_array($ext, $allowed, true)) return ['ok' => false, 'error' => 'فقط فایل PDF یا عکس' . ($allowZip ? ' یا زیپ' : '') . ' پذیرفته می‌شود.'];
     $info = cbot_api($pdo, 'getFile', ['file_id' => $fileId]);
@@ -185,7 +185,7 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
     require_once __DIR__ . '/_heic.php';
     $dest = heic_fix_saved_file($GLOBALS['pdo'] ?? null, $dest);   // عکسِ HEIC (آیفون) => PNG
     if (preg_match('/\.png$/i', $dest) && preg_match('/\.(heic|heif)$/i', $name)) $name = preg_replace('/\.(heic|heif)$/i', '.png', $name);
-    if (in_array(strtolower(pathinfo($dest, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($dest);
+    if (in_array(upload_ext($dest), ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($dest);
     return ['ok' => true, 'path' => $dest, 'orig_name' => $name];
 }
 
@@ -309,7 +309,7 @@ function send_policy_file($chat, $p) {
     global $pdo;
     $abs = dirname(__DIR__) . '/' . $p['issued_file_path'];
     if (!is_file($abs)) return false;
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+    $ext = upload_ext($abs) ?: 'pdf';
     $name = sanitize_folder_name(name_join([insurance_type_fa($p['insurance_type']), plate_for_filename(company_row_label($p)),
             policy_number_for_filename($p['policy_number'])])) . '.' . $ext;
     return (bool)cbot_send_file($pdo, $chat, $abs, 'بیمه‌نامه‌ی ' . insurance_type_fa($p['insurance_type']) . ' - ' . fa(company_row_label($p)), $name);
@@ -425,7 +425,7 @@ function co_store_doc($chat, $acc, $t, $message) {
                    $isLetter ? 'letter' : ($isMixed ? null : ($t['doc_type'] ?? null)), $isLetter ? 'ASSIGNED' : 'UNASSIGNED']);
     $docId = $pdo->lastInsertId();
     if ($isLetter) {
-        $placed = company_place_letter($pdo, $siteRoot, $req['id'], $saved['path'], strtolower(pathinfo($saved['path'], PATHINFO_EXTENSION)) ?: 'pdf');
+        $placed = company_place_letter($pdo, $siteRoot, $req['id'], $saved['path'], upload_ext($saved['path']) ?: 'pdf');
         if ($placed) { $rel = $placed; $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([$rel, $docId]); }
         $pdo->prepare("UPDATE company_requests SET letter_file_path = ? WHERE id = ?")->execute([$rel, $req['id']]);
     }

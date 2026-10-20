@@ -227,7 +227,7 @@ try {
         if (substr($en, -1) === '/' || strpos($en, '__MACOSX') !== false) return;
         $base = basename($en);
         if ($base === '' || $base[0] === '.') return;
-        $e2 = strtolower(pathinfo($base, PATHINFO_EXTENSION));
+        $e2 = upload_ext($base);
         if (!isset(CF_AUDIO[$e2])) { if (!in_array($e2, ['jpg', 'jpeg', 'png', 'txt', 'nfo', 'url', 'm3u', 'db', 'ini', 'lrc'], true)) $res['skipped'][] = '«' . $base . '» فایلِ صوتی نیست.'; return; }
         $job['audio_done'] = intval($job['audio_done'] ?? 0) + 1;
         if ($stt['size'] > $trackMax) { $res['errors'][] = '«' . $base . '» بیشتر از ' . cf_max_mb_fa($trackMax) . ' مگابایت است.'; return; }
@@ -254,7 +254,7 @@ try {
         $upCanTarget($target);
         $uid = $upUid();
         $name = basename(str_replace('\\', '/', (string)($data['name'] ?? '')));
-        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $ext = upload_ext($name);
         $isZip = $ext === 'zip';
         if ($isZip && !$isAdmin) cfo(['ok' => false, 'error' => 'آپلودِ زیپ فقط برای مدیر کل است؛ آهنگ‌ها را تکی انتخاب کنید.']);
         if (!$isZip && !isset(CF_AUDIO[$ext])) cfo(['ok' => false, 'error' => 'فقط فایلِ صوتی (MP3، M4A، OGG، WAV، FLAC…) ' . ($isAdmin ? 'یا ZIP ' : '') . 'قبول می‌شود.']);
@@ -297,7 +297,7 @@ try {
         $audio = 0;
         for ($i = 0; $i < $z->numFiles; $i++) {
             $nm = (string)$z->getNameIndex($i);
-            if (substr($nm, -1) !== '/' && strpos($nm, '__MACOSX') === false && isset(CF_AUDIO[strtolower(pathinfo($nm, PATHINFO_EXTENSION))])) $audio++;
+            if (substr($nm, -1) !== '/' && strpos($nm, '__MACOSX') === false && isset(CF_AUDIO[upload_ext($nm)])) $audio++;
         }
         $n = min($z->numFiles, 3000);
         $z->close();

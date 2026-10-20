@@ -84,13 +84,13 @@ function life_upload($key, array $exts, $maxMb = 20) {
     $f = $_FILES[$key];
     if ($f['error'] !== UPLOAD_ERR_OK) return ['error' => 'بارگذاری ناقص ماند؛ دوباره امتحان کنید.'];
     if ($f['size'] > $maxMb * 1048576) return ['error' => 'حجمِ فایل بیش از ' . life_fa($maxMb) . ' مگابایت است.'];
-    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    $ext = upload_ext($f['name']);
     if (!in_array($ext, $exts, true)) return ['error' => 'نوعِ فایل مجاز نیست (' . implode('، ', $exts) . ').'];
     return ['tmp' => $f['tmp_name'], 'name' => $f['name'], 'ext' => $ext];
 }
 const LIFE_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'gif', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'txt'];
 function life_send_file($abs, $name = null, $inline = false) {
-    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $ext = upload_ext($abs);
     $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'txt' => 'text/plain; charset=utf-8',
               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'zip' => 'application/zip'];
     $name = $name ?: basename($abs);

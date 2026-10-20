@@ -258,7 +258,7 @@ case 'level_image':
     if (!$l) $fail('سطح پیدا نشد.');
     if (!empty($data['remove'])) { if ($l['image_path']) @unlink(dirname(__DIR__) . '/' . $l['image_path']); $pdo->prepare("UPDATE mk_levels SET image_path = NULL WHERE id = ?")->execute([$id]); $out(['ok' => true]); }
     if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) $fail('تصویری انتخاب نشده است.');
-    $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+    $ext = upload_ext($_FILES['file']['name']);
     if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true) || $_FILES['file']['size'] > 3 * 1048576 || !@getimagesize($_FILES['file']['tmp_name'])) $fail('فقط تصویرِ PNG/JPG/WEBP تا ۳ مگابایت.');
     $dir = dirname(__DIR__) . '/uploads/mk_levels';
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
