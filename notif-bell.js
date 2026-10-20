@@ -123,8 +123,17 @@
         const willOpen = open === undefined ? !root.classList.contains('open') : open;
         root.classList.toggle('open', willOpen);
         btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-        if (willOpen) render(); // زمان‌های «... دقیقه پیش» تازه شوند
+        if (willOpen) { render(); place(); } // زمان‌های «... دقیقه پیش» تازه شوند
     }
+    // پنل نسبت به صفحه جا می‌گیرد (fixed)، تا سربرگی که overflow:hidden دارد (مثلِ پنلِ شرکت‌ها) آن را نبُرد یا زیرِ بقیه‌ی صفحه نماند
+    function place() {
+        if (!panel || window.innerWidth <= 640) { if (panel) panel.style.cssText = ''; return; }
+        const r = btn.getBoundingClientRect(), w = Math.min(340, window.innerWidth - 32);
+        const left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16));
+        panel.style.cssText = `position:fixed;top:${Math.round(r.bottom + 10)}px;left:${Math.round(left)}px;width:${w}px;z-index:2147480000`;
+    }
+    window.addEventListener('resize', () => { if (root && root.classList.contains('open')) place(); });
+    window.addEventListener('scroll', () => { if (root && root.classList.contains('open')) place(); }, true);
 
     function init(opts) {
         storageKey = opts.storageKey || 'notif:default';

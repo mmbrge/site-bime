@@ -3730,6 +3730,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </select>
                             <label>اگر مالکِ سند/فاکتورِ خودرو کسِ دیگری بود</label>
                         </div>
+                        <div class="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1.5">
+                            <p class="text-[11px] font-black text-slate-600"><i class="fas fa-cloud-arrow-up ml-1 text-blue-500"></i>بارگذاریِ مدارک در پنلِ این شرکت</p>
+                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-general" class="mt-0.5 accent-blue-600" checked>
+                                <span>می‌توانند «مدارکِ کلی» بفرستند (چند فایل، زیپ، پوشه، بدونِ ردیفِ مشخص)<small class="block text-slate-400 font-normal">خاموش = فقط بعد از اینکه ردیف‌ها را ساختید، مدارکِ هر خودرو را در چک‌لیستِ همان خودرو بارگذاری می‌کنند</small></span></label>
+                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-custom" class="mt-0.5 accent-blue-600" checked>
+                                <span>می‌توانند برای هر خودرو «مدرکِ دیگر» با نامِ دلخواه (جز مدارکِ پیش‌فرض) اضافه کنند</span></label>
+                        </div>
                     </div>
                     <p id="cm-contract-hint" class="text-[10.5px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 leading-6">نقد/اقساط، تعداد قسط و سررسیدِ اول از قراردادِ انتخاب‌شده می‌آید.</p>
                     <p class="text-[10.5px] text-slate-400 mt-1">قراردادها را از <a href="#" onclick="switchTab('fin-contracts');return false" class="text-indigo-600 font-bold">مالی ← قراردادهای پرداخت</a> تعریف کنید. برای هر بیمه‌نامه هم در پاپ‌آپِ صدور می‌شود روشِ دیگری گذاشت.</p>
@@ -4454,7 +4461,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
-    <script src="notif-bell.js?v=2"></script>
+    <script src="notif-bell.js?v=3"></script>
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=3"></script>
@@ -9874,6 +9881,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             cmLoadContracts('');
             document.getElementById('cm-allowed-insurers').value = 'BOTH';
             document.getElementById('cm-other-owner').value = '';
+            document.getElementById('cm-portal-general').checked = true;
+            document.getElementById('cm-portal-custom').checked = true;
         }
 
         // قراردادهای پرداخت برای فرمِ شرکت
@@ -9912,6 +9921,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             cmLoadContracts(c.contract_id || '');
             document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
             document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
+            document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
+            document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
 
             const groupSel = document.getElementById('cm-group-select');
             if (c.bale_group_chat_id && [...groupSel.options].some(o => o.value == c.bale_group_chat_id)) {
@@ -9936,6 +9947,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 contract_id: document.getElementById('cm-contract').value,
                 allowed_insurers: document.getElementById('cm-allowed-insurers').value,
                 other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
+                portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
+                portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),

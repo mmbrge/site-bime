@@ -53,7 +53,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="../notif-bell.js?v=2"></script>
+<script src="../notif-bell.js?v=3"></script>
 <script src="../party-ui.js?v=2"></script>
 <script src="../upload-kit.js?v=1"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
@@ -345,7 +345,8 @@ if (!$companies) {
             </button>
         </div>
         <div id="request-detail-body"></div>
-        <div class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
+        <div id="du-off-note" class="hidden bg-amber-50 border border-amber-100 rounded-2xl mt-4 p-4 text-xs font-bold text-amber-800"><i class="fas fa-circle-info ml-1"></i>مدارکِ هر خودرو را از چک‌لیستِ همان خودرو (بالا، در ردیف‌ها) بارگذاری کنید؛ ردیف‌ها را کارشناسِ «بیمه با ما» می‌سازد.</div>
+        <div id="du-box" class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
             <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5 mb-1"><i class="fas fa-cloud-arrow-up text-blue-400"></i>افزودن مدارک جدید به این درخواست</label>
             <p class="text-[11px] text-slate-400 mb-3">چند فایل، فایلِ زیپ یا یک پوشه را انتخاب کنید: زیپ و پوشه کامل باز می‌شوند، PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا و همه از ۱ شماره‌گذاری می‌شوند و برای بررسی فرستاده می‌شوند. اگر نوعِ فایلی را می‌دانید انتخاب کنید؛ وگرنه «سایر مدارک» بماند.</p>
             <div class="grid grid-cols-2 gap-2 mb-2">
@@ -1079,6 +1080,7 @@ async function openRequestDetail(id) {
         ${docsHtml}
     `;
     window.portalPartyDefault = r.party_default || null;
+    { const uo = data.upload_opts || {general: true}; document.getElementById('du-box').classList.toggle('hidden', !uo.general); document.getElementById('du-off-note').classList.toggle('hidden', !!uo.general); }
     document.getElementById('doc-upload-input').value = '';
     duFiles = []; renderDocUploadRows();
     openModal('request-detail-modal');

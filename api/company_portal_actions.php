@@ -163,6 +163,7 @@ try {
     // ---- جزئیات یک درخواست + مدارک و پلاک‌های آن (فقط اگر متعلق به یکی از شرکت‌های خودش باشد) ----
     if ($action === 'request_detail') {
         $requestId = intval($data['request_id'] ?? 0);
+        companies_extra_ensure($pdo);
         $placeholders = implode(',', array_fill(0, count($allowedCompanyIds), '?'));
         $stmt = $pdo->prepare("SELECT * FROM company_requests WHERE id = ? AND company_id IN ($placeholders)");
         $stmt->execute(array_merge([$requestId], $allowedCompanyIds));
@@ -235,7 +236,7 @@ try {
                 ));
             }
             unset($item);
-            $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
+            if (portal_company_opts($pdo, $request['company_id'])['custom']) $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
             $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
             // مالک / بیمه‌گذار / ذینفع (شرکت هم می‌تواند برای هر ردیف یا همه‌ی ردیف‌ها تعیین کند)
@@ -258,7 +259,7 @@ try {
 
         $request['party_default'] = ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)];
         unset($request['party_json']);
-        echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
+        echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates, 'upload_opts' => portal_company_opts($pdo, $request['company_id']),
                           'counts' => $counts, 'doc_types' => company_doc_types(), 'party_modes' => PARTY_MODES,
                           'request_kind' => $reqKind], JSON_UNESCAPED_UNICODE);
         exit;
@@ -295,6 +296,10 @@ try {
             ->execute([$row['company_id'], $row['request_id'], $plateId, $session['company_user_id'], $relPath, $saved['orig_name'], $docType]);
         $docId = $pdo->lastInsertId();
         $docLabel = $docType === 'other' ? company_doc_label_clean($_POST['doc_label'] ?? '') : '';
+        if ($docLabel !== '' && !portal_company_opts($pdo, $row['company_id'])['custom']) {
+            $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$docId]); @unlink($siteRoot . '/' . $relPath);
+            echo json_encode(['ok' => false, 'error' => 'افزودنِ «مدرکِ دیگر» با نامِ دلخواه برای این شرکت فعال نیست.'], JSON_UNESCAPED_UNICODE); exit;
+        }
         if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
@@ -683,6 +688,10 @@ try {
 
         $relPath = ltrim(str_replace($siteRoot, '', $saved['path']), '/');
         $suggestedType = trim($data['doc_type'] ?? '') ?: null;
+        if ($suggestedType !== 'letter' && !portal_company_opts($pdo, $companyId)['general']) {
+            @unlink($saved['path']);
+            echo json_encode(['ok' => false, 'error' => 'برای این شرکت، مدارک فقط از چک‌لیستِ هر خودرو (بعد از ساختِ ردیف‌ها) بارگذاری می‌شود.'], JSON_UNESCAPED_UNICODE); exit;
+        }
         if ($suggestedType === 'mixed') $suggestedType = null;   // «چند مدرک در یک PDF»: نوعِ هر صفحه را کارشناس تعیین می‌کند
         $p1 = trim($data['plate_p1'] ?? '') ?: null; $p2 = trim($data['plate_p2'] ?? '') ?: null;
         $letter = trim($data['plate_letter'] ?? '') ?: null; $p4 = trim($data['plate_p4'] ?? '') ?: null;
@@ -822,4 +831,19 @@ try {
 } catch (Throwable $e) {
     error_log('[company_portal_actions] ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
+}
+
+// پنلِ شرکت: «مدارکِ کلی» و «مدرکِ دیگر با نامِ دلخواه» برای این شرکت مجاز است؟ (تنظیماتِ شرکت در پنلِ ما؛ پیش‌فرض هر دو بله)
+function portal_company_opts($pdo, $companyId) {
+    static $c = [];
+    $companyId = intval($companyId);
+    if (isset($c[$companyId])) return $c[$companyId];
+    $o = ['general' => true, 'custom' => true];
+    try {
+        companies_extra_ensure($pdo);
+        $st = $pdo->prepare("SELECT portal_general_docs, portal_custom_docs FROM companies WHERE id = ?");
+        $st->execute([$companyId]);
+        if ($r = $st->fetch()) $o = ['general' => (int)$r['portal_general_docs'] !== 0, 'custom' => (int)$r['portal_custom_docs'] !== 0];
+    } catch (Throwable $e) {}
+    return $c[$companyId] = $o;
 }

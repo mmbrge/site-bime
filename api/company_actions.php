@@ -1168,8 +1168,11 @@ try {
         if (!empty($legal['national_id']) && strlen($legal['national_id']) !== 11) { echo json_encode(['ok' => false, 'error' => 'شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد.']); exit; }
         if (array_key_exists('legal_active', $data)) $legal['legal_active'] = $data['legal_active'] === '' || $data['legal_active'] === null ? null : (int)!empty($data['legal_active']);
         if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
-        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address, $legal) {
+        $portalOpts = [];
+        foreach (['portal_general_docs', 'portal_custom_docs'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
+        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address, $legal, $portalOpts) {
             if ($ownerGiven) $pdo->prepare("UPDATE companies SET other_owner_mode = ? WHERE id = ?")->execute([$otherOwner, $cid]);
+            foreach ($portalOpts as $k => $v) $pdo->prepare("UPDATE companies SET $k = ? WHERE id = ?")->execute([$v, $cid]);
             if ($legal) $pdo->prepare("UPDATE companies SET " . implode(', ', array_map(fn($k) => "$k = ?", array_keys($legal))) . " WHERE id = ?")->execute(array_merge(array_values($legal), [$cid]));
             if ($economicCode && $phone && $address) $pdo->prepare("UPDATE companies SET auto_created = NULL WHERE id = ?")->execute([$cid]);   // تکمیل شد
         };
