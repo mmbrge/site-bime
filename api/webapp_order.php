@@ -48,6 +48,23 @@ function normalize_jalali_date($str) {
     return null;
 }
 
+// استعلامات در مینی‌اپ (پنل ← استعلامات ← تنظیمات)
+function order_inq_cfg($pdo) {
+    require_once __DIR__ . '/_inquiry.php';
+    $on = inq_get_setting($pdo, 'inq_enabled') === '1';
+    $postal = $on && inq_get_setting($pdo, 'inq_miniapp_postal') === '1';
+    return ['person' => $on && inq_get_setting($pdo, 'inq_miniapp_person') === '1', 'postal' => $postal, 'required' => $postal && inq_get_setting($pdo, 'inq_postal_required') === '1'];
+}
+// این کد پستی اخیراً (اعتبارِ نتیجه در تنظیمات) با موفقیت استعلام شده؟
+function order_postal_verified($pdo, $postal) {
+    require_once __DIR__ . '/_inquiry.php';
+    inq_ensure($pdo);
+    $days = max(1, intval(inq_get_setting($pdo, 'inq_cache_days')));
+    $st = $pdo->prepare("SELECT 1 FROM inq_requests WHERE postal = ? AND postal_valid = 1 AND finished_at >= ? LIMIT 1");
+    $st->execute([$postal, date('Y-m-d H:i:s', time() - $days * 86400)]);
+    return (bool)$st->fetchColumn();
+}
+
 // ستون‌های افزودنیِ پرونده: نوعِ وسیله، مدلِ انتخاب‌شده از فهرست، و «بدونِ پلاک» (ماشین‌آلات با شاسی و موتور)
 function order_case_cols_ensure($pdo) {
     static $done = false;
@@ -88,6 +105,7 @@ try {
             'incomplete_cases' => $incomplete,
             'hours' => oh_status($pdo),
             'kinds' => vc_kinds_list(),
+            'inq' => order_inq_cfg($pdo),
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -153,6 +171,37 @@ try {
     // =====================================================================
     //  ذخیره‌ی هر مرحله - همه‌ی اعتبارسنجی‌ها اینجا و سمت سرور انجام می‌شود
     // =====================================================================
+    // ---- استعلامِ هوشمندِ شخص (نام با کد ملی + تاریخ تولد) و استعلامِ کد پستی (املاک و اسکان) ----
+    if ($action === 'inq_person' || $action === 'inq_postal') {
+        $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        require_once __DIR__ . '/_inquiry.php';
+        $cfg = order_inq_cfg($pdo);
+        if (!$cfg[$action === 'inq_person' ? 'person' : 'postal']) { echo json_encode(['ok' => false, 'off' => true, 'error' => 'استعلام فعلاً در دسترس نیست؛ دستی وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $lim = intval(inq_get_setting($pdo, 'inq_daily_limit'));
+        if ($lim > 0) {
+            $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE user_type = 'PERSON' AND user_id = ? AND created_at >= CURDATE() AND cached_from IS NULL");
+            $st->execute([$person['id']]);
+            if (intval($st->fetchColumn()) >= $lim) { echo json_encode(['ok' => false, 'error' => 'سقفِ استعلامِ امروزِ شما پر شده؛ اطلاعات را دستی وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        }
+        $nid = $jsonBody['national_id'] ?? '';
+        if ($nid === '' && !empty($jsonBody['case_id'])) {
+            $case = get_owned_case($pdo, $person['id'], intval($jsonBody['case_id']));
+            $nid = $case ? (string)$case['insured_national_id'] : '';
+        }
+        $kind = $action === 'inq_person' ? 'person' : 'postal';
+        $c = inq_create($pdo, $kind, ['national_id' => $nid, 'birth' => $jsonBody['birth'] ?? '', 'postal' => $jsonBody['postal'] ?? ''], 'miniapp', ['PERSON', intval($person['id']), (string)$person['full_name']]);
+        if (!$c['ok']) { echo json_encode($c, JSON_UNESCAPED_UNICODE); exit; }
+        if (!$c['cached']) { if (function_exists('sess_release')) sess_release(); inq_execute($pdo, $c['id']); }
+        $o = inq_out(inq_get($pdo, $c['id']), false);
+        $p = $o['person'] ?: [];
+        echo json_encode(['ok' => true, 'status' => $o['status'], 'found' => $o['status'] !== 'FAIL' && ($p['name'] ?? '') !== '',
+                          'name' => trim(($p['name'] ?? '') . ' ' . ($p['family'] ?? '')), 'father' => $p['father'] ?? '', 'gender' => $p['gender'] ?? '',
+                          'postal_valid' => $o['postal_valid'], 'message' => $kind === 'postal' ? ($o['postal_text'] ?: $o['notice']) : $o['notice'],
+                          'birth_mismatch' => $o['birth_mismatch']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'save_step') {
         $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
@@ -193,6 +242,7 @@ try {
             elseif (mb_strlen($addr) < 10) $err = 'آدرس را کامل‌تر وارد کنید.';
             elseif (!preg_match('/^09\d{9}$/', $phone)) $err = 'شماره موبایل باید ۱۱ رقم و با 09 شروع شود.';
             elseif (strlen($postal) !== 10) $err = 'کد پستی باید دقیقاً ۱۰ رقم باشد.';
+            elseif (order_inq_cfg($pdo)['required'] && !order_postal_verified($pdo, $postal)) $err = 'کد پستی را با دکمه‌ی «استعلامِ کد پستی» بررسی کنید؛ فقط کد پستیِ ثبت‌شده در سامانه‌ی املاک و اسکان پذیرفته می‌شود.';
             else {
                 $pdo->prepare("UPDATE policy_cases SET insured_birth_date=?, insured_address=?, insured_phone=?, insured_postal_code=? WHERE id=?")
                     ->execute([$bd, $addr, $phone, $postal, $caseId]);

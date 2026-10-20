@@ -63,6 +63,9 @@ $mkMenuHtml = !$mkAccess ? '' : '
                     </div>
                 </div>
 ';
+// «استعلامات»: مدیر کل، یا دسترسیِ سفارشی به یکی از بخش‌های استعلام (تکی/گروهی/تاریخچه)
+$inqAccess = ($_SESSION['role'] ?? '') === 'ADMIN' && empty($permBoot['custom']);
+if (!empty($permBoot['custom'])) foreach ((array)($permBoot['p'] ?? []) as $__k => $__ops) if (strpos((string)$__k, 'inq-') === 0 && in_array('view', (array)$__ops, true)) $inqAccess = true;
 // منوی «اتوماسیون نامه‌ها»: مدیر کل و دسترسی‌های سفارشی
 $ltAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 $ltMenuHtml = !$ltAccess ? '' : '
@@ -1073,6 +1076,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item <?php echo $homeFirst ? '' : 'text-blue-600'; ?> hover-target transition-colors block lg:inline py-2 lg:py-0"><i class="fas fa-home ml-1"></i> داشبورد</a>
                 <?php endif; ?>
                 <?php echo $chatNavHtml; ?>
+                <?php if ($inqAccess): ?><a href="#" onclick="switchTab('inquiries')" id="nav-inquiries" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0" data-perm-skip><i class="fas fa-user-check ml-1"></i> استعلامات</a><?php endif; ?>
 
                 <!-- ===== «بیمه با ما»: منوی درختیِ بزرگ به تفکیکِ رشته‌ی بیمه (هر بخش با کارها و تنظیماتِ خودش) ===== -->
                 <?php
@@ -2928,6 +2932,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div id="imp-root"></div>
         </div>
         <!-- ======================= مغایرت‌گیری با پاسارگاد - recon.js ======================= -->
+        <!-- استعلامات: شخص حقیقی، کد پستی، شخص حقوقی؛ تکی، گروهی، تاریخچه، تنظیمات (inquiry.js) -->
+        <div id="tab-inquiries" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden" data-perm-skip><div id="inq-root"></div></div>
         <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
             <div id="recon-root" class="space-y-4"></div>
@@ -4480,6 +4486,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=1"></script>
+    <script src="inquiry.js?v=1"></script>
+    <script>
+    // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
+    document.addEventListener('DOMContentLoaded', () => {
+        if (!window.Inquiry) return;
+        const g = id => document.getElementById(id);
+        if (!g('mc-postal')) return;
+        const selfRel = () => (g('mc-relationship') || {}).value === 'خودم';
+        Inquiry.attachForm({ nid: () => g('mc-national-code').value, birth: g('mc-birth'), name: g('mc-full-name') });
+        Inquiry.attachForm({ nid: () => selfRel() ? g('mc-national-code').value : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name') });
+    });
+    </script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=7"></script>
     <script>
@@ -4591,6 +4609,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
+            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }
@@ -10945,6 +10964,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'legacy-import' && window.LegacyImport) LegacyImport.init(document.getElementById('legacy-root'));
             if (tabId === 'contacts' && window.Contacts) Contacts.init(document.getElementById('ct-root'));
             if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
+            if (tabId === 'inquiries' && window.Inquiry) Inquiry.init(document.getElementById('inq-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);

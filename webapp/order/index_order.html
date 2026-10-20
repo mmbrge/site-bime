@@ -188,8 +188,10 @@
   <div class="topbar"><div class="back-btn" onclick="goBack()">›</div><h2>مشخصات <span id="ri-addressee">بیمه‌گذار</span></h2><div style="width:38px"></div></div>
   <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:16%"></div></div></div>
   <div class="form-card">
-    <div class="field"><label>نام و نام‌خانوادگی <span id="ri-addressee2">بیمه‌گذار</span></label><input type="text" id="rel-name" placeholder="مثلاً زهرا احمدی"></div>
     <div class="field"><label>کد ملی <span id="ri-addressee3">بیمه‌گذار</span></label><input type="tel" id="rel-nid" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم"></div>
+    <div class="field" id="rel-birth-box" style="display:none;"><label>تاریخ تولد <span>(برای پر شدنِ خودکارِ نام)</span></label><input type="text" id="rel-birth" dir="ltr"></div>
+    <div class="field"><label>نام و نام‌خانوادگی <span id="ri-addressee2">بیمه‌گذار</span></label><input type="text" id="rel-name" placeholder="مثلاً زهرا احمدی">
+      <p id="rel-inq" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p></div>
     <div class="field-error" id="rel-error"></div>
   </div>
   <button class="btn btn-primary" onclick="submitRelativeInfo()">ادامه</button>
@@ -210,6 +212,8 @@
     <div class="field">
       <label>کد پستی (ثبت‌شده در سامانه املاک و اسکان)</label>
       <input type="tel" id="pi-postal" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم" dir="ltr" style="text-align:center;">
+      <button type="button" id="pi-postal-inq" class="btn" style="display:none;margin-top:8px;padding:9px 12px;font-size:12px;background:#eef2ff;color:#4338ca;box-shadow:none;" onclick="inqPostal()">🔎 استعلامِ کد پستی (املاک و اسکان)</button>
+      <p id="pi-postal-res" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p>
       <p style="font-size:10px;color:#64748b;margin-top:6px;line-height:1.8;">اگر کد پستی را نمی‌دانید، باید به سامانه‌ی ملی املاک و اسکان (amlak.mrud.ir) مراجعه کنید.</p>
     </div>
     <div class="field-error" id="pi-error"></div>
@@ -431,6 +435,9 @@ async function initApp() {
     if (!TOKEN) { showAppError('لینک نامعتبر است.'); return; }
     fillLetterSelects();
     MKIT.dateField(document.getElementById('pi-birthdate'), () => ({ title: '🎂 تاریخ تولد', max: MKIT.jToday(), startView: 'year', focus: [MKIT.jToday()[0] - 30, 1, 1] }));
+    MKIT.dateField(document.getElementById('rel-birth'), () => ({ title: '🎂 تاریخ تولد', max: MKIT.jToday(), startView: 'year', focus: [MKIT.jToday()[0] - 30, 1, 1], onChange: () => relInq() }));
+    document.getElementById('rel-nid').addEventListener('input', () => { if (toEn(document.getElementById('rel-nid').value).replace(/\D/g, '').length === 10) relInq(); });
+    document.getElementById('pi-postal').addEventListener('input', () => { const r = document.getElementById('pi-postal-res'); if (r && INQ.verified !== toEn(document.getElementById('pi-postal').value.trim())) r.style.display = 'none'; });
     try {
         const data = await (await fetch(`${API}?action=init&token=${encodeURIComponent(TOKEN)}`)).json();
         if (!data.ok) { showAppError(data.error); return; }
@@ -438,6 +445,9 @@ async function initApp() {
         KINDS = data.kinds || [];
         document.getElementById('quota-info').textContent = data.quota_summary ? `سهمیه‌ی باقی‌مانده‌ی شما: ${toFa(data.quota_summary)}` : '';
         window._initData = data;
+        INQ.cfg = data.inq || {};
+        document.getElementById('rel-birth-box').style.display = INQ.cfg.person ? 'block' : 'none';
+        document.getElementById('pi-postal-inq').style.display = INQ.cfg.postal ? 'block' : 'none';
         if (data.hours && !data.hours.open) { showClosed(data.hours); return; }
         const existingCaseId = params.get('case');
         if (existingCaseId) { caseId = parseInt(existingCaseId); await loadCaseAndAdvance(); return; }
@@ -532,6 +542,51 @@ async function submitRelationship(rel) {
     const res = await saveStep({ step:'relationship', relationship:rel });
     if (res.ok) await loadCaseAndAdvance(); else handleErr(res);
 }
+// ============================================================
+//  استعلامِ هوشمند: با کد ملی + تاریخ تولد نام خودکار پر می‌شود (اگر نیامد، دستی)؛ و استعلامِ کد پستی
+// ============================================================
+const INQ = { cfg: {}, relBusy: false, relKey: '', relBirth: '', verified: '' };
+async function inqCall(action, body) {
+    try { return await (await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ action: action, token: TOKEN, case_id: caseId }, body)) })).json(); }
+    catch (e) { return { ok: false, error: 'خطا در اتصال به سرور.' }; }
+}
+function inqMsg(el, text, color) { el.style.display = 'block'; el.style.color = color; el.textContent = text; }
+async function relInq() {
+    if (!INQ.cfg.person || INQ.relBusy) return;
+    const nid = toEn(document.getElementById('rel-nid').value).replace(/\D/g, '');
+    const birth = toEn(document.getElementById('rel-birth').value.trim());
+    if (nid.length !== 10 || !birth) return;
+    const key = nid + '|' + birth;
+    if (key === INQ.relKey) return;
+    INQ.relKey = key; INQ.relBirth = birth; INQ.relBusy = true;
+    const box = document.getElementById('rel-inq'), nameIn = document.getElementById('rel-name');
+    inqMsg(box, '⏳ در حالِ استعلامِ نام… (چند ثانیه؛ می‌توانید دستی هم بنویسید)', '#4338ca');
+    const r = await inqCall('inq_person', { national_id: nid, birth: birth });
+    INQ.relBusy = false;
+    if (r.ok && r.found) {
+        if (!nameIn.value.trim() || nameIn.dataset.auto === '1') { nameIn.value = r.name; nameIn.dataset.auto = '1'; }
+        inqMsg(box, '✅ ' + r.name + (r.father ? ' (فرزندِ ' + r.father + ')' : '') + ' — اگر درست نیست، دستی اصلاح کنید.', '#047857');
+    } else if (r.ok && r.birth_mismatch) {
+        inqMsg(box, '⚠️ تاریخ تولد با کد ملی نمی‌خواند؛ تاریخ را بررسی کنید یا نام را دستی بنویسید.', '#b45309');
+    } else {
+        inqMsg(box, 'ℹ️ ' + ((r.message || r.error) ? (r.message || r.error) + ' — ' : '') + 'نام را دستی بنویسید.', '#64748b');
+    }
+}
+document.addEventListener('input', e => { if (e.target && e.target.id === 'rel-name') e.target.dataset.auto = ''; });
+async function inqPostal() {
+    const btn = document.getElementById('pi-postal-inq'), box = document.getElementById('pi-postal-res');
+    const postal = toEn(document.getElementById('pi-postal').value.trim()).replace(/\D/g, '');
+    const birth = toEn(document.getElementById('pi-birthdate').value.trim());
+    if (!birth) { inqMsg(box, 'اول تاریخ تولد را انتخاب کنید.', '#b45309'); return; }
+    if (postal.length !== 10) { inqMsg(box, 'کد پستیِ ۱۰ رقمی را وارد کنید.', '#b45309'); return; }
+    btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ در حالِ استعلام… (تا یک دقیقه)';
+    const r = await inqCall('inq_postal', { birth: birth, postal: postal });
+    btn.disabled = false; btn.textContent = t;
+    if (!r.ok) { inqMsg(box, r.error || 'استعلام انجام نشد.', '#b91c1c'); return; }
+    if (r.postal_valid === true) { INQ.verified = postal; inqMsg(box, '✅ ' + (r.message || 'کد پستی در املاک و اسکان ثبت شده است.'), '#047857'); }
+    else if (r.postal_valid === false) { INQ.verified = ''; inqMsg(box, '❌ ' + (r.message || 'این کد پستی در املاک و اسکان ثبت نشده است.') + ' (amlak.mrud.ir)', '#b91c1c'); }
+    else { inqMsg(box, '⚠️ ' + (r.message || 'نتیجه‌ی قطعی نیامد؛ کمی بعد دوباره امتحان کنید.'), '#b45309'); }
+}
 async function submitRelativeInfo() {
     const name = document.getElementById('rel-name').value.trim();
     const nid = toEn(document.getElementById('rel-nid').value.trim());
@@ -553,7 +608,8 @@ async function openPersonalInfoForm() {
         try { const d = await (await fetch(`${API}?action=get_saved_profile&token=${encodeURIComponent(TOKEN)}&case_id=${caseId}`)).json(); if (d.ok && d.profile) p = d.profile; } catch(e) {}
     }
     const v = (a, b) => a || (p && p[b]) || '';
-    document.getElementById('pi-birthdate').value = toFa(v(caseData.insured_birth_date, 'birth_date'));
+    document.getElementById('pi-birthdate').value = toFa(v(caseData.insured_birth_date, 'birth_date') || INQ.relBirth || '');
+    document.getElementById('pi-postal-res').style.display = 'none';
     document.getElementById('pi-address').value = v(caseData.insured_address, 'address');
     document.getElementById('pi-phone').value = v(caseData.insured_phone, 'phone');
     document.getElementById('pi-postal').value = v(caseData.insured_postal_code, 'postal_code');
@@ -566,6 +622,7 @@ async function submitPersonalInfo() {
     const postal_code = toEn(document.getElementById('pi-postal').value.trim());
     const errBox = document.getElementById('pi-error');
     if (!birth_date) { errBox.textContent = 'تاریخ تولد را از روی تقویم انتخاب کنید.'; errBox.style.display = 'block'; return; }
+    if (INQ.cfg.required && INQ.verified !== postal_code) { errBox.textContent = 'کد پستی را با دکمه‌ی «استعلامِ کد پستی» بررسی کنید.'; errBox.style.display = 'block'; return; }
     const res = await saveStep({ step:'personal_info', birth_date, address, phone, postal_code });
     if (!res.ok) { if (handleErr(res)) return; errBox.textContent = res.error; errBox.style.display='block'; return; }
     errBox.style.display='none';
