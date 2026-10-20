@@ -178,12 +178,13 @@ try {
 
         // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به
         // ../undefined می‌خورد و کاربر نمی‌تواند فایلی که خودش فرستاده را ببیند
-        $stmt = $pdo->prepare("SELECT id, orig_name, file_path, file_kind, doc_type, plate_id, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
+        company_doc_label_ensure($pdo);
+        $stmt = $pdo->prepare("SELECT id, orig_name, file_path, file_kind, doc_type, doc_label, plate_id, status, uploaded_at FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
         $siteRoot = dirname(__DIR__);
         foreach ($docs as &$d) {
-            $d['doc_type_label'] = company_doc_type_label($d['doc_type']);
+            $d['doc_type_label'] = company_doc_display_label($d);
             $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
             $d['uploaded_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($d['uploaded_at']));
         }
@@ -229,11 +230,12 @@ try {
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
-                               'label' => company_doc_type_label($d['doc_type']), 'is_dir' => !empty($d['is_dir'])],
+                               'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])],
                     array_filter($rowDocs, fn($d) => in_array($d['doc_type'], $item['upload_types'], true) || $d['doc_type'] === $item['key'])
                 ));
             }
             unset($item);
+            $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
             $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
             // مالک / بیمه‌گذار / ذینفع (شرکت هم می‌تواند برای هر ردیف یا همه‌ی ردیف‌ها تعیین کند)
@@ -292,6 +294,8 @@ try {
                         VALUES (?, ?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED')")
             ->execute([$row['company_id'], $row['request_id'], $plateId, $session['company_user_id'], $relPath, $saved['orig_name'], $docType]);
         $docId = $pdo->lastInsertId();
+        $docLabel = $docType === 'other' ? company_doc_label_clean($_POST['doc_label'] ?? '') : '';
+        if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
         $rowStatus = company_sync_plate_status($pdo, $plateId);

@@ -897,7 +897,14 @@ function portalChecklistChip(plate, item) {
     ).join('<span class="text-slate-300 mx-1">|</span>');
 
     let uploader = '';
-    if (!ok && plate.status !== 'ISSUED') {
+    if (item.custom && plate.status !== 'ISSUED') {
+        // «مدرکِ دیگر»: نامش را خودتان می‌نویسید (چند مدرک هم می‌شود زد)
+        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="pr-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (مثلاً گواهی‌نامه)" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+            <input type="hidden" id="pr-type-${plate.id}-other" value="other">
+            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
+                + بارگذاری<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-other', this, 'pr-label-${plate.id}')">
+            </label></span>`;
+    } else if (!ok && plate.status !== 'ISSUED') {
         const types = item.upload_types || [item.key];
         const sel = types.length > 1
             ? `<select id="pr-type-${plate.id}-${item.key}" class="text-[10px] border rounded px-1 py-0.5 bg-white">
@@ -1094,13 +1101,18 @@ function portalEditAllParty() {
 }
 
 // آپلودِ هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست
-async function portalUploadRowDoc(plateId, typeElId, input) {
+async function portalUploadRowDoc(plateId, typeElId, input, labelElId) {
     if (!input.files[0]) return;
     const typeEl = document.getElementById(typeElId);
     const fd = new FormData();
     fd.append('action', 'upload_row_doc');
     fd.append('plate_id', plateId);
     fd.append('doc_type', typeEl ? typeEl.value : 'other');
+    if (labelElId) {
+        const lb = document.getElementById(labelElId), name = lb ? lb.value.trim() : '';
+        if (!name) { showToast('اول نامِ مدرک را بنویسید.'); input.value = ''; if (lb) lb.focus(); return; }
+        fd.append('doc_label', name);
+    }
     fd.append('doc_file', input.files[0]);
     try {
         const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});

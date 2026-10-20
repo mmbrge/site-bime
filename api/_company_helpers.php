@@ -202,6 +202,34 @@ function company_doc_type_label($key) {
     return company_doc_types()[$key] ?? ($key ?: 'نامشخص');
 }
 
+// «سایر مدارک» با نامِ دلخواه (مثلاً «گواهی‌نامه»): ستونِ doc_label در company_documents
+function company_doc_label_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM company_documents LIKE 'doc_label'")->fetch()) $pdo->exec("ALTER TABLE company_documents ADD COLUMN doc_label VARCHAR(120) NULL"); }
+    catch (Throwable $e) { error_log('[company_doc_label_ensure] ' . $e->getMessage()); }
+}
+function company_doc_label_clean($v) {
+    $v = trim(preg_replace('/\s+/u', ' ', str_replace(['(', ')', '/', '\\', ':', '*', '?', '"', '<', '>', '|'], ' ', (string)$v)));
+    return mb_substr($v, 0, 80);
+}
+// برچسبِ نمایشیِ یک مدرک: نامِ دلخواه (برای «سایر مدارک») یا نامِ نوع
+function company_doc_display_label($d) {
+    $l = trim((string)($d['doc_label'] ?? ''));
+    return $l !== '' ? $l : company_doc_type_label($d['doc_type'] ?? '');
+}
+// خانه‌ی «مدرکِ دیگر (با نامِ دلخواه)» در انتهای چک‌لیستِ هر ردیف، با مدارکِ «سایر»ِ همان ردیف
+function company_checklist_add_other(array $checklist, array $rowDocs) {
+    foreach ($checklist as $it) if (in_array('other', $it['upload_types'] ?? [], true)) return $checklist;
+    $docs = [];
+    foreach ($rowDocs as $d) if (($d['doc_type'] ?? '') === 'other')
+        $docs[] = ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => 'other', 'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])];
+    $checklist[] = ['key' => 'other', 'label' => 'مدرکِ دیگر', 'required' => false, 'satisfied' => (bool)$docs, 'upload_types' => ['other'],
+                    'hint' => 'هر مدرکِ دیگری که لازم است؛ نامش را خودتان می‌نویسید', 'custom' => true, 'docs' => $docs];
+    return $checklist;
+}
+
 // مدرکی که به‌صورت «پوشه» ذخیره می‌شود (زیپِ چندفایلی) نه یک فایل تکی
 function company_doc_type_is_folder($key) {
     return $key === 'health_inspection';
@@ -613,9 +641,12 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
             if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
         }
     } elseif (is_file($absOld)) {
-        // بقیه‌ی مدارک: مستقیم داخل پوشه‌ی خودِ پلاک، با نام «(نوع مدرک) پلاک»
+        // بقیه‌ی مدارک: مستقیم داخل پوشه‌ی خودِ پلاک، با نام «(نوع مدرک) پلاک»؛ «سایر» با نامِ دلخواهش
         $ext = upload_ext($absOld) ?: 'pdf';
-        $dest = unique_dest_path($plateFolder . '/' . company_doc_filename($docType ?: 'other', $plateDisplay, $ext));
+        $custom = ($docType ?: 'other') === 'other' ? company_doc_label_clean($doc['doc_label'] ?? '') : '';
+        $fname = $custom !== '' ? sanitize_folder_name('(' . $custom . ') ' . ($plateDisplay ?: 'بدون‌پلاک')) . '.' . strtolower($ext)
+                                : company_doc_filename($docType ?: 'other', $plateDisplay, $ext);
+        $dest = unique_dest_path($plateFolder . '/' . $fname);
         if (realpath($absOld) !== realpath($dest) && @rename($absOld, $dest)) {
             $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
         }
@@ -664,6 +695,11 @@ function company_parse_plate_text($text) {
     // موتورسیکلت: «583-76224»، «۵۸۳ ایران ۷۶۲۲۴» یا «۷۶۲۲۴ ایران ۵۸۳» (کد شهر ۳ رقم، شماره ۵ رقم)
     if (preg_match('/(?<!\d)(\d{3})\s*(?:-|ایران|-\s*ایران\s*-)\s*(\d{5})(?!\d)/u', $t, $m)) return ['p1' => $m[1], 'p2' => $m[2], 'letter' => 'موتور', 'p4' => ''];
     if (preg_match('/(?<!\d)(\d{5})\s*(?:-|ایران|-\s*ایران\s*-)\s*(\d{3})(?!\d)/u', $t, $m)) return ['p1' => $m[2], 'p2' => $m[1], 'letter' => 'موتور', 'p4' => ''];
+    // «ایران ۵۸۳ ۷۶۲۲۴»، «موتور ۵۸۳/۷۶۲۲۴» یا فقط «۵۸۳ ۷۶۲۲۴» (در متن فقط همین دو عدد)
+    if (preg_match('/^[^\d]*?(\d{3})\s*[\/\s_]\s*(?:ایران\s*)?(\d{5})[^\d]*$/u', $t, $m)) return ['p1' => $m[1], 'p2' => $m[2], 'letter' => 'موتور', 'p4' => ''];
+    if (preg_match('/^[^\d]*?(\d{5})\s*[\/\s_]\s*(?:ایران\s*)?(\d{3})[^\d]*$/u', $t, $m)) return ['p1' => $m[2], 'p2' => $m[1], 'letter' => 'موتور', 'p4' => ''];
+    // «موتور ۵۸۳۷۶۲۲۴» (هشت رقمِ پیوسته فقط وقتی کلمه‌ی موتور کنارش باشد)
+    if (mb_strpos($t, 'موتور') !== false && preg_match('/(?<!\d)(\d{3})(\d{5})(?!\d)/u', $t, $m)) return ['p1' => $m[1], 'p2' => $m[2], 'letter' => 'موتور', 'p4' => ''];
     return null;
 }
 
@@ -767,8 +803,25 @@ function company_parse_letter_rows($raw) {
         $pLet = trim((string)($r['plate_letter'] ?? ($pObj['letter'] ?? '')));
         $pThree = p2e_digits(trim((string)($r['plate_three'] ?? ($pObj['three'] ?? ($r['plate_p2'] ?? '')))));
         $pIran = p2e_digits(trim((string)($r['plate_iran'] ?? ($pObj['iran'] ?? ($r['plate_p1'] ?? '')))));
-        $plate = null;
-        if (preg_match('/^\d{2}$/', $pTwo) && preg_match('/^\d{3}$/', $pThree) && preg_match('/^\d{2}$/', $pIran) && $pLet !== '') {
+        $plate = null; $motoBad = false;
+        // پلاکِ موتورسیکلت: moto_city (سه رقمِ بالا) و moto_number (پنج رقمِ پایین)، یا "plate": {"city": "583", "number": "76224"}
+        $mCity = p2e_digits(trim((string)($r['moto_city'] ?? ($r['motor_plate_city'] ?? ($pObj['city'] ?? '')))));
+        $mNum = p2e_digits(trim((string)($r['moto_number'] ?? ($r['motor_plate_number'] ?? ($pObj['number'] ?? '')))));
+        // هوش مصنوعی گاهی پلاکِ موتور را در فیلدهای پلاکِ خودرو می‌گذارد (سه رقم + پنج رقم، بدونِ حرف)
+        if ($mCity === '' && $mNum === '' && ($pLet === '' || $pLet === 'موتور')) {
+            $digs = array_values(array_filter([$pTwo, $pThree, $pIran], function ($x) { return $x !== ''; }));
+            $c3 = array_values(array_filter($digs, function ($x) { return preg_match('/^\d{3}$/', $x); }));
+            $c5 = array_values(array_filter($digs, function ($x) { return preg_match('/^\d{5}$/', $x); }));
+            if (count($digs) === 2 && count($c3) === 1 && count($c5) === 1) { $mCity = $c3[0]; $mNum = $c5[0]; }
+        }
+        if (preg_match('/^\d{3}$/', $mCity) && preg_match('/^\d{5}$/', $mNum)) {
+            $plate = ['p1' => $mCity, 'p2' => $mNum, 'letter' => 'موتور', 'p4' => ''];
+            $plateText = "$mCity-$mNum";
+        } elseif ($mCity !== '' || $mNum !== '') {
+            $errors[] = "ردیف {$lineNo}: پلاکِ موتور کامل نیست (سه رقمِ کدِ شهر و پنج رقمِ شماره).";
+            $plateText = trim("$mCity $mNum");
+            $motoBad = true;
+        } elseif (preg_match('/^\d{2}$/', $pTwo) && preg_match('/^\d{3}$/', $pThree) && preg_match('/^\d{2}$/', $pIran) && $pLet !== '') {
             $plate = ['p4' => $pTwo, 'letter' => $pLet === 'الف' ? 'الف' : mb_substr($pLet, 0, 3), 'p2' => $pThree, 'p1' => $pIran];
             $plateText = "$pTwo $pLet $pThree ایران $pIran";
         } else {
@@ -781,6 +834,7 @@ function company_parse_letter_rows($raw) {
         if (!$plate && $chassis === '' && trim((string)$plateText) !== '' && preg_match('/^[A-Za-z0-9\-]{6,}$/', trim((string)$plateText))) {
             $chassis = trim((string)$plateText);
         }
+        if (!$plate && $chassis === '' && $motoBad) continue;
         if (!$plate && $chassis === '') {
             $pt = trim(str_replace('ایران', '', (string)$plateText));
             $errors[] = "ردیف {$lineNo}: نه پلاک خوانده شد و نه شماره شاسی" . ($pt !== '' ? " («" . mb_substr((string)$plateText, 0, 40) . "»)" : '')
@@ -893,6 +947,7 @@ function company_counts_from_labels($in) {
 // عنوانِ فارسیِ هر فیلدِ اکسل (برای تنظیمات و فایلِ نمونه)
 function company_excel_field_labels() {
     return ['plate' => 'پلاک (کامل در یک ستون)', 'plate_two' => 'دو رقمِ پلاک', 'plate_letter' => 'حرفِ پلاک', 'plate_three' => 'سه رقمِ پلاک', 'plate_iran' => 'کد ایران',
+            'moto_city' => 'پلاکِ موتور: کدِ شهر (۳ رقمِ بالا)', 'moto_number' => 'پلاکِ موتور: شماره (۵ رقمِ پایین)',
             'chassis_no' => 'شماره شاسی / VIN', 'engine_no' => 'شماره موتور', 'is_new_vehicle' => 'صفر کیلومتر (بله/خیر)', 'car_name' => 'نام خودرو (سیستم)', 'car_type' => 'تیپ خودرو',
             'model_year' => 'مدل (سال ساخت)', 'insurance_type' => 'نوع بیمه (ثالث/بدنه/هردو)', 'car_value' => 'ارزش خودرو (بدنه)', 'liability_limit' => 'سقف تعهد مالی (ثالث)',
             'expiry_date' => 'تاریخ انقضای بیمه‌نامه‌ی قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی', 'has_prev_body' => 'بیمه بدنه‌ی قبلی دارد؟',
@@ -915,7 +970,9 @@ function company_excel_column_map() {
 }
 function company_excel_column_map_base() {
     return [
-        'plate'          => ['پلاک', 'شماره پلاک', 'شمارهپلاک', 'plate'],
+        'plate'          => ['پلاک', 'شماره پلاک', 'شمارهپلاک', 'plate', 'پلاک موتور', 'پلاک موتورسیکلت'],
+        'moto_city'      => ['کد شهر موتور', 'کد شهر پلاک موتور', 'پلاک موتور بالا', 'کد شهر موتورسیکلت'],
+        'moto_number'    => ['شماره پلاک موتور', 'شماره موتورسیکلت', 'پلاک موتور پایین', 'شماره پلاک موتورسیکلت'],
         'chassis_no'     => ['شماره شاسی', 'شمارهشاسی', 'شاسی', 'vin', 'chassis', 'chassis no', 'شماره شاسی/vin'],
         'engine_no'      => ['شماره موتور', 'شمارهموتور', 'موتور', 'engine', 'engine no'],
         'car_value'      => ['ارزش خودرو', 'ارزش', 'ارزش روز', 'قیمت خودرو', 'car value', 'value'],
@@ -992,7 +1049,7 @@ function company_rows_from_spreadsheet($path) {
         // ردیفِ کاملاً خالی را رد کن
         if (!$rec) continue;
         // ردیفی که نه پلاک دارد نه شاسی ولی چیزِ دیگری دارد (مثلاً نامِ خودرو) به پارسر می‌رود تا خطایش گزارش شود
-        if (empty($rec['plate']) && empty($rec['chassis_no']) && empty($rec['plate_three']) && count($rec) < 2) continue;
+        if (empty($rec['plate']) && empty($rec['chassis_no']) && empty($rec['plate_three']) && empty($rec['moto_number']) && count($rec) < 2) continue;
         $out[] = $rec;
     }
     if (!$out) return ['error' => 'زیر سرستون‌ها هیچ ردیفِ پُری پیدا نشد.'];
@@ -1010,6 +1067,7 @@ function company_excel_sample_path() {
         ['12 ب 345 ایران 67', '', '', 'خیر', 'پژو 206', 'تیپ 5', '1401', 'ثالث', '', '2,000,000,000', '1405/09/15', '14/30054/0-0/1404/1234', ''],
         ['24 ج 567 ایران 11', '', '', 'خیر', 'تویوتا هایلوکس', 'دو کابین', '1399', 'هردو', '18,000,000,000', '4,000,000,000', '1405/10/01', '', 'ثالث و بدنه با هم'],
         ['', 'NAAP41FE5PJ123456', '164B0123456', 'بله', 'دنا پلاس', 'توربو اتوماتیک', '1405', 'بدنه', '14,500,000,000', '', '', '', 'صفر کیلومتر - هنوز پلاک نگرفته'],
+        ['583-76224', '', '', 'خیر', 'موتورسیکلت هوندا', '125', '1400', 'ثالث', '', '500,000,000', '1405/08/12', '', 'پلاکِ موتور: کدِ شهر-شماره'],
         ['', 'FD30-112233', '', 'خیر', 'لیفتراک', '3 تن دیزلی', '1398', 'ثالث', '', '1,500,000,000', '1405/08/20', '', 'بدون پلاک (ماشین‌آلات)'],
     ];
     $guide = [];
@@ -1018,6 +1076,7 @@ function company_excel_sample_path() {
     $guide[] = ['نکته', 'هر خودرو یک ردیف؛ برای «ثالث و بدنه» بنویسید «هردو».', ''];
     $guide[] = ['نکته', 'خودروی صفرکیلومتر: ستونِ صفر کیلومتر = بله، شماره شاسی لازم است، تاریخِ انقضا ندارد و بازدید سلامت نمی‌خواهد.', ''];
     $guide[] = ['نکته', 'پلاک را می‌شود در یک ستون نوشت یا در چهار ستونِ «دو رقم پلاک / حرف پلاک / سه رقم پلاک / کد ایران».', ''];
+    $guide[] = ['نکته', 'موتورسیکلت: پلاک را «کدِ شهر-شماره» بنویسید (مثلِ 583-76224) یا در دو ستونِ «کد شهر موتور» و «شماره پلاک موتور».', ''];
     $guide[] = ['نکته', 'ترتیبِ ستون‌ها مهم نیست و ستون‌های اضافه نادیده گرفته می‌شوند.', ''];
     return xlsx_build_book([
         ['name' => 'خودروها', 'headers' => $hdr, 'rows' => $rows, 'numeric' => []],

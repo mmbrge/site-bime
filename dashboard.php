@@ -3517,7 +3517,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-[11px] font-bold text-indigo-800">متنِ آماده برای هوش مصنوعی (همراهِ فایل نامه بفرستید):</p>
                     <button type="button" onclick="copyValue(document.getElementById('cli-ai-prompt').innerText, 'متن')" class="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 rounded-lg px-2 py-0.5"><i class="far fa-copy ml-1"></i>کپی</button>
                 </div>
-                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با همان ساختارِ نمونه برگردان. در «letter.counts» تعدادِ درخواستی از هر نوع را با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ» بنویس. در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)؛ پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (دو رقمِ کدِ ایران، کنارِ کلمه‌ی «ایران»). مهم: در نامه‌ها پلاک معمولاً به شکلِ «۷۹۸ع۸۱-۱۱» نوشته می‌شود که یعنی plate_three=798، plate_letter=ع، plate_two=81 و عددِ بعد از خط تیره plate_iran=11؛ یا به شکلِ «۸۱ ع ۷۹۸ ایران ۱۱» که همان پلاک است. هیچ‌وقت کدِ ایران را با دو رقمِ اول جابه‌جا نکن. اگر خودرو پلاک ندارد، فیلدهای پلاک را خالی بگذار و chassis_no را بنویس. بقیه‌ی فیلدها: insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخِ انقضا/اتمامِ بیمه‌نامه‌ی فعلی به شمسی مثل 1405/07/30)، car_name (نوع خودرو)، model_year (مدل/سال ساخت)، chassis_no، engine_no، prev_policy_number (شماره‌ی بیمه‌نامه‌ی قبلی)، prev_insurer (بیمه‌گرِ قبلی)؛ فقط برای ثالث: liability_limit (تعهد مالی به ریال)؛ فقط برای بدنه: car_value (ارزش خودرو به ریال)، has_prev_body («بله»/«خیر»)، health_inspection («لازم»/«لازم نیست»)؛ برای تغییر اطلاعات و فسخ: policy_number، change_request (چه تغییری) یا cancellation_reason (دلیل)؛ و note برای هر توضیحِ دیگر. هر فیلدی که در نامه نیست یا به آن نوع بیمه مربوط نیست را نگذار یا خالی بگذار؛ چیزی حدس نزن.</p>
+                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با همان ساختارِ نمونه برگردان. در «letter.counts» تعدادِ درخواستی از هر نوع را با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ» بنویس. در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)؛ پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (دو رقمِ کدِ ایران، کنارِ کلمه‌ی «ایران»). مهم: در نامه‌ها پلاک معمولاً به شکلِ «۷۹۸ع۸۱-۱۱» نوشته می‌شود که یعنی plate_three=798، plate_letter=ع، plate_two=81 و عددِ بعد از خط تیره plate_iran=11؛ یا به شکلِ «۸۱ ع ۷۹۸ ایران ۱۱» که همان پلاک است. هیچ‌وقت کدِ ایران را با دو رقمِ اول جابه‌جا نکن. اگر وسیله موتورسیکلت است، پلاکِ موتور را در دو فیلد بنویس: moto_city (سه رقمِ بالای پلاک، کدِ شهر) و moto_number (پنج رقمِ پایین)؛ مثلاً «۵۸۳-۷۶۲۲۴» یعنی moto_city=583 و moto_number=76224، و فیلدهای پلاکِ خودرو را خالی بگذار. اگر خودرو پلاک ندارد، فیلدهای پلاک را خالی بگذار و chassis_no را بنویس. بقیه‌ی فیلدها: insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخِ انقضا/اتمامِ بیمه‌نامه‌ی فعلی به شمسی مثل 1405/07/30)، car_name (نوع خودرو)، model_year (مدل/سال ساخت)، chassis_no، engine_no، prev_policy_number (شماره‌ی بیمه‌نامه‌ی قبلی)، prev_insurer (بیمه‌گرِ قبلی)؛ فقط برای ثالث: liability_limit (تعهد مالی به ریال)؛ فقط برای بدنه: car_value (ارزش خودرو به ریال)، has_prev_body («بله»/«خیر»)، health_inspection («لازم»/«لازم نیست»)؛ برای تغییر اطلاعات و فسخ: policy_number، change_request (چه تغییری) یا cancellation_reason (دلیل)؛ و note برای هر توضیحِ دیگر. هر فیلدی که در نامه نیست یا به آن نوع بیمه مربوط نیست را نگذار یا خالی بگذار؛ چیزی حدس نزن.</p>
             </div>
             <input type="hidden" id="cli-request-id">
 
@@ -3547,6 +3547,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
       "car_value": "5,000,000,000",
       "has_prev_body": "بله",
       "health_inspection": "لازم"
+    },
+    {
+      "request": "صدور",
+      "moto_city": "583", "moto_number": "76224",
+      "insurance_type": "ثالث",
+      "expiry_date": "1405/08/12",
+      "car_name": "موتورسیکلت هوندا 125"
     },
     {
       "request": "صدور",
@@ -6511,7 +6518,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
 
             let uploader = '';
-            if (canEdit && !ok) {
+            if (canEdit && item.custom) {
+                // «مدرکِ دیگر»: نامش را خودِ کاربر می‌نویسد و چند مدرک هم می‌شود زد
+                uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (مثلاً گواهی‌نامه)" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+                    <input type="hidden" id="rowdoc-type-${plate.id}-other" value="other">
+                    <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
+                        <i class="fas fa-plus ml-0.5"></i>بارگذاری<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')">
+                    </label></span>`;
+            } else if (canEdit && !ok) {
                 const types = item.upload_types || [item.key];
                 const sel = types.length > 1
                     ? `<select id="rowdoc-type-${plate.id}-${item.key}" class="text-[10px] border rounded px-1 py-0.5 bg-white">
@@ -7248,13 +7262,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
-        async function uploadRowDoc(plateId, typeElId, input) {
+        async function uploadRowDoc(plateId, typeElId, input, labelElId) {
             if (!input.files[0]) return;
             const typeEl = document.getElementById(typeElId);
             const fd = new FormData();
             fd.append('action', 'upload_row_doc');
             fd.append('plate_id', plateId);
             fd.append('doc_type', typeEl ? typeEl.value : 'other');
+            if (labelElId) {
+                const lb = document.getElementById(labelElId), name = lb ? lb.value.trim() : '';
+                if (!name) { showToast('اول نامِ مدرک را بنویسید.', 'warning'); input.value = ''; if (lb) lb.focus(); return; }
+                fd.append('doc_label', name);
+            }
             fd.append('doc_file', input.files[0]);
             try {
                 const res = await fetch(COMPANY_API, {method: 'POST', body: fd});

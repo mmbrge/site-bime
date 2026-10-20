@@ -301,10 +301,11 @@ try {
             // مدارکِ تخصیص‌یافته‌ی همه‌ی این ردیف‌ها را یک‌جا می‌گیریم (نه یک کوئری به ازای هر ردیف)
             $ids = array_column($rows, 'id');
             $ph = implode(',', array_fill(0, count($ids), '?'));
-            $stmt = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, orig_name, status FROM company_documents WHERE plate_id IN ($ph)");
+            company_doc_label_ensure($pdo);
+            $stmt = $pdo->prepare("SELECT id, plate_id, doc_type, doc_label, file_path, orig_name, status FROM company_documents WHERE plate_id IN ($ph)");
             $stmt->execute($ids);
             foreach ($stmt->fetchAll() as $d) {
-                $d['label'] = company_doc_type_label($d['doc_type']);
+                $d['label'] = company_doc_display_label($d);
                 $d['is_dir'] = is_dir($siteRoot . '/' . $d['file_path']);
                 $docsByPlate[$d['plate_id']][] = $d;
             }
@@ -1735,6 +1736,8 @@ try {
             ->execute([$requestRow['company_id'], $requestId, $plateId, $relPath, $saved['orig_name'],
                        $plateId ? 'SUPPORTING_DOC' : 'LETTER', $plateId ? $docType : 'letter', $actor['user_id']]);
         $docId = $pdo->lastInsertId();
+        $docLabel = $plateId && $docType === 'other' ? company_doc_label_clean($data['doc_label'] ?? '') : '';
+        if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         if ($plateId) {
             $relPath = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
@@ -1785,6 +1788,7 @@ try {
         $request['requested_counts_fa'] = company_requested_counts_fa($request['requested_counts'] ?? null);
         $request['requested_counts_obj'] = json_decode((string)($request['requested_counts'] ?? ''), true) ?: null;
 
+        company_doc_label_ensure($pdo);
         $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
@@ -1809,12 +1813,13 @@ try {
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
-                               'label' => company_doc_type_label($d['doc_type']), 'is_dir' => !empty($d['is_dir'])],
+                               'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])],
                     array_filter($rowDocs, fn($d) => in_array($d['doc_type'], $item['upload_types'], true)
                                                      || $d['doc_type'] === $item['key'])
                 ));
             }
             unset($item);
+            $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
             $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
             $p['expiry_date_jalali'] = $p['expiry_date'] ? jd(strtotime($p['expiry_date'])) : null;
@@ -1853,7 +1858,7 @@ try {
         // (ردیف آخرِ هر درخواستِ چندردیفی در جزئیات، تکراریِ ردیف قبلی دیده می‌شد)
         unset($p);
 
-        foreach ($docs as &$d) $d['doc_type_label'] = company_doc_type_label($d['doc_type']);
+        foreach ($docs as &$d) $d['doc_type_label'] = company_doc_display_label($d);
         unset($d);
 
         // شمارشِ خواسته‌شده در صفحه‌ی درخواست: چند بدنه و چند ثالث درخواست شده و چند تا صادر شده
@@ -2347,6 +2352,8 @@ try {
                         VALUES (?, ?, ?, NULL, ?, ?, 'SUPPORTING_DOC', ?, 'ASSIGNED', ?, NOW())")
             ->execute([$row['company_id'], $row['request_id'], $plateId, $relPath, $saved['orig_name'], $docType, $actor['user_id']]);
         $docId = $pdo->lastInsertId();
+        $docLabel = $docType === 'other' ? company_doc_label_clean($_POST['doc_label'] ?? '') : '';
+        if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
         $rowStatus = company_sync_plate_status($pdo, $plateId);
