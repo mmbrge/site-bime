@@ -486,6 +486,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .dc-delta.up { background: #ecfdf5; color: #047857; } .dc-delta.down { background: #fef2f2; color: #b91c1c; } .dc-delta.flat { background: #f1f5f9; color: #64748b; }
         .dc-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #94a3b8; pointer-events: none; }
         @keyframes suFade { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+        .cit-ws { width: min(1500px, 97vw); max-width: none; height: 93vh; max-height: 93vh; display: flex; flex-direction: column; overflow: hidden; }
+        .cit-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #eef2f7; }
+        .cit-nb { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 11px; background: #f1f5f9; color: #334155; font-weight: 800; font-size: 12px; }
+        .cit-nb:hover:not(:disabled) { background: #e2e8f0; } .cit-nb:disabled { opacity: .4; cursor: default; }
+        .cit-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr); }
+        .cit-view { position: relative; min-height: 0; background: #e2e8f0; border-left: 1px solid #e2e8f0; display: flex; flex-direction: column; }
+        .cit-pv { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; }
+        .cit-pv iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+        .cit-pv img { transform-origin: center center; transition: transform .2s; background: #fff; box-shadow: 0 4px 20px -8px rgba(0,0,0,.35); margin: 12px auto; max-width: none; }
+        .cit-tools { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; gap: 4px; background: rgba(15,23,42,.6); padding: 4px; border-radius: 12px; }
+        .cit-tools button, .cit-tools a { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: #fff; border-radius: 8px; font-size: 12px; }
+        .cit-tools button:hover, .cit-tools a:hover { background: rgba(255,255,255,.18); }
+        .cit-form { min-height: 0; overflow-y: auto; padding: 14px 18px 8px; }
+        @media (max-width: 900px) { .cit-body { grid-template-columns: 1fr; grid-template-rows: 44vh 1fr; } .cit-view { border-left: 0; border-bottom: 1px solid #e2e8f0; } }
         .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
@@ -3292,15 +3306,34 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <!-- مودال تگ‌گذاریِ یک مدرک صندوق ورودی -->
+    <!-- میزِ بررسیِ مدارک: فایل سمتِ راست، فیلدها سمتِ چپ؛ «بعدی/قبلی» بدونِ بستنِ پنجره، و هر وقت بستید بقیه سرِ جایش می‌ماند -->
     <div id="cinbox-tag-modal" class="modal-overlay">
-        <div class="modal-content w-full max-w-lg p-6 relative max-h-[90vh] overflow-y-auto">
-            <button type="button" onclick="document.getElementById('cinbox-tag-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
-            <h3 class="font-black text-lg mb-1">ثبت اطلاعات مدرک (تگ‌گذاری)</h3>
-            <p class="text-[11px] text-slate-400 mb-3">فایل را همین‌جا ببینید، بعد مشخص کنید مالِ کدام خودروی این درخواست و چه نوع مدرکی است؛ سیستم خودش نام‌گذاری می‌کند و در پوشه‌ی همان ردیف می‌گذارد.</p>
+        <div class="modal-content cit-ws relative p-0">
+            <div class="cit-top">
+                <div class="min-w-0 flex-1">
+                    <h3 class="font-black text-base flex items-center gap-2"><i class="fas fa-file-circle-check text-blue-500"></i>بررسیِ مدارک <span id="cit-counter" class="text-[11px] font-bold bg-blue-50 text-blue-700 rounded-full px-2.5 py-0.5"></span></h3>
+                    <p id="cit-docname" class="text-[11px] text-slate-400 truncate" dir="auto"></p>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" id="cit-prev" onclick="citNav(-1)" class="cit-nb" title="مدرکِ قبلی"><i class="fas fa-chevron-right"></i><span class="hidden sm:inline">قبلی</span></button>
+                    <button type="button" id="cit-next" onclick="citNav(1)" class="cit-nb" title="مدرکِ بعدی (بدونِ ثبت)"><span class="hidden sm:inline">بعدی</span><i class="fas fa-chevron-left"></i></button>
+                    <button type="button" onclick="citClose()" class="cit-nb" title="بستن؛ بقیه‌ی مدارک برای بعد می‌ماند"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="cit-body">
+            <div class="cit-view">
+                <div class="cit-tools">
+                    <button type="button" onclick="citZoom(1)" title="بزرگ‌تر"><i class="fas fa-magnifying-glass-plus"></i></button>
+                    <button type="button" onclick="citZoom(-1)" title="کوچک‌تر"><i class="fas fa-magnifying-glass-minus"></i></button>
+                    <button type="button" onclick="citRotate()" title="چرخاندن"><i class="fas fa-rotate-right"></i></button>
+                    <a id="cit-open-tab" href="#" target="_blank" title="باز کردن در تبِ جدید"><i class="fas fa-up-right-from-square"></i></a>
+                </div>
+                <!-- پیش‌نمایشِ خودِ فایل، تا بشود دید این مدرک چیست و مالِ کدام پلاک است -->
+                <div id="cit-preview" class="cit-pv"></div>
+            </div>
+            <div class="cit-form">
+            <p class="text-[11px] text-slate-400 mb-3">مشخص کنید این مدرک مالِ کدام خودروی درخواست و چه نوع مدرکی است؛ سیستم خودش نام‌گذاری می‌کند و در پوشه‌ی همان ردیف می‌گذارد. با «ثبت و بعدی» مدرکِ بعدی همین‌جا باز می‌شود.</p>
             <input type="hidden" id="cit-doc-id">
-
-            <!-- پیش‌نمایشِ خودِ فایل، تا بشود دید این مدرک چیست و مالِ کدام پلاک است -->
-            <div id="cit-preview" class="mb-3 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"></div>
             <!-- PDFِ چندصفحه‌ای: پیشنهادِ جدا کردنِ صفحه‌ها (هر صفحه یک مدرکِ جدا برای تگ‌گذاری) -->
             <div id="cit-split" class="hidden mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 flex items-center justify-between gap-2"></div>
             <!-- نتیجه‌ی شناساییِ خودکار (فاکتور فروش، سند، کارت، بیمه‌نامه‌ی قبلی) + ساختِ ردیف از همین اطلاعات -->
@@ -3375,9 +3408,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
             </div>
 
-            <div class="flex gap-2">
-                <button onclick="submitAssignDocument()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm">ثبت اطلاعات (تگ‌گذاری)</button>
+            <div class="flex gap-2 sticky bottom-0 bg-white pt-2 pb-1">
+                <button onclick="submitAssignDocument()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm" title="Ctrl+Enter"><i class="fas fa-check ml-1"></i><span id="cit-submit-lbl">ثبت و بعدی</span></button>
                 <button onclick="rejectDocument(document.getElementById('cit-doc-id').value)" class="bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2.5 px-4 rounded-xl text-sm whitespace-nowrap">رد کردن</button>
+            </div>
+            </div>
             </div>
         </div>
     </div>
@@ -8664,7 +8699,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
             companyInboxCache = data.documents;
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">مدرک تخصیص‌نیافته‌ای برای این درخواست نیست.</p>'; return; }
-            box.innerHTML = data.documents.map(d => `
+            box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div>
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
@@ -8678,6 +8713,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>`).join('');
         }
 
+        // دکمه‌ی «شروع/ادامه‌ی بررسی»: مدارک یکی‌یکی در میزِ بررسی (فایل راست، فیلدها چپ) باز می‌شوند
+        function citStartBar(docs) {
+            return `<div class="flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-2xl p-3">
+                <span class="text-xs font-bold text-blue-800"><i class="fas fa-layer-group ml-1"></i>${faDigits(String(docs.length))} مدرک منتظرِ بررسی</span>
+                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></div>`;
+        }
         async function loadCompanyInbox() {
             await loadCompanyInboxList();
             if ((companyInboxCache || []).some(d => d.ai_status === 'PENDING' || d.ai_status === 'RUNNING')) aiStepLoop();
@@ -8693,7 +8734,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
             companyInboxCache = data.documents;
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
-            box.innerHTML = data.documents.map(d => `
+            box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
                 <div class="card p-4 flex items-center justify-between gap-3">
                     <div class="min-w-0">
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
@@ -8773,29 +8814,88 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 vin: document.getElementById('cit-ai-vin').value.trim(), engine_no: document.getElementById('cit-ai-eng').value.trim()})})).json();
             if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
             showToast('ردیفِ تازه ساخته شد و مدرک رویش نشست.', 'success');
-            document.getElementById('cinbox-tag-modal').classList.remove('active');
-            loadCompanyInbox();
+            citAfterDone(docId);
             if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
         }
 
         // پیش‌نمایشِ خودِ فایلِ مدرک داخل مودال تگ‌گذاری (PDF در iframe، عکس به‌صورت
         // تصویر، و پوشه/زیپ فقط با لینک دانلود چون قابل نمایش درون‌خطی نیست)
+        let citZ = 1, citR = 0;
         function renderCitPreview(doc) {
             const box = document.getElementById('cit-preview');
             const url = '../' + doc.file_path;
             const ext = (doc.file_path || '').split('.').pop().toLowerCase();
+            citZ = 1; citR = 0;
+            document.getElementById('cit-open-tab').href = url;
+            document.querySelector('#cinbox-tag-modal .cit-tools').style.display = ['jpg','jpeg','png','webp','gif'].includes(ext) ? '' : 'none';
             if (['jpg','jpeg','png','webp','gif'].includes(ext)) {
-                box.innerHTML = `<img src="${url}" alt="پیش‌نمایش مدرک" class="w-full max-h-72 object-contain bg-white">
-                    <a href="${url}" target="_blank" class="block text-center text-[11px] text-blue-600 hover:underline py-1.5">باز کردن در تب جدید</a>`;
+                box.innerHTML = `<img id="cit-img" src="${url}" alt="پیش‌نمایش مدرک">`;
+                const im = document.getElementById('cit-img');
+                im.onload = () => { citFit(); };
             } else if (ext === 'pdf') {
-                box.innerHTML = `<iframe src="${url}" title="پیش‌نمایش مدرک" class="w-full h-72 bg-white"></iframe>
-                    <a href="${url}" target="_blank" class="block text-center text-[11px] text-blue-600 hover:underline py-1.5">باز کردن در تب جدید</a>`;
+                box.innerHTML = `<iframe src="${url}#view=FitH" title="پیش‌نمایش مدرک"></iframe>`;
             } else {
-                box.innerHTML = `<div class="p-3 text-center text-[11px] text-slate-500">
+                box.innerHTML = `<div class="p-6 text-center text-xs text-slate-600 self-center">
                     این فایل قابل نمایش درون‌خطی نیست (${ext || 'نامشخص'}).
                     <a href="${url}" target="_blank" class="text-blue-600 hover:underline mr-1">دانلود/باز کردن</a></div>`;
             }
         }
+        // عکس اول به اندازه‌ی کادر، بعد با بزرگ‌نمایی/چرخش
+        function citFit() {
+            const im = document.getElementById('cit-img'), box = document.getElementById('cit-preview');
+            if (!im || !im.naturalWidth) return;
+            const rot = citR % 180 !== 0;
+            const w = rot ? im.naturalHeight : im.naturalWidth, h = rot ? im.naturalWidth : im.naturalHeight;
+            const fit = Math.min((box.clientWidth - 24) / w, (box.clientHeight - 24) / h, 1.5);
+            im.style.width = Math.round(im.naturalWidth * fit * citZ) + 'px';
+            im.style.transform = `rotate(${citR}deg)`;
+            im.style.margin = rot ? `${Math.round((im.naturalWidth - im.naturalHeight) * fit * citZ / 2 + 12)}px auto` : '12px auto';
+        }
+        function citZoom(d) { citZ = Math.max(0.3, Math.min(5, citZ * (d > 0 ? 1.25 : 0.8))); citFit(); }
+        function citRotate() { citR = (citR + 90) % 360; citFit(); }
+
+        // ---- پیمایشِ مدارک داخلِ همان پنجره ----
+        function citIndex() { const id = document.getElementById('cit-doc-id').value; return (companyInboxCache || []).findIndex(d => String(d.id) === String(id)); }
+        function citPaintNav() {
+            const i = citIndex(), n = (companyInboxCache || []).length;
+            document.getElementById('cit-counter').textContent = n ? faDigits(String(i + 1)) + ' از ' + faDigits(String(n)) : '';
+            document.getElementById('cit-prev').disabled = i <= 0;
+            document.getElementById('cit-next').disabled = i < 0 || i >= n - 1;
+            document.getElementById('cit-submit-lbl').textContent = n > 1 ? 'ثبت و بعدی' : 'ثبت';
+            const d = (companyInboxCache || [])[i];
+            document.getElementById('cit-docname').textContent = d ? ((d.orig_name || 'فایل') + (d.company_name ? ' · ' + d.company_name : '') + (d.request_id ? ' · درخواست #' + faDigits(String(d.request_id)) : '')) : '';
+        }
+        function citNav(delta) {
+            const i = citIndex(), list = companyInboxCache || [];
+            const t = list[i + delta];
+            if (t) openInboxTagModal(t.id);
+        }
+        function citClose() {
+            document.getElementById('cinbox-tag-modal').classList.remove('active');
+            if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+            else if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+        }
+        // بعد از ثبت/رد: مدرک از فهرست بیرون می‌رود و مدرکِ بعدی (یا قبلی، اگر آخری بود) همین‌جا باز می‌شود
+        function citAfterDone(docId) {
+            const list = companyInboxCache || [];
+            const i = list.findIndex(d => String(d.id) === String(docId));
+            if (i >= 0) list.splice(i, 1);
+            const next = list[Math.max(0, Math.min(i, list.length - 1))];
+            if (next) { openInboxTagModal(next.id); return; }
+            document.getElementById('cinbox-tag-modal').classList.remove('active');
+            showToast('همه‌ی مدارکِ این فهرست بررسی شد.', 'success');
+            if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+            else loadCompanyInbox();
+            if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        }
+        document.addEventListener('keydown', e => {
+            const m = document.getElementById('cinbox-tag-modal');
+            if (!m || !m.classList.contains('active')) return;
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submitAssignDocument(); }
+            else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); citNav(1); }
+            else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); citNav(-1); }
+        });
+        window.addEventListener('resize', () => { if (document.getElementById('cit-img')) citFit(); });
 
         async function loadPlatesForCitRequest(requestId, preselectPlateId) {
             const plateSel = document.getElementById('cit-existing-plate');
@@ -8860,10 +8960,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const sel = document.getElementById('cit-request');
             sel.innerHTML = '<option>در حال بارگذاری...</option>';
             let data;
-            try {
+            // فهرستِ درخواست‌ها برای پیمایشِ پشتِ‌سرِهم یک بار گرفته می‌شود (۲ دقیقه)
+            if (window._citReq && Date.now() - window._citReq.t < 120000) data = window._citReq.d;
+            else try {
                 const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests'})});
                 data = await res.json();
+                if (data.ok) window._citReq = {t: Date.now(), d: data};
             } catch (e) { sel.innerHTML = '<option value="">خطا در ارتباط با سرور - دوباره تلاش کنید</option>'; return; }
+            if (String(document.getElementById('cit-doc-id').value) !== String(docId)) return;   // در این فاصله مدرکِ دیگری باز شد
             const forCompany = (data.requests || []).filter(r => r.company_id == doc.company_id);
             sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === doc.request_id ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
 
@@ -8889,8 +8993,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cit-expiry').value = '';
             document.getElementById('cit-skip-health').checked = false;
             // صفحه‌ی جداشده از PDFی که برای یک ردیفِ مشخص فرستاده شده بود، همان ردیف را از پیش انتخاب‌شده دارد
-            await loadPlatesForCitRequest(sel.value, String(sel.value) === String(doc.request_id) ? doc.plate_id : null);
             document.getElementById('cinbox-tag-modal').classList.add('active');
+            citPaintNav();
+            await loadPlatesForCitRequest(sel.value, String(sel.value) === String(doc.request_id) ? doc.plate_id : null);
         }
 
         // رد کردنِ یک مدرکِ ارسالیِ شرکت: فایل حذف می‌شود و دلیلش به‌صورت پیام در چتِ
@@ -8903,7 +9008,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     const data = await res.json();
                     showToast(data.ok ? 'مدرک رد شد و به شرکت اطلاع داده شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
                     if (!data.ok) return;
-                    document.getElementById('cinbox-tag-modal').classList.remove('active');
+                    if (document.getElementById('cinbox-tag-modal').classList.contains('active')) { citAfterDone(docId); return; }
                     if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
                     else loadCompanyInbox();
                     if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) {
@@ -8947,9 +9052,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (data.ok) {
                     showToast(data.note || (data.is_letter && data.requested_counts_fa ? 'نامه ثبت شد: ' + data.requested_counts_fa : 'اطلاعات ثبت شد.'),
                               data.note ? 'warning' : 'success');
-                    document.getElementById('cinbox-tag-modal').classList.remove('active');
-                    if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
-                    else loadCompanyInbox();
+                    citAfterDone(payload.doc_id);
                     loadCompanyRequests();
                 }
                 else showToast(data.error || 'خطا در تخصیص مدرک', 'error');
