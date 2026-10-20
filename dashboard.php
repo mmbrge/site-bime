@@ -4486,7 +4486,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=1"></script>
-    <script src="inquiry.js?v=1"></script>
+    <script src="inquiry.js?v=2"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {

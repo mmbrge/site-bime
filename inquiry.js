@@ -66,30 +66,90 @@
         .inq-modal>div{background:#fff;border-radius:22px;width:min(1100px,100%);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
         .inq-fb{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
         .inq-fbtn{font-size:10.5px;font-weight:800;border-radius:9px;padding:4px 10px;background:#eef2ff;color:#4338ca;white-space:nowrap}
-        .inq-fbtn:disabled{opacity:.5}.inq-fmsg{font-size:10.5px;font-weight:700}`;
+        .inq-fbtn:disabled{opacity:.5}.inq-fmsg{font-size:10.5px;font-weight:700}
+        .inq-cap{margin-top:10px;border:1.5px dashed #a5b4fc;background:#eef2ff;border-radius:16px;padding:12px}
+        .inq-capimg{display:inline-flex;align-items:center;justify-content:center;min-width:120px;min-height:44px;background:#fff;border-radius:10px;padding:3px}.inq-capimg img{max-height:50px;display:block}`;
         document.head.appendChild(s);
     }
     const badge = st => { const u = ST_UI[st] || ['', '#64748b', 'fa-circle']; return `<span class="inq-badge" style="background:${u[1]}1a;color:${u[1]}"><i class="fas ${u[2]}"></i>${u[0]}</span>`; };
     const pName = it => it.person && (it.person.name || it.person.family) ? `${it.person.name} ${it.person.family}`.trim() : (it.person_name || '');
 
-    // ---------------- اجرای یک استعلام (ثبت ← اجرا + خواندنِ پیشرفت) ----------------
-    async function run(body, onProg) {
+    // ---------------- کپچا: هر کاربری که به نشستِ بسته‌ی سامانه برسد، کدِ تصویر را زیرِ همان فیلدهایش می‌زند ----------------
+    // نام کاربری و رمز را مدیر کل در تنظیمات گذاشته؛ کاربر فقط متنِ تصویر را می‌نویسد. خروجی: true (وارد شد) / false (انصراف)
+    function captchaBox(host, image, err) {
+        css();
+        return new Promise(resolve => {
+            host.innerHTML = `<div class="inq-cap"><p class="text-[11.5px] font-black text-indigo-800 mb-2"><i class="fas fa-shield-halved ml-1"></i>برای انجامِ استعلام، کدِ تصویرِ امنیتی را وارد کنید</p>
+                <div class="flex flex-wrap items-center gap-2"><span class="inq-capimg">${image ? `<img src="${image}" alt="کد امنیتی">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'}</span>
+                    <button type="button" class="inq-fbtn" data-c="re" title="تصویرِ دیگر"><i class="fas fa-rotate"></i></button>
+                    <input class="inq-in !mt-0" style="width:150px;font-size:15px;text-align:center" dir="ltr" inputmode="numeric" autocomplete="off" placeholder="کد تصویر">
+                    <button type="button" class="inq-go !py-2 !px-4 text-xs" data-c="ok">ادامه‌ی استعلام</button>
+                    <button type="button" class="inq-fbtn" data-c="no" style="background:#f1f5f9;color:#475569">انصراف</button></div>
+                <p class="inq-caperr text-[11px] font-bold text-rose-600 mt-1.5">${esc(err || '')}</p></div>`;
+            const inp = host.querySelector('input'), er = host.querySelector('.inq-caperr'), img = host.querySelector('.inq-capimg');
+            const setImg = src => { img.innerHTML = src ? `<img src="${src}" alt="کد امنیتی">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'; };
+            const done = v => { host.innerHTML = ''; resolve(v); };
+            const refresh = async force => {
+                setImg(null);
+                const r = await post({ action: 'captcha', refresh: force ? 1 : 0 });
+                if (r.ok && r.logged_in) { done(true); return; }
+                if (!r.ok) { er.textContent = r.error || 'تصویر نیامد؛ دوباره بزنید.'; return; }
+                setImg(r.image); inp.value = ''; inp.focus();
+            };
+            if (!image) refresh(false); else setTimeout(() => inp.focus(), 50);
+            const go = async () => {
+                const t = en(inp.value).trim();
+                if (!t) { inp.focus(); return; }
+                const b = host.querySelector('[data-c="ok"]'); b.disabled = true; er.textContent = '';
+                const r = await post({ action: 'captcha_login', captcha: t });
+                b.disabled = false;
+                if (r.ok) { done(true); return; }
+                er.textContent = r.error || 'کد اشتباه بود.'; inp.value = '';
+                if (r.image) setImg(r.image); else refresh(true);
+                inp.focus();
+            };
+            host.querySelector('[data-c="ok"]').onclick = go;
+            host.querySelector('[data-c="re"]').onclick = () => refresh(true);
+            host.querySelector('[data-c="no"]').onclick = () => done(false);
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+        });
+    }
+    // جای کپچا وقتی فرمی میزبانش نیست (پنجره‌ی کوچک)
+    function captchaModal(image, err) {
+        const m = document.createElement('div'); m.className = 'inq-modal';
+        m.innerHTML = '<div style="width:min(460px,100%)"><div class="p-4" data-h></div></div>';
+        document.body.appendChild(m);
+        return captchaBox(m.querySelector('[data-h]'), image, err).then(v => { m.remove(); return v; });
+    }
+
+    // ---------------- اجرای یک استعلام (ثبت ← اجرا + خواندنِ پیشرفت؛ اگر نشست بسته بود: کپچا و ادامه) ----------------
+    async function run(body, onProg, capHost) {
         const c = await post(Object.assign({ action: 'create' }, body));
         if (!c.ok) return c;
         if (c.item.done) { if (onProg) onProg(c.item); return { ok: true, item: c.item }; }
-        let done = null;
-        const ex = post({ action: 'exec', id: c.id }).then(r => { done = r; });
         let last = c.item;
-        while (!done) {
-            await sleep(1300);
-            if (done) break;
-            const g = await post({ action: 'get', id: c.id });
-            if (g.ok) { last = g.item; if (onProg) onProg(last); if (last.done) break; }
+        for (let attempt = 0; attempt < 6; attempt++) {
+            let done = null;
+            const ex = post({ action: 'exec', id: c.id }).then(r => { done = r; });
+            while (!done) {
+                await sleep(1300);
+                if (done) break;
+                const g = await post({ action: 'get', id: c.id });
+                if (g.ok) { last = g.item; if (onProg) onProg(last); if (last.done) break; }
+            }
+            await ex.catch(() => {});
+            if (done && done.need_captcha) {
+                if (onProg) onProg(Object.assign({}, done.item, { notice: 'منتظرِ کدِ تصویرِ امنیتی…' }));
+                const ok = capHost ? await captchaBox(capHost, done.captcha, done.captcha_error) : await captchaModal(done.captcha, done.captcha_error);
+                if (!ok) return { ok: false, error: 'استعلام انجام نشد (کدِ امنیتی وارد نشد).', item: done.item };
+                if (V.boot) V.boot.status = 'logged_in';
+                continue;
+            }
+            const f = done && done.ok ? done.item : (await post({ action: 'get', id: c.id })).item || last;
+            if (onProg) onProg(f);
+            return { ok: true, item: f };
         }
-        await ex.catch(() => {});
-        const f = done && done.ok ? done.item : (await post({ action: 'get', id: c.id })).item || last;
-        if (onProg) onProg(f);
-        return { ok: true, item: f };
+        return { ok: false, error: 'ورود به سامانه انجام نشد؛ کمی بعد دوباره امتحان کنید.' };
     }
 
     // ---------------- نمای اصلی ----------------
@@ -136,6 +196,7 @@
                 <button class="inq-go ${k === 'person' ? 'md:col-span-2' : ''}" type="submit"><i class="fas fa-magnifying-glass ml-1"></i>استعلام</button>
             </form>
             ${V.boot.is_admin ? '<label class="flex items-center gap-2 text-[11px] font-bold text-slate-500"><input type="checkbox" id="inq-fresh" class="accent-indigo-600"> نتیجه‌ی قبلی (کش) استفاده نشود و دوباره از سامانه پرسیده شود</label>' : ''}
+            <div id="inq-capbox"></div>
             <div id="inq-out"></div></div>`;
         body.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { V.kind = x.dataset.k; renderSingle(body); });
         const f = body.querySelector('#inq-form');
@@ -148,10 +209,9 @@
             const btn = f.querySelector('button'); btn.disabled = true; V.running = true;
             const outEl = body.querySelector('#inq-out');
             const fresh = body.querySelector('#inq-fresh');
-            const r = await run(Object.assign({ kind: k, fresh: fresh && fresh.checked ? 1 : 0 }, d), it => { outEl.innerHTML = resultHtml(it, true); bindResult(outEl, it); });
+            const r = await run(Object.assign({ kind: k, fresh: fresh && fresh.checked ? 1 : 0 }, d), it => { outEl.innerHTML = resultHtml(it, true); bindResult(outEl, it); }, body.querySelector('#inq-capbox'));
             btn.disabled = false; V.running = false;
             if (!r.ok) { if (r.field) { const i = f.querySelector(`[name="${r.field === 'national_id' && k === 'legal' ? 'company_nid' : r.field}"]`); if (i) { i.classList.add('err'); i.focus(); } } toast(r.error || 'خطا', 'error'); }
-            else if (r.item.need_login && V.boot.is_admin) loginDialog();
         };
     }
     function stepsBar(it) {
@@ -238,7 +298,7 @@
                 <button id="inq-gstart" class="inq-go w-full hidden"><i class="fas fa-play ml-1"></i>شروعِ استعلامِ گروهی</button>
                 <p class="text-[10.5px] text-slate-400 leading-6">ردیف‌ها یکی‌یکی و پشتِ سرِ هم استعلام می‌شوند (نشستِ سامانه یکی است). اگر این صفحه را ببندید، با «ادامه» از همان‌جا جلو می‌رود${V.boot.is_admin ? '؛ اگر cron را در تنظیمات گذاشته باشید، در پس‌زمینه هم ادامه پیدا می‌کند' : ''}.</p>
             </div>` : ''}
-            <div class="inq-card ${can.group ? 'xl:col-span-3' : 'xl:col-span-5'}"><div class="flex items-center justify-between mb-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-layer-group ml-1 text-violet-500"></i>استعلام‌های گروهی</p><button class="inq-fbtn" id="inq-gr"><i class="fas fa-rotate"></i></button></div><div id="inq-gl" class="space-y-2"></div></div></div>`;
+            <div class="inq-card ${can.group ? 'xl:col-span-3' : 'xl:col-span-5'}"><div class="flex items-center justify-between mb-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-layer-group ml-1 text-violet-500"></i>استعلام‌های گروهی</p><button class="inq-fbtn" id="inq-gr"><i class="fas fa-rotate"></i></button></div><div id="inq-gcap"></div><div id="inq-gl" class="space-y-2 mt-2"></div></div></div>`;
         if (can.group) {
             const kindSel = body.querySelector('#inq-gk'), fileIn = body.querySelector('#inq-gf'), sample = body.querySelector('#inq-gs');
             const setSample = () => sample.href = `${API}?action=batch_sample&kind=${kindSel.value}`;
@@ -309,11 +369,16 @@
         try {
             for (let i = 0; i < 5000 && V.batchRun[id]; i++) {
                 const d = await post({ action: 'batch_step', id });
-                if (!d.ok) { toast(d.error, 'error'); if (d.need_login && V.boot.is_admin) loginDialog(); break; }
+                if (!d.ok) { toast(d.error, 'error'); break; }
+                if (d.need_captcha) {
+                    const host = body.querySelector('#inq-gcap');
+                    const ok = host ? await captchaBox(host, d.captcha) : await captchaModal(d.captcha);
+                    if (!ok) { toast('استعلامِ گروهی متوقف شد؛ هر وقت خواستید «ادامه» را بزنید.', 'warning'); break; }
+                    continue;
+                }
                 const card = body.querySelector(`[data-b="${id}"]`);
                 if (card && d.batch) { card.outerHTML = batchCard(d.batch); bindBatches(body); }
                 if (!d.batch || d.batch.status !== 'RUNNING') { toast('استعلامِ گروهی تمام شد.', 'success'); break; }
-                if (d.last && d.last.need_login) { toast('نشستِ سامانه بسته شد؛ بعد از ورودِ دوباره «ادامه» را بزنید.', 'warning'); if (V.boot.is_admin) loginDialog(); break; }
                 if (!d.last) await sleep(2500);
             }
         } finally { delete V.batchRun[id]; const b = body.querySelector('#inq-gl'); if (b && b.isConnected) loadBatches(body); }
@@ -382,10 +447,11 @@
                 <div class="flex flex-wrap items-center gap-2">${statusChip(d.status).replace('inq-chip', 'inq-chip !bg-slate-800 text-white')}<button class="inq-fbtn" id="inq-ss"><i class="fas fa-rotate ml-1"></i>بررسیِ دوباره</button><button class="inq-go !py-2 !px-4 text-xs" id="inq-sl"><i class="fas fa-key ml-1"></i>ورود با کپچا</button></div>
                 <label class="inq-f">نام کاربریِ سامانه<input id="inq-su" class="inq-in" dir="ltr" style="font-size:13px" value="${esc(d.username)}"></label>
                 <label class="inq-f">رمزِ سامانه<input id="inq-sp" type="password" class="inq-in" dir="ltr" style="font-size:13px" placeholder="${d.has_password ? '•••••• (ذخیره شده؛ برای تغییر بنویسید)' : ''}"></label>
-                <p class="text-[10.5px] text-slate-400 leading-6">رمز رمزنگاری‌شده روی هاست ذخیره می‌شود. نشستِ سامانه بینِ همه‌ی استعلام‌ها مشترک است؛ اگر بسته شود به شما در ربات پیام می‌آید و تا ورودِ دوباره، استعلام‌ها خطای «اطلاعات را دستی وارد کنید» می‌دهند.</p>
+                <p class="text-[10.5px] text-slate-400 leading-6">رمز رمزنگاری‌شده روی هاست ذخیره می‌شود و استعلام‌ها خودکار با همین نام کاربری و رمز وارد می‌شوند. نشستِ سامانه بینِ همه مشترک است؛ اگر بسته باشد، هر کاربری که استعلام بزند (پنل یا مینی‌اپ) زیرِ فیلدهایش کدِ تصویرِ امنیتی را می‌بیند و با زدنش، ورود و استعلام خودکار انجام می‌شود.</p>
                 <div class="rounded-2xl bg-slate-50 p-3"><p class="text-[11px] font-black text-slate-600 mb-1"><i class="fas fa-clock ml-1"></i>نگه‌داشتنِ نشست + ادامه‌ی استعلامِ گروهی در پس‌زمینه</p>
-                    <p class="text-[10.5px] text-slate-500 leading-6">در cPanel ← Cron Jobs هر ۵ دقیقه این دستور را بگذارید:</p>
-                    <code class="block text-[10.5px] bg-white border rounded-lg p-2 mt-1 break-all" dir="ltr" id="inq-cron">wget -q -O /dev/null "${esc(d.cron_url)}"</code>
+                    <p class="text-[10.5px] text-slate-500 leading-6">اختیاری ولی پیشنهادی: بدونِ آن، سامانه‌ی پاسارگاد بعد از مدتی بی‌کاری خودش نشست را می‌بندد و کاربر زودتر کپچا می‌بیند، و استعلامِ گروهی فقط تا وقتی این صفحه باز است جلو می‌رود. با آن، نشست تا «نگه‌داشتنِ نشست» دقیقه بعد از آخرین استعلام باز می‌ماند و بعد رها می‌شود.</p>
+                    <p class="text-[10.5px] text-slate-500 leading-6 mt-1">cPanel ← Cron Jobs ← Common Settings: <b>Once Per Five Minutes (*/5 * * * *)</b> و در Command این را بگذارید:</p>
+                    <code class="block text-[10.5px] bg-white border rounded-lg p-2 mt-1 break-all" dir="ltr" id="inq-cron">curl -s -o /dev/null "${esc(d.cron_url)}"</code>
                     <div class="flex gap-2 mt-2"><button class="inq-fbtn" id="inq-cc"><i class="far fa-copy ml-1"></i>کپی</button><button class="inq-fbtn" id="inq-ck">کلیدِ تازه</button></div></div>
             </div>
             <div class="inq-card space-y-2.5">
@@ -394,10 +460,11 @@
                 ${sw('inq_miniapp_person', 'استعلامِ هوشمندِ شخص در مینی‌اپ', 'به محضِ واردکردنِ کد ملی و تاریخ تولد، نام و نام خانوادگی خودکار پر می‌شود (اگر نیامد، کاربر دستی می‌نویسد)')}
                 ${sw('inq_miniapp_postal', 'دکمه‌ی استعلامِ کد پستی در مینی‌اپ و درخواستِ کاربران')}
                 ${sw('inq_postal_required', 'استعلامِ کد پستی برای کاربران اجباری باشد', 'کاربر تا کد پستیِ تأییدشده (املاک و اسکان) نزند، نمی‌تواند درخواست را ادامه دهد')}
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                     ${num('inq_wait_sec', 'مکث بینِ گام‌ها (ثانیه)', '۰ تا ۹؛ پیش‌فرض ۲')}
                     ${num('inq_cache_days', 'اعتبارِ نتیجه‌ی قبلی (روز)', '۰ = همیشه دوباره بپرس')}
                     ${num('inq_daily_limit', 'سقفِ روزانه برای هر کاربرِ مینی‌اپ', '۰ = بدونِ سقف')}
+                    ${num('inq_keep_minutes', 'نگه‌داشتنِ نشست (دقیقه)', 'بعد از آخرین استعلام؛ پیش‌فرض ۶۰ (با cron)')}
                 </div>
                 <button class="inq-go w-full mt-2" id="inq-ssave"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیمات</button>
             </div></div>`;
@@ -428,7 +495,7 @@
             const box = m.querySelector('#inq-cap'); box.innerHTML = '<i class="fas fa-spinner fa-spin text-slate-400"></i>';
             const r = await post({ action: 'captcha' });
             if (!r.ok) { box.innerHTML = `<p class="text-xs text-rose-600">${esc(r.error)}</p>`; return; }
-            if (r.loggedIn) { box.innerHTML = '<p class="text-xs font-bold text-emerald-600">نشست باز است؛ نیازی به ورود نیست.</p>'; return; }
+            if (r.loggedIn || r.logged_in) { box.innerHTML = '<p class="text-xs font-bold text-emerald-600">نشست باز است؛ نیازی به ورود نیست.</p>'; return; }
             box.innerHTML = `<img src="${r.image}" class="mx-auto rounded-lg" alt="کپچا"><button class="inq-fbtn mt-2" data-rc>↻ تصویرِ دیگر</button>`;
             box.querySelector('[data-rc]').onclick = cap;
             m.querySelector('#inq-lc').focus();
@@ -458,6 +525,7 @@
             const wrap = document.createElement('div'); wrap.className = 'inq-fb';
             wrap.innerHTML = `<button type="button" class="inq-fbtn"><i class="fas fa-magnifying-glass ml-1"></i>${label}</button><span class="inq-fmsg text-slate-400"></span>`;
             input.insertAdjacentElement('afterend', wrap);
+            const capHost = document.createElement('div'); wrap.insertAdjacentElement('afterend', capHost);
             const btn = wrap.querySelector('button'), msg = wrap.querySelector('span');
             btn.onclick = async () => {
                 const nid = en(typeof opts.nid === 'function' ? opts.nid() : (opts.nid && opts.nid.value) || '').replace(/\D/g, '');
@@ -466,7 +534,7 @@
                 if (!nid || !birth) { msg.className = 'inq-fmsg text-amber-600'; msg.textContent = 'اول کد ملی و تاریخ تولد را وارد کنید.'; return; }
                 if (kind === 'postal' && postal.length !== 10) { msg.className = 'inq-fmsg text-amber-600'; msg.textContent = 'کد پستیِ ۱۰ رقمی را وارد کنید.'; return; }
                 btn.disabled = true; msg.className = 'inq-fmsg text-indigo-600'; msg.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال استعلام…';
-                const r = await run({ kind: kind === 'postal' ? 'postal' : 'person', source: 'form', national_id: nid, birth, postal }, it => { if (!it.done) msg.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>${esc(it.notice || 'در حال استعلام…')}`; });
+                const r = await run({ kind: kind === 'postal' ? 'postal' : 'person', source: 'form', national_id: nid, birth, postal }, it => { if (!it.done) msg.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>${esc(it.notice || 'در حال استعلام…')}`; }, capHost);
                 btn.disabled = false;
                 if (!r.ok) { msg.className = 'inq-fmsg text-rose-600'; msg.textContent = r.error || 'خطا'; return; }
                 const it = r.item;

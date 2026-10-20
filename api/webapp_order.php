@@ -55,6 +55,20 @@ function order_inq_cfg($pdo) {
     $postal = $on && inq_get_setting($pdo, 'inq_miniapp_postal') === '1';
     return ['person' => $on && inq_get_setting($pdo, 'inq_miniapp_person') === '1', 'postal' => $postal, 'required' => $postal && inq_get_setting($pdo, 'inq_postal_required') === '1'];
 }
+// اجرای یک استعلامِ مینی‌اپ و خروجیِ ساده برای کاربر (نشستِ بسته => کپچا)
+function order_inq_run($pdo, $id, $execute) {
+    if ($execute) {
+        $r = inq_execute($pdo, $id);
+        if (!empty($r['need_captcha'])) { $cp = inq_captcha_get($pdo); return ['ok' => false, 'need_captcha' => true, 'id' => intval($id), 'captcha' => $cp['image'] ?? null, 'error' => $cp['ok'] ? '' : ($cp['error'] ?? '')]; }
+    }
+    $row = inq_get($pdo, $id);
+    $o = inq_out($row, false);
+    $p = $o['person'] ?: [];
+    return ['ok' => true, 'status' => $o['status'], 'found' => $o['status'] !== 'FAIL' && ($p['name'] ?? '') !== '',
+            'name' => trim(($p['name'] ?? '') . ' ' . ($p['family'] ?? '')), 'father' => $p['father'] ?? '', 'gender' => $p['gender'] ?? '',
+            'postal_valid' => $o['postal_valid'], 'message' => $row['kind'] === 'postal' ? ($o['postal_text'] ?: $o['notice']) : $o['notice'],
+            'birth_mismatch' => $o['birth_mismatch']];
+}
 // این کد پستی اخیراً (اعتبارِ نتیجه در تنظیمات) با موفقیت استعلام شده؟
 function order_postal_verified($pdo, $postal) {
     require_once __DIR__ . '/_inquiry.php';
@@ -192,13 +206,20 @@ try {
         $kind = $action === 'inq_person' ? 'person' : 'postal';
         $c = inq_create($pdo, $kind, ['national_id' => $nid, 'birth' => $jsonBody['birth'] ?? '', 'postal' => $jsonBody['postal'] ?? ''], 'miniapp', ['PERSON', intval($person['id']), (string)$person['full_name']]);
         if (!$c['ok']) { echo json_encode($c, JSON_UNESCAPED_UNICODE); exit; }
-        if (!$c['cached']) { if (function_exists('sess_release')) sess_release(); inq_execute($pdo, $c['id']); }
-        $o = inq_out(inq_get($pdo, $c['id']), false);
-        $p = $o['person'] ?: [];
-        echo json_encode(['ok' => true, 'status' => $o['status'], 'found' => $o['status'] !== 'FAIL' && ($p['name'] ?? '') !== '',
-                          'name' => trim(($p['name'] ?? '') . ' ' . ($p['family'] ?? '')), 'father' => $p['father'] ?? '', 'gender' => $p['gender'] ?? '',
-                          'postal_valid' => $o['postal_valid'], 'message' => $kind === 'postal' ? ($o['postal_text'] ?: $o['notice']) : $o['notice'],
-                          'birth_mismatch' => $o['birth_mismatch']], JSON_UNESCAPED_UNICODE);
+        echo json_encode(order_inq_run($pdo, $c['id'], !$c['cached']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- نشستِ سامانه‌ی استعلام بسته بود: کاربر کدِ تصویرِ امنیتی را می‌زند و همان استعلام ادامه پیدا می‌کند ----
+    if ($action === 'inq_captcha') {
+        $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        require_once __DIR__ . '/_inquiry.php';
+        $row = inq_get($pdo, intval($jsonBody['id'] ?? 0));
+        if (!$row || $row['user_type'] !== 'PERSON' || intval($row['user_id']) !== intval($person['id'])) { echo json_encode(['ok' => false, 'error' => 'استعلام پیدا نشد.']); exit; }
+        if (!empty($jsonBody['refresh'])) { $cp = inq_captcha_get($pdo, true); echo json_encode(['ok' => false, 'need_captcha' => true, 'id' => intval($row['id']), 'captcha' => $cp['image'] ?? null, 'logged_in' => !empty($cp['logged_in'])]); exit; }
+        $l = inq_captcha_login($pdo, $jsonBody['captcha'] ?? '');
+        if (!$l['ok']) { echo json_encode(['ok' => false, 'need_captcha' => true, 'id' => intval($row['id']), 'captcha' => $l['image'] ?? null, 'error' => $l['error']], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(order_inq_run($pdo, intval($row['id']), true), JSON_UNESCAPED_UNICODE);
         exit;
     }
 

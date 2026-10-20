@@ -191,7 +191,7 @@
     <div class="field"><label>کد ملی <span id="ri-addressee3">بیمه‌گذار</span></label><input type="tel" id="rel-nid" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم"></div>
     <div class="field" id="rel-birth-box" style="display:none;"><label>تاریخ تولد <span>(برای پر شدنِ خودکارِ نام)</span></label><input type="text" id="rel-birth" dir="ltr"></div>
     <div class="field"><label>نام و نام‌خانوادگی <span id="ri-addressee2">بیمه‌گذار</span></label><input type="text" id="rel-name" placeholder="مثلاً زهرا احمدی">
-      <p id="rel-inq" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p></div>
+      <p id="rel-inq" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p><div id="rel-cap"></div></div>
     <div class="field-error" id="rel-error"></div>
   </div>
   <button class="btn btn-primary" onclick="submitRelativeInfo()">ادامه</button>
@@ -213,7 +213,7 @@
       <label>کد پستی (ثبت‌شده در سامانه املاک و اسکان)</label>
       <input type="tel" id="pi-postal" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم" dir="ltr" style="text-align:center;">
       <button type="button" id="pi-postal-inq" class="btn" style="display:none;margin-top:8px;padding:9px 12px;font-size:12px;background:#eef2ff;color:#4338ca;box-shadow:none;" onclick="inqPostal()">🔎 استعلامِ کد پستی (املاک و اسکان)</button>
-      <p id="pi-postal-res" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p>
+      <p id="pi-postal-res" style="font-size:11px;margin-top:6px;line-height:1.8;display:none;"></p><div id="pi-cap"></div>
       <p style="font-size:10px;color:#64748b;margin-top:6px;line-height:1.8;">اگر کد پستی را نمی‌دانید، باید به سامانه‌ی ملی املاک و اسکان (amlak.mrud.ir) مراجعه کنید.</p>
     </div>
     <div class="field-error" id="pi-error"></div>
@@ -551,6 +551,41 @@ async function inqCall(action, body) {
     catch (e) { return { ok: false, error: 'خطا در اتصال به سرور.' }; }
 }
 function inqMsg(el, text, color) { el.style.display = 'block'; el.style.color = color; el.textContent = text; }
+// نشستِ سامانه بسته بود: کدِ تصویرِ امنیتی همین‌جا زیرِ فیلد؛ با زدنش همان استعلام ادامه پیدا می‌کند. خروجی: نتیجه یا null (انصراف)
+function inqCaptcha(host, r) {
+    return new Promise(resolve => {
+        let id = r.id;
+        host.innerHTML = '<div style="margin-top:8px;border:1.5px dashed #a5b4fc;background:#eef2ff;border-radius:14px;padding:10px;">'
+            + '<p style="font-size:11.5px;font-weight:800;color:#3730a3;margin:0 0 8px;">🛡️ برای استعلام، کدِ تصویرِ امنیتی را وارد کنید</p>'
+            + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span data-img style="background:#fff;border-radius:10px;padding:3px;min-width:110px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;"></span>'
+            + '<button type="button" data-re style="border:0;background:#fff;border-radius:9px;padding:8px 10px;">🔄</button></div>'
+            + '<input type="tel" data-in inputmode="numeric" dir="ltr" placeholder="کدِ تصویر" style="margin-top:8px;text-align:center;">'
+            + '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="btn btn-primary" data-ok style="flex:1;padding:10px;">ادامه‌ی استعلام</button><button type="button" class="btn" data-no style="flex:0 0 auto;padding:10px 14px;background:#f1f5f9;color:#475569;box-shadow:none;">دستی می‌نویسم</button></div>'
+            + '<p data-er style="font-size:11px;color:#b91c1c;margin:6px 0 0;"></p></div>';
+        const img = host.querySelector('[data-img]'), inp = host.querySelector('[data-in]'), er = host.querySelector('[data-er]');
+        const setImg = src => { img.innerHTML = src ? '<img src="' + src + '" style="max-height:46px;display:block;" alt="کد">' : '⏳'; };
+        setImg(r.captcha); if (r.error) er.textContent = r.error;
+        const finish = v => { host.innerHTML = ''; resolve(v); };
+        host.querySelector('[data-re]').onclick = async () => {
+            setImg(null);
+            const x = await inqCall('inq_captcha', { id: id, refresh: 1 });
+            if (x.logged_in) { const y = await inqCall('inq_captcha', { id: id, captcha: '-' }); if (y.ok) { finish(y); return; } }
+            setImg(x.captcha); inp.value = '';
+        };
+        host.querySelector('[data-no]').onclick = () => finish(null);
+        host.querySelector('[data-ok]').onclick = async () => {
+            const t = toEn(inp.value.trim());
+            if (!t) { inp.focus(); return; }
+            const b = host.querySelector('[data-ok]'); b.disabled = true; b.textContent = '⏳ در حالِ ورود و استعلام…'; er.textContent = '';
+            const x = await inqCall('inq_captcha', { id: id, captcha: t });
+            b.disabled = false; b.textContent = 'ادامه‌ی استعلام';
+            if (x.ok) { finish(x); return; }
+            if (x.need_captcha) { er.textContent = x.error || 'کد اشتباه بود؛ دوباره بزنید.'; setImg(x.captcha); inp.value = ''; inp.focus(); return; }
+            finish(x);
+        };
+        if (!r.captcha) host.querySelector('[data-re]').click();
+    });
+}
 async function relInq() {
     if (!INQ.cfg.person || INQ.relBusy) return;
     const nid = toEn(document.getElementById('rel-nid').value).replace(/\D/g, '');
@@ -561,7 +596,8 @@ async function relInq() {
     INQ.relKey = key; INQ.relBirth = birth; INQ.relBusy = true;
     const box = document.getElementById('rel-inq'), nameIn = document.getElementById('rel-name');
     inqMsg(box, '⏳ در حالِ استعلامِ نام… (چند ثانیه؛ می‌توانید دستی هم بنویسید)', '#4338ca');
-    const r = await inqCall('inq_person', { national_id: nid, birth: birth });
+    let r = await inqCall('inq_person', { national_id: nid, birth: birth });
+    if (r.need_captcha) { inqMsg(box, 'برای پر شدنِ خودکارِ نام، کدِ تصویرِ زیر را بزنید (یا نام را دستی بنویسید).', '#4338ca'); r = (await inqCaptcha(document.getElementById('rel-cap'), r)) || { ok: false, error: 'استعلام انجام نشد' }; }
     INQ.relBusy = false;
     if (r.ok && r.found) {
         if (!nameIn.value.trim() || nameIn.dataset.auto === '1') { nameIn.value = r.name; nameIn.dataset.auto = '1'; }
@@ -580,7 +616,8 @@ async function inqPostal() {
     if (!birth) { inqMsg(box, 'اول تاریخ تولد را انتخاب کنید.', '#b45309'); return; }
     if (postal.length !== 10) { inqMsg(box, 'کد پستیِ ۱۰ رقمی را وارد کنید.', '#b45309'); return; }
     btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ در حالِ استعلام… (تا یک دقیقه)';
-    const r = await inqCall('inq_postal', { birth: birth, postal: postal });
+    let r = await inqCall('inq_postal', { birth: birth, postal: postal });
+    if (r.need_captcha) { box.style.display = 'none'; r = (await inqCaptcha(document.getElementById('pi-cap'), r)) || { ok: false, error: 'استعلام انجام نشد؛ دوباره «استعلامِ کد پستی» را بزنید.' }; }
     btn.disabled = false; btn.textContent = t;
     if (!r.ok) { inqMsg(box, r.error || 'استعلام انجام نشد.', '#b91c1c'); return; }
     if (r.postal_valid === true) { INQ.verified = postal; inqMsg(box, '✅ ' + (r.message || 'کد پستی در املاک و اسکان ثبت شده است.'), '#047857'); }

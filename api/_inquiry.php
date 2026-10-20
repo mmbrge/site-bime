@@ -13,7 +13,7 @@
 const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
-                      'inq_daily_limit' => '30', 'inq_enabled' => '1'];
+                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';
@@ -557,12 +557,40 @@ function inq_px_status($pdo, $fresh = false) {
 }
 function inq_px_mark($s) { @file_put_contents(inq_dir() . '/status.json', json_encode(['t' => time(), 's' => $s])); }
 
-// خروج از سامانه => یک بار در ساعت به مدیر کل خبر داده می‌شود (در ربات)
-function inq_notify_logout($pdo) {
-    $f = inq_dir() . '/notified.txt';
-    if (is_file($f) && time() - filemtime($f) < 3600) return;
-    @touch($f);
-    try { if (function_exists('notify_admin')) notify_admin($pdo, '🔐 نشستِ سامانه‌ی استعلامِ پاسارگاد بسته شده؛ برای ادامه‌ی استعلام‌ها در پنل ← «استعلامات» ← تنظیمات وارد شوید (کپچا).'); } catch (Throwable $e) {}
+// آخرین کار با سامانه (استعلام یا ورود): cron فقط تا «inq_keep_minutes» دقیقه بعد از آن نشست را باز نگه می‌دارد
+function inq_touch_activity() { @file_put_contents(inq_dir() . '/activity.txt', (string)time()); }
+function inq_last_activity() { $f = inq_dir() . '/activity.txt'; return is_file($f) ? intval(@file_get_contents($f)) : 0; }
+function inq_notify_logout($pdo) { /* هر کاربر خودش کپچا را می‌زند؛ پیامی به مدیر لازم نیست */ }
+
+// ---- کپچا برای همه‌ی کاربران: نام کاربری و رمز از تنظیمات (مدیر کل)، فقط متنِ تصویر را کاربر می‌زند ----
+// همه‌ی کسانی که هم‌زمان به کپچا رسیده‌اند همان یک تصویر را می‌بینند (کپچای سامانه به نشستِ مشترک بسته است)
+function inq_captcha_get($pdo, $refresh = false) {
+    $f = inq_dir() . '/captcha.json';
+    $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    if (!$refresh && is_array($c) && time() - intval($c['t'] ?? 0) < 150 && !empty($c['image'])) return ['ok' => true, 'image' => $c['image']];
+    $lk = inq_lock(25);
+    if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
+    try { $r = (new InqPasargad())->getCaptcha(); } finally { inq_unlock($lk); }
+    if (!empty($r['loggedIn'])) { inq_px_mark('logged_in'); @unlink($f); return ['ok' => true, 'logged_in' => true]; }
+    if (!empty($r['image'])) @file_put_contents($f, json_encode(['t' => time(), 'image' => $r['image']]));
+    return $r;
+}
+function inq_captcha_login($pdo, $text) {
+    $cr = inq_creds($pdo);
+    if ($cr['user'] === '' || $cr['pass'] === '') return ['ok' => false, 'error' => 'نام کاربری و رمزِ سامانه‌ی پاسارگاد هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.'];
+    $text = trim(strtr((string)$text, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']));
+    if ($text === '') return ['ok' => false, 'error' => 'متنِ تصویرِ امنیتی را بنویسید.'];
+    $lk = inq_lock(25);
+    if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
+    try {
+        $px = new InqPasargad();
+        if ($px->status() === 'logged_in') { $r = ['ok' => true]; }   // کسِ دیگری همین الان وارد شده بود
+        else $r = $px->login($cr['user'], $cr['pass'], $text);
+    } finally { inq_unlock($lk); }
+    @unlink(inq_dir() . '/captcha.json');
+    if ($r['ok']) { inq_px_mark('logged_in'); inq_touch_activity(); return ['ok' => true]; }
+    $n = inq_captcha_get($pdo, true);
+    return ['ok' => false, 'error' => $r['error'] ?? 'کد اشتباه بود؛ دوباره بزنید.', 'image' => $n['image'] ?? null];
 }
 
 // =====================================================================
@@ -694,10 +722,12 @@ function inq_execute($pdo, $id) {
             $pdo->prepare("UPDATE inq_requests SET notice = ? WHERE id = ?")->execute(['گام ' . $s . ' از ' . $max . '…', $id]);
             $r = $px->runStep($s, $row['national_id'], $birth, (string)$row['postal']);
             if (($r['error'] ?? '') === 'need_login') {
-                inq_px_mark('logged_out'); inq_notify_logout($pdo);
-                inq_timeline_push($pdo, $id, $tl, ['step' => $s, 'status' => 'bad', 'title' => 'گام ' . $s, 'detail' => 'نشستِ سامانه بسته است (نیاز به ورود).', 'time' => '']);
-                return $finish('FAIL', 'سامانه‌ی استعلام موقتاً در دسترس نیست (نیاز به ورودِ دوباره‌ی مدیر). اطلاعات را دستی وارد کنید.', ['timeline' => $tl, 'need_login' => true]);
+                // نشست بسته است: استعلام در صف می‌ماند تا کاربر کپچا را بزند و دوباره اجرا شود
+                inq_px_mark('logged_out');
+                $pdo->prepare("UPDATE inq_requests SET status = 'QUEUED', notice = 'برای ادامه، کدِ تصویرِ امنیتی (کپچا) لازم است.', timeline_json = NULL, started_at = NULL WHERE id = ?")->execute([$id]);
+                return ['ok' => false, 'need_captcha' => true];
             }
+            if (!empty($r['ok'])) inq_touch_activity();
             inq_timeline_push($pdo, $id, $tl, ['step' => $s, 'status' => $r['status'] ?? ($r['ok'] ? 'ok' : 'bad'), 'title' => $r['title'] ?? ('گام ' . $s), 'detail' => $r['detail'] ?? '', 'time' => $r['time'] ?? '',
                                               'live' => $r['live'] ?? null]);
             if (!empty($r['person']) && !empty($r['person']['name'])) $person = $r['person'];
@@ -790,7 +820,13 @@ function inq_batch_tick($pdo, $batchId = null) {
     $w = "status = 'QUEUED' AND batch_id IS NOT NULL" . ($batchId ? " AND batch_id = " . intval($batchId) : '') . " AND batch_id IN (SELECT id FROM inq_batches WHERE status = 'RUNNING')";
     $id = $pdo->query("SELECT id FROM inq_requests WHERE $w ORDER BY id LIMIT 1")->fetchColumn();
     $ran = null;
-    if ($id) { $r = inq_execute($pdo, intval($id)); $ran = intval($id); }
+    if ($id) {
+        $kind = $pdo->query("SELECT kind FROM inq_requests WHERE id = " . intval($id))->fetchColumn();
+        if ($kind !== 'legal' && inq_px_status($pdo) === 'logged_out') return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
+        $r = inq_execute($pdo, intval($id));
+        if (!empty($r['need_captcha'])) return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
+        $ran = intval($id);
+    }
     // گروه‌هایی که چیزی در صف ندارند تمام می‌شوند
     $pdo->exec("UPDATE inq_batches b SET status = 'DONE', finished_at = NOW() WHERE status = 'RUNNING' AND NOT EXISTS (SELECT 1 FROM inq_requests r WHERE r.batch_id = b.id AND r.status IN ('QUEUED', 'RUNNING'))");
     return ['ran' => $ran, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];

@@ -16,8 +16,12 @@ if (($_GET['action'] ?? '') === 'keepalive') {
     $key = inq_get_setting($pdo, 'inq_cron_key');
     if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) { http_response_code(403); $out(['ok' => false]); }
     @set_time_limit(280); @ignore_user_abort(true);
+    // فقط تا «inq_keep_minutes» دقیقه بعد از آخرین استعلام/ورود نشست باز نگه داشته می‌شود؛ بعد از آن رها می‌شود تا خودش بسته شود
+    $keep = max(5, intval(inq_get_setting($pdo, 'inq_keep_minutes')));
+    $idle = time() - inq_last_activity();
+    $pending = intval($pdo->query("SELECT COUNT(*) FROM inq_requests r JOIN inq_batches b ON b.id = r.batch_id WHERE b.status = 'RUNNING' AND r.status = 'QUEUED'")->fetchColumn());
+    if ($idle > $keep * 60 && !$pending) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60)]);
     $s = inq_px_status($pdo, true);
-    if ($s === 'logged_out') inq_notify_logout($pdo);
     $ran = 0; $t0 = time();
     if ($s === 'logged_in') while (time() - $t0 < 200) { $r = inq_batch_tick($pdo); if (!$r['ran']) break; $ran++; }
     $out(['ok' => true, 'state' => $s, 'ran' => $ran]);
@@ -71,8 +75,17 @@ if ($action === 'create') {
 if ($action === 'exec') {
     $row = inq_get($pdo, $in['id'] ?? 0);
     if (!$row || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
-    if ($row['status'] === 'QUEUED') inq_execute($pdo, intval($row['id']));
-    $out(['ok' => true, 'item' => inq_out(inq_get($pdo, $row['id']), $isAdmin)]);
+    $r = $row['status'] === 'QUEUED' ? inq_execute($pdo, intval($row['id'])) : [];
+    $o = ['ok' => true, 'item' => inq_out(inq_get($pdo, $row['id']), $isAdmin)];
+    // نشستِ سامانه بسته بود: تصویرِ امنیتی برای همین کاربر (زیرِ فیلدها) و بعد از واردکردنش همین استعلام دوباره اجرا می‌شود
+    if (!empty($r['need_captcha'])) { $c = inq_captcha_get($pdo); $o['need_captcha'] = true; $o['captcha'] = $c['image'] ?? null; if (!$c['ok']) $o['captcha_error'] = $c['error'] ?? ''; }
+    $out($o);
+}
+// ---- کپچا (هر کاربری که استعلام می‌زند) ----
+if ($action === 'captcha' || $action === 'captcha_login') {
+    if (!$can('form') && !$can('single') && !$can('group')) $out(['ok' => false, 'error' => 'دسترسی ندارید.']);
+    if ($action === 'captcha') $out(inq_captcha_get($pdo, !empty($in['refresh'])));
+    $out(inq_captcha_login($pdo, $in['captcha'] ?? ''));
 }
 if ($action === 'get') {
     $row = inq_get($pdo, $in['id'] ?? 0);
@@ -169,9 +182,9 @@ if ($action === 'batch_upload') {
 }
 if ($action === 'batch_step') {
     $need('group');
-    if (!$isAdmin && inq_px_status($pdo) === 'logged_out') $out(['ok' => false, 'need_login' => true, 'error' => 'نشستِ سامانه‌ی استعلام بسته است؛ مدیر کل باید دوباره وارد شود.']);
     $bid = intval($in['id'] ?? 0);
     $r = inq_batch_tick($pdo, $bid);
+    if (!empty($r['need_captcha'])) { $c = inq_captcha_get($pdo); $out(['ok' => true, 'need_captcha' => true, 'captcha' => $c['image'] ?? null, 'batch' => inq_batch_info($pdo, $bid)]); }
     $last = $r['ran'] ? inq_out(inq_get($pdo, $r['ran']), false) : null;
     $out(['ok' => true, 'batch' => inq_batch_info($pdo, $bid), 'last' => $last]);
 }
@@ -196,7 +209,7 @@ if ($action === 'batch_cancel' || $action === 'batch_resume') {
 }
 
 // ---- تنظیمات و ورود به سامانه (فقط مدیر کل) ----
-if (in_array($action, ['settings_get', 'settings_save', 'captcha', 'login', 'status', 'logout_local'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
+if (in_array($action, ['settings_get', 'settings_save', 'login', 'status'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
 if ($action === 'settings_get') {
     $s = inq_settings($pdo);
     if (inq_get_setting($pdo, 'inq_cron_key') === '') inq_set_setting($pdo, 'inq_cron_key', bin2hex(random_bytes(16)));
@@ -208,7 +221,7 @@ if ($action === 'settings_get') {
 }
 if ($action === 'settings_save') {
     foreach (INQ_DEFAULTS as $k => $def) if (array_key_exists($k, $in)) {
-        $v = in_array($k, ['inq_wait_sec', 'inq_cache_days', 'inq_daily_limit'], true) ? (string)max(0, min($k === 'inq_wait_sec' ? 9 : 365, intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
+        $v = in_array($k, ['inq_wait_sec', 'inq_cache_days', 'inq_daily_limit', 'inq_keep_minutes'], true) ? (string)max($k === 'inq_keep_minutes' ? 5 : 0, min($k === 'inq_wait_sec' ? 9 : ($k === 'inq_keep_minutes' ? 600 : 365), intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
         inq_set_setting($pdo, $k, $v);
     }
     if (array_key_exists('username', $in)) inq_set_setting($pdo, 'inq_px_user', trim((string)$in['username']));
@@ -217,13 +230,6 @@ if ($action === 'settings_save') {
     $out(['ok' => true]);
 }
 if ($action === 'status') $out(['ok' => true, 'status' => inq_px_status($pdo, true)]);
-if ($action === 'captcha') {
-    $lk = inq_lock(20);
-    if (!$lk) $out(['ok' => false, 'error' => 'سامانه مشغولِ استعلام است؛ چند ثانیه‌ی دیگر دوباره بزنید.']);
-    try { $r = (new InqPasargad())->getCaptcha(); } finally { inq_unlock($lk); }
-    if (!empty($r['loggedIn'])) inq_px_mark('logged_in');
-    $out($r);
-}
 if ($action === 'login') {
     $cr = inq_creds($pdo);
     $u = trim((string)($in['username'] ?? '')) ?: $cr['user'];
@@ -233,7 +239,7 @@ if ($action === 'login') {
     if (!$lk) $out(['ok' => false, 'error' => 'سامانه مشغولِ استعلام است؛ چند ثانیه‌ی دیگر دوباره بزنید.']);
     try { $r = (new InqPasargad())->login($u, $p, trim((string)($in['captcha'] ?? ''))); } finally { inq_unlock($lk); }
     if ($r['ok']) {
-        inq_px_mark('logged_in');
+        inq_px_mark('logged_in'); inq_touch_activity(); @unlink(inq_dir() . '/captcha.json');
         if (!empty($in['remember'])) { inq_set_setting($pdo, 'inq_px_user', $u); inq_set_setting($pdo, 'inq_px_pass', inq_enc($p)); }
     }
     $out($r);

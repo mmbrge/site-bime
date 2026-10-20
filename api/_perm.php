@@ -249,7 +249,7 @@ function perm_api_map() {
         // دسترسیِ دقیق داخلِ خودِ inquiry_actions بررسی می‌شود (استعلامِ داخلِ فرم‌ها برای همه‌ی کارشناسانِ ثبت آزاد است)
         'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
-            'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
+            'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
         ]],
         'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
             'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',
