@@ -18,6 +18,47 @@ function chat_access_ensure($pdo) {
     }
 }
 
+// ---- سقفِ حجمِ فایلِ گفتگو برای هر کاربر (ستونِ chat_max_mb: خالی = پیش‌فرض، ۰ = فرستادنِ فایل بسته) ----
+const CHAT_MAX_MB_DEFAULT = 20;
+function chat_size_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    foreach (['users', 'company_portal_users'] as $t) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE 'chat_max_mb'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN chat_max_mb SMALLINT NULL"); }
+        catch (Throwable $e) { error_log('[chat_size_ensure] ' . $e->getMessage()); }
+    }
+}
+// سقفِ آپلودِ خودِ PHP روی هاست (upload_max_filesize و post_max_size) به مگابایت
+function chat_php_max_mb() {
+    $b = function ($v) { $v = trim((string)$v); if ($v === '') return 0; $n = (float)$v; $u = strtolower(substr($v, -1));
+        return $u === 'g' ? $n * 1024 : ($u === 'm' ? $n : ($u === 'k' ? $n / 1024 : $n / 1048576)); };
+    $l = array_filter([$b(ini_get('upload_max_filesize')), $b(ini_get('post_max_size'))], function ($x) { return $x > 0; });
+    return $l ? (int)floor(min($l)) : 0;
+}
+function chat_max_mb_value($v) {
+    if ($v === null || $v === '' || !is_numeric($v)) return null;
+    return max(0, min(2048, (int)$v));
+}
+// سقفِ مؤثرِ یک کاربر (مگابایت): مقدارِ تعیین‌شده یا پیش‌فرض، و نه بیشتر از سقفِ هاست
+function chat_max_mb($pdo, $actor) {
+    $mb = null;
+    $t = ($actor['kind'] ?? '') === 'STAFF' ? 'users' : (($actor['kind'] ?? '') === 'COMPANY' ? 'company_portal_users' : null);
+    if ($t) {
+        chat_size_ensure($pdo);
+        try { $st = $pdo->prepare("SELECT chat_max_mb FROM `$t` WHERE id = ?"); $st->execute([intval($actor['id'])]); $mb = chat_max_mb_value($st->fetchColumn()); }
+        catch (Throwable $e) {}
+    }
+    if ($mb === null) $mb = CHAT_MAX_MB_DEFAULT;
+    $php = chat_php_max_mb();
+    return $php > 0 && $mb > $php ? $php : $mb;
+}
+function chat_set_max_mb($pdo, $kind, $id, $v) {
+    chat_size_ensure($pdo);
+    $t = $kind === 'COMPANY' ? 'company_portal_users' : 'users';
+    try { $pdo->prepare("UPDATE `$t` SET chat_max_mb = ? WHERE id = ?")->execute([chat_max_mb_value($v), intval($id)]); } catch (Throwable $e) {}
+}
+
 const CHAT_COMPANY_ROLE_OPTIONS = ['OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'همکار · پنل پارسیان', 'LIFE' => 'همکار · بیمه عمر'];
 
 function chat_company_roles($pdo) {

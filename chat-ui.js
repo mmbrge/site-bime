@@ -820,7 +820,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             const d = await this.call('chat_open', { key });
             if (this.key !== key) return;
             if (!d.ok) { main.innerHTML = `<div class="cx-empty"><i class="fas fa-triangle-exclamation" style="font-size:30px;color:#f59e0b"></i><b>${esc(d.error)}</b></div>`; return; }
-            this.head = d.head; this.refs = d.refs || [];
+            this.head = d.head; this.refs = d.refs || []; if (d.max_mb != null) this.maxMb = Number(d.max_mb);
             this.presence = d.head.presence || null; this.presenceAt = Date.now(); this.state = d.state || null;
             this.renderConv();
             this.setMessages(d.messages, true);
@@ -1198,7 +1198,9 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
 
         // ---------------- نوشتن و ارسال
         attach(f) {
-            if (f.size > 20 * 1048576) return this.toast('حجم فایل بیشتر از ۲۰ مگابایت است.', 'error');
+            const mx = this.maxMb == null ? 20 : this.maxMb;
+            if (mx <= 0) return this.toast('فرستادنِ فایل در گفتگو برای حسابِ شما بسته است.', 'error');
+            if (f.size > mx * 1048576) return this.toast('حجم فایل بیشتر از ' + fa(String(mx)) + ' مگابایت است.', 'error');
             this.file = f; this.renderBar();
         }
         renderBar() {

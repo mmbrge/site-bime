@@ -3787,6 +3787,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <div class="uf-inline"><input id="uf-password" dir="ltr" autocomplete="new-password" placeholder="••••••"><button type="button" onclick="ufGenPass()" title="ساختِ رمزِ تصادفی"><i class="fas fa-dice"></i></button></div></label>
                             <label class="uf-f"><span>شماره موبایل <em>(برای ورود با کدِ بله)</em></span><input id="uf-mobile" dir="ltr" inputmode="numeric" placeholder="09xxxxxxxxx"></label>
                             <label class="uf-f" id="uf-personnel-box"><span>کد پرسنلی <em>(اختیاری)</em></span><input id="uf-personnel" dir="ltr"></label>
+                            <label class="uf-f"><span>سقفِ حجمِ فایل در گفتگو <em>(مگابایت؛ خالی = پیش‌فرض ۲۰، ۰ = بسته)</em></span><input id="uf-chatmb" type="number" min="0" max="2048" dir="ltr" placeholder="۲۰"><em id="uf-chatmb-host" class="text-[10px] text-slate-400"></em></label>
                         </div>
                         <p id="uf-mobile-err" class="hidden text-[11px] text-red-600 font-bold mt-2"></p>
                     </section>
@@ -4428,7 +4429,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=14"></script>
+    <script src="chat-ui.js?v=15"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=7"></script>
     <script>
@@ -9893,6 +9894,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             staffUsersCache = data.users;
             presenceAt = Date.now();
             staffCompanies = data.companies || [];
+            { const e = document.getElementById('uf-chatmb-host'); if (e) e.textContent = data.chat_php_max_mb ? 'سقفِ هاست: ' + faDigits(String(data.chat_php_max_mb)) + ' مگابایت' : ''; }
             staffMeId = Number(data.me);
             document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
             renderStaffUsers();
@@ -10194,6 +10196,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ufG('uf-honor').value = u ? (u.honor || '') : '';
             ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
             ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
+            ufG('uf-chatmb').value = u && u.chat_max_mb != null ? u.chat_max_mb : '';
             ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
             const pf = (u && u.profile) || {};
             ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { ufG('uf-pf-' + k).value = pf[k] || ''; });
@@ -10250,7 +10253,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const mode = ufG('uf-mode').value, role = ufG('uf-role').value, edit = mode === 'edit';
             if (!role) { showToast('اول نقشِ کاربر را انتخاب کنید.', 'warning'); return; }
             const co = role === 'COMPANY';
-            const body = {full_name: ufG('uf-fullname').value.trim(), honor: ufG('uf-honor').value, mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value};
+            const body = {full_name: ufG('uf-fullname').value.trim(), honor: ufG('uf-honor').value, mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value,
+                          chat_max_mb: p2e(ufG('uf-chatmb').value.trim())};
             if (!body.full_name) { showToast('نامِ کاربر را وارد کنید.', 'error'); ufG('uf-fullname').focus(); return; }
             if (co) {
                 body.company_ids = msdValue('uf-companies');

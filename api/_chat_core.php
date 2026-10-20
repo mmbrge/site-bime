@@ -64,10 +64,13 @@ function chat_file_out($path, $name) {
 }
 
 // ذخیره‌ی فایلِ پیوستِ پیام (فهرستِ پسوندهای مجاز؛ هیچ فایلِ اجرایی‌ای پذیرفته نمی‌شود)
-function chat_store_file($f, $destDir) {
+function chat_store_file($f, $destDir, $maxMb = CHAT_MAX_MB_DEFAULT) {
+    $mbFa = function ($n) { return function_exists('fa_digits') ? fa_digits($n) : $n; };
+    if ($maxMb <= 0) return ['ok' => false, 'error' => 'فرستادنِ فایل در گفتگو برای حسابِ شما بسته است.'];
+    if (!empty($f) && in_array($f['error'] ?? 0, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) return ['ok' => false, 'error' => 'حجم فایل بیشتر از سقفِ مجاز (' . $mbFa($maxMb) . ' مگابایت) است.'];
     if (empty($f) || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'] ?? '')) return ['ok' => false, 'error' => 'فایلی دریافت نشد.'];
-    if (($f['size'] ?? 0) > 20 * 1048576) return ['ok' => false, 'error' => 'حجم فایل بیشتر از ۲۰ مگابایت است.'];
-    $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
+    if (($f['size'] ?? 0) > $maxMb * 1048576) return ['ok' => false, 'error' => 'حجم فایل بیشتر از ' . $mbFa($maxMb) . ' مگابایت است.'];
+    $ext = upload_ext((string)$f['name']);
     $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'txt', 'mp3', 'ogg', 'oga', 'm4a', 'wav', 'webm', 'mp4'];
     if (!in_array($ext, $allowed, true)) return ['ok' => false, 'error' => 'این نوع فایل مجاز نیست (عکس، PDF، Word، Excel، ZIP، صوت).'];
     if (!is_dir($destDir) && !@mkdir($destDir, 0775, true) && !is_dir($destDir)) return ['ok' => false, 'error' => 'ساختِ پوشه‌ی فایل‌ها ممکن نشد.'];
@@ -563,7 +566,7 @@ function chat_send($pdo, $actor, $type, $id, $text, $file, $replyTo, $ref) {
     if ($file) {
         $dir = $type === 'C' ? temp_archive_root($root) . '/چت شرکت‌ها/' . sanitize_folder_name(chat_company_name($pdo, $id))
              : ($type === 'S' ? temp_archive_root($root) . '/چت داخلی' : $root . '/موقت/موقت بایگانی/support/' . ($type === 'P' ? 'p' . $id : 't' . $id));
-        $saved = chat_store_file($file, $dir);
+        $saved = chat_store_file($file, $dir, chat_max_mb($pdo, $actor));
         if (!$saved['ok']) return $saved;
         $fileRel = $saved['rel']; $fileName = $saved['name'];
     }
@@ -877,7 +880,7 @@ function chat_dispatch($pdo, $actor, $action, array $data, $files = []) {
             chat_mark_read($pdo, $actor, $type, $id);
             return ['ok' => true, 'head' => chat_head($pdo, $actor, $type, $id), 'refs' => $type === 'T' ? [] : chat_refs($pdo, $type, $id),
                     'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id),
-                    'state' => chat_state_out($pdo, $actor, $type, $id)];
+                    'state' => chat_state_out($pdo, $actor, $type, $id), 'max_mb' => chat_max_mb($pdo, $actor)];
         case 'chat_poll':
             chat_mark_read($pdo, $actor, $type, $id);
             return ['ok' => true, 'messages' => chat_messages($pdo, $actor, $type, $id), 'typing' => chat_other_typing($pdo, $actor, $type, $id),

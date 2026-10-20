@@ -218,6 +218,8 @@ try {
         $cols .= ', max_devices';
         honor_ensure($pdo);
         $cols .= ', honor';
+        chat_size_ensure($pdo);
+        $cols .= ', chat_max_mb';
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         $devN = su_devices_alive_counts($pdo);
         foreach ($users as &$u) {
@@ -241,7 +243,7 @@ try {
         // کاربرانِ شرکت‌ها
         $cWhere = $ready ? (empty($data['include_deleted']) ? 'WHERE COALESCE(cpu.is_deleted, 0) = 0' : '') : 'WHERE cpu.is_active = 1';
         $cCols = $ready ? ', (cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked, cpu.is_deleted, cpu.deleted_at' : '';
-        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.honor, cpu.mobile_number, cpu.is_active, cpu.created_at, cpu.max_devices $cCols, " . prof_cols($pdo, 'cpu') . ",
+        $cUsers = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.honor, cpu.mobile_number, cpu.is_active, cpu.created_at, cpu.max_devices, cpu.chat_max_mb $cCols, " . prof_cols($pdo, 'cpu') . ",
                                       GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR '، ') AS company_names, GROUP_CONCAT(c.id) AS company_ids
                                  FROM company_portal_users cpu
                                  LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
@@ -267,7 +269,7 @@ try {
 
         $pending = 0;
         if ($ready) { auth_purge_old_resets($pdo); $pending = intval($pdo->query("SELECT COUNT(*) FROM password_reset_requests WHERE status = 'PENDING'")->fetchColumn()); }
-        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me,
+        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'chat_php_max_mb' => chat_php_max_mb(), 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me,
              'profile_ready' => prof_ready($pdo)]);
     }
 
@@ -305,6 +307,7 @@ try {
         $pdo->commit();
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'COMPANY', $newId, $data['avatar']);
         if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE company_portal_users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $newId]); }
+        if (array_key_exists('chat_max_mb', $data)) chat_set_max_mb($pdo, 'COMPANY', $newId, $data['chat_max_mb']);
         out(['ok' => true, 'user_id' => $newId]);
     }
 
@@ -334,6 +337,7 @@ try {
         if (!empty($data['avatar'])) prof_set_avatar($pdo, 'STAFF', $newId, $data['avatar']);
         if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $newId]); }
         if (!empty($data['profile']) && is_array($data['profile'])) cprof_save($pdo, $newId, $data['profile']);
+        if (array_key_exists('chat_max_mb', $data)) chat_set_max_mb($pdo, 'STAFF', $newId, $data['chat_max_mb']);
         $rpw = (string)($data['report_edit_password'] ?? '');
         $warn = null;
         if ($rpw !== '') { if (strlen($rpw) < 4) $warn = 'رمزِ ویرایشِ گزارش باید حداقل ۴ کاراکتر باشد؛ ثبت نشد.'; elseif (!staff_set_report_pw($pdo, $newId, $rpw, false)) $warn = STAFF_REPORT_PW_MSG; }
@@ -370,6 +374,7 @@ try {
         $pdo->commit();
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'COMPANY', $id, (string)$data['avatar']);
         if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE company_portal_users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $id]); }
+        if (array_key_exists('chat_max_mb', $data)) chat_set_max_mb($pdo, 'COMPANY', $id, $data['chat_max_mb']);
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
             auth_unlink_bot($pdo, 'COMPANY', $id, "⚠️ {$fullName} عزیز، شماره‌ی تماسِ حساب شما در پنل «بیمه با ما» تغییر کرد.\nاتصال این گفتگو قطع شد؛ لطفاً با شماره‌ی جدید دوباره وارد شوید.");
         }
@@ -407,6 +412,7 @@ try {
         if ($rpw !== '' || $rpwClear) staff_set_report_pw($pdo, $id, $rpw, $rpwClear);
         if (array_key_exists('avatar', $data) && prof_ready($pdo)) prof_set_avatar($pdo, 'STAFF', $id, (string)$data['avatar']);
         if (array_key_exists('honor', $data)) { honor_ensure($pdo); $pdo->prepare("UPDATE users SET honor = ? WHERE id = ?")->execute([honor_value($data['honor']), $id]); }
+        if (array_key_exists('chat_max_mb', $data)) chat_set_max_mb($pdo, 'STAFF', $id, $data['chat_max_mb']);
         if (!empty($data['profile']) && is_array($data['profile'])) { $pr = cprof_save($pdo, $id, $data['profile']); if (empty($pr['ok'])) out($pr); }
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره احراز هویت کند
         if ($phoneChanged && !empty($u['bale_chat_id'])) {
