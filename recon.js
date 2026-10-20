@@ -84,7 +84,7 @@
             <div class="rc-hero"><h2><i class="fas fa-scale-unbalanced ml-2"></i>مغایرت‌گیری با پاسارگاد</h2>
                 <p>هر هفته یا هر ماه خروجیِ صدورِ پاسارگاد (بدنه و ثالث، همان قالبِ همیشگی) و در صورتِ امکان خروجیِ الحاقیه‌ها را بدهید. سایت می‌گوید کدام بیمه‌نامه در هر دو هست و یکی است، کدام فیلدش فرق دارد، کدام فقط در پنلِ پاسارگاد است و کدام فقط در سایت. برای هر مغایرت شما تعیین می‌کنید کدام طرف درست است؛ «پاسارگاد درست است» مقدارِ پاسارگاد را روی سایت می‌نشاند.</p></div>
             ${can('create') ? `<div class="rc-card"><h3><i class="fas fa-file-excel text-emerald-600"></i>مغایرت‌گیریِ تازه</h3>
-                <div class="rc-up"><div class="rc-drop" id="rc-drop"><b>اکسل‌های خروجیِ پاسارگاد را اینجا بکشید یا کلیک کنید</b><br>بدنه، ثالث و الحاقیه‌ها — با هم یا جدا<input type="file" id="rc-file" accept=".xlsx,.xls,.csv" multiple class="hidden"></div>
+                <div class="rc-up"><div class="rc-drop" id="rc-drop"><b>اکسل‌های خروجیِ پاسارگاد را اینجا بکشید یا کلیک کنید</b><br>بدنه، ثالث و الحاقیه‌ها — با هم یا جدا<input type="file" data-uk-skip id="rc-file" accept=".xlsx,.xls,.csv" multiple class="hidden"></div>
                 <input id="rc-title" class="rc-in" placeholder="عنوان (اختیاری): مثلاً هفته‌ی دوم مهر">
                 <button class="rc-btn p" id="rc-go" disabled><i class="fas fa-magnifying-glass-chart"></i>شروع</button></div>
                 <div class="text-[11px] text-slate-500" id="rc-fnames"></div><div id="rc-result"></div></div>` : ''}
@@ -221,7 +221,7 @@
                     ${(run.src_files || []).length ? run.src_files.map(f => f.can ? `<button class="rc-btn g sm" style="border-radius:999px" data-corr="${f.idx}"><i class="fas fa-file-excel"></i>${esc(fa(f.label))}</button>` : `<span class="text-[11px] text-slate-400">${esc(f.name)} (فقط xlsx)</span>`).join('')
                         : '<span class="text-[11px] text-amber-700">فایلِ اصلیِ این مغایرت‌گیری روی سایت نیست (قبل از این امکان انجام شده). همان اکسلی را که از پاسارگاد گرفته بودید این‌جا بارگذاری کنید؛ تصمیم‌های قبلی سرِ جایش می‌ماند و نیازی به مغایرت‌گیریِ دوباره نیست.</span>'}
                     <button id="rc-attach" class="rc-btn ${(run.src_files || []).length ? 's' : 'p'} sm" style="border-radius:999px"><i class="fas fa-upload"></i>${(run.src_files || []).length ? 'افزودنِ فایلِ اصلیِ دیگر' : 'بارگذاریِ فایلِ اصلیِ بیمه‌گر (xlsx)'}</button>
-                    <input type="file" id="rc-attach-f" accept=".xlsx" multiple class="hidden"></div></div>
+                    <input type="file" data-uk-skip id="rc-attach-f" accept=".xlsx" multiple class="hidden"></div></div>
                 <div id="rc-list" class="space-y-2"></div>`;
             view.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { S.cat = b.dataset.cat; S.sel = {}; if (S.cat !== 'DIFF') S.field = ''; loadItems(); });
             view.querySelectorAll('[data-fld]').forEach(b => b.onclick = () => { S.field = S.field === b.dataset.fld ? '' : b.dataset.fld; if (S.field) S.cat = 'DIFF'; loadItems(); });

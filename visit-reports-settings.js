@@ -134,7 +134,7 @@
                 <p class="vr-sec-title !text-xs"><i class="fas fa-file-word text-blue-600"></i> قالبِ فعلی</p>
                 ${t.exists ? `<p class="text-xs font-bold text-slate-600">${esc(t.orig_name || '')} · ${fa(t.vars.length)} متغیر</p>` : '<p class="text-xs font-bold text-red-500">هنوز قالبی بارگذاری نشده است.</p>'}
                 <label class="vr-drop p-5 flex flex-col items-center gap-2 cursor-pointer text-center" data-drop="docx"><i class="fas fa-cloud-arrow-up text-2xl text-indigo-400"></i>
-                    <p class="text-xs font-black text-slate-600">بارگذاریِ قالبِ Word (docx)</p><p class="text-[10px] text-slate-400 font-bold">قالبِ قبلی با «(old)» کنار گذاشته می‌شود</p><input type="file" accept=".docx" class="hidden vrs-tpl-in"></label>
+                    <p class="text-xs font-black text-slate-600">بارگذاریِ قالبِ Word (docx)</p><p class="text-[10px] text-slate-400 font-bold">قالبِ قبلی با «(old)» کنار گذاشته می‌شود</p><input type="file" data-uk-skip accept=".docx" class="hidden vrs-tpl-in"></label>
                 <p class="vrs-tpl-st text-[11px] font-bold"></p>
                 ${t.exists ? `<div class="flex flex-wrap gap-2">
                     <a class="vr-btn vr-btn-p" target="_blank" href="${API}?action=set_template_preview&id=${cat.id}"><i class="fas fa-eye"></i> پیش‌نمایش با دادهٔ نمونه</a>
@@ -251,14 +251,14 @@
                 <button type="button" class="vr-btn vr-btn-s shrink-0 vrs-psel">اعمال</button></div>
                 <label class="vr-drop p-4 flex flex-col items-center gap-1.5 cursor-pointer text-center"><i class="fas fa-file-code text-2xl text-sky-500"></i>
                     <p class="text-xs font-black text-slate-600">بارگذاریِ فایلِ .php</p><p class="text-[10px] text-slate-400 font-bold">با همان نامِ اصلی ذخیره می‌شود (پارسرها با نام همدیگر را صدا می‌زنند)؛ نسخه‌ی قبلی (old) می‌شود</p>
-                    <input type="file" accept=".php" class="hidden vrs-py-in"></label>
+                    <input type="file" data-uk-skip accept=".php" class="hidden vrs-py-in"></label>
                 <p class="vrs-py-st text-[11px] font-bold"></p>
                 ${p.exists ? `<a class="vr-btn vr-btn-s" href="${API}?action=set_parser_download&id=${cat.id}"><i class="fas fa-download"></i> دانلودِ فایلِ فعلی</a>` : ''}
                 <p class="text-[10px] text-slate-400 font-bold leading-5">فایل باید با <code dir="ltr">return function ($raw_text, $checkboxes) { … return [...]; };</code> یک تابع برگرداند که آرایه‌ی کلید ← مقدار بدهد (فایل‌های .py قدیمی دیگر اجرا نمی‌شوند؛ نسخه‌ی PHP همان قالب‌ها آماده است). کلیدهایی که پارسرِ اختصاصی پیدا نکند از الگوریتمِ عمومی پُر می‌شود.</p>
             </div>
             <div class="vr-card p-5 vr-fade-up space-y-3">
                 <p class="vr-sec-title !text-xs"><i class="fas fa-flask text-violet-500"></i> آزمایش با یک PDF</p>
-                <label class="vr-drop p-4 flex flex-col items-center gap-1.5 cursor-pointer text-center"><i class="fas fa-file-pdf text-2xl text-rose-500"></i><p class="text-xs font-black text-slate-600">انتخابِ PDF برای آزمایش</p><input type="file" accept=".pdf" class="hidden vrs-pt-in"></label>
+                <label class="vr-drop p-4 flex flex-col items-center gap-1.5 cursor-pointer text-center"><i class="fas fa-file-pdf text-2xl text-rose-500"></i><p class="text-xs font-black text-slate-600">انتخابِ PDF برای آزمایش</p><input type="file" data-uk-skip accept=".pdf" class="hidden vrs-pt-in"></label>
                 <div class="vrs-pt-out text-[11px]"></div>
             </div></div>`;
         sb.querySelector('.vrs-psel').onclick = async () => { const d = await api('set_parser_select', { id: cat.id, name: sb.querySelector('.vrs-pfile').value }); if (!d.ok) return toast(d.error, 'error'); toast('اعمال شد.', 'info'); await loadBoot(); renderTypes(body); };
@@ -397,7 +397,7 @@
                 <p class="vr-sec-title !text-xs"><i class="fas fa-font text-indigo-500"></i> بارگذاریِ قلم</p>
                 <p class="text-[10px] text-slate-400 font-bold leading-5">به‌طور پیش‌فرض همه‌ی متن‌های فارسی با «وزیر» و متن‌های لاتین با Helvetica ساخته می‌شوند. اگر می‌خواهید PDF دقیقاً با قلمِ قالب (مثلاً B Nazanin) ساخته شود، فایل TTFِ همان قلم را با همان نامی که در Word انتخاب شده آپلود کنید.</p>
                 <div><label class="vr-lbl">نامِ قلم در Word</label><input class="vr-in vrs-fw" list="vrs-wf" placeholder="B Nazanin"><datalist id="vrs-wf">${b.word_fonts.map(w => `<option value="${esc(w)}">`).join('')}</datalist></div>
-                <div class="grid grid-cols-2 gap-2"><div><label class="vr-lbl">فایلِ معمولی (TTF)</label><input type="file" accept=".ttf,.otf" class="vr-in !p-1.5 vrs-fr"></div><div><label class="vr-lbl">فایلِ Bold (اختیاری)</label><input type="file" accept=".ttf,.otf" class="vr-in !p-1.5 vrs-fb"></div></div>
+                <div class="grid grid-cols-2 gap-2"><div><label class="vr-lbl">فایلِ معمولی (TTF)</label><input type="file" data-uk-skip accept=".ttf,.otf" class="vr-in !p-1.5 vrs-fr"></div><div><label class="vr-lbl">فایلِ Bold (اختیاری)</label><input type="file" data-uk-skip accept=".ttf,.otf" class="vr-in !p-1.5 vrs-fb"></div></div>
                 <button type="button" class="vr-btn vr-btn-p vrs-fup"><i class="fas fa-upload"></i> بارگذاری و تبدیل</button>
             </div>
             <div class="vr-card p-5 vr-fade-up space-y-3">

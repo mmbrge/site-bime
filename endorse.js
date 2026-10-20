@@ -117,7 +117,7 @@
         const kind = d.kind || '';
         bd.innerHTML = `
             <div class="en-sec"><h4>۱) فایلِ الحاقیه</h4>
-                <label class="en-drop" id="en-drop"><input type="file" accept="application/pdf,.pdf" class="hidden" id="en-file">
+                <label class="en-drop" id="en-drop"><input type="file" data-uk-skip accept="application/pdf,.pdf" class="hidden" id="en-file">
                     ${E.token ? `<i class="fas fa-circle-check text-emerald-600 ml-1"></i>فایل دریافت شد${E.readErr ? ` — <span class="text-rose-600">${esc(E.readErr)}</span>` : ' و خوانده شد'} · برای عوض کردن کلیک کنید`
                               : '<i class="fas fa-cloud-arrow-up ml-1"></i>فایلِ PDFِ الحاقیه را بکشید یا کلیک کنید (اختیاری؛ بدونِ فایل هم می‌شود دستی وارد کرد)'}</label>
                 ${(E.warnings || []).map(w => `<div class="en-warn mt-2"><i class="fas fa-triangle-exclamation ml-1"></i>${esc(w)}</div>`).join('')}
@@ -143,7 +143,7 @@
             </div>
             <div class="en-sec" id="en-fin"></div>
             <div class="en-sec"><h4>۵) بیمه‌نامه‌ی نهایی (بعد از الحاقیه) — اختیاری</h4>
-                <label class="en-drop" id="en-fdrop"><input type="file" accept="application/pdf,.pdf" class="hidden" id="en-ffile">${finalDropHtml()}</label>
+                <label class="en-drop" id="en-fdrop"><input type="file" data-uk-skip accept="application/pdf,.pdf" class="hidden" id="en-ffile">${finalDropHtml()}</label>
                 <div id="en-fres" class="mt-2">${finalResHtml()}</div>
                 <p class="text-[10.5px] text-slate-400 mt-1">اطلاعاتِ این فایل دوباره خوانده و با اطلاعاتِ قبلیِ بیمه‌نامه مقایسه می‌شود؛ هر چه عوض شده (پلاک، تعهد، تاریخ پایان، ...) در شرحِ الحاقیه نوشته می‌شود. بعداً هم از فهرستِ الحاقیه‌ها می‌شود داد.</p></div>`;
         const drop = bd.querySelector('#en-drop'), fi = bd.querySelector('#en-file');
@@ -187,7 +187,7 @@
         const r = await post(fd, true);
         if (!r.ok) { toast(r.error || 'خطا', 'error'); E.finalToken = null; }
         else { E.finalToken = r.token; E.finalDiffs = r.diffs || []; E.finalWarn = r.warnings || []; E.finalErr = r.read_ok ? null : (r.read_error || 'خوانده نشد؛ فقط فایل ذخیره می‌شود.'); }
-        const d2 = document.getElementById('en-fdrop'); if (d2) d2.innerHTML = '<input type="file" accept="application/pdf,.pdf" class="hidden" id="en-ffile">' + finalDropHtml();
+        const d2 = document.getElementById('en-fdrop'); if (d2) d2.innerHTML = '<input type="file" data-uk-skip accept="application/pdf,.pdf" class="hidden" id="en-ffile">' + finalDropHtml();
         const fi2 = document.getElementById('en-ffile'); if (fi2) fi2.onchange = () => fi2.files[0] && readFinal(fi2.files[0]);
         const box = document.getElementById('en-fres'); if (box) box.innerHTML = finalResHtml();
     }
@@ -506,7 +506,7 @@
     function filesHtml(x, isAdmin) {
         return (x.file_path ? `<a href="${fpath(x.file_path)}" target="_blank" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10.5px] font-bold whitespace-nowrap" title="دانلودِ فایلِ الحاقیه" onclick="event.stopPropagation()"><i class="fas fa-file-pdf text-rose-500 ml-1"></i>الحاقیه</a>` : '')
             + (x.final_file_path ? `<a href="${fpath(x.final_file_path)}" target="_blank" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10.5px] font-bold whitespace-nowrap" title="دانلودِ بیمه‌نامه‌ی نهایی (بعد از الحاقیه)" onclick="event.stopPropagation()"><i class="fas fa-file-shield ml-1"></i>نهایی</a>` : '')
-            + (isAdmin ? `<label class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold whitespace-nowrap cursor-pointer" title="${x.final_file_path ? 'عوض کردنِ' : 'بارگذاریِ'} بیمه‌نامه‌ی نهایی (بعد از الحاقیه)" onclick="event.stopPropagation()"><i class="fas fa-upload ml-1"></i>${x.final_file_path ? 'تعویضِ نهایی' : 'بیمه‌نامه‌ی نهایی'}<input type="file" accept="application/pdf,.pdf" class="hidden" data-final="${x.id}"></label>` : '');
+            + (isAdmin ? `<label class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold whitespace-nowrap cursor-pointer" title="${x.final_file_path ? 'عوض کردنِ' : 'بارگذاریِ'} بیمه‌نامه‌ی نهایی (بعد از الحاقیه)" onclick="event.stopPropagation()"><i class="fas fa-upload ml-1"></i>${x.final_file_path ? 'تعویضِ نهایی' : 'بیمه‌نامه‌ی نهایی'}<input type="file" data-uk-skip accept="application/pdf,.pdf" class="hidden" data-final="${x.id}"></label>` : '');
     }
     function bindFinalUpload(root, after) {
         root.querySelectorAll('input[data-final]').forEach(inp => inp.onchange = async () => {
@@ -546,7 +546,7 @@
         return ov;
     }
     function dropBox(id, accept, text) {
-        return `<label class="en-drop" data-drop="${id}"><input type="file" accept="${accept}" class="hidden" data-in="${id}"><span data-lbl="${id}">${text}</span></label>`;
+        return `<label class="en-drop" data-drop="${id}"><input type="file" data-uk-skip accept="${accept}" class="hidden" data-in="${id}"><span data-lbl="${id}">${text}</span></label>`;
     }
     function bindDrop(ov, id, onFile) {
         const d = ov.querySelector(`[data-drop="${id}"]`), i = ov.querySelector(`[data-in="${id}"]`);

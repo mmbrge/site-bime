@@ -1555,7 +1555,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <button onclick="toggleEmojiPanel('user-emoji-panel')" class="text-slate-400 hover:text-amber-500 text-lg"><i class="fas fa-face-smile"></i></button>
                     <label class="text-slate-400 hover:text-blue-500 text-lg cursor-pointer">
                         <i class="fas fa-paperclip"></i>
-                        <input type="file" id="user-chat-file" class="hidden" onchange="sendUserFile()">
+                        <input type="file" data-uk-skip id="user-chat-file" class="hidden" onchange="sendUserFile()">
                     </label>
                     <input type="text" id="user-chat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
                     <button onclick="sendUserMessage()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">ارسال</button>
@@ -1633,7 +1633,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button onclick="toggleEmojiPanel('ticket-emoji-panel')" class="text-slate-400 hover:text-amber-500 text-lg"><i class="fas fa-face-smile"></i></button>
                         <label class="text-slate-400 hover:text-emerald-500 text-lg cursor-pointer">
                             <i class="fas fa-paperclip"></i>
-                            <input type="file" id="ticket-chat-file" class="hidden" onchange="sendTicketFile()">
+                            <input type="file" data-uk-skip id="ticket-chat-file" class="hidden" onchange="sendTicketFile()">
                         </label>
                         <input type="text" id="ticket-chat-input" placeholder="پاسخ خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm" oninput="onAdminTyping()">
                         <button onclick="sendTicketReply()" class="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-emerald-700">ارسال</button>
@@ -1653,7 +1653,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div id="staffchat-input-row" class="p-3 border-t flex gap-2 items-center hidden">
                             <label class="text-slate-400 hover:text-blue-500 text-lg cursor-pointer">
                                 <i class="fas fa-paperclip"></i>
-                                <input type="file" id="staffchat-file" class="hidden" onchange="sendStaffChatFile()">
+                                <input type="file" data-uk-skip id="staffchat-file" class="hidden" onchange="sendStaffChatFile()">
                             </label>
                             <input type="text" id="staffchat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
                             <button onclick="sendStaffChatMessage()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">ارسال</button>
@@ -1679,7 +1679,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div id="companychat-input-row" class="p-3 border-t flex gap-2 items-center hidden">
                             <label class="text-slate-400 hover:text-cyan-500 text-lg cursor-pointer">
                                 <i class="fas fa-paperclip"></i>
-                                <input type="file" id="companychat-file" class="hidden" onchange="sendCompanyChatFile()">
+                                <input type="file" data-uk-skip id="companychat-file" class="hidden" onchange="sendCompanyChatFile()">
                             </label>
                             <input type="text" id="companychat-input" placeholder="پیام خود را بنویسید..." class="flex-1 border rounded-xl px-3 py-2 text-sm">
                             <button onclick="sendCompanyChatMessage()" class="bg-cyan-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-cyan-700">ارسال</button>
@@ -3164,7 +3164,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <span class="font-black text-slate-700">فایلِ PDFِ بیمه‌نامه‌ها را اینجا رها کنید یا کلیک کنید</span>
                         <span class="text-[11px] text-slate-400 mt-1">هر بیمه‌نامه چند صفحه دارد (بیمه‌نامه + صفحه‌های پرداخت و فیش)؛ صفحه‌ی بیمه‌نامه‌ی هر کدام خودکار پیدا می‌شود.</span>
                         <span id="bdl-fname" class="text-xs font-bold text-blue-700 mt-2"></span>
-                        <input type="file" id="bdl-file" accept="application/pdf,.pdf" class="hidden" onchange="bundlePicked(this)">
+                        <input type="file" data-uk-skip id="bdl-file" accept="application/pdf,.pdf" class="hidden" onchange="bundlePicked(this)">
                     </label>
                     <button id="bdl-analyze-btn" onclick="bundleAnalyze()" disabled class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-sm"><i class="fas fa-magnifying-glass-chart ml-1"></i>بررسی و شناسایی</button>
                 </div>
@@ -4100,7 +4100,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <h4 class="text-xs font-bold text-slate-600 mb-2"><i class="fas fa-car ml-1 text-slate-300"></i>اطلاعات درخواست</h4>
                 <div id="mc-prop-box" class="mb-3 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-2.5 text-[11px]">
                     <label class="flex items-center gap-2 cursor-pointer font-bold text-indigo-700"><i class="fas fa-file-signature"></i>بارگذاریِ «پیشنهاد» یا «پیش‌نویس» (PDFِ سایتِ بیمه‌گر) — هر اطلاعاتی که در آن هست خودکار در فرم می‌نشیند
-                        <input type="file" id="mc-prop-file" accept=".pdf,application/pdf" class="hidden" onchange="mcProposalPick(this)"></label>
+                        <input type="file" data-uk-skip id="mc-prop-file" accept=".pdf,application/pdf" class="hidden" onchange="mcProposalPick(this)"></label>
                     <div id="mc-prop-status" class="text-slate-500 mt-1 leading-5">اختیاری است؛ بعد از ثبت، خودِ فایل هم روی همین درخواست بایگانی می‌شود و فرمِ صدور با آن پر و چک می‌شود.</div>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
@@ -4422,8 +4422,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="notif-bell.js?v=2"></script>
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
-    <script src="tools.js?v=2"></script>
-    <script src="comfort.js?v=16"></script>
+    <script src="tools.js?v=3"></script>
+    <script src="comfort.js?v=17"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=2"></script>
@@ -4435,8 +4435,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="home.js?v=1"></script>
     <script src="announce-admin.js?v=3"></script>
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
-    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=6"></script><?php endif; ?>
-    <script src="chat-ui.js?v=15"></script>
+    <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
+    <script src="chat-ui.js?v=16"></script>
+    <script src="upload-kit.js?v=1"></script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
     <script src="table-count.js?v=7"></script>
     <script>
@@ -4451,18 +4452,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-ui.js?v=5"></script>
     <script src="finance-hub.js?v=8"></script>
     <script src="work-log.js?v=12"></script>
-    <script src="import-archive.js?v=2"></script>
+    <script src="import-archive.js?v=3"></script>
     <script src="renewals.js?v=2"></script>
-    <script src="endorse.js?v=5"></script>
+    <script src="endorse.js?v=6"></script>
     <script src="party-ui.js?v=2"></script>
     <script src="company-pick.js?v=1"></script>
-    <script src="legacy-import.js?v=2"></script>
+    <script src="legacy-import.js?v=3"></script>
     <script src="edit-lock.js?v=1"></script>
     <script src="table-ctx.js?v=1"></script>
-    <script src="recon.js?v=5"></script>
+    <script src="recon.js?v=6"></script>
     <?php if ($lifeAccess): ?><script src="life.js?v=6"></script><?php endif; ?>
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
-    <?php if ($ltAccess): ?><script src="letters.js?v=2"></script><?php endif; ?>
+    <?php if ($ltAccess): ?><script src="letters.js?v=3"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
     <script src="fin-contracts.js?v=2"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
@@ -4470,7 +4471,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=16"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=9"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=10"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6773,10 +6774,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <i class="fas fa-cloud-arrow-up"></i>بارگذاری نامه/مدرک عمومی (بدون پلاک مشخص)
                     <input type="file" class="hidden" onchange="uploadPlateDocDirect(null, this)">
                 </label>
-                <label class="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100" title="هر صفحه‌ی PDF یک مدرکِ جدا می‌شود و در «بررسی مدارک» تک‌تک نوع و ردیفش را تعیین می‌کنید">
-                    <i class="fas fa-scissors"></i>PDFِ چند مدرکی (هر صفحه جدا بررسی و نوع‌گذاری شود)
-                    <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="uploadCombinedPdf(null, this)">
-                </label>` : ''}
+                <div class="grid grid-cols-2 gap-2 mt-2" title="زیپ و پوشه کامل باز می‌شوند، PDFها صفحه‌به‌صفحه جدا و ۱ تا N نام‌گذاری می‌شوند؛ همه با نوعِ «سایر مدارک» به «بررسی مدارک» می‌روند">
+                    <label class="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100">
+                        <i class="fas fa-layer-group"></i>ارسالِ گروهی: چند فایل / زیپ / PDFِ چند مدرکی
+                        <input type="file" class="hidden" multiple data-uk-bulk accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif" onchange="adminBulkDocs(this)">
+                    </label>
+                    <label class="text-[10px] font-bold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-violet-100">
+                        <i class="fas fa-folder-open"></i>ارسالِ گروهی: یک پوشه
+                        <input type="file" class="hidden" webkitdirectory directory multiple data-uk-bulk onchange="adminBulkDocs(this)">
+                    </label>
+                </div>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
@@ -6835,7 +6842,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="p-4 overflow-y-auto flex-1">
                     <label id="cprop-drop" class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-xl p-6 text-center cursor-pointer text-indigo-700 font-bold text-sm">
                         <i class="fas fa-file-pdf text-2xl block mb-2"></i>انتخابِ فایلِ PDFِ پیشنهادها
-                        <input type="file" accept=".pdf,application/pdf" class="hidden" onchange="cpropUpload(this)"></label>
+                        <input type="file" data-uk-skip accept=".pdf,application/pdf" class="hidden" onchange="cpropUpload(this)"></label>
                     <div id="cprop-prog" class="hidden text-[11px] text-slate-600 mb-2"></div>
                     <div id="cprop-list" class="space-y-1.5"></div>
                 </div>
@@ -8470,6 +8477,28 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
         }
 
+        // ارسالِ گروهی (upload-kit.js زیپ/پوشه را باز، PDFها را صفحه‌به‌صفحه و ۱..N نام‌گذاری کرده): هر فایل یک مدرکِ «تخصیص‌نیافته»
+        // با نوعِ «سایر مدارک»؛ ارسال در پس‌زمینه با نوارِ پیشرفت، و در پایان «بررسی مدارک» باز می‌شود
+        function adminBulkDocs(input) {
+            const files = Array.from(input.files || []);
+            input.value = '';
+            if (!files.length) return;
+            const reqId = currentRequestId;
+            if (!window.UploadKit) { showToast('ابزارِ ارسال بارگذاری نشد؛ صفحه را تازه کنید.', 'error'); return; }
+            const items = files.map(f => {
+                const fd = new FormData();
+                fd.append('action', 'upload_combined_pdf'); fd.append('request_id', reqId); fd.append('doc_type', 'other');
+                fd.append('file', f, f.name);
+                return {name: f.name, size: f.size, form: fd};
+            });
+            UploadKit.enqueue({title: 'مدارکِ درخواست #' + faDigits(String(reqId)), url: COMPANY_API, items, onDone: sum => {
+                showToast(`${faDigits(String(sum.ok))} از ${faDigits(String(sum.total))} فایل برای بررسی ثبت شد` + (sum.fail ? ` (${faDigits(String(sum.fail))} خطا)` : ''), sum.fail ? 'warning' : 'success');
+                if (currentRequestId === reqId) { openCompanyRequestDetail(reqId); if (sum.ok) openRequestDocsReview(reqId); }
+                if (sum.ok && typeof aiStepLoop === 'function') aiStepLoop();
+            }});
+            showToast(`${faDigits(String(files.length))} فایل در صفِ ارسال؛ پیشرفت پایینِ صفحه دیده می‌شود.`, 'info');
+        }
+
         // PDFِ چند مدرکی: روی سرور صفحه‌به‌صفحه جدا می‌شود و هر صفحه یک مدرکِ «تخصیص‌نیافته»ی این درخواست می‌شود
         async function uploadCombinedPdf(plateId, input) {
             const f = input.files[0];
@@ -8493,6 +8522,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         async function citCheckPages(doc) {
             const box = document.getElementById('cit-split');
             box.classList.add('hidden'); box.innerHTML = '';
+            return;   // پیشنهادِ «جدا کردنِ صفحه‌ها» برداشته شد (صفحه‌ها هنگامِ بارگذاری انتخاب/جدا می‌شوند)
             if (!/\.pdf$/i.test(doc.file_path || '')) return;
             try {
                 const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_pages', doc_id: doc.id})})).json();
@@ -8508,6 +8538,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // ---- دکمه‌ی «جداسازی» زیرِ هر PDF (شرکتی): پنجره‌ی صفحه‌ها با پیش‌نمایش؛ برای هر صفحه بماند/حذف + نوعِ مدرک + ردیف ----
         // فایلِ اصلی تا «ثبت» دست نمی‌خورد؛ صفحه‌های هم‌نوع و هم‌ردیف یک PDF می‌شوند؛ نوع/ردیفِ نامعلوم => صندوقِ مدارک
         function splitBtnHtml(id, path, fn) {
+            return '';   // دکمه‌ی «جداسازی» برداشته شد: انتخابِ صفحه‌ها حالا هنگامِ بارگذاری انجام می‌شود (upload-kit.js)
             if (!/\.pdf$/i.test(path || '')) return '';
             return `<button type="button" onclick="event.stopPropagation(); ${fn || 'openCompanySplit'}(${id})" title="جداسازیِ صفحه‌های این PDF" class="split-btn inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1"><i class="fas fa-scissors"></i>جداسازی</button>`;
         }
@@ -9080,7 +9111,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function propRender(caseId) {
             const holder = document.getElementById('prop-box'); if (!holder) return;
             const prop = window._issueProp, c = window._issueCase || {};
-            const up = (txt, cls) => `<label class="${cls} cursor-pointer"><i class="fas fa-file-import ml-1"></i>${txt}<input type="file" accept=".pdf,application/pdf" class="hidden" onchange="propUpload(${caseId}, this)"></label>`;
+            const up = (txt, cls) => `<label class="${cls} cursor-pointer"><i class="fas fa-file-import ml-1"></i>${txt}<input type="file" data-uk-skip accept=".pdf,application/pdf" class="hidden" onchange="propUpload(${caseId}, this)"></label>`;
             if (!prop || !prop.data) {
                 holder.innerHTML = `<div class="prop-drop">${up('بارگذاریِ «پیشنهاد» یا «پیش‌نویس» (PDFِ سایتِ بیمه‌گر)', 'block text-center font-bold text-indigo-700')}
                     <p class="text-[10px] text-slate-500 mt-1">فرمِ صدور با آن پر می‌شود، نسبتِ بیمه‌گذار/مالک تشخیص داده می‌شود و فایلِ بیمه‌نامه با آن چک می‌شود. (اختیاری؛ «پیشنهاد» بهتر است)</p>
@@ -11347,7 +11378,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <i class="fas fa-cloud-arrow-up text-2xl text-indigo-400"></i>
                         <span class="text-xs font-black text-slate-600">${t ? 'جایگزینیِ قالب' : 'بارگذاریِ قالب'} (فایلِ docx را رها کنید یا کلیک کنید)</span>
                         <span class="text-[10px] text-slate-400">قالبِ فعلی پاک نمی‌شود و در «نسخه‌های قبلی» می‌ماند تا هر وقت خواستید برگردید</span>
-                        <input type="file" accept=".docx" class="hidden" onchange="itplUpload(this.files[0]); this.value=''">
+                        <input type="file" data-uk-skip accept=".docx" class="hidden" onchange="itplUpload(this.files[0]); this.value=''">
                     </label>
                     <p id="itpl-up-st" class="text-[11px] font-bold"></p>
                     <a href="${FIN_API}?action=tpl_starter&kind=${k.kind}" class="block text-center text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl py-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>دانلودِ قالبِ آماده‌ی شروع (با همه‌ی کدها) برای ویرایش در Word</a>
@@ -11776,7 +11807,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <div id="prop-box" class="mb-3"></div>
                             <label class="block border-2 border-dashed border-emerald-300 rounded-lg text-center p-3 text-xs text-emerald-700 cursor-pointer hover:bg-emerald-100" id="policy-upload-label">
                                 <i class="fas fa-cloud-arrow-up ml-1"></i> انتخاب فایل بیمه‌نامه (PDF) برای شناسایی خودکار
-                                <input type="file" id="final-policy-file" class="hidden" onchange="ocrPreviewPolicy(${caseId})">
+                                <input type="file" data-uk-skip id="final-policy-file" class="hidden" onchange="ocrPreviewPolicy(${caseId})">
                             </label>
                             <div id="policy-ocr-status" class="text-[11px] text-slate-400 mt-2"></div>
 
@@ -11872,7 +11903,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <button onclick="uploadAdminCaseDoc(${caseId})" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
                             <label class="bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer" title="هر صفحه جدا نمایش داده می‌شود و نوعِ مدرکِ هر صفحه را انتخاب می‌کنید">
                                 <i class="fas fa-scissors ml-1"></i>PDFِ چند مدرکی (تفکیکِ صفحه‌ها)
-                                <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(${caseId}, this, () => { openCase(${caseId}); loadCases(); })"></label>
+                                <input type="file" data-uk-skip class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(${caseId}, this, () => { openCase(${caseId}); loadCases(); })"></label>
                         </div>
                     </div>` : ''}
                 `;
@@ -13959,7 +13990,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                   + `<div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
                         <div class="font-bold">PDFِ چند مدرکی</div>
                         <label class="inline-block mt-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 px-2 py-0.5 rounded cursor-pointer"><i class="fas fa-scissors ml-1"></i>تفکیکِ صفحه‌ها
-                            <input type="file" class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(document.getElementById('mc-case-id').value, this, renderMcChecklist)"></label></div>`
+                            <input type="file" data-uk-skip class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(document.getElementById('mc-case-id').value, this, renderMcChecklist)"></label></div>`
                   + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
                         <div class="font-bold">سایر مدارک (اختیاری)</div>
                         <input type="text" id="mc-post-other-name" placeholder="نام مدرک" class="mt-1 w-full border border-slate-300 rounded p-1 text-[11px]">

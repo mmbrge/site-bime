@@ -50,7 +50,7 @@
                     <div class="flex-1 min-w-[220px]"><b class="text-[13px] text-slate-700"><i class="fas fa-cloud-arrow-up text-violet-500 ml-1"></i>آپلود در کتابخانه‌ی پنل</b>
                         <p class="text-[10.5px] text-slate-500 mt-1 leading-6">آهنگ‌ها را تکی (MP3، M4A، OGG، WAV، FLAC…) یا یک‌جا در فایلِ <b>ZIP</b> بکشید یا انتخاب کنید. زیپ خودکار باز می‌شود، هر آهنگ جدا ذخیره و نامش «خواننده - نامِ آهنگ» مرتب می‌شود (از برچسبِ آهنگ یا نامِ فایل). اگر داخلِ زیپ پوشه‌هایی مثلِ «شاد» یا «بی‌کلام» باشد و ژانر «خودکار» باشد، نامِ پوشه ژانر می‌شود.</p></div>
                     <select class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white" data-ug><option value="auto">ژانر: خودکار (پوشه / برچسب)</option>${d.genres.map(g => `<option>${esc(g)}</option>`).join('')}</select>
-                    <label class="cursor-pointer bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2.5 rounded-xl"><i class="fas fa-upload ml-1"></i>انتخابِ فایل یا زیپ<input type="file" multiple hidden accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus,.zip" data-uf></label>
+                    <label class="cursor-pointer bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2.5 rounded-xl"><i class="fas fa-upload ml-1"></i>انتخابِ فایل یا زیپ<input type="file" data-uk-skip multiple hidden accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus,.zip" data-uf></label>
                 </div>
                 <div data-prog class="text-[11px] text-slate-600"></div>
             </div>

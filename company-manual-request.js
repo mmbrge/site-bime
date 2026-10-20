@@ -91,7 +91,7 @@
               <div class="md:col-span-2"><label class="lbl">نامه‌ی درخواست (اختیاری)</label>
                 <label class="flex items-center gap-2 border-2 border-dashed rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50 text-xs ${st.letter ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}">
                   <i class="fas fa-envelope-open-text"></i><span class="truncate">${st.letter ? esc(st.letter.name) : 'انتخاب فایل نامه (PDF یا عکس) - اگر نامه ندارد خالی بماند'}</span>
-                  <input type="file" data-letter class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
+                  <input type="file" data-uk-skip data-letter class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
                 ${st.letter ? '<button data-act="rmletter" class="text-[10px] text-rose-500 underline mt-1">حذف نامه</button>' : ''}</div>
               <div class="md:col-span-2"><label class="lbl">توضیح درخواست (اختیاری)</label><textarea data-f="text" rows="2" class="inp" placeholder="مثلاً: مدارک در بله فرستاده شد، بدون نامه">${esc(st.text)}</textarea></div>
             </div>
@@ -133,7 +133,7 @@
               <div><h3 class="font-black text-sm text-emerald-800"><i class="fas fa-wand-magic-sparkles ml-1"></i>شناساییِ خودکار از فاکتور فروش / سند / کارت ماشین</h3>
                 <p class="text-[10.5px] text-slate-500 mt-1 leading-5">یک یا چند فایل بدهید (PDFِ چندصفحه‌ای که چند فاکتور یا سند پشتِ سرِ هم دارد، یا عکس). سایت هر صفحه را می‌خواند، نوعش را تشخیص می‌دهد و برای هر خودرو یک ردیف با شاسی، موتور، نام خودرو و مشخصاتِ مالک می‌سازد. بعد از ثبت، هر صفحه روی ردیفِ خودش بایگانی می‌شود و جزئیاتِ کامل در «اطلاعات صدور»ِ همان ردیف (صفحه‌ی صدور و صادره) می‌نشیند.</p></div>
               <label class="btn-s bg-emerald-600 text-white cursor-pointer whitespace-nowrap ${D.busy ? 'opacity-60 pointer-events-none' : ''}"><i class="fas fa-file-arrow-up ml-1"></i>انتخابِ فایل‌ها
-                <input type="file" multiple data-detect class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
+                <input type="file" data-uk-skip multiple data-detect class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
             </div>
             ${D.busy ? `<div class="mt-3 text-[11px] text-emerald-700 font-bold"><i class="fas fa-circle-notch fa-spin ml-1"></i>در حال خواندن… ${fa(D.done)} از ${fa(D.total)} صفحه</div>
                 <div class="h-1.5 rounded-full bg-emerald-50 overflow-hidden mt-1"><div class="h-full bg-emerald-500" style="width:${D.total ? Math.round(D.done * 100 / D.total) : 0}%"></div></div>` : ''}
@@ -361,7 +361,7 @@
                 const fs = r.files[t] || [];
                 return `<label class="text-[10px] font-bold px-2 py-1 rounded-lg cursor-pointer ${fs.length ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}">
                     ${fs.length ? '✓ ' : '+ '}${esc((form.doc_types || {})[t] || t)}${fs.length ? ` (${fa(fs.length)})` : ''}
-                    <input type="file" class="hidden" multiple data-file="${t}" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif"></label>`;
+                    <input type="file" data-uk-skip class="hidden" multiple data-file="${t}" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif"></label>`;
             }).join('')}</div>
             ${item.upload_types.some(t => (r.files[t] || []).length) ? `<div class="text-[9.5px] text-slate-500 mt-1 truncate" dir="ltr">${item.upload_types.flatMap(t => (r.files[t] || []).map(f => esc(f.name))).join(' · ')}</div>
               <button data-clearfiles="${item.upload_types.join(',')}" class="text-[9.5px] text-rose-500 underline">حذف فایل‌ها</button>` : ''}</div>`).join('');

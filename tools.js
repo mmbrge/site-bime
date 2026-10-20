@@ -269,7 +269,7 @@
     // ---------------- ورودیِ فایل (کشیدن یا انتخاب) ----------------
     function dropzone(box, {multiple, accept, label, onFiles}) {
         box.innerHTML = `<div class="tl-drop" tabindex="0"><i class="fas fa-cloud-arrow-up"></i>${label}<br><small style="font-weight:600;color:#94a3b8">کلیک کنید یا فایل را اینجا بکشید</small>
-            <input type="file" hidden ${multiple ? 'multiple' : ''} accept="${accept}"></div>`;
+            <input type="file" data-uk-skip hidden ${multiple ? 'multiple' : ''} accept="${accept}"></div>`;
         const dz = box.firstElementChild, inp = dz.querySelector('input');
         dz.onclick = () => inp.click();
         inp.onchange = () => { const f = [...inp.files]; inp.value = ''; if (f.length) onFiles(f); };

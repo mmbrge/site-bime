@@ -55,12 +55,13 @@ if (!$companies) {
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=2"></script>
 <script src="../party-ui.js?v=2"></script>
+<script src="../upload-kit.js?v=1"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=5"></script>
 <script src="../cursor-fx.js?v=2" defer></script>
-<script src="../tools.js?v=2"></script>
-<script src="../comfort.js?v=16"></script>
+<script src="../tools.js?v=3"></script>
+<script src="../comfort.js?v=17"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
 <script src="zerokm.js?v=3"></script>
@@ -69,9 +70,9 @@ if (!$companies) {
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=4">
-<script src="../chat-ui.js?v=15"></script>
+<script src="../chat-ui.js?v=16"></script>
 <script src="../money-input.js?v=1"></script>
-<script src="../letters-portal.js?v=1" defer></script>
+<script src="../letters-portal.js?v=2" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -346,8 +347,13 @@ if (!$companies) {
         <div id="request-detail-body"></div>
         <div class="bg-slate-50 border border-slate-100 rounded-2xl mt-4 p-4">
             <label class="text-xs font-bold text-slate-600 flex items-center gap-1.5 mb-1"><i class="fas fa-cloud-arrow-up text-blue-400"></i>افزودن مدارک جدید به این درخواست</label>
-            <p class="text-[11px] text-slate-400 mb-3">می‌توانید چند فایل با هم انتخاب کنید؛ فقط برای هر فایل نوعش را مشخص کنید.</p>
-            <input type="file" id="doc-upload-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif" onchange="renderDocUploadRows()" class="mb-2 w-full text-xs bg-white border border-slate-200 rounded-lg p-2">
+            <p class="text-[11px] text-slate-400 mb-3">چند فایل، فایلِ زیپ یا یک پوشه را انتخاب کنید: زیپ و پوشه کامل باز می‌شوند، PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا و همه از ۱ شماره‌گذاری می‌شوند و برای بررسی فرستاده می‌شوند. اگر نوعِ فایلی را می‌دانید انتخاب کنید؛ وگرنه «سایر مدارک» بماند.</p>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <label class="cursor-pointer text-center text-xs font-bold bg-white border-2 border-dashed border-blue-200 hover:border-blue-400 text-blue-700 rounded-xl py-3"><i class="fas fa-file-circle-plus ml-1"></i>انتخابِ فایل‌ها / زیپ
+                    <input type="file" id="doc-upload-input" multiple data-uk-bulk accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif" onchange="duAddFiles(this)" class="hidden"></label>
+                <label class="cursor-pointer text-center text-xs font-bold bg-white border-2 border-dashed border-violet-200 hover:border-violet-400 text-violet-700 rounded-xl py-3"><i class="fas fa-folder-open ml-1"></i>انتخابِ پوشه
+                    <input type="file" id="doc-upload-folder" webkitdirectory directory multiple data-uk-bulk onchange="duAddFiles(this)" class="hidden"></label>
+            </div>
             <div id="doc-upload-rows" class="space-y-2 mb-2"></div>
             <button onclick="uploadDocuments()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
                 <i class="fas fa-upload ml-1"></i> آپلود مدارک
@@ -1074,7 +1080,7 @@ async function openRequestDetail(id) {
     `;
     window.portalPartyDefault = r.party_default || null;
     document.getElementById('doc-upload-input').value = '';
-    document.getElementById('doc-upload-rows').innerHTML = '';
+    duFiles = []; renderDocUploadRows();
     openModal('request-detail-modal');
 }
 
@@ -1163,49 +1169,67 @@ function plateHtml(p) {
     return `<span class="ir-plate"><span class="flag"></span><span>${fa(p.plate_p4 || '--')}</span><span>${esc(p.plate_letter || '-')}</span><span>${fa(p.plate_p2 || '---')}</span><span class="ir"><small>ایران</small>${fa(p.plate_p1 || '--')}</span></span>`;
 }
 
+// فایل‌های آماده‌ی ارسال (از چند انتخابِ پشتِ‌سرِهم جمع می‌شوند؛ upload-kit.js زیپ/پوشه/PDF را از قبل باز و جدا کرده)
+let duFiles = [];
+function duAddFiles(input) {
+    const add = Array.from(input.files || []);
+    input.value = '';
+    if (!add.length) return;
+    duFiles = duFiles.concat(add);
+    // شماره‌گذاریِ ۱ تا N روی کلِ فهرست (وقتی چند بار انتخاب شود هم پیوسته بماند)
+    if (duFiles.length > 1 && window.UploadKit) duFiles = duFiles.map((f, i) => UploadKit.mkFile(f, (i + 1) + '.' + (UploadKit.ext(f.name) || 'pdf')));
+    renderDocUploadRows();
+}
+function duRemove(i) { duFiles.splice(i, 1); renderDocUploadRows(); }
 function renderDocUploadRows() {
-    const files = document.getElementById('doc-upload-input').files;
     const box = document.getElementById('doc-upload-rows');
+    if (!duFiles.length) { box.innerHTML = ''; return; }
+    const bulk = duFiles.length > 1;
     const plateOptions = '<option value="">بدون پلاک مشخص</option>' + currentRequestPlates.map((p, i) => `<option value="${i}">${plateOptionLabel(p)}</option>`).join('');
-    box.innerHTML = Array.from(files).map((f, i) => `
+    const typeOpts = DOC_TYPE_OPTIONS.filter(([v]) => !bulk || v !== 'mixed').map(([v, l]) => `<option value="${v}" ${bulk && v === 'other' ? 'selected' : ''}>${l}</option>`).join('');
+    const total = duFiles.reduce((a, f) => a + f.size, 0);
+    box.innerHTML = `<div class="flex items-center justify-between text-[11px] font-bold text-slate-500"><span>${faNum(duFiles.length)} فایل · ${faNum((total / 1048576).toFixed(1))} مگابایت</span>
+            ${bulk ? `<span class="flex items-center gap-1">نوعِ همه: <select class="border border-slate-200 rounded-lg p-1" onchange="document.querySelectorAll('#doc-upload-rows .du-type').forEach(s => s.value = this.value)">${typeOpts}</select></span>` : ''}
+            <button type="button" onclick="duFiles = []; renderDocUploadRows()" class="text-red-500">پاک کردنِ فهرست</button></div>`
+        + duFiles.map((f, i) => `
         <div class="bg-white border border-slate-200 rounded-xl p-2.5 text-xs du-row" data-index="${i}">
-            <p class="font-bold mb-1.5 truncate text-slate-700"><i class="fas fa-paperclip text-slate-300 ml-1"></i>${f.name}</p>
+            <p class="font-bold mb-1.5 truncate text-slate-700 flex items-center gap-1"><i class="fas fa-paperclip text-slate-300"></i><span class="flex-1 truncate" dir="auto">${f.name}</span><small class="text-slate-400">${faNum((f.size / 1048576).toFixed(1))} مگ</small><button type="button" onclick="duRemove(${i})" class="text-red-400 hover:text-red-600 px-1">&times;</button></p>
             <div class="grid grid-cols-2 gap-2">
-                <select class="du-type border border-slate-200 rounded-lg p-1.5">${DOC_TYPE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+                <select class="du-type border border-slate-200 rounded-lg p-1.5">${typeOpts}</select>
                 <select class="du-plate border border-slate-200 rounded-lg p-1.5">${plateOptions}</select>
             </div>
         </div>`).join('');
 }
 
+// ارسال در پس‌زمینه (upload-kit.js): نوارِ پیشرفت پایینِ صفحه می‌ماند و با بستنِ این پنجره یا رفتن به بخشِ دیگر ادامه دارد
 async function uploadDocuments() {
-    const files = document.getElementById('doc-upload-input').files;
-    if (!files.length) { showToast('حداقل یک فایل انتخاب کنید.'); return; }
+    if (!duFiles.length) { showToast('حداقل یک فایل انتخاب کنید.'); return; }
     const rows = document.querySelectorAll('#doc-upload-rows .du-row');
-    let okCount = 0, splitPages = 0;
-    for (let i = 0; i < files.length; i++) {
+    const reqId = activeRequestId;
+    const items = duFiles.map((f, i) => {
         const row = rows[i];
         const fd = new FormData();
         fd.append('action', 'upload_document');
-        fd.append('request_id', activeRequestId);
-        fd.append('doc_type', row ? row.querySelector('.du-type').value : '');
+        fd.append('request_id', reqId);
+        fd.append('doc_type', row ? row.querySelector('.du-type').value : 'other');
         const plateIdx = row ? row.querySelector('.du-plate').value : '';
         const plate = plateIdx !== '' ? currentRequestPlates[Number(plateIdx)] : null;
         fd.append('plate_p1', plate ? (plate.plate_p1 || '') : '');
         fd.append('plate_p2', plate ? (plate.plate_p2 || '') : '');
         fd.append('plate_letter', plate ? (plate.plate_letter || '') : '');
         fd.append('plate_p4', plate ? (plate.plate_p4 || '') : '');
-        fd.append('file', files[i]);
-        try {
-            const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
-            const data = await res.json();
-            if (data.ok) { okCount++; if (Number(data.pages) > 1) splitPages += Number(data.pages); }
-        } catch (e) { /* ادامه با فایل بعدی */ }
-    }
-    showToast(`${okCount} از ${files.length} فایل آپلود شد.` + (splitPages ? ` PDFهای چندصفحه‌ای صفحه‌به‌صفحه جدا شدند (${splitPages} صفحه).` : '') + ' شناساییِ خودکارِ صفحه‌ها شروع شد…');
-    document.getElementById('doc-upload-input').value = '';
-    document.getElementById('doc-upload-rows').innerHTML = '';
-    openRequestDetail(activeRequestId);
-    if (okCount) docAiLoop(activeRequestId);
+        fd.append('file', f, f.name);
+        return {name: f.name, size: f.size, form: fd};
+    });
+    duFiles = []; renderDocUploadRows();
+    if (!window.UploadKit) { showToast('ابزارِ ارسال بارگذاری نشد؛ صفحه را تازه کنید.'); return; }
+    UploadKit.enqueue({title: 'مدارکِ درخواست #' + faNum(reqId), url: '../api/company_portal_actions.php', items,
+        onDone: sum => {
+            showToast(`${faNum(sum.ok)} از ${faNum(sum.total)} فایل ارسال شد` + (sum.fail ? ` (${faNum(sum.fail)} خطا)` : '') + '؛ شناساییِ خودکار شروع شد…');
+            if (activeRequestId === reqId && document.getElementById('request-detail-modal').classList.contains('active')) openRequestDetail(reqId);
+            if (sum.ok) docAiLoop(reqId);
+        }});
+    showToast('ارسال در پس‌زمینه شروع شد؛ پیشرفت پایینِ صفحه دیده می‌شود.');
 }
 
 // شناساییِ خودکارِ صفحه‌ها (فاکتور فروش، سند، کارت، بیمه‌نامه‌ی قبلی): هر بار یک صفحه، تا تمام شود.

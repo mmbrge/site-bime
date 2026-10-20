@@ -141,7 +141,7 @@
                     </div>
                     <div><span class="text-[11px] font-bold text-slate-500">فوریت</span><div class="ltp-tg" data-prio><button class="on" data-v="normal">عادی</button><button data-v="urgent">فوری</button></div></div>
                     <label><span class="text-[11px] font-bold text-slate-500">متنِ پاسخ</span><textarea class="ltp-ta" rows="5" data-k="text" placeholder="متنِ پاسخ را بنویسید (یا فقط فایلِ نامه را بارگذاری کنید)"></textarea></label>
-                    <label class="ltp-drop" data-drop>⬆ فایلِ نامه یا مدارک را این‌جا رها کنید یا بزنید<br><small class="text-slate-500 font-normal">PDF، تصویر، Word، Excel یا ZIP - حداکثر ۱۰ فایل</small><input type="file" multiple hidden data-files></label>
+                    <label class="ltp-drop" data-drop>⬆ فایلِ نامه یا مدارک را این‌جا رها کنید یا بزنید<br><small class="text-slate-500 font-normal">PDF، تصویر، Word، Excel یا ZIP - حداکثر ۱۰ فایل</small><input type="file" data-uk-skip multiple hidden data-files></label>
                     <div data-picked></div>
                     <div><button class="ltp-btn p" data-send>📨 ارسالِ پاسخ</button></div>
                 </div></div>` : ''}`);

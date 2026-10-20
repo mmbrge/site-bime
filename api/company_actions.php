@@ -2075,15 +2075,19 @@ try {
             if (!$st->fetchColumn()) $plateId = null;
         }
         $f = $_FILES['file'] ?? [];
-        if (upload_ext($f['name'] ?? '') !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فقط فایلِ PDF.']); exit; }
+        // ارسالِ گروهی (زیپ/پوشه/چند فایل که مرورگر باز و صفحه‌به‌صفحه کرده): PDF یا عکس، با نوعِ پیش‌فرضِ «سایر مدارک»
+        $fExt = upload_ext($f['name'] ?? '');
+        if (!in_array($fExt, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) { echo json_encode(['ok' => false, 'error' => 'فقط PDF یا عکس (jpg/png/webp).'], JSON_UNESCAPED_UNICODE); exit; }
+        $bulkType = trim((string)($data['doc_type'] ?? ''));
+        $bulkType = $bulkType !== '' && array_key_exists($bulkType, company_doc_types()) ? $bulkType : null;
         $siteRoot = dirname(__DIR__);
         $saved = company_store_uploaded_file($f, company_unassigned_temp_path($siteRoot, $rq['company_name']), 41943040);
         if (!$saved['ok']) { echo json_encode($saved, JSON_UNESCAPED_UNICODE); exit; }
-        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status) VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', NULL, 'UNASSIGNED')")
-            ->execute([$rq['company_id'], $requestId, $plateId, ltrim(str_replace($siteRoot, '', $saved['path']), '/'), $saved['orig_name']]);
+        $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, file_path, orig_name, file_kind, doc_type, status) VALUES (?, ?, ?, ?, ?, 'SUPPORTING_DOC', ?, 'UNASSIGNED')")
+            ->execute([$rq['company_id'], $requestId, $plateId, ltrim(str_replace($siteRoot, '', $saved['path']), '/'), $saved['orig_name'], $bulkType]);
         $docId = intval($pdo->lastInsertId());
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
-        $sp = company_split_document($pdo, $siteRoot, $docId);
+        $sp = $fExt === 'pdf' ? company_split_document($pdo, $siteRoot, $docId) : null;
         require_once __DIR__ . '/_vdoc.php';
         vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId]);
         if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? '', 'ai_queued' => true], JSON_UNESCAPED_UNICODE); exit; }

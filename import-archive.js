@@ -252,7 +252,7 @@
     function openImport() {
         const m = overlay(`<div class="ia-ph"><h3><i class="fas fa-file-excel text-emerald-600 ml-1"></i>ورودِ اکسلِ خروجیِ بیمه‌گر</h3><button class="ia-x" data-x>✕</button></div>
             <div class="ia-pb" data-body>
-                <label class="ia-drop block" data-drop><input type="file" accept=".xlsx,.xls,.csv" hidden data-file>
+                <label class="ia-drop block" data-drop><input type="file" data-uk-skip accept=".xlsx,.xls,.csv" hidden data-file>
                     <i class="fas fa-cloud-arrow-up text-3xl block mb-2"></i>فایلِ اکسلِ بیمه‌نامه‌های صادره (بدنه یا ثالث) را اینجا رها کنید یا بزنید
                     <small class="block text-[10.5px] font-bold text-teal-700/70 mt-1">همان خروجیِ سایتِ پاسارگاد؛ چند فایل را می‌شود یکی‌یکی وارد کرد. چیزی تا «ثبت» ذخیره نمی‌شود.</small></label>
                 <div data-res class="mt-3"></div>
@@ -499,7 +499,7 @@
     function mountUploader(el, row, onAllDone) {
         const files = [];
         const open = S.rows.filter(r => r.state !== 'ISSUED');
-        el.innerHTML = `<label class="ia-drop block"><input type="file" multiple hidden accept="image/*,.pdf,.zip,.heic">
+        el.innerHTML = `<label class="ia-drop block"><input type="file" data-uk-skip multiple hidden accept="image/*,.pdf,.zip,.heic">
             <i class="fas fa-file-circle-plus text-2xl block mb-1"></i>فایل‌ها را اینجا رها کنید یا بزنید (عکس، PDF، زیپِ بازدید)</label>
             <div class="ia-files"></div><div class="flex flex-wrap gap-2 mt-3 hidden" data-acts>
             <button class="ia-btn p" data-go><i class="fas fa-upload"></i>بارگذاریِ همه</button><button class="ia-btn s" data-clr>پاک کردنِ فهرست</button></div>`;

@@ -207,7 +207,7 @@
             ov.innerHTML = `<div class="cx-dlg cx-pick"><b class="cx-dlg-t">عکسِ پروفایل</b>
                 <div class="cx-pick-pv"></div>
                 <div class="cx-pick-g">${PRESETS.map((p, i) => `<button type="button" data-p="preset:${i + 1}" style="background:linear-gradient(135deg,${p[1]},${p[2]})">${p[0]}</button>`).join('')}</div>
-                <div class="cx-pick-a"><label class="cx-pick-up"><i class="fas fa-image"></i> انتخاب از گالری / سیستم<input type="file" accept="image/*,.heic,.heif" hidden></label>
+                <div class="cx-pick-a"><label class="cx-pick-up"><i class="fas fa-image"></i> انتخاب از گالری / سیستم<input type="file" data-uk-skip accept="image/*,.heic,.heif" hidden></label>
                     <button type="button" class="cx-pick-none"><i class="fas fa-font"></i> بدونِ عکس</button></div>
                 <div class="cx-dlg-b"><button class="cx-dlg-ok">ذخیره</button><button class="cx-dlg-no">انصراف</button></div></div>`;
             const pv = ov.querySelector('.cx-pick-pv');
@@ -966,7 +966,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                     <div class="cx-in-row">
                         <button class="cx-ib cx-emo-btn" title="ایموجی"><i class="far fa-face-smile"></i></button>
                         ${window.CFCanned ? '<button class="cx-ib cx-canned-btn" title="متن‌های آماده"><i class="fas fa-bolt"></i></button>' : ''}
-                        <label class="cx-ib" title="پیوستِ فایل" style="cursor:pointer"><i class="fas fa-paperclip"></i><input type="file" class="cx-file-in" hidden></label>
+                        <label class="cx-ib" title="پیوستِ فایل" style="cursor:pointer"><i class="fas fa-paperclip"></i><input type="file" data-uk-skip class="cx-file-in" hidden></label>
                         <textarea rows="1" class="cx-ta" placeholder="${window.innerWidth < 640 ? 'پیام بنویسید...' : 'پیام بنویسید... (Enter ارسال، Shift+Enter خطِ تازه)'}"></textarea>
                         ${navigator.mediaDevices && window.MediaRecorder ? '<button class="cx-ib cx-mic" title="پیامِ صوتی (برای شروع بزنید)"><i class="fas fa-microphone"></i></button>' : ''}
                         <button class="cx-send" title="ارسال"><i class="fas fa-paper-plane"></i></button></div></div>

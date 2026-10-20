@@ -838,7 +838,7 @@
             <div style="display:flex;justify-content:space-between;font-size:10px;opacity:.75;margin-bottom:3px"><span>فضای آپلود</span><span>${fa((q.used / 1048576).toFixed(1))} از ${fa(Math.round(q.limit / 1048576))} مگابایت</span></div>
             <div class="cf-quota"><i style="width:${pct}%"></i></div>
             <div style="display:flex;gap:6px;margin-top:8px"><select class="cf-in" data-ug style="flex:1">${S.genres.map(g => `<option>${esc(g)}</option>`).join('')}</select>
-                <label class="cf-btn" style="cursor:pointer;white-space:nowrap"><i class="fas fa-upload ml-1"></i>آپلود<input type="file" multiple accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus" hidden data-uf></label></div>
+                <label class="cf-btn" style="cursor:pointer;white-space:nowrap"><i class="fas fa-upload ml-1"></i>آپلود<input type="file" data-uk-skip multiple accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.opus" hidden data-uf></label></div>
             <div data-up style="font-size:10.5px;margin-top:6px"></div></div>`;
         // پیشرفت از مدیرِ آپلود (با بستن/باز کردنِ پخش‌کننده یا رفتن به صفحه‌ی دیگرِ پنل ادامه دارد)
         upMount(extra.querySelector('[data-up]'), 'mine', true);

@@ -91,7 +91,7 @@
         const box = S.root.querySelector('#lg-excel');
         box.innerHTML = `<div class="lg-card"><h3><i class="fas fa-file-excel text-emerald-600"></i>اکسل‌های صدور و الحاقیه <small>یک یا چند فایل؛ نوعِ هر فایل خودکار تشخیص داده می‌شود</small></h3>
             <div class="lg-drop" id="lg-drop"><i class="fas fa-cloud-arrow-up text-2xl text-teal-600"></i><br><b>اکسل‌ها را اینجا بکشید یا کلیک کنید</b><br>
-                گزارشِ صدورِ بدنه، گزارشِ صدورِ ثالث (همان خروجیِ پاسارگاد) و گزارشِ الحاقیه‌ها — همه با هم<input type="file" id="lg-file" accept=".xlsx,.xls,.csv" multiple class="hidden"></div>
+                گزارشِ صدورِ بدنه، گزارشِ صدورِ ثالث (همان خروجیِ پاسارگاد) و گزارشِ الحاقیه‌ها — همه با هم<input type="file" data-uk-skip id="lg-file" accept=".xlsx,.xls,.csv" multiple class="hidden"></div>
             <div class="lg-info"><i class="fas fa-circle-info ml-1"></i>قبل از ثبت هیچ چیزی در سایت عوض نمی‌شود. بیمه‌نامه‌هایی که قبلاً در سایت (یا بایگانیِ وارداتی) هستند خودکار کنار گذاشته می‌شوند. بیمه‌گذارِ «حقیقی» که کد ملیِ پرداخت‌کننده دارد «کارکنان» و بقیه «شرکتی» پیشنهاد می‌شوند؛ هر ردیف را می‌توانید عوض کنید.</div>
             </div><div id="lg-pv" class="space-y-4 mt-4"></div>`;
         const drop = box.querySelector('#lg-drop'), inp = box.querySelector('#lg-file');
@@ -261,7 +261,7 @@
                 <select id="lg-sub" class="lg-in" style="max-width:320px"><option value="">همه‌ی پوشه‌ها</option></select>
                 <button class="lg-btn p" id="lg-scan"><i class="fas fa-magnifying-glass"></i>اسکن</button>
                 <button class="lg-btn s" id="lg-refresh"><i class="fas fa-rotate"></i>تازه‌سازی</button>
-                <label class="lg-btn s" style="cursor:pointer"><i class="fas fa-file-zipper"></i>آپلودِ ZIP<input type="file" id="lg-zip" accept=".zip" class="hidden"></label>
+                <label class="lg-btn s" style="cursor:pointer"><i class="fas fa-file-zipper"></i>آپلودِ ZIP<input type="file" data-uk-skip id="lg-zip" accept=".zip" class="hidden"></label>
             </div>
             <div id="lg-prog" class="hidden"><div class="lg-bar"><i style="width:0"></i></div><div class="text-[11px] text-slate-500 mt-1" id="lg-prog-t"></div></div>
             </div><div id="lg-scanres" class="space-y-3 mt-4"></div>`;
