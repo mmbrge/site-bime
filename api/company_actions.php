@@ -1181,6 +1181,9 @@ try {
         fin_contracts_ensure($pdo);
         $contractGiven = array_key_exists('contract_id', $data);
         $contractId = intval($data['contract_id'] ?? 0) ?: null;
+        if ($contractId && ($cc = fin_contract($pdo, $contractId)) && fin_contract_audience($cc) === 'PERSONNEL') {
+            echo json_encode(['ok' => false, 'error' => 'قراردادِ «' . $cc['name'] . '» فقط برای کارکنان است؛ برای شرکت قراردادی با «شرکت‌ها» یا «همه» انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit;
+        }
         if ($contractId) {
             $ct = fin_contract($pdo, $contractId);
             if (!$ct) { echo json_encode(['ok' => false, 'error' => 'قرارداد پیدا نشد.']); exit; }

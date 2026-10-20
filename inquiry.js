@@ -72,8 +72,11 @@
         document.head.appendChild(s);
     }
     const badge = st => { const u = ST_UI[st] || ['', '#64748b', 'fa-circle']; return `<span class="inq-badge" style="background:${u[1]}1a;color:${u[1]}"><i class="fas ${u[2]}"></i>${u[0]}</span>`; };
+    // جزئیاتِ گام‌ها فقط برای مدیر کل (سرور فقط برای او step_pages را می‌فرستد)
+    const isAdm = it => (V.boot ? !!V.boot.is_admin : false) || Array.isArray(it && it.step_pages);
     const pName = it => it.person && (it.person.name || it.person.family) ? `${it.person.name} ${it.person.family}`.trim() : (it.person_name || '');
 
+    const CAPW = new Set();   // کپچاهای باز: با ورودِ موفق از هر جا، همه‌ی استعلام‌های منتظر ادامه پیدا می‌کنند
     // ---------------- کپچا: هر کاربری که به نشستِ بسته‌ی سامانه برسد، کدِ تصویر را زیرِ همان فیلدهایش می‌زند ----------------
     // نام کاربری و رمز را مدیر کل در تنظیمات گذاشته؛ کاربر فقط متنِ تصویر را می‌نویسد. خروجی: true (وارد شد) / false (انصراف)
     function captchaBox(host, image, err) {
@@ -88,7 +91,11 @@
                 <p class="inq-caperr text-[11px] font-bold text-rose-600 mt-1.5">${esc(err || '')}</p></div>`;
             const inp = host.querySelector('input'), er = host.querySelector('.inq-caperr'), img = host.querySelector('.inq-capimg');
             const setImg = src => { img.innerHTML = src ? `<img src="${src}" alt="کد امنیتی">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'; };
-            const done = v => { host.innerHTML = ''; resolve(v); };
+            let settled = false;
+            const done = v => { if (settled) return; settled = true; CAPW.delete(done); clearInterval(watch); if (host.isConnected) host.innerHTML = ''; resolve(v); };
+            CAPW.add(done);
+            // اگر این بخش بسته/عوض شد، استعلامِ منتظر رها می‌شود تا دکمه‌ها قفل نمانند
+            const watch = setInterval(() => { if (!host.isConnected) done(false); }, 1500);
             const refresh = async force => {
                 setImg(null);
                 const r = await post({ action: 'captcha', refresh: force ? 1 : 0 });
@@ -103,7 +110,7 @@
                 const b = host.querySelector('[data-c="ok"]'); b.disabled = true; er.textContent = '';
                 const r = await post({ action: 'captcha_login', captcha: t });
                 b.disabled = false;
-                if (r.ok) { done(true); return; }
+                if (r.ok) { CAPW.forEach(f => f(true)); done(true); return; }
                 er.textContent = r.error || 'کد اشتباه بود.'; inp.value = '';
                 if (r.image) setImg(r.image); else refresh(true);
                 inp.focus();
@@ -131,11 +138,13 @@
         for (let attempt = 0; attempt < 6; attempt++) {
             let done = null;
             const ex = post({ action: 'exec', id: c.id }).then(r => { done = r; });
+            const t0 = Date.now();
             while (!done) {
                 await sleep(1300);
                 if (done) break;
                 const g = await post({ action: 'get', id: c.id });
                 if (g.ok) { last = g.item; if (onProg) onProg(last); if (last.done) break; }
+                if (Date.now() - t0 > 240000) return { ok: false, error: 'پاسخی از سامانه نیامد؛ کمی بعد دوباره امتحان کنید.', item: last };
             }
             await ex.catch(() => {});
             if (done && done.need_captcha) {
@@ -203,14 +212,15 @@
         f.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { if (i.name !== 'birth') i.value = en(i.value).replace(/\D/g, ''); i.classList.remove('err'); }));
         f.onsubmit = async e => {
             e.preventDefault();
-            if (V.running) return;
             const d = Object.fromEntries(new FormData(f).entries());
             Object.keys(d).forEach(x => d[x] = en(d[x]).trim());
-            const btn = f.querySelector('button'); btn.disabled = true; V.running = true;
+            const btn = f.querySelector('button[type="submit"]');
+            if (btn.disabled) return;
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال استعلام…';
             const outEl = body.querySelector('#inq-out');
             const fresh = body.querySelector('#inq-fresh');
             const r = await run(Object.assign({ kind: k, fresh: fresh && fresh.checked ? 1 : 0 }, d), it => { outEl.innerHTML = resultHtml(it, true); bindResult(outEl, it); }, body.querySelector('#inq-capbox'));
-            btn.disabled = false; V.running = false;
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام';
             if (!r.ok) { if (r.field) { const i = f.querySelector(`[name="${r.field === 'national_id' && k === 'legal' ? 'company_nid' : r.field}"]`); if (i) { i.classList.add('err'); i.focus(); } } toast(r.error || 'خطا', 'error'); }
         };
     }
@@ -247,8 +257,8 @@
         return `<div class="inq-res mt-1" style="background:${tone}">
             <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm text-slate-800"><i class="fas ${(KIND_UI[it.kind] || {}).ic || 'fa-search'} ml-1"></i>${esc(it.kind_fa)} ${it.national_id ? '· <span dir="ltr">' + fa(it.national_id) + '</span>' : ''}</b>
                 <span class="flex items-center gap-2">${it.cached ? '<span class="inq-badge" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-bolt"></i>از نتیجه‌ی قبلی</span>' : ''}${badge(it.status)}${it.ms ? `<small class="text-slate-400">${fa((it.ms / 1000).toFixed(1))} ثانیه</small>` : ''}</span></div>
-            ${it.kind !== 'legal' ? stepsBar(it) : ''}${inner}
-            ${V.boot && V.boot.is_admin && it.timeline && it.timeline.length ? `<details class="mt-3" ${big && !it.done ? 'open' : ''}><summary class="text-[11px] font-black text-slate-500 cursor-pointer">جزئیاتِ گام‌ها (فقط مدیر کل)</summary>${timelineHtml(it)}</details>` : ''}</div>`;
+            ${it.kind !== 'legal' && isAdm(it) ? stepsBar(it) : ''}${inner}
+            ${isAdm(it) && it.timeline && it.timeline.length ? `<details class="mt-3" open><summary class="text-[11px] font-black text-slate-500 cursor-pointer">جزئیاتِ گام‌ها (فقط مدیر کل)</summary>${timelineHtml(it)}</details>` : ''}</div>`;
     }
     function timelineHtml(it) {
         const col = { ok: '#10b981', warn: '#f59e0b', bad: '#f43f5e' };
@@ -479,39 +489,13 @@
             if (r.ok) renderSettings(body);
         };
     }
+    // ورودِ دستی به سامانه (فقط کدِ تصویر؛ نام کاربری و رمز فقط از تنظیمات)
     async function loginDialog(after) {
-        const m = document.createElement('div'); m.className = 'inq-modal';
-        m.innerHTML = `<div style="width:min(420px,100%)"><div class="p-5 space-y-3"><div class="flex items-center justify-between"><b class="text-sm"><i class="fas fa-key ml-1 text-indigo-500"></i>ورود به سامانه‌ی پاسارگاد</b><button class="inq-fbtn" data-x>✕</button></div>
-            <div id="inq-cap" class="text-center rounded-xl bg-slate-50 p-3 min-h-[70px]"><i class="fas fa-spinner fa-spin text-slate-400"></i></div>
-            <label class="inq-f">متنِ تصویر<input id="inq-lc" class="inq-in" dir="ltr" autocomplete="off"></label>
-            <details><summary class="text-[11px] text-slate-500 cursor-pointer">نام کاربری / رمزِ دیگر</summary><input id="inq-lu" class="inq-in" dir="ltr" placeholder="خالی = ذخیره‌شده"><input id="inq-lp" type="password" class="inq-in" dir="ltr" placeholder="خالی = ذخیره‌شده">
-                <label class="flex items-center gap-2 text-[11px] mt-2"><input type="checkbox" id="inq-lr" checked> ذخیره شود</label></details>
-            <p id="inq-lh" class="text-[11px] font-bold text-rose-600"></p>
-            <button class="inq-go w-full" id="inq-lb">ورود</button></div></div>`;
-        document.body.appendChild(m);
-        const close = () => m.remove();
-        m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) close(); };
-        const cap = async () => {
-            const box = m.querySelector('#inq-cap'); box.innerHTML = '<i class="fas fa-spinner fa-spin text-slate-400"></i>';
-            const r = await post({ action: 'captcha' });
-            if (!r.ok) { box.innerHTML = `<p class="text-xs text-rose-600">${esc(r.error)}</p>`; return; }
-            if (r.loggedIn || r.logged_in) { box.innerHTML = '<p class="text-xs font-bold text-emerald-600">نشست باز است؛ نیازی به ورود نیست.</p>'; return; }
-            box.innerHTML = `<img src="${r.image}" class="mx-auto rounded-lg" alt="کپچا"><button class="inq-fbtn mt-2" data-rc>↻ تصویرِ دیگر</button>`;
-            box.querySelector('[data-rc]').onclick = cap;
-            m.querySelector('#inq-lc').focus();
-        };
-        cap();
-        const go = async () => {
-            const btn = m.querySelector('#inq-lb'); btn.disabled = true;
-            const r = await post({ action: 'login', captcha: en(m.querySelector('#inq-lc').value.trim()), username: m.querySelector('#inq-lu').value.trim(), password: m.querySelector('#inq-lp').value, remember: m.querySelector('#inq-lr').checked ? 1 : 0 });
-            btn.disabled = false;
-            if (!r.ok) { m.querySelector('#inq-lh').textContent = r.error || 'ورود ناموفق بود.'; m.querySelector('#inq-lc').value = ''; cap(); return; }
-            toast('وارد شدید؛ استعلام‌ها آماده‌اند.', 'success'); close();
-            if (V.boot) { V.boot.status = 'logged_in'; if (V.el && V.el.isConnected && !after) render(); }
-            if (after) after();
-        };
-        m.querySelector('#inq-lb').onclick = go;
-        m.querySelector('#inq-lc').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        const ok = await captchaModal(null, '');
+        if (!ok) return;
+        toast('وارد شدید؛ استعلام‌ها آماده‌اند.', 'success');
+        if (V.boot) { V.boot.status = 'logged_in'; if (V.el && V.el.isConnected && !after) render(); }
+        if (after) after();
     }
 
     // ---------------- استعلام داخلِ فرم‌ها ----------------
@@ -542,6 +526,7 @@
                     const v = it.postal_valid;
                     msg.className = 'inq-fmsg ' + (v === true ? 'text-emerald-600' : v === false ? 'text-rose-600' : 'text-amber-600');
                     msg.innerHTML = `<i class="fas ${v === true ? 'fa-circle-check' : v === false ? 'fa-circle-xmark' : 'fa-triangle-exclamation'} ml-1"></i>${esc(it.postal_text || it.notice || '')}`;
+                    if (isAdm(it)) { msg.insertAdjacentHTML('beforeend', ' <button type="button" class="inq-fbtn" data-det>جزئیات</button>'); msg.querySelector('[data-det]').onclick = () => detail(it.id); }
                     if (opts.onPostal) opts.onPostal(it);
                 } else {
                     const p = it.person || {};
@@ -551,6 +536,7 @@
                         if (opts.father && (p.father || it.father_name)) opts.father.value = p.father || it.father_name;
                         msg.className = 'inq-fmsg text-emerald-600';
                         msg.innerHTML = `<i class="fas fa-circle-check ml-1"></i>${esc(full)}${p.father ? ' · فرزند ' + esc(p.father) : ''}${it.cached ? ' (از استعلامِ قبلی)' : ''}`;
+                        if (isAdm(it)) { msg.insertAdjacentHTML('beforeend', ' <button type="button" class="inq-fbtn" data-det>جزئیات</button>'); msg.querySelector('[data-det]').onclick = () => detail(it.id); }
                         if (opts.onPerson) opts.onPerson(it);
                     } else { msg.className = 'inq-fmsg text-rose-600'; msg.textContent = (it.notice || 'مشخصات پیدا نشد') + ' — دستی وارد کنید.'; }
                 }

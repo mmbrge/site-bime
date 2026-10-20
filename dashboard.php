@@ -1007,6 +1007,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=2"></script>
+<script src="jdate-picker.js?v=1" defer></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="plate.css?v=4">
@@ -4470,7 +4471,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="notif-bell.js?v=3"></script>
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
-    <script src="tools.js?v=3"></script>
+    <script src="tools.js?v=4"></script>
     <script src="comfort.js?v=17"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
@@ -4485,8 +4486,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
-    <script src="upload-kit.js?v=1"></script>
-    <script src="inquiry.js?v=2"></script>
+    <script src="upload-kit.js?v=2"></script>
+    <script src="inquiry.js?v=3"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -4511,7 +4512,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
     <script src="finance-hub.js?v=8"></script>
-    <script src="work-log.js?v=12"></script>
+    <script src="work-log.js?v=13"></script>
     <script src="import-archive.js?v=3"></script>
     <script src="renewals.js?v=2"></script>
     <script src="endorse.js?v=6"></script>
@@ -4525,8 +4526,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=3"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
-    <script src="fin-contracts.js?v=2"></script>
-    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=3"></script><?php endif; ?>
+    <script src="fin-contracts.js?v=3"></script>
+    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=16"></script>
@@ -9913,14 +9914,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 try { const d = await (await fetch('api/fin_plan_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'contracts'})})).json(); cmContracts = d.ok ? d.contracts : []; }
                 catch (e) { cmContracts = []; }
             }
-            box.innerHTML = '<option value="">— بدونِ قرارداد —</option>' + cmContracts.filter(c => c.is_active || String(c.id) === String(sel)).map(c => `<option value="${c.id}">${iiEsc(c.name)}${c.contract_key ? ' (' + iiEsc(c.contract_key) + ')' : ''}</option>`).join('');
+            box.innerHTML = '<option value="">— بدونِ قرارداد —</option>' + cmContracts.filter(c => (c.is_active && c.audience !== 'PERSONNEL') || String(c.id) === String(sel)).map(c => `<option value="${c.id}">${iiEsc(c.name)}${c.contract_key ? ' (' + iiEsc(c.contract_key) + ')' : ''}${c.audience === 'COMPANY' ? ' · شرکتی' : ''}</option>`).join('');
             box.value = sel ? String(sel) : '';
             cmContractHint();
         }
         function cmContractHint() {
             const id = document.getElementById('cm-contract').value, h = document.getElementById('cm-contract-hint');
             const c = (cmContracts || []).find(x => String(x.id) === id);
-            h.innerHTML = c ? `<i class="fas fa-file-contract text-indigo-500 ml-1"></i>${iiEsc(c.label)}` : 'بدونِ قرارداد: اقساط طبقِ تنظیماتِ قبلیِ همین شرکت ساخته می‌شود. بهتر است یک قرارداد انتخاب کنید.';
+            h.innerHTML = c ? `<i class="fas fa-file-contract text-indigo-500 ml-1"></i>${iiEsc(c.label)}` : 'بدونِ قراردادِ اختصاصی: اقساط طبقِ «قراردادِ پیش‌فرضِ شرکت‌ها» (صفحه‌ی قراردادها) ساخته می‌شود و اگر آن هم تعیین نشده باشد، طبقِ تنظیماتِ قبلیِ همین شرکت.';
         }
         window.addEventListener('fin:contracts-changed', () => { cmContracts = null; });
         function editCompany(id) {

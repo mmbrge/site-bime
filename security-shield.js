@@ -12,7 +12,7 @@
     const confirmBox = (t, m) => (window.uiConfirm ? uiConfirm(t, m) : Promise.resolve(confirm(t + '\n' + m)));
     const SEV = {info: ['اطلاع', '#64748b', '#f1f5f9'], low: ['کم', '#0284c7', '#e0f2fe'], medium: ['متوسط', '#d97706', '#fef3c7'], high: ['زیاد', '#ea580c', '#ffedd5'], critical: ['بحرانی', '#e11d48', '#ffe4e6']};
     const TYPE_IC = {LOGIN_FAIL: 'fa-key', LOGIN_LOCK: 'fa-lock', LOGIN_BLOCKED: 'fa-ban', NEW_IP: 'fa-location-dot', IDLE_LOGOUT: 'fa-hourglass-end', FORCED_LOGOUT: 'fa-right-from-bracket',
-                     CSRF_BLOCK: 'fa-mask', UPLOAD_BLOCK: 'fa-file-circle-xmark', WEBHOOK_FORGED: 'fa-robot', IP_BLOCKED: 'fa-ban', SUSPICIOUS_INPUT: 'fa-bug', PERM_DENIED: 'fa-user-lock',
+                     CSRF_BLOCK: 'fa-mask', UPLOAD_BLOCK: 'fa-file-circle-xmark', UPLOAD_REJECTED: 'fa-file-circle-minus', WEBHOOK_FORGED: 'fa-robot', IP_BLOCKED: 'fa-ban', SUSPICIOUS_INPUT: 'fa-bug', PERM_DENIED: 'fa-user-lock',
                      FILE_DENIED: 'fa-folder-closed', ADMIN_ACTION: 'fa-user-gear'};
     let root = null, ov = null, evFilter = {type: '', severity: '', q: '', from: '', to: '', page: 1}, tab = 'overview';
 

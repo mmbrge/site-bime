@@ -690,6 +690,16 @@
         };
     };
 
+    // «1-3, 5, 8-» => [1,2,3,5,8,…n]؛ خالی = همه
+    const parsePages = (txt, n) => {
+        const out = [];
+        String(txt || '').split(/[,،\s]+/).filter(Boolean).forEach(part => {
+            const m = /^(\d*)-(\d*)$/.exec(part);
+            if (m) { const a = m[1] ? +m[1] : 1, z = m[2] ? +m[2] : n; for (let i = a; i <= Math.min(z, n); i++) out.push(i); }
+            else if (/^\d+$/.test(part) && +part <= n) out.push(+part);
+        });
+        return [...new Set(out)];
+    };
     // ===== ابزارهای PDF (روی سرور) =====
     IMPL.pdf = b => {
         const OPS = [['merge', 'ادغام', 'fa-object-group', 'چند PDF را به ترتیب پشتِ هم یک فایل کنید.'], ['extract', 'انتخابِ صفحه‌ها', 'fa-scissors', 'فقط صفحه‌های لازم در یک PDFِ تازه.'],
@@ -748,6 +758,25 @@
             if (op === 'extract' && !g('pages').value.trim()) return toast('شماره‌ی صفحه‌ها را بنویسید (مثلاً 1-3, 5).', 'warning');
             const btn = e.currentTarget; btn.disabled = true;
             const bar = b.querySelector('[data-bar]'), o = b.querySelector('[data-o]'); bar.style.display = ''; bar.firstElementChild.style.width = '0';
+            // «PDF به عکس» در خودِ مرورگر (pdf.js)؛ چند صفحه => یک ZIP
+            if (op === 'toimg') {
+                o.innerHTML = '<p class="tl-note"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ساختِ عکس‌ها…</p>';
+                try {
+                    if (!window.UploadKit) throw new Error('ابزارِ PDF بارگذاری نشد؛ صفحه را تازه کنید.');
+                    const n0 = await UploadKit.pageCount(files[0]);
+                    const pages = parsePages(en(g('pages').value), n0);
+                    const r = await UploadKit.pdfToImages(files[0], {pages, dpi: +g('dpi').value, format: g('format').value, onProgress: p => { bar.firstElementChild.style.width = (p * 90) + '%'; }});
+                    let blob, name;
+                    if (r.images.length === 1) { blob = r.images[0].blob; name = r.images[0].name; }
+                    else { const Z = await UploadKit.ensure('jszip'); const z = new Z(); r.images.forEach(im => z.file(im.name, im.blob)); blob = await z.generateAsync({type: 'blob'}); name = baseName(files[0].name) + ' (عکس‌ها).zip'; }
+                    bar.firstElementChild.style.width = '100%';
+                    const u = URL.createObjectURL(blob);
+                    o.innerHTML = `<div class="tl-res" style="display:flex;align-items:center;gap:10px"><div><small>${esc(name)}</small><div class="big" style="font-size:20px">${kb(blob.size)}</div><small>${fa(r.images.length)} عکس از ${fa(r.total)} صفحه</small></div>
+                        <a class="tl-btn" href="${u}" download="${esc(name)}" style="margin-right:auto;text-decoration:none"><i class="fas fa-download ml-1"></i>دانلود</a></div>`;
+                } catch (x) { o.innerHTML = `<p class="tl-note tl-bad">${esc(x.message || 'ساختِ عکس ممکن نشد.')}</p>`; }
+                btn.disabled = false;
+                return;
+            }
             o.innerHTML = '<p class="tl-note"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ آپلود…</p>';
             try {
                 const tot = files.reduce((a, f) => a + f.size, 0); let done = 0; const ids = [];

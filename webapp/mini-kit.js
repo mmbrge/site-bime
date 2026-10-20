@@ -39,7 +39,8 @@
         for (gm = 1; gm <= 12 && gd > sal[gm]; gm++) gd -= sal[gm];
         return [gy, gm, gd];
     }
-    const leap = jy => { const r = (jy - (jy > 0 ? 474 : 473)) % 2820 + 474; return ((r + 38) * 682) % 2816 < 682; };
+    // کبیسه با چرخه‌ی ۳۳ساله (۱۳۹۹، ۱۴۰۳، ۱۴۰۸، …)
+    const leap = jy => [1, 5, 9, 13, 17, 22, 26, 30].indexOf(jy % 33) >= 0;
     const mdays = (jy, jm) => jm <= 6 ? 31 : jm <= 11 ? 30 : (leap(jy) ? 30 : 29);
     function jToday() {
         // ساعتِ ایران بر اساسِ سرور (iran-time.js) اگر بارگذاری شده باشد

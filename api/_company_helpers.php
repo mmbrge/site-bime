@@ -1435,8 +1435,8 @@ function company_add_months_jalali($jy, $jm, $step) {
 function company_jalali_month_len($jy, $jm) {
     if ($jm <= 6) return 31;
     if ($jm <= 11) return 30;
-    $r = (($jy - ($jy > 0 ? 474 : 473)) % 2820) + 474;
-    return ((($r + 38) * 682) % 2816 < 682) ? 30 : 29;
+    // کبیسه با چرخه‌ی ۳۳ساله (۱۳۹۹، ۱۴۰۳، ۱۴۰۸، ۱۴۱۲، …) — فرمولِ ۲۸۲۰ساله برای ۱۴۰۳/۱۴۰۴ اشتباه بود
+    return in_array(((int)$jy) % 33, [1, 5, 9, 13, 17, 22, 26, 30], true) ? 30 : 29;
 }
 
 // اولین سررسید = تاریخ صدور + first_due_offset_months ماه + first_due_offset_days روز؛

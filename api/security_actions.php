@@ -125,7 +125,7 @@ function sec_checks($pdo) {
     }
     // فایل‌ها و پوشه‌ها
     $guards = ['Archive/.htaccess' => 'بایگانی', 'Archive/_guard.php' => 'نگهبانِ بایگانی', 'config/.htaccess' => 'تنظیمات', 'uploads/.htaccess' => 'آپلودها',
-               'queue/.htaccess' => 'صفِ پردازش', 'tmp_ocr/.htaccess' => 'موقتِ OCR', 'migrations/.htaccess' => 'مایگریشن‌ها', 'report_assets/.htaccess' => 'فایل‌های گزارش', 'موقت/.htaccess' => 'موقت', 'api/.htaccess' => 'کتابخانه‌های API', 'api/py/.htaccess' => 'اسکریپت‌های پایتون'];
+               'queue/.htaccess' => 'صفِ پردازش', 'tmp_ocr/.htaccess' => 'موقتِ OCR', 'migrations/.htaccess' => 'مایگریشن‌ها', 'report_assets/.htaccess' => 'فایل‌های گزارش', 'موقت/.htaccess' => 'موقت', 'api/.htaccess' => 'کتابخانه‌های API', 'api/data/.htaccess' => 'داده‌های داخلیِ API'];
     $miss = [];
     foreach ($guards as $f => $l) if (!is_file($root . '/' . $f)) $miss[] = $l;
     $add('htaccess', 'فایل‌ها', 'محافظِ پوشه‌ها (اجرانشدنِ فایلِ آپلودی، بسته‌بودنِ پوشه‌های داخلی)', $miss ? 'bad' : 'ok',

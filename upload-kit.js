@@ -460,8 +460,29 @@
         }).catch(function () {});
     }, true);
 
+    // PDF به عکس (ابزارِ «PDF به عکس»): pages = شماره‌ی صفحه‌ها از ۱ (خالی = همه)؛ خروجی [{name, blob}]
+    function pdfToImages(file, opts) {
+        opts = opts || {};
+        var dpi = opts.dpi || 150, fmt = opts.format === 'png' ? 'png' : 'jpg', onProg = opts.onProgress || function () {};
+        return readBuf(file).then(openPdf).then(function (doc) {
+            var n = doc.numPages, pages = (opts.pages && opts.pages.length ? opts.pages : null) || Array.from({length: n}, function (_, i) { return i + 1; });
+            pages = pages.filter(function (p) { return p >= 1 && p <= n; });
+            var out = [], ch = Promise.resolve();
+            pages.forEach(function (pn, i) {
+                ch = ch.then(function () { return doc.getPage(pn); }).then(function (page) {
+                    var vp = page.getViewport({scale: dpi / 72});
+                    var c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+                    var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+                    return page.render({canvasContext: ctx, viewport: vp}).promise.then(function () { page.cleanup(); return canvasBlob(c, fmt === 'png' ? 'image/png' : 'image/jpeg', 0.9); });
+                }).then(function (blob) { out.push({name: base(file.name) + ' - ' + pn + '.' + fmt, blob: blob}); onProg((i + 1) / pages.length); });
+            });
+            return ch.then(function () { doc.destroy(); return {images: out, total: n}; });
+        });
+    }
+
     window.UploadKit = {
-        ensure: ensure, pageCount: pageCount, pickPages: pickPages, expand: expand, extractPages: extractPages, heicToJpg: heicToJpg,
+        pdfToImages: pdfToImages, pageCount: pageCount,
+        ensure: ensure, pickPages: pickPages, expand: expand, extractPages: extractPages, heicToJpg: heicToJpg,
         enqueue: enqueue, post: xhrPost, isPdf: isPdf, isZip: isZip, isHeic: isHeic, isImg: isImg, ext: ext, mkFile: mkFile, busy: busy
     };
 })();

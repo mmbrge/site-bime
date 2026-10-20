@@ -39,8 +39,8 @@ function fin_jalali_month_len($jy, $jm) {
     if ($jm <= 6) return 31;
     if ($jm <= 11) return 30;
     // اسفند: بستگی به کبیسه دارد
-    $r = (($jy - ($jy > 0 ? 474 : 473)) % 2820) + 474;
-    return ((($r + 38) * 682) % 2816 < 682) ? 30 : 29;
+    // کبیسه با چرخه‌ی ۳۳ساله (۱۳۹۹، ۱۴۰۳، ۱۴۰۸، ۱۴۱۲، …) — فرمولِ ۲۸۲۰ساله برای ۱۴۰۳/۱۴۰۴ اشتباه بود
+    return in_array(((int)$jy) % 33, [1, 5, 9, 13, 17, 22, 26, 30], true) ? 30 : 29;
 }
 
 // ماهِ بعدی را برمی‌گرداند
@@ -1175,28 +1175,28 @@ function fin_tpl_starter_docx($kind, $dest) {
     return true;
 }
 
-// آیا روی سرور ابزاری برای تبدیلِ docx به pdf هست؟ (برای پیام در صفحه‌ی قالب‌ها)
+// آیا روی سرور ابزاری برای تبدیلِ docx به pdf هست؟ (موتورِ PHP همیشه هست؛ LibreOffice اگر نصب باشد اولویت دارد)
 function fin_pdf_converter_available() {
-    if (!function_exists('shell_exec')) return false;
-    foreach (['soffice', 'libreoffice'] as $bin) { $w = @shell_exec("command -v $bin 2>/dev/null"); if ($w && trim($w)) return true; }
-    return false;
+    return class_exists('ZipArchive') && is_file(__DIR__ . '/_docx_pdf.php');
+}
+function fin_soffice_bin() {
+    $dis = array_map('trim', explode(',', strtolower((string)ini_get('disable_functions'))));
+    if (!function_exists('shell_exec') || in_array('shell_exec', $dis, true)) return null;
+    foreach (['soffice', 'libreoffice'] as $bin) { $w = @shell_exec("command -v $bin 2>/dev/null"); if ($w && trim($w)) return trim($w); }
+    return null;
 }
 
-// تبدیل docx به pdf - چند روش به‌ترتیب اولویت
+// تبدیل docx به pdf: ۱) LibreOffice اگر روی هاست باشد؛ ۲) موتورِ PHPِ خودِ سایت (api/_docx_pdf.php)
 function fin_docx_to_pdf($docxPath, $folder, $destPdf, $siteRoot) {
-    if (!function_exists('shell_exec')) return null;
-
-    // روش ۱: LibreOffice (بهترین کیفیت، اگر نصب باشد)
-    foreach (['soffice', 'libreoffice'] as $bin) {
-        $which = @shell_exec("command -v $bin 2>/dev/null");
-        if ($which && trim($which)) {
-            $home = escapeshellarg(sys_get_temp_dir());
-            @shell_exec("HOME=$home " . trim($which) . ' --headless --convert-to pdf --outdir '
-                        . escapeshellarg($folder) . ' ' . escapeshellarg($docxPath) . ' 2>&1');
-            if (file_exists($destPdf)) return ltrim(str_replace($siteRoot, '', $destPdf), '/');
-        }
+    if (($bin = fin_soffice_bin())) {
+        $home = escapeshellarg(sys_get_temp_dir());
+        @shell_exec("HOME=$home " . $bin . ' --headless --convert-to pdf --outdir ' . escapeshellarg($folder) . ' ' . escapeshellarg($docxPath) . ' 2>&1');
+        $lo = rtrim($folder, '/') . '/' . pathinfo($docxPath, PATHINFO_FILENAME) . '.pdf';
+        if ($lo !== $destPdf && is_file($lo) && !is_file($destPdf)) @rename($lo, $destPdf);
+        if (file_exists($destPdf)) return ltrim(str_replace($siteRoot, '', $destPdf), '/');
     }
-
+    require_once __DIR__ . '/_docx_pdf.php';
+    if (docx_to_pdf($docxPath, $destPdf) && is_file($destPdf)) return ltrim(str_replace($siteRoot, '', $destPdf), '/');
     return null;
 }
 
@@ -1652,7 +1652,7 @@ function fin_contracts_ensure($pdo) {
             split_method VARCHAR(12) NOT NULL DEFAULT 'mamut', note VARCHAR(500) NULL, is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NULL, KEY k_key (contract_key)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     } catch (Throwable $e) { error_log('[fin_contracts_ensure] ' . $e->getMessage()); return; }
-    foreach ([['companies', 'contract_id', 'INT NULL'],
+    foreach ([['companies', 'contract_id', 'INT NULL'], ['fin_contracts', 'audience', "VARCHAR(12) NOT NULL DEFAULT 'ALL'"],
               ['policy_cases', 'pay_plan_json', 'TEXT NULL'], ['policy_cases', 'pay_check_json', 'MEDIUMTEXT NULL'],
               ['company_request_plates', 'pay_plan_json', 'TEXT NULL'], ['company_request_plates', 'pay_check_json', 'MEDIUMTEXT NULL'],
               ['policy_installments', 'slip_json', 'TEXT NULL'], ['policy_installments', 'slip_file', 'VARCHAR(500) NULL'],
@@ -1710,12 +1710,18 @@ function fin_contract($pdo, $id) {
     $st->execute([intval($id)]);
     return $st->fetch() ?: null;
 }
-function fin_contract_by_key($pdo, $key) {
+// $kind: P (کارکنان) | C (شرکتی) — اگر یک شماره دو قرارداد دارد (مثلاً ۵۰۵۱ کارکنان ۱۲ قسط و ۵۰۵۱ شرکتی ۹ قسط)، همان گروه اول می‌آید
+function fin_contract_by_key($pdo, $key, $kind = null) {
     if (!$key) return null;
-    $st = $pdo->prepare("SELECT * FROM fin_contracts WHERE contract_key = ? AND is_active = 1 ORDER BY id LIMIT 1");
-    $st->execute([(string)$key]);
+    $want = $kind === 'C' ? 'COMPANY' : ($kind === 'P' ? 'PERSONNEL' : '');
+    $st = $pdo->prepare("SELECT * FROM fin_contracts WHERE contract_key = ? AND is_active = 1
+                         ORDER BY (audience = ?) DESC, (audience = 'ALL') DESC, id LIMIT 1");
+    $st->execute([(string)$key, $want]);
     return $st->fetch() ?: null;
 }
+// برای چه کسانی: ALL (همه) | PERSONNEL (کارکنان) | COMPANY (شرکت‌ها)
+function fin_contract_audience($c) { $a = strtoupper((string)($c['audience'] ?? 'ALL')); return in_array($a, ['PERSONNEL', 'COMPANY'], true) ? $a : 'ALL'; }
+function fin_contract_audience_fa($a) { return ['PERSONNEL' => 'کارکنان', 'COMPANY' => 'شرکت‌ها'][$a] ?? 'همه'; }
 
 // برنامه‌ی پرداخت: type (CASH/INSTALLMENT)، count، first_m، first_d، interval، method، contract_*، source، prefer (auto/slips/formula)
 function fin_plan_from_contract($c, $source) {
@@ -1741,6 +1747,8 @@ function fin_plan_default($pdo, $kind, $row) {
         $st->execute([intval($row['company_id'] ?? 0)]);
         $co = $st->fetch() ?: [];
         if (!empty($co['contract_id']) && ($c = fin_contract($pdo, $co['contract_id']))) return fin_plan_from_contract($c, 'company');
+        // شرکتِ بدونِ قراردادِ اختصاصی: قراردادِ پیش‌فرضِ شرکت‌ها (اگر در صفحه‌ی قراردادها تعیین شده باشد)
+        if (($dc = intval($s['company_default_contract_id'] ?? 0)) && ($c = fin_contract($pdo, $dc)) && intval($c['is_active'])) return fin_plan_from_contract($c, 'company_default');
         // شرکتِ بدونِ قرارداد: همان تنظیماتِ قبلیِ شرکت
         return ['source' => 'company_legacy', 'contract_id' => 0, 'contract_key' => '', 'contract_no' => '', 'contract_name' => '',
                 'type' => 'INSTALLMENT', 'count' => max(1, intval($co['installment_count'] ?? 0) ?: 1), 'first_m' => intval($co['first_due_offset_months'] ?? 0),

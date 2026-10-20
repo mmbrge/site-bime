@@ -16,7 +16,7 @@ const SEC_BAD_MID = '/\.(php\d?|phtml|phar|pht|phps|pgif|shtml|cgi|pl|py|sh|bash
 const SEC_EVENT_FA = [
     'LOGIN_FAIL' => 'ورودِ ناموفق', 'LOGIN_LOCK' => 'قفلِ ورود (تلاشِ زیاد)', 'LOGIN_BLOCKED' => 'تلاشِ ورود در زمانِ قفل', 'NEW_IP' => 'ورود از IP تازه',
     'IDLE_LOGOUT' => 'خروجِ خودکار (عدمِ فعالیت)', 'FORCED_LOGOUT' => 'خروجِ اجباری توسطِ مدیر', 'CSRF_BLOCK' => 'درخواستِ جعلی از سایتِ دیگر',
-    'UPLOAD_BLOCK' => 'آپلودِ فایلِ خطرناک', 'WEBHOOK_FORGED' => 'پیامِ جعلی به ربات', 'IP_BLOCKED' => 'درخواست از IPِ مسدود', 'SUSPICIOUS_INPUT' => 'ورودیِ مشکوک',
+    'UPLOAD_BLOCK' => 'آپلودِ فایلِ خطرناک', 'UPLOAD_REJECTED' => 'فایلِ غیرمجاز از کاربرِ پنل (رد شد)', 'WEBHOOK_FORGED' => 'پیامِ جعلی به ربات', 'IP_BLOCKED' => 'درخواست از IPِ مسدود', 'SUSPICIOUS_INPUT' => 'ورودیِ مشکوک',
     'PERM_DENIED' => 'تلاش برای دسترسیِ غیرمجاز', 'FILE_DENIED' => 'دسترسیِ بدونِ ورود به فایلِ بایگانی', 'ADMIN_ACTION' => 'تغییرِ تنظیماتِ امنیتی',
     'DEVICE_KICK' => 'خروجِ دستگاهِ قبلی (ورود از دستگاهِ تازه)', 'DEVICE_END' => 'بستنِ دستگاه توسطِ مدیر',
 ];
@@ -66,6 +66,13 @@ function sec_ensure($pdo) {
             ip VARCHAR(45) NULL, user_agent VARCHAR(300) NULL, device VARCHAR(120) NULL, created_at DATETIME NOT NULL, last_seen DATETIME NOT NULL,
             ended_at DATETIME NULL, end_reason VARCHAR(20) NULL, UNIQUE KEY uq_token (token), KEY k_user (user_type, user_id, ended_at)) $opt");
     } catch (Throwable $e) { error_log('[sec_ensure devices] ' . $e->getMessage()); }
+    // یک بار: فایل‌های ردشده‌ی کاربرانِ واردشده‌ی پنل که قبلاً «بحرانی» ثبت شده بودند، «کم‌اهمیت» شوند
+    try {
+        if (!$pdo->query("SELECT 1 FROM system_settings WHERE setting_key = 'sec_upl_reclass_v1'")->fetchColumn()) {
+            $pdo->exec("UPDATE security_events SET type = 'UPLOAD_REJECTED', severity = 'low' WHERE type = 'UPLOAD_BLOCK' AND user_type = 'STAFF' AND user_id IS NOT NULL");
+            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('sec_upl_reclass_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+        }
+    } catch (Throwable $e) {}
 }
 
 // ---------------- دستگاه‌های همزمان ----------------
@@ -161,7 +168,7 @@ function sec_actor() {
 }
 
 const SEC_SEV_OF = ['LOGIN_FAIL' => 'low', 'LOGIN_LOCK' => 'high', 'LOGIN_BLOCKED' => 'medium', 'NEW_IP' => 'info', 'IDLE_LOGOUT' => 'info', 'FORCED_LOGOUT' => 'info',
-                    'CSRF_BLOCK' => 'high', 'UPLOAD_BLOCK' => 'critical', 'WEBHOOK_FORGED' => 'critical', 'IP_BLOCKED' => 'medium', 'SUSPICIOUS_INPUT' => 'medium',
+                    'CSRF_BLOCK' => 'high', 'UPLOAD_BLOCK' => 'critical', 'UPLOAD_REJECTED' => 'low', 'WEBHOOK_FORGED' => 'critical', 'IP_BLOCKED' => 'medium', 'SUSPICIOUS_INPUT' => 'medium',
                     'PERM_DENIED' => 'medium', 'FILE_DENIED' => 'medium', 'ADMIN_ACTION' => 'info', 'DEVICE_KICK' => 'medium', 'DEVICE_END' => 'info'];
 
 function sec_event($pdo, $type, $detail = '', $userName = null, $severity = null) {
@@ -438,7 +445,9 @@ function sec_boot($pdo) {
             if ($adminSvg && preg_match('/^[^.]+\.svg$/i', $b)) continue;
             $bt = ltrim(trim($b), '. ');
             if ($bt === '' || preg_match(SEC_BAD_LAST, '.' . $bt) || preg_match(SEC_BAD_MID, $bt) || preg_match('/^\.?(htaccess|htpasswd|user\.ini)$/i', trim($b)) || preg_match('/[<>"\x00-\x1f]/', $b)) {   // < > " در نامِ فایل در ویندوز هم مجاز نیست
-                sec_event($pdo, 'UPLOAD_BLOCK', 'فایل: ' . $b . ' · ' . $script);
+                // کاربرِ واردشده‌ی پنل (خودتان یا همکاران) فایلِ غیرمجاز زده: رد می‌شود ولی «حمله» شمرده نمی‌شود
+                $inPanel = session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['user_id']) && session_name() !== 'bime_company_portal';
+                sec_event($pdo, $inPanel ? 'UPLOAD_REJECTED' : 'UPLOAD_BLOCK', 'فایل: ' . $b . ' · ' . $script);
                 sec_deny(400, 'این نوع فایل برای بارگذاری مجاز نیست (' . $b . ').');
             }
         }

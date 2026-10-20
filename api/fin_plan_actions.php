@@ -23,6 +23,7 @@ function fp_contract_out($c) {
     return ['id' => intval($c['id']), 'contract_no' => $c['contract_no'], 'contract_key' => $c['contract_key'], 'name' => $c['name'], 'pay_type' => $c['pay_type'],
             'installment_count' => intval($c['installment_count']), 'first_due_months' => intval($c['first_due_months']), 'first_due_days' => intval($c['first_due_days']),
             'interval_months' => intval($c['interval_months']), 'split_method' => $c['split_method'], 'note' => $c['note'], 'is_active' => intval($c['is_active']),
+            'audience' => fin_contract_audience($c), 'audience_fa' => fin_contract_audience_fa(fin_contract_audience($c)),
             'label' => fin_plan_label($p)];
 }
 // ردیفِ هدف: C = ردیفِ شرکتی، P = پرونده‌ی کارکنان
@@ -89,7 +90,7 @@ function fp_state($pdo, $kind, $t) {
     }
     return ['ok' => true, 'kind' => $kind, 'id' => $id, 'issued' => $t['status'] === 'ISSUED', 'default' => $def + ['label' => fin_plan_label($def)],
             'plan' => $plan + ['label' => fin_plan_label($plan)], 'custom' => $custom, 'detected_key' => $detected, 'detected_no' => $ocr['contract_no'] ?? null,
-            'detected_contract' => ($dc = fin_contract_by_key($pdo, $detected)) ? fp_contract_out($dc) : null,
+            'detected_contract' => ($dc = fin_contract_by_key($pdo, $detected, $kind)) ? fp_contract_out($dc) : null,
             'check' => $preview ? $preview['check'] : (json_decode((string)($t['pay_check_json'] ?? ''), true) ?: null), 'stale' => $stale,
             'any_touched' => (bool)array_filter($insts, fn($r) => $r['touched']),
             'preview' => $preview ? $preview['rows'] : [], 'installments' => $insts, 'premium' => $premium,
@@ -101,10 +102,11 @@ if ($action === 'contracts') {
     $s = fin_settings($pdo);
     $co = $pdo->query("SELECT contract_id, COUNT(*) n FROM companies WHERE contract_id IS NOT NULL GROUP BY contract_id")->fetchAll(PDO::FETCH_KEY_PAIR);
     fpo(['ok' => true, 'contracts' => array_map(fn($c) => fp_contract_out($c) + ['companies' => intval($co[$c['id']] ?? 0)], fin_contracts($pdo)),
-         'personnel_contract_id' => intval($s['personnel_contract_id'] ?? 0), 'personnel_use_contract' => ($s['personnel_use_contract'] ?? '1') === '1',
+         'personnel_contract_id' => intval($s['personnel_contract_id'] ?? 0), 'company_default_contract_id' => intval($s['company_default_contract_id'] ?? 0),
+         'companies_without' => intval($pdo->query("SELECT COUNT(*) FROM companies WHERE contract_id IS NULL")->fetchColumn()), 'personnel_use_contract' => ($s['personnel_use_contract'] ?? '1') === '1',
          'personnel_settings' => ['count' => intval($s['default_installments'] ?? 9), 'method' => $s['installment_method'] ?? 'mamut'], 'can_edit' => $isAdmin]);
 }
-if (in_array($action, ['contract_save', 'contract_delete', 'personnel_contract_save'], true) && !$isAdmin) fpo(['ok' => false, 'error' => 'تعریفِ قرارداد فقط کارِ مدیر کل است.']);
+if (in_array($action, ['contract_save', 'contract_delete', 'personnel_contract_save', 'company_default_save'], true) && !$isAdmin) fpo(['ok' => false, 'error' => 'تعریفِ قرارداد فقط کارِ مدیر کل است.']);
 if ($action === 'contract_save') {
     $c = (array)($data['contract'] ?? []);
     $name = trim((string)($c['name'] ?? ''));
@@ -117,19 +119,35 @@ if ($action === 'contract_save') {
              max(0, min(36, intval(p2e_digits((string)($c['first_due_months'] ?? 0))))), max(0, min(365, intval(p2e_digits((string)($c['first_due_days'] ?? 0))))),
              max(1, min(12, intval(p2e_digits((string)($c['interval_months'] ?? 1))))), ($c['split_method'] ?? 'mamut') === 'even' ? 'even' : 'mamut',
              mb_substr(trim((string)($c['note'] ?? '')), 0, 500) ?: null, !isset($c['is_active']) || !empty($c['is_active']) ? 1 : 0];
-    if ($key) {
-        $dup = $pdo->prepare("SELECT id FROM fin_contracts WHERE contract_key = ? AND id <> ? AND is_active = 1");
+    $aud = fin_contract_audience(['audience' => $c['audience'] ?? 'ALL']);
+    // یک شماره می‌تواند دو قراردادِ فعال داشته باشد، به شرطِ این‌که یکی برای کارکنان و دیگری برای شرکت‌ها باشد
+    if ($key && $vals[10]) {
+        $dup = $pdo->prepare("SELECT name, audience FROM fin_contracts WHERE contract_key = ? AND id <> ? AND is_active = 1");
         $dup->execute([$key, intval($c['id'] ?? 0)]);
-        if ($dup->fetchColumn()) fpo(['ok' => false, 'error' => "قراردادِ فعالِ دیگری با کلیدِ {$key} وجود دارد."]);
+        foreach ($dup->fetchAll() as $o) {
+            $oa = fin_contract_audience($o);
+            if ($oa === 'ALL' || $aud === 'ALL' || $oa === $aud) fpo(['ok' => false, 'error' => "قراردادِ فعالِ «{$o['name']}» هم کلیدِ {$key} را دارد (برای " . fin_contract_audience_fa($oa) . "). "
+                . 'اگر این دو برای دو گروهِ جدا هستند، در هر دو «برای چه کسانی» را جدا انتخاب کنید (یکی «کارکنان» و دیگری «شرکت‌ها»).']);
+        }
+    }
+    if (!empty($c['id'])) {
+        $cid = intval($c['id']);
+        if ($aud === 'COMPANY' && $cid === intval(fin_settings($pdo)['personnel_contract_id'] ?? 0)) fpo(['ok' => false, 'error' => 'این قرارداد الان قراردادِ کارکنان است؛ اول برای کارکنان قراردادِ دیگری انتخاب کنید.']);
+        if ($aud === 'PERSONNEL') {
+            $n = $pdo->prepare("SELECT COUNT(*) FROM companies WHERE contract_id = ?"); $n->execute([$cid]);
+            if (intval($n->fetchColumn()) || $cid === intval(fin_settings($pdo)['company_default_contract_id'] ?? 0)) fpo(['ok' => false, 'error' => 'این قرارداد به شرکت‌ها وصل است؛ اول قراردادِ آن شرکت‌ها را عوض کنید.']);
+        }
     }
     if (!empty($c['id'])) {
         $pdo->prepare("UPDATE fin_contracts SET contract_no=?, contract_key=?, name=?, pay_type=?, installment_count=?, first_due_months=?, first_due_days=?, interval_months=?, split_method=?, note=?, is_active=? WHERE id=?")
             ->execute([...$vals, intval($c['id'])]);
         $id = intval($c['id']);
+        $pdo->prepare("UPDATE fin_contracts SET audience = ? WHERE id = ?")->execute([$aud, $id]);
     } else {
         $pdo->prepare("INSERT INTO fin_contracts (contract_no, contract_key, name, pay_type, installment_count, first_due_months, first_due_days, interval_months, split_method, note, is_active, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")->execute($vals);
         $id = intval($pdo->lastInsertId());
+        $pdo->prepare("UPDATE fin_contracts SET audience = ? WHERE id = ?")->execute([$aud, $id]);
     }
     // شرکت‌هایی که این قرارداد را دارند: ستون‌های قدیمی هم هم‌شکل می‌شوند (نمایش و سازگاری)
     $pdo->prepare("UPDATE companies SET payment_terms = ?, installment_count = ?, first_due_offset_months = ?, first_due_offset_days = ? WHERE contract_id = ?")
@@ -142,14 +160,25 @@ if ($action === 'contract_delete') {
     $n->execute([$id]);
     if (intval($n->fetchColumn())) fpo(['ok' => false, 'error' => 'این قرارداد به شرکت‌هایی وصل است؛ اول قراردادِ آن شرکت‌ها را عوض کنید یا قرارداد را «غیرفعال» کنید.']);
     if ($id === intval(fin_settings($pdo)['personnel_contract_id'] ?? 0)) fpo(['ok' => false, 'error' => 'این قراردادِ کارکنان است؛ اول قراردادِ دیگری برای کارکنان انتخاب کنید.']);
+    if ($id === intval(fin_settings($pdo)['company_default_contract_id'] ?? 0)) fpo(['ok' => false, 'error' => 'این قراردادِ پیش‌فرضِ شرکت‌هاست؛ اول پیش‌فرضِ شرکت‌ها را عوض کنید.']);
     $pdo->prepare("DELETE FROM fin_contracts WHERE id = ?")->execute([$id]);
     fpo(['ok' => true]);
 }
 if ($action === 'personnel_contract_save') {
     $cid = intval($data['contract_id'] ?? 0);
-    if ($cid && !fin_contract($pdo, $cid)) fpo(['ok' => false, 'error' => 'قرارداد پیدا نشد.']);
+    if ($cid && !($pc = fin_contract($pdo, $cid))) fpo(['ok' => false, 'error' => 'قرارداد پیدا نشد.']);
+    if ($cid && fin_contract_audience($pc) === 'COMPANY') fpo(['ok' => false, 'error' => 'این قرارداد فقط برای شرکت‌هاست؛ قراردادی با «کارکنان» یا «همه» انتخاب کنید.']);
     fin_set($pdo, 'personnel_contract_id', (string)$cid);
     fin_set($pdo, 'personnel_use_contract', !empty($data['use_contract']) && $cid ? '1' : '0');
+    fpo(['ok' => true]);
+}
+
+// قراردادِ پیش‌فرضِ شرکت‌هایی که قراردادِ اختصاصی ندارند (۰ = مثلِ قبل، تنظیماتِ قبلیِ همان شرکت)
+if ($action === 'company_default_save') {
+    $cid = intval($data['contract_id'] ?? 0);
+    if ($cid && !($cc = fin_contract($pdo, $cid))) fpo(['ok' => false, 'error' => 'قرارداد پیدا نشد.']);
+    if ($cid && fin_contract_audience($cc) === 'PERSONNEL') fpo(['ok' => false, 'error' => 'این قرارداد فقط برای کارکنان است؛ قراردادی با «شرکت‌ها» یا «همه» انتخاب کنید.']);
+    fin_set($pdo, 'company_default_contract_id', (string)$cid);
     fpo(['ok' => true]);
 }
 

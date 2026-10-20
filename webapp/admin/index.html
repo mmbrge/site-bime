@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>پنل مدیر</title>
 <script src="https://tapi.bale.ai/miniapp.js?3" onerror="this.remove()"></script>
+<script src="../mini-kit.js?v=6"></script>
 <link rel="stylesheet" href="/plate.css?v=4">
 <style>
   /* مینی‌اپِ مدیر (ربات بله): صفِ بازدید به ترتیبِ نوبت، بازدیدِ آزاد، ثبتِ درخواست از روی معرفی‌نامه - api/webapp_admin.php */
@@ -321,6 +322,18 @@ function newDone() {
   show('queue');
 }
 </script>
-<script src="../../upload-kit.js?v=1"></script><script src="../../page-guard.js?v=1"></script>
+<script>
+// مینی‌اپ: خانه‌های تاریخ فقط با تقویم پر می‌شوند
+(function () {
+  const MKIT = window.MiniKit; if (!MKIT) return;
+  const f = document.getElementById('i-date'); if (f) MKIT.dateField(f, {title: '📅 تاریخِ معرفی‌نامه'});
+  document.addEventListener('click', e => {
+    const el = e.target.closest && e.target.closest('input[data-d]');
+    if (!el || el._mkDate) return;
+    MKIT.dateField(el, {title: '📅 تاریخِ نوبتِ بازدید', min: MKIT.jToday()}); el._mkOpen(e);
+  }, true);
+})();
+</script>
+<script src="../../upload-kit.js?v=2"></script><script src="../../page-guard.js?v=1"></script>
 </body>
 </html>

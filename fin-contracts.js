@@ -60,7 +60,8 @@
         root.innerHTML = '<div class="p-10 text-center text-slate-400"><i class="fas fa-spinner fa-spin text-2xl"></i></div>';
         const d = await api('contracts');
         if (!d.ok) { root.innerHTML = `<div class="fc-card text-rose-600">${esc(d.error)}</div>`; return; }
-        const pc = d.contracts.find(c => c.id === d.personnel_contract_id);
+        const pc = d.contracts.find(c => c.id === d.personnel_contract_id), cdc = d.contracts.find(c => c.id === d.company_default_contract_id);
+        const opt = (aud, sel) => d.contracts.filter(c => c.is_active && c.audience !== aud).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}${c.contract_key ? ' (' + esc(c.contract_key) + ')' : ''} — ${c.pay_type === 'CASH' ? 'نقد' : fa(c.installment_count) + ' قسط'}</option>`).join('');
         root.innerHTML = `
         <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
             <div class="flex items-center gap-3"><span class="w-11 h-11 rounded-2xl text-white flex items-center justify-center shadow-lg" style="background:linear-gradient(135deg,#4338ca,#7c3aed)"><i class="fas fa-file-contract"></i></span>
@@ -72,18 +73,30 @@
                 <span class="fc-pill" style="background:${d.personnel_use_contract ? '#e0e7ff;color:#4338ca' : '#f1f5f9;color:#475569'}">${d.personnel_use_contract && pc ? 'طبقِ قرارداد ' + esc(pc.contract_key || pc.name) : 'طبقِ تنظیماتِ مالیِ کارکنان (' + fa(d.personnel_settings.count) + ' قسط)'}</span></div>
             <div class="flex flex-wrap gap-2 items-end">
                 <label class="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" data-puse ${d.personnel_use_contract ? 'checked' : ''} ${d.can_edit ? '' : 'disabled'}> اقساطِ کارکنان طبقِ قرارداد حساب شود</label>
-                <select class="fc-in" style="max-width:340px" data-pcid ${d.can_edit ? '' : 'disabled'}><option value="0">— انتخابِ قرارداد —</option>${d.contracts.filter(c => c.is_active).map(c => `<option value="${c.id}" ${c.id === d.personnel_contract_id ? 'selected' : ''}>${esc(c.name)}${c.contract_key ? ' (' + esc(c.contract_key) + ')' : ''}</option>`).join('')}</select>
+                <select class="fc-in" style="max-width:340px" data-pcid ${d.can_edit ? '' : 'disabled'}><option value="0">— انتخابِ قرارداد —</option>${opt('COMPANY', d.personnel_contract_id)}</select>
                 ${d.can_edit ? '<button class="fc-btn s" data-psave><i class="fas fa-floppy-disk"></i> ذخیره</button>' : ''}
             </div>
             <p class="text-[10.5px] text-slate-500 mt-2">اگر تیکِ «طبقِ قرارداد» را بردارید، اقساطِ کارکنان مثلِ قبل طبقِ «تنظیمات مالی» (تعداد قسط و روشِ رُند کردن) ساخته می‌شود. برای هر بیمه‌نامه هم در پاپ‌آپِ صدور می‌شود روشِ دیگری انتخاب کرد.</p>
+        </div>
+        <div class="fc-card mb-4" style="background:linear-gradient(135deg,#ecfeff,#fff)">
+            <div class="flex items-center gap-2 flex-wrap mb-2"><i class="fas fa-building text-cyan-600"></i><b class="text-sm text-slate-800">شرکت‌ها (پیش‌فرض)</b>
+                <span class="fc-pill" style="background:${cdc ? '#cffafe;color:#0e7490' : '#f1f5f9;color:#475569'}">${cdc ? 'طبقِ قرارداد ' + esc(cdc.contract_key || cdc.name) + ' (' + (cdc.pay_type === 'CASH' ? 'نقد' : fa(cdc.installment_count) + ' قسط') + ')' : 'هر شرکت طبقِ تنظیماتِ خودش'}</span>
+                <span class="text-[10.5px] text-slate-500">${fa(d.companies_without)} شرکت قراردادِ اختصاصی ندارند</span></div>
+            <div class="flex flex-wrap gap-2 items-end">
+                <select class="fc-in" style="max-width:340px" data-cdid ${d.can_edit ? '' : 'disabled'}><option value="0">— بدونِ پیش‌فرض (مثلِ قبل) —</option>${opt('PERSONNEL', d.company_default_contract_id)}</select>
+                ${d.can_edit ? '<button class="fc-btn s" data-cdsave><i class="fas fa-floppy-disk"></i> ذخیره</button>' : ''}
+            </div>
+            <p class="text-[10.5px] text-slate-500 mt-2">برای شرکت‌هایی که در فرمِ شرکت قراردادِ جداگانه ندارند. شرکتی که قراردادِ خودش را دارد، طبقِ همان حساب می‌شود.
+                <br><b>مثال:</b> دو قرارداد با شماره‌ی ۵۰۵۱ بسازید: «۵۰۵۱ کارکنان» با ۱۲ قسط و «برای چه کسانی = کارکنان»، و «۵۰۵۱ شرکتی» با ۹ قسط و «برای چه کسانی = شرکت‌ها». اولی را بالا برای کارکنان و دومی را این‌جا پیش‌فرضِ شرکت‌ها کنید.</p>
         </div>
         <div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(270px,1fr))">
             ${d.contracts.map(c => `<div class="fc-ccard ${c.is_active ? '' : 'off'}">
                 <div class="flex items-start gap-2"><span class="fc-pill" style="background:${c.pay_type === 'CASH' ? '#dcfce7;color:#15803d' : '#e0e7ff;color:#4338ca'}">${typeFa(c.pay_type)}</span>
                     <div class="flex-1 min-w-0"><b class="text-sm text-slate-800 block truncate">${esc(c.name)}</b><span class="text-[11px] text-slate-500 font-mono" dir="ltr">${esc(c.contract_no || 'بدونِ شماره')}</span></div>
+                    <span class="fc-pill" style="background:${c.audience === 'PERSONNEL' ? '#e0e7ff;color:#4338ca' : c.audience === 'COMPANY' ? '#cffafe;color:#0e7490' : '#f1f5f9;color:#475569'}" title="برای چه کسانی">${c.audience === 'ALL' ? 'همه' : esc(c.audience_fa)}</span>
                     ${c.contract_key ? `<span class="fc-pill" style="background:#0f172a;color:#fff" title="کلیدِ قرارداد (در شماره‌ی بیمه‌نامه هم می‌آید)">${fa(c.contract_key)}</span>` : '<span class="fc-pill" style="background:#fef3c7;color:#92400e">بدونِ شماره</span>'}</div>
                 <div class="text-[11px] text-slate-600 mt-2 leading-6">${c.pay_type === 'CASH' ? 'یک‌جا' : fa(c.installment_count) + ' قسط، هر ' + fa(c.interval_months) + ' ماه'} · سررسیدِ اول ${c.first_due_months || c.first_due_days ? fa(c.first_due_months) + ' ماه' + (c.first_due_days ? ' و ' + fa(c.first_due_days) + ' روز' : '') + ' بعد از صدور' : 'همان روزِ صدور'}
-                    <br>${c.id === d.personnel_contract_id ? '<span class="text-indigo-600 font-bold">قراردادِ کارکنان</span> · ' : ''}${fa(c.companies)} شرکت${c.note ? '<br><span class="text-slate-400">' + esc(c.note) + '</span>' : ''}</div>
+                    <br>${c.id === d.personnel_contract_id ? '<span class="text-indigo-600 font-bold">قراردادِ کارکنان</span> · ' : ''}${c.id === d.company_default_contract_id ? '<span class="text-cyan-700 font-bold">پیش‌فرضِ شرکت‌ها</span> · ' : ''}${fa(c.companies)} شرکت${c.note ? '<br><span class="text-slate-400">' + esc(c.note) + '</span>' : ''}</div>
                 ${d.can_edit ? `<div class="flex gap-2 mt-2"><button class="fc-btn s" data-edit="${c.id}"><i class="fas fa-pen"></i> ویرایش</button><button class="fc-btn r" data-del="${c.id}"><i class="fas fa-trash"></i></button></div>` : ''}
             </div>`).join('') || '<p class="text-sm text-slate-400">قراردادی تعریف نشده است.</p>'}
         </div>`;
@@ -96,6 +109,12 @@
             toast(r.ok ? 'قرارداد حذف شد.' : r.error, r.ok ? 'success' : 'error');
             if (r.ok) renderPage(root);
         });
+        const cds = root.querySelector('[data-cdsave]');
+        if (cds) cds.onclick = async () => {
+            const r = await api('company_default_save', {contract_id: Number(root.querySelector('[data-cdid]').value)});
+            toast(r.ok ? 'قراردادِ پیش‌فرضِ شرکت‌ها ذخیره شد.' : r.error, r.ok ? 'success' : 'error');
+            if (r.ok) { renderPage(root); window.dispatchEvent(new CustomEvent('fin:contracts-changed')); }
+        };
         const ps = root.querySelector('[data-psave]');
         if (ps) ps.onclick = async () => {
             const r = await api('personnel_contract_save', {contract_id: Number(root.querySelector('[data-pcid]').value), use_contract: root.querySelector('[data-puse]').checked});
@@ -104,7 +123,7 @@
         };
     }
     function contractForm(c) {
-        c = c || {pay_type: 'INSTALLMENT', installment_count: 9, first_due_months: 1, first_due_days: 0, interval_months: 1, split_method: 'mamut', is_active: 1};
+        c = c || {pay_type: 'INSTALLMENT', installment_count: 9, first_due_months: 1, first_due_days: 0, interval_months: 1, split_method: 'mamut', is_active: 1, audience: 'ALL'};
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
         ov.innerHTML = `<div class="fc-card" style="width:min(560px,100%);max-height:92vh;overflow:auto" dir="rtl">
@@ -112,6 +131,8 @@
             <div class="fc-grid">
                 <div><label class="fc-lbl">شماره قرارداد</label><input class="fc-in" data-f="contract_no" dir="ltr" placeholder="5051/30000/1404" value="${esc(c.contract_no || '')}"></div>
                 <div><label class="fc-lbl">نام قرارداد *</label><input class="fc-in" data-f="name" value="${esc(c.name || '')}"></div>
+                <div style="grid-column:1/-1"><label class="fc-lbl">برای چه کسانی</label><select class="fc-in" data-f="audience">${[['ALL', 'همه (کارکنان و شرکت‌ها)'], ['PERSONNEL', 'فقط کارکنان'], ['COMPANY', 'فقط شرکت‌ها']].map(([k, t]) => `<option value="${k}" ${(c.audience || 'ALL') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+                    <span class="text-[10px] text-slate-400">با جدا کردنِ گروه، یک شماره‌ی قرارداد (مثلاً ۵۰۵۱) می‌تواند برای کارکنان و شرکت‌ها دو تعداد قسطِ متفاوت داشته باشد.</span></div>
                 <div><label class="fc-lbl">نوعِ پرداخت</label><select class="fc-in" data-f="pay_type"><option value="INSTALLMENT" ${c.pay_type !== 'CASH' ? 'selected' : ''}>اقساط</option><option value="CASH" ${c.pay_type === 'CASH' ? 'selected' : ''}>نقد (یک‌جا)</option></select></div>
                 <div data-inst><label class="fc-lbl">تعداد قسط</label><input class="fc-in" data-f="installment_count" type="number" min="1" max="60" value="${c.installment_count}"></div>
                 <div><label class="fc-lbl">سررسیدِ اول: چند ماه بعد از صدور</label><input class="fc-in" data-f="first_due_months" type="number" min="0" value="${c.first_due_months}"></div>

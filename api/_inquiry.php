@@ -709,7 +709,7 @@ function inq_execute($pdo, $id) {
     if (!function_exists('curl_init')) return $finish('FAIL', 'افزونه‌ی curl روی سرور فعال نیست.');
     $jobDir = inq_dir('jobs/' . $id);
     $tl = [];
-    $lk = inq_lock(150, function () use ($pdo, $id) { $pdo->prepare("UPDATE inq_requests SET notice = 'در صف (استعلامِ دیگری در حالِ اجراست)…' WHERE id = ?")->execute([$id]); });
+    $lk = inq_lock(90, function () use ($pdo, $id) { $pdo->prepare("UPDATE inq_requests SET notice = 'در صف (استعلامِ دیگری در حالِ اجراست)…' WHERE id = ?")->execute([$id]); });
     if (!$lk) return $finish('FAIL', 'سامانه مشغولِ استعلام‌های دیگر بود؛ کمی بعد دوباره امتحان کنید.');
     try {
         [$y, $m, $d] = array_map('intval', explode('/', $row['birth']));

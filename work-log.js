@@ -102,7 +102,7 @@
         draw();
         document.body.appendChild(jpEl);
     }
-    document.addEventListener('focusin', e => { if (e.target.matches && e.target.matches('input[data-jdate]')) jpOpen(e.target); });
+    document.addEventListener('focusin', e => { if (!window.JDatePick && e.target.matches && e.target.matches('input[data-jdate]')) jpOpen(e.target); });
     document.addEventListener('mousedown', e => { if (jpEl && !jpEl.contains(e.target) && !(e.target.matches && e.target.matches('input[data-jdate]'))) jpClose(); });
 
     // ---------------- استایل ----------------

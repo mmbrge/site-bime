@@ -209,7 +209,7 @@ if ($action === 'batch_cancel' || $action === 'batch_resume') {
 }
 
 // ---- تنظیمات و ورود به سامانه (فقط مدیر کل) ----
-if (in_array($action, ['settings_get', 'settings_save', 'login', 'status'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
+if (in_array($action, ['settings_get', 'settings_save', 'status'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
 if ($action === 'settings_get') {
     $s = inq_settings($pdo);
     if (inq_get_setting($pdo, 'inq_cron_key') === '') inq_set_setting($pdo, 'inq_cron_key', bin2hex(random_bytes(16)));
@@ -230,19 +230,4 @@ if ($action === 'settings_save') {
     $out(['ok' => true]);
 }
 if ($action === 'status') $out(['ok' => true, 'status' => inq_px_status($pdo, true)]);
-if ($action === 'login') {
-    $cr = inq_creds($pdo);
-    $u = trim((string)($in['username'] ?? '')) ?: $cr['user'];
-    $p = (string)($in['password'] ?? '') ?: $cr['pass'];
-    if ($u === '' || $p === '') $out(['ok' => false, 'error' => 'نام کاربری و رمزِ سامانه را وارد کنید.']);
-    $lk = inq_lock(20);
-    if (!$lk) $out(['ok' => false, 'error' => 'سامانه مشغولِ استعلام است؛ چند ثانیه‌ی دیگر دوباره بزنید.']);
-    try { $r = (new InqPasargad())->login($u, $p, trim((string)($in['captcha'] ?? ''))); } finally { inq_unlock($lk); }
-    if ($r['ok']) {
-        inq_px_mark('logged_in'); inq_touch_activity(); @unlink(inq_dir() . '/captcha.json');
-        if (!empty($in['remember'])) { inq_set_setting($pdo, 'inq_px_user', $u); inq_set_setting($pdo, 'inq_px_pass', inq_enc($p)); }
-    }
-    $out($r);
-}
-
 $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
