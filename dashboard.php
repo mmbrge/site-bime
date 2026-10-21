@@ -505,7 +505,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .cit-tools button:hover, .cit-tools a:hover { background: rgba(255,255,255,.18); }
         .cit-form { min-height: 0; overflow-y: auto; padding: 14px 18px 8px; }
         @media (max-width: 900px) { .cit-body { grid-template-columns: 1fr; grid-template-rows: 44vh 1fr; } .cit-view { border-left: 0; border-bottom: 1px solid #e2e8f0; } }
-        .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; align-items: start; }
+        .checklist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 7px; align-items: stretch; }
+        /* خانه‌های چک‌لیست: عنوان می‌شکند و دکمه‌ها زیرِ هم در عرضِ خانه می‌نشینند (روی هم نمی‌افتند) */
+        .ck-chip { border-radius: 12px; padding: 7px 8px; font-size: 10px; line-height: 1.6; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .ck-chip .ck-t { font-weight: 800; display: flex; align-items: flex-start; gap: 4px; word-break: break-word; }
+        .ck-chip .ck-links a { word-break: break-word; }
+        .up-stack { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 3px; }
+        .up-row { display: flex; gap: 4px; flex-wrap: wrap; }
+        .up-sel { width: 100%; font-size: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 3px 6px; background: #fff; color: #334155; }
+        .up-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: 1 1 auto; font-size: 10.5px; font-weight: 800; color: #fff; padding: 5px 10px;
+                  border-radius: 9px; border: 0; cursor: pointer; white-space: nowrap; background: linear-gradient(135deg, #0d9488, #0891b2); box-shadow: 0 3px 8px -4px rgba(8,145,178,.7); transition: transform .12s, box-shadow .12s; }
+        .up-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px -6px rgba(8,145,178,.8); }
+        .up-btn.soft { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; box-shadow: none; }
+        .up-btn.violet { background: linear-gradient(135deg, #4f46e5, #7c3aed); box-shadow: 0 3px 8px -4px rgba(99,102,241,.7); }
+        .up-in { width: 100%; font-size: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 3px 6px; background: #fff; }
         /* ستونِ چک‌لیست باید بیشترِ عرضِ جدول را بگیرد تا خانه‌هایش در یک سطر کنار هم
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
            نوشته شده (نه کلاس‌های Tailwind) تا مستقل از CDN هم درست کار کند. */
@@ -6656,28 +6669,24 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             let uploader = '';
             if (canEdit && item.custom) {
                 // «مدرکِ دیگر»: نامش را خودِ کاربر می‌نویسد و چند مدرک هم می‌شود زد
-                uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه؛ خالی بماند نامِ خودِ فایل گذاشته می‌شود" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+                uploader = `<span class="up-stack"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه؛ خالی بماند نامِ خودِ فایل گذاشته می‌شود" class="up-in">
                     <input type="hidden" id="rowdoc-type-${plate.id}-other" value="other">
-                    <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                        <i class="fas fa-plus ml-0.5"></i>بارگذاری<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')">
-                    </label></span>`;
+                    <label class="up-btn"><i class="fas fa-plus"></i>افزودنِ مدرک<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')"></label></span>`;
             } else if (canEdit && !ok) {
                 const types = item.upload_types || [item.key];
                 const sel = types.length > 1
-                    ? `<select id="rowdoc-type-${plate.id}-${item.key}" class="text-[10px] border rounded px-1 py-0.5 bg-white">
+                    ? `<select id="rowdoc-type-${plate.id}-${item.key}" class="up-sel">
                            ${types.map(t => `<option value="${t}">${DOC_TYPE_FA[t] || t}</option>`).join('')}
                        </select>`
                     : `<input type="hidden" id="rowdoc-type-${plate.id}-${item.key}" value="${types[0]}">`;
                 const accept = item.key === 'health_inspection' ? '.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
-                uploader = `<span class="inline-flex items-center gap-1 mt-1">${sel}
-                    <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                        بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)">
-                    </label></span>`;
+                uploader = `<span class="up-stack">${sel}
+                    <label class="up-btn"><i class="fas fa-cloud-arrow-up"></i>بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)"></label></span>`;
             }
 
-            return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="${item.hint || ''}">
-                <div class="font-bold whitespace-nowrap">${mark} ${item.label}${star}</div>
-                ${links ? `<div class="mt-0.5">${links}${del}</div>` : ''}
+            return `<div class="ck-chip border ${tone}" title="${item.hint || ''}">
+                <div class="ck-t"><span>${mark}</span><span>${item.label}${star}</span></div>
+                ${links ? `<div class="ck-links">${links}${del}</div>` : ''}
                 ${uploader}
             </div>`;
         }
@@ -6702,20 +6711,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`).join('<span class="text-slate-300 mx-1">|</span>');
             const del = canEdit ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
             const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
-            const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow px-2 py-0.5 rounded whitespace-nowrap">
-                    <i class="fas fa-file-circle-plus ml-1"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
+            const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="up-btn violet">
+                    <i class="fas fa-file-circle-plus"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
             const insp = items.find(it => it.key === 'health_inspection');
             const pending = pendingRep;
-            const custUp = canEdit && insp && !insp.satisfied && p.status !== 'ISSUED' ? `<div class="mt-1 flex flex-wrap items-center gap-1"><span class="text-[9.5px] text-slate-500">بازدیدِ ارسالیِ شرکت:</span>
-                    <label class="text-[9.5px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-1.5 py-0.5 rounded cursor-pointer" title="زیپ، RAR یا یک یا چند عکس/PDF"><i class="fas fa-file-zipper ml-0.5"></i>زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="uploadInspection(${p.id}, this)"></label>
-                    <label class="text-[9.5px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-1.5 py-0.5 rounded cursor-pointer" title="همه‌ی فایل‌های یک پوشه"><i class="fas fa-folder-open ml-0.5"></i>پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="uploadInspection(${p.id}, this)"></label></div>` : '';
+            const custUp = canEdit && insp && !insp.satisfied && p.status !== 'ISSUED' ? `<div class="up-stack"><span class="text-[9.5px] text-slate-500">بازدیدِ ارسالیِ شرکت:</span><div class="up-row">
+                    <label class="up-btn" title="زیپ، RAR یا یک یا چند عکس/PDF"><i class="fas fa-file-zipper"></i>زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="uploadInspection(${p.id}, this)"></label>
+                    <label class="up-btn soft" title="همه‌ی فایل‌های یک پوشه"><i class="fas fa-folder-open"></i>پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="uploadInspection(${p.id}, this)"></label></div></div>` : '';
             const pendNote = pending ? '<p class="text-[9.5px] text-cyan-700 font-bold mt-0.5"><i class="fas fa-circle-info ml-0.5"></i>بازدید رسیده؛ آماده‌ی صدور — فقط گزارشِ بازدید با سایت مانده</p>' : '';
             const missing = items.filter(it => !it.satisfied && !(it.key === 'health_inspection' && custUp));
             const manual = canEdit && missing.length ? `<details class="mt-1"><summary class="cursor-pointer text-[9.5px] text-slate-500">فایلِ آماده دارم</summary>
                     <div class="flex flex-wrap gap-1 mt-1">${missing.map(it => checklistChip(p, { ...it, docs: [] }, canEdit)).join('')}</div></details>` : '';
-            return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="گزارش و عکس‌های بازدید">
-                <div class="font-bold whitespace-nowrap">${pendingRep ? '◐' : ok ? '✓' : '✗'} گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</div>
-                ${links ? `<div class="mt-0.5">${links}${del}</div>` : ''}${pendNote}${build}${custUp}${manual}
+            return `<div class="ck-chip border ${tone}" title="گزارش و عکس‌های بازدید">
+                <div class="ck-t"><span>${pendingRep ? '◐' : ok ? '✓' : '✗'}</span><span>گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</span></div>
+                ${links ? `<div class="ck-links">${links}${del}</div>` : ''}${pendNote}<div class="up-stack">${build}</div>${custUp}${manual}
             </div>`;
         }
         // پاپ‌آپِ ساختِ گزارش از روی همین ردیف: اطلاعاتِ ردیف و شرکت خودکار، قالبِ سواری/سنگین خودکار؛

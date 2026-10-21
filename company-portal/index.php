@@ -176,6 +176,17 @@ if (!$companies) {
     .pt-steps i.on { background:var(--c,#3b82f6); }
     .pt-prog { height:6px; border-radius:99px; background:#f1f5f9; overflow:hidden; margin-top:6px; } .pt-prog i { display:block; height:100%; background:linear-gradient(90deg,#10b981,#22c55e); border-radius:99px; }
     @media (max-width: 767px) { .pt-req-grid { grid-template-columns:minmax(0,1fr); } .pt-hero { border-radius:22px; padding:15px; } .pt-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* خانه‌های چک‌لیستِ مدارکِ هر ردیف: دکمه‌ها زیرِ هم و در عرضِ خانه (روی هم نمی‌افتند) */
+.checklist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:7px;align-items:stretch}
+.ck-chip{border-radius:12px;padding:7px 8px;font-size:10px;line-height:1.6;display:flex;flex-direction:column;gap:3px;min-width:0}
+.ck-chip .ck-t{font-weight:800;display:flex;align-items:flex-start;gap:4px;word-break:break-word}
+.up-stack{display:flex;flex-direction:column;gap:4px;margin-top:auto;padding-top:3px}
+.up-row{display:flex;gap:4px;flex-wrap:wrap}
+.up-sel,.up-in{width:100%;font-size:10px;border:1px solid #cbd5e1;border-radius:8px;padding:3px 6px;background:#fff;color:#334155}
+.up-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:1 1 auto;font-size:10.5px;font-weight:800;color:#fff;padding:5px 10px;border-radius:9px;border:0;cursor:pointer;white-space:nowrap;background:linear-gradient(135deg,#2563eb,#0891b2);box-shadow:0 3px 8px -4px rgba(37,99,235,.7);transition:transform .12s}
+.up-btn:hover{transform:translateY(-1px)}
+.up-btn.soft{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;box-shadow:none}
 </style>
 <link rel="stylesheet" href="../ui-scroll.css?v=3">
 </head>
@@ -956,36 +967,32 @@ function portalChecklistChip(plate, item) {
     let uploader = '';
     if (item.custom && plate.status !== 'ISSUED') {
         // «مدرکِ دیگر»: نامش را خودتان می‌نویسید (چند مدرک هم می‌شود زد)
-        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="pr-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+        uploader = `<span class="up-stack"><input id="pr-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه" class="up-in">
             <input type="hidden" id="pr-type-${plate.id}-other" value="other">
-            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                + بارگذاری<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-other', this, 'pr-label-${plate.id}')">
-            </label></span>`;
+            <label class="up-btn"><i class="fas fa-plus"></i>افزودنِ مدرک<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-other', this, 'pr-label-${plate.id}')"></label></span>`;
     } else if (!ok && item.internal) {
         // بازدید رسیده؛ گزارشِ بازدید را کارشناسِ ما می‌سازد
         uploader = `<span class="block mt-1 text-[9.5px] ${plate.report_pending ? 'text-cyan-700 font-bold' : 'text-slate-400'}">${plate.report_pending ? 'بازدید رسیده؛ گزارش را ما می‌سازیم' : 'بعد از رسیدنِ بازدید، گزارش را ما می‌سازیم'}</span>`;
     } else if (!ok && plate.status !== 'ISSUED' && item.key === 'health_inspection') {
         // بازدیدی که خودتان انجام داده‌اید: زیپ، RAR، چند عکس یا یک پوشه
-        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1">
-            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap" title="زیپ، RAR یا یک یا چند عکس/PDF">زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label>
-            <label class="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap" title="همه‌ی فایل‌های یک پوشه">پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label></span>`;
+        uploader = `<span class="up-row" style="margin-top:auto;padding-top:3px">
+            <label class="up-btn" title="زیپ، RAR یا یک یا چند عکس/PDF"><i class="fas fa-file-zipper"></i>زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label>
+            <label class="up-btn soft" title="همه‌ی فایل‌های یک پوشه"><i class="fas fa-folder-open"></i>پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label></span>`;
     } else if (!ok && plate.status !== 'ISSUED') {
         const types = item.upload_types || [item.key];
         const sel = types.length > 1
-            ? `<select id="pr-type-${plate.id}-${item.key}" class="text-[10px] border rounded px-1 py-0.5 bg-white">
+            ? `<select id="pr-type-${plate.id}-${item.key}" class="up-sel">
                    ${types.map(t => `<option value="${t}">${PORTAL_DOC_TYPE_FA[t] || t}</option>`).join('')}
                </select>`
             : `<input type="hidden" id="pr-type-${plate.id}-${item.key}" value="${types[0]}">`;
         const accept = item.key === 'health_inspection' ? '.zip,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
-        uploader = `<span class="inline-flex items-center gap-1 mt-1">${sel}
-            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-${item.key}', this)">
-            </label></span>`;
+        uploader = `<span class="up-stack">${sel}
+            <label class="up-btn"><i class="fas fa-cloud-arrow-up"></i>بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-${item.key}', this)"></label></span>`;
     }
 
-    return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="${item.hint || ''}">
-        <div class="font-bold whitespace-nowrap">${ok ? '✓' : (item.internal && plate.report_pending ? '◐' : '✗')} ${item.label}${star}</div>
-        ${links ? `<div class="mt-0.5">${links}</div>` : ''}
+    return `<div class="ck-chip border ${tone}" title="${item.hint || ''}">
+        <div class="ck-t"><span>${ok ? '✓' : (item.internal && plate.report_pending ? '◐' : '✗')}</span><span>${item.label}${star}</span></div>
+        ${links ? `<div style="word-break:break-word">${links}</div>` : ''}
         ${uploader}
     </div>`;
 }
