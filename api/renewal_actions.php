@@ -302,8 +302,13 @@ try {
         $items = is_array($data['items'] ?? null) ? $data['items'] : (json_decode((string)($data['items'] ?? '[]'), true) ?: []);
         if (!$items) $out(['ok' => false, 'error' => 'ردیفی انتخاب نشده.']);
         @set_time_limit(300);
-        $r = rnr_create($pdo, dirname(__DIR__), $items, intval($actor['user_id'] ?? 0) ?: null);
+        $r = rnr_create($pdo, dirname(__DIR__), $items, intval($actor['user_id'] ?? 0) ?: null,
+                        ['company_id' => intval($data['company_id'] ?? 0), 'values' => ($data['values'] ?? '') === 'company' ? 'company' : 'prev', 'text' => (string)($data['text'] ?? '')]);
         $out(['ok' => true] + $r);
+    }
+    // فهرستِ شرکت‌ها برای «شرکتِ درخواست‌دهنده» در پنجره‌ی درخواستِ تمدید
+    if ($action === 'companies') {
+        $out(['ok' => true, 'companies' => $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll()]);
     }
     if ($action === 'export') {
         $keys = json_decode((string)($data['keys'] ?? '[]'), true);

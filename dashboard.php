@@ -4537,10 +4537,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=7"></script>
-    <script src="registry.js?v=3"></script>
+    <script src="registry.js?v=4"></script>
     <script src="issue-panel.js?v=1"></script>
     <script src="reg-link.js?v=1"></script>
-    <script src="renew-req.js?v=1"></script>
+    <script src="renew-req.js?v=2"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -6390,7 +6390,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 font-bold">${r.company_name}</td>
                     <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}
                         ${r.request_kind && r.request_kind !== 'NEW_POLICY'
-                            ? `<span class="block text-[10px] font-bold ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</span>` : ''}</td>
+                            ? `<span class="block text-[10px] font-bold ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</span>` : ''}${Number(r.is_renewal) ? '<span class="block text-[10px] font-bold text-emerald-600"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}</td>
                     <td class="p-3 text-[11px] whitespace-nowrap">
                         ${r.requested_counts_fa ? `<span class="block text-[10px] text-indigo-600 font-bold mb-1">درخواستیِ نامه: ${r.requested_counts_fa}</span>` : ''}
                         <span class="inline-block bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5 ml-1">بدنه ${e2pNum(r.body_count)} / ${e2pNum(r.body_issued)}</span>
@@ -6888,7 +6888,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${reqCodeHtml(r, true)}
                     <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
                     ${r.request_kind && r.request_kind !== 'NEW_POLICY'
-                        ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
+                        ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}${Number(r.is_renewal) ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}
                     <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                 </div>
                 <p class="text-[10px] text-slate-400 mb-2">ثبت: ${faDigits(r.created_at_jalali)} · آخرین ویرایش: ${faDigits(r.updated_at_jalali)}</p>

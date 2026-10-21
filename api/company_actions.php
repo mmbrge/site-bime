@@ -1404,7 +1404,7 @@ try {
             $r['created_at_jalali'] = jd(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jd(strtotime($r['updated_at']));
             foreach (['pending_docs_count', 'body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
-            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
+            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY') . (!empty($r['is_renewal']) ? ' (تمدیدی)' : '');
             $r['requested_counts_fa'] = company_requested_counts_fa($r['requested_counts'] ?? null);
             $r['row_stages'] = [];
             foreach ($stages[intval($r['id'])] ?? [] as $st => $n) {
@@ -1799,7 +1799,7 @@ try {
         $request['created_at_jalali'] = jd(strtotime($request['created_at']));
         $request['updated_at_jalali'] = jd(strtotime($request['updated_at']));
         $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
-        $request['request_kind_fa'] = company_request_kind_fa($reqKind);
+        $request['request_kind_fa'] = company_request_kind_fa($reqKind) . (!empty($request['is_renewal']) ? ' (تمدیدی)' : '');
         $request['requested_counts_fa'] = company_requested_counts_fa($request['requested_counts'] ?? null);
         $request['requested_counts_obj'] = json_decode((string)($request['requested_counts'] ?? ''), true) ?: null;
 

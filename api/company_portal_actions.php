@@ -181,7 +181,7 @@ try {
             $r['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['created_at']));
             $r['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($r['updated_at']));
             foreach (['body_count', 'third_count', 'body_issued', 'third_issued'] as $k) $r[$k] = intval($r[$k]);
-            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY');
+            $r['request_kind_fa'] = company_request_kind_fa($r['request_kind'] ?? 'NEW_POLICY') . (!empty($r['is_renewal']) ? ' (تمدیدی)' : '');
             $r['requested_counts_fa'] = company_requested_counts_fa($r['requested_counts'] ?? null);
         }
         echo json_encode(['ok' => true, 'requests' => $rows], JSON_UNESCAPED_UNICODE);
@@ -202,7 +202,7 @@ try {
         $request['created_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['created_at']));
         $request['updated_at_jalali'] = jalali_from_gregorian_ts_dotted(strtotime($request['updated_at']));
         $reqKind = $request['request_kind'] ?? 'NEW_POLICY';
-        $request['request_kind_fa'] = company_request_kind_fa($reqKind);
+        $request['request_kind_fa'] = company_request_kind_fa($reqKind) . (!empty($request['is_renewal']) ? ' (تمدیدی)' : '');
         $request['requested_counts_fa'] = company_requested_counts_fa($request['requested_counts'] ?? null);
 
         // file_path هم لازم است، وگرنه لینکِ «مدارک ارسالی» در پنل شرکت به

@@ -282,7 +282,7 @@ function perm_api_map() {
         ]],
         'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
             'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',
-            'create_requests' => 'renewals:edit|bordereau:edit|companies-requests:create',
+            'create_requests' => 'renewals:edit|bordereau:edit|companies-requests:create', 'companies' => 'renewals:view|bordereau:view|companies-requests:view',
         ]],
         'endorse_actions' => ['pages' => ['endorsements'], 'elevate' => true, 'actions' => [
             'read' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'policy_search' => 'endorsements:view|endorsements:create|issue-queue:edit|companies-requests:edit',

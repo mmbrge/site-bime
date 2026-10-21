@@ -645,7 +645,7 @@
         R2.querySelector('[data-bnote]').onclick = () => bNote([...BR.sel]);
         // درخواستِ صدورِ تازه برای همان شرکت با مشخصاتِ ردیف (renew-req.js)
         const rnb = R2.querySelector('[data-brenew]');
-        if (rnb) rnb.onclick = () => RenewReq.open(BR.rows.filter(r => BR.sel.has(r.id)).map(r => ({src: 'B', id: r.id, label: r.policy, type: r.type, plate: r.plate, company: r.group, renewed: !!(r.renewed_by && r.renewed_by.policy)})),
+        if (rnb) rnb.onclick = () => RenewReq.open(BR.rows.filter(r => BR.sel.has(r.id)).map(r => ({src: 'B', id: r.id, label: r.policy, type: r.type, plate: r.plate, company: r.company_name || r.group, no_company: !r.company_id, renewed: !!(r.renewed_by && r.renewed_by.policy)})),
             {onDone: () => {}});
         R2.querySelector('[data-bdel]').onclick = async () => {
             if (!(await uiAsk(fa(BR.sel.size) + ' ردیف از بردرو حذف شود؟ (پوشه‌های بایگانی می‌مانند)'))) return;
