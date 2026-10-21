@@ -1171,7 +1171,7 @@ try {
         if (array_key_exists('legal_active', $data)) $legal['legal_active'] = $data['legal_active'] === '' || $data['legal_active'] === null ? null : (int)!empty($data['legal_active']);
         if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
         $portalOpts = [];
-        foreach (['portal_general_docs', 'portal_custom_docs'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
+        foreach (['portal_general_docs', 'portal_custom_docs', 'doc_read'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
         // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ درخواست‌های این شرکت (فقط اگر فرم فرستاده باشد)
         $defGiven = array_key_exists('default_coverages', $data) || array_key_exists('default_liability', $data);
         $defVals = $defGiven ? company_defaults_from_input($data) : null;
@@ -2215,7 +2215,7 @@ try {
     // ---- دوباره خواندنِ یک مدرک (دکمه‌ی «شناساییِ دوباره» در صندوق) ----
     if ($action === 'doc_ai_retry') {
         require_once __DIR__ . '/_vdoc.php';
-        vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)]);
+        vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)], true);   // درخواستِ دستی: حتی اگر خواندنِ خودکارِ این شرکت خاموش باشد
         $r = vdoc_process_company_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0));
         echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);
         exit;
@@ -2386,7 +2386,7 @@ try {
         $rowStatus = company_sync_plate_status($pdo, $plateId);
         // کارت/سند/فاکتور: در صفِ شناسایی، تا اطلاعاتش روی همین ردیف بنشیند (خانه‌های خالی)
         $aiQueued = false;
-        if (in_array($docType, vdoc_vehicle_types(), true)) { vdoc_queue($pdo, [intval($docId)]); $aiQueued = true; }
+        if (in_array($docType, vdoc_vehicle_types(), true)) $aiQueued = vdoc_queue($pdo, [intval($docId)]) > 0;
         echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus, 'ai_queued' => $aiQueued], JSON_UNESCAPED_UNICODE);
         exit;
     }

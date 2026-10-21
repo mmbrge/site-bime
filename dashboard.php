@@ -3776,6 +3776,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <span>می‌توانند «مدارکِ کلی» بفرستند (چند فایل، زیپ، پوشه، بدونِ ردیفِ مشخص)<small class="block text-slate-400 font-normal">خاموش = فقط بعد از اینکه ردیف‌ها را ساختید، مدارکِ هر خودرو را در چک‌لیستِ همان خودرو بارگذاری می‌کنند</small></span></label>
                             <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-custom" class="mt-0.5 accent-blue-600" checked>
                                 <span>می‌توانند برای هر خودرو «مدرکِ دیگر» با نامِ دلخواه (جز مدارکِ پیش‌فرض) اضافه کنند</span></label>
+                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-doc-read" class="mt-0.5 accent-blue-600" checked>
+                                <span>مدارکِ این شرکت خودکار خوانده شود (شناساییِ نوعِ مدرک و استخراجِ اطلاعاتِ کارت/سند/فاکتور)<small class="block text-slate-400 font-normal">خاموش = مدارک فقط بارگذاری و بایگانی می‌شوند و نوع‌گذاری دستی است؛ دکمه‌ی «شناساییِ دوباره» در صندوق همچنان دستی کار می‌کند</small></span></label>
                         </div>
                         <div class="sm:col-span-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
                             <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -10079,6 +10081,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = '';
             document.getElementById('cm-portal-general').checked = true;
             document.getElementById('cm-portal-custom').checked = true;
+            document.getElementById('cm-doc-read').checked = true;
             cmSetDefaults(null, '');
         }
         // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ شرکت (فرم): coverages = شیء | 'none' | null
@@ -10139,6 +10142,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
             document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
             document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
+            document.getElementById('cm-doc-read').checked = c.doc_read === undefined || c.doc_read === null || +c.doc_read === 1;
             cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
 
             const groupSel = document.getElementById('cm-group-select');
@@ -10166,6 +10170,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
                 portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
                 portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
+                doc_read: document.getElementById('cm-doc-read').checked ? 1 : 0,
                 default_coverages: cmDefaults.coverages === null ? '' : cmDefaults.coverages,
                 default_liability: cmDefaults.liability || '',
                 economic_code: document.getElementById('cm-economic-code').value.trim(),

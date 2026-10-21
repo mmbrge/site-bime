@@ -254,14 +254,23 @@ function vdoc_step($pdo, $siteRoot, $companyIds = null, $max = 1) {
 }
 
 // مدرکِ تازه‌ی شرکت را در صفِ شناسایی می‌گذارد (فقط مدارکِ پشتیبان؛ نامه نه)
-function vdoc_queue($pdo, array $docIds) {
+//   شرکتی که در تعریفش «خواندنِ خودکارِ مدارک» خاموش است: مدارکش فقط بارگذاری می‌شود (مگر $force = درخواستِ دستیِ کارشناس)
+function vdoc_queue($pdo, array $docIds, $force = false) {
     vdoc_ensure($pdo);
     $docIds = array_values(array_filter(array_map('intval', $docIds)));
-    if (!$docIds) return;
+    if (!$docIds) return 0;
+    if (!$force) {
+        try {
+            $off = $pdo->query("SELECT d.id FROM company_documents d JOIN companies c ON c.id = d.company_id WHERE c.doc_read = 0 AND d.id IN (" . implode(',', $docIds) . ")")->fetchAll(PDO::FETCH_COLUMN);
+            if ($off) $docIds = array_values(array_diff($docIds, array_map('intval', $off)));
+        } catch (Throwable $e) {}   // ستون هنوز ساخته نشده => همه خوانده می‌شوند (مثلِ قبل)
+        if (!$docIds) return 0;
+    }
     $vt = vdoc_vehicle_types();
     $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING', ai_at = NOW() WHERE id IN (" . implode(',', array_fill(0, count($docIds), '?')) . ") AND file_kind = 'SUPPORTING_DOC'
                      AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL AND doc_type IN (" . implode(',', array_fill(0, count($vt), '?')) . ")))")
         ->execute(array_merge($docIds, $vt));
+    return count($docIds);
 }
 
 // =====================================================================
