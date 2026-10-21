@@ -25,6 +25,7 @@ if ($schemaProblem) { echo json_encode(['ok' => false, 'error' => $schemaProblem
 company_ensure_coverage_column($pdo);
 company_ensure_car_type($pdo);
 imp_ensure($pdo);   // «بایگانی وارداتی»: ستون‌های is_import و ... (خودکار)
+company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالث (شرکت و درخواست)
 
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
@@ -43,7 +44,7 @@ if ($action === '' && !$isJson && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' 
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
-$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
+$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
@@ -1170,8 +1171,12 @@ try {
         if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
         $portalOpts = [];
         foreach (['portal_general_docs', 'portal_custom_docs'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
-        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address, $legal, $portalOpts) {
+        // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ درخواست‌های این شرکت (فقط اگر فرم فرستاده باشد)
+        $defGiven = array_key_exists('default_coverages', $data) || array_key_exists('default_liability', $data);
+        $defVals = $defGiven ? company_defaults_from_input($data) : null;
+        $saveExtra = function ($cid) use ($pdo, $ownerGiven, $otherOwner, $economicCode, $phone, $address, $legal, $portalOpts, $defGiven, $defVals) {
             if ($ownerGiven) $pdo->prepare("UPDATE companies SET other_owner_mode = ? WHERE id = ?")->execute([$otherOwner, $cid]);
+            if ($defGiven) $pdo->prepare("UPDATE companies SET default_coverages = ?, default_liability = ? WHERE id = ?")->execute([$defVals[0], $defVals[1], $cid]);
             foreach ($portalOpts as $k => $v) $pdo->prepare("UPDATE companies SET $k = ? WHERE id = ?")->execute([$v, $cid]);
             if ($legal) $pdo->prepare("UPDATE companies SET " . implode(', ', array_map(fn($k) => "$k = ?", array_keys($legal))) . " WHERE id = ?")->execute(array_merge(array_values($legal), [$cid]));
             if ($economicCode && $phone && $address) $pdo->prepare("UPDATE companies SET auto_created = NULL WHERE id = ?")->execute([$cid]);   // تکمیل شد
@@ -1596,6 +1601,8 @@ try {
             ->execute([$companyId, trim($data['request_text'] ?? '') ?: null, $insurer, $kind, json_encode(company_normalize_requested_counts($counts))]);
         $requestId = (int)$pdo->lastInsertId();
         ref_code_of($pdo, 'company_requests', $requestId);
+        // پیش‌فرضِ همین درخواست (برای ردیف‌هایی که بعداً اضافه می‌شوند یا از نامه وارد می‌شوند)
+        if ($defaultLiability || $defaultCov !== null) $pdo->prepare("UPDATE company_requests SET default_coverages = ?, default_liability = ? WHERE id = ?")->execute([$defaultCov, $defaultLiability ?: null, $requestId]);
         $ins = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
              car_value, liability_limit, ref_policy_number, endorsement_request, cancellation_reason,
@@ -1702,6 +1709,7 @@ try {
         // ردیفِ بی‌تنظیم از پیش‌فرضِ کلیِ درخواست پیروی می‌کند
         party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null]);
         company_set_vehicle_kind($pdo, intval($newPlateId), $data['vehicle_kind'] ?? '');
+        company_apply_defaults_to_rows($pdo, $requestId, [intval($newPlateId)]);   // تعهد/پوششِ خالی از پیش‌فرضِ درخواست یا شرکت
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
         company_sync_plate_status($pdo, $newPlateId);
         echo json_encode(['ok' => true, 'plate_id' => $newPlateId]);
@@ -1885,6 +1893,7 @@ try {
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
                           'counts' => $counts, 'doc_types' => company_doc_types(),
                           'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options(),
+                          'defaults' => company_effective_defaults($pdo, $request['company_id'], $requestId),
                           'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons(),
                           'party_modes' => PARTY_MODES, 'party_default' => ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)]], JSON_UNESCAPED_UNICODE);
         exit;
@@ -2472,6 +2481,20 @@ try {
         exit;
     }
 
+    // ---- پیش‌فرضِ پوشش‌ها/تعهدِ یک درخواست؛ apply: none (فقط برای ردیف‌های تازه) | empty (ردیف‌های خالی) | all (همه‌ی ردیف‌های صادرنشده) ----
+    if ($action === 'set_request_defaults') {
+        $requestId = intval($data['request_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id FROM company_requests WHERE id = ?");
+        $st->execute([$requestId]);
+        if (!$st->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
+        [$cov, $liab] = company_defaults_from_input($data);
+        $pdo->prepare("UPDATE company_requests SET default_coverages = ?, default_liability = ? WHERE id = ?")->execute([$cov, $liab, $requestId]);
+        $apply = in_array($data['apply'] ?? '', ['empty', 'all'], true) ? $data['apply'] : 'none';
+        $n = $apply !== 'none' ? company_apply_defaults_to_rows($pdo, $requestId, [], $apply, ['coverages' => $cov, 'liability' => $liab]) : 0;
+        echo json_encode(['ok' => true, 'updated' => $n], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- تغییر پوشش‌های درخواستیِ بدنه‌ی یک ردیف (coverages: آرایه‌ی پوشش‌ها، 'none' = فقط پایه، null = نامشخص) ----
     if ($action === 'set_row_coverages') {
         $plateId = intval($data['plate_id'] ?? 0);
@@ -2571,6 +2594,13 @@ try {
                 ->execute([json_encode($parsed['counts']), $newKind, $requestId]);
         }
         $pdo->commit();
+
+        // پیش‌فرضِ پوشش‌ها/تعهد برای ردیف‌های این نامه (از پنجره‌ی ورود؛ همان پیش‌فرضِ درخواست هم می‌شود)، وگرنه پیش‌فرضِ درخواست یا شرکت
+        [$defCov, $defLiab] = company_defaults_from_input($data);
+        if ($defCov !== null || $defLiab) {
+            $pdo->prepare("UPDATE company_requests SET default_coverages = COALESCE(?, default_coverages), default_liability = COALESCE(?, default_liability) WHERE id = ?")->execute([$defCov, $defLiab, $requestId]);
+        }
+        if ($newIds) company_apply_defaults_to_rows($pdo, $requestId, array_map('intval', $newIds));
 
         // پوشه‌ی هر ردیفِ تازه ساخته می‌شود و وضعیتش بر اساس چک‌لیست تعیین می‌گردد
         $siteRoot = dirname(__DIR__);

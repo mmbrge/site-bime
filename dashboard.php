@@ -3664,6 +3664,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <textarea id="cli-raw" rows="7" dir="ltr" placeholder='{ "rows": [ ... ] }  یا هر خط: پلاک | نوع | انقضا' class="w-full text-[11px] font-mono border rounded-xl p-3 mb-2"></textarea>
             <div class="float-input"><input type="file" id="cli-file" accept=".json,.txt,.tex,.csv,.xlsx,.xls" placeholder=" "><label>یا فایل: اکسل (xlsx/csv)، JSON یا متن</label></div>
             <p class="text-[10.5px] text-slate-500 -mt-2 mb-3">ستون‌های اکسل از «تنظیمات ← صدور و استعلام ← ستون‌های اکسلِ شرکت‌ها» قابلِ تعریف است. <a href="api/company_actions.php?action=excel_sample" class="text-blue-600 font-bold">دانلودِ فایلِ نمونه</a></p>
+            <div data-cli-def class="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3 flex items-center justify-between gap-2 flex-wrap">
+                <div class="text-[10.5px] text-slate-600 leading-6"><span class="font-black text-indigo-700"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ ردیف‌ها (اگر در نامه نیامده):</span> <span id="cli-def-summary">—</span></div>
+                <button type="button" onclick="cliPickDefaults()" class="text-[10.5px] font-bold bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg px-2.5 py-1"><i class="fas fa-pen ml-1"></i>تغییر</button>
+            </div>
             <label class="flex items-center gap-2 text-xs font-bold text-slate-600 mb-3 cursor-pointer">
                 <input type="checkbox" id="cli-replace"> ردیف‌های قبلیِ صادرنشده را پاک کن و از نو بساز
             </label>
@@ -3758,6 +3762,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <span>می‌توانند «مدارکِ کلی» بفرستند (چند فایل، زیپ، پوشه، بدونِ ردیفِ مشخص)<small class="block text-slate-400 font-normal">خاموش = فقط بعد از اینکه ردیف‌ها را ساختید، مدارکِ هر خودرو را در چک‌لیستِ همان خودرو بارگذاری می‌کنند</small></span></label>
                             <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-custom" class="mt-0.5 accent-blue-600" checked>
                                 <span>می‌توانند برای هر خودرو «مدرکِ دیگر» با نامِ دلخواه (جز مدارکِ پیش‌فرض) اضافه کنند</span></label>
+                        </div>
+                        <div class="sm:col-span-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <p class="text-[11px] font-black text-indigo-700"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ درخواست‌های این شرکت</p>
+                                <button type="button" onclick="cmPickDefaults()" class="text-[10.5px] font-bold bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg px-2.5 py-1"><i class="fas fa-pen ml-1"></i>تعیین / تغییر</button>
+                            </div>
+                            <p id="cm-def-summary" class="text-[10.5px] text-slate-600 mt-1.5 leading-6">—</p>
+                            <p class="text-[10px] text-slate-400">در ثبتِ دستی، ورود از نامه و ردیف‌هایی که شرکت در پنلش می‌سازد، تعهد/پوششِ خالی از همین پر می‌شود؛ هر درخواست و هر ردیف را هم می‌شود جدا عوض کرد.</p>
                         </div>
                     </div>
                     <p id="cm-contract-hint" class="text-[10.5px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 leading-6">نقد/اقساط، تعداد قسط و سررسیدِ اول از قراردادِ انتخاب‌شده می‌آید.</p>
@@ -4552,7 +4564,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=17"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=10"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=11"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6840,6 +6852,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex flex-wrap gap-2 mb-4">
                     <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
                     ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
+                    ${isAdmin && window.CompanyManualRequest && (r.request_kind || 'NEW_POLICY') === 'NEW_POLICY' ? `<button onclick="editRequestDefaults(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl" title="${iiEsc(reqDefaultsTitle(data.defaults))}"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ پوشش و تعهد</button>` : ''}
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
                     ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
@@ -7583,6 +7596,41 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- ورودِ ردیف‌ها از نامه (خروجی هوش مصنوعی) ----
+        // پیش‌فرضِ پوشش/تعهدِ درخواست (یا شرکت) — برای ردیف‌های تازه و (به انتخاب) ردیف‌های موجود
+        let reqDefaultsCache = {};
+        function reqDefaultsTitle(d) {
+            if (!d || !window.CompanyManualRequest) return '';
+            const t = CompanyManualRequest.defaultsText(d.coverages, d.liability);
+            const src = x => x === 'request' ? 'این درخواست' : x === 'company' ? 'شرکت' : '';
+            return `تعهدِ ثالث: ${t.liab}${d.liab_src ? ' (' + src(d.liab_src) + ')' : ''} — پوشش‌های بدنه: ${t.cov}${d.cov_src ? ' (' + src(d.cov_src) + ')' : ''}`;
+        }
+        async function editRequestDefaults(requestId) {
+            let d = null;
+            try { const x = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})})).json(); d = x.ok ? x.defaults : null; } catch (e) {}
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ پوشش‌ها و تعهدِ این درخواست', apply: true,
+                sub: 'اگر خالی بماند از پیش‌فرضِ شرکت پیروی می‌کند. هر ردیف را هم جدا می‌شود عوض کرد («ویرایش» و «ویرایش پوشش» روی همان ردیف).',
+                coverages: d ? d.coverages : null, liability: d ? d.liability : ''});
+            if (!r) return;
+            const res = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'set_request_defaults', request_id: requestId,
+                default_coverages: r.coverages === null ? '' : r.coverages, default_liability: r.liability || '', apply: r.apply})})).json();
+            if (!res.ok) { showToast(res.error || 'خطا', 'error'); return; }
+            showToast('پیش‌فرضِ درخواست ذخیره شد' + (res.updated ? ` و ${e2pNum(res.updated)} ردیف به‌روز شد` : '') + '.', 'success');
+            openCompanyRequestDetail(requestId);
+        }
+        // پیش‌فرض‌های پنجره‌ی «ورود ردیف‌ها از نامه» (از درخواست/شرکت پر می‌شود؛ روی ردیف‌های بی‌تعهد/بی‌پوشش می‌نشیند)
+        let cliDefaults = {coverages: null, liability: ''};
+        async function cliRenderDefaults() {
+            const box = document.getElementById('cli-def-summary');
+            if (!box) return;
+            if (!window.CompanyManualRequest) { box.closest('[data-cli-def]').classList.add('hidden'); return; }
+            await CompanyManualRequest.ensureForm();
+            const t = CompanyManualRequest.defaultsText(cliDefaults.coverages, cliDefaults.liability);
+            box.innerHTML = `<b>تعهدِ ثالث:</b> ${iiEsc(t.liab)} · <b>پوشش‌های بدنه:</b> ${iiEsc(t.cov)}`;
+        }
+        async function cliPickDefaults() {
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ ردیف‌های این نامه', sub: 'روی ردیف‌هایی می‌نشیند که در نامه تعهد یا پوشش ندارند؛ پیش‌فرضِ همین درخواست هم می‌شود.', coverages: cliDefaults.coverages, liability: cliDefaults.liability});
+            if (r) { cliDefaults = {coverages: r.coverages, liability: r.liability}; cliRenderDefaults(); }
+        }
         function openLetterImport(requestId) {
             document.getElementById('cli-request-id').value = requestId;
             document.getElementById('cli-raw').value = '';
@@ -7590,6 +7638,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cli-replace').checked = false;
             document.getElementById('cli-preview').innerHTML = '';
             document.getElementById('letter-import-modal').classList.add('active');
+            cliDefaults = {coverages: null, liability: ''};
+            cliRenderDefaults();
+            fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})})
+                .then(r => r.json()).then(x => { if (x.ok && x.defaults) { cliDefaults = {coverages: x.defaults.coverages, liability: x.defaults.liability || ''}; cliRenderDefaults(); } }).catch(() => {});
         }
 
         async function previewLetterRows() {
@@ -7662,11 +7714,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 fd.append('action', 'import_letter_rows');
                 fd.append('request_id', requestId);
                 fd.append('replace_existing', replace ? '1' : '');
+                fd.append('default_coverages', cliDefaults.coverages === null ? '' : (typeof cliDefaults.coverages === 'string' ? cliDefaults.coverages : JSON.stringify(cliDefaults.coverages)));
+                fd.append('default_liability', cliDefaults.liability || '');
                 fd.append('import_file', file);
                 res = await fetch(COMPANY_API, {method: 'POST', body: fd});
             } else {
                 res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace})});
+                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace,
+                        default_coverages: cliDefaults.coverages === null ? '' : cliDefaults.coverages, default_liability: cliDefaults.liability || ''})});
             }
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
@@ -9970,6 +10025,26 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = '';
             document.getElementById('cm-portal-general').checked = true;
             document.getElementById('cm-portal-custom').checked = true;
+            cmSetDefaults(null, '');
+        }
+        // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ شرکت (فرم): coverages = شیء | 'none' | null
+        let cmDefaults = {coverages: null, liability: ''};
+        async function cmSetDefaults(cov, liab) {
+            if (typeof cov === 'string' && cov !== 'none') { try { cov = JSON.parse(cov); } catch (e) { cov = null; } }
+            if (cov && typeof cov === 'object' && !Array.isArray(cov) && !Object.keys(cov).length) cov = 'none';
+            if (Array.isArray(cov)) cov = cov.length ? null : 'none';
+            cmDefaults = {coverages: cov === undefined ? null : cov, liability: liab ? String(liab) : ''};
+            const box = document.getElementById('cm-def-summary');
+            if (!box) return;
+            if (!window.CompanyManualRequest) { box.textContent = cmDefaults.coverages || cmDefaults.liability ? 'تعیین شده' : 'تعیین نشده'; return; }
+            await CompanyManualRequest.ensureForm();
+            const t = CompanyManualRequest.defaultsText(cmDefaults.coverages, cmDefaults.liability);
+            box.innerHTML = `<b>تعهدِ ثالث:</b> ${iiEsc(t.liab)}<br><b>پوشش‌های بدنه:</b> ${iiEsc(t.cov)}`;
+        }
+        async function cmPickDefaults() {
+            if (!window.CompanyManualRequest) { showToast('این بخش فقط برای مدیر کل است.', 'error'); return; }
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ درخواست‌های این شرکت', sub: 'وقتی تعهد یا پوشش برای ردیفی مشخص نشده باشد، همین گذاشته می‌شود.', coverages: cmDefaults.coverages, liability: cmDefaults.liability});
+            if (r) cmSetDefaults(r.coverages, r.liability);
         }
 
         // قراردادهای پرداخت برای فرمِ شرکت
@@ -10010,6 +10085,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
             document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
             document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
+            cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
 
             const groupSel = document.getElementById('cm-group-select');
             if (c.bale_group_chat_id && [...groupSel.options].some(o => o.value == c.bale_group_chat_id)) {
@@ -10036,6 +10112,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
                 portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
                 portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
+                default_coverages: cmDefaults.coverages === null ? '' : cmDefaults.coverages,
+                default_liability: cmDefaults.liability || '',
                 economic_code: document.getElementById('cm-economic-code').value.trim(),
                 phone: document.getElementById('cm-phone').value.trim(),
                 address: document.getElementById('cm-address').value.trim(),

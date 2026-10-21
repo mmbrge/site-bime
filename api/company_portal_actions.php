@@ -12,6 +12,7 @@ require_once __DIR__ . '/_auth_helpers.php';
 
 $session = require_company_portal_session($pdo);
 ref_codes_ensure($pdo);
+company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌ها و تعهدِ شرکت (برای ردیف‌هایی که فرم نداده)
 $allowedCompanyIds = $session['company_ids'];
 
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
@@ -628,6 +629,8 @@ try {
                     $cov = company_clean_coverages($p['coverages']);
                     if ($cov !== null) $pdo->prepare("UPDATE company_request_plates SET selected_coverages = ? WHERE id = ?")->execute([$cov, $newPlateId]);
                 }
+                // تعهد/پوششی که فرم نداده: پیش‌فرضِ تعریف‌شده برای همین شرکت
+                if ($kind === 'NEW_POLICY') company_apply_defaults_to_rows($pdo, $requestId, [$newPlateId]);
                 if ($zkToken && !empty($p['zk_page'])) {
                     require_once __DIR__ . '/_zerokm.php';
                     $n = intval($p['zk_page']);

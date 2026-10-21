@@ -1616,16 +1616,74 @@ function company_coverages_fa($json) {
     return $out;
 }
 
-// آخرین پوشش‌ها و تعهد مالیِ درخواست‌شده‌ی یک شرکت (پیش‌فرضِ فرم ثبت دستی)
+// =====================================================================
+//  پیش‌فرضِ پوشش‌های بدنه و تعهدِ مالیِ ثالث: در تعریفِ شرکت، در هر درخواست، و (جدا) در هر ردیف
+//  default_coverages: JSON مثلِ selected_coverages («{}» = فقط پوشش پایه، NULL = تعیین نشده)؛ default_liability: ریال
+// =====================================================================
+function company_defaults_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    foreach (['companies', 'company_requests'] as $t) foreach (['default_coverages' => 'TEXT NULL', 'default_liability' => 'BIGINT NULL'] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def"); }
+        catch (Throwable $e) { error_log('[company_defaults_ensure] ' . $e->getMessage()); }
+    }
+}
+// ورودیِ فرم => [پوشش‌ها (JSON یا NULL), تعهد (عدد یا NULL)]؛ پوشش «none» = فقط پایه، خالی = تعیین نشده
+function company_defaults_from_input(array $data) {
+    $c = $data['default_coverages'] ?? null;
+    $cov = ($c === null || $c === '' || $c === []) ? null : company_clean_coverages($c);   // «none» => «{}»
+    return [$cov, company_parse_money($data['default_liability'] ?? '') ?: null];
+}
+// پیش‌فرضِ مؤثر: درخواست، وگرنه شرکت => ['coverages' => JSON|null, 'liability' => int|null, 'cov_src', 'liab_src' => 'request'|'company'|null]
+function company_effective_defaults($pdo, $companyId, $requestId = 0) {
+    company_defaults_ensure($pdo);
+    $out = ['coverages' => null, 'liability' => null, 'cov_src' => null, 'liab_src' => null];
+    try {
+        $rows = [];
+        if ($requestId) { $st = $pdo->prepare("SELECT default_coverages, default_liability, company_id FROM company_requests WHERE id = ?"); $st->execute([intval($requestId)]); if ($r = $st->fetch()) { $rows['request'] = $r; if (!$companyId) $companyId = (int)$r['company_id']; } }
+        if ($companyId) { $st = $pdo->prepare("SELECT default_coverages, default_liability FROM companies WHERE id = ?"); $st->execute([intval($companyId)]); if ($r = $st->fetch()) $rows['company'] = $r; }
+        foreach ($rows as $src => $r) {
+            if ($out['coverages'] === null && $r['default_coverages'] !== null && $r['default_coverages'] !== '') { $out['coverages'] = $r['default_coverages']; $out['cov_src'] = $src; }
+            if ($out['liability'] === null && intval($r['default_liability']) > 0) { $out['liability'] = (int)$r['default_liability']; $out['liab_src'] = $src; }
+        }
+    } catch (Throwable $e) {}
+    return $out;
+}
+// ردیف‌های تازه/خالی: تعهدِ ثالث و پوشش‌های بدنه از پیش‌فرض (فقط جایی که خالی است؛ ردیفِ صادرشده دست نمی‌خورد)
+//   $mode: 'empty' فقط خانه‌های خالی، 'all' همه‌ی ردیف‌های صادرنشده
+function company_apply_defaults_to_rows($pdo, $requestId, array $plateIds = [], $mode = 'empty', $defaults = null) {
+    $d = $defaults ?: company_effective_defaults($pdo, 0, $requestId);
+    if ($d['coverages'] === null && !$d['liability']) return 0;
+    $w = "request_id = ? AND status NOT IN ('ISSUED', 'CANCELLED')";
+    $args = [intval($requestId)];
+    if ($plateIds) { $w .= ' AND id IN (' . implode(',', array_map('intval', $plateIds)) . ')'; }
+    $n = 0;
+    if ($d['liability']) {
+        $st = $pdo->prepare("UPDATE company_request_plates SET liability_limit = ? WHERE $w AND insurance_type = 'THIRDPARTY'" . ($mode === 'all' ? '' : ' AND (liability_limit IS NULL OR liability_limit = 0)'));
+        $st->execute(array_merge([$d['liability']], $args)); $n += $st->rowCount();
+    }
+    if ($d['coverages'] !== null) {
+        $st = $pdo->prepare("UPDATE company_request_plates SET selected_coverages = ? WHERE $w AND insurance_type = 'BODY'" . ($mode === 'all' ? '' : " AND (selected_coverages IS NULL OR selected_coverages = '')"));
+        $st->execute(array_merge([$d['coverages']], $args)); $n += $st->rowCount();
+    }
+    return $n;
+}
+
+// آخرین پوشش‌ها و تعهد مالیِ درخواست‌شده‌ی یک شرکت (پیش‌فرضِ فرم ثبت دستی)؛ اگر در تعریفِ شرکت پیش‌فرض گذاشته شده، همان
 function company_last_request_defaults($pdo, $companyId) {
     $out = ['coverages' => null, 'coverages_from' => null, 'liability_limit' => null, 'liability_from' => null];
+    $eff = company_effective_defaults($pdo, $companyId);
+    if ($eff['coverages'] !== null) { $out['coverages'] = json_decode($eff['coverages'], true); $out['coverages_from'] = ['company' => true, 'request_id' => 0, 'date' => '']; }
+    if ($eff['liability']) { $out['liability_limit'] = $eff['liability']; $out['liability_from'] = ['company' => true, 'request_id' => 0, 'date' => '']; }
+    if ($out['coverages_from'] && $out['liability_from']) return $out;
     try {
         $st = $pdo->prepare("SELECT crp.selected_coverages, cr.id, cr.created_at FROM company_request_plates crp
                              JOIN company_requests cr ON cr.id = crp.request_id
                              WHERE cr.company_id = ? AND crp.insurance_type = 'BODY' AND crp.selected_coverages IS NOT NULL
                              ORDER BY cr.created_at DESC, crp.id DESC LIMIT 1");
         $st->execute([$companyId]);
-        if ($r = $st->fetch()) {
+        if (!$out['coverages_from'] && ($r = $st->fetch())) {
             $out['coverages'] = json_decode($r['selected_coverages'], true);
             $out['coverages_from'] = ['request_id' => (int)$r['id'], 'date' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at']))];
         }
@@ -1634,7 +1692,7 @@ function company_last_request_defaults($pdo, $companyId) {
                              WHERE cr.company_id = ? AND crp.insurance_type = 'THIRDPARTY' AND crp.liability_limit > 0
                              ORDER BY cr.created_at DESC, crp.id DESC LIMIT 1");
         $st->execute([$companyId]);
-        if ($r = $st->fetch()) {
+        if (!$out['liability_from'] && ($r = $st->fetch())) {
             $out['liability_limit'] = (int)$r['liability_limit'];
             $out['liability_from'] = ['request_id' => (int)$r['id'], 'date' => jalali_from_gregorian_ts_dotted(strtotime($r['created_at']))];
         }

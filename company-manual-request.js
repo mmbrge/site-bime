@@ -271,7 +271,7 @@
 
     function thirdBox() {
         const d = st.defaults;
-        const hint = d && d.liability_limit ? `<span class="text-emerald-600">پیش‌فرض از آخرین درخواست این شرکت (${fa(d.liability_from.date)}): ${money(d.liability_limit)} ریال</span>` : (st.companyId ? '<span class="text-amber-600">این شرکت درخواست ثالث قبلی ندارد؛ تعهد را انتخاب کنید.</span>' : '');
+        const hint = d && d.liability_limit ? `<span class="text-emerald-600">${d.liability_from && d.liability_from.company ? 'پیش‌فرضِ تعریف‌شده برای این شرکت' : `پیش‌فرض از آخرین درخواست این شرکت (${fa(d.liability_from.date)})`}: ${money(d.liability_limit)} ریال</span>` : (st.companyId ? '<span class="text-amber-600">این شرکت درخواست ثالث قبلی ندارد؛ تعهد را انتخاب کنید.</span>' : '');
         return `<div class="bg-white rounded-2xl border-2 border-sky-100 p-4">
             <h3 class="font-black text-sm text-sky-700 mb-3"><i class="fas fa-shield-halved ml-1"></i>تعهد مالی ثالث</h3>
             <div class="flex flex-wrap gap-4 items-end">
@@ -295,7 +295,8 @@
     function bodyBox() {
         const d = st.defaults;
         let hint = '';
-        if (d && d.coverages_from) hint = `<span class="text-emerald-600"><i class="fas fa-clock-rotate-left ml-1"></i>پوشش‌ها از آخرین درخواست بدنه‌ی این شرکت (${fa(d.coverages_from.date)}) انتخاب شده‌اند؛ می‌توانید تغییر دهید.</span>`;
+        if (d && d.coverages_from) hint = d.coverages_from.company ? '<span class="text-emerald-600"><i class="fas fa-building ml-1"></i>پوشش‌ها از پیش‌فرضِ تعریف‌شده برای این شرکت انتخاب شده‌اند؛ می‌توانید تغییر دهید.</span>'
+            : `<span class="text-emerald-600"><i class="fas fa-clock-rotate-left ml-1"></i>پوشش‌ها از آخرین درخواست بدنه‌ی این شرکت (${fa(d.coverages_from.date)}) انتخاب شده‌اند؛ می‌توانید تغییر دهید.</span>`;
         else if (st.companyId) hint = '<span class="text-amber-600"><i class="fas fa-circle-exclamation ml-1"></i>اولین درخواست بدنه‌ی این شرکت است؛ پوشش‌های درخواستی را انتخاب کنید.</span>';
         return `<div class="bg-white rounded-2xl border-2 border-violet-100 p-4">
             <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
@@ -641,5 +642,71 @@
         draw();
     }
 
-    window.CompanyManualRequest = { open, close, editCoverages };
+    // ---------------- پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالث (تعریفِ شرکت، هر درخواست، ورود از نامه) ----------------
+    async function ensureForm() {
+        if (form) return true;
+        const d = await post({ action: 'admin_manual_form' });
+        if (!d.ok) { toast(d.error || 'خطا', 'error'); return false; }
+        form = d; return true;
+    }
+    // cov: شیء پوشش‌ها | 'none' (فقط پایه) | null (تعیین نشده)؛ برچسبِ کوتاه برای نمایش
+    function defaultsText(cov, liab) {
+        const opts = (form && form.coverage_options) || {};
+        if (typeof cov === 'string' && cov !== 'none') { try { cov = JSON.parse(cov); } catch (e) { cov = null; } }
+        const isBase = cov === 'none' || (cov && typeof cov === 'object' && !Object.keys(cov).length);
+        const covTxt = cov === null || cov === undefined ? 'تعیین نشده' : isBase ? 'فقط پوشش پایه'
+            : Object.keys(cov).map(k => opts[k] ? opts[k].label.replace(/\s*\(.*?\)\s*/g, '') + (opts[k].tiers && opts[k].tiers[String(cov[k])] ? ' (' + opts[k].tiers[String(cov[k])] + ')' : '') : '').filter(Boolean).join('، ') || 'تعیین نشده';
+        return { cov: covTxt, liab: Number(en(liab || 0)) ? money(liab) + ' ریال' : 'تعیین نشده' };
+    }
+    // پنجره‌ی انتخاب؛ نتیجه: { coverages: شیء|'none'|null, liability: '…'|'' , apply } یا null (انصراف)
+    async function pickDefaults(o = {}) {
+        if (!(await ensureForm())) return null;
+        let cur = o.coverages; if (typeof cur === 'string' && cur !== 'none') { try { cur = JSON.parse(cur); } catch (e) { cur = null; } }
+        let mode = cur === null || cur === undefined ? 'unset' : (cur === 'none' || (typeof cur === 'object' && !Object.keys(cur).length) ? 'base' : 'pick');
+        let cov = mode === 'pick' ? { ...cur } : {};
+        let liab = o.liability ? String(o.liability) : '';
+        let apply = o.apply ? 'empty' : 'none';
+        return new Promise(resolve => {
+            const ov = document.createElement('div');
+            ov.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4';
+            ov.style.zIndex = '1000002';
+            document.body.appendChild(ov);
+            const done = v => { ov.remove(); resolve(v); };
+            const radio = (v, t) => `<label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="cmr-cm" value="${v}" ${mode === v ? 'checked' : ''}> ${t}</label>`;
+            const draw = () => {
+                ov.innerHTML = `<div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto">
+                    <h3 class="font-black text-indigo-700"><i class="fas fa-sliders ml-1"></i>${esc(o.title || 'پیش‌فرضِ پوشش‌ها و تعهد')}</h3>
+                    ${o.sub ? `<p class="text-[11px] text-slate-500 mt-1 leading-6">${esc(o.sub)}</p>` : ''}
+                    ${o.showLiab !== false ? `<div class="mt-4"><label class="block text-[11px] font-black text-sky-700 mb-1"><i class="fas fa-shield-halved ml-1"></i>تعهدِ مالیِ ثالث</label>
+                        <select data-liab class="w-full sm:w-72 border-2 border-slate-200 rounded-xl px-3 py-2 text-xs bg-white">${liabilityOptions(liab, '— تعیین نشده —')}</select></div>` : ''}
+                    ${o.showCov !== false ? `<div class="mt-4"><label class="block text-[11px] font-black text-violet-700 mb-1"><i class="fas fa-list-check ml-1"></i>پوشش‌های بدنه</label>
+                        <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-600 mb-2">${radio('unset', 'تعیین نشده')}${radio('base', 'فقط پوشش پایه')}${radio('pick', 'پوشش‌های تکمیلی')}</div>
+                        ${mode === 'pick' ? covEditor(cov, 'def') : ''}</div>` : ''}
+                    ${o.apply ? `<div class="mt-4 rounded-xl bg-slate-50 border p-3 text-[11px] font-bold text-slate-600 space-y-1.5">
+                        <p class="text-slate-500">روی ردیف‌های همین درخواست:</p>
+                        <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="cmr-ap" value="none" ${apply === 'none' ? 'checked' : ''}> فقط برای ردیف‌هایی که از این به بعد اضافه می‌شوند</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="cmr-ap" value="empty" ${apply === 'empty' ? 'checked' : ''}> ردیف‌هایی که تعهد/پوشش ندارند هم پر شوند</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="cmr-ap" value="all" ${apply === 'all' ? 'checked' : ''}> همه‌ی ردیف‌های صادرنشده با همین عوض شوند</label></div>` : ''}
+                    <div class="flex gap-2 mt-5"><button data-ok class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs">تأیید</button>
+                    <button data-no class="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-xl text-xs">انصراف</button></div></div>`;
+                const l = ov.querySelector('[data-liab]'); if (l) l.onchange = () => { liab = l.value; };
+                ov.querySelectorAll('[name="cmr-cm"]').forEach(el => el.onchange = () => { mode = el.value; draw(); });
+                ov.querySelectorAll('[name="cmr-ap"]').forEach(el => el.onchange = () => { apply = el.value; });
+                ov.querySelectorAll('[data-cov]').forEach(el => el.onchange = () => {
+                    const k = el.dataset.cov, op = form.coverage_options[k];
+                    if (el.checked) cov[k] = op.tiers ? Object.keys(op.tiers)[0] : true; else delete cov[k];
+                    draw();
+                });
+                ov.querySelectorAll('[data-tier]').forEach(el => el.onchange = () => { cov[el.dataset.tier] = el.value; });
+                ov.querySelector('[data-no]').onclick = () => done(null);
+                ov.querySelector('[data-ok]').onclick = () => {
+                    if (mode === 'pick' && !Object.keys(cov).length) { toast('حداقل یک پوشش انتخاب کنید یا «فقط پوشش پایه» را بزنید.', 'error'); return; }
+                    done({ coverages: mode === 'unset' ? null : mode === 'base' ? 'none' : { ...cov }, liability: liab, apply });
+                };
+            };
+            draw();
+        });
+    }
+
+    window.CompanyManualRequest = { open, close, editCoverages, pickDefaults, defaultsText, ensureForm };
 })();
