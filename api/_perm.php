@@ -262,6 +262,11 @@ function perm_api_map() {
             'endorse' => 'bordereau:edit', 'endorse_delete' => 'bordereau:edit', 'note' => 'bordereau:edit', 'set_company' => 'bordereau:edit', 'delete' => 'bordereau:delete',
             'export_xlsx' => 'bordereau:export', 'export_pdf' => 'bordereau:export',
         ]],
+        // پرونده‌ی خودرو/شخص در فرم‌های ثبتِ درخواست (پیشنهادِ اطلاعات و مدارکِ موجود)
+        'registry_actions' => ['pages' => ['companies-requests', 'cases', 'records'], 'elevate' => true, 'actions' => [
+            'lookup' => 'companies-requests:create|companies-requests:edit|cases:create|cases:edit|records:create|records:edit',
+            'attach' => 'companies-requests:create|companies-requests:edit|cases:create|cases:edit|records:create|records:edit',
+        ]],
         // «پنلِ صدور» (فقط خواندنی): هر کس یکی از صفحه‌های صدور/درخواست‌ها را می‌بیند
         'issue_panel_actions' => ['pages' => ['issue-queue', 'companies-requests', 'cases'], 'elevate' => true, 'actions' => [
             'get' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view',

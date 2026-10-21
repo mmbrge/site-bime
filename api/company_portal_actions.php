@@ -59,6 +59,32 @@ try {
         exit;
     }
 
+    // ---- پرونده‌ی خودرو: همین خودرو قبلاً در درخواست‌های همین شرکت(ها) بوده؟ اطلاعات و مدارکش پیشنهاد می‌شود ----
+    if ($action === 'registry_lookup' || $action === 'registry_attach') {
+        require_once __DIR__ . '/finance_core.php';
+        require_once __DIR__ . '/_import_archive.php';
+        require_once __DIR__ . '/_bordereau.php';
+        require_once __DIR__ . '/_vehicles.php';
+        require_once __DIR__ . '/_registry_link.php';
+        if ($action === 'registry_lookup') {
+            company_ensure_issue_info_cols($pdo); imp_ensure($pdo); brd_ensure($pdo);
+            $v = reg_lookup_vehicle($pdo, $data, ['company_ids' => $allowedCompanyIds]);
+            if ($v) { unset($v['open']); $v['docs'] = array_values(array_filter($v['docs'], function ($d) { return in_array($d['src'], ['C', 'IC'], true); })); }
+            echo json_encode(['ok' => true, 'vehicle' => $v], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $docs = is_array($data['docs'] ?? null) ? $data['docs'] : (json_decode((string)($data['docs'] ?? '[]'), true) ?: []);
+        $plateId = intval($data['plate_id'] ?? 0);
+        $done = 0; $errs = [];
+        foreach (array_slice($docs, 0, 12) as $d) {
+            $r = reg_attach_to_plate($pdo, dirname(__DIR__), $plateId, (string)($d['src'] ?? ''), intval($d['id'] ?? 0), (string)($d['type'] ?? ''), $allowedCompanyIds, null);
+            if (!empty($r['ok'])) $done++; else $errs[] = $r['error'] ?? 'خطا';
+        }
+        if ($done) company_sync_plate_status($pdo, $plateId);
+        echo json_encode(['ok' => true, 'attached' => $done, 'errors' => $errs], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ---- تکراری: هر ردیف (شاسی/موتور/پلاک + نوعِ بیمه) با بیمه‌نامه‌های صادرشده و درخواست‌های باز ----
     if ($action === 'dup_check') {
         require_once __DIR__ . '/_dup.php';
@@ -631,6 +657,17 @@ try {
                 }
                 // تعهد/پوششی که فرم نداده: پیش‌فرضِ تعریف‌شده برای همین شرکت
                 if ($kind === 'NEW_POLICY') company_apply_defaults_to_rows($pdo, $requestId, [$newPlateId]);
+                // مدارکِ انتخاب‌شده از پرونده‌ی همین خودرو (فقط مدارکِ شرکت‌های خودِ کاربر)
+                if (!empty($p['reg_docs']) && is_array($p['reg_docs'])) {
+                    require_once __DIR__ . '/finance_core.php'; require_once __DIR__ . '/_import_archive.php'; require_once __DIR__ . '/_bordereau.php';
+                    require_once __DIR__ . '/_vehicles.php'; require_once __DIR__ . '/_registry_link.php';
+                    $regN = 0;
+                    foreach (array_slice($p['reg_docs'], 0, 12) as $rd) {
+                        try { $rr = reg_attach_to_plate($pdo, dirname(__DIR__), $newPlateId, (string)($rd['src'] ?? ''), intval($rd['id'] ?? 0), (string)($rd['type'] ?? ''), $allowedCompanyIds, null); if (!empty($rr['ok'])) $regN++; }
+                        catch (Throwable $e) { error_log('[portal reg_docs] ' . $e->getMessage()); }
+                    }
+                    if ($regN) company_sync_plate_status($pdo, $newPlateId);
+                }
                 if ($zkToken && !empty($p['zk_page'])) {
                     require_once __DIR__ . '/_zerokm.php';
                     $n = intval($p['zk_page']);

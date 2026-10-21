@@ -74,6 +74,7 @@ if (!$companies) {
 <script src="../chat-ui.js?v=16"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
+<script src="../reg-link.js?v=1" defer></script>
 <script src="../registry.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -783,6 +784,43 @@ function portalDupHtml(list) {
     }).join('');
 }
 document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#nr-plates-list')) nrDupSchedule(); });
+// ---- پرونده‌ی خودرو (reg-link.js): همین خودرو قبلاً در درخواست‌های شرکتِ شما بوده؟ اطلاعات و مدارکش پیشنهاد می‌شود ----
+function nrRegSchedule(row) {
+    if (!window.RegLink || !row) return;
+    clearTimeout(row._regT);
+    row._regT = setTimeout(async () => {
+        const enD = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).trim();
+        const moto = row.querySelector('.plate-moto')?.checked;
+        const q = moto ? {vin: row.querySelector('.plate-chassis')?.value, engine: row.querySelector('.plate-engine')?.value}
+            : {p1: enD(row.querySelector('.plate-p1').value), p2: enD(row.querySelector('.plate-p2').value), letter: row.querySelector('.plate-letter').value.trim(), p4: enD(row.querySelector('.plate-p4').value),
+               vin: row.querySelector('.plate-chassis')?.value, engine: row.querySelector('.plate-engine')?.value};
+        const v = await RegLink.vehicle(q, {portal: true});
+        const R = row._reg || (row._reg = {v: null, sel: new Set(), applied: false, dismiss: ''});
+        if ((v && v.key) !== (R.v && R.v.key)) { R.v = v; R.applied = false; R.sel = new Set((v ? v.docs : []).map((d, i) => i)); }
+        nrRegRender(row);
+    }, 650);
+}
+function nrRegRender(row) {
+    const R = row._reg;
+    let box = row.querySelector('.plate-reg');
+    if (!R || !R.v || R.dismiss === R.v.key) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.className = 'plate-reg'; row.querySelector('.plate-chassis-box').before(box); }
+    box.innerHTML = RegLink.vehicleCard(R.v, R.sel, {applied: R.applied, portal: true});
+    box.querySelector('[data-reg-fill]').onclick = () => {
+        const f = R.v.fill || {}, sm = R.v.summary || {};
+        const set = (cls, val) => { const e = row.querySelector(cls); if (e && !e.value.trim() && val) e.value = val; };
+        set('.plate-carname', f.car_name); set('.plate-cartype', f.car_type); set('.plate-chassis', f.chassis_no); set('.plate-engine', f.engine_no);
+        const t = row.querySelector('.plate-instype').value, end = t === 'BODY' ? sm.body_end : (t === 'THIRDPARTY' ? sm.third_end : (sm.third_end || sm.body_end));
+        if (end && !row.querySelector('.plate-isnew')?.checked) set('.plate-expiry', faNum(end));
+        R.applied = true; nrRegRender(row); showToast('اطلاعاتِ خودرو از درخواست‌های قبلی نشست؛ بررسی کنید.');
+    };
+    box.querySelector('[data-reg-dismiss]').onclick = () => { R.dismiss = R.v.key; R.sel = new Set(); box.remove(); };
+    box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? R.sel.add(i) : R.sel.delete(i); });
+}
+document.addEventListener('input', e => {
+    const t = e.target;
+    if (t && t.closest && t.closest('#nr-plates-list') && /plate-(p1|p2|p4|letter|chassis|engine)\b/.test(t.className || '')) nrRegSchedule(t.closest('.plate-row'));
+});
 document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#nr-plates-list')) nrDupSchedule(); });
 
 // اکسلِ خودروها => ردیف‌های همین فرم (برای بازبینی پیش از ثبت)
@@ -852,16 +890,19 @@ function collectPlateRows(containerId) {
         endorsement_request: !row.querySelector('.plate-endorse').classList.contains('hidden') ? (row.querySelector('.plate-endorse')?.value || '').trim() : '',
         cancellation_reason: !row.querySelector('.plate-cancelreason').classList.contains('hidden') ? (row.querySelector('.plate-cancelreason')?.value || '').trim() : '',
         insurance_type: row.querySelector('.plate-instype').value,
+        // مدارکِ انتخاب‌شده از پرونده‌ی همین خودرو (درخواست‌ها/بیمه‌نامه‌های قبلیِ شرکت) — بعد از ثبت روی ردیف می‌نشینند
+        reg_docs: row._reg && row._reg.v && row._reg.dismiss !== row._reg.v.key ? [...row._reg.sel].map(i => row._reg.v.docs[i]).filter(Boolean).map(d => ({src: d.src, id: d.id, type: d.type})) : [],
         ...(row.querySelector('.plate-party-on')?.checked && window.PartyUI ? PartyUI.collect(row.querySelector('.plate-party')) : {}),
     // ردیف یا پلاک دارد یا شماره شاسی (لیفتراک و خودروی صفرکیلومتر پلاک ندارند)
     }, row.querySelector('.plate-moto')?.checked ? motoParts(row) : {})).filter(p => p.p1 || p.p2 || p.letter || p.p4 || p.chassis_no);
     // اگر «هردو» انتخاب شده، همین پلاک به دو ردیفِ جدا (ثالث + بدنه) تبدیل می‌شود
     const out = [];
+    const keep = (docs, t) => (docs || []).filter(d => !((d.type === 'prev_body_policy' && t !== 'BODY') || (d.type === 'prev_third_policy' && t !== 'THIRDPARTY')));
     rows.forEach(p => {
         if (p.insurance_type === 'BOTH') {
-            out.push({...p, insurance_type: 'THIRDPARTY'});
-            out.push({...p, insurance_type: 'BODY'});
-        } else out.push(p);
+            out.push({...p, insurance_type: 'THIRDPARTY', reg_docs: keep(p.reg_docs, 'THIRDPARTY')});
+            out.push({...p, insurance_type: 'BODY', reg_docs: keep(p.reg_docs, 'BODY')});
+        } else out.push({...p, reg_docs: keep(p.reg_docs, p.insurance_type)});
     });
     return out;
 }

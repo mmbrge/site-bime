@@ -22,7 +22,7 @@
     const newRow = type => ({ id: ++seq, type, noPlate: false, moto: false, mcity: '', mnum: '', p1: '', letter: 'الف', p2: '', p4: '', chassis: '', engine: '', isNew: false, carType: '',
         carName: '', expiry: '', liability: '', carValue: '', prevBody: '', skipHealth: !!(st && st.noVisitAll), customCov: false, cov: null,
         refPolicy: '', endorse: '', cancelReason: '', note: '', files: {}, vclass: '', report: null, manualVisit: false, docPages: [], docData: null,
-        partyOpen: false, partyMode: '', party: null });
+        partyOpen: false, partyMode: '', party: null, reg: null, regSel: new Set(), regApplied: false, regDismiss: '' });
     // سواری/وانت یا سنگین: انتخابِ کاربر، وگرنه حدس از نام خودرو (مثل سرور)
     const HEAVY_RE = /کامیون|کشنده|تریلی|تریلر|اتوبوس|مینی\s*بوس|میدل\s*باس|بوس|سنگین|کمپرسی|تانکر|جرثقیل|لودر|بیل\s*مکانیکی|گریدر|بولدوزر|تراکتور|ماشین\s*آلات|یدک\s*کش/;
     const vclassOf = r => r.vclass || (HEAVY_RE.test(String(r.carName || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک')) ? 'HEAVY' : 'LIGHT');
@@ -315,6 +315,43 @@
         return (form.checklists || {})[key] || [];
     }
 
+    // ---------------- پرونده‌ی خودرو (reg-link.js): همین خودرو قبلاً در سامانه بوده؟ ----------------
+    const regHtml = r => (window.RegLink && r.reg && r.regDismiss !== r.reg.key) ? RegLink.vehicleCard(r.reg, r.regSel, { applied: r.regApplied }) : '';
+    const regTimers = {};
+    function scheduleReg(r) {
+        if (!window.RegLink) return;
+        clearTimeout(regTimers[r.id]);
+        regTimers[r.id] = setTimeout(async () => {
+            const q = r.moto ? { plate: '' , vin: r.chassis, engine: r.engine } : { p1: r.p1, p2: r.p2, letter: r.letter, p4: r.p4, vin: r.chassis, engine: r.engine };
+            const v = await RegLink.vehicle(q);
+            if ((v && v.key) !== (r.reg && r.reg.key)) {
+                r.reg = v; r.regApplied = false;
+                // پیش‌فرض: مدارکِ خودِ خودرو و بیمه‌نامه‌ی قبلیِ همان نوع تیک می‌خورند
+                r.regSel = new Set((v ? v.docs : []).map((d, i) => ((d.type === 'prev_body_policy' && r.type !== 'BODY') || (d.type === 'prev_third_policy' && r.type !== 'THIRDPARTY')) ? -1 : i).filter(i => i >= 0));
+            }
+            const box = root && root.querySelector(`[data-row="${r.id}"] [data-reg-box]`);
+            if (box) { box.innerHTML = regHtml(r); bindReg(box, r); }
+        }, 650);
+    }
+    function regFill(r) {
+        const v = r.reg, f = (v && v.fill) || {}, sm = (v && v.summary) || {};
+        if (!r.moto && !r.noPlate && !(en(r.p1) + en(r.p2) + en(r.p4)).trim() && f.plate_p2) { r.p1 = f.plate_p1 || ''; r.p2 = f.plate_p2 || ''; r.letter = f.plate_letter || r.letter; r.p4 = f.plate_p4 || ''; }
+        if (!r.chassis && f.chassis_no) r.chassis = f.chassis_no;
+        if (!r.engine && f.engine_no) r.engine = f.engine_no;
+        if (!r.carName && f.car_name) r.carName = f.car_name;
+        if (!r.carType && f.car_type) r.carType = f.car_type;
+        const end = r.type === 'BODY' ? sm.body_end : sm.third_end;
+        if (!r.expiry && !r.isNew && end) r.expiry = end;
+        if (!r.docData && (f.owner_name || f.model_year || f.color)) r.docData = { owner_name: f.owner_name || '', national_id: f.owner_national_id || '', model_year: f.model_year || '', color: f.color || '' };
+        r.regApplied = true;
+    }
+    function bindReg(box, r) {
+        const fb = box.querySelector('[data-reg-fill]'); if (fb) fb.onclick = () => { regFill(r); render(); toast('اطلاعاتِ خودرو از پرونده نشست؛ بررسی کنید.', 'success'); };
+        const db = box.querySelector('[data-reg-dismiss]'); if (db) db.onclick = () => { r.regDismiss = r.reg ? r.reg.key : ''; r.regSel = new Set(); box.innerHTML = ''; };
+        const ob = box.querySelector('[data-reg-open]'); if (ob) ob.onclick = () => window.Vehicles && Vehicles.open(ob.dataset.regOpen);
+        box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? r.regSel.add(i) : r.regSel.delete(i); cb.closest('label').className = cb.closest('label').className.replace(/border-\S+ text-\S+/, cb.checked ? 'border-emerald-300 text-emerald-800' : 'border-slate-200 text-slate-600'); });
+    }
+
     function rowCard(r, i) {
         const body = r.type === 'BODY';
         const tBadge = body ? '<span class="px-2 py-0.5 rounded-lg bg-violet-100 text-violet-700 text-[10px] font-black">بدنه</span>' : '<span class="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-700 text-[10px] font-black">ثالث</span>';
@@ -385,6 +422,7 @@
               ${kindFields}
               <div class="md:col-span-4"><label class="lbl">توضیح این ردیف</label><input data-r="note" class="inp" value="${esc(r.note)}"></div>
             </div>
+            <div data-reg-box>${regHtml(r)}</div>
             ${covRow}
             ${rowPartyHtml(r)}
             ${r.docPages.length ? `<div class="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 p-2 text-[10.5px] text-emerald-800">
@@ -473,6 +511,7 @@
                 if (['p1', 'p2', 'p4', 'expiry', 'mcity', 'mnum'].includes(f)) { v = en(v).replace(f === 'expiry' ? /[^\d/]/g : /\D/g, ''); el.value = fa(v); }
                 if (f === 'mcity' && v.length >= 3) { const nx = el.closest('.mt-pin').querySelector('[data-r="mnum"]'); if (nx) nx.focus(); }
                 r[f] = v;
+                if (['p1', 'p2', 'p4', 'letter', 'chassis', 'engine', 'mcity', 'mnum'].includes(f)) scheduleReg(r);
                 if (f === 'partyOpen') { r.partyUser = true; r.partyAuto = false; }
                 // فیلدهایی که ظاهر کارت را عوض می‌کنند، کارت را دوباره می‌سازند
                 if (['type', 'noPlate', 'isNew', 'skipHealth', 'prevBody', 'customCov', 'liability', 'vclass', 'manualVisit', 'partyOpen', 'moto'].includes(f)) {
@@ -490,6 +529,7 @@
             };
             box.addEventListener('input', h); box.addEventListener('change', h);
         });
+        root.querySelectorAll('[data-reg-box]').forEach(box => { const r = rowOf(box); if (r) bindReg(box, r); });
         root.querySelectorAll('[data-visit]').forEach(b => b.onclick = () => buildVisit(rowOf(b)));
         root.querySelectorAll('[data-visit-edit]').forEach(b => b.onclick = () => {
             const r = rowOf(b);
@@ -588,6 +628,15 @@
             const x = await post({ action: 'mreq_doc_attach', items: docItems.slice(k, k + 10) });
             failed += x.ok ? (x.results || []).filter(y => !y.ok).length : Math.min(10, docItems.length - k);
         }
+        // مدارکِ انتخاب‌شده از پرونده‌ی خودرو (درخواست‌ها/بیمه‌نامه‌های قبلیِ همین خودرو) روی ردیفِ تازه
+        let regDone = 0;
+        for (let i = 0; i < st.rows.length; i++) {
+            const r = st.rows[i];
+            if (!window.RegLink || !r.reg || !r.regSel.size || r.regDismiss === r.reg.key || !d.plate_ids[i]) continue;
+            btn.innerHTML = `<i class="fas fa-circle-notch fa-spin ml-1"></i> انتقالِ مدارکِ پرونده‌ی خودروی ${fa(i + 1)}...`;
+            const x = await RegLink.attach({ plate_id: d.plate_ids[i] }, [...r.regSel].map(k => r.reg.docs[k]).filter(Boolean));
+            if (x && x.ok) { regDone += x.attached || 0; failed += (x.errors || []).length; } else failed++;
+        }
         // گزارش‌های بازدیدی که در همین فرم ساخته شده‌اند به ردیفِ خودشان وصل می‌شوند (PDF و عکس‌ها در پوشه‌ی همان ردیف)
         let linked = 0;
         for (let i = 0; i < st.rows.length; i++) {
@@ -597,7 +646,7 @@
             try { const x = await VR.api('link', { id: r.report.id, type: 'company', target_id: d.plate_ids[i] }); if (x.ok) linked++; else failed++; } catch (e) { failed++; }
         }
         close();
-        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد` : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
+        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد` : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (regDone ? ` و ${fa(regDone)} مدرک از پرونده‌ی خودروها روی ردیف‌ها نشست` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
         if (window.loadCompanyRequests) loadCompanyRequests();
         if (window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id);
     }

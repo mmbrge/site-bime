@@ -3284,6 +3284,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="aap-chassis" dir="ltr" placeholder=" "><label>شماره شاسی</label></div>
                 <div class="float-input"><input type="text" id="aap-engine" dir="ltr" placeholder=" "><label>شماره موتور</label></div>
             </div>
+            <div id="aap-reg"></div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input"><input type="text" id="aap-car-name" placeholder=" "><label>نام خودرو (مثلاً پژو ۲۰۶)</label></div>
                 <div class="float-input"><input type="text" id="aap-car-type" placeholder=" "><label>تیپ خودرو (مثلاً تیپ ۵)</label></div>
@@ -4171,6 +4172,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <label class="text-[11px] font-bold text-slate-500 block md:col-span-2">فایل معرفی‌نامه (اختیاری)<input type="file" id="mc-intro-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" class="mt-1 w-full text-xs"></label>
                 </div>
                 <datalist id="mc-companies-dl"></datalist>
+                <div id="mc-reg-person"></div>
             </div>
             <div id="mc-intro-summary" class="hidden text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"></div>
 
@@ -4200,6 +4202,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 </div>
                 <label class="text-[11px] font-bold text-slate-500 block mb-1">پلاک *</label>
                 <div id="mc-plate-mount" class="mb-3 max-w-md"></div>
+                <div id="mc-reg-veh" class="mb-3"></div>
 
                 <p class="text-[11px] font-bold text-slate-600 mb-1 mt-1"><i class="fas fa-user ml-1 text-slate-300"></i>اطلاعات بیمه‌گذار <span id="mc-insured-who" class="text-slate-400 font-normal"></span></p>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
@@ -4520,6 +4523,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="inquiry.js?v=6"></script>
     <script src="registry.js?v=1"></script>
     <script src="issue-panel.js?v=1"></script>
+    <script src="reg-link.js?v=1"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -4565,7 +4569,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=17"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=11"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=12"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -6539,8 +6543,38 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             toggleNoPlate('aap');
             document.getElementById('aap-insurance-type').value = '';
             document.getElementById('aap-skip-health').checked = false;
+            aapReg = {v: null, sel: new Set(), applied: false, dismiss: ''};
+            document.getElementById('aap-reg').innerHTML = '';
             openModal('admin-add-plate-modal');
         }
+        // پرونده‌ی خودرو (reg-link.js): با نوشتنِ پلاک/شاسی/موتور، اگر همین خودرو قبلاً بوده، اطلاعات و مدارکش پیشنهاد می‌شود
+        let aapReg = {v: null, sel: new Set(), applied: false, dismiss: ''};
+        const aapRegCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink || !document.getElementById('admin-add-plate-modal').classList.contains('active')) return;
+            const pp = vkPlateParts('aap');
+            const v = await RegLink.vehicle(pp.vehicle_kind === 'MOTOR' ? {vin: document.getElementById('aap-chassis').value, engine: document.getElementById('aap-engine').value}
+                : {p1: pp.plate_p1, p2: pp.plate_p2, letter: pp.plate_letter, p4: pp.plate_p4, vin: document.getElementById('aap-chassis').value, engine: document.getElementById('aap-engine').value});
+            if ((v && v.key) !== (aapReg.v && aapReg.v.key)) aapReg = {v, sel: new Set((v ? v.docs : []).map((d, i) => i)), applied: false, dismiss: aapReg.dismiss};
+            aapRegRender();
+        }, 650);
+        function aapRegRender() {
+            const box = document.getElementById('aap-reg');
+            if (!aapReg.v || aapReg.dismiss === aapReg.v.key) { box.innerHTML = ''; return; }
+            box.innerHTML = RegLink.vehicleCard(aapReg.v, aapReg.sel, {applied: aapReg.applied});
+            const fb = box.querySelector('[data-reg-fill]'); if (fb) fb.onclick = () => {
+                const f = aapReg.v.fill || {}, sm = aapReg.v.summary || {}, set = (id, val) => { const e = document.getElementById(id); if (e && !e.value.trim() && val) e.value = id.endsWith('-p1') || id.endsWith('-p2') || id.endsWith('-p4') ? faDigits(val) : val; };
+                if (vkGet('aap') !== 'moto') { set('aap-p1', f.plate_p1); set('aap-p2', f.plate_p2); set('aap-p4', f.plate_p4); const l = document.getElementById('aap-letter'); if (l && !l.value && f.plate_letter) l.value = f.plate_letter; }
+                set('aap-chassis', f.chassis_no); set('aap-engine', f.engine_no); set('aap-car-name', f.car_name); set('aap-car-type', f.car_type);
+                const t = document.getElementById('aap-insurance-type').value, end = t === 'BODY' ? sm.body_end : (t === 'THIRDPARTY' ? sm.third_end : '');
+                if (end && !document.getElementById('aap-isnew').checked) set('aap-expiry', faDigits(end));
+                aapReg.applied = true; aapRegRender(); showToast('اطلاعاتِ خودرو از پرونده نشست؛ بررسی کنید.', 'success');
+            };
+            const db = box.querySelector('[data-reg-dismiss]'); if (db) db.onclick = () => { aapReg.dismiss = aapReg.v.key; aapReg.sel = new Set(); box.innerHTML = ''; };
+            const ob = box.querySelector('[data-reg-open]'); if (ob) ob.onclick = () => window.Vehicles && Vehicles.open(ob.dataset.regOpen);
+            box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? aapReg.sel.add(i) : aapReg.sel.delete(i); });
+        }
+        document.addEventListener('input', e => { if (e.target && /^aap-(p1|p2|p4|mcity|mnum|chassis|engine)$/.test(e.target.id || '')) aapRegCheck(); });
+        document.addEventListener('change', e => { if (e.target && e.target.id === 'aap-letter') aapRegCheck(); });
         async function submitAdminAddPlate() {
             const payload = {
                 action: 'admin_add_plate',
@@ -6563,6 +6597,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
             const data = await res.json();
             if (data.ok) {
+                if (window.RegLink && aapReg.v && aapReg.sel.size && aapReg.dismiss !== aapReg.v.key && data.plate_id) {
+                    const x = await RegLink.attach({plate_id: data.plate_id}, [...aapReg.sel].map(i => aapReg.v.docs[i]).filter(Boolean));
+                    if (x && x.attached) showToast(`${e2pNum(x.attached)} مدرک از پرونده‌ی خودرو روی ردیف نشست.`, 'info');
+                }
                 showToast('پلاک اضافه شد.', 'success');
                 document.getElementById('admin-add-plate-modal').classList.remove('active');
                 if (currentRequestId) openCompanyRequestDetail(currentRequestId);
@@ -14042,6 +14080,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('mc-liability').innerHTML = '<option value="">انتخاب کنید</option>'
                 + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
             document.getElementById('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', '');
+            mcReg = {v: null, sel: new Set(), applied: false, dismiss: '', p: null, pApplied: false, pDismiss: ''};
+            ['mc-reg-person', 'mc-reg-veh'].forEach(id => document.getElementById(id).innerHTML = '');
             document.getElementById('mc-person-section').classList.toggle('hidden', !!introId);
             const sum = document.getElementById('mc-intro-summary');
             sum.classList.toggle('hidden', !introId);
@@ -14175,10 +14215,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const req = mcRequiredDocs();
             // فایلِ مدرکی که دیگر لازم نیست کنار گذاشته می‌شود
             Object.keys(mcFiles).forEach(k => { if (!req[k]) delete mcFiles[k]; });
+            let regKeys = new Set();
+            try { regKeys = new Set(mcRegSelDocs().map(d => MC_REG_KEY[d.type] || d.type)); } catch (e) {}
             document.getElementById('mc-pick-list').innerHTML = Object.entries(req).map(([key, label]) => {
-                const f = mcFiles[key];
-                return `<div class="rounded-lg border p-2 text-[11px] ${f ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600'}">
-                    <div class="font-bold">${f ? '✓' : '○'} ${label}</div>
+                const f = mcFiles[key], rg = !f && regKeys.has(key);
+                return `<div class="rounded-lg border p-2 text-[11px] ${f || rg ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600'}">
+                    <div class="font-bold">${f || rg ? '✓' : '○'} ${label}</div>${rg ? '<div class="text-[10px] text-sky-700"><i class="fas fa-magnifying-glass-plus ml-1"></i>از پرونده‌ی خودرو</div>' : ''}
                     ${f ? `<div class="text-[10px] text-slate-500 truncate" dir="ltr">${f.name}</div>
                            <button type="button" onclick="mcPickFile('${key}', null)" class="text-[10px] text-red-500 underline">حذف</button>` : ''}
                     <label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">${f ? 'تغییر فایل' : 'انتخاب فایل'}
@@ -14195,6 +14237,65 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function mcPickFile(key, file) { if (file) mcFiles[key] = file; else delete mcFiles[key]; mcRenderPickList(); }
         function mcAddOther() { mcOthers.push({name: '', file: null}); mcRenderPickList(); }
+
+        // پرونده‌ی اشخاص و خودروها (reg-link.js): کد ملی / نام / پلاکی که قبلاً در سامانه بوده => پیشنهادِ اطلاعات و مدارک
+        let mcReg = {v: null, sel: new Set(), applied: false, dismiss: '', p: null, pApplied: false, pDismiss: ''};
+        const MC_REG_KEY = {prev_body_policy: 'prev_body_insurance', prev_third_policy: 'prev_third_insurance'};
+        const mcRegSelDocs = () => mcReg.v && mcReg.dismiss !== mcReg.v.key ? [...mcReg.sel].map(i => mcReg.v.docs[i]).filter(Boolean) : [];
+        const mcRegPersonCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink) return;
+            const box = document.getElementById('mc-reg-person');
+            const nid = p2e(document.getElementById('mc-national-code').value.trim()), name = document.getElementById('mc-full-name').value.trim();
+            const r = await RegLink.person(nid, /^\d{10}$/.test(nid) ? '' : name);
+            if (r.person) {
+                if ((mcReg.p && mcReg.p.national_code) !== r.person.national_code) mcReg.pApplied = false;
+                mcReg.p = r.person;
+                if (mcReg.pDismiss === r.person.national_code) { box.innerHTML = ''; return; }
+                box.innerHTML = RegLink.personCard(r.person, {applied: mcReg.pApplied});
+                box.querySelector('[data-reg-pfill]').onclick = () => {
+                    const p = mcReg.p, set = (id, val) => { const e = document.getElementById(id); if (e && !e.value.trim() && val) e.value = val; };
+                    set('mc-full-name', p.full_name); set('mc-personnel-code', p.personnel_code ? e2p(p.personnel_code) : ''); set('mc-company-name', p.company); set('mc-mobile', p.mobile ? e2p(p.mobile) : '');
+                    if (document.getElementById('mc-relationship').value === 'خودم') {
+                        set('mc-birth', p.birth ? e2p(p.birth) : ''); set('mc-phone', p.mobile ? e2p(p.mobile) : ''); set('mc-postal', p.postal_code ? e2p(p.postal_code) : ''); set('mc-address', p.address);
+                    }
+                    if (p.last_plate && !document.getElementById('mc-plate').value) { setPlateSplit('mc-plate', p.last_plate); mcRegVehCheck(); }
+                    mcReg.pApplied = true; mcRegPersonCheck(); showToast('اطلاعاتِ شخص از پرونده نشست؛ بررسی کنید.', 'success');
+                };
+                box.querySelector('[data-reg-dismiss]').onclick = () => { mcReg.pDismiss = mcReg.p.national_code; box.innerHTML = ''; };
+            } else if (r.suggest && r.suggest.length) {
+                box.innerHTML = `<div class="reg-card mt-2 rounded-xl border border-sky-200 bg-sky-50 p-2 text-[11px] text-slate-700"><b class="text-sky-800"><i class="fas fa-user-check ml-1"></i>اشخاصِ هم‌نام در سامانه:</b>
+                    ${r.suggest.map(x => `<button type="button" data-nid="${iiEsc(x.national_code)}" class="mr-1 mt-1 bg-white border border-sky-200 rounded-lg px-2 py-0.5 hover:bg-sky-100">${iiEsc(x.full_name)} · ${iiEsc(e2p(x.national_code))}${x.company_name ? ' · ' + iiEsc(x.company_name) : ''}</button>`).join('')}</div>`;
+                box.querySelectorAll('[data-nid]').forEach(b => b.onclick = () => { document.getElementById('mc-national-code').value = e2p(b.dataset.nid); mcRegPersonCheck(); });
+            } else box.innerHTML = '';
+        }, 600);
+        const mcRegVehCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink) return;
+            const box = document.getElementById('mc-reg-veh');
+            const plate = document.getElementById('mc-plate').value;
+            const v = /^\d{2}ایران - \d{3} \S+ \d{2}$/.test(plate) ? await RegLink.vehicle({plate}) : null;
+            if ((v && v.key) !== (mcReg.v && mcReg.v.key)) {
+                const t = document.getElementById('mc-insurance-type').value;
+                mcReg.v = v; mcReg.applied = false;
+                mcReg.sel = new Set((v ? v.docs : []).map((d, i) => ((d.type === 'prev_body_policy' && t !== 'BODY') || (d.type === 'prev_third_policy' && t !== 'THIRDPARTY')) ? -1 : i).filter(i => i >= 0));
+            }
+            if (!v || mcReg.dismiss === v.key) { box.innerHTML = ''; mcRenderPickList(); return; }
+            box.innerHTML = RegLink.vehicleCard(v, mcReg.sel, {applied: mcReg.applied});
+            const fb = box.querySelector('[data-reg-fill]'); if (fb) fb.onclick = () => {
+                const f = v.fill || {};
+                if (f.owner_name && document.getElementById('mc-owner-kind').value === 'other' && !document.getElementById('mc-owner-name').value) document.getElementById('mc-owner-name').value = f.owner_name;
+                mcReg.applied = true; mcRegVehCheck();
+                showToast('مدارکِ تیک‌خورده بعد از ثبت روی همین درخواست می‌نشینند' + (f.car_name ? ` (${f.car_name}${f.model_year ? ' مدل ' + e2p(f.model_year) : ''})` : '') + '.', 'success');
+            };
+            box.querySelector('[data-reg-dismiss]').onclick = () => { mcReg.dismiss = v.key; mcReg.sel = new Set(); box.innerHTML = ''; mcRenderPickList(); };
+            const ob = box.querySelector('[data-reg-open]'); if (ob) ob.onclick = () => window.Vehicles && Vehicles.open(ob.dataset.regOpen);
+            box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? mcReg.sel.add(i) : mcReg.sel.delete(i); mcRenderPickList(); });
+            mcRenderPickList();
+        }, 650);
+        document.addEventListener('input', e => {
+            const id = e.target && e.target.id;
+            if (id === 'mc-national-code' || id === 'mc-full-name') mcRegPersonCheck();
+            if (e.target && e.target.closest && e.target.closest('#mc-plate-mount')) setTimeout(mcRegVehCheck, 0);
+        });
 
         async function submitManualRequest() {
             const v = id => document.getElementById(id).value.trim();
@@ -14217,7 +14318,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
             const othersBad = mcOthers.find(o => o.file && !o.name.trim());
             if (othersBad) return warn('برای «سایر مدارک» نام مدرک را بنویسید.');
-            const missing = Object.entries(mcRequiredDocs()).filter(([k]) => !mcFiles[k]).map(([, l]) => l);
+            const regKeys = new Set(mcRegSelDocs().map(d => MC_REG_KEY[d.type] || d.type));
+            const missing = Object.entries(mcRequiredDocs()).filter(([k]) => !mcFiles[k] && !regKeys.has(k)).map(([, l]) => l);
             if (missing.length && !(await uiConfirm('مدارک ناقص', `${e2p(missing.length)} مدرک هنوز انتخاب نشده:\n• ${missing.join('\n• ')}\n\nدرخواست ثبت شود و این مدارک را بعداً بارگذاری می‌کنید؟`, {ok: 'بله، ثبت شود'}))) return;
 
             const fd = new FormData();
@@ -14251,6 +14353,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (!data.ok) { showToast(data.error || 'خطا در ثبت.', 'error'); return; }
                 mcCreated = data;
                 document.getElementById('mc-case-id').value = data.case_id;
+                // مدارکِ انتخاب‌شده از پرونده‌ی خودرو (درخواست‌ها/بیمه‌نامه‌های قبلیِ همین پلاک)
+                const regDocs = window.RegLink ? mcRegSelDocs() : [];
+                if (regDocs.length) {
+                    const x = await RegLink.attach({case_id: data.case_id}, regDocs);
+                    if (x && x.attached) data.uploaded = (data.uploaded || 0) + x.attached;
+                    ((x && x.errors) || []).forEach(e => showToast('مدرکِ پرونده‌ی خودرو: ' + e, 'warning'));
+                }
                 // پیشنهادی که فرم با آن پر شد، حالا روی همین پرونده بایگانی می‌شود (فرمِ صدور با آن پر و چک می‌شود)
                 if (mcProposalFile) {
                     const pf = new FormData(); pf.append('action', 'proposal_upload'); pf.append('case_id', data.case_id); pf.append('file', mcProposalFile);
