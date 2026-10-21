@@ -75,7 +75,7 @@ if (!$companies) {
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
 <script src="../reg-link.js?v=1" defer></script>
-<script src="../registry.js?v=2" defer></script>
+<script src="../registry.js?v=3" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -1007,7 +1007,7 @@ const PORTAL_DOC_TYPE_FA = {
     prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
     health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
     policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
-    other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست',
+    other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', no_claim_report: 'گزارش عدم خسارت',
 };
 
 async function openRequestDetail(id) {

@@ -628,7 +628,7 @@
         <div class="rg-bar mt-2"><span class="text-[11px] font-bold text-slate-500" data-n></span>
             <button class="rg-btn s" data-exx><i class="fas fa-file-excel text-emerald-600"></i> اکسلِ همین فهرست</button><button class="rg-btn s" data-exp2><i class="fas fa-file-pdf text-rose-600"></i> PDFِ همین فهرست</button>
             <span class="flex-1"></span><span class="text-[11px] text-slate-500" data-seln></span>
-            <button class="rg-btn s" data-bnote disabled><i class="fas fa-phone"></i> ثبتِ پیگیری</button><button class="rg-btn r" data-bdel disabled><i class="fas fa-trash"></i> حذف</button></div></div>
+            <button class="rg-btn s" data-bnote disabled><i class="fas fa-phone"></i> ثبتِ پیگیری</button>${window.RenewReq ? '<button class="rg-btn g" data-brenew disabled><i class="fas fa-rotate"></i> درخواستِ تمدید</button>' : ''}<button class="rg-btn r" data-bdel disabled><i class="fas fa-trash"></i> حذف</button></div></div>
         <div data-body></div>`;
         const R2 = BR.root;
         R2.querySelector('[data-q]').addEventListener('input', debounce(e => { BR.f.q = e.target.value; bTable(); }, 220));
@@ -643,6 +643,10 @@
         R2.querySelector('[data-exx]').onclick = () => download(BR.api, { action: 'export_xlsx', ids: BR.view.map(r => r.id), title: BR.f.group || 'فهرستِ کلی' }, 'bordereau.xlsx');
         R2.querySelector('[data-exp2]').onclick = () => download(BR.api, { action: 'export_pdf', ids: BR.view.map(r => r.id), title: BR.f.group || 'فهرستِ کلی' }, 'bordereau.pdf');
         R2.querySelector('[data-bnote]').onclick = () => bNote([...BR.sel]);
+        // درخواستِ صدورِ تازه برای همان شرکت با مشخصاتِ ردیف (renew-req.js)
+        const rnb = R2.querySelector('[data-brenew]');
+        if (rnb) rnb.onclick = () => RenewReq.open(BR.rows.filter(r => BR.sel.has(r.id)).map(r => ({src: 'B', id: r.id, label: r.policy, type: r.type, plate: r.plate, company: r.group, renewed: !!(r.renewed_by && r.renewed_by.policy)})),
+            {onDone: () => {}});
         R2.querySelector('[data-bdel]').onclick = async () => {
             if (!(await uiAsk(fa(BR.sel.size) + ' ردیف از بردرو حذف شود؟ (پوشه‌های بایگانی می‌مانند)'))) return;
             const r = await call(BR.api, { action: 'delete', ids: [...BR.sel] });
@@ -682,7 +686,7 @@
             body.querySelectorAll('[data-gp]').forEach(b => b.onclick = e => { e.preventDefault(); const g = b.dataset.gp; download(BR.api, { action: 'export_pdf', ids: by[g].map(r => r.id), title: g }, 'bordereau.pdf'); });
         }
         body.querySelectorAll('[data-s]').forEach(th => th.onclick = () => { const k = th.dataset.s; BR.sort = { k, d: BR.sort.k === k ? -BR.sort.d : 1 }; bTable(); });
-        const selN = () => { BR.root.querySelector('[data-seln]').textContent = BR.sel.size ? fa(BR.sel.size) + ' انتخاب' : ''; BR.root.querySelector('[data-bnote]').disabled = BR.root.querySelector('[data-bdel]').disabled = !BR.sel.size; };
+        const selN = () => { BR.root.querySelector('[data-seln]').textContent = BR.sel.size ? fa(BR.sel.size) + ' انتخاب' : ''; BR.root.querySelector('[data-bnote]').disabled = BR.root.querySelector('[data-bdel]').disabled = !BR.sel.size; const rb = BR.root.querySelector('[data-brenew]'); if (rb) rb.disabled = !BR.sel.size; };
         body.querySelectorAll('[data-sel]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { const id = Number(c.dataset.sel); c.checked ? BR.sel.add(id) : BR.sel.delete(id); selN(); }; });
         body.querySelectorAll('[data-all]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { c.closest('table').querySelectorAll('[data-sel]').forEach(x => { x.checked = c.checked; const id = Number(x.dataset.sel); c.checked ? BR.sel.add(id) : BR.sel.delete(id); }); selN(); }; });
         body.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => bOpen(Number(tr.dataset.id)));

@@ -191,23 +191,33 @@
             ${C.map(c => `<th data-sort="${c[0]}" class="${R.sort.k === c[0] ? 'on' : ''}">${c[1]}<span class="ar">${R.sort.k === c[0] ? (R.sort.d > 0 ? '▲' : '▼') : '⇅'}</span></th>`).join('')}<th style="cursor:default"></th></tr></thead>
             <tbody>${R.view.map(r => `<tr class="${R.sel.has(r.key) ? 'sel' : ''}" data-k="${r.key}"><td><input type="checkbox" data-sel="${r.key}" ${R.sel.has(r.key) ? 'checked' : ''}></td>
                 ${C.map(c => `<td>${c[3](r)}</td>`).join('')}
-                <td><button class="rn-btn s" style="padding:4px 8px;font-size:10.5px" data-h="${r.key}" title="تاریخچه‌ی پیگیری"><i class="fas fa-clock-rotate-left"></i></button>
+                <td class="whitespace-nowrap"><button class="rn-btn s" style="padding:4px 8px;font-size:10.5px" data-h="${r.key}" title="تاریخچه‌ی پیگیری"><i class="fas fa-clock-rotate-left"></i></button>
+                ${window.RenewReq ? `<button class="rn-btn s" style="padding:4px 8px;font-size:10.5px;color:#047857" data-rr="${r.key}" title="درخواستِ تمدید (صدورِ تازه با همین اطلاعات و مدارک)"><i class="fas fa-rotate"></i></button>` : ''}
                 ${r.file ? `<a class="rn-btn s" style="padding:4px 8px;font-size:10.5px" href="${fpath(r.file)}" target="_blank" title="فایلِ بیمه‌نامه"><i class="fas fa-file-pdf"></i></a>` : ''}</td></tr>`).join('')}</tbody></table>`;
         tw.querySelector('[data-all]').onchange = e => { R.view.forEach(r => e.target.checked ? R.sel.add(r.key) : R.sel.delete(r.key)); render(); };
         tw.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? R.sel.add(c.dataset.sel) : R.sel.delete(c.dataset.sel); c.closest('tr').classList.toggle('sel', c.checked); bulk(); });
         tw.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { const k = th.dataset.sort; R.sort = {k, d: R.sort.k === k ? -R.sort.d : 1}; apply(); });
         tw.querySelectorAll('[data-h]').forEach(b => b.onclick = () => history(b.dataset.h));
+        tw.querySelectorAll('[data-rr]').forEach(b => b.onclick = () => renewReq(R.rows.filter(r => r.key === b.dataset.rr)));
         bulk();
+    }
+    // «درخواستِ تمدید»: درخواستِ صدورِ تازه با همان اطلاعات و مدارک (renew-req.js)؛ کارکنان: فرمِ ثبتِ دستی با همان اطلاعات
+    function renewReq(rows) {
+        if (!window.RenewReq) return;
+        RenewReq.open(rows.map(r => ({src: r.src, id: r.id, label: r.policy || r.plate || r.insured, type: r.type, plate: r.plate, company: r.company || r.insured, renewed: !!r.renewed_by, row: r})),
+            {onPersonnel: it => { if (typeof window.renewPersonnelCase === 'function') window.renewPersonnelCase(it.row); }});
     }
     function bulk() {
         const box = R.root.querySelector('[data-bulk]');
         if (!R.sel.size) { box.innerHTML = ''; return; }
         box.innerHTML = `<div class="rn-bulk mt-3"><span class="text-xs font-black"><i class="fas fa-check-double ml-1 text-pink-300"></i>${fa(R.sel.size)} بیمه‌نامه انتخاب شد</span>
             <span class="flex flex-wrap gap-2"><button class="rn-btn p" data-b="notify"><i class="fas fa-paper-plane"></i>اعلام تمدید</button>
+            ${window.RenewReq ? '<button class="rn-btn e" data-b="renew"><i class="fas fa-rotate"></i>درخواستِ تمدید (صدورِ تازه)</button>' : ''}
             <button class="rn-btn g" style="background:rgba(255,255,255,.12);color:#fff" data-b="mark"><i class="fas fa-clipboard-check"></i>ثبتِ پیگیری</button>
             <button class="rn-btn g" style="background:rgba(255,255,255,.12);color:#fff" data-b="xls"><i class="fas fa-file-excel"></i>اکسلِ انتخاب‌شده‌ها</button>
             <button class="rn-btn g" style="background:rgba(255,255,255,.12);color:#fff" data-b="clr">لغوِ انتخاب</button></span></div>`;
         box.querySelector('[data-b="notify"]').onclick = notify;
+        const rb = box.querySelector('[data-b="renew"]'); if (rb) rb.onclick = () => renewReq(R.view.filter(r => R.sel.has(r.key)));
         box.querySelector('[data-b="mark"]').onclick = () => mark([...R.sel]);
         box.querySelector('[data-b="xls"]').onclick = () => exportXlsx(R.view.filter(r => R.sel.has(r.key)).map(r => r.key));
         box.querySelector('[data-b="clr"]').onclick = () => { R.sel.clear(); render(); };

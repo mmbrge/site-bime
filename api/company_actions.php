@@ -26,6 +26,7 @@ company_ensure_coverage_column($pdo);
 company_ensure_car_type($pdo);
 imp_ensure($pdo);   // «بایگانی وارداتی»: ستون‌های is_import و ... (خودکار)
 company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالث (شرکت و درخواست)
+company_claim_ensure($pdo);      // وضعیتِ خسارتِ ردیف‌های تمدیدی
 
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
@@ -317,13 +318,13 @@ try {
             $types = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $kind = $r['request_kind'] ?? 'NEW_POLICY';
 
-            $r['checklist'] = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']));
+            $r['checklist'] = company_plate_checklist($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']), $r['claim_status'] ?? null);
             foreach ($r['checklist'] as &$item) {
                 $item['docs'] = array_values(array_filter($rowDocs,
                     fn($d) => in_array($d['doc_type'], $item['upload_types'], true) || $d['doc_type'] === $item['key']));
             }
             unset($item);
-            $r['missing_docs'] = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']));
+            $r['missing_docs'] = company_plate_missing_docs($r['insurance_type'], (bool)$r['skip_health_inspection'], $types, $r['has_prev_body'], $kind, !empty($r['is_new_vehicle']), $r['claim_status'] ?? null);
             $r['is_ready'] = empty($r['missing_docs']);
             $r['all_docs'] = $rowDocs;
 
@@ -1823,7 +1824,7 @@ try {
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             // چک‌لیستِ کاملِ همین ردیف: هر آیتم با تیک/ضربدر، اجباری یا اختیاری، و
             // مدرکِ متناظرش (اگر موجود است) تا در جدول قابل باز کردن باشد
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -1835,7 +1836,7 @@ try {
             unset($item);
             $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
             // وضعیتِ خودکار با چک‌لیستِ فعلی هم‌گام می‌شود (مثلاً ردیفی که بازدیدش رسیده و فقط گزارشِ ما مانده => آماده‌ی صدور)
             if (in_array($p['status'], ['PENDING', 'READY_FOR_ISSUE'], true) && ($p['missing_docs'] ? 'PENDING' : 'READY_FOR_ISSUE') !== $p['status'] && empty($request['is_import'])) {
                 $p['status'] = company_sync_plate_status($pdo, $p['id']) ?: $p['status'];

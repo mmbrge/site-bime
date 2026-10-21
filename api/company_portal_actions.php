@@ -13,6 +13,7 @@ require_once __DIR__ . '/_auth_helpers.php';
 $session = require_company_portal_session($pdo);
 ref_codes_ensure($pdo);
 company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌ها و تعهدِ شرکت (برای ردیف‌هایی که فرم نداده)
+company_claim_ensure($pdo);
 $allowedCompanyIds = $session['company_ids'];
 
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
@@ -254,7 +255,7 @@ try {
             $p['plate_display'] = company_row_label($p);
             $p['coverages_fa'] = company_coverages_fa($p['selected_coverages'] ?? null);
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
-            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
+            $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
@@ -265,7 +266,7 @@ try {
             unset($item);
             if (portal_company_opts($pdo, $request['company_id'])['custom']) $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
-            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
+            $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
             $p['report_pending'] = company_plate_report_pending($p['insurance_type'], $assignedTypes, $reqKind);
             if ($p['report_pending'] && $p['status'] === 'READY_FOR_ISSUE') $p['status_fa'] = 'آماده‌ی صدور (گزارش بازدید)';
             // مالک / بیمه‌گذار / ذینفع (شرکت هم می‌تواند برای هر ردیف یا همه‌ی ردیف‌ها تعیین کند)

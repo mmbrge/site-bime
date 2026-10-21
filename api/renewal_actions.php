@@ -81,6 +81,7 @@ function rn_rows($pdo) {
             $rows[] = [
                 'src' => 'P', 'id' => (int)$r['id'], 'source_fa' => 'کارکنان', 'owner_id' => (int)$r['pid'],
                 'insured' => $r['insured_name'] ?: $r['full_name'], 'company' => $r['employer'] ?: '', 'holder' => $r['full_name'], 'personnel_code' => $r['personnel_code'],
+                'holder_nid' => $r['national_code'], 'relationship' => $r['insured_relationship'] ?? '',
                 'contract' => $contracts[(int)$r['contract_id']] ?? rn_pick([$oc], 'contract_no'),
                 'national_id' => $r['insured_national_id'] ?: $r['national_code'], 'phone' => $r['insured_phone'] ?: ($r['ocr_phone'] ?: $r['mobile_number']),
                 'address' => $r['insured_address'] ?: rn_pick($S, ['insured_address', 'address']), 'owner_name' => rn_pick($S, 'owner_name'),
@@ -293,6 +294,17 @@ try {
     }
 
     // اکسل: دقیقاً همان ردیف‌ها و همان ترتیبِ صفحه (keys)
+    // ---- «درخواستِ تمدید»: درخواستِ صدورِ تازه از روی بیمه‌نامه‌های قبلی (شرکتی/وارداتی/بردرو) با مدارکِ موجود ----
+    if ($action === 'create_requests') {
+        require_once __DIR__ . '/_import_archive.php'; require_once __DIR__ . '/_bordereau.php'; require_once __DIR__ . '/_vehicles.php';
+        require_once __DIR__ . '/_registry_link.php'; require_once __DIR__ . '/_renew_request.php';
+        brd_ensure($pdo);
+        $items = is_array($data['items'] ?? null) ? $data['items'] : (json_decode((string)($data['items'] ?? '[]'), true) ?: []);
+        if (!$items) $out(['ok' => false, 'error' => 'ردیفی انتخاب نشده.']);
+        @set_time_limit(300);
+        $r = rnr_create($pdo, dirname(__DIR__), $items, intval($actor['user_id'] ?? 0) ?: null);
+        $out(['ok' => true] + $r);
+    }
     if ($action === 'export') {
         $keys = json_decode((string)($data['keys'] ?? '[]'), true);
         $rows = is_array($keys) && $keys ? rn_by_keys($pdo, $keys) : rn_rows($pdo);

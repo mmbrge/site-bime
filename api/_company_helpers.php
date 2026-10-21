@@ -193,6 +193,8 @@ function company_doc_types() {
         'other'             => 'سایر مدارک',
         // خودروی صفر کیلومتر: به‌جای کارت ماشین/سند، فاکتورِ فروش
         'sales_invoice'     => 'فاکتور فروش',
+        // تمدیدِ بدنه بدونِ خسارت
+        'no_claim_report'   => 'گزارش عدم خسارت',
         // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
         'car_card_or_title' => 'کارت ماشین یا سند',
     ];
@@ -245,7 +247,8 @@ function company_doc_type_is_folder($key) {
 //     اجباری (با has_prev_body مشخص می‌شود)؛ «بازدید سلامت» برای بعضی خودروها
 //     اجباری است و برای بعضی نه (skip_health_inspection)؛ و «گزارش بازدید» در
 //     صورت وجودِ بازدید سلامت اجباری است.
-function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false) {
+//   $claim (تمدید): NO_CLAIM => «گزارش عدم خسارت» لازم و بازدید نه؛ CLAIM => بازدیدِ سلامت دوباره لازم
+function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false, $claim = null) {
     $has = fn($k) => in_array($k, $assignedDocTypes, true);
     $items = [];
 
@@ -308,6 +311,11 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
             'upload_types' => ['prev_body_policy'],
             'hint' => $hasPrevBody === 'NO' ? 'این خودرو بیمه بدنه قبلی ندارد' : 'در صورت وجود، اجباری است',
         ];
+        // تمدیدِ بدونِ خسارت: «گزارش عدم خسارت» از بیمه‌گرِ قبلی (بازدید لازم نیست)
+        if ($claim === 'NO_CLAIM' || $has('no_claim_report')) {
+            $items[] = ['key' => 'no_claim_report', 'label' => 'گزارش عدم خسارت', 'required' => $claim === 'NO_CLAIM', 'satisfied' => $has('no_claim_report'),
+                        'upload_types' => ['no_claim_report'], 'hint' => 'تمدیدِ بدونِ خسارت: گواهیِ عدمِ خسارت از بیمه‌گرِ قبلی'];
+        }
 
         // ---- بازدید سلامت: برای بعضی خودروها اجباری، برای بعضی نه ----
         $healthNeeded = !$skipHealthInspection;
@@ -352,12 +360,21 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
 }
 
 // فهرستِ «چه چیزی کم دارد» - فقط آیتم‌های اجباریِ تکمیل‌نشده
-function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false) {
+function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false, $claim = null) {
     $missing = [];
-    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody, $kind, $isNew) as $it) {
+    foreach (company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, $assignedDocTypes, $hasPrevBody, $kind, $isNew, $claim) as $it) {
         if ($it['required'] && !$it['satisfied']) $missing[$it['key']] = $it['label'];
     }
     return $missing;
+}
+
+// وضعیتِ خسارتِ ردیفِ تمدیدی (NO_CLAIM / CLAIM) روی ردیف‌های شرکتی (خودکار)
+function company_claim_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'claim_status'")->fetch()) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN claim_status VARCHAR(10) NULL"); }
+    catch (Throwable $e) { error_log('[company_claim_ensure] ' . $e->getMessage()); }
 }
 
 // بازدید رسیده ولی گزارشِ بازدید هنوز با سایت ساخته نشده (کارِ داخلیِ ما، نه کسریِ مشتری)
@@ -410,7 +427,7 @@ function company_sync_plate_status($pdo, $plateId) {
     $stmt->execute([$plateId]);
     $types = array_filter(array_column($stmt->fetchAll(), 'doc_type'));
     $missing = company_plate_missing_docs($plate['insurance_type'], (bool)$plate['skip_health_inspection'], $types,
-                                          $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY', !empty($plate['is_new_vehicle']));
+                                          $plate['has_prev_body'], $plate['request_kind'] ?? 'NEW_POLICY', !empty($plate['is_new_vehicle']), $plate['claim_status'] ?? null);
     // ردیفِ وارداتی: اطلاعاتِ لازم (شماره بیمه‌نامه، تاریخ صدور، پلاک یا شاسی) هم باید کامل باشد
     if (!empty($plate['is_import']) && imp_missing_info($plate)) $missing['_info'] = 'اطلاعات';
     $newStatus = $missing ? 'PENDING' : 'READY_FOR_ISSUE';
@@ -492,7 +509,7 @@ function company_request_rows_text_report($pdo, $requestId, $onlyMissing = false
     $shown = 0;
     foreach ($plates as $p) {
         $types = array_values(array_filter($byPlate[$p['id']] ?? []));
-        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind, !empty($p['is_new_vehicle']));
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
         if ($onlyMissing && (!$missing || in_array($p['status'], ['ISSUED', 'CANCELLED'], true) || !empty($p['dup_of_id']))) continue;
         $shown++;
         $display = company_row_label($p);

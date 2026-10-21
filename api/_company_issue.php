@@ -256,7 +256,7 @@ function cbundle_match($pdo, $requestId, array $policies, $importScope = false) 
             $ds = $pdo->prepare("SELECT doc_type FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED'");
             $ds->execute([$best['id']]);
             $missing = company_plate_missing_docs($best['insurance_type'], (bool)$best['skip_health_inspection'], array_filter(array_column($ds->fetchAll(), 'doc_type')),
-                                                  $best['has_prev_body'], $kind, !empty($best['is_new_vehicle']));
+                                                  $best['has_prev_body'], $kind, !empty($best['is_new_vehicle']), $best['claim_status'] ?? null);
             if (!empty($best['is_import'])) $missing += imp_missing_info($best);
             $it['state'] = 'not_ready';
             $it['missing'] = array_values($missing);

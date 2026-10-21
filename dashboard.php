@@ -4535,9 +4535,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=7"></script>
-    <script src="registry.js?v=2"></script>
+    <script src="registry.js?v=3"></script>
     <script src="issue-panel.js?v=1"></script>
     <script src="reg-link.js?v=1"></script>
+    <script src="renew-req.js?v=1"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -4567,7 +4568,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-hub.js?v=8"></script>
     <script src="work-log.js?v=13"></script>
     <script src="import-archive.js?v=3"></script>
-    <script src="renewals.js?v=2"></script>
+    <script src="renewals.js?v=3"></script>
     <script src="endorse.js?v=6"></script>
     <script src="party-ui.js?v=2"></script>
     <script src="company-pick.js?v=1"></script>
@@ -6629,7 +6630,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
             policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
-            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش',
+            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش', no_claim_report: 'گزارش عدم خسارت',
         };
         const ROW_STATUS_COLOR = {
             PENDING: 'bg-amber-100 text-amber-700', READY_FOR_ISSUE: 'bg-cyan-100 text-cyan-700',
@@ -14344,6 +14345,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (id === 'mc-national-code' || id === 'mc-full-name') mcRegPersonCheck();
             if (e.target && e.target.closest && e.target.closest('#mc-plate-mount')) setTimeout(mcRegVehCheck, 0);
         });
+
+        // «درخواستِ تمدید» برای بیمه‌نامه‌ی کارکنان («اعلام تمدید»): فرمِ ثبتِ دستی با همان اطلاعات؛ مدارکِ خودرو از پرونده پیشنهاد می‌شود
+        window.renewPersonnelCase = function (r) {
+            if (!r) return;
+            openManualCreateModal();
+            const set = (id, v) => { const e = document.getElementById(id); if (e && v !== undefined && v !== null && String(v).trim() !== '') e.value = /^\d[\d\s]*$/.test(String(v)) ? e2p(String(v)) : v; };
+            set('mc-full-name', r.holder || r.insured); set('mc-national-code', r.holder_nid || ''); set('mc-personnel-code', r.personnel_code); set('mc-company-name', r.company);
+            document.getElementById('mc-insurance-type').value = r.type === 'BODY' ? 'BODY' : 'THIRDPARTY';
+            const rel = r.relationship && r.relationship !== 'خودم' ? r.relationship : 'خودم';
+            if ([...document.getElementById('mc-relationship').options].some(o => o.value === rel)) document.getElementById('mc-relationship').value = rel;
+            if (rel !== 'خودم') { set('mc-insured-name', r.insured); set('mc-insured-nid', r.national_id); }
+            set('mc-phone', r.phone); set('mc-address', r.address);
+            if (r.type === 'BODY') { document.getElementById('mc-prev-body').value = 'بله'; if (r.car_value) set('mc-car-value', Number(r.car_value).toLocaleString('en-US')); }
+            if (r.type !== 'BODY' && r.liability && [...document.getElementById('mc-liability').options].some(o => o.value === String(r.liability))) document.getElementById('mc-liability').value = String(r.liability);
+            mcRefresh();
+            if (r.plate) { setPlateSplit('mc-plate', r.plate); mcRegVehCheck(); }
+            mcRegPersonCheck();
+            showToast('اطلاعاتِ بیمه‌نامه‌ی قبلی نشست؛ تاریخ تولد، کد پستی و ' + (r.type === 'BODY' ? '«خسارت داشته؟» ' : '') + 'را بررسی کنید. مدارکِ خودرو از پرونده پیشنهاد می‌شود.', 'info');
+        };
 
         async function submitManualRequest() {
             const v = id => document.getElementById(id).value.trim();
