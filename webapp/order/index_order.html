@@ -548,7 +548,28 @@ async function submitRelationship(rel) {
 const INQ = { cfg: {}, relBusy: false, relKey: '', relBirth: '', verified: '' };
 async function inqCall(action, body) {
     try { return await (await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ action: action, token: TOKEN, case_id: caseId }, body)) })).json(); }
-    catch (e) { return { ok: false, error: 'خطا در اتصال به سرور.' }; }
+    catch (e) { return { ok: false, net: true, error: 'خطا در اتصال به سرور.' }; }
+}
+// اجرای استعلام: درخواستِ اجرا + پیگیریِ وضعیت هر ۱.۵ ثانیه (اگر درخواستِ طولانی وسطِ راه قطع شود، نتیجه از پیگیری می‌رسد)
+async function inqExec(id) {
+    let done = null, running = true;
+    const start = () => inqCall('inq_exec', { id: id }).then(r => { if (r && r.pending) return; if (r && r.net) { running = false; return; } done = r; });
+    start();
+    const t0 = Date.now();
+    while (!done) {
+        await new Promise(r => setTimeout(r, 1500));
+        if (done) break;
+        const g = await inqCall('inq_poll', { id: id });
+        if (g.done || g.need_captcha) { done = g; break; }
+        if (g.ok === false && !g.net && !g.pending) { done = g; break; }
+        if (Date.now() - t0 > 180000) return { ok: false, error: 'پاسخی از سامانه نیامد؛ کمی بعد دوباره امتحان کنید یا دستی وارد کنید.' };
+        if (!running && Date.now() - t0 > 20000) { running = true; start(); }   // درخواستِ اجرا قطع شد و هنوز در صف است
+    }
+    return done;
+}
+async function inqRun(action, body) {
+    const c = await inqCall(action, Object.assign({ async: 1 }, body));
+    return c.ok && c.pending ? await inqExec(c.id) : c;
 }
 function inqMsg(el, text, color) { el.style.display = 'block'; el.style.color = color; el.textContent = text; }
 // نشستِ سامانه بسته بود: کدِ تصویرِ امنیتی همین‌جا زیرِ فیلد؛ با زدنش همان استعلام ادامه پیدا می‌کند. خروجی: نتیجه یا null (انصراف)
@@ -559,7 +580,7 @@ function inqCaptcha(host, r) {
             + '<p style="font-size:11.5px;font-weight:800;color:#3730a3;margin:0 0 8px;">🛡️ برای استعلام، کدِ تصویرِ امنیتی را وارد کنید</p>'
             + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span data-img style="background:#fff;border-radius:10px;padding:3px;min-width:110px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;"></span>'
             + '<button type="button" data-re style="border:0;background:#fff;border-radius:9px;padding:8px 10px;">🔄</button></div>'
-            + '<input type="tel" data-in inputmode="numeric" dir="ltr" placeholder="کدِ تصویر" style="margin-top:8px;text-align:center;">'
+            + '<input type="text" data-in autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" dir="ltr" placeholder="کدِ تصویر" style="margin-top:8px;text-align:center;">'
             + '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="btn btn-primary" data-ok style="flex:1;padding:10px;">ادامه‌ی استعلام</button><button type="button" class="btn" data-no style="flex:0 0 auto;padding:10px 14px;background:#f1f5f9;color:#475569;box-shadow:none;">دستی می‌نویسم</button></div>'
             + '<p data-er style="font-size:11px;color:#b91c1c;margin:6px 0 0;"></p></div>';
         const img = host.querySelector('[data-img]'), inp = host.querySelector('[data-in]'), er = host.querySelector('[data-er]');
@@ -569,7 +590,7 @@ function inqCaptcha(host, r) {
         host.querySelector('[data-re]').onclick = async () => {
             setImg(null);
             const x = await inqCall('inq_captcha', { id: id, refresh: 1 });
-            if (x.logged_in) { const y = await inqCall('inq_captcha', { id: id, captcha: '-' }); if (y.ok) { finish(y); return; } }
+            if (x.logged_in) { let y = await inqCall('inq_captcha', { id: id, captcha: '-', async: 1 }); if (y.ok && y.pending) y = await inqExec(id); if (y.ok) { finish(y); return; } }
             setImg(x.captcha); inp.value = '';
         };
         host.querySelector('[data-no]').onclick = () => finish(null);
@@ -577,7 +598,8 @@ function inqCaptcha(host, r) {
             const t = toEn(inp.value.trim());
             if (!t) { inp.focus(); return; }
             const b = host.querySelector('[data-ok]'); b.disabled = true; b.textContent = '⏳ در حالِ ورود و استعلام…'; er.textContent = '';
-            const x = await inqCall('inq_captcha', { id: id, captcha: t });
+            let x = await inqCall('inq_captcha', { id: id, captcha: t, async: 1 });
+            if (x.ok && x.pending) x = await inqExec(id);
             b.disabled = false; b.textContent = 'ادامه‌ی استعلام';
             if (x.ok) { finish(x); return; }
             if (x.need_captcha) { er.textContent = x.error || 'کد اشتباه بود؛ دوباره بزنید.'; setImg(x.captcha); inp.value = ''; inp.focus(); return; }
@@ -596,7 +618,7 @@ async function relInq() {
     INQ.relKey = key; INQ.relBirth = birth; INQ.relBusy = true;
     const box = document.getElementById('rel-inq'), nameIn = document.getElementById('rel-name');
     inqMsg(box, '⏳ در حالِ استعلامِ نام… (چند ثانیه؛ می‌توانید دستی هم بنویسید)', '#4338ca');
-    let r = await inqCall('inq_person', { national_id: nid, birth: birth });
+    let r = await inqRun('inq_person', { national_id: nid, birth: birth });
     if (r.need_captcha) { inqMsg(box, 'برای پر شدنِ خودکارِ نام، کدِ تصویرِ زیر را بزنید (یا نام را دستی بنویسید).', '#4338ca'); r = (await inqCaptcha(document.getElementById('rel-cap'), r)) || { ok: false, error: 'استعلام انجام نشد' }; }
     INQ.relBusy = false;
     if (r.ok && r.found) {
@@ -616,7 +638,7 @@ async function inqPostal() {
     if (!birth) { inqMsg(box, 'اول تاریخ تولد را انتخاب کنید.', '#b45309'); return; }
     if (postal.length !== 10) { inqMsg(box, 'کد پستیِ ۱۰ رقمی را وارد کنید.', '#b45309'); return; }
     btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ در حالِ استعلام… (تا یک دقیقه)';
-    let r = await inqCall('inq_postal', { birth: birth, postal: postal });
+    let r = await inqRun('inq_postal', { birth: birth, postal: postal });
     if (r.need_captcha) { box.style.display = 'none'; r = (await inqCaptcha(document.getElementById('pi-cap'), r)) || { ok: false, error: 'استعلام انجام نشد؛ دوباره «استعلامِ کد پستی» را بزنید.' }; }
     btn.disabled = false; btn.textContent = t;
     if (!r.ok) { inqMsg(box, r.error || 'استعلام انجام نشد.', '#b91c1c'); return; }

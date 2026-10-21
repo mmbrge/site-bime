@@ -334,7 +334,9 @@ class InqPasargad
                                                          'username' => $user, 'password' => $pass, 'j_captcha' => $captcha], $this->sso . '/login', true);
         if ($this->loggedOut($r['body'])) {
             $msg = preg_match('/id="message"[^>]*>([^<]*)/i', $r['body'], $m) ? trim($m[1]) : '';
-            return ['ok' => false, 'error' => $msg ?: 'نام کاربری، رمز یا کپچا اشتباه است.'];
+            // صفحه‌ی خطا خودش کپچای تازه دارد؛ همان را نشان می‌دهیم (درخواستِ دیگری کپچا را دوباره عوض می‌کند)
+            $img = preg_match('/id="captcha-imgId"[^>]*src="(data:image\/png;base64,[^"]+)"/i', $r['body'], $mm) ? $mm[1] : null;
+            return ['ok' => false, 'error' => $msg ?: 'نام کاربری، رمز یا کپچا اشتباه است.', 'image' => $img];
         }
         $r2 = $this->http('GET', $this->core);
         if ($this->loggedOut($r2['body'])) return ['ok' => false, 'error' => 'ورود به پنل ناموفق بود؛ دوباره تلاش کنید.'];
@@ -548,6 +550,7 @@ function inq_unlock($fh) { if ($fh) { flock($fh, LOCK_UN); fclose($fh); } }
 function inq_px_status($pdo, $fresh = false) {
     $f = inq_dir() . '/status.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    if (inq_captcha_pending()) return 'logged_out';
     if (!$fresh && is_array($c) && time() - intval($c['t'] ?? 0) < 60) return $c['s'];
     $lk = inq_lock(5);
     if (!$lk) return is_array($c) ? $c['s'] : 'busy';
@@ -563,16 +566,29 @@ function inq_last_activity() { $f = inq_dir() . '/activity.txt'; return is_file(
 function inq_notify_logout($pdo) { /* هر کاربر خودش کپچا را می‌زند؛ پیامی به مدیر لازم نیست */ }
 
 // ---- کپچا برای همه‌ی کاربران: نام کاربری و رمز از تنظیمات (مدیر کل)، فقط متنِ تصویر را کاربر می‌زند ----
+// کپچای سامانه به نشست بسته است و با هر بار باز شدنِ صفحه‌ی ورود عوض می‌شود؛ پس از نشان دادنِ تصویر تا زدنِ کد
+// هیچ درخواستی (بررسیِ وضعیت، keepalive، استعلام) نباید به سامانه برود، وگرنه کدِ کاربر همیشه «اشتباه» می‌شود.
+const INQ_CAPTCHA_TTL = 300;
+function inq_captcha_pending() {
+    $f = inq_dir() . '/captcha.json';
+    if (!is_file($f)) return false;
+    $c = json_decode((string)@file_get_contents($f), true);
+    return is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < INQ_CAPTCHA_TTL;
+}
+function inq_captcha_save($image) {
+    if ($image) @file_put_contents(inq_dir() . '/captcha.json', json_encode(['t' => time(), 'image' => $image]));
+    inq_px_mark('logged_out');
+}
 // همه‌ی کسانی که هم‌زمان به کپچا رسیده‌اند همان یک تصویر را می‌بینند (کپچای سامانه به نشستِ مشترک بسته است)
 function inq_captcha_get($pdo, $refresh = false) {
     $f = inq_dir() . '/captcha.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
-    if (!$refresh && is_array($c) && time() - intval($c['t'] ?? 0) < 150 && !empty($c['image'])) return ['ok' => true, 'image' => $c['image']];
+    if (!$refresh && is_array($c) && time() - intval($c['t'] ?? 0) < INQ_CAPTCHA_TTL && !empty($c['image'])) return ['ok' => true, 'image' => $c['image']];
     $lk = inq_lock(25);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     try { $r = (new InqPasargad())->getCaptcha(); } finally { inq_unlock($lk); }
     if (!empty($r['loggedIn'])) { inq_px_mark('logged_in'); @unlink($f); return ['ok' => true, 'logged_in' => true]; }
-    if (!empty($r['image'])) @file_put_contents($f, json_encode(['t' => time(), 'image' => $r['image']]));
+    if (!empty($r['image'])) inq_captcha_save($r['image']);
     return $r;
 }
 function inq_captcha_login($pdo, $text) {
@@ -582,15 +598,15 @@ function inq_captcha_login($pdo, $text) {
     if ($text === '') return ['ok' => false, 'error' => 'متنِ تصویرِ امنیتی را بنویسید.'];
     $lk = inq_lock(25);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
-    try {
-        $px = new InqPasargad();
-        if ($px->status() === 'logged_in') { $r = ['ok' => true]; }   // کسِ دیگری همین الان وارد شده بود
-        else $r = $px->login($cr['user'], $cr['pass'], $text);
-    } finally { inq_unlock($lk); }
-    @unlink(inq_dir() . '/captcha.json');
-    if ($r['ok']) { inq_px_mark('logged_in'); inq_touch_activity(); return ['ok' => true]; }
-    $n = inq_captcha_get($pdo, true);
-    return ['ok' => false, 'error' => $r['error'] ?? 'کد اشتباه بود؛ دوباره بزنید.', 'image' => $n['image'] ?? null];
+    // کسِ دیگری همین چند لحظه پیش وارد شده بود؟ (بدونِ درخواست به سامانه؛ بررسیِ وضعیت کپچا را عوض می‌کرد)
+    $sf = inq_dir() . '/status.json';
+    $sc = is_file($sf) ? json_decode((string)@file_get_contents($sf), true) : null;
+    if (!is_file(inq_dir() . '/captcha.json') && is_array($sc) && ($sc['s'] ?? '') === 'logged_in' && time() - intval($sc['t'] ?? 0) < 120) { inq_unlock($lk); return ['ok' => true]; }
+    try { $r = (new InqPasargad())->login($cr['user'], $cr['pass'], $text); } finally { inq_unlock($lk); }
+    if ($r['ok']) { @unlink(inq_dir() . '/captcha.json'); inq_px_mark('logged_in'); inq_touch_activity(); return ['ok' => true]; }
+    if (!empty($r['image'])) { inq_captcha_save($r['image']); $img = $r['image']; }
+    else { @unlink(inq_dir() . '/captcha.json'); $n = inq_captcha_get($pdo, true); $img = $n['image'] ?? null; }
+    return ['ok' => false, 'error' => $r['error'] ?? 'کد اشتباه بود؛ دوباره بزنید.', 'image' => $img];
 }
 
 // =====================================================================
@@ -707,6 +723,11 @@ function inq_execute($pdo, $id) {
     }
 
     if (!function_exists('curl_init')) return $finish('FAIL', 'افزونه‌ی curl روی سرور فعال نیست.');
+    $needCaptcha = function () use ($pdo, $id) {
+        $pdo->prepare("UPDATE inq_requests SET status = 'QUEUED', notice = 'برای ادامه، کدِ تصویرِ امنیتی (کپچا) لازم است.', timeline_json = NULL, started_at = NULL WHERE id = ?")->execute([$id]);
+        return ['ok' => false, 'need_captcha' => true];
+    };
+    if (inq_captcha_pending()) return $needCaptcha();
     $jobDir = inq_dir('jobs/' . $id);
     $tl = [];
     $lk = inq_lock(90, function () use ($pdo, $id) { $pdo->prepare("UPDATE inq_requests SET notice = 'در صف (استعلامِ دیگری در حالِ اجراست)…' WHERE id = ?")->execute([$id]); });
@@ -722,10 +743,10 @@ function inq_execute($pdo, $id) {
             $pdo->prepare("UPDATE inq_requests SET notice = ? WHERE id = ?")->execute(['گام ' . $s . ' از ' . $max . '…', $id]);
             $r = $px->runStep($s, $row['national_id'], $birth, (string)$row['postal']);
             if (($r['error'] ?? '') === 'need_login') {
-                // نشست بسته است: استعلام در صف می‌ماند تا کاربر کپچا را بزند و دوباره اجرا شود
-                inq_px_mark('logged_out');
-                $pdo->prepare("UPDATE inq_requests SET status = 'QUEUED', notice = 'برای ادامه، کدِ تصویرِ امنیتی (کپچا) لازم است.', timeline_json = NULL, started_at = NULL WHERE id = ?")->execute([$id]);
-                return ['ok' => false, 'need_captcha' => true];
+                // نشست بسته است: تازه‌ترین کپچا همین‌جا گرفته می‌شود و استعلام در صف می‌ماند تا کاربر کد را بزند
+                $c = $px->getCaptcha();
+                if (!empty($c['image'])) inq_captcha_save($c['image']); else inq_px_mark('logged_out');
+                return $needCaptcha();
             }
             if (!empty($r['ok'])) inq_touch_activity();
             inq_timeline_push($pdo, $id, $tl, ['step' => $s, 'status' => $r['status'] ?? ($r['ok'] ? 'ok' : 'bad'), 'title' => $r['title'] ?? ('گام ' . $s), 'detail' => $r['detail'] ?? '', 'time' => $r['time'] ?? '',

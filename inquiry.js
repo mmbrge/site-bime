@@ -85,7 +85,7 @@
             host.innerHTML = `<div class="inq-cap"><p class="text-[11.5px] font-black text-indigo-800 mb-2"><i class="fas fa-shield-halved ml-1"></i>برای انجامِ استعلام، کدِ تصویرِ امنیتی را وارد کنید</p>
                 <div class="flex flex-wrap items-center gap-2"><span class="inq-capimg">${image ? `<img src="${image}" alt="کد امنیتی">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'}</span>
                     <button type="button" class="inq-fbtn" data-c="re" title="تصویرِ دیگر"><i class="fas fa-rotate"></i></button>
-                    <input class="inq-in !mt-0" style="width:150px;font-size:15px;text-align:center" dir="ltr" inputmode="numeric" autocomplete="off" placeholder="کد تصویر">
+                    <input class="inq-in !mt-0" style="width:150px;font-size:15px;text-align:center" dir="ltr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="کد تصویر">
                     <button type="button" class="inq-go !py-2 !px-4 text-xs" data-c="ok">ادامه‌ی استعلام</button>
                     <button type="button" class="inq-fbtn" data-c="no" style="background:#f1f5f9;color:#475569">انصراف</button></div>
                 <p class="inq-caperr text-[11px] font-bold text-rose-600 mt-1.5">${esc(err || '')}</p></div>`;

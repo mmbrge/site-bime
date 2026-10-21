@@ -190,6 +190,7 @@ try {
         $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
         if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
         require_once __DIR__ . '/_inquiry.php';
+        inq_ensure($pdo);
         $cfg = order_inq_cfg($pdo);
         if (!$cfg[$action === 'inq_person' ? 'person' : 'postal']) { echo json_encode(['ok' => false, 'off' => true, 'error' => 'استعلام فعلاً در دسترس نیست؛ دستی وارد کنید.'], JSON_UNESCAPED_UNICODE); exit; }
         $lim = intval(inq_get_setting($pdo, 'inq_daily_limit'));
@@ -206,7 +207,31 @@ try {
         $kind = $action === 'inq_person' ? 'person' : 'postal';
         $c = inq_create($pdo, $kind, ['national_id' => $nid, 'birth' => $jsonBody['birth'] ?? '', 'postal' => $jsonBody['postal'] ?? ''], 'miniapp', ['PERSON', intval($person['id']), (string)$person['full_name']]);
         if (!$c['ok']) { echo json_encode($c, JSON_UNESCAPED_UNICODE); exit; }
+        // نسخه‌ی تازه‌ی مینی‌اپ (async): فقط ساخته می‌شود و اجرا با inq_exec + پیگیری با inq_poll (درخواستِ طولانی قطع نشود)
+        if (!empty($jsonBody['async']) && !$c['cached']) { echo json_encode(['ok' => true, 'pending' => true, 'id' => intval($c['id'])]); exit; }
         echo json_encode(order_inq_run($pdo, $c['id'], !$c['cached']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- اجرا و پیگیریِ یک استعلامِ مینی‌اپ ----
+    if ($action === 'inq_exec' || $action === 'inq_poll') {
+        $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        require_once __DIR__ . '/_inquiry.php';
+        $row = inq_get($pdo, intval($jsonBody['id'] ?? 0));
+        if (!$row || $row['user_type'] !== 'PERSON' || intval($row['user_id']) !== intval($person['id'])) { echo json_encode(['ok' => false, 'error' => 'استعلام پیدا نشد.']); exit; }
+        $done = in_array($row['status'], ['OK', 'WARN', 'FAIL'], true);
+        if ($action === 'inq_exec') {
+            if ($row['status'] === 'RUNNING') { echo json_encode(['ok' => true, 'pending' => true, 'id' => intval($row['id'])]); exit; }
+            echo json_encode(order_inq_run($pdo, intval($row['id']), !$done), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($done) { echo json_encode(order_inq_run($pdo, intval($row['id']), false) + ['done' => true], JSON_UNESCAPED_UNICODE); exit; }
+        if ($row['status'] === 'QUEUED' && inq_captcha_pending()) {
+            $cp = inq_captcha_get($pdo);
+            echo json_encode(['ok' => false, 'need_captcha' => true, 'id' => intval($row['id']), 'captcha' => $cp['image'] ?? null, 'error' => ''], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'pending' => true, 'id' => intval($row['id']), 'notice' => (string)$row['notice']], JSON_UNESCAPED_UNICODE);
         exit;
     }
     // ---- نشستِ سامانه‌ی استعلام بسته بود: کاربر کدِ تصویرِ امنیتی را می‌زند و همان استعلام ادامه پیدا می‌کند ----
@@ -219,6 +244,7 @@ try {
         if (!empty($jsonBody['refresh'])) { $cp = inq_captcha_get($pdo, true); echo json_encode(['ok' => false, 'need_captcha' => true, 'id' => intval($row['id']), 'captcha' => $cp['image'] ?? null, 'logged_in' => !empty($cp['logged_in'])]); exit; }
         $l = inq_captcha_login($pdo, $jsonBody['captcha'] ?? '');
         if (!$l['ok']) { echo json_encode(['ok' => false, 'need_captcha' => true, 'id' => intval($row['id']), 'captcha' => $l['image'] ?? null, 'error' => $l['error']], JSON_UNESCAPED_UNICODE); exit; }
+        if (!empty($jsonBody['async'])) { echo json_encode(['ok' => true, 'pending' => true, 'id' => intval($row['id'])]); exit; }
         echo json_encode(order_inq_run($pdo, intval($row['id']), true), JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -455,6 +481,7 @@ try {
 
     echo json_encode(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {
-    error_log('[webapp_order] ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'خطای سرور.']);
+    error_log('[webapp_order] ' . $action . ': ' . $e->getMessage() . ' @' . basename($e->getFile()) . ':' . $e->getLine());
+    // استعلام‌ها نباید ثبتِ درخواست را متوقف کنند: پیامِ روشن تا کاربر دستی ادامه دهد
+    echo json_encode(['ok' => false, 'error' => strpos((string)$action, 'inq_') === 0 ? 'استعلام انجام نشد (خطای داخلی)؛ اطلاعات را دستی وارد کنید.' : 'خطای سرور.'], JSON_UNESCAPED_UNICODE);
 }
