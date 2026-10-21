@@ -183,6 +183,8 @@ function issuance_nav($active, $isLiaison) {
     foreach ($items as [$tab, $ic, $label, $badge]) {
         $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
     }
+    // تنظیمِ کلیِ «فیش‌های بیمه‌نامه وقتی با اقساطِ قرارداد فرق داشت» (کارکنان و شرکتی)
+    if (!$isLiaison) $h .= '<button type="button" onclick="window.FinContracts && FinContracts.slipSettings()" title="وقتی فیش‌های داخلِ بیمه‌نامه با اقساطِ قرارداد فرق داشت"><i class="fas fa-receipt"></i>تنظیمِ فیش‌ها</button>';
     return $h . '</div></div>';
 }
 // نوارِ زبانه‌های «مرکز مالی»: همه‌ی بخش‌های مالی در یک جا
@@ -3788,6 +3790,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <p class="text-[10px] text-slate-400">در ثبتِ دستی، ورود از نامه و ردیف‌هایی که شرکت در پنلش می‌سازد، تعهد/پوششِ خالی از همین پر می‌شود؛ هر درخواست و هر ردیف را هم می‌شود جدا عوض کرد.</p>
                         </div>
                     </div>
+                    <div class="float-input mt-3">
+                        <select id="cm-slip-mode">
+                            <option value="">پیش‌فرضِ کلیِ صدور (مرکز صدور ← فیش‌ها)</option>
+                            <option value="auto">طبقِ فیش‌های بیمه‌نامه (اگر قرارداد یکی بود)</option>
+                            <option value="site">اگر فیش فرق داشت: اقساط طبقِ قرارداد و فیش را سامانه بسازد</option>
+                            <option value="site_all">اگر فیش فرق داشت یا فیشی نبود: سامانه فیش بسازد</option>
+                        </select>
+                        <label>وقتی فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت</label>
+                    </div>
                     <p id="cm-contract-hint" class="text-[10.5px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 leading-6">نقد/اقساط، تعداد قسط و سررسیدِ اول از قراردادِ انتخاب‌شده می‌آید.</p>
                     <p class="text-[10.5px] text-slate-400 mt-1">قراردادها را از <a href="#" onclick="switchTab('fin-contracts');return false" class="text-indigo-600 font-bold">مالی ← قراردادهای پرداخت</a> تعریف کنید. برای هر بیمه‌نامه هم در پاپ‌آپِ صدور می‌شود روشِ دیگری گذاشت.</p>
                 </div>
@@ -4567,7 +4578,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </script>
     <script src="money-input.js?v=1"></script>
     <script src="finance-ui.js?v=5"></script>
-    <script src="finance-hub.js?v=8"></script>
+    <script src="finance-hub.js?v=9"></script>
     <script src="work-log.js?v=13"></script>
     <script src="import-archive.js?v=3"></script>
     <script src="renewals.js?v=3"></script>
@@ -4582,7 +4593,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=3"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
-    <script src="fin-contracts.js?v=3"></script>
+    <script src="fin-contracts.js?v=4"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -10082,6 +10093,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-portal-general').checked = true;
             document.getElementById('cm-portal-custom').checked = true;
             document.getElementById('cm-doc-read').checked = true;
+            document.getElementById('cm-slip-mode').value = '';
             cmSetDefaults(null, '');
         }
         // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ شرکت (فرم): coverages = شیء | 'none' | null
@@ -10143,6 +10155,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
             document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
             document.getElementById('cm-doc-read').checked = c.doc_read === undefined || c.doc_read === null || +c.doc_read === 1;
+            document.getElementById('cm-slip-mode').value = ['auto', 'site', 'site_all'].includes(c.slip_mode) ? c.slip_mode : '';
             cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
 
             const groupSel = document.getElementById('cm-group-select');
@@ -10171,6 +10184,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
                 portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
                 doc_read: document.getElementById('cm-doc-read').checked ? 1 : 0,
+                slip_mode: document.getElementById('cm-slip-mode').value,
                 default_coverages: cmDefaults.coverages === null ? '' : cmDefaults.coverages,
                 default_liability: cmDefaults.liability || '',
                 economic_code: document.getElementById('cm-economic-code').value.trim(),

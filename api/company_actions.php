@@ -1172,6 +1172,8 @@ try {
         if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
         $portalOpts = [];
         foreach (['portal_general_docs', 'portal_custom_docs', 'doc_read'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
+        // فیش‌های بیمه‌نامه وقتی با اقساطِ قرارداد فرق داشت: خالی = تنظیمِ کلیِ صدور
+        if (array_key_exists('slip_mode', $data)) $portalOpts['slip_mode'] = in_array((string)$data['slip_mode'], ['auto', 'site', 'site_all'], true) ? (string)$data['slip_mode'] : null;
         // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ درخواست‌های این شرکت (فقط اگر فرم فرستاده باشد)
         $defGiven = array_key_exists('default_coverages', $data) || array_key_exists('default_liability', $data);
         $defVals = $defGiven ? company_defaults_from_input($data) : null;

@@ -313,6 +313,7 @@ function perm_api_map() {
         ]],
         'fin_plan_actions' => ['pages' => ['fin-settings'], 'elevate' => true, 'actions' => [
             'contracts' => 'any', 'contract_save' => 'fin-contracts:edit|fin-settings:edit', 'contract_delete' => 'fin-contracts:edit|fin-settings:edit', 'personnel_contract_save' => 'fin-contracts:edit|fin-settings:edit',
+            'slip_modes' => 'any', 'slip_modes_save' => 'issue-queue:edit|fin-contracts:edit|fin-settings:edit',
             'plan_get' => 'any', 'plan_save' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
             'plan_reset' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
             'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',

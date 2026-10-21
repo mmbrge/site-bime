@@ -1503,6 +1503,8 @@ function company_generate_installments($pdo, $plateId) {
     $built = fin_plan_build(money_to_int($plate['total_premium']), $issueJ, $plan, $plate['receipts_json'] ?? null,
                             fin_detected_contract_key($plate['ocr_extracted_data'] ?? null, $plate['policy_number'] ?? ''));
     fin_ensure_schema($pdo);
+    require_once __DIR__ . '/_site_slip.php';
+    site_slip_cleanup($pdo, 'C', $plateId);   // فیش‌های قبلیِ خودِ سامانه (فیش‌های بیمه‌نامه دست نمی‌خورند)
     $pdo->prepare("DELETE FROM company_installments WHERE plate_id = ?")->execute([$plateId]);
     $ins = $pdo->prepare("INSERT INTO company_installments (plate_id, inst_number, amount, due_jalali, due_date, tracking_code, slip_json, slip_file) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($built['rows'] as $r) {
@@ -1510,6 +1512,7 @@ function company_generate_installments($pdo, $plateId) {
                        !empty($r['slip']) ? json_encode($r['slip'], JSON_UNESCAPED_UNICODE) : null, $r['slip_file'] ?? null]);
     }
     try { $pdo->prepare("UPDATE company_request_plates SET pay_check_json = ? WHERE id = ?")->execute([json_encode($built['check'], JSON_UNESCAPED_UNICODE), $plateId]); } catch (Throwable $e) {}
+    if (($built['check']['applied'] ?? '') === 'site') site_slip_make($pdo, 'C', $plateId, fin_plan_label($plan));
     return ['ok' => true, 'count' => count($built['rows']), 'check' => $built['check']];
 }
 

@@ -94,7 +94,8 @@ function fp_state($pdo, $kind, $t) {
             'check' => $preview ? $preview['check'] : (json_decode((string)($t['pay_check_json'] ?? ''), true) ?: null), 'stale' => $stale,
             'any_touched' => (bool)array_filter($insts, fn($r) => $r['touched']),
             'preview' => $preview ? $preview['rows'] : [], 'installments' => $insts, 'premium' => $premium,
-            'company_name' => $t['company_name'] ?? null, 'contracts' => array_map('fp_contract_out', fin_contracts($pdo, true))];
+            'company_name' => $t['company_name'] ?? null, 'contracts' => array_map('fp_contract_out', fin_contracts($pdo, true)),
+            'slip_default' => ['mode' => $def['prefer'] ?? 'auto', 'src' => $def['prefer_src'] ?? 'global', 'fa' => fin_slip_mode_fa($def['prefer'] ?? 'auto')]];
 }
 
 // ---------------- قراردادها ----------------
@@ -105,6 +106,20 @@ if ($action === 'contracts') {
          'personnel_contract_id' => intval($s['personnel_contract_id'] ?? 0), 'company_default_contract_id' => intval($s['company_default_contract_id'] ?? 0),
          'companies_without' => intval($pdo->query("SELECT COUNT(*) FROM companies WHERE contract_id IS NULL")->fetchColumn()), 'personnel_use_contract' => ($s['personnel_use_contract'] ?? '1') === '1',
          'personnel_settings' => ['count' => intval($s['default_installments'] ?? 9), 'method' => $s['installment_method'] ?? 'mamut'], 'can_edit' => $isAdmin]);
+}
+// «وقتی فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت» — تنظیمِ کلیِ صدورِ کارکنان و شرکتی (شرکت‌ها جدا هم در فرمِ شرکت)
+if ($action === 'slip_modes') {
+    $over = [];
+    try { $over = $pdo->query("SELECT slip_mode, COUNT(*) n FROM companies WHERE slip_mode IN ('auto','site','site_all') GROUP BY slip_mode")->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) {}
+    fpo(['ok' => true, 'P' => fin_slip_mode_global($pdo, 'P'), 'C' => fin_slip_mode_global($pdo, 'C'), 'company_overrides' => array_map('intval', $over),
+         'modes' => array_map(fn($m) => ['k' => $m, 'fa' => fin_slip_mode_fa($m)], FIN_SLIP_MODES), 'can_edit' => $isAdmin]);
+}
+if ($action === 'slip_modes_save') {
+    if (!$isAdmin) fpo(['ok' => false, 'error' => 'این تنظیم فقط کارِ مدیر است.']);
+    foreach (['P' => 'slip_mode_p', 'C' => 'slip_mode_c'] as $k => $key) {
+        if (isset($data[$k]) && in_array((string)$data[$k], FIN_SLIP_MODES, true)) fin_set($pdo, $key, (string)$data[$k]);
+    }
+    fpo(['ok' => true]);
 }
 if (in_array($action, ['contract_save', 'contract_delete', 'personnel_contract_save', 'company_default_save'], true) && !$isAdmin) fpo(['ok' => false, 'error' => 'تعریفِ قرارداد فقط کارِ مدیر کل است.']);
 if ($action === 'contract_save') {
@@ -196,7 +211,7 @@ if (in_array($action, ['plan_get', 'plan_save', 'plan_reset', 'plan_regen'], tru
     } else {
         $p = (array)($data['plan'] ?? []);
         $mode = in_array($p['mode'] ?? '', ['default', 'contract', 'custom'], true) ? $p['mode'] : 'default';
-        $prefer = in_array($p['prefer'] ?? '', ['slips', 'formula'], true) ? $p['prefer'] : 'auto';
+        $prefer = in_array($p['prefer'] ?? '', FIN_PREFERS, true) ? $p['prefer'] : 'auto';
         $j = ['mode' => $mode, 'prefer' => $prefer];
         if ($mode === 'contract') {
             if (!fin_contract($pdo, intval($p['contract_id'] ?? 0))) fpo(['ok' => false, 'error' => 'قرارداد را انتخاب کنید.']);

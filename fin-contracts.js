@@ -66,7 +66,8 @@
         <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
             <div class="flex items-center gap-3"><span class="w-11 h-11 rounded-2xl text-white flex items-center justify-center shadow-lg" style="background:linear-gradient(135deg,#4338ca,#7c3aed)"><i class="fas fa-file-contract"></i></span>
             <div><h1 class="text-lg font-black text-slate-800">قراردادهای پرداخت</h1><p class="text-[11px] font-bold text-slate-400">هر شرکت طبقِ یکی از این قراردادها پرداخت می‌کند؛ اقساطِ هر بیمه‌نامه از روی قراردادش ساخته و با فیش‌های بیمه‌نامه مغایرت‌گیری می‌شود.</p></div></div>
-            ${d.can_edit ? '<button class="fc-btn p" data-new><i class="fas fa-plus"></i> قراردادِ جدید</button>' : ''}
+            <div class="flex gap-2"><button class="fc-btn s" data-slipset><i class="fas fa-receipt"></i> فیش‌های بیمه‌نامه</button>
+            ${d.can_edit ? '<button class="fc-btn p" data-new><i class="fas fa-plus"></i> قراردادِ جدید</button>' : ''}</div>
         </div>
         <div class="fc-card mb-4" style="background:linear-gradient(135deg,#eef2ff,#fff)">
             <div class="flex items-center gap-2 flex-wrap mb-2"><i class="fas fa-users text-indigo-500"></i><b class="text-sm text-slate-800">کارکنان (کسر از حقوق)</b>
@@ -102,6 +103,7 @@
         </div>`;
         const nb = root.querySelector('[data-new]');
         if (nb) nb.onclick = () => contractForm(null);
+        root.querySelector('[data-slipset]').onclick = () => slipSettings();
         root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => contractForm(d.contracts.find(c => c.id === Number(b.dataset.edit))));
         root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
             if (window.uiConfirm && !(await uiConfirm('حذفِ قرارداد', 'این قرارداد حذف شود؟', {danger: true}))) return;
@@ -173,6 +175,7 @@
     const STATUS = {
         ok: ['ok', 'fa-circle-check'], no_slips: ['info', 'fa-circle-info'], contract_mismatch: ['bad', 'fa-triangle-exclamation'],
         diff_slips_applied: ['warn', 'fa-scale-unbalanced'], diff_formula_applied: ['warn', 'fa-scale-unbalanced'],
+        diff_site_applied: ['info', 'fa-wand-magic-sparkles'], no_slips_site: ['info', 'fa-wand-magic-sparkles'],
     };
     async function mountPlan(el) {
         css();
@@ -204,6 +207,7 @@
         const cu = d.custom || {};
         const mode = cu.mode || 'default';
         const prefer = cu.prefer || 'auto';
+        const sd = d.slip_default || {};
         const ck = d.check;
         const st = ck ? (STATUS[ck.status] || ['info', 'fa-circle-info']) : null;
         const diffs = ck && ck.diffs ? ck.diffs : [];
@@ -238,7 +242,8 @@
                     <div><label class="fc-lbl">+ روز</label><input class="fc-in" type="number" min="0" data-c="first_d" value="${cu.first_d ?? d.default.first_d}"></div>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap"><span class="text-[10.5px] font-bold text-slate-500">وقتی فیش‌ها با محاسبه فرق دارند:</span>
-                    <div class="fc-seg" data-prefer>${[['auto', 'خودکار (فیش، اگر قرارداد یکی بود)'], ['slips', 'همیشه طبقِ فیش'], ['formula', 'همیشه طبقِ فرمول']].map(([k, t]) => `<button type="button" data-p="${k}" class="${prefer === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+                    <div class="fc-seg" data-prefer>${[['auto', 'پیش‌فرض: ' + (sd.fa || 'طبقِ فیش‌های بیمه‌نامه') + (sd.src === 'company' ? ' (تنظیمِ شرکت)' : ' (تنظیمِ کلیِ صدور)')], ['slips', 'همیشه طبقِ فیش'], ['formula', 'همیشه طبقِ فرمول'],
+                        ['site', 'فرق داشت: فیش با سامانه'], ['site_all', 'فرق داشت یا فیش نبود: فیش با سامانه']].map(([k, t]) => `<button type="button" data-p="${k}" class="${prefer === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
                 <div class="flex gap-2"><button class="fc-btn p" data-save><i class="fas fa-rotate"></i> ${d.issued ? 'ذخیره و ساختِ دوباره‌ی اقساط' : 'ذخیره (هنگامِ صدور اعمال می‌شود)'}</button>
                     ${d.custom ? '<button class="fc-btn s" data-reset><i class="fas fa-rotate-left"></i> برگشت به پیش‌فرض</button>' : ''}</div>
             </div></details>
@@ -246,7 +251,7 @@
             ${rows.map(r => { const s = r.slip || {}; return `<tr><td>${fa(r.n)}${r.touched ? ' <i class="fas fa-lock text-slate-300" title="دریافت/تسویه ثبت شده"></i>' : ''}</td><td class="whitespace-nowrap">${fa(r.due)}</td><td class="whitespace-nowrap font-bold">${money(r.amount)}</td>${showPay ? payCells(r) : ''}
                 <td>${esc(s.kind || '—')}</td><td class="font-mono" dir="ltr" style="text-align:right">${fa(s.shenase || s.fish || '—')}</td>
                 <td class="text-[10.5px]">${s.account ? '<span dir="ltr">' + fa(s.account) + '</span><br>' : ''}<span class="text-slate-500">${esc(s.bank || '')}</span></td>
-                <td>${r.slip_file ? `<a class="fc-btn s" style="padding:3px 8px" target="_blank" href="${fileHref(r.slip_file)}"><i class="fas fa-file-invoice text-rose-500"></i> فیش</a>` : '—'}</td></tr>`; }).join('')}
+                <td>${r.slip_file ? `<a class="fc-btn s" style="padding:3px 8px" target="_blank" href="${fileHref(r.slip_file)}" title="${s.site ? 'ساخته‌ی سامانه طبقِ اقساطِ قرارداد' : 'از فایلِ بیمه‌نامه'}"><i class="fas ${s.site ? 'fa-wand-magic-sparkles text-indigo-500' : 'fa-file-invoice text-rose-500'}"></i> ${s.site ? 'فیشِ سامانه' : 'فیش'}</a>` : (s.site ? '<span class="text-[10px] text-indigo-500" title="بعد از صدور ساخته می‌شود">فیشِ سامانه</span>' : '—')}</td></tr>`; }).join('')}
             </tbody><tfoot><tr><td colspan="2" class="font-black">جمع (${fa(rows.length)} قسط)</td><td class="font-black whitespace-nowrap">${money(rows.reduce((a, r) => a + Number(r.amount || 0), 0))}</td><td colspan="${showPay ? 6 : 4}" class="text-[10.5px] text-slate-400">${d.issued ? (showPay ? payFoot(rows) : '') : 'پیش‌نمایش؛ اقساطِ واقعی بعد از صدور ساخته می‌شود.'}</td></tr></tfoot></table></div>`
             : `<p class="text-[11px] text-slate-400">${d.premium ? '' : 'حق بیمه هنوز معلوم نیست؛ اقساط بعد از صدور ساخته می‌شود.'}</p>`}`;
         let selMode = mode, selPrefer = prefer;
@@ -274,6 +279,48 @@
             else save({mode: 'default', prefer: q});
         });
     }
+    // =================================================================
+    //  تنظیمِ کلیِ صدور: «وقتی فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت» — کارکنان و شرکتی جدا
+    //  (هر شرکت در فرمِ شرکت می‌تواند تنظیمِ خودش را داشته باشد)
+    // =================================================================
+    async function slipSettings() {
+        css();
+        const d = await api('slip_modes');
+        if (!d.ok) return toast(d.error, 'error');
+        const HINT = {auto: 'اگر شماره‌ی قراردادِ بیمه‌نامه با قرارداد یکی بود، مبلغ و سررسیدِ اقساط طبقِ فیش‌های داخلِ فایلِ بیمه‌نامه ثبت می‌شود (روشِ فعلی).',
+            site: 'اگر فیش‌های بیمه‌نامه (تعداد، مبلغ، سررسید یا شماره‌ی قرارداد) با اقساطِ قرارداد فرق داشت، اقساط طبقِ قرارداد ثبت می‌شود و سامانه برای هر قسط فیشِ PDF می‌سازد (حساب، بانک و پرداخت‌کننده از فیش‌های بیمه‌نامه، اگر بود). اگر یکی بود، همان فیش‌های بیمه‌نامه.',
+            site_all: 'مثلِ گزینه‌ی قبل؛ و اگر در فایلِ بیمه‌نامه هیچ فیشی نبود هم سامانه طبقِ قرارداد برای هر قسط فیش می‌سازد.'};
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+        const sel = {P: d.P, C: d.C};
+        const ovr = d.company_overrides || {};
+        const ovN = Object.values(ovr).reduce((a, b) => a + Number(b || 0), 0);
+        const draw = () => {
+            ov.innerHTML = `<div class="fc-card" style="width:min(640px,100%);max-height:92vh;overflow:auto" dir="rtl">
+            <div class="flex items-center justify-between mb-2"><b class="text-base text-slate-800"><i class="fas fa-receipt text-indigo-500 ml-1"></i>فیش‌های بیمه‌نامه در صدور</b><button class="fc-btn s" data-x>✕</button></div>
+            <p class="text-[11px] text-slate-500 mb-3 leading-6">وقتی فیش‌های داخلِ فایلِ بیمه‌نامه با اقساطی که از قرارداد حساب می‌شود فرق داشت، اقساط و فیش‌ها چطور ثبت شود؟</p>
+            ${[['P', 'fa-users', 'کارکنان'], ['C', 'fa-building', 'شرکتی']].map(([k, ic, t]) => `<div class="fc-card mb-3" style="background:linear-gradient(135deg,${k === 'P' ? '#eef2ff' : '#ecfeff'},#fff)">
+                <b class="text-sm text-slate-800 block mb-2"><i class="fas ${ic} ml-1 ${k === 'P' ? 'text-indigo-500' : 'text-cyan-600'}"></i>صدورِ ${t}</b>
+                <div class="fc-seg" data-k="${k}">${d.modes.map(m => `<button type="button" data-m="${m.k}" class="${sel[k] === m.k ? 'on' : ''}" ${d.can_edit ? '' : 'disabled'}>${esc(m.fa)}</button>`).join('')}</div>
+                <p class="text-[10.5px] text-slate-500 mt-2 leading-6">${esc(HINT[sel[k]] || '')}</p>
+                ${k === 'C' && ovN ? `<p class="text-[10.5px] text-amber-700 mt-1"><i class="fas fa-circle-info ml-1"></i>${fa(ovN)} شرکت در فرمِ شرکت تنظیمِ اختصاصی دارند و طبقِ همان عمل می‌شود.</p>` : ''}
+            </div>`).join('')}
+            <p class="fc-alert info text-[10.5px]"><i class="fas fa-shield-halved ml-1"></i>روی بیمه‌نامه‌هایی که از این به بعد صادر می‌شوند (یا اقساطشان در پاپ‌آپِ صدور دوباره ساخته شود) اعمال می‌شود؛ اقساط و دریافتی‌های فعلی دست نمی‌خورند و فیش‌های اصلیِ بیمه‌نامه هم حذف نمی‌شوند. برای یک بیمه‌نامه هم در «مالی و روشِ پرداخت» می‌شود روشِ دیگری گذاشت.</p>
+            <div class="flex gap-2 mt-3">${d.can_edit ? '<button class="fc-btn p" data-save><i class="fas fa-check"></i> ذخیره</button>' : ''}<button class="fc-btn s" data-x>بستن</button></div></div>`;
+            ov.querySelectorAll('[data-x]').forEach(b => b.onclick = () => ov.remove());
+            ov.querySelectorAll('[data-k] [data-m]').forEach(b => b.onclick = () => { sel[b.closest('[data-k]').dataset.k] = b.dataset.m; draw(); });
+            const sv = ov.querySelector('[data-save]');
+            if (sv) sv.onclick = async () => {
+                const r = await api('slip_modes_save', sel);
+                if (!r.ok) return toast(r.error, 'error');
+                toast('تنظیمِ فیش‌ها ذخیره شد.', 'success');
+                ov.remove();
+            };
+        };
+        draw();
+        document.body.appendChild(ov);
+    }
+
     // هر عنصرِ data-finplan که به صفحه اضافه شود خودکار پر می‌شود
     function scan(root) {
         (root.querySelectorAll ? root : document).querySelectorAll('[data-finplan]:not([data-fp-on])').forEach(el => { el.dataset.fpOn = '1'; mountPlan(el); });
@@ -282,6 +329,6 @@
     const start = () => { mo.observe(document.body, {childList: true, subtree: true}); scan(document); };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 
-    window.FinContracts = {render: renderPage, api};
+    window.FinContracts = {render: renderPage, api, slipSettings};
     window.FinPlan = {mount: mountPlan};
 })();

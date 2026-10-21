@@ -91,7 +91,7 @@
         const f = SLIP_F.filter(([k]) => rc[k] !== undefined && rc[k] !== null && rc[k] !== '');
         return `<div class="rounded-xl border-2 border-sky-200 bg-sky-50/70 p-3 space-y-2">
             <div class="flex flex-wrap items-center gap-2">
-                <b class="text-[12px] text-sky-900"><i class="fas fa-receipt ml-1"></i>${esc(title || 'فیش پرداختیِ این قسط')}</b>
+                <b class="text-[12px] text-sky-900"><i class="fas fa-receipt ml-1"></i>${esc(title || 'فیش پرداختیِ این قسط')}</b>${rc.site ? '<span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5" title="فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت؛ این فیش را سامانه ساخته"><i class="fas fa-wand-magic-sparkles ml-1"></i>ساختِ سامانه</span>' : ''}
                 <span class="mr-auto flex flex-wrap gap-1.5">
                     ${f.length ? `<button type="button" class="text-[10.5px] font-bold bg-white hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-lg px-2 py-1" data-copy="${esc(slipText(rc))}"><i class="fas fa-copy ml-1"></i>کپیِ همه</button>` : ''}
                     ${rc.file ? `<button type="button" class="text-[10.5px] font-bold text-white rounded-lg px-2 py-1" style="background:#0284c7" data-preview="${esc(rc.file)}" data-ptitle="${esc(title || 'فیش پرداختی')}"><i class="fas fa-eye ml-1"></i>مشاهده‌ی فیش</button>` : ''}
@@ -270,7 +270,7 @@
                     <td class="p-2.5"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${st[1]}"><i class="fas ${st[2]} ml-0.5"></i>${st[0]}</span>${r.is_invoiced ? '<p class="text-[9.5px] text-blue-600 mt-0.5">دارای صورتحساب</p>' : ''}</td>
                     <td class="p-2.5"><div class="flex gap-1">
                         <button class="fh-act w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600" data-a="info" data-k="${k}" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
-                        ${r.receipt && r.receipt.file ? `<button type="button" data-preview="${esc(r.receipt.file)}" data-ptitle="فیشِ قسطِ ${fa(r.inst_number)} — ${esc(r.insured)}" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold" title="فیش پرداختیِ این قسط (از فایلِ بیمه‌نامه)"><i class="fas fa-receipt"></i>فیش</button>` : ''}
+                        ${r.receipt && r.receipt.file ? `<button type="button" data-preview="${esc(r.receipt.file)}" data-ptitle="فیشِ قسطِ ${fa(r.inst_number)} — ${esc(r.insured)}" class="h-7 px-2 inline-flex items-center gap-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10.5px] font-bold" title="فیش پرداختیِ این قسط (${r.receipt.site ? 'ساختِ سامانه طبقِ قرارداد' : 'از فایلِ بیمه‌نامه'})"><i class="fas ${r.receipt.site ? 'fa-wand-magic-sparkles' : 'fa-receipt'}"></i>فیش</button>` : ''}
                         ${r.remaining > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600" data-a="in" data-k="${k}" title="ثبت دریافت"><i class="fas fa-hand-holding-dollar"></i></button>` : ''}
                         ${r.insurer_payable > 0 ? `<button class="fh-act w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700" data-a="out" data-k="${k}" title="پرداخت به بیمه‌گر"><i class="fas fa-building-columns"></i></button>` : ''}
                     </div></td>

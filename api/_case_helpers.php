@@ -2116,7 +2116,9 @@ function companies_extra_ensure($pdo) {
               // پنلِ شرکت: «مدارکِ کلی» (بدونِ ردیفِ مشخص) مجاز است؟ «مدرکِ دیگر» با نامِ دلخواه برای هر خودرو مجاز است؟
               'portal_general_docs' => 'TINYINT(1) NOT NULL DEFAULT 1', 'portal_custom_docs' => 'TINYINT(1) NOT NULL DEFAULT 1',
               // مدارکِ این شرکت با الگوریتمِ خودمان خوانده شود (۱) یا فقط بارگذاری شود (۰)
-              'doc_read' => 'TINYINT(1) NOT NULL DEFAULT 1'] as $c => $def) {
+              'doc_read' => 'TINYINT(1) NOT NULL DEFAULT 1',
+              // وقتی فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت: خالی = تنظیمِ کلیِ صدور | auto | site | site_all
+              'slip_mode' => 'VARCHAR(10) NULL'] as $c => $def) {
         try {
             if ($pdo->query("SHOW COLUMNS FROM companies LIKE '$c'")->fetch()) continue;
             if ($pdo->inTransaction()) { $ok = false; continue; }
