@@ -13,7 +13,7 @@
 const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
-                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60'];
+                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';
@@ -634,6 +634,78 @@ function inq_validate($kind, array $in) {
     return ['ok' => true, 'national_id' => $nid, 'birth' => $birth, 'postal' => $kind === 'person' ? null : $postal];
 }
 
+// =====================================================================
+//  سقف‌های روزانه: هر کد ملی (همه‌ی کاربران روی هم) و هر کاربرِ پنل (پیش‌فرضِ کلی یا عددِ خودِ کاربر)
+//  نتیجه‌ی ذخیره‌شده (کش) حساب نمی‌شود چون سامانه صدا زده نمی‌شود. ۰ = بدونِ سقف. مدیر کل سقف ندارد.
+// =====================================================================
+function inq_limits_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    foreach (['users', 'company_portal_users'] as $t) foreach (['inq_daily_limit' => 'SMALLINT NULL', 'inq_reset_at' => 'DATETIME NULL'] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def"); }
+        catch (Throwable $e) { error_log('[inq_limits_ensure] ' . $e->getMessage()); }
+    }
+    try { if (!$pdo->query("SHOW INDEX FROM inq_requests WHERE Key_name = 'idx_user'")->fetch()) $pdo->exec("ALTER TABLE inq_requests ADD INDEX idx_user (user_type, user_id, created_at)"); }
+    catch (Throwable $e) { error_log('[inq_limits_ensure idx] ' . $e->getMessage()); }
+}
+function inq_limit_value($v) {
+    $v = is_string($v) ? inq_digits($v) : $v;
+    if ($v === null || $v === '' || !is_numeric($v)) return null;
+    return max(0, min(10000, (int)$v));
+}
+function inq_user_table($type) { return $type === 'COMPANY' ? 'company_portal_users' : ($type === 'STAFF' ? 'users' : null); }
+// سقف و مصرفِ امروزِ یک کاربرِ پنل => [limit (مؤثر؛ ۰ = بدونِ سقف), own (عددِ خودِ کاربر یا null), default, used, admin]
+function inq_user_limit_info($pdo, $type, $id) {
+    inq_ensure($pdo); inq_limits_ensure($pdo);
+    $def = (int)inq_limit_value(inq_get_setting($pdo, 'inq_user_daily_limit'));
+    $o = ['limit' => 0, 'own' => null, 'default' => $def, 'used' => 0, 'admin' => false];
+    $t = inq_user_table($type);
+    if (!$t || !$id) return $o;
+    try {
+        $st = $pdo->prepare("SELECT inq_daily_limit, inq_reset_at" . ($t === 'users' ? ', role' : '') . " FROM `$t` WHERE id = ?");
+        $st->execute([intval($id)]);
+        $u = $st->fetch() ?: [];
+    } catch (Throwable $e) { $u = []; }
+    $o['admin'] = ($u['role'] ?? '') === 'ADMIN';
+    $o['own'] = inq_limit_value($u['inq_daily_limit'] ?? null);
+    $o['limit'] = $o['admin'] ? 0 : ($o['own'] !== null ? $o['own'] : $def);
+    try {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE user_type = ? AND user_id = ? AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
+        $st->execute([$type, intval($id), !empty($u['inq_reset_at']) ? $u['inq_reset_at'] : '1970-01-01 00:00:00']);
+        $o['used'] = intval($st->fetchColumn());
+    } catch (Throwable $e) {}
+    return $o;
+}
+function inq_user_set_limit($pdo, $type, $id, $v) {
+    inq_limits_ensure($pdo);
+    if (!($t = inq_user_table($type))) return;
+    try { $pdo->prepare("UPDATE `$t` SET inq_daily_limit = ? WHERE id = ?")->execute([inq_limit_value($v), intval($id)]); } catch (Throwable $e) {}
+}
+// «صفر کردنِ شمارشِ امروز»: استعلام‌های قبل از این لحظه برای این کاربر حساب نمی‌شوند
+function inq_user_reset($pdo, $type, $id) {
+    inq_limits_ensure($pdo);
+    if (!($t = inq_user_table($type))) return;
+    try { $pdo->prepare("UPDATE `$t` SET inq_reset_at = NOW() WHERE id = ?")->execute([intval($id)]); } catch (Throwable $e) {}
+}
+// مصرفِ امروزِ همه‌ی کاربرانِ یک نوع (برای فهرستِ کاربران) => [id => n]
+function inq_users_used_today($pdo, $type) {
+    if (!($t = inq_user_table($type))) return [];
+    inq_ensure($pdo); inq_limits_ensure($pdo);
+    try {
+        $st = $pdo->prepare("SELECT u.id, (SELECT COUNT(*) FROM inq_requests r WHERE r.user_type = ? AND r.user_id = u.id AND r.cached_from IS NULL
+                                                  AND r.created_at >= CURDATE() AND (u.inq_reset_at IS NULL OR r.created_at > u.inq_reset_at)) AS n
+                               FROM `$t` u WHERE EXISTS (SELECT 1 FROM inq_requests r2 WHERE r2.user_type = ? AND r2.user_id = u.id AND r2.created_at >= CURDATE())");
+        $st->execute([$type, $type]);
+        return array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
+    } catch (Throwable $e) { return []; }
+}
+function inq_nid_used_today($pdo, $nid) {
+    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE national_id = ? AND kind <> 'legal' AND cached_from IS NULL AND created_at >= CURDATE()");
+    $st->execute([$nid]);
+    return intval($st->fetchColumn());
+}
+
 // نتیجه‌ی تازه‌ی همین استعلام (تا چند روز) برای استفاده‌ی دوباره
 function inq_find_cached($pdo, $kind, $nid, $birth, $postal) {
     $days = max(0, intval(inq_get_setting($pdo, 'inq_cache_days')));
@@ -665,10 +737,26 @@ function inq_create($pdo, $kind, array $in, $source = 'panel', array $actor = nu
     if (!$v['ok']) return $v;
     $actor = $actor ?: inq_actor_from_session();
     $now = date('Y-m-d H:i:s');
+    $c = $useCache ? inq_find_cached($pdo, $kind, $v['national_id'], $v['birth'], $v['postal']) : null;
+    if (!$c) {
+        // همین استعلام قبلاً ساخته شده و منتظرِ کپچا مانده (کاربر انصراف داده بود): همان دوباره استفاده می‌شود و سقف را دوباره مصرف نمی‌کند
+        if (!$batchId) {
+            $st = $pdo->prepare("SELECT id FROM inq_requests WHERE status = 'QUEUED' AND batch_id IS NULL AND kind = ? AND national_id = ? AND COALESCE(birth, '') = ? AND COALESCE(postal, '') = ?
+                                   AND user_type = ? AND COALESCE(user_id, 0) = ? AND created_at >= CURDATE() ORDER BY id DESC LIMIT 1");
+            $st->execute([$kind, $v['national_id'], (string)$v['birth'], (string)$v['postal'], $actor[0], intval($actor[1])]);
+            if (($old = $st->fetchColumn())) return ['ok' => true, 'id' => intval($old), 'cached' => false];
+        }
+        if ($kind !== 'legal' && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_nid_daily_limit'))) > 0 && inq_nid_used_today($pdo, $v['national_id']) >= $lim)
+            return ['ok' => false, 'limit' => 'nid', 'error' => 'سقفِ استعلامِ امروزِ این کد ملی (' . $lim . ' بار) پر شده است؛ فردا دوباره امتحان کنید یا اطلاعات را دستی وارد کنید.', 'field' => 'national_id'];
+        if (in_array($actor[0], ['STAFF', 'COMPANY'], true)) {
+            $li = inq_user_limit_info($pdo, $actor[0], $actor[1]);
+            if ($li['limit'] > 0 && $li['used'] >= $li['limit'])
+                return ['ok' => false, 'limit' => 'user', 'error' => 'سقفِ استعلامِ امروزِ شما (' . $li['limit'] . ' استعلام) پر شده است؛ برای افزایش به مدیر کل اطلاع دهید.'];
+        }
+    }
     $pdo->prepare("INSERT INTO inq_requests (kind, national_id, birth, postal, status, source, batch_id, row_no, user_type, user_id, user_name, created_at) VALUES (?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$kind, $v['national_id'], $v['birth'], $v['postal'], $source, $batchId, $rowNo, $actor[0], $actor[1] ?: null, mb_substr((string)$actor[2], 0, 190), $now]);
     $id = intval($pdo->lastInsertId());
-    $c = $useCache ? inq_find_cached($pdo, $kind, $v['national_id'], $v['birth'], $v['postal']) : null;
     if ($c) {
         $p = isset($c['person']) ? $c['person'] : $c; $z = isset($c['postal']) ? $c['postal'] : $c;
         $res = json_decode((string)($p['result_json'] ?? ''), true) ?: [];

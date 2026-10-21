@@ -618,6 +618,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                              background: linear-gradient(135deg, var(--c), color-mix(in srgb, var(--c) 60%, #7c3aed)); box-shadow: 0 8px 16px -8px var(--c); }
         .notif-card .nc-t { font-weight: 900; font-size: 13.5px; color: #0f172a; margin-bottom: 2px; }
         .notif-card .nc-b { font-size: 12.5px; color: #475569; line-height: 1.8; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+        .su-inq { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 999px; padding: 2px 8px; }
+        .su-inq.full { color: #be123c; background: #fff1f2; border-color: #fecdd3; }
         .su-dev { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 999px; padding: 2px 8px; }
         .su-dev:hover { background: #ccfbf1; }
         .su-dev.over { color: #be123c; background: #fff1f2; border-color: #fecdd3; }
@@ -3844,6 +3846,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <label class="uf-f"><span>شماره موبایل <em>(برای ورود با کدِ بله)</em></span><input id="uf-mobile" dir="ltr" inputmode="numeric" placeholder="09xxxxxxxxx"></label>
                             <label class="uf-f" id="uf-personnel-box"><span>کد پرسنلی <em>(اختیاری)</em></span><input id="uf-personnel" dir="ltr"></label>
                             <label class="uf-f"><span>سقفِ حجمِ فایل در گفتگو <em>(مگابایت؛ خالی = پیش‌فرض ۲۰، ۰ = بسته)</em></span><input id="uf-chatmb" type="number" min="0" max="2048" dir="ltr" placeholder="۲۰"><em id="uf-chatmb-host" class="text-[10px] text-slate-400"></em></label>
+                            <label class="uf-f"><span>سقفِ استعلامِ روزانه <em>(خالی = پیش‌فرض، ۰ = بدونِ سقف)</em></span>
+                                <div class="uf-inline"><input id="uf-inq" type="number" min="0" max="10000" dir="ltr" placeholder="پیش‌فرض"><button type="button" id="uf-inq-reset" class="hidden" onclick="ufInqReset()" title="صفر کردنِ شمارشِ امروز"><i class="fas fa-rotate-left"></i></button></div>
+                                <em id="uf-inq-used" class="text-[10px] text-slate-400"></em></label>
                         </div>
                         <p id="uf-mobile-err" class="hidden text-[11px] text-red-600 font-bold mt-2"></p>
                     </section>
@@ -4487,7 +4492,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="inquiry.js?v=4"></script>
+    <script src="inquiry.js?v=5"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -10081,10 +10086,37 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             presenceAt = Date.now();
             staffCompanies = data.companies || [];
             { const e = document.getElementById('uf-chatmb-host'); if (e) e.textContent = data.chat_php_max_mb ? 'سقفِ هاست: ' + faDigits(String(data.chat_php_max_mb)) + ' مگابایت' : ''; }
+            staffInqDefault = Number(data.inq_user_default || 0);
             staffMeId = Number(data.me);
             document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
             renderStaffUsers();
             loadResetRequests(data.pending_resets);
+        }
+        // سقفِ روزانه‌ی استعلامِ هر کاربر: عددِ خودش یا پیش‌فرضِ کلی (استعلامات ← تنظیمات)؛ ۰ = بدونِ سقف؛ مدیر کل سقف ندارد
+        let staffInqDefault = 0;
+        const inqLimitOf = u => u.role === 'ADMIN' ? 0 : (u.inq_daily_limit != null ? Number(u.inq_daily_limit) : staffInqDefault);
+        function inqBadge(u) {
+            const lim = inqLimitOf(u), used = Number(u.inq_used || 0);
+            if (!lim && !used) return '';
+            return `<button onclick="openEditStaffUser('${u.type}', ${u.id})" class="su-inq ${lim && used >= lim ? 'full' : ''} ml-2" title="استعلامِ امروز: انجام‌شده / سقف${u.inq_daily_limit != null ? ' (اختصاصی)' : ' (پیش‌فرض)'}"><i class="fas fa-user-check"></i>${faDigits(String(used))}/${lim ? faDigits(String(lim)) : '∞'}</button>`;
+        }
+        function ufInqInfo(u) {
+            const box = document.getElementById('uf-inq-used');
+            if (!box) return;
+            if (!u) { box.textContent = 'خالی = پیش‌فرض (' + (staffInqDefault ? faDigits(String(staffInqDefault)) + ' در روز' : 'بدونِ سقف') + ')'; ufG('uf-inq-reset').classList.add('hidden'); return; }
+            const lim = inqLimitOf(u);
+            box.textContent = u.role === 'ADMIN' ? 'مدیر کل سقف ندارد.' : 'امروز ' + faDigits(String(u.inq_used || 0)) + ' استعلام از ' + (lim ? faDigits(String(lim)) : 'بدونِ سقف')
+                + (u.inq_daily_limit == null ? ' (پیش‌فرض)' : '');
+            ufG('uf-inq-reset').classList.toggle('hidden', !Number(u.inq_used || 0));
+        }
+        async function ufInqReset() {
+            const type = ufG('uf-type').value || 'STAFF', id = Number(ufG('uf-id').value);
+            if (!id) return;
+            const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'inq_reset', type, id})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            const u = staffUsersCache.find(x => x.type === type && Number(x.id) === id);
+            if (u) { u.inq_used = 0; ufInqInfo(u); renderStaffUsers(); }
+            showToast('شمارشِ استعلامِ امروزِ این کاربر صفر شد.', 'success');
         }
         // «آنلاین» سبز یا «آخرین بازدید ...»؛ هر ۵ ثانیه از سرور تازه می‌شود (فقط وقتی همین صفحه باز است)
         let presenceAt = Date.now();
@@ -10231,7 +10263,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 whitespace-nowrap">${del ? '' : `
                         ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
                         <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
-                        <button onclick="openUserDevices('${u.type}', ${u.id})" class="su-dev ${u.max_devices && u.devices_active > u.max_devices ? 'over' : ''} ml-2" title="دستگاه‌های همزمان: فعال / مجاز"><i class="fas fa-laptop"></i>${faDigits(String(u.devices_active || 0))}/${u.max_devices ? faDigits(String(u.max_devices)) : '∞'}</button>
+                        <button onclick="openUserDevices('${u.type}', ${u.id})" class="su-dev ${u.max_devices && u.devices_active > u.max_devices ? 'over' : ''} ml-2" title="دستگاه‌های همزمان: فعال / مجاز"><i class="fas fa-laptop"></i>${faDigits(String(u.devices_active || 0))}/${u.max_devices ? faDigits(String(u.max_devices)) : '∞'}</button>${inqBadge(u)}
                         ${!co && REAL_ADMIN && u.role !== 'ADMIN' ? `<button onclick="openPermEditor(${u.id})" class="text-violet-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-user-lock ml-1"></i>دسترسی‌ها</button>` : ''}
                         ${REAL_ADMIN && window.CFAdmin && (co || u.role === 'ADMIN') ? `<button onclick="CFAdmin.openAccess('${co ? 'C' : 'S'}', ${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})" class="text-fuchsia-600 hover:underline text-xs font-bold ml-2" title="موسیقی، کارهای امروز، تمرکز، …"><i class="fas fa-mug-hot ml-1"></i>امکانات</button>` : ''}
                         ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
@@ -10383,6 +10415,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
             ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
             ufG('uf-chatmb').value = u && u.chat_max_mb != null ? u.chat_max_mb : '';
+            ufG('uf-inq').value = u && u.inq_daily_limit != null ? u.inq_daily_limit : ''; ufInqInfo(u);
             ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
             const pf = (u && u.profile) || {};
             ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { ufG('uf-pf-' + k).value = pf[k] || ''; });
@@ -10440,7 +10473,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!role) { showToast('اول نقشِ کاربر را انتخاب کنید.', 'warning'); return; }
             const co = role === 'COMPANY';
             const body = {full_name: ufG('uf-fullname').value.trim(), honor: ufG('uf-honor').value, mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value,
-                          chat_max_mb: p2e(ufG('uf-chatmb').value.trim())};
+                          chat_max_mb: p2e(ufG('uf-chatmb').value.trim()), inq_daily_limit: p2e(ufG('uf-inq').value.trim())};
             if (!body.full_name) { showToast('نامِ کاربر را وارد کنید.', 'error'); ufG('uf-fullname').focus(); return; }
             if (co) {
                 body.company_ids = msdValue('uf-companies');

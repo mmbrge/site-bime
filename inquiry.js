@@ -133,6 +133,7 @@
     async function run(body, onProg, capHost) {
         const c = await post(Object.assign({ action: 'create' }, body));
         if (!c.ok) return c;
+        if (!c.cached && V.boot && V.boot.my_quota) V.boot.my_quota.used++;
         if (c.item.done) { if (onProg) onProg(c.item); return { ok: true, item: c.item }; }
         let last = c.item;
         for (let attempt = 0; attempt < 6; attempt++) {
@@ -182,7 +183,8 @@
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
             <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان) و شخص حقوقی</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
             <div class="flex flex-wrap items-center gap-2">${b.is_admin ? statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '') : ''}
-                <span class="inq-chip">امروز: ${fa(t.total || 0)} استعلام، ${fa(t.ok || 0)} موفق${t.queue ? '، ' + fa(t.queue) + ' در صف' : ''}</span></div></div></div>
+                <span class="inq-chip">امروز: ${fa(t.total || 0)} استعلام، ${fa(t.ok || 0)} موفق${t.queue ? '، ' + fa(t.queue) + ' در صف' : ''}</span>
+                ${!b.is_admin && b.my_quota && b.my_quota.limit ? `<span class="inq-chip" title="سقفِ استعلامِ روزانه‌ی شما"><i class="fas fa-gauge"></i>سهمِ امروزِ شما: ${fa(b.my_quota.used)} از ${fa(b.my_quota.limit)}</span>` : ''}</div></div></div>
         <div class="inq-tabs mb-4">${tabs.filter(x => x[3]).map(x => `<button class="inq-tab ${V.tab === x[0] ? 'on' : ''}" data-tab="${x[0]}"><i class="fas ${x[1]}"></i>${x[2]}</button>`).join('')}</div>
         <div id="inq-body"></div>`;
         V.el.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => { V.tab = x.dataset.tab; render(); });
@@ -474,6 +476,8 @@
                     ${num('inq_wait_sec', 'مکث بینِ گام‌ها (ثانیه)', '۰ تا ۹؛ پیش‌فرض ۲')}
                     ${num('inq_cache_days', 'اعتبارِ نتیجه‌ی قبلی (روز)', '۰ = همیشه دوباره بپرس')}
                     ${num('inq_daily_limit', 'سقفِ روزانه برای هر کاربرِ مینی‌اپ', '۰ = بدونِ سقف')}
+                    ${num('inq_nid_daily_limit', 'سقفِ روزانه برای هر کد ملی', 'همه‌ی کاربران روی هم؛ پیش‌فرض ۲؛ ۰ = بدونِ سقف')}
+                    ${num('inq_user_daily_limit', 'سقفِ روزانه‌ی پیش‌فرضِ هر کاربرِ پنل', '۰ = بدونِ سقف؛ عددِ هر نفر در «کاربران» قابلِ تغییر است')}
                     ${num('inq_keep_minutes', 'نگه‌داشتنِ نشست (دقیقه)', 'بعد از آخرین استعلام؛ پیش‌فرض ۶۰ (با cron)')}
                 </div>
                 <button class="inq-go w-full mt-2" id="inq-ssave"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیمات</button>

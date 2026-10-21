@@ -58,6 +58,8 @@ if ($action === 'boot') {
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
     $q = $pdo->query("SELECT COUNT(*) n, SUM(status = 'OK') ok, SUM(status = 'FAIL') fail, SUM(status IN ('QUEUED', 'RUNNING')) q FROM inq_requests WHERE created_at >= CURDATE()")->fetch();
     $o['today'] = ['total' => intval($q['n']), 'ok' => intval($q['ok']), 'fail' => intval($q['fail']), 'queue' => intval($q['q'])];
+    $mq = inq_user_limit_info($pdo, 'STAFF', $uid);
+    $o['my_quota'] = ['limit' => $mq['limit'], 'used' => $mq['used'], 'nid_limit' => (int)inq_limit_value(inq_get_setting($pdo, 'inq_nid_daily_limit'))];
     $out($o);
 }
 
@@ -221,7 +223,8 @@ if ($action === 'settings_get') {
 }
 if ($action === 'settings_save') {
     foreach (INQ_DEFAULTS as $k => $def) if (array_key_exists($k, $in)) {
-        $v = in_array($k, ['inq_wait_sec', 'inq_cache_days', 'inq_daily_limit', 'inq_keep_minutes'], true) ? (string)max($k === 'inq_keep_minutes' ? 5 : 0, min($k === 'inq_wait_sec' ? 9 : ($k === 'inq_keep_minutes' ? 600 : 365), intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
+        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000]];
+        $v = isset($lims[$k]) ? (string)max($lims[$k][0], min($lims[$k][1], intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
         inq_set_setting($pdo, $k, $v);
     }
     if (array_key_exists('username', $in)) inq_set_setting($pdo, 'inq_px_user', trim((string)$in['username']));

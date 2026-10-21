@@ -348,6 +348,7 @@ function perm_api_map() {
             'send_message' => 'staff-users:view', 'reset_requests' => 'staff-users:view', 'handle_reset' => 'staff-users:edit',
             'perm_get' => 'staff-users:view', 'perm_peek' => 'staff-users:view', 'perm_save' => 'staff-users:edit', 'fm_tree' => 'staff-users:edit',
             'devices_get' => 'staff-users:view', 'devices_set_max' => 'staff-users:edit', 'device_end' => 'staff-users:edit', 'devices_end_all' => 'staff-users:edit',
+            'inq_reset' => 'staff-users:edit',
         ]],
         'settings_actions' => ['pages' => ['settings'], 'elevate' => true, 'actions' => [
             'get_quota' => 'any', 'get_site_url' => 'any', 'get_premium_settings' => 'any',
@@ -494,7 +495,7 @@ function perm_activity_labels() {
         'record_actions.delete' => 'حذفِ پرونده', 'record_actions.reset_all' => 'پاک‌سازیِ کلِ سامانه', 'records.export' => 'خروجیِ اکسلِ پرونده‌ها',
         'queue_actions.approve' => 'تأییدِ صفِ پردازش OCR', 'queue_actions.reject' => 'ردِ صفِ پردازش OCR',
         'staff_users_actions.create' => 'ساختِ کاربر', 'staff_users_actions.update' => 'ویرایشِ کاربر', 'staff_users_actions.delete' => 'حذفِ کاربر', 'staff_users_actions.perm_save' => 'تعیینِ دسترسیِ کاربر',
-        'staff_users_actions.handle_reset' => 'رسیدگی به درخواستِ بازیابیِ رمز', 'staff_users_actions.devices_set_max' => 'تعیینِ سقفِ دستگاه‌های همزمان', 'staff_users_actions.device_end' => 'بستنِ دستگاهِ کاربر', 'staff_users_actions.devices_end_all' => 'بستنِ همه‌ی دستگاه‌های کاربر', 'user_actions.send_message' => 'پیام به کاربرِ ربات', 'ticket_actions.reply' => 'پاسخ به تیکت',
+        'staff_users_actions.handle_reset' => 'رسیدگی به درخواستِ بازیابیِ رمز', 'staff_users_actions.devices_set_max' => 'تعیینِ سقفِ دستگاه‌های همزمان', 'staff_users_actions.device_end' => 'بستنِ دستگاهِ کاربر', 'staff_users_actions.devices_end_all' => 'بستنِ همه‌ی دستگاه‌های کاربر', 'staff_users_actions.inq_reset' => 'صفر کردنِ شمارشِ استعلامِ کاربر', 'user_actions.send_message' => 'پیام به کاربرِ ربات', 'ticket_actions.reply' => 'پاسخ به تیکت',
         'backup_actions.create' => 'پشتیبان‌گیری', 'backup_actions.restore' => 'بازگردانیِ پشتیبان', 'backup_actions.download' => 'دانلودِ فایلِ پشتیبان',
         'life_actions.import_commit' => 'ورودِ اکسلِ اقساطِ بیمه عمر', 'life_actions.pay_add' => 'ثبتِ پرداختِ قسطِ بیمه عمر', 'life_actions.pay_void' => 'ابطالِ پرداختِ قسطِ بیمه عمر',
         'life_actions.note_add' => 'ثبتِ تماس / یادداشتِ بیمه عمر', 'life_actions.phones_save' => 'ثبتِ شماره‌ی تماسِ بیمه‌گذارِ عمر', 'life_actions.policy_save' => 'ویرایشِ بیمه‌نامه‌ی عمر',
