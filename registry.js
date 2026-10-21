@@ -6,6 +6,8 @@
 // API: api/vehicle_actions.php، api/personnel_actions.php، api/bordereau_actions.php
 (function () {
     'use strict';
+    // تأیید با پاپ‌آپِ خودِ سایت (uiConfirm)
+    const uiAsk = (t) => window.uiConfirm ? uiConfirm('تأیید', t, {}) : Promise.resolve(window.confirm(t));
     const FA = '۰۱۲۳۴۵۶۷۸۹';
     const fa = v => (v === null || v === undefined) ? '' : String(v).replace(/\d/g, d => FA[d]);
     const en = v => String(v == null ? '' : v).replace(/[۰-۹]/g, d => FA.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
@@ -490,7 +492,7 @@
                     toast(r.ok ? 'انتقال ثبت شد.' : r.error, r.ok ? 'success' : 'error');
                     if (r.ok) { reload(); if (PER.root) pInit(PER.root); }
                 };
-                pane.querySelectorAll('[data-tdel]').forEach(b => b.onclick = async () => { if (!confirm('این سابقه حذف شود؟ (شرکتِ فعلی عوض نمی‌شود)')) return; await call(PER.api, { action: 'transfer_delete', id, transfer_id: Number(b.dataset.tdel) }); reload(); });
+                pane.querySelectorAll('[data-tdel]').forEach(b => b.onclick = async () => { if (!(await uiAsk('این سابقه حذف شود؟ (شرکتِ فعلی عوض نمی‌شود)'))) return; await call(PER.api, { action: 'transfer_delete', id, transfer_id: Number(b.dataset.tdel) }); reload(); });
             } else if (tab === 'fam') {
                 pane.innerHTML = `<div class="rg-card mb-3"><p class="text-xs font-black text-slate-700 mb-2"><i class="fas fa-user-plus ml-1 text-pink-500"></i>افزودنِ عضوِ خانواده</p><div class="rg-bar">
                     <input class="rg-in" data-fn placeholder="نام و نام خانوادگی"><input class="rg-in" style="width:110px" data-fr placeholder="نسبت (همسر، فرزند…)"><input class="rg-in" style="width:120px" data-fi dir="ltr" placeholder="کد ملی">
@@ -503,7 +505,7 @@
                     const r = await call(PER.api, { action: 'family_save', id, member: { name: pane.querySelector('[data-fn]').value, relation: pane.querySelector('[data-fr]').value, nid: g('fi'), birth: g('fb'), mobile: g('fm') } });
                     toast(r.ok ? 'افزوده شد.' : r.error, r.ok ? 'success' : 'error'); if (r.ok) reload();
                 };
-                pane.querySelectorAll('[data-fdel]').forEach(b => b.onclick = async () => { if (!confirm('حذف شود؟')) return; await call(PER.api, { action: 'family_delete', id, member_id: Number(b.dataset.fdel) }); reload(); });
+                pane.querySelectorAll('[data-fdel]').forEach(b => b.onclick = async () => { if (!(await uiAsk('حذف شود؟'))) return; await call(PER.api, { action: 'family_delete', id, member_id: Number(b.dataset.fdel) }); reload(); });
             } else if (tab === 'car') {
                 pane.innerHTML = d.vehicles.length ? `<div class="rg-grid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">${d.vehicles.map(v => `<div class="rg-f" style="cursor:pointer" data-vk="${esc(v.key)}"><div class="flex gap-3 items-center"><div class="rg-thumb" style="width:90px;height:56px">${carSvg(v.shape, v.color)}</div>
                     <div><div>${plateHtml(v.plate)}</div><b class="text-[12px]">${esc(fa(v.car || ''))} ${v.model_year ? fa(v.model_year) : ''}</b><div class="text-[10.5px] text-slate-500">${v.body_end ? 'بدنه تا ' + fa(v.body_end) : ''} ${v.third_end ? 'ثالث تا ' + fa(v.third_end) : ''}</div></div></div></div>`).join('')}</div>` : empty('خودرویی ثبت نشده.');
@@ -642,7 +644,7 @@
         R2.querySelector('[data-exp2]').onclick = () => download(BR.api, { action: 'export_pdf', ids: BR.view.map(r => r.id), title: BR.f.group || 'فهرستِ کلی' }, 'bordereau.pdf');
         R2.querySelector('[data-bnote]').onclick = () => bNote([...BR.sel]);
         R2.querySelector('[data-bdel]').onclick = async () => {
-            if (!confirm(fa(BR.sel.size) + ' ردیف از بردرو حذف شود؟ (پوشه‌های بایگانی می‌مانند)')) return;
+            if (!(await uiAsk(fa(BR.sel.size) + ' ردیف از بردرو حذف شود؟ (پوشه‌های بایگانی می‌مانند)'))) return;
             const r = await call(BR.api, { action: 'delete', ids: [...BR.sel] });
             toast(r.ok ? 'حذف شد.' : r.error, r.ok ? 'success' : 'error'); if (r.ok) bInit(BR.root);
         };
@@ -722,7 +724,7 @@
             const f = m.el.querySelector('[data-ef]').files[0]; if (f) fd.append('file', f);
             const x = await call(BR.api, fd, true); toast(x.ok ? 'الحاقیه ثبت شد.' : x.error, x.ok ? 'success' : 'error'); if (x.ok) refresh(x.row);
         };
-        m.el.querySelectorAll('[data-edel]').forEach(b => b.onclick = async () => { if (!confirm('این الحاقیه حذف شود؟')) return; const x = await call(BR.api, { action: 'endorse_delete', endorse_id: Number(b.dataset.edel) }); if (x.ok) refresh(x.row); else toast(x.error, 'error'); });
+        m.el.querySelectorAll('[data-edel]').forEach(b => b.onclick = async () => { if (!(await uiAsk('این الحاقیه حذف شود؟'))) return; const x = await call(BR.api, { action: 'endorse_delete', endorse_id: Number(b.dataset.edel) }); if (x.ok) refresh(x.row); else toast(x.error, 'error'); });
         m.el.querySelector('[data-ngo]').onclick = async () => { const x = await call(BR.api, { action: 'note', ids: [id], channel: m.el.querySelector('[data-nc]').value, note: m.el.querySelector('[data-nt]').value }); toast(x.ok ? 'ثبت شد.' : x.error, x.ok ? 'success' : 'error'); if (x.ok) refresh(x.rows[0]); };
         const vb = m.el.querySelector('[data-veh]'); if (vb) vb.onclick = () => { m.close(); vOpen(r.vin ? 'v:' + String(r.vin).toUpperCase().replace(/[^A-Z0-9]/g, '') : 'p:' + r.plate_core); };
         const pb = m.el.querySelector('[data-per]'); if (pb) pb.onclick = () => { m.close(); pOpen(r.person_id); };

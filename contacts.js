@@ -2,6 +2,8 @@
 // پنل → «بانک مخاطبین»: کارکنانِ همه‌ی شرکت‌ها با فیلتر (شرکت، موبایل، ربات، معرفی‌نامه)، ویرایش، ورود از اکسل (پیش‌نمایش ← ثبت)،
 // خروجیِ اکسل با همان فیلترها، اکسلِ نمونه و لاگِ کدهای تأییدِ (OTP) ارسالی برای هر شخص (api/contacts_actions.php)
 (function () {
+    // تأیید با پاپ‌آپِ خودِ سایت (uiConfirm)
+    const uiAsk = (t) => window.uiConfirm ? uiConfirm('تأیید', t, {}) : Promise.resolve(window.confirm(t));
     const API = 'api/contacts_actions.php';
     const fa = s => String(s == null ? '' : s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -193,7 +195,7 @@
               : '<p class="text-xs text-slate-400">شماره‌ای ثبت نشده.</p>';
             const after = r => { if (!r.ok) return toast(r.error || 'خطا', 'error'); paintPhones(r.phones || []); const def = (r.phones || []).find(x => x.is_default); m.el.querySelector('[data-e="mobile_number"]').value = def ? def.phone : ''; load(); loadStats(); };
             box.querySelectorAll('[data-pdef]').forEach(b => b.onclick = async () => after(await post({ action: 'phone_default', id, phone_id: +b.dataset.pdef })));
-            box.querySelectorAll('[data-pdel]').forEach(b => b.onclick = async () => { if (!confirm('این شماره از فهرست حذف شود؟')) return; after(await post({ action: 'phone_remove', id, phone_id: +b.dataset.pdel })); });
+            box.querySelectorAll('[data-pdel]').forEach(b => b.onclick = async () => { if (!(await uiAsk('این شماره از فهرست حذف شود؟'))) return; after(await post({ action: 'phone_remove', id, phone_id: +b.dataset.pdel })); });
             m.el.querySelector('[data-addphone]').onclick = async () => {
                 const r = await post({ action: 'phone_add', id, phone: m.el.querySelector('[data-newphone]').value, make_default: m.el.querySelector('[data-newdef]').checked });
                 if (r.ok) m.el.querySelector('[data-newphone]').value = '';
@@ -300,7 +302,7 @@
         m.el.querySelector('[data-bcgo]').onclick = async () => {
             const text = m.el.querySelector('[data-bctext]').value.trim();
             if (text.length < 2) return toast('متنِ پیام را بنویسید.', 'error');
-            if (!confirm(`پیام برای ${fa(cnt.count)} نفر در ربات فرستاده شود؟`)) return;
+            if (!(await uiAsk(`پیام برای ${fa(cnt.count)} نفر در ربات فرستاده شود؟`))) return;
             const btn = m.el.querySelector('[data-bcgo]'); btn.disabled = true;
             const r = await post({ action: 'bc_create', filters, text });
             if (!r.ok) { btn.disabled = false; return toast(r.error || 'خطا', 'error'); }

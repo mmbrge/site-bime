@@ -75,7 +75,7 @@ if (!$companies) {
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
 <script src="../reg-link.js?v=1" defer></script>
-<script src="../registry.js?v=1" defer></script>
+<script src="../registry.js?v=2" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }

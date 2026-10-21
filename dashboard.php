@@ -4511,7 +4511,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="sms-otp.js?v=2"></script>
     <script src="api-keys.js?v=2"></script>
     <script src="visit-appt.js?v=1"></script>
-    <script src="contacts.js?v=2"></script>
+    <script src="contacts.js?v=3"></script>
     <script src="trash.js?v=1"></script>
     <script src="announce.js?v=3"></script>
     <script src="home.js?v=1"></script>
@@ -4520,8 +4520,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="inquiry.js?v=6"></script>
-    <script src="registry.js?v=1"></script>
+    <script src="inquiry.js?v=7"></script>
+    <script src="registry.js?v=2"></script>
     <script src="issue-panel.js?v=1"></script>
     <script src="reg-link.js?v=1"></script>
     <script>
@@ -4531,8 +4531,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const g = id => document.getElementById(id);
         if (!g('mc-postal')) return;
         const selfRel = () => (g('mc-relationship') || {}).value === 'خودم';
-        Inquiry.attachForm({ nid: () => g('mc-national-code').value, birth: g('mc-birth'), name: g('mc-full-name') });
-        Inquiry.attachForm({ nid: () => selfRel() ? g('mc-national-code').value : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name'),
+        // بیمه‌گذار = خودِ پرسنل: کد ملیِ فرم یا (درخواستِ تازه روی معرفی‌نامه) کد ملیِ صاحبِ معرفی‌نامه؛ بستگان: کد ملیِ خودِ بیمه‌گذار
+        const selfNid = () => g('mc-national-code').value.trim() || window.MC_INTRO_NID || '';
+        Inquiry.attachForm({ nid: selfNid, birth: g('mc-birth'), name: g('mc-full-name') });
+        Inquiry.attachForm({ nid: () => selfRel() ? selfNid() : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name'),
                              watch: [g('mc-national-code'), g('mc-insured-nid'), g('mc-relationship')] });
     });
     </script>
@@ -5596,7 +5598,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 showToast('معرفی‌نامه ثبت شد' + (d.filed ? ' و فایلش در بایگانی قرار گرفت.' : '.'), 'success');
                 loadRecords();
                 if (await uiConfirm('ثبت درخواست', 'همین حالا برای این معرفی‌نامه درخواستِ بیمه (ثالث/بدنه) ثبت می‌کنید؟', {ok: 'بله، درخواست جدید'}))
-                    openManualCreateModal(d.intro_id, v('full_name'));
+                    openManualCreateModal(d.intro_id, v('full_name'), v('national_code'));
             } finally { btn.disabled = false; btn.innerHTML = old; }
         }
 
@@ -5626,7 +5628,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if (el.classList.contains('full')) { showToast('سهمیه‌ی این معرفی‌نامه پر شده است.', 'warning'); return; }
                 const r = ipData[Number(el.dataset.i)];
                 closeModal('intro-picker-modal');
-                openManualCreateModal(r.introduction_id, r.full_name);
+                openManualCreateModal(r.introduction_id, r.full_name, r.national_code);
             });
         }
         document.getElementById('ip-q').addEventListener('input', renderIntroPicker);
@@ -11926,7 +11928,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const addCaseHtml = !CAN_MANUAL ? '' : `
                     <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center justify-between gap-2">
                         <span class="text-[11px] text-blue-800">درخواستِ تازه برای همین معرفی‌نامه، با همه‌ی اطلاعات و مدارکش:</span>
-                        <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
+                        <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}', '${String(introRow.national_code || '').replace(/\D/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
                     </div>`;
 
                 if (data.data.length === 0) {
@@ -14060,7 +14062,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // introId: اگر داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود و بخش پرسنل پنهان است
-        function openManualCreateModal(introId = null, holderName = '') {
+        // holderNid: کد ملیِ صاحبِ معرفی‌نامه (برای استعلامِ نام/کد پستیِ بیمه‌گذار وقتی خودِ پرسنل است)
+        function openManualCreateModal(introId = null, holderName = '', holderNid = '') {
+            window.MC_INTRO_NID = introId ? p2e(String(holderNid || '')).replace(/\D/g, '') : '';
             mcCreated = null; mcFiles = {}; mcOthers = []; mcSelectedCov = {}; mcProposalFile = null;
             document.getElementById('mc-prop-file').value = '';
             document.getElementById('mc-prop-status').innerHTML = 'اختیاری است؛ بعد از ثبت، خودِ فایل هم روی همین درخواست بایگانی می‌شود و فرمِ صدور با آن پر و چک می‌شود.';

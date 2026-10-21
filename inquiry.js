@@ -433,7 +433,7 @@
             ${d.pages > 1 ? `<div class="flex items-center justify-center gap-2 mt-3 text-xs"><button class="inq-fbtn" data-pg="-1" ${d.page <= 1 ? 'disabled' : ''}>قبلی</button><span>${fa(d.page)} از ${fa(d.pages)} (${fa(d.total)})</span><button class="inq-fbtn" data-pg="1" ${d.page >= d.pages ? 'disabled' : ''}>بعدی</button></div>` : ''}`;
         box.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { h.page += +b.dataset.pg; loadHist(body); });
         box.querySelectorAll('[data-det]').forEach(b => b.onclick = () => detail(+b.dataset.det));
-        box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm('این استعلام از تاریخچه حذف شود؟')) return; const r = await post({ action: 'delete', id: +b.dataset.del }); if (!r.ok) toast(r.error, 'error'); loadHist(body); });
+        box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!(await ask('حذفِ استعلام', 'این استعلام از تاریخچه حذف شود؟', { danger: true, ok: 'حذف' }))) return; const r = await post({ action: 'delete', id: +b.dataset.del }); if (!r.ok) toast(r.error, 'error'); loadHist(body); });
     }
     async function detail(id) {
         const d = await post({ action: 'get', id });
@@ -507,7 +507,7 @@
         body.querySelector('#inq-ss').onclick = async () => { const r = await post({ action: 'status' }); V.boot.status = r.status; renderSettings(body); };
         body.querySelector('#inq-sl').onclick = () => loginDialog(() => renderSettings(body));
         body.querySelector('#inq-cc').onclick = () => { try { navigator.clipboard.writeText(body.querySelector('#inq-cron').textContent); toast('کپی شد.', 'info'); } catch (e) {} };
-        body.querySelector('#inq-ck').onclick = async () => { if (!confirm('کلیدِ cron عوض شود؟ دستورِ قبلی دیگر کار نمی‌کند.')) return; await post({ action: 'settings_save', new_cron_key: 1 }); renderSettings(body); };
+        body.querySelector('#inq-ck').onclick = async () => { if (!(await ask('کلیدِ cron', 'کلیدِ cron عوض شود؟ دستورِ قبلی دیگر کار نمی‌کند.', { ok: 'عوض شود' }))) return; await post({ action: 'settings_save', new_cron_key: 1 }); renderSettings(body); };
         body.querySelector('#inq-ssave').onclick = async () => {
             const b = { action: 'settings_save', username: body.querySelector('#inq-su').value.trim(), password: body.querySelector('#inq-sp').value };
             body.querySelectorAll('[data-s]').forEach(i => b[i.dataset.s] = i.type === 'checkbox' ? (i.checked ? 1 : 0) : en(i.value));
@@ -523,6 +523,9 @@
         if (V.boot) { V.boot.status = 'logged_in'; if (V.el && V.el.isConnected && !after) render(); }
         if (after) after();
     }
+
+    // تأیید با پاپ‌آپِ خودِ سایت (uiConfirm)؛ اگر نبود، پنجره‌ی مرورگر
+    function ask(title, text, o) { return window.uiConfirm ? uiConfirm(title, text, o || {}) : Promise.resolve(window.confirm(text)); }
 
     // ---------------- استعلام داخلِ فرم‌ها ----------------
     // opts: { nid: () => کد ملی, birth: input, postal: input, name: input (پر می‌شود), father: input (اختیاری), onPerson(p), onPostal(z) }
@@ -541,7 +544,7 @@
                 const nid = en(typeof opts.nid === 'function' ? opts.nid() : (opts.nid && opts.nid.value) || '').replace(/\D/g, '');
                 const birth = en(opts.birth ? opts.birth.value : '').trim();
                 const postal = en(opts.postal ? opts.postal.value : '').replace(/\D/g, '');
-                if (!nid || !birth) { msg.className = 'inq-fmsg text-amber-600'; msg.textContent = 'اول کد ملی و تاریخ تولد را وارد کنید.'; return; }
+                if (!nid || !birth) { msg.className = 'inq-fmsg text-amber-600'; msg.textContent = !nid && !birth ? 'اول کد ملی و تاریخ تولدِ بیمه‌گذار را وارد کنید.' : (!nid ? 'کد ملیِ بیمه‌گذار پیدا نشد؛ آن را وارد کنید.' : 'اول تاریخ تولدِ بیمه‌گذار را وارد کنید.'); return; }
                 if (kind === 'postal' && postal.length !== 10) { msg.className = 'inq-fmsg text-amber-600'; msg.textContent = 'کد پستیِ ۱۰ رقمی را وارد کنید.'; return; }
                 btn.disabled = true; msg.className = 'inq-fmsg text-indigo-600'; msg.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال استعلام…';
                 const r = await run({ kind: kind === 'postal' ? 'postal' : 'person', source: 'form', national_id: nid, birth, postal }, it => { if (!it.done) msg.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>${esc(it.notice || 'در حال استعلام…')}`; }, capHost);
