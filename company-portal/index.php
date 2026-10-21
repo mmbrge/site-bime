@@ -75,7 +75,7 @@ if (!$companies) {
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
 <script src="../reg-link.js?v=1" defer></script>
-<script src="../registry.js?v=4" defer></script>
+<script src="../registry.js?v=5" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -867,6 +867,18 @@ async function importPlatesExcel(inp) {
         msg.innerHTML = `<span class="text-emerald-700 font-bold">${merged.length.toLocaleString('fa-IR')} خودرو از اکسل اضافه شد؛ بازبینی و بعد «ثبت» را بزنید.</span>` + (r.errors && r.errors.length ? `<div class="text-amber-700 mt-1">${r.errors.slice(0, 6).map(escH).join('<br>')}</div>` : '');
     } catch (e) { msg.innerHTML = '<span class="text-rose-600">خطا در ارتباط با سرور.</span>'; }
 }
+// نامِ خودرو از چند بخش (نام، تیپ، …) بدونِ تکرار: «سمند سورن» + «سمند سورن» => یک بار؛ بخشی که داخلِ بخشِ دیگر هست حذف می‌شود
+function carJoin(...parts) {
+    const n = s => String(s ?? '').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/\s+/g, ' ').trim();
+    const out = [];
+    parts.flatMap(x => String(x ?? '').split(/\s+[-–·]\s+/)).map(n).map(p => { const w = p.split(' '), h = w.length / 2; return h >= 1 && Number.isInteger(h) && w.slice(0, h).join(' ') === w.slice(h).join(' ') ? w.slice(0, h).join(' ') : p; }).filter(Boolean).forEach(p => {
+const k = p.replace(/\s/g, '');
+if (out.some(o => o.replace(/\s/g, '').includes(k))) return;
+for (let i = out.length - 1; i >= 0; i--) if (k.includes(out[i].replace(/\s/g, ''))) out.splice(i, 1);
+out.push(p);
+    });
+    return out.join(' · ');
+}
 function escH(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
 // ارزش خودرو فقط برای بدنه، سقف تعهد مالی فقط برای ثالث
@@ -1066,7 +1078,7 @@ async function openRequestDetail(id) {
                         ? plateHtml(p)
                         : `<div class="border-2 border-dashed border-slate-400 rounded-md px-2.5 py-1 font-black text-xs text-slate-600" dir="ltr" title="شماره شاسی">${p.chassis_no || 'بدون شناسه'}</div>`}
                     <span class="text-[10px] font-bold text-slate-400">${p.insurance_type === 'BODY' ? 'بیمه بدنه' : 'بیمه ثالث'}</span>
-                    ${p.car_name || p.car_type ? `<span class="text-[10px] font-bold text-slate-600">${escH([p.car_name, p.car_type].filter(Boolean).join(' · '))}</span>` : ''}
+                    ${p.car_name || p.car_type ? `<span class="text-[10px] font-bold text-slate-600">${escH(carJoin(p.car_name, p.car_type))}</span>` : ''}
                     ${faNum(p.expiry_date_jalali) ? `<span class="text-[10px] text-slate-400">انقضا: ${faNum(p.expiry_date_jalali)}</span>`
                         : (Number(p.is_new_vehicle) ? '<span class="text-[10px] text-slate-400">صفر کیلومتر</span>' : '')}
                     ${p.insurance_type === 'BODY' && p.car_value ? `<span class="text-[10px] text-slate-500">ارزش: ${faMoney(p.car_value)}</span>` : ''}

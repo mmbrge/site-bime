@@ -106,7 +106,7 @@ try {
     if ($action === 'zk_defaults') {
         $companyId = resolve_company_id($allowedCompanyIds, $data['company_id'] ?? null) ?: ($allowedCompanyIds[0] ?? 0);
         echo json_encode(['ok' => true, 'defaults' => company_last_request_defaults($pdo, $companyId), 'coverage_options' => body_coverage_options(),
-                          'liability_options' => liability_limit_options()], JSON_UNESCAPED_UNICODE);
+                          'liability_options' => liability_limit_options('C', $pdo)], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'zk_parse_excel') {

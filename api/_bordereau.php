@@ -239,6 +239,9 @@ function brd_rows($pdo, array $f = []) {
             foreach (array_filter([$pc ? 'p' . $pc : '', $vk ? 'v' . $vk : '']) as $k) $later[$o['insurance_type'] . '|' . $k][] = ['issue' => imp_jdate($iss), 'policy' => $o['policy_number'], 'src' => 'صادره‌ی کارکنان'];
         }
     } catch (Throwable $e) { error_log('[brd later] ' . $e->getMessage()); }
+    // درخواستِ تمدیدی که از روی ردیفِ بردرو ساخته شده (و بیمه‌نامه‌ی تازه‌اش وقتی صادر شد)
+    if (!function_exists('rnr_links')) require_once __DIR__ . '/_renew_request.php';
+    $links = rnr_links($pdo);
     $today = strtotime(date('Y-m-d'));
     $jn = function ($j) { return preg_match('/^(\d{4})\/(\d{2})\/(\d{2})$/', (string)$j, $m) ? intval($m[1] . $m[2] . $m[3]) : 0; };
     $out = [];
@@ -274,6 +277,8 @@ function brd_rows($pdo, array $f = []) {
                 if ($jn($o['issue']) > $jn($r['issue_date']) && $jn($o['issue']) >= $win) { $renewed = $o; break 2; }
             }
         }
+        $lk = $links['B:' . $id] ?? null;
+        if ($lk && $lk['issued'] && !$cancel) $renewed = ['issue' => $lk['issue_date'], 'policy' => $lk['policy'], 'src' => 'درخواستِ تمدید ' . $lk['ref']];
         $ns = $notes[$id] ?? [];
         $last = $ns ? end($ns) : null;
         $state = $cancel ? 'cancelled' : ($renewed || ($last && $last['channel'] === 'renewed') ? 'renewed' : ($last && in_array($last['channel'], ['declined', 'renewed_out'], true) ? 'closed' : ($last ? 'notified' : 'none')));
@@ -307,7 +312,7 @@ function brd_rows($pdo, array $f = []) {
             'owner_name' => $r['owner_name'], 'prev_insurer' => $r['prev_insurer'], 'prev_policy' => $r['prev_policy'], 'central_no' => $r['central_no'],
             'status' => $r['status'], 'state' => $state,
             'state_fa' => ['cancelled' => 'فسخ‌شده', 'renewed' => 'تمدید شد', 'closed' => $last ? (BRD_CHANNELS[$last['channel']] ?? 'بسته') : 'بسته', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$state],
-            'renewed_by' => $renewed, 'endorsements' => array_map(function ($e) {
+            'renewed_by' => $renewed, 'renewal' => $lk, 'endorsements' => array_map(function ($e) {
                 $ch = json_decode((string)($e['changes_json'] ?? ''), true) ?: [];
                 return ['id' => (int)$e['id'], 'kind' => $e['kind'], 'kind_fa' => BRD_ENDORSE_KINDS[$e['kind']] ?? $e['kind'], 'no' => $e['endorse_no'], 'date' => $e['date_j'],
                         'changes' => array_values(array_map(function ($f, $v) { return ['label' => BRD_CHANGE_FIELDS[$f] ?? $f, 'to' => $f === 'coverages' ? implode('، ', company_coverages_fa(json_encode($v ?: new stdClass()))) : (string)$v]; }, array_keys($ch), $ch)),

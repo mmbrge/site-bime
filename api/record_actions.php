@@ -578,7 +578,7 @@ try {
             $liability = null; $carValue = null; $prevBody = null; $prevClaim = null; $noClaimYears = null; $coverages = null;
             if ($insuranceType === 'THIRDPARTY') {
                 $liability = money_to_int($data['liability_limit'] ?? '');
-                if (!in_array($liability, liability_limit_options(), true)) throw new RuntimeException('سقف تعهد مالیِ بیمه‌ی ثالث را انتخاب کنید.');
+                if (!in_array($liability, liability_limit_options('P', $pdo), true)) throw new RuntimeException('سقف تعهد مالیِ بیمه‌ی ثالث را انتخاب کنید.');
             } else {
                 $prevBody = ($data['prev_body_insurance'] ?? '') === 'بله' ? 'بله' : 'خیر';
                 if ($prevBody === 'بله') {
@@ -661,7 +661,7 @@ try {
         exit;
     }
     if ($action === 'manual_form_options') {
-        echo json_encode(['ok' => true, 'coverages' => body_coverage_options(), 'liability' => liability_limit_options(),
+        echo json_encode(['ok' => true, 'coverages' => body_coverage_options(), 'liability' => liability_limit_options('P', $pdo),
                           'relationships' => relationship_options()], JSON_UNESCAPED_UNICODE);
         exit;
     }

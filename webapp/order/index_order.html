@@ -798,7 +798,8 @@ async function submitNewPlate() {
 // ============================================================
 const LIABILITY_OPTIONS_RIAL = [700000000,800000000,1000000000,2000000000,2500000000,3000000000,4000000000,5000000000,6000000000,7000000000,8000000000,9000000000,10000000000];
 function renderLiabilityList() {
-    document.getElementById('liability-list').innerHTML = LIABILITY_OPTIONS_RIAL.map(r => `<div class="list-card" onclick="submitLiability(${r})"><b>${toFa((r/10).toLocaleString('en-US'))} تومان</b><span>›</span></div>`).join('');
+    const opts = (window._initData && window._initData.liability_options && window._initData.liability_options.length) ? window._initData.liability_options : LIABILITY_OPTIONS_RIAL;
+    document.getElementById('liability-list').innerHTML = opts.map(r => `<div class="list-card" onclick="submitLiability(${r})"><b>${toFa((r/10).toLocaleString('en-US'))} تومان</b><span>›</span></div>`).join('');
 }
 async function submitLiability(amountRial) {
     const res = await saveStep({ step:'liability', liability_limit:amountRial });

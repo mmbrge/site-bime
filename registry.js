@@ -628,6 +628,7 @@
         <div class="rg-bar mt-2"><span class="text-[11px] font-bold text-slate-500" data-n></span>
             <button class="rg-btn s" data-exx><i class="fas fa-file-excel text-emerald-600"></i> اکسلِ همین فهرست</button><button class="rg-btn s" data-exp2><i class="fas fa-file-pdf text-rose-600"></i> PDFِ همین فهرست</button>
             <span class="flex-1"></span><span class="text-[11px] text-slate-500" data-seln></span>
+            <button class="rg-btn s" data-bunsel disabled title="لغوِ انتخابِ همه‌ی ردیف‌ها"><i class="fas fa-xmark"></i> لغوِ انتخاب</button>
             <button class="rg-btn s" data-bnote disabled><i class="fas fa-phone"></i> ثبتِ پیگیری</button>${window.RenewReq ? '<button class="rg-btn g" data-brenew disabled><i class="fas fa-rotate"></i> درخواستِ تمدید</button>' : ''}<button class="rg-btn r" data-bdel disabled><i class="fas fa-trash"></i> حذف</button></div></div>
         <div data-body></div>`;
         const R2 = BR.root;
@@ -646,7 +647,9 @@
         // درخواستِ صدورِ تازه برای همان شرکت با مشخصاتِ ردیف (renew-req.js)
         const rnb = R2.querySelector('[data-brenew]');
         if (rnb) rnb.onclick = () => RenewReq.open(BR.rows.filter(r => BR.sel.has(r.id)).map(r => ({src: 'B', id: r.id, label: r.policy, type: r.type, plate: r.plate, company: r.company_name || r.group, no_company: !r.company_id, renewed: !!(r.renewed_by && r.renewed_by.policy)})),
-            {onDone: () => {}});
+            // بعد از ثبتِ درخواست: انتخاب‌ها خودکار لغو و فهرست تازه می‌شود (شرحِ درخواست روی همان ردیف)
+            {onDone: d => { if ((d.created || []).length) { BR.sel.clear(); bInit(BR.root); } }});
+        R2.querySelector('[data-bunsel]').onclick = () => { BR.sel.clear(); bTable(); };
         R2.querySelector('[data-bdel]').onclick = async () => {
             if (!(await uiAsk(fa(BR.sel.size) + ' ردیف از بردرو حذف شود؟ (پوشه‌های بایگانی می‌مانند)'))) return;
             const r = await call(BR.api, { action: 'delete', ids: [...BR.sel] });
@@ -664,7 +667,7 @@
                 <td class="text-[11px]">${r.type === 'BODY' ? (r.car_value ? money(r.car_value) : '—') + (r.coverages_fa && r.coverages_fa.length ? `<div class="text-[9.5px] text-violet-600" title="${esc(r.coverages_fa.join('، '))}">${fa(r.coverages_fa.length)} پوشش</div>` : '') : (r.liability ? money(r.liability) : '—')}</td>
                 <td class="font-mono text-[11px]" dir="ltr" style="text-align:right">${esc(fa(r.policy))}${r.endorsements.length ? ` <span class="rg-pill" style="background:#fef3c7;color:#92400e">${fa(r.endorsements.length)} الحاقیه</span>` : ''}${r.endorsed ? ' <span class="rg-pill" style="background:#ede9fe;color:#6d28d9" title="اطلاعاتِ این ردیف با الحاقیه عوض شده">تغییر کرد</span>' : ''}</td>
                 <td>${fa(r.issue_date)}</td><td><b>${fa(r.end_date)}</b></td><td><span class="rg-left" style="${leftCls(r.state === 'renewed' || r.state === 'cancelled' ? null : r.days_left)}">${r.state === 'renewed' ? 'تمدید شد' : leftTxt(r.days_left)}</span></td>
-                <td>${money(r.premium)}</td><td>${bStatePill(r)}${r.notes.length ? `<div class="text-[10px] text-slate-400">${esc(r.notes[r.notes.length - 1].at)}</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="13">${empty('ردیفی نیست.')}</td></tr>`}
+                <td>${money(r.premium)}</td><td>${bStatePill(r)}${r.notes.length ? `<div class="text-[10px] text-slate-400">${esc(r.notes[r.notes.length - 1].at)}</div>` : ''}${r.renewal ? `<div class="text-[10px] leading-5 max-w-[260px] whitespace-normal ${r.renewal.issued ? 'text-emerald-700' : 'text-sky-700'}"><i class="fas fa-rotate ml-1"></i>${esc(fa(r.renewal.note))}</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="13">${empty('ردیفی نیست.')}</td></tr>`}
             </tbody></table></div>`;
     }
     function bTable() {
@@ -687,7 +690,7 @@
             body.querySelectorAll('[data-gp]').forEach(b => b.onclick = e => { e.preventDefault(); const g = b.dataset.gp; download(BR.api, { action: 'export_pdf', ids: by[g].map(r => r.id), title: g }, 'bordereau.pdf'); });
         }
         body.querySelectorAll('[data-s]').forEach(th => th.onclick = () => { const k = th.dataset.s; BR.sort = { k, d: BR.sort.k === k ? -BR.sort.d : 1 }; bTable(); });
-        const selN = () => { BR.root.querySelector('[data-seln]').textContent = BR.sel.size ? fa(BR.sel.size) + ' انتخاب' : ''; BR.root.querySelector('[data-bnote]').disabled = BR.root.querySelector('[data-bdel]').disabled = !BR.sel.size; const rb = BR.root.querySelector('[data-brenew]'); if (rb) rb.disabled = !BR.sel.size; };
+        const selN = () => { BR.root.querySelector('[data-seln]').textContent = BR.sel.size ? fa(BR.sel.size) + ' انتخاب' : ''; BR.root.querySelector('[data-bnote]').disabled = BR.root.querySelector('[data-bdel]').disabled = !BR.sel.size; const rb = BR.root.querySelector('[data-brenew]'); if (rb) rb.disabled = !BR.sel.size; const ub = BR.root.querySelector('[data-bunsel]'); if (ub) ub.disabled = !BR.sel.size; };
         body.querySelectorAll('[data-sel]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { const id = Number(c.dataset.sel); c.checked ? BR.sel.add(id) : BR.sel.delete(id); selN(); }; });
         body.querySelectorAll('[data-all]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { c.closest('table').querySelectorAll('[data-sel]').forEach(x => { x.checked = c.checked; const id = Number(x.dataset.sel); c.checked ? BR.sel.add(id) : BR.sel.delete(id); }); selN(); }; });
         body.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => bOpen(Number(tr.dataset.id)));
@@ -703,6 +706,9 @@
                 <div class="flex gap-2 flex-wrap">${window.permCan && permCan('vehicles') ? '<button class="rg-btn s" data-veh><i class="fas fa-car-side"></i> پرونده‌ی خودرو</button>' : ''}${r.person_id && window.permCan && permCan('personnel') ? '<button class="rg-btn s" data-per><i class="fas fa-id-badge"></i> پرونده‌ی شخص</button>' : ''}<button class="rg-btn s" data-x>بستن ✕</button></div>
             </div></div>
             <div class="p-4 space-y-4">
+                ${r.renewal ? `<div class="rg-card" style="border-color:${r.renewal.issued ? '#a7f3d0;background:#ecfdf5' : '#bae6fd;background:#f0f9ff'}"><p class="text-xs font-black ${r.renewal.issued ? 'text-emerald-800' : 'text-sky-800'}"><i class="fas fa-rotate ml-1"></i>${r.renewal.issued ? 'تمدید شد' : 'درخواستِ تمدید ثبت شد'}</p>
+                    <p class="text-[11.5px] leading-7 mt-1">${esc(fa(r.renewal.note))}</p>
+                    <div class="flex gap-2 mt-1">${window.openCompanyRequestDetail ? `<button class="rg-btn s" data-rnreq="${r.renewal.request_id}"><i class="fas fa-folder-open"></i> درخواست</button>` : ''}${r.renewal.file ? `<a class="rg-btn s" target="_blank" href="/${String(r.renewal.file).split('/').map(encodeURIComponent).join('/')}"><i class="fas fa-file-pdf"></i> بیمه‌نامه‌ی تازه</a>` : ''}</div></div>` : ''}
                 ${r.endorsed ? `<div class="rg-card" style="border-color:#ddd6fe;background:#f5f3ff"><p class="text-xs font-black text-violet-800 mb-1"><i class="fas fa-file-pen ml-1"></i>اطلاعاتِ این ردیف با الحاقیه عوض شده (در تمدید، اطلاعاتِ تازه می‌نشیند)</p>
                     <div class="text-[11.5px] leading-7">${r.changes.map(c => `<div><b>${esc(c.label)}:</b> <span class="text-slate-400 line-through">${esc(fa(c.from || '—'))}</span> ← <b class="text-violet-800">${esc(fa(c.to || '—'))}</b></div>`).join('')}</div></div>` : ''}
                 <div class="rg-grid">${field('بیمه‌گذار', r.insured)}${field('کد / شناسه ملی', r.insured_id)}${field('حقیقی / حقوقی', r.insured_kind_fa || r.insured_kind)}${field('کد اقتصادی', r.economic_code)}${field('شماره بیمه‌نامه', r.policy)}${field('کد یکتا', r.central_no)}
@@ -763,6 +769,7 @@
         };
         m.el.querySelectorAll('[data-edel]').forEach(b => b.onclick = async () => { if (!(await uiAsk('این الحاقیه حذف شود؟'))) return; const x = await call(BR.api, { action: 'endorse_delete', endorse_id: Number(b.dataset.edel) }); if (x.ok) refresh(x.row); else toast(x.error, 'error'); });
         m.el.querySelector('[data-ngo]').onclick = async () => { const x = await call(BR.api, { action: 'note', ids: [id], channel: m.el.querySelector('[data-nc]').value, note: m.el.querySelector('[data-nt]').value }); toast(x.ok ? 'ثبت شد.' : x.error, x.ok ? 'success' : 'error'); if (x.ok) refresh(x.rows[0]); };
+        const rq = m.el.querySelector('[data-rnreq]'); if (rq) rq.onclick = () => { m.close(); window.openCompanyRequestDetail(+rq.dataset.rnreq); };
         const vb = m.el.querySelector('[data-veh]'); if (vb) vb.onclick = () => { m.close(); vOpen(r.vin ? 'v:' + String(r.vin).toUpperCase().replace(/[^A-Z0-9]/g, '') : 'p:' + r.plate_core); };
         const pb = m.el.querySelector('[data-per]'); if (pb) pb.onclick = () => { m.close(); pOpen(r.person_id); };
     }

@@ -443,7 +443,7 @@ try {
                         'plate_display' => $c['plate'] ?: 'بدون‌پلاک',
                         'plate_p1' => null, 'plate_p2' => null, 'plate_letter' => null, 'plate_p4' => null,
                         'chassis_no' => $c['chassis_num'] ?? null, 'engine_no' => $c['engine_num'] ?? null,
-                        'is_new_vehicle' => 0, 'car_name' => trim(($c['car_system'] ?? '') . ' ' . ($c['car_type'] ?? '')) ?: null,
+                        'is_new_vehicle' => 0, 'car_name' => car_join([($c['car_system'] ?? ''), ($c['car_type'] ?? '')]) ?: null,
                         'car_value' => $c['car_value'] ?? null, 'liability_limit' => null,
                         'ref_policy_number' => null, 'endorsement_request' => null, 'cancellation_reason' => null,
                         'insurance_type' => $c['insurance_type'], 'insurance_type_fa' => insurance_type_fa($c['insurance_type']),
@@ -926,7 +926,7 @@ try {
                         'request_text' => null, 'ref_policy_number' => null,
                         'endorsement_request' => null, 'cancellation_reason' => null,
                         'policy_number' => $r['policy_number'], 'vin' => $r['vin'],
-                        'car_name' => trim(($r['car_system'] ?? '') . ' ' . ($r['car_type'] ?? '')) ?: null,
+                        'car_name' => car_join([($r['car_system'] ?? ''), ($r['car_type'] ?? '')]) ?: null,
                         'car_system' => $r['car_system'], 'car_type' => $r['car_type'],
                         'car_model_year' => $r['car_model_year'], 'car_color' => $r['car_color'], 'car_usage' => $r['car_usage'],
                         'car_value' => $r['car_value'], 'liability_limit' => null,
@@ -1473,7 +1473,7 @@ try {
         $docTypes = [];
         foreach (company_doc_types() as $key => $v) $docTypes[$key] = company_doc_type_label($key);
         echo json_encode(['ok' => true, 'companies' => $companies, 'coverage_options' => body_coverage_options(),
-                          'liability_options' => liability_limit_options(), 'checklists' => $checklists,
+                          'liability_options' => liability_limit_options('C', $pdo), 'checklists' => $checklists,
                           'doc_types' => $docTypes, 'kinds' => company_request_kinds(),
                           'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
         exit;
@@ -1818,7 +1818,11 @@ try {
         $stmt = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
         $stmt->execute([$requestId]);
         $plates = $stmt->fetchAll();
+        // ردیف‌هایی که از رویشان «درخواستِ تمدید» ساخته شده (و اگر صادر شد، بیمه‌نامه‌ی تازه)
+        $rnLinks = [];
+        try { require_once __DIR__ . '/_renew_request.php'; $rnLinks = rnr_links($pdo); } catch (Throwable $e) {}
         foreach ($plates as &$p) {
+            $p['renewal'] = $rnLinks[($request['is_import'] ?? 0 ? 'I:' : 'C:') . $p['id']] ?? null;
             $rowDocs = array_values(array_filter($docs, fn($d) => $d['plate_id'] == $p['id'] && $d['status'] === 'ASSIGNED'));
             $assignedTypes = array_values(array_filter(array_column($rowDocs, 'doc_type')));
             $p['plate_display'] = company_row_label($p);
@@ -1895,7 +1899,7 @@ try {
 
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates,
                           'counts' => $counts, 'doc_types' => company_doc_types(),
-                          'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options(),
+                          'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options('C', $pdo),
                           'defaults' => company_effective_defaults($pdo, $request['company_id'], $requestId),
                           'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons(),
                           'party_modes' => PARTY_MODES, 'party_default' => ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)]], JSON_UNESCAPED_UNICODE);
@@ -1928,6 +1932,7 @@ try {
             $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
         }
         $n = party_set_rows($pdo, $ids, $mode, $party);
+        try { party_sync_issue_info($pdo, $ids); } catch (Throwable $e) { error_log('[set_party sync] ' . $e->getMessage()); }
         echo json_encode(['ok' => true, 'updated' => $n, 'skipped_issued' => $skipped], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -2185,7 +2190,7 @@ try {
         $types = array_values(array_intersect((array)($data['types'] ?? []), ['THIRDPARTY', 'BODY'])) ?: [null];
         $kind = $aj['kind'] ?? '';
         $isNew = !empty($data['is_new']) || $kind === 'sales_invoice' ? 1 : 0;
-        $carName = mb_substr(trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? ''), 0, 100) ?: null;
+        $carName = mb_substr(car_join([($d['car_system'] ?? ''), ($d['car_tip'] ?? '')]) ?: ($d['usage'] ?? ''), 0, 100) ?: null;
         $ids = [];
         foreach ($types as $t) {
             $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -2442,7 +2447,16 @@ try {
         if ($expiry && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry)) $expiry = fin_jalali_to_date($expiry);
         $isNewRow = !empty($data['is_new_vehicle']);
         company_ensure_car_type($pdo);
-        $pdo->prepare("UPDATE company_request_plates SET car_type = ? WHERE id = ?")->execute([mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null, $plateId]);
+        $newCarType = mb_substr(trim($data['car_type'] ?? ''), 0, 120);
+        $pdo->prepare("UPDATE company_request_plates SET car_type = ? WHERE id = ?")->execute([$newCarType ?: null, $plateId]);
+        // «اطلاعات برای صدور» هم تیپِ تازه را می‌گیرد تا پنلِ صدور و فهرست‌ها همان را نشان دهند
+        company_ensure_issue_info_cols($pdo);
+        $iiSt = $pdo->prepare("SELECT issue_info FROM company_request_plates WHERE id = ?"); $iiSt->execute([$plateId]);
+        $iiRow = json_decode((string)$iiSt->fetchColumn(), true) ?: [];
+        if ($iiRow && ($iiRow['car_type'] ?? '') !== $newCarType) {
+            if ($newCarType !== '') $iiRow['car_type'] = $newCarType; else unset($iiRow['car_type']);
+            $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([$iiRow ? json_encode($iiRow, JSON_UNESCAPED_UNICODE) : null, $plateId]);
+        }
         // صفرکیلومتر: بدونِ تاریخِ انقضا و بدونِ بازدیدِ سلامت
         if ($isNewRow) { $pdo->prepare("UPDATE company_request_plates SET expiry_date = NULL WHERE id = ?")->execute([$plateId]); $expiry = null; $data['skip_health_inspection'] = 1; }
 

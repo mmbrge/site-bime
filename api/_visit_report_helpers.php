@@ -983,7 +983,7 @@ function vr_target_raw($pdo, $type, $id) {
         $st->execute([intval($id)]);
         $h = $st->fetch();
         if (!$h) return null;
-        $vt = trim(($h['car_system'] ?? '') . ' ' . ($h['car_type'] ?? ''));
+        $vt = car_join([($h['car_system'] ?? ''), ($h['car_type'] ?? '')]);
         $raw = ['name' => $h['insured_name'] ?: $h['full_name'], 'national_id' => $h['insured_national_id'] ?: $h['national_code'],
                 'phone_bimeg' => $h['insured_phone'] ?: $h['mobile_number'], 'addres_bimeg' => $h['insured_address'],
                 'chassis_no' => $h['chassis_num'] ?: $h['vin'], 'engine_no' => $h['engine_num'], 'year' => $h['car_model_year'], 'color' => $h['car_color'],

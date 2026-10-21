@@ -292,28 +292,31 @@
             site_all: 'مثلِ گزینه‌ی قبل؛ و اگر در فایلِ بیمه‌نامه هیچ فیشی نبود هم سامانه طبقِ قرارداد برای هر قسط فیش می‌سازد.'};
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
-        const sel = {P: d.P, C: d.C};
+        const sel = {P: d.P, C: d.C, liability_max: Object.assign({P: 10000000000, C: 14000000000}, d.liability_max || {})};
         const ovr = d.company_overrides || {};
         const ovN = Object.values(ovr).reduce((a, b) => a + Number(b || 0), 0);
         const draw = () => {
             ov.innerHTML = `<div class="fc-card" style="width:min(640px,100%);max-height:92vh;overflow:auto" dir="rtl">
-            <div class="flex items-center justify-between mb-2"><b class="text-base text-slate-800"><i class="fas fa-receipt text-indigo-500 ml-1"></i>فیش‌های بیمه‌نامه در صدور</b><button class="fc-btn s" data-x>✕</button></div>
+            <div class="flex items-center justify-between mb-2"><b class="text-base text-slate-800"><i class="fas fa-sliders text-indigo-500 ml-1"></i>تنظیماتِ صدور: فیش‌ها و سقفِ تعهد</b><button class="fc-btn s" data-x>✕</button></div>
             <p class="text-[11px] text-slate-500 mb-3 leading-6">وقتی فیش‌های داخلِ فایلِ بیمه‌نامه با اقساطی که از قرارداد حساب می‌شود فرق داشت، اقساط و فیش‌ها چطور ثبت شود؟</p>
             ${[['P', 'fa-users', 'کارکنان'], ['C', 'fa-building', 'شرکتی']].map(([k, ic, t]) => `<div class="fc-card mb-3" style="background:linear-gradient(135deg,${k === 'P' ? '#eef2ff' : '#ecfeff'},#fff)">
                 <b class="text-sm text-slate-800 block mb-2"><i class="fas ${ic} ml-1 ${k === 'P' ? 'text-indigo-500' : 'text-cyan-600'}"></i>صدورِ ${t}</b>
                 <div class="fc-seg" data-k="${k}">${d.modes.map(m => `<button type="button" data-m="${m.k}" class="${sel[k] === m.k ? 'on' : ''}" ${d.can_edit ? '' : 'disabled'}>${esc(m.fa)}</button>`).join('')}</div>
                 <p class="text-[10.5px] text-slate-500 mt-2 leading-6">${esc(HINT[sel[k]] || '')}</p>
                 ${k === 'C' && ovN ? `<p class="text-[10.5px] text-amber-700 mt-1"><i class="fas fa-circle-info ml-1"></i>${fa(ovN)} شرکت در فرمِ شرکت تنظیمِ اختصاصی دارند و طبقِ همان عمل می‌شود.</p>` : ''}
+                <label class="flex items-center gap-2 flex-wrap mt-3 pt-2" style="border-top:1px dashed #e2e8f0"><span class="text-[11px] font-bold text-slate-600"><i class="fas fa-shield-halved ml-1 text-slate-400"></i>بیشترین تعهدِ مالیِ ثالث که ${k === 'P' ? 'کارکنان (ربات، مینی‌اپ و ثبتِ دستی)' : 'شرکت‌ها (پنلِ ما و پنلِ شرکت‌ها)'} می‌بینند و ثبت می‌کنند:</span>
+                    <select class="fc-in" style="width:auto" data-lmax="${k}" ${d.can_edit ? '' : 'disabled'}>${(d.liability_all || []).map(v => `<option value="${v}" ${Number(sel.liability_max[k]) === Number(v) ? 'selected' : ''}>${money(v)} ریال</option>`).join('')}</select></label>
             </div>`).join('')}
             <p class="fc-alert info text-[10.5px]"><i class="fas fa-shield-halved ml-1"></i>روی بیمه‌نامه‌هایی که از این به بعد صادر می‌شوند (یا اقساطشان در پاپ‌آپِ صدور دوباره ساخته شود) اعمال می‌شود؛ اقساط و دریافتی‌های فعلی دست نمی‌خورند و فیش‌های اصلیِ بیمه‌نامه هم حذف نمی‌شوند. برای یک بیمه‌نامه هم در «مالی و روشِ پرداخت» می‌شود روشِ دیگری گذاشت.</p>
             <div class="flex gap-2 mt-3">${d.can_edit ? '<button class="fc-btn p" data-save><i class="fas fa-check"></i> ذخیره</button>' : ''}<button class="fc-btn s" data-x>بستن</button></div></div>`;
             ov.querySelectorAll('[data-x]').forEach(b => b.onclick = () => ov.remove());
             ov.querySelectorAll('[data-k] [data-m]').forEach(b => b.onclick = () => { sel[b.closest('[data-k]').dataset.k] = b.dataset.m; draw(); });
+            ov.querySelectorAll('[data-lmax]').forEach(x => x.onchange = () => { sel.liability_max[x.dataset.lmax] = Number(x.value); });
             const sv = ov.querySelector('[data-save]');
             if (sv) sv.onclick = async () => {
                 const r = await api('slip_modes_save', sel);
                 if (!r.ok) return toast(r.error, 'error');
-                toast('تنظیمِ فیش‌ها ذخیره شد.', 'success');
+                toast('تنظیماتِ صدور ذخیره شد.', 'success');
                 ov.remove();
             };
         };

@@ -112,12 +112,19 @@ if ($action === 'slip_modes') {
     $over = [];
     try { $over = $pdo->query("SELECT slip_mode, COUNT(*) n FROM companies WHERE slip_mode IN ('auto','site','site_all') GROUP BY slip_mode")->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) {}
     fpo(['ok' => true, 'P' => fin_slip_mode_global($pdo, 'P'), 'C' => fin_slip_mode_global($pdo, 'C'), 'company_overrides' => array_map('intval', $over),
+         'liability_all' => LIABILITY_ALL_OPTIONS, 'liability_max' => ['P' => liability_max($pdo, 'P'), 'C' => liability_max($pdo, 'C')],
          'modes' => array_map(fn($m) => ['k' => $m, 'fa' => fin_slip_mode_fa($m)], FIN_SLIP_MODES), 'can_edit' => $isAdmin]);
 }
 if ($action === 'slip_modes_save') {
     if (!$isAdmin) fpo(['ok' => false, 'error' => 'این تنظیم فقط کارِ مدیر است.']);
     foreach (['P' => 'slip_mode_p', 'C' => 'slip_mode_c'] as $k => $key) {
         if (isset($data[$k]) && in_array((string)$data[$k], FIN_SLIP_MODES, true)) fin_set($pdo, $key, (string)$data[$k]);
+    }
+    // سقفِ تعهدِ مالیِ ثالث که کارکنان / شرکت‌ها می‌بینند و می‌توانند ثبت کنند
+    foreach (['P' => 'liability_max_p', 'C' => 'liability_max_c'] as $k => $key) {
+        $v = intval($data['liability_max'][$k] ?? 0);
+        if ($v && in_array($v, LIABILITY_ALL_OPTIONS, true))
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, (string)$v]);
     }
     fpo(['ok' => true]);
 }

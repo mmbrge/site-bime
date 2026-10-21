@@ -53,7 +53,7 @@ function site_slip_context($pdo, $kind, $refId) {
         $insured = trim((string)($r['insured_name'] ?? '')) ?: (string)$r['holder_name'];
         $nid = trim((string)($r['insured_national_id'] ?? '')) ?: (string)$r['holder_nid'];
         $plate = (string)($r['plate'] ?? '');
-        $car = trim(($r['car_system'] ?? '') . ' ' . ($r['car_type'] ?? ''));
+        $car = car_join([($r['car_system'] ?? ''), ($r['car_type'] ?? '')]);
         $company = (string)($r['company_name'] ?? '');
     }
     $dir = null;

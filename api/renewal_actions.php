@@ -29,7 +29,7 @@ function rn_ensure($pdo) {
         recipient VARCHAR(200) NULL, note VARCHAR(255) NULL, message TEXT NULL, created_by INT NULL, created_at DATETIME NULL, KEY idx_row (src, row_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
-const RN_CHANNELS = ['bot' => 'ربات بله', 'phone' => 'تماس تلفنی', 'sms' => 'پیامک', 'letter' => 'نامه', 'visit' => 'حضوری', 'other' => 'سایر', 'declined' => 'تمدید نمی‌کند', 'renewed_out' => 'جای دیگر تمدید کرد'];
+const RN_CHANNELS = ['request' => 'درخواستِ تمدید', 'bot' => 'ربات بله', 'phone' => 'تماس تلفنی', 'sms' => 'پیامک', 'letter' => 'نامه', 'visit' => 'حضوری', 'other' => 'سایر', 'declined' => 'تمدید نمی‌کند', 'renewed_out' => 'جای دیگر تمدید کرد'];
 
 // تاریخِ شمسیِ «۱۴۰۵/۰۷/۱۳» (هر شکلی) => [jalali 'Y/m/d', ts] یا null
 function rn_j($v) {
@@ -40,6 +40,13 @@ function rn_j($v) {
 function rn_plus_year($j) { [$y, $m, $d] = array_map('intval', explode('/', $j)); $d = min($d, company_jalali_month_len($y + 1, $m)); return sprintf('%04d/%02d/%02d', $y + 1, $m, $d); }
 function rn_pick(array $srcs, $keys) { foreach ($srcs as $s) foreach ((array)$keys as $k) if (isset($s[$k]) && is_scalar($s[$k]) && trim((string)$s[$k]) !== '') return trim((string)$s[$k]); return ''; }
 function rn_key_vin($v) { $v = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); return strlen($v) >= 6 ? $v : ''; }
+
+// بردرو و درخواستِ تمدید (همان فایل‌هایی که create_requests لازم دارد)
+function rn_require_brd() {
+    require_once __DIR__ . '/_import_archive.php'; require_once __DIR__ . '/_bordereau.php'; require_once __DIR__ . '/_vehicles.php';
+    require_once __DIR__ . '/_registry_link.php'; require_once __DIR__ . '/_renew_request.php';
+}
+const RN_ORIGINS = ['panel' => 'پنل', 'brd' => 'بردرو', 'both' => 'پنل + بردرو'];
 
 // همه‌ی صادره‌ها با اطلاعاتِ کامل
 function rn_rows($pdo) {
@@ -62,7 +69,7 @@ function rn_rows($pdo) {
             'national_id' => rn_pick($S, ['insured_national_id', 'national_id']) ?: $r['economic_code'], 'phone' => rn_pick($S, ['insured_phone', 'phone']) ?: $r['company_phone'],
             'address' => rn_pick($S, ['insured_address', 'address']), 'owner_name' => rn_pick($S, 'owner_name'),
             'plate' => company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) ?: '', 'chassis' => $r['chassis_no'] ?: ($r['vin'] ?: rn_pick($S, 'vin')),
-            'engine' => $r['engine_no'] ?: rn_pick($S, ['engine_no']), 'type' => $r['insurance_type'], 'car' => $r['car_name'] ?: trim(rn_pick($S, 'car_system') . ' ' . rn_pick($S, ['car_type', 'car_tip'])),
+            'engine' => $r['engine_no'] ?: rn_pick($S, ['engine_no']), 'type' => $r['insurance_type'], 'car' => $r['car_name'] ?: car_join([rn_pick($S, 'car_system'), rn_pick($S, ['car_type', 'car_tip'])]),
             'model_year' => rn_pick($S, ['car_model_year', 'model_year']), 'color' => rn_pick($S, ['car_color', 'color']), 'usage' => rn_pick($S, ['car_usage', 'usage']),
             'policy' => $r['policy_number'] ?: ($r['import_policy_number'] ?? ''), 'central_no' => rn_pick($S, ['central_unique_code', 'central_no']),
             'premium' => (int)$r['total_premium'], 'car_value' => (int)$r['car_value'], 'liability' => (int)$r['liability_limit'], 'insurer' => $r['insurer'] === 'IRAN' ? 'ایران' : 'پاسارگاد',
@@ -86,7 +93,7 @@ function rn_rows($pdo) {
                 'national_id' => $r['insured_national_id'] ?: $r['national_code'], 'phone' => $r['insured_phone'] ?: ($r['ocr_phone'] ?: $r['mobile_number']),
                 'address' => $r['insured_address'] ?: rn_pick($S, ['insured_address', 'address']), 'owner_name' => rn_pick($S, 'owner_name'),
                 'plate' => $r['plate'] ?: '', 'chassis' => $r['chassis_num'] ?: $r['vin'], 'engine' => $r['engine_num'], 'type' => $r['insurance_type'],
-                'car' => trim(($r['car_system'] ?? '') . ' ' . ($r['car_type'] ?? '')), 'model_year' => $r['car_model_year'], 'color' => $r['car_color'], 'usage' => $r['car_usage'],
+                'car' => car_join([($r['car_system'] ?? ''), ($r['car_type'] ?? '')]), 'model_year' => $r['car_model_year'], 'color' => $r['car_color'], 'usage' => $r['car_usage'],
                 'policy' => $r['policy_number'], 'central_no' => $r['central_unique_code'], 'premium' => (int)$r['total_premium'], 'car_value' => (int)$r['car_value'],
                 'liability' => (int)preg_replace('/\D/', '', (string)$r['liability_limit']), 'insurer' => 'پاسارگاد',
                 'prev_insurer' => rn_pick($S, 'prev_insurer'), 'prev_policy' => rn_pick($S, ['prev_policy_number', 'prev_policy']),
@@ -95,6 +102,35 @@ function rn_rows($pdo) {
             ];
         }
     } catch (Throwable $e) { error_log('[renewal personnel] ' . $e->getMessage()); }
+    foreach ($rows as &$r) $r['origin'] = 'panel';
+    unset($r);
+
+    // «بردروی پاسارگاد» هم در همین فهرست (منبع B، برچسبِ «بردرو»)؛ بیمه‌نامه‌ای که در پنل هم صادر شده یک ردیف می‌ماند با برچسبِ «پنل + بردرو»
+    rn_require_brd();
+    $polKey = function ($p) { $p = preg_replace('/\D+/', '', p2e_digits((string)$p)); return strlen($p) >= 6 ? $p : ''; };
+    $byPol = [];
+    foreach ($rows as $i => $r) if (($k = $polKey($r['policy'])) !== '') $byPol[$k] = $i;
+    try {
+        foreach (brd_rows($pdo) as $b) {
+            if ($b['state'] === 'cancelled') continue;
+            if (($k = $polKey($b['policy'])) !== '' && isset($byPol[$k])) {
+                $i = $byPol[$k];
+                $rows[$i]['origin'] = 'both'; $rows[$i]['brd_id'] = $b['id'];
+                continue;
+            }
+            $rows[] = [
+                'src' => 'B', 'id' => (int)$b['id'], 'source_fa' => 'بردرو', 'origin' => 'brd', 'owner_id' => (int)($b['company_id'] ?? 0),
+                'insured' => $b['insured'] ?: $b['group'], 'company' => $b['company_name'] ?: $b['group'], 'contract' => $b['contract_no'] ?: $b['contract_party'],
+                'national_id' => $b['insured_id'], 'phone' => $b['phone'], 'address' => $b['address'], 'owner_name' => $b['owner_name'],
+                'plate' => $b['plate'], 'chassis' => $b['vin'], 'engine' => $b['engine'], 'type' => $b['type'], 'car' => car_join([$b['car'], $b['car_system'], $b['car_tip']]),
+                'model_year' => $b['model_year'], 'color' => $b['color'], 'usage' => $b['usage'], 'policy' => $b['policy'], 'central_no' => $b['central_no'],
+                'premium' => (int)$b['premium'], 'car_value' => (int)$b['car_value'], 'liability' => (int)$b['liability'], 'insurer' => 'پاسارگاد',
+                'prev_insurer' => $b['prev_insurer'], 'prev_policy' => $b['prev_policy'], 'endorsed' => !empty($b['endorsed']), 'insured_kind_fa' => $b['insured_kind_fa'],
+                '_issue' => $b['issue_date'], '_start' => $b['start_date'], '_end' => $b['end_date'], '_issued_at' => null, 'file' => null,
+                '_brd_renewed' => $b['renewed_by'], '_brd_note' => $b['notes'] ? end($b['notes']) : null,
+            ];
+        }
+    } catch (Throwable $e) { error_log('[renewal bordereau] ' . $e->getMessage()); }
 
     // تاریخ‌ها: صدور، شروع، انقضا (اگر انقضا خوانده نشده: یک سال بعد از شروع/صدور = «تخمینی»)
     foreach ($rows as &$r) {
@@ -108,6 +144,7 @@ function rn_rows($pdo) {
         $r['days_left'] = $end ? (int)floor(($end[1] - $today) / 86400) : null;
         $r['type_fa'] = insurance_type_fa($r['type']);
         $r['key'] = $r['src'] . ':' . $r['id'];
+        $r['origin_fa'] = RN_ORIGINS[$r['origin']] ?? '';
         unset($r['_issue'], $r['_start'], $r['_end'], $r['_issued_at']);
     }
     unset($r);
@@ -119,7 +156,7 @@ function rn_rows($pdo) {
         foreach ($ks as $k) $by[$r['type'] . '|' . $k][] = $i;
     }
     foreach ($rows as $i => &$r) {
-        $r['renewed_by'] = null;
+        $r['renewed_by'] = !empty($r['_brd_renewed']['policy']) || !empty($r['_brd_renewed']['issue']) ? $r['_brd_renewed'] : null;
         $ks = array_filter([rn_key_vin($r['chassis']) ? 'v' . rn_key_vin($r['chassis']) : '', $r['plate'] !== '' ? 'p' . plate_core($r['plate']) : '']);
         foreach ($ks as $k) foreach ($by[$r['type'] . '|' . $k] ?? [] as $j) {
             if ($j === $i) continue;
@@ -138,14 +175,28 @@ function rn_rows($pdo) {
         if ($n['ok']) $notes[$k]['last'] = ['channel' => $n['channel'], 'channel_fa' => RN_CHANNELS[$n['channel']] ?? $n['channel'], 'note' => $n['note'],
                                            'at' => jalali_from_gregorian_ts_dotted(strtotime($n['created_at'])), 'ts' => strtotime($n['created_at'])];
     }
+    $links = rnr_links($pdo);
     foreach ($rows as &$r) {
-        $n = $notes[$r['key']] ?? null;
+        $n = $notes[$r['key']] ?? ($notes['B:' . ($r['brd_id'] ?? 0)] ?? null);
         $r['notice'] = $n['last'] ?? null; $r['notice_count'] = $n['count'] ?? 0;
+        // پیگیری‌هایی که قبلاً در خودِ بردرو ثبت شده
+        if (!$r['notice'] && !empty($r['_brd_note'])) {
+            $bn = $r['_brd_note'];
+            $r['notice'] = ['channel' => $bn['channel'] === 'renewed' ? 'other' : $bn['channel'], 'channel_fa' => $bn['channel_fa'], 'note' => $bn['note'], 'at' => $bn['at'], 'ts' => 0];
+            $r['notice_count'] = 1;
+            if ($bn['channel'] === 'renewed' && !$r['renewed_by']) $r['renewed_by'] = ['policy' => '', 'issue' => $bn['at'], 'src' => 'ثبتِ دستی در بردرو'];
+        }
+        unset($r['_brd_renewed'], $r['_brd_note']);
+        // درخواستِ تمدیدِ ثبت‌شده از همین ردیف (و بیمه‌نامه‌ی تازه‌اش وقتی صادر شد)
+        $lk = $links[$r['key']] ?? (!empty($r['brd_id']) ? ($links['B:' . $r['brd_id']] ?? null) : null);
+        $r['renewal'] = $lk;
+        if ($lk && $lk['issued']) $r['renewed_by'] = ['policy' => $lk['policy'], 'issue' => $lk['issue_date'], 'src' => 'درخواستِ تمدید ' . $lk['ref'], 'file' => $lk['file']];
         if ($r['renewed_by']) $r['state'] = 'renewed';
+        elseif ($lk) $r['state'] = 'requested';
         elseif ($r['notice'] && in_array($r['notice']['channel'], ['declined', 'renewed_out'], true)) $r['state'] = 'closed';
         elseif ($r['notice']) $r['state'] = 'notified';
         else $r['state'] = 'none';
-        $r['state_fa'] = ['renewed' => 'تمدید شد', 'closed' => $r['notice']['channel_fa'] ?? 'بسته شد', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$r['state']];
+        $r['state_fa'] = ['renewed' => 'تمدید شد', 'requested' => 'درخواستِ تمدید ثبت شد', 'closed' => $r['notice']['channel_fa'] ?? 'بسته شد', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$r['state']];
     }
     unset($r);
     return $rows;
@@ -164,10 +215,11 @@ function rn_by_keys($pdo, array $keys) {
 function rn_recipients($pdo, array $rows, $tpl) {
     $groups = [];
     foreach ($rows as $r) {
-        if ($r['src'] === 'C') $g = 'C' . $r['owner_id'];
+        if ($r['src'] === 'C' || ($r['src'] === 'B' && $r['owner_id'])) $g = 'C' . $r['owner_id'];
         elseif ($r['src'] === 'P') $g = 'P' . $r['owner_id'];
         else $g = 'I' . md5($r['insured'] . '|' . $r['national_id']);
-        if (!isset($groups[$g])) $groups[$g] = ['gid' => $g, 'kind' => $r['src'], 'owner_id' => $r['owner_id'], 'name' => $r['src'] === 'C' ? $r['company'] : $r['insured'],
+        $gk = $g[0] === 'C' ? 'C' : ($r['src'] === 'B' ? 'I' : $r['src']);
+        if (!isset($groups[$g])) $groups[$g] = ['gid' => $g, 'kind' => $gk, 'owner_id' => $r['owner_id'], 'name' => $gk === 'C' ? $r['company'] : $r['insured'],
                                                'phone' => $r['phone'], 'rows' => [], 'bot' => false, 'bot_fa' => ''];
         $groups[$g]['rows'][] = $r;
     }
@@ -182,7 +234,7 @@ function rn_recipients($pdo, array $rows, $tpl) {
             $g['bot'] = $n > 0 && cbot_token($pdo); $g['bot_fa'] = $n ? fa_digits($n) . ' کاربرِ شرکت در ربات شرکت‌ها' : 'هیچ کاربرِ این شرکت به ربات وصل نیست';
         } elseif ($g['kind'] === 'P') {
             $g['bot'] = !empty($g['rows'][0]['has_bot']) && rn_main_token($pdo); $g['bot_fa'] = !empty($g['rows'][0]['has_bot']) ? 'ربات بله (پرسنل)' : 'به ربات بله وصل نیست';
-        } else $g['bot_fa'] = 'بایگانی وارداتی؛ ربات ندارد';
+        } else $g['bot_fa'] = 'بایگانی وارداتی / بردروی بدونِ شرکت؛ ربات ندارد';
         $g['message'] = rn_message($tpl, $g);
         $g['keys'] = array_map(function ($r) { return $r['key']; }, $g['rows']);
         $g['count'] = count($g['rows']);
@@ -219,7 +271,7 @@ function rn_send_main($pdo, $chat, $text) {
 function rn_log($pdo, $keys, $channel, $ok, $recipient, $note, $message, $uid) {
     $ins = $pdo->prepare("INSERT INTO renewal_notices (src, row_id, channel, ok, recipient, note, message, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
     foreach ($keys as $k) {
-        if (!preg_match('/^([CIP]):(\d+)$/', (string)$k, $m)) continue;
+        if (!preg_match('/^([CIPB]):(\d+)$/', (string)$k, $m)) continue;
         $ins->execute([$m[1], (int)$m[2], $channel, $ok ? 1 : 0, mb_substr((string)$recipient, 0, 200), mb_substr((string)$note, 0, 255) ?: null, $message, $uid ?: null]);
     }
 }
@@ -275,7 +327,7 @@ try {
     // ثبتِ دستیِ پیگیری (تماس، پیامک، نامه، «تمدید نمی‌کند»، ...)
     if ($action === 'mark') {
         $ch = (string)($data['channel'] ?? '');
-        if (!isset(RN_CHANNELS[$ch]) || $ch === 'bot') $out(['ok' => false, 'error' => 'نوعِ پیگیری نامعتبر است.']);
+        if (!isset(RN_CHANNELS[$ch]) || $ch === 'bot' || $ch === 'request') $out(['ok' => false, 'error' => 'نوعِ پیگیری نامعتبر است.']);
         $keys = array_values(array_filter((array)($data['keys'] ?? []), 'is_string'));
         if (!$keys) $out(['ok' => false, 'error' => 'ردیفی انتخاب نشده.']);
         rn_log($pdo, $keys, $ch, true, '', trim((string)($data['note'] ?? '')), trim((string)($data['message'] ?? '')) ?: null, intval($actor['user_id'] ?? 0));
@@ -284,12 +336,21 @@ try {
 
     // تاریخچه‌ی پیگیریِ یک ردیف
     if ($action === 'history') {
-        if (!preg_match('/^([CIP]):(\d+)$/', (string)($data['key'] ?? ''), $m)) $out(['ok' => false, 'error' => 'ردیف نامعتبر.']);
+        if (!preg_match('/^([CIPB]):(\d+)$/', (string)($data['key'] ?? ''), $m)) $out(['ok' => false, 'error' => 'ردیف نامعتبر.']);
         $st = $pdo->prepare("SELECT n.*, u.full_name AS by_name FROM renewal_notices n LEFT JOIN users u ON u.id = n.created_by WHERE n.src = ? AND n.row_id = ? ORDER BY n.id DESC");
         try { $st->execute([$m[1], (int)$m[2]]); $list = $st->fetchAll(); }
         catch (Throwable $e) { $st = $pdo->prepare("SELECT * FROM renewal_notices WHERE src = ? AND row_id = ? ORDER BY id DESC"); $st->execute([$m[1], (int)$m[2]]); $list = $st->fetchAll(); }
         foreach ($list as &$n) { $n['channel_fa'] = RN_CHANNELS[$n['channel']] ?? $n['channel']; $n['at'] = jalali_from_gregorian_ts_dotted(strtotime($n['created_at'])) . ' ' . date('H:i', strtotime($n['created_at'])); }
         unset($n);
+        // ردیفِ بردرو: پیگیری‌هایی که در خودِ بردرو ثبت شده هم
+        if ($m[1] === 'B') {
+            rn_require_brd(); brd_ensure($pdo);
+            $bs = $pdo->prepare("SELECT channel, note, created_at, created_by_name FROM brd_notes WHERE row_id = ? ORDER BY id DESC");
+            $bs->execute([(int)$m[2]]);
+            foreach ($bs->fetchAll() as $b) $list[] = ['channel' => $b['channel'], 'channel_fa' => (BRD_CHANNELS[$b['channel']] ?? $b['channel']) . ' (بردرو)', 'ok' => 1, 'note' => $b['note'], 'message' => null,
+                                                      'by_name' => $b['created_by_name'], 'at' => jalali_from_gregorian_ts_dotted(strtotime($b['created_at'])) . ' ' . date('H:i', strtotime($b['created_at'])), 'created_at' => $b['created_at']];
+            usort($list, function ($a, $b) { return strcmp((string)$b['created_at'], (string)$a['created_at']); });
+        }
         $out(['ok' => true, 'rows' => $list]);
     }
 
@@ -304,6 +365,12 @@ try {
         @set_time_limit(300);
         $r = rnr_create($pdo, dirname(__DIR__), $items, intval($actor['user_id'] ?? 0) ?: null,
                         ['company_id' => intval($data['company_id'] ?? 0), 'values' => ($data['values'] ?? '') === 'company' ? 'company' : 'prev', 'text' => (string)($data['text'] ?? '')]);
+        // روی ردیفِ مبدأ هم ثبت می‌شود (پیگیریِ «درخواستِ تمدید»)
+        foreach ($r['created'] as $c) {
+            if (empty($c['src_key'])) continue;
+            $ref = ref_code_of($pdo, 'company_requests', (int)$c['request_id']) ?: ('#' . $c['request_id']);
+            rn_log($pdo, [$c['src_key']], 'request', true, $c['company'], 'درخواستِ تمدید ' . $ref . ' ثبت شد', null, intval($actor['user_id'] ?? 0));
+        }
         $out(['ok' => true] + $r);
     }
     // فهرستِ شرکت‌ها برای «شرکتِ درخواست‌دهنده» در پنجره‌ی درخواستِ تمدید
@@ -316,7 +383,7 @@ try {
         require_once __DIR__ . '/_xlsx_writer.php';
         $headers = ['ردیف', 'منبع', 'بیمه‌گذار', 'شرکت / کارفرما', 'قرارداد', 'کد / شناسه ملی', 'تلفن', 'نشانی', 'پلاک', 'شماره شاسی', 'شماره موتور', 'نوع بیمه', 'خودرو', 'مدل',
                     'رنگ', 'کاربری', 'شماره بیمه‌نامه', 'کد یکتا', 'بیمه‌گر', 'تاریخ صدور', 'شروع', 'انقضا', 'روزِ مانده', 'حق بیمه (ریال)', 'ارزش خودرو (ریال)', 'تعهد مالی (ریال)',
-                    'بیمه‌گرِ قبلی', 'بیمه‌نامه‌ی قبلی', 'وضعیتِ تمدید', 'آخرین پیگیری', 'تمدید با بیمه‌نامه'];
+                    'بیمه‌گرِ قبلی', 'بیمه‌نامه‌ی قبلی', 'وضعیتِ تمدید', 'آخرین پیگیری', 'تمدید با بیمه‌نامه', 'ورودی', 'درخواست و تمدید'];
         $xr = [];
         foreach ($rows as $i => $r) {
             $xr[] = [$i + 1, $r['source_fa'], $r['insured'], $r['company'], $r['contract'], $r['national_id'], $r['phone'], $r['address'], $r['plate'], $r['chassis'], $r['engine'],
@@ -324,7 +391,7 @@ try {
                      fa_digits($r['start_date']), fa_digits($r['end_date']) . ($r['end_est'] ? ' (تخمینی)' : ''), $r['days_left'] === null ? '' : $r['days_left'],
                      $r['premium'] ?: '', $r['car_value'] ?: '', $r['liability'] ?: '', $r['prev_insurer'], $r['prev_policy'], $r['state_fa'],
                      $r['notice'] ? fa_digits($r['notice']['at']) . ' - ' . $r['notice']['channel_fa'] . ($r['notice']['note'] ? ' (' . $r['notice']['note'] . ')' : '') : '',
-                     $r['renewed_by'] ? $r['renewed_by']['policy'] : ''];
+                     $r['renewed_by'] ? $r['renewed_by']['policy'] : '', $r['origin_fa'] ?? '', $r['renewal']['note'] ?? ''];
         }
         $path = xlsx_build($headers, $xr, 'اعلام تمدید', [0, 22, 23, 24, 25]);
         header_remove('Content-Type');

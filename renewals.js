@@ -2,6 +2,8 @@
 // صفحه‌ی «اعلام تمدید»: همه‌ی بیمه‌نامه‌های صادرشده (شرکتی، بایگانی وارداتی، کارکنان) ردیف‌به‌ردیف با همه‌ی اطلاعات؛
 // جستجو در همه‌ی ستون‌ها، مرتب‌سازی با کلیک روی سرستون، فیلتر (منبع، شرکت، بیمه‌گذار، قرارداد، نوع، تاریخ صدور، انقضا، وضعیتِ تمدید)،
 // انتخابِ ستون‌ها، اعلامِ تمدید با ربات بله (به تفکیکِ شرکت/شخص) یا ثبتِ پیگیریِ دستی، و خروجیِ اکسل به همان ترتیب.
+// ردیف‌های «بردروی پاسارگاد» هم در همین فهرست‌اند (برچسبِ «بردرو» / «پنل» / «پنل + بردرو» و فیلترِ «ورودی»)؛
+// بعد از «درخواستِ تمدید» شرحش روی همان ردیف می‌نشیند و وقتی صادر شد ردیف به «تمدید شده‌ها» می‌رود.
 (function () {
     'use strict';
     const API = 'api/renewal_actions.php';
@@ -15,11 +17,11 @@
     const fpath = p => '/' + String(p || '').split('/').map(encodeURIComponent).join('/');
     const jnum = j => { const m = en(j).match(/(1[34]\d{2})\D+(\d{1,2})\D+(\d{1,2})/); return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]) : 0; };
     const LSK = 'rn:cols';
-    const R = {root: null, rows: [], view: [], sel: new Set(), sort: {k: 'days_left', d: 1}, f: {quick: 'all'}, tpl: '', channels: {}, cols: null};
+    const R = {root: null, rows: [], view: [], sel: new Set(), sort: {k: 'days_left', d: 1}, f: {quick: 'all'}, tpl: '', channels: {}, cols: null, tab: 'open'};
 
     // ستون‌ها: [کلید، عنوان، پیش‌فرض نمایش، تابعِ نمایش]
     const COLS = [
-        ['source_fa', 'منبع', 1, r => `<span class="rn-src rn-src-${r.src}">${esc(r.source_fa)}</span>`],
+        ['source_fa', 'منبع', 1, r => `<span class="rn-src rn-src-${r.src}">${esc(r.source_fa)}</span>${r.origin ? `<small class="rn-o rn-o-${r.origin}" title="ورودیِ ردیف">${esc(r.origin_fa)}</small>` : ''}${r.endorsed ? '<small class="rn-o" style="background:#fef3c7;color:#92400e" title="اطلاعاتِ این ردیف با الحاقیه تغییر کرده">الحاقیه</small>' : ''}`],
         ['insured', 'بیمه‌گذار', 1, r => `<b>${esc(r.insured)}</b>${r.holder && r.holder !== r.insured ? `<small class="block text-slate-400">${esc(r.holder)}</small>` : ''}`],
         ['company', 'شرکت / کارفرما', 1, r => esc(r.company)],
         ['contract', 'قرارداد', 1, r => esc(r.contract)],
@@ -32,6 +34,11 @@
         ['end_date', 'انقضا', 1, r => `${fa(r.end_date)}${r.end_est ? '<small class="block text-[9px] text-slate-400">تخمینی (یک سال)</small>' : ''}`],
         ['days_left', 'روزِ مانده', 1, r => r.days_left === null ? '' : `<span class="rn-d ${r.days_left < 0 ? 'x' : r.days_left <= 15 ? 'h' : r.days_left <= 45 ? 'm' : ''}">${r.days_left < 0 ? fa(-r.days_left) + ' روز گذشته' : fa(r.days_left)}</span>`],
         ['premium', 'حق بیمه', 1, r => money(r.premium)],
+        ['renewal', 'درخواست و تمدید', 1, r => r.renewal ? `<span class="block max-w-[300px] whitespace-normal text-[10.5px] leading-5 ${r.renewal.issued ? 'text-emerald-700' : 'text-sky-700'}">${esc(fa(r.renewal.note))}</span>
+            <span class="flex gap-1 mt-0.5">${window.openCompanyRequestDetail ? `<button class="rn-btn s" style="padding:2px 7px;font-size:10px" data-req="${r.renewal.request_id}"><i class="fas fa-folder-open"></i>درخواست</button>` : ''}
+            ${r.renewal.letter_file ? `<a class="rn-btn s" style="padding:2px 7px;font-size:10px" href="${fpath(r.renewal.letter_file)}" target="_blank"><i class="fas fa-envelope-open-text"></i>نامه</a>` : ''}
+            ${r.renewal.file ? `<a class="rn-btn s" style="padding:2px 7px;font-size:10px;color:#047857" href="${fpath(r.renewal.file)}" target="_blank"><i class="fas fa-file-pdf"></i>بیمه‌نامه‌ی تازه</a>` : ''}</span>`
+            : (r.renewed_by ? `<span class="text-[10.5px] text-emerald-700">تمدید با ${esc(r.renewed_by.src || '')} ${r.renewed_by.policy ? '<span dir="ltr">' + esc(fa(r.renewed_by.policy)) + '</span>' : ''}</span>` : '')],
         ['state_fa', 'وضعیتِ تمدید', 1, r => `<span class="rn-s rn-s-${r.state}">${esc(r.state_fa)}</span>${r.notice ? `<small class="block text-[9.5px] text-slate-400">${fa(r.notice.at)} · ${esc(r.notice.channel_fa)}${r.notice_count > 1 ? ' · ' + fa(r.notice_count) + ' بار' : ''}</small>` : ''}${r.renewed_by ? `<small class="block text-[9.5px] text-emerald-600" dir="ltr">${esc(fa(r.renewed_by.policy || ''))}</small>` : ''}`],
         ['national_id', 'کد / شناسه ملی', 0, r => `<span dir="ltr">${esc(fa(r.national_id || ''))}</span>`],
         ['phone', 'تلفن', 0, r => `<span dir="ltr">${esc(fa(r.phone || ''))}</span>`],
@@ -72,7 +79,11 @@
     .rn-t{font-size:10px;font-weight:900;border-radius:8px;padding:2px 7px} .rn-t-BODY{background:#ecfeff;color:#0e7490} .rn-t-THIRDPARTY{background:#f5f3ff;color:#6d28d9}
     .rn-d{font-weight:900;color:#334155} .rn-d.m{color:#d97706} .rn-d.h{color:#e11d48} .rn-d.x{color:#9f1239;background:#fff1f2;border-radius:8px;padding:1px 6px}
     .rn-s{font-size:10px;font-weight:900;border-radius:999px;padding:2px 8px} .rn-s-none{background:#f1f5f9;color:#64748b} .rn-s-notified{background:#fef3c7;color:#92400e}
-    .rn-s-renewed{background:#d1fae5;color:#065f46} .rn-s-closed{background:#ffe4e6;color:#9f1239}
+    .rn-s-renewed{background:#d1fae5;color:#065f46} .rn-s-closed{background:#ffe4e6;color:#9f1239} .rn-s-requested{background:#e0f2fe;color:#0369a1}
+    .rn-src-B{background:#fff7ed;color:#c2410c} .rn-o{display:inline-block;font-size:9.5px;font-weight:900;border-radius:999px;padding:1px 7px;margin-right:4px;background:#f1f5f9;color:#475569}
+    .rn-o-brd{background:#ffedd5;color:#9a3412} .rn-o-both{background:#fae8ff;color:#86198f} .rn-o-panel{background:#ecfdf5;color:#047857}
+    .rn-tabs{display:flex;gap:6px;flex-wrap:wrap} .rn-tab{border:0;border-radius:14px;padding:9px 16px;font-weight:900;font-size:12.5px;cursor:pointer;font-family:inherit;background:#fff;color:#334155;border:1px solid #e2e8f0}
+    .rn-tab.on{background:linear-gradient(120deg,#db2777,#7c3aed);color:#fff;border-color:transparent} .rn-tab b{margin-right:6px;opacity:.85}
     .rn-bulk{position:sticky;bottom:10px;z-index:5;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:#0f172a;color:#fff;border-radius:18px;padding:10px 14px;box-shadow:0 18px 30px -18px #0f172a}
     .rn-ov{position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto;direction:rtl}
     .rn-pn{background:#fff;border-radius:26px;width:100%;max-width:980px;box-shadow:0 30px 60px -25px rgba(0,0,0,.5)}
@@ -92,27 +103,35 @@
         } catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; }
     }
     function cols() {
-        if (!R.cols) { let c = null; try { c = JSON.parse(localStorage.getItem(LSK) || 'null'); } catch (e) {} R.cols = Array.isArray(c) ? c : COLS.filter(x => x[2]).map(x => x[0]); }
+        if (!R.cols) {
+            let c = null; try { c = JSON.parse(localStorage.getItem(LSK) || 'null'); } catch (e) {}
+            R.cols = Array.isArray(c) ? c : COLS.filter(x => x[2]).map(x => x[0]);
+            // ستونِ تازه‌ی «درخواست و تمدید» یک بار به انتخابِ قبلیِ کاربر اضافه می‌شود
+            if (Array.isArray(c) && !c.includes('renewal')) { try { if (!localStorage.getItem(LSK + ':rn2')) { R.cols.push('renewal'); localStorage.setItem(LSK, JSON.stringify(R.cols)); localStorage.setItem(LSK + ':rn2', '1'); } } catch (e) {} }
+        }
         return COLS.filter(x => R.cols.includes(x[0]));
     }
 
     function shell() {
         R.root.innerHTML = `
         <div class="rn-hero"><h2><i class="fas fa-bell ml-2"></i>اعلام تمدید</h2>
-            <p>همه‌ی بیمه‌نامه‌های صادرشده (شرکتی، بایگانی وارداتی و کارکنان) با تاریخِ انقضا. ردیف‌ها را انتخاب کنید و «اعلام تمدید» بزنید: برای هر شرکت یا شخص یک پیام ساخته می‌شود و با ربات بله فرستاده می‌شود، یا تماس/پیامکِ خودتان را به‌عنوانِ پیگیری ثبت کنید. اگر بیمه‌نامه‌ی تازه‌ای برای همان خودرو صادر شود، ردیف خودکار «تمدید شد» می‌شود.</p>
+            <p>همه‌ی بیمه‌نامه‌های صادرشده (شرکتی، بایگانی وارداتی، کارکنان و بردروی پاسارگاد) با تاریخِ انقضا. ردیف‌ها را انتخاب کنید و «اعلام تمدید» بزنید: برای هر شرکت یا شخص یک پیام ساخته می‌شود و با ربات بله فرستاده می‌شود، یا تماس/پیامکِ خودتان را به‌عنوانِ پیگیری ثبت کنید. اگر بیمه‌نامه‌ی تازه‌ای برای همان خودرو صادر شود، ردیف خودکار «تمدید شد» می‌شود.</p>
             <div class="flex flex-wrap gap-2 mt-3 relative z-10">
                 <button class="rn-btn w" data-a="export"><i class="fas fa-file-excel"></i>اکسلِ همین فهرست</button>
                 <button class="rn-btn g" data-a="cols"><i class="fas fa-table-columns"></i>ستون‌ها</button>
                 <button class="rn-btn g" data-a="reload"><i class="fas fa-rotate"></i></button>
+                <button class="rn-btn g" data-a="brd" title="بارگذاریِ اکسلِ بردرو، الحاقیه‌ها و فهرستِ گروهی"><i class="fas fa-file-import"></i>بردروی پاسارگاد (بارگذاری و الحاقیه)</button>
             </div></div>
+        <div class="rn-tabs mt-3" data-tabs></div>
         <div class="rn-chips mt-3" data-quick></div>
         <div class="rn-f mt-3">
             <input type="search" data-f="q" placeholder="جستجو در همه‌چیز: بیمه‌گذار، پلاک، شاسی، شماره بیمه‌نامه، تلفن…" style="flex:1;min-width:220px">
-            <select data-f="src"><option value="">همه‌ی منابع</option><option value="C">شرکتی</option><option value="I">بایگانی وارداتی</option><option value="P">کارکنان</option></select>
+            <select data-f="src"><option value="">همه‌ی منابع</option><option value="C">شرکتی</option><option value="I">بایگانی وارداتی</option><option value="P">کارکنان</option><option value="B">بردرو</option></select>
+            <select data-f="origin" title="ردیف از بردرو آمده یا از ابتدا در پنل ثبت شده"><option value="">همه‌ی ورودی‌ها</option><option value="panel">ثبت‌شده در پنل</option><option value="brd">فقط بردرو</option><option value="both">پنل + بردرو</option></select>
             <select data-f="type"><option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option></select>
             <select data-f="company"><option value="">همه‌ی شرکت‌ها / کارفرماها</option></select>
             <select data-f="contract"><option value="">همه‌ی قراردادها</option></select>
-            <select data-f="state"><option value="">همه‌ی وضعیت‌ها</option><option value="none">اعلام نشده</option><option value="notified">اعلام شده</option><option value="renewed">تمدید شد</option><option value="closed">تمدید نمی‌کند / جای دیگر</option></select>
+            <select data-f="state"><option value="">همه‌ی وضعیت‌ها</option><option value="none">اعلام نشده</option><option value="notified">اعلام شده</option><option value="requested">درخواستِ تمدید ثبت شد</option><option value="closed">تمدید نمی‌کند / جای دیگر</option></select>
             <input data-f="ifrom" placeholder="صدور از ۱۴۰۵/۰۱/۰۱" dir="ltr" style="width:120px"><input data-f="ito" placeholder="صدور تا" dir="ltr" style="width:100px">
             <input data-f="efrom" placeholder="انقضا از" dir="ltr" style="width:100px"><input data-f="eto" placeholder="انقضا تا" dir="ltr" style="width:100px">
             <button class="rn-btn s" data-a="clear"><i class="fas fa-eraser"></i>پاک‌کردن</button>
@@ -124,6 +143,7 @@
         q('[data-a="export"]').onclick = exportXlsx;
         q('[data-a="cols"]').onclick = pickCols;
         q('[data-a="reload"]').onclick = load;
+        q('[data-a="brd"]').onclick = () => { if (typeof switchTab === 'function') switchTab('bordereau'); };
         q('[data-a="clear"]').onclick = () => { R.f = {quick: 'all'}; sync(); apply(); };
         let t = null;
         R.root.querySelectorAll('[data-f]').forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', () => {
@@ -148,7 +168,9 @@
 
     function match(r, quick) {
         const f = R.f;
+        if (R.tab === 'renewed' ? r.state !== 'renewed' : r.state === 'renewed') return false;
         if (f.src && r.src !== f.src) return false;
+        if (f.origin && (f.origin === 'panel' ? r.origin === 'brd' : r.origin !== f.origin)) return false;
         if (f.type && r.type !== f.type) return false;
         if (f.company && r.company !== f.company) return false;
         if (f.contract && r.contract !== f.contract) return false;
@@ -168,7 +190,13 @@
         }
     }
     function apply() {
+        const tb = R.root.querySelector('[data-tabs]');
+        const nOpen = R.rows.filter(r => r.state !== 'renewed').length, nRen = R.rows.length - nOpen;
+        tb.innerHTML = `<button class="rn-tab ${R.tab === 'open' ? 'on' : ''}" data-tab="open"><i class="fas fa-bell ml-1"></i>اعلام تمدید<b>${fa(nOpen)}</b></button>
+            <button class="rn-tab ${R.tab === 'renewed' ? 'on' : ''}" data-tab="renewed"><i class="fas fa-circle-check ml-1"></i>تمدید شده‌ها<b>${fa(nRen)}</b></button>`;
+        tb.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { R.tab = b.dataset.tab; R.sel.clear(); if (R.tab === 'renewed') R.f.quick = 'all'; apply(); });
         const qb = R.root.querySelector('[data-quick]');
+        qb.style.display = R.tab === 'renewed' ? 'none' : '';
         qb.innerHTML = QUICK.map(([k, l]) => `<button class="rn-chip ${R.f.quick === k ? 'on' : ''}" data-q="${k}">${l}<b>${fa(R.rows.filter(r => match(r, k)).length)}</b></button>`).join('');
         qb.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { R.f.quick = b.dataset.q; apply(); });
         const {k, d} = R.sort;
@@ -181,10 +209,15 @@
         render();
     }
 
+    // خلاصه‌ی بالای جدول + «لغوِ انتخاب» (با هر تغییرِ انتخاب تازه می‌شود)
+    function sumLine() {
+        const prem = R.view.reduce((a, r) => a + (Number(r.premium) || 0), 0);
+        R.root.querySelector('[data-sum]').innerHTML = `${fa(R.view.length)} بیمه‌نامه از ${fa(R.rows.length)} · جمعِ حق بیمه ${money(prem) || '۰'} ریال${R.sel.size ? ` · <button class="rn-btn s" style="padding:2px 9px;font-size:10.5px" data-unsel><i class="fas fa-xmark"></i>لغوِ انتخاب</button>` : ''}${R.sel.size ? ` · <b class="text-pink-700">${fa(R.sel.size)} انتخاب‌شده</b>` : ''}`;
+        const u = R.root.querySelector('[data-unsel]'); if (u) u.onclick = () => { R.sel.clear(); render(); };
+    }
     function render() {
         const C = cols(), tw = R.root.querySelector('[data-tw]');
-        const prem = R.view.reduce((a, r) => a + (Number(r.premium) || 0), 0);
-        R.root.querySelector('[data-sum]').innerHTML = `${fa(R.view.length)} بیمه‌نامه از ${fa(R.rows.length)} · جمعِ حق بیمه ${money(prem) || '۰'} ریال${R.sel.size ? ` · <b class="text-pink-700">${fa(R.sel.size)} انتخاب‌شده</b>` : ''}`;
+        sumLine();
         if (!R.view.length) { tw.innerHTML = '<div class="p-12 text-center text-slate-400 text-sm"><i class="fas fa-calendar-check text-3xl block mb-2 text-slate-200"></i>بیمه‌نامه‌ای با این فیلترها نیست.</div>'; bulk(); return; }
         const allSel = R.view.every(r => R.sel.has(r.key));
         tw.innerHTML = `<table class="rn-tbl no-count"><thead><tr><th style="width:30px;cursor:default"><input type="checkbox" data-all ${allSel ? 'checked' : ''}></th>
@@ -198,17 +231,22 @@
         tw.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? R.sel.add(c.dataset.sel) : R.sel.delete(c.dataset.sel); c.closest('tr').classList.toggle('sel', c.checked); bulk(); });
         tw.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { const k = th.dataset.sort; R.sort = {k, d: R.sort.k === k ? -R.sort.d : 1}; apply(); });
         tw.querySelectorAll('[data-h]').forEach(b => b.onclick = () => history(b.dataset.h));
+        tw.querySelectorAll('[data-req]').forEach(b => b.onclick = () => window.openCompanyRequestDetail(+b.dataset.req));
         tw.querySelectorAll('[data-rr]').forEach(b => b.onclick = () => renewReq(R.rows.filter(r => r.key === b.dataset.rr)));
         bulk();
     }
     // «درخواستِ تمدید»: درخواستِ صدورِ تازه با همان اطلاعات و مدارک (renew-req.js)؛ کارکنان: فرمِ ثبتِ دستی با همان اطلاعات
     function renewReq(rows) {
         if (!window.RenewReq) return;
-        RenewReq.open(rows.map(r => ({src: r.src, id: r.id, label: r.policy || r.plate || r.insured, type: r.type, plate: r.plate, company: r.company || r.insured, renewed: !!r.renewed_by, row: r})),
-            {onPersonnel: it => { if (typeof window.renewPersonnelCase === 'function') window.renewPersonnelCase(it.row); }});
+        RenewReq.open(rows.map(r => ({src: r.src, id: r.id, label: r.policy || r.plate || r.insured, type: r.type, plate: r.plate, company: r.company || r.insured,
+                                      no_company: r.src === 'B' && !r.owner_id, renewed: !!r.renewed_by || r.state === 'requested', row: r})),
+            {onPersonnel: it => { if (typeof window.renewPersonnelCase === 'function') window.renewPersonnelCase(it.row); },
+             // بعد از ثبتِ درخواست: انتخاب‌ها خودکار لغو و فهرست تازه می‌شود (شرحِ درخواست روی همان ردیف)
+             onDone: d => { if ((d.created || []).length) { R.sel.clear(); load(); } }});
     }
     function bulk() {
         const box = R.root.querySelector('[data-bulk]');
+        sumLine();
         if (!R.sel.size) { box.innerHTML = ''; return; }
         box.innerHTML = `<div class="rn-bulk mt-3"><span class="text-xs font-black"><i class="fas fa-check-double ml-1 text-pink-300"></i>${fa(R.sel.size)} بیمه‌نامه انتخاب شد</span>
             <span class="flex flex-wrap gap-2"><button class="rn-btn p" data-b="notify"><i class="fas fa-paper-plane"></i>اعلام تمدید</button>
@@ -256,7 +294,7 @@
                     <label class="mr-auto inline-flex items-center gap-1 text-[11px] font-bold"><input type="checkbox" data-pick ${g.bot ? 'checked' : ''} ${g.bot ? '' : 'disabled'}>ارسال با ربات</label></div>
                     <textarea data-msg>${esc(g.message)}</textarea>
                     <div class="flex flex-wrap gap-2 mt-2"><button class="rn-btn s" data-copy><i class="fas fa-copy"></i>کپیِ متن</button>
-                    ${g.bot ? '' : `<select data-ch class="border rounded-xl px-2 text-xs">${Object.entries(R.channels).filter(([k]) => !['bot', 'declined', 'renewed_out'].includes(k)).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select><button class="rn-btn e" data-mk><i class="fas fa-check"></i>ثبت: اطلاع داده شد</button>`}</div></div>`).join('')
+                    ${g.bot ? '' : `<select data-ch class="border rounded-xl px-2 text-xs">${Object.entries(R.channels).filter(([k]) => !['bot', 'declined', 'renewed_out', 'request'].includes(k)).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select><button class="rn-btn e" data-mk><i class="fas fa-check"></i>ثبت: اطلاع داده شد</button>`}</div></div>`).join('')
                 + (bots.length ? `<button class="rn-btn p mt-2" data-send><i class="fas fa-paper-plane"></i>ارسال با ربات برای انتخاب‌شده‌ها</button>` : '');
             box.querySelectorAll('[data-g]').forEach(el => {
                 const g = d.groups.find(x => x.gid === el.dataset.g);
@@ -291,7 +329,7 @@
     function mark(keys) {
         const m = overlay('<i class="fas fa-clipboard-check text-pink-600 ml-1"></i>ثبتِ پیگیری', `
             <p class="text-xs text-slate-500 mb-2">${fa(keys.length)} بیمه‌نامه</p>
-            <div class="flex flex-wrap gap-2 mb-2">${Object.entries(R.channels).filter(([k]) => k !== 'bot').map(([k, v], i) => `<label class="rn-chip"><input type="radio" name="rnch" value="${k}" ${i === 0 ? 'checked' : ''} class="ml-1">${v}</label>`).join('')}</div>
+            <div class="flex flex-wrap gap-2 mb-2">${Object.entries(R.channels).filter(([k]) => k !== 'bot' && k !== 'request').map(([k, v], i) => `<label class="rn-chip"><input type="radio" name="rnch" value="${k}" ${i === 0 ? 'checked' : ''} class="ml-1">${v}</label>`).join('')}</div>
             <textarea data-note placeholder="توضیح (مثلاً: با آقای ... تماس گرفته شد، هفته‌ی بعد خبر می‌دهد)" style="min-height:70px"></textarea>
             <button class="rn-btn p mt-2" data-ok><i class="fas fa-check"></i>ثبت</button>`);
         m.q('[data-ok]').onclick = async () => {

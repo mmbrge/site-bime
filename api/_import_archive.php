@@ -112,7 +112,7 @@ function imp_parse_excel($pdo, $path) {
         $start = imp_jdate($r['start_date'] ?? '');
         $hasPrev = ($r['prev_policy'] ?? '') !== '' || ($r['prev_insurer'] ?? '') !== '';
         $zero = preg_match('/بل(ی|ه)|yes/ui', $r['zero_km'] ?? '') ? 1 : 0;
-        $carName = ($r['car_name'] ?? '') !== '' ? $r['car_name'] : trim(($r['car_system'] ?? '') . ' ' . ($r['car_tip'] ?? ''));
+        $carName = ($r['car_name'] ?? '') !== '' ? $r['car_name'] : car_join([($r['car_system'] ?? ''), ($r['car_tip'] ?? '')]);
 
         // داده‌ی کامل با همان کلیدهای فرمِ صدور (برای پیش‌پر کردنِ «ثبت صدور»)
         $pf = array_filter([

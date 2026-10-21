@@ -71,6 +71,39 @@ function party_set_rows($pdo, array $plateIds, $mode, $party = false) {
     return $n;
 }
 
+// بعد از تغییرِ مالک/بیمه‌گذار (کلیِ درخواست یا چند ردیف): «اطلاعات برای صدور» (issue_info) هم با همان مقادیرِ تازه هم‌سان می‌شود
+// تا پنلِ صدور و همه‌ی بخش‌ها اطلاعاتِ آخر را نشان دهند (ردیف‌های صادرشده دست نمی‌خورند)
+function party_sync_issue_info($pdo, array $plateIds) {
+    $plateIds = array_values(array_filter(array_unique(array_map('intval', $plateIds))));
+    if (!$plateIds) return;
+    $in = implode(',', array_fill(0, count($plateIds), '?'));
+    $st = $pdo->prepare("SELECT crp.id, crp.status, crp.party_mode, crp.party_json, crp.issue_info, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+                                c.name, c.national_id, c.economic_code, c.phone, c.address
+                           FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id IN ($in)");
+    $st->execute($plateIds);
+    $up = $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?");
+    foreach ($st->fetchAll() as $r) {
+        if ($r['status'] === 'ISSUED') continue;
+        $ii = json_decode((string)$r['issue_info'], true) ?: [];
+        $old = $ii;
+        $pr = party_resolve($r, $r, ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+        $set = function ($prefix, $p) use (&$ii) {
+            $map = ['name' => 'name', 'national_id' => 'national_id', 'phone' => 'phone', 'address' => 'address', 'postal_code' => 'postal_code'];
+            foreach ($map as $k => $f) {
+                $v = trim((string)($p[$f] ?? ''));
+                if ($k === 'national_id' && $v === '' && !empty($p['economic_code'])) $v = trim((string)$p['economic_code']);
+                if ($v !== '') $ii[$prefix . $k] = $v; else unset($ii[$prefix . $k]);
+            }
+        };
+        $set('insured_', $pr['insured'] ?: []);
+        if (!empty($pr['other'])) { $set('owner_', $pr['other']); unset($ii['owner_postal_code']); }
+        if ($pr['beneficiary']) { $ii['beneficiary'] = (string)($pr['beneficiary']['name'] ?? ''); $ii['beneficiary_national_id'] = (string)($pr['beneficiary']['national_id'] ?? ''); }
+        else unset($ii['beneficiary'], $ii['beneficiary_national_id']);
+        $ii = array_filter($ii, function ($v) { return $v !== '' && $v !== null; });
+        if ($ii != $old) $up->execute([$ii ? json_encode($ii, JSON_UNESCAPED_UNICODE) : null, $r['id']]);
+    }
+}
+
 function party_set_request_default($pdo, $requestId, $mode, $party = null) {
     party_ensure($pdo);
     $mode = party_valid_mode($mode);

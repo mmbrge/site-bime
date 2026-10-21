@@ -181,7 +181,7 @@ function vh_records($pdo, array $scope = []) {
         $recs[] = ['src' => !empty($r['is_import']) ? 'I' : 'C', 'id' => (int)$r['id'], 'issued' => $issued, 'status' => $r['status'], 'kind' => $r['request_kind'],
             'plate' => $plate, 'plate_core' => $plate ? p2e_digits(plate_core($plate)) : '', 'vin' => brd_vin_key($r['chassis_no'] ?: vh_pick($S, ['vin', 'chassis_no'])),
             'vin_raw' => $r['chassis_no'] ?: vh_pick($S, ['vin', 'chassis_no']), 'engine' => $r['engine_no'] ?: vh_pick($S, 'engine_no'),
-            'car' => $r['car_name'] ?: trim(vh_pick($S, 'car_system') . ' ' . vh_pick($S, ['car_type', 'car_tip'])), 'car_kind' => vh_pick($S, ['car_kind']),
+            'car' => $r['car_name'] ?: car_join([vh_pick($S, 'car_system'), vh_pick($S, ['car_type', 'car_tip'])]), 'car_kind' => vh_pick($S, ['car_kind']),
             'model_year' => vh_pick($S, ['car_model_year', 'model_year']), 'color' => vh_pick($S, ['car_color', 'color']), 'usage' => vh_pick($S, ['car_usage', 'usage']),
             'type' => $r['insurance_type'], 'policy' => $issued ? ($r['policy_number'] ?: ($r['import_policy_number'] ?? '')) : ($r['import_policy_number'] ?? ''),
             'issue_date' => vh_j($r['policy_issue_date'] ?: (($r['import_issue_date'] ?? '') ?: vh_pick($S, 'issue_date'))) ?: ($r['issued_at'] ? vh_j(jalali_from_gregorian_ts_dotted(strtotime($r['issued_at']))) : ''),
@@ -202,7 +202,7 @@ function vh_records($pdo, array $scope = []) {
                 $issued = $r['status'] === 'ISSUED';
                 $recs[] = ['src' => 'P', 'id' => (int)$r['id'], 'issued' => $issued, 'status' => $r['status'], 'kind' => 'NEW_POLICY',
                     'plate' => (string)$r['plate'], 'plate_core' => $r['plate'] ? p2e_digits(plate_core($r['plate'])) : '', 'vin' => brd_vin_key($r['chassis_num'] ?: $r['vin']),
-                    'vin_raw' => $r['chassis_num'] ?: $r['vin'], 'engine' => $r['engine_num'], 'car' => trim(($r['car_system'] ?? '') . ' ' . ($r['car_type'] ?? '')), 'car_kind' => '',
+                    'vin_raw' => $r['chassis_num'] ?: $r['vin'], 'engine' => $r['engine_num'], 'car' => car_join([($r['car_system'] ?? ''), ($r['car_type'] ?? '')]), 'car_kind' => '',
                     'model_year' => $r['car_model_year'], 'color' => $r['car_color'], 'usage' => $r['car_usage'], 'type' => $r['insurance_type'], 'policy' => $issued ? $r['policy_number'] : '',
                     'issue_date' => vh_j($r['policy_issue_date'] ?: vh_pick($S, 'issue_date')) ?: ($r['issued_at'] ? vh_j(jalali_from_gregorian_ts_dotted(strtotime($r['issued_at']))) : ''),
                     'start_date' => vh_j(vh_pick($S, 'start_date')), 'end_date' => vh_j(vh_pick($S, 'end_date')),

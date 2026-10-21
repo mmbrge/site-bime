@@ -20,7 +20,7 @@ function rnr_source($pdo, $src, $id) {
         return ['company_id' => (int)$r['company_id'], 'insurer' => $r['insurer'] ?: 'PASARGAD', 'type' => $r['insurance_type'],
                 'p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4'], 'vehicle_kind' => $r['vehicle_kind'] ?? '',
                 'chassis' => $r['chassis_no'] ?: ($r['vin'] ?: $pick(['vin', 'chassis_no'])), 'engine' => $r['engine_no'] ?: $pick('engine_no'),
-                'car_name' => $r['car_name'] ?: trim($pick('car_system') . ' ' . $pick(['car_type', 'car_tip'])), 'car_type' => $r['car_type'] ?? '',
+                'car_name' => $r['car_name'] ?: car_join([$pick('car_system'), $pick(['car_type', 'car_tip'])]), 'car_type' => $r['car_type'] ?? '',
                 'car_value' => (int)$r['car_value'], 'liability' => (int)$r['liability_limit'], 'coverages' => $r['selected_coverages'] ?? null,
                 'policy' => $r['policy_number'] ?: ($r['import_policy_number'] ?? ''), 'end' => vh_j($pick('end_date')), 'start' => vh_j($pick('start_date')),
                 'issue' => vh_j($r['policy_issue_date'] ?: (($r['import_issue_date'] ?? '') ?: $pick('issue_date'))),
@@ -34,7 +34,7 @@ function rnr_source($pdo, $src, $id) {
         $kind = $x['insured_kind_n'] ?? '';
         return ['company_id' => (int)$x['company_id'], 'insurer' => 'PASARGAD', 'type' => in_array($x['type'], ['BODY', 'THIRDPARTY'], true) ? $x['type'] : 'THIRDPARTY',
                 'p1' => $x['plate_p1'], 'p2' => $x['plate_p2'], 'letter' => $x['plate_letter'], 'p4' => $x['plate_p4'], 'vehicle_kind' => $x['plate_letter'] === 'موتور' ? 'MOTOR' : '',
-                'chassis' => $x['vin'], 'engine' => $x['engine'], 'car_name' => $x['car'] ?: trim(($raw['car_system'] ?? '') . ' ' . ($raw['car_tip'] ?? '')), 'car_type' => $raw['car_tip'] ?? '',
+                'chassis' => $x['vin'], 'engine' => $x['engine'], 'car_name' => $x['car'] ?: car_join([($raw['car_system'] ?? ''), ($raw['car_tip'] ?? '')]), 'car_type' => $raw['car_tip'] ?? '',
                 'car_value' => (int)$x['car_value'], 'liability' => (int)$x['liability'], 'coverages' => $x['coverages'] === null ? null : json_encode($x['coverages'] ?: new stdClass()),
                 'policy' => $x['policy'], 'end' => $x['end_date'], 'start' => $x['start_date'], 'issue' => $x['issue_date'], 'party_mode' => null, 'party_json' => null,
                 'insured' => ['kind' => $kind === 'LEGAL' ? 'COMPANY' : 'PERSON', 'name' => $x['insured'], 'national_id' => $x['insured_id'], 'phone' => $x['phone'], 'address' => $x['address'], 'postal_code' => $x['postal_code']],
@@ -149,3 +149,38 @@ function rnr_ensure($pdo) {
     }
 }
 function rnr_norm($s) { return preg_replace('/[\s\x{200c}\-ـ«»"\'().،,]+|شرکت|سهامی|خاص|عام/u', '', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$s)); }
+
+// ردیفِ مبدأ (renew_src: «C:12»، «I:5»، «B:40») => آخرین درخواستِ تمدیدش: شرح («با نامه‌ی … در تاریخ … درخواستِ تمدید … ثبت شد
+// و با بیمه‌نامه‌ی شماره‌ی … تمدید شد»)، وضعیت و بیمه‌نامه‌ی تازه. ردیفِ صادرشده بر درخواستِ هنوز باز اولویت دارد.
+function rnr_links($pdo) {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    rnr_ensure($pdo);
+    if (function_exists('ref_codes_ensure')) ref_codes_ensure($pdo);
+    $cache = [];
+    $root = dirname(__DIR__);
+    try {
+        $st = $pdo->query("SELECT crp.id, crp.request_id, crp.renew_src, crp.status, crp.policy_number, crp.policy_issue_date, crp.issued_at, crp.total_premium,
+                                  crp.issued_file_path, cr.created_at AS req_at, cr.ref_code, c.name AS company_name,
+                                  (SELECT cd.orig_name FROM company_documents cd WHERE cd.request_id = crp.request_id AND cd.doc_type = 'letter' ORDER BY cd.id DESC LIMIT 1) AS letter_name,
+                                  (SELECT cd.file_path FROM company_documents cd WHERE cd.request_id = crp.request_id AND cd.doc_type = 'letter' ORDER BY cd.id DESC LIMIT 1) AS letter_file
+                             FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id
+                            WHERE crp.renew_src IS NOT NULL AND crp.renew_src <> '' AND COALESCE(crp.status, 'PENDING') NOT IN ('CANCELLED', 'REJECTED') ORDER BY crp.id");
+        foreach ($st->fetchAll() as $r) {
+            $issued = $r['status'] === 'ISSUED';
+            $ref = $r['ref_code'] ?: ('#' . $r['request_id']);
+            $date = $r['req_at'] ? str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($r['req_at']))) : '';
+            $iss = str_replace('.', '/', (string)($r['policy_issue_date'] ?: ($r['issued_at'] ? jalali_from_gregorian_ts_dotted(strtotime($r['issued_at'])) : '')));
+            $letter = $r['letter_name'] ? pathinfo((string)$r['letter_name'], PATHINFO_FILENAME) : '';
+            $note = ($letter !== '' ? 'با نامه‌ی «' . $letter . '» ' : '') . ($date ? 'در تاریخ ' . $date . ' ' : '') . 'درخواستِ تمدید (شماره‌ی ' . $ref . ') ثبت شد'
+                  . ($issued ? ' و با بیمه‌نامه‌ی شماره‌ی ' . ($r['policy_number'] ?: '—') . ($iss ? ' (صدور ' . $iss . ')' : '') . ' تمدید شد' : '') . '.';
+            $info = ['plate_id' => (int)$r['id'], 'request_id' => (int)$r['request_id'], 'ref' => $ref, 'date' => $date, 'company' => $r['company_name'],
+                     'letter' => $letter, 'letter_file' => $r['letter_file'] ? ltrim(str_replace($root, '', (string)$r['letter_file']), '/') : null,
+                     'issued' => $issued, 'status' => $r['status'], 'policy' => $issued ? (string)$r['policy_number'] : '', 'issue_date' => $issued ? $iss : '',
+                     'premium' => $issued ? (int)$r['total_premium'] : 0, 'file' => $issued ? $r['issued_file_path'] : null, 'note' => $note];
+            $prev = $cache[$r['renew_src']] ?? null;
+            if (!$prev || $issued || !$prev['issued']) $cache[$r['renew_src']] = $info;
+        }
+    } catch (Throwable $e) { error_log('[rnr_links] ' . $e->getMessage()); }
+    return $cache;
+}

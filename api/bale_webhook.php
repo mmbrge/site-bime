@@ -1083,7 +1083,7 @@ function liability_prompt_text() {
 }
 function liability_kb() {
     $rows = []; $r = [];
-    foreach (liability_limit_options() as $a) {
+    foreach (liability_limit_options('P', $GLOBALS['pdo'] ?? null) as $a) {
         $toman = $a / 10;
         $r[] = number_format($toman);
         if (count($r) == 2) { $rows[] = $r; $r = []; }
@@ -1938,7 +1938,7 @@ function handle_private_message($pdo, $message, $chat_id, $incoming_message_id, 
                 if (go_back_to_relationship_and_check($pdo, $chat_id, $person, $bot_token, $text)) break;
                 $plainTomans = (int) preg_replace('/[^\d]/', '', $text);
                 $chosenRial = $plainTomans * 10;
-                $chosen = in_array($chosenRial, liability_limit_options()) ? $chosenRial : null;
+                $chosen = in_array($chosenRial, liability_limit_options('P', $pdo)) ? $chosenRial : null;
 
                 if ($chosen) {
                     $pdo->prepare("UPDATE policy_cases SET liability_limit = ? WHERE id = ?")->execute([$chosen, $person['active_case_id']]);

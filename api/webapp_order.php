@@ -118,7 +118,7 @@ try {
             'quota_summary' => $intro ? (($intro['used_quota'] ?? 0) . ' / ' . ($intro['max_quota'] ?? 4)) : null,
             'incomplete_cases' => $incomplete,
             'hours' => oh_status($pdo),
-            'kinds' => vc_kinds_list(),
+            'kinds' => vc_kinds_list(), 'liability_options' => liability_limit_options('P', $pdo),
             'inq' => order_inq_cfg($pdo),
         ], JSON_UNESCAPED_UNICODE);
         exit;
@@ -345,7 +345,7 @@ try {
             $pdo->prepare("UPDATE policy_cases SET ownership_choice=? WHERE id=?")->execute([$choice, $caseId]);
         } elseif ($step === 'liability') {
             $amount = intval($jsonBody['liability_limit'] ?? 0);
-            if (!in_array($amount, liability_limit_options())) { $err = 'مبلغ انتخاب‌شده نامعتبر است.'; }
+            if (!in_array($amount, liability_limit_options('P', $pdo))) { $err = 'مبلغ انتخاب‌شده نامعتبر است.'; }
             else $pdo->prepare("UPDATE policy_cases SET liability_limit=? WHERE id=?")->execute([$amount, $caseId]);
         } elseif ($step === 'prev_body') {
             $has = ($jsonBody['prev_body_insurance'] ?? '') === 'بله' ? 'بله' : 'خیر';

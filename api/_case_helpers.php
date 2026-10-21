@@ -642,10 +642,25 @@ function insurance_type_fa($enumType) {
 
 // =====================================================================
 //  سقف تعهد مالی بیمه ثالث (ریال) - دقیقاً مطابق فهرستی که در پنل پاسارگاد است
+//  $audience: P (کارکنان: ربات، مینی‌اپ، ثبتِ دستی) | C (شرکت‌ها) | null (همه‌ی مبالغ)
+//  هر گروه تا «سقفِ قابلِ انتخاب» خودش را می‌بیند (system_settings: liability_max_p / liability_max_c)
 // =====================================================================
-function liability_limit_options() {
-    return [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
-            4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
+const LIABILITY_ALL_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
+                               4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000, 12000000000, 14000000000];
+const LIABILITY_MAX_DEFAULT = ['P' => 10000000000, 'C' => 14000000000];
+function liability_max($pdo, $audience) {
+    $a = $audience === 'C' ? 'C' : 'P';
+    $v = 0;
+    if ($pdo) {
+        try { $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?"); $st->execute(['liability_max_' . strtolower($a)]); $v = intval($st->fetchColumn()); }
+        catch (Throwable $e) {}
+    }
+    return in_array($v, LIABILITY_ALL_OPTIONS, true) ? $v : LIABILITY_MAX_DEFAULT[$a];
+}
+function liability_limit_options($audience = null, $pdo = null) {
+    if ($audience === null) return LIABILITY_ALL_OPTIONS;
+    $max = liability_max($pdo ?: ($GLOBALS['pdo'] ?? null), $audience);
+    return array_values(array_filter(LIABILITY_ALL_OPTIONS, function ($v) use ($max) { return $v <= $max; }));
 }
 
 function coverage_descriptions_fa() {
@@ -717,6 +732,27 @@ function body_coverage_options() {
 // وضعیت «بازدید مدارک» یک پرونده را از روی مدارک واقعاً ارسال‌شده محاسبه می‌کند (نه از یک فیلد ثابت)
 // خروجی: not_applicable | not_started | partial | submitted | needs_fix | approved
 // رقم‌های لاتین را فارسی می‌کند - فقط برای *نمایش* (تاریخ‌ها در خروجی‌ها)؛ داده‌ی ذخیره‌شده لاتین می‌ماند
+// نامِ خودرو از چند بخش (سیستم، تیپ، نام) بدونِ تکرار: «سمند» + «سمند سورن» => «سمند سورن»؛ «سمند سورن» + «سمند سورن» => یک بار
+function car_join(array $parts, $sep = ' ') {
+    $out = [];
+    // هر بخش خودش ممکن است «الف - الف» یا «الف الف» باشد (داده‌های قبلی)
+    $flat = [];
+    foreach ($parts as $p) foreach (preg_split('/\s+[-–·]\s+/u', (string)$p) as $q) {
+        $w = preg_split('/\s+/u', trim($q), -1, PREG_SPLIT_NO_EMPTY);
+        $h = intdiv(count($w), 2);
+        if ($h && count($w) % 2 === 0 && array_slice($w, 0, $h) === array_slice($w, $h)) $w = array_slice($w, 0, $h);
+        $flat[] = implode(' ', $w);
+    }
+    foreach ($flat as $p) {
+        $p = trim(preg_replace('/\s+/u', ' ', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$p)));
+        if ($p === '') continue;
+        $k = preg_replace('/\s/u', '', $p);
+        foreach ($out as $o) if (mb_strpos(preg_replace('/\s/u', '', $o), $k) !== false) continue 2;
+        $out = array_values(array_filter($out, function ($o) use ($k) { return mb_strpos($k, preg_replace('/\s/u', '', $o)) === false; }));
+        $out[] = $p;
+    }
+    return implode($sep, $out);
+}
 function fa_digits($s) {
     if ($s === null || $s === '') return $s;
     return str_replace(['0','1','2','3','4','5','6','7','8','9'], ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'], (string)$s);

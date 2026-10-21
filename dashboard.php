@@ -184,7 +184,7 @@ function issuance_nav($active, $isLiaison) {
         $h .= '<button type="button" onclick="switchTab(\'' . $tab . '\')" class="' . ($active === $tab ? 'on' : '') . '"><i class="fas ' . $ic . '"></i>' . $label . ' <span class="iss-n ' . $badge . '"></span></button>';
     }
     // تنظیمِ کلیِ «فیش‌های بیمه‌نامه وقتی با اقساطِ قرارداد فرق داشت» (کارکنان و شرکتی)
-    if (!$isLiaison) $h .= '<button type="button" onclick="window.FinContracts && FinContracts.slipSettings()" title="وقتی فیش‌های داخلِ بیمه‌نامه با اقساطِ قرارداد فرق داشت"><i class="fas fa-receipt"></i>تنظیمِ فیش‌ها</button>';
+    if (!$isLiaison) $h .= '<button type="button" onclick="window.FinContracts && FinContracts.slipSettings()" title="فیش‌های بیمه‌نامه وقتی با اقساطِ قرارداد فرق داشت، و بیشترین تعهدِ مالیِ ثالث برای کارکنان و شرکت‌ها"><i class="fas fa-sliders"></i>تنظیماتِ صدور</button>';
     return $h . '</div></div>';
 }
 // نوارِ زبانه‌های «مرکز مالی»: همه‌ی بخش‌های مالی در یک جا
@@ -4548,7 +4548,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=7"></script>
-    <script src="registry.js?v=4"></script>
+    <script src="registry.js?v=5"></script>
     <script src="issue-panel.js?v=1"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
@@ -4581,7 +4581,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-hub.js?v=9"></script>
     <script src="work-log.js?v=13"></script>
     <script src="import-archive.js?v=3"></script>
-    <script src="renewals.js?v=3"></script>
+    <script src="renewals.js?v=4"></script>
     <script src="endorse.js?v=6"></script>
     <script src="party-ui.js?v=2"></script>
     <script src="company-pick.js?v=1"></script>
@@ -4593,7 +4593,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=3"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
-    <script src="fin-contracts.js?v=4"></script>
+    <script src="fin-contracts.js?v=5"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -5696,6 +5696,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             bc.innerHTML = html;
         }
 
+        // نامِ خودرو از چند بخش (نام، تیپ، …) بدونِ تکرار: «سمند سورن» + «سمند سورن» => یک بار؛ بخشی که داخلِ بخشِ دیگر هست حذف می‌شود
+        function carJoin(...parts) {
+            const n = s => String(s ?? '').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/\s+/g, ' ').trim();
+            const out = [];
+            parts.flatMap(x => String(x ?? '').split(/\s+[-–·]\s+/)).map(n).map(p => { const w = p.split(' '), h = w.length / 2; return h >= 1 && Number.isInteger(h) && w.slice(0, h).join(' ') === w.slice(h).join(' ') ? w.slice(0, h).join(' ') : p; }).filter(Boolean).forEach(p => {
+                const k = p.replace(/\s/g, '');
+                if (out.some(o => o.replace(/\s/g, '').includes(k))) return;
+                for (let i = out.length - 1; i >= 0; i--) if (k.includes(out[i].replace(/\s/g, ''))) out.splice(i, 1);
+                out.push(p);
+            });
+            return out.join(' · ');
+        }
         // نام و مسیرِ فایل‌های بایگانی (ممکن است از بارگذاریِ کاربران یا ZIP بیایند) پیش از درج در صفحه خنثی می‌شوند
         const fmEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
         const fmAttr = v => fmEsc(String(v ?? '').replace(/['\\]/g, ''));
@@ -6848,7 +6860,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-2 text-[10px] text-slate-400">${e2pNum(idx + 1)}</td>
                     <td class="p-2">
                         ${rowIdentityHtml(p)}
-                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold">${fmEsc([p.car_name, p.car_type].filter(Boolean).join(' · '))}</p>` : ''}
+                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
                         ${Number(p.is_new_vehicle) ? '<p class="text-[10px] text-emerald-600 font-bold">صفر کیلومتر</p>' : ''}
                         ${window.PartyUI && p.party ? `<div class="whitespace-normal max-w-[260px]">${PartyUI.chip(p.party, {onEdit: isAdmin && p.status !== 'ISSUED' ? `editRowParty(${p.id})` : ''})}</div>` : ''}
                         ${p.engine_no ? `<p class="text-[10px] text-slate-400" dir="ltr">موتور: ${p.engine_no}</p>` : ''}
@@ -6856,6 +6868,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
                         ${p.endorsement_request ? `<p class="text-[10px] text-violet-600 mt-0.5">خواسته: ${p.endorsement_request}</p>` : ''}
                         ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600 mt-0.5">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
+                        ${p.renewal ? `<div class="rounded-lg ${p.renewal.issued ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-sky-50 border-sky-200 text-sky-800'} border text-[10px] p-1.5 mt-1 whitespace-normal max-w-[300px]"><b><i class="fas fa-rotate ml-1"></i>${p.renewal.issued ? 'تمدید شد' : 'درخواستِ تمدید ثبت شد'}</b> — ${fmEsc(faDigits(p.renewal.note))}
+                            ${Number(p.renewal.request_id) !== Number(r.id) ? `<button type="button" onclick="openCompanyRequestDetail(${Number(p.renewal.request_id)})" class="underline mr-1">باز کردنِ درخواست</button>` : ''}</div>` : ''}
                         ${p.dup_ref ? `<div class="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] p-1.5 mt-1 whitespace-normal">⛔ تکراری — بیمه‌نامه‌ی قبلی${p.dup_ref.policy_number ? ' <b dir="ltr">' + faDigits(p.dup_ref.policy_number) + '</b>' : ''}${p.dup_ref.issued_j ? ' (صادره ' + faDigits(p.dup_ref.issued_j) + ')' : ''}
                             ${p.dup_ref.file ? `<a href="/${encodeFilePath(p.dup_ref.file)}" target="_blank" class="text-blue-600 underline mr-1">دانلود</a>` : ''}<button type="button" onclick="openIssuedRef('${p.dup_ref.source}', ${p.dup_ref.id})" class="text-indigo-600 underline mr-1">صفحه‌ی صدور</button>
                             ${isAdmin ? `<button type="button" onclick="unmarkDuplicate(${p.id})" class="text-slate-500 underline mr-1">برداشتنِ تکراری</button>` : ''}</div>` : dupBoxHtml(p.dups, {plateId: isAdmin ? p.id : 0})}
@@ -7891,7 +7905,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.holder_name || dash}</td>
                     <td class="p-3" dir="ltr">${r.personnel_code ? e2p(r.personnel_code) : dash}</td>
                     <td class="p-3">${isP ? `<span class="plate-display font-bold">${formatPlateHtml(r.plate_display)}</span>` : rowIdentityHtml(r)}
-                        ${r.car_name || r.car_type ? `<p class="text-[10px] text-slate-400">${fmEsc([r.car_name, r.car_type].filter(Boolean).join(' · '))}</p>` : ''}</td>
+                        ${r.car_name || r.car_type ? `<p class="text-[10px] text-slate-400">${fmEsc(carJoin(r.car_name, r.car_type))}</p>` : ''}</td>
                     <td class="p-3">${r.insurance_type_fa}
                         ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.period_title) || dash}</td>
@@ -8041,7 +8055,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${iiRo('نوع بیمه / درخواست', kindLine)}
                         ${iiRo('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
                         ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
-                        ${iiRo('خودرو (درخواست)', [r.car_name, r.car_type].filter(Boolean).join(' · '))}
+                        ${iiRo('خودرو (درخواست)', carJoin(r.car_name, r.car_type))}
                         ${r.insurance_type === 'BODY' ? iiRo('ارزش خودرو (ریال)', r.car_value || r.estimated_car_value ? money(r.car_value || r.estimated_car_value) : '', {copy: String(r.car_value || r.estimated_car_value || '')}) : iiRo('تعهد مالی (ریال)', (r.liability_limit || r.liability_limit_case) ? money(r.liability_limit || r.liability_limit_case) : '', {copy: String(r.liability_limit || r.liability_limit_case || '')})}
                         ${iiRo('انقضای بیمه‌نامه‌ی قبلی', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {digits: true})}
                         ${r.ref_policy_number ? iiRo('بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true}) : ''}
@@ -8446,7 +8460,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3">${r.plate ? formatPlateHtml(r.plate) : `<span dir="ltr">${r.chassis_no || '—'}</span>`}</td>
                     <td class="p-3">${r.insurance_type_fa}</td>
                     <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
-                    <td class="p-3">${fmEsc([r.car_name, r.car_type].filter(Boolean).join(' · ')) || '—'}</td>
+                    <td class="p-3">${fmEsc(carJoin(r.car_name, r.car_type)) || '—'}</td>
                     <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}${Number(r.endo_count) || Number(r.is_cancelled) ? `<div class="mt-0.5">${window.Endorse ? Endorse.badge(r) : ''}</div>${r.final_premium !== null && r.final_premium !== undefined && Number(r.endo_count) ? `<small class="block text-[10px] text-indigo-700 font-bold">نهایی: ${money(r.final_premium)}</small>` : ''}` : ''}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
@@ -8601,7 +8615,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
                     ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
                     ${infoCell('VIN', r.vin, {ltr: true})}
-                    ${infoCell('خودرو', [r.car_name, r.car_type].filter(Boolean).join(' · '))}
+                    ${infoCell('خودرو', carJoin(r.car_name, r.car_type))}
                     ${infoCell('سیستم', r.car_system)}
                     ${infoCell('تیپ', r.car_type)}
                     ${infoCell('مدل', r.car_model_year, {ltr: true})}
@@ -14098,8 +14112,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         /* ===== ثبت دستیِ درخواست کارکنان (یک مرحله: پرسنل + درخواست + مدارک) ===== */
         // سقف‌های تعهد مالی - هم‌خوان با liability_limit_options() در api/_case_helpers.php
-        const MC_LIABILITY_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
-                                      4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
+        // فهرستِ نهایی (تا سقفِ تعیین‌شده برای کارکنان) از manual_form_options می‌آید
+        let MC_LIABILITY_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
+                                    4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
+        const mcFillLiability = () => {
+            const el = document.getElementById('mc-liability'), cur = el.value;
+            el.innerHTML = '<option value="">انتخاب کنید</option>' + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
+            if (cur) el.value = cur;
+        };
         let mcCreated = null;
         let mcFiles = {};          // کلیدِ مدرک => File
         let mcOthers = [];         // [{name, file}]
@@ -14145,8 +14165,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('mc-prev-body').value = 'خیر';
             document.getElementById('mc-prev-claim').value = 'خیر';
             document.getElementById('mc-car-value-auto').checked = false;
-            document.getElementById('mc-liability').innerHTML = '<option value="">انتخاب کنید</option>'
-                + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
+            mcFillLiability();
             document.getElementById('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', '');
             mcReg = {v: null, sel: new Set(), applied: false, dismiss: '', p: null, pApplied: false, pDismiss: ''};
             ['mc-reg-person', 'mc-reg-veh'].forEach(id => document.getElementById(id).innerHTML = '');
@@ -14162,7 +14181,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             mcRefresh();
             if (!mcCoverageOpts) {
                 fetch('api/record_actions.php?action=manual_form_options').then(r => r.json()).then(d => {
-                    if (d.ok) { mcCoverageOpts = d.coverages; mcRenderCoverages(); }
+                    if (d.ok) { mcCoverageOpts = d.coverages; mcRenderCoverages(); if ((d.liability || []).length) { MC_LIABILITY_OPTIONS = d.liability; mcFillLiability(); } }
                 }).catch(() => {});
             } else mcRenderCoverages();
             // پیشنهادِ نام شرکت‌ها

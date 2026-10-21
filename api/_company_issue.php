@@ -369,7 +369,7 @@ function policy_data_aliases($d) {
             'car_color' => 'color', 'car_usage' => 'usage'];
     foreach ($map as $old => $new) if (empty($d[$old]) && !empty($d[$new])) $d[$old] = $d[$new];
     if (empty($d['chassis_num']) && !empty($d['chassis_no'])) $d['chassis_num'] = $d['chassis_no'];
-    if (empty($d['car_type'])) $d['car_type'] = trim(($d['car_kind'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['car_type'] ?? '');
+    if (empty($d['car_type'])) $d['car_type'] = car_join([($d['car_kind'] ?? ''), ($d['car_tip'] ?? '')]) ?: ($d['car_type'] ?? '');
     return $d;
 }
 
@@ -386,7 +386,7 @@ function policy_data_clean($d) {
     }
     if (!empty($d['model_year']) && !preg_match('/^(1[34]\d{2}|19\d{2}|20\d{2})$/', p2e_digits((string)$d['model_year']))) $d['model_year'] = '';
     if (!empty($d['prev_insurer']) && (preg_match('/[:\d]/u', p2e_digits($d['prev_insurer'])) || mb_strlen($d['prev_insurer']) > 40)) $d['prev_insurer'] = '';
-    if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? ''));
+    if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = car_join([($d['car_system'] ?? ''), ($d['car_tip'] ?? '')]);
     return $d;
 }
 
@@ -416,7 +416,7 @@ function company_apply_policy_fields($pdo, $plateId, array $f) {
     $info = array_merge(issue_info_decode($row['issue_info']), policy_fields_to_issue_info($f));
     $ocr = json_decode((string)$row['ocr_extracted_data'], true) ?: [];
     unset($ocr['_single']);
-    $carName = trim(($f['car_system'] ?? '') . ' ' . ($f['car_tip'] ?? ''));
+    $carName = car_join([($f['car_system'] ?? ''), ($f['car_tip'] ?? '')]);
     $pdo->prepare("UPDATE company_request_plates SET issue_info = ?, ocr_extracted_data = ?,
                           engine_no = COALESCE(NULLIF(?, ''), engine_no), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')),
                           chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')) WHERE id = ?")

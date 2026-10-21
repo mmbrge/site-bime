@@ -609,7 +609,7 @@ try {
         $raw = ['name' => $h['insured_name'] ?: $h['full_name'], 'national_id' => $h['insured_national_id'] ?: $h['national_code'],
                 'phone_bimeg' => $h['insured_phone'] ?: $h['mobile_number'], 'addres_bimeg' => $h['insured_address'],
                 'chassis_no' => $h['chassis_num'] ?: $h['vin'], 'engine_no' => $h['engine_num'], 'year' => $h['car_model_year'], 'color' => $h['car_color'],
-                'usage' => $h['car_usage'], 'vehicle_type' => trim(($h['car_system'] ?? '') . ' ' . ($h['car_type'] ?? '')),
+                'usage' => $h['car_usage'], 'vehicle_type' => car_join([($h['car_system'] ?? ''), ($h['car_type'] ?? '')]),
                 'insured_value' => $h['car_val'] ? preg_replace('/\D/', '', (string)$h['car_val']) : ''];
         $raw = array_merge($raw, array_combine(['plate_part1', 'plate_letter', 'plate_part2', 'plate_part3'], array_values(vr_plate_split($h['plate_txt']))));
         $forms = [];
