@@ -66,6 +66,8 @@ $mkMenuHtml = !$mkAccess ? '' : '
 // «استعلامات»: مدیر کل، یا دسترسیِ سفارشی به یکی از بخش‌های استعلام (تکی/گروهی/تاریخچه)
 $inqAccess = ($_SESSION['role'] ?? '') === 'ADMIN' && empty($permBoot['custom']);
 if (!empty($permBoot['custom'])) foreach ((array)($permBoot['p'] ?? []) as $__k => $__ops) if (strpos((string)$__k, 'inq-') === 0 && in_array('view', (array)$__ops, true)) $inqAccess = true;
+// «پرونده‌ها و بردرو» (خودروها، پرسنل، بردروی پاسارگاد): مدیر کل و دسترسی‌های سفارشی (لینکِ بی‌اجازه را permCan پنهان می‌کند)
+$regAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 // منوی «اتوماسیون نامه‌ها»: مدیر کل و دسترسی‌های سفارشی
 $ltAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 $ltMenuHtml = !$ltAccess ? '' : '
@@ -1128,6 +1130,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if ($ltAccess) $bmSecs[] = ['اتوماسیونِ نامه‌ها', 'صادره، وارده، ارجاع، کارتابلِ شرکت‌ها', 'fa-envelope-open-text', '#4338ca', '#0891b2',
                     $bmLink('lt-box', 'fa-inbox', 'کارتابلِ نامه‌ها', 'صادره، وارده، ارجاع') . $bmLink('lt-box', 'fa-pen-nib', 'نامه‌ی جدید', 'با سربرگ و شماره‌ی خودکار', false, '; window.Letters && Letters.compose({}); return false;'),
                     $bmLink('lt-settings', 'fa-sliders', 'تنظیماتِ نامه‌ها', 'شماره، سربرگ، قالب، امضا')];
+                if ($regAccess && !$isLiaison) $bmSecs[] = ['پرونده‌ها و بردرو', 'هر پلاک و هر پرسنل یک پرونده؛ بردروی پاسارگاد', 'fa-folder-tree', '#0f766e', '#4f46e5',
+                    $bmLink('vehicles', 'fa-car-side', 'پرونده‌ی خودروها', 'هر پلاک: مدارک، بیمه‌نامه‌ها، مالک، گزارشِ PDF') . $bmLink('personnel', 'fa-id-badge', 'پرونده‌ی پرسنل', 'شرکتِ فعلی، جابه‌جایی، خانواده، بیمه‌نامه‌ها')
+                    . $bmLink('bordereau', 'fa-table-list', 'بردروی پاسارگاد', 'تمدیدها به تفکیکِ شرکت؛ جدا از مالی و صادره‌ها'), ''];
                 ?>
                 <?php if ($bmSecs): ?>
                 <div class="menu-group bm-mega">
@@ -2937,6 +2942,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- ======================= مغایرت‌گیری با پاسارگاد - recon.js ======================= -->
         <!-- استعلامات: شخص حقیقی، کد پستی، شخص حقوقی؛ تکی، گروهی، تاریخچه، تنظیمات (inquiry.js) -->
         <div id="tab-inquiries" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden" data-perm-skip><div id="inq-root"></div></div>
+        <!-- پرونده‌ی خودروها، پرسنل و بردروی پاسارگاد (registry.js) -->
+        <div id="tab-vehicles" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="vh-root"></div></div>
+        <div id="tab-personnel" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="per-root"></div></div>
+        <div id="tab-bordereau" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="brd-root"></div></div>
         <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
             <div id="recon-root" class="space-y-4"></div>
@@ -4493,6 +4502,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=6"></script>
+    <script src="registry.js?v=1"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -4613,7 +4623,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
@@ -11000,6 +11010,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'contacts' && window.Contacts) Contacts.init(document.getElementById('ct-root'));
             if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
             if (tabId === 'inquiries' && window.Inquiry) Inquiry.init(document.getElementById('inq-root'));
+            if (tabId === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'));
+            if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
+            if (tabId === 'bordereau' && window.Bordereau) Bordereau.init(document.getElementById('brd-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);

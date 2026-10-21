@@ -85,6 +85,11 @@ function perm_catalog() {
             'fin-contracts' => ['قراردادهای پرداخت', ['view', 'edit']],
             'fin-settings' => ['تنظیمات مالی', ['view', 'edit']],
         ]],
+        ['پرونده‌ها و بردرو', [
+            'vehicles' => ['پرونده‌ی خودروها (هر پلاک: مشخصات، مالک، مدارک، بیمه‌نامه‌ها، گزارشِ PDF)', ['view', 'edit', 'export']],
+            'personnel' => ['پرونده‌ی پرسنل (شرکتِ فعلی، نقل‌وانتقال، عکس، خانواده، بیمه‌ها، اقساط)', ['view', 'create', 'edit', 'export']],
+            'bordereau' => ['بردروی پاسارگاد (فهرست و تمدیدها، الحاقیه، خروجی)', ['view', 'create', 'edit', 'delete', 'export']],
+        ]],
         ['استعلامات', [
             'inq-single' => ['استعلامِ تکی (شخص حقیقی، شخص + کد پستی، کد پستی، شخص حقوقی)', ['view', 'create']],
             'inq-group' => ['استعلامِ گروهی با اکسل', ['view', 'create', 'export']],
@@ -251,6 +256,20 @@ function perm_api_map() {
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
+        ]],
+        'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
+            'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',
+            'endorse' => 'bordereau:edit', 'endorse_delete' => 'bordereau:edit', 'note' => 'bordereau:edit', 'set_company' => 'bordereau:edit', 'delete' => 'bordereau:delete',
+            'export_xlsx' => 'bordereau:export', 'export_pdf' => 'bordereau:export',
+        ]],
+        'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [
+            'list' => 'vehicles:view', 'detail' => 'vehicles:view', 'models' => 'vehicles:view', 'model_img' => 'vehicles:view', 'model_image' => 'vehicles:edit', 'model_image_delete' => 'vehicles:edit', 'note' => 'vehicles:edit',
+            'report_pdf' => 'vehicles:export', 'export_xlsx' => 'vehicles:export',
+        ]],
+        'personnel_actions' => ['pages' => ['personnel'], 'elevate' => true, 'actions' => [
+            'list' => 'personnel:view', 'detail' => 'personnel:view', 'photo_get' => 'personnel:view', 'photo' => 'personnel:edit', 'save' => 'personnel:edit', 'transfer' => 'personnel:edit',
+            'transfer_delete' => 'personnel:edit', 'family_save' => 'personnel:edit', 'family_delete' => 'personnel:edit', 'roster_preview' => 'personnel:create',
+            'roster_commit' => 'personnel:create', 'report_pdf' => 'personnel:export', 'export_xlsx' => 'personnel:export',
         ]],
         'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
             'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',

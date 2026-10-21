@@ -74,6 +74,7 @@ if (!$companies) {
 <script src="../chat-ui.js?v=16"></script>
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
+<script src="../registry.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -202,6 +203,7 @@ if (!$companies) {
     <!-- زبانه‌ها -->
     <div class="pt-tabs" role="tablist">
         <button type="button" data-ptab="requests" class="on" onclick="showPortalTab('requests')"><i class="fas fa-clipboard-list"></i>درخواست‌ها<b id="pt-req-count"></b></button>
+        <button type="button" data-ptab="vehicles" onclick="showPortalTab('vehicles')"><i class="fas fa-car-side"></i>خودروها</button>
         <button type="button" data-ptab="letters" onclick="showPortalTab('letters')"><i class="fas fa-envelope-open-text"></i>اتوماسیون نامه‌ها<b id="pt-letters-badge" class="hidden red"></b></button>
     </div>
 
@@ -226,6 +228,9 @@ if (!$companies) {
 
     <!-- ================= اتوماسیون نامه‌ها (letters-portal.js) ================= -->
     <section id="pt-letters" class="hidden"><div id="letters-root"></div></section>
+
+    <!-- ================= پرونده‌ی خودروهای شرکت (registry.js) ================= -->
+    <section id="pt-vehicles" class="hidden"><div id="vh-root"></div></section>
 </div>
 
 <button onclick="openChatModal()" title="گفتگو با پشتیبانی" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center z-50">
@@ -518,12 +523,14 @@ async function doLogout() {
     location.reload();
 }
 
-// ---- زبانه‌های پنل: درخواست‌ها | اتوماسیون نامه‌ها ----
+// ---- زبانه‌های پنل: درخواست‌ها | خودروها | اتوماسیون نامه‌ها ----
 function showPortalTab(t) {
     document.querySelectorAll('[data-ptab]').forEach(b => b.classList.toggle('on', b.dataset.ptab === t));
     document.getElementById('pt-requests').classList.toggle('hidden', t !== 'requests');
     document.getElementById('pt-letters').classList.toggle('hidden', t !== 'letters');
     if (t === 'letters' && window.PortalLetters) PortalLetters.open(document.getElementById('letters-root'));
+    document.getElementById('pt-vehicles').classList.toggle('hidden', t !== 'vehicles');
+    if (t === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'), {portal: true, api: '../api/vehicle_actions.php?portal=1'});
     try { sessionStorage.setItem('pt-tab', t); } catch (e) {}
 }
 const REQ_STEPS = ['NEW', 'DOCS_PENDING', 'DOCS_REVIEW', 'READY_FOR_ISSUE', 'ISSUED'];
@@ -1343,7 +1350,8 @@ loadRequests();
 window.addEventListener('load', () => {
     let t = 'requests'; try { t = sessionStorage.getItem('pt-tab') || 'requests'; } catch (e) {}
     if (location.hash === '#letters') t = 'letters';
-    if (t === 'letters') showPortalTab('letters');
+    if (location.hash === '#vehicles') t = 'vehicles';
+    if (t === 'letters' || t === 'vehicles') showPortalTab(t);
     if (window.PortalLetters) PortalLetters.badge();
 });
 
