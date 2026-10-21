@@ -3554,6 +3554,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <button type="button" onclick="document.getElementById('crows-text-modal').classList.remove('active')" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 hover-target text-xl"><i class="fas fa-times"></i></button>
             <h3 class="font-black text-lg mb-1">فهرست متنی ریز درخواست</h3>
             <p class="text-[11px] text-slate-400 mb-3">هر ردیف با مدارکی که دارد، و زیرش مدارکِ ناموجودش.</p>
+            <div class="flex gap-1.5 mb-2 text-[11px] font-bold" id="crows-text-mode">
+                <button type="button" data-m="0" onclick="setRowsTextMode(0)" class="px-3 py-1.5 rounded-lg bg-slate-800 text-white">همه‌ی ردیف‌ها</button>
+                <button type="button" data-m="1" onclick="setRowsTextMode(1)" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600">فقط ردیف‌های دارای کسری</button>
+            </div>
             <textarea id="crows-text-content" rows="14" dir="rtl" class="w-full text-[11px] font-mono border rounded-xl p-3 bg-slate-50" readonly></textarea>
             <button onclick="copyRowsText()" class="w-full mt-3 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-xl text-sm"><i class="fas fa-copy ml-1"></i>کپی کردن</button>
         </div>
@@ -4546,7 +4550,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=16"></script>
+    <script src="visit-reports.js?v=17"></script>
     <script src="visit-reports-list.js?v=11"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=10"></script><?php endif; ?>
     <?php endif; ?>
@@ -6599,10 +6603,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             let uploader = '';
             if (canEdit && item.custom) {
                 // «مدرکِ دیگر»: نامش را خودِ کاربر می‌نویسد و چند مدرک هم می‌شود زد
-                uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (مثلاً گواهی‌نامه)" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+                uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه؛ خالی بماند نامِ خودِ فایل گذاشته می‌شود" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
                     <input type="hidden" id="rowdoc-type-${plate.id}-other" value="other">
                     <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                        <i class="fas fa-plus ml-0.5"></i>بارگذاری<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')">
+                        <i class="fas fa-plus ml-0.5"></i>بارگذاری<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')">
                     </label></span>`;
             } else if (canEdit && !ok) {
                 const types = item.upload_types || [item.key];
@@ -6611,7 +6615,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                            ${types.map(t => `<option value="${t}">${DOC_TYPE_FA[t] || t}</option>`).join('')}
                        </select>`
                     : `<input type="hidden" id="rowdoc-type-${plate.id}-${item.key}" value="${types[0]}">`;
-                const accept = item.key === 'health_inspection' ? '.zip,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
+                const accept = item.key === 'health_inspection' ? '.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
                 uploader = `<span class="inline-flex items-center gap-1 mt-1">${sel}
                     <label class="text-[10px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
                         بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)">
@@ -6637,7 +6641,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const report = items.find(it => it.key === 'health_report');
             const ok = items.every(it => it.satisfied || !it.required);
             const required = items.some(it => it.required);
-            const tone = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : (required ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400');
+            const pendingRep = !!p.report_pending && p.status !== 'ISSUED';
+            const tone = pendingRep ? 'bg-cyan-50 border-cyan-200 text-cyan-800' : ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : (required ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400');
             const docs = items.flatMap(it => it.docs || []);
             const links = docs.map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ عکس‌ها">عکس‌ها (پوشه)</a>`
@@ -6646,12 +6651,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
             const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow px-2 py-0.5 rounded whitespace-nowrap">
                     <i class="fas fa-file-circle-plus ml-1"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
-            const missing = items.filter(it => !it.satisfied);
+            const insp = items.find(it => it.key === 'health_inspection');
+            const pending = pendingRep;
+            const custUp = canEdit && insp && !insp.satisfied && p.status !== 'ISSUED' ? `<div class="mt-1 flex flex-wrap items-center gap-1"><span class="text-[9.5px] text-slate-500">بازدیدِ ارسالیِ شرکت:</span>
+                    <label class="text-[9.5px] font-bold text-white bg-teal-600 hover:bg-teal-700 px-1.5 py-0.5 rounded cursor-pointer" title="زیپ، RAR یا یک یا چند عکس/PDF"><i class="fas fa-file-zipper ml-0.5"></i>زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="uploadInspection(${p.id}, this)"></label>
+                    <label class="text-[9.5px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-1.5 py-0.5 rounded cursor-pointer" title="همه‌ی فایل‌های یک پوشه"><i class="fas fa-folder-open ml-0.5"></i>پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="uploadInspection(${p.id}, this)"></label></div>` : '';
+            const pendNote = pending ? '<p class="text-[9.5px] text-cyan-700 font-bold mt-0.5"><i class="fas fa-circle-info ml-0.5"></i>بازدید رسیده؛ آماده‌ی صدور — فقط گزارشِ بازدید با سایت مانده</p>' : '';
+            const missing = items.filter(it => !it.satisfied && !(it.key === 'health_inspection' && custUp));
             const manual = canEdit && missing.length ? `<details class="mt-1"><summary class="cursor-pointer text-[9.5px] text-slate-500">فایلِ آماده دارم</summary>
                     <div class="flex flex-wrap gap-1 mt-1">${missing.map(it => checklistChip(p, { ...it, docs: [] }, canEdit)).join('')}</div></details>` : '';
             return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="گزارش و عکس‌های بازدید">
-                <div class="font-bold whitespace-nowrap">${ok ? '✓' : '✗'} گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</div>
-                ${links ? `<div class="mt-0.5">${links}${del}</div>` : ''}${build}${manual}
+                <div class="font-bold whitespace-nowrap">${pendingRep ? '◐' : ok ? '✓' : '✗'} گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</div>
+                ${links ? `<div class="mt-0.5">${links}${del}</div>` : ''}${pendNote}${build}${custUp}${manual}
             </div>`;
         }
         // پاپ‌آپِ ساختِ گزارش از روی همین ردیف: اطلاعاتِ ردیف و شرکت خودکار، قالبِ سواری/سنگین خودکار؛
@@ -7347,27 +7358,55 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
+        // «مدرکِ دیگر» می‌تواند چند فایل باشد: هر فایل یک مدرکِ جدا با نامِ نوشته‌شده (چندتایی: «نام ۱»، «نام ۲») یا نامِ خودِ فایل
         async function uploadRowDoc(plateId, typeElId, input, labelElId) {
-            if (!input.files[0]) return;
+            const files = [...(input.files || [])];
+            if (!files.length) return;
             const typeEl = document.getElementById(typeElId);
-            const fd = new FormData();
-            fd.append('action', 'upload_row_doc');
-            fd.append('plate_id', plateId);
-            fd.append('doc_type', typeEl ? typeEl.value : 'other');
-            if (labelElId) {
-                const lb = document.getElementById(labelElId), name = lb ? lb.value.trim() : '';
-                if (!name) { showToast('اول نامِ مدرک را بنویسید.', 'warning'); input.value = ''; if (lb) lb.focus(); return; }
-                fd.append('doc_label', name);
+            const lb = labelElId ? document.getElementById(labelElId) : null, typed = lb ? lb.value.trim() : '';
+            let ok = 0, last = null, aiQueued = false;
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const fd = new FormData();
+                fd.append('action', 'upload_row_doc');
+                fd.append('plate_id', plateId);
+                fd.append('doc_type', typeEl ? typeEl.value : 'other');
+                if (labelElId) fd.append('doc_label', typed ? (files.length > 1 ? typed + ' ' + e2pNum(i + 1) : typed) : f.name.replace(/\.[^.]+$/, '').slice(0, 80));
+                fd.append('doc_file', f, f.name);
+                try {
+                    const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                    if (data.ok) { ok++; aiQueued = aiQueued || !!data.ai_queued; } else last = data.error || 'خطا';
+                } catch (e) { last = 'خطا در ارتباط با سرور.'; }
             }
-            fd.append('doc_file', input.files[0]);
-            try {
-                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
-                const data = await res.json();
-                showToast(data.ok ? 'مدرک ثبت و نام‌گذاری شد.' + (data.ai_queued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') : (data.error || 'خطا'), data.ok ? 'success' : 'error');
-                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
-                if (data.ok && data.ai_queued && typeof aiStepLoop === 'function') aiStepLoop();
-            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            if (ok) showToast((files.length > 1 ? `${e2pNum(ok)} مدرک` : 'مدرک') + ' ثبت و نام‌گذاری شد.' + (aiQueued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') + (last ? ' (بقیه: ' + last + ')' : ''), last ? 'warning' : 'success');
+            else showToast(last || 'خطا', 'error');
+            if (ok && lb) lb.value = '';
+            if (ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            if (ok && aiQueued && typeof aiStepLoop === 'function') aiStepLoop();
             input.value = '';
+        }
+        // بازدیدی که شرکت فرستاده: زیپ/RAR همان‌طور، و پوشه یا چند عکس در خودِ مرورگر یک زیپ می‌شود (روی سرور در پوشه‌ی بازدید باز می‌شود)
+        async function uploadInspection(plateId, input, portal) {
+            const files = [...(input.files || [])].filter(f => !/^\./.test(f.name));
+            input.value = '';
+            if (!files.length) return;
+            let file = files[0];
+            if (files.length > 1 || (input.webkitdirectory && files.length)) {
+                try {
+                    showToast(`در حالِ آماده‌سازیِ ${e2pNum(files.length)} فایلِ بازدید…`, 'info');
+                    const JSZip = await UploadKit.ensure('jszip');
+                    const z = new JSZip();
+                    files.forEach(f => z.file((f.webkitRelativePath || f.name).replace(/^[^/]*\//, '') || f.name, f));
+                    file = new File([await z.generateAsync({type: 'blob'})], 'inspection.zip', {type: 'application/zip'});
+                } catch (e) { showToast('ساختِ زیپ ممکن نشد: ' + (e.message || e), 'error'); return; }
+            }
+            const fd = new FormData();
+            fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', 'health_inspection'); fd.append('doc_file', file, file.name);
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                showToast(data.ok ? 'بازدید ثبت شد؛ حالا «ساخت گزارش بازدید» را بزنید (عکس‌ها خودکار می‌آیند).' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } catch (e) { showToast('خطا در ارتباط با سرور (حجمِ فایل را بررسی کنید).', 'error'); }
         }
 
         function deleteRowDoc(docId) {
@@ -7514,13 +7553,25 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- فهرست متنیِ ریزِ درخواست ----
+        // «همه‌ی ردیف‌ها» یا «فقط دارای کسری» (برای فرستادنِ کسری‌ها به شرکت)؛ انتخابِ آخر در همین مرورگر می‌ماند
+        let rowsTextReq = 0, rowsTextOnly = 0;
+        try { rowsTextOnly = localStorage.getItem('crows-text-only') === '1' ? 1 : 0; } catch (e) {}
+        function setRowsTextMode(m) {
+            rowsTextOnly = m ? 1 : 0;
+            try { localStorage.setItem('crows-text-only', String(rowsTextOnly)); } catch (e) {}
+            if (rowsTextReq) showRequestRowsText(rowsTextReq);
+        }
         async function showRequestRowsText(requestId) {
+            rowsTextReq = requestId;
             const box = document.getElementById('crows-text-content');
             box.value = 'در حال آماده‌سازی...';
+            document.querySelectorAll('#crows-text-mode [data-m]').forEach(b => { const on = Number(b.dataset.m) === rowsTextOnly; b.className = 'px-3 py-1.5 rounded-lg ' + (on ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'); });
             document.getElementById('crows-text-modal').classList.add('active');
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_rows_text', request_id: requestId})});
-            const data = await res.json();
-            box.value = data.ok ? data.text : (data.error || 'خطا');
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_rows_text', request_id: requestId, only_missing: rowsTextOnly})});
+                const data = await res.json();
+                box.value = data.ok ? data.text : (data.error || 'خطا');
+            } catch (e) { box.value = 'خطا در ارتباط با سرور.'; }
         }
 
         function copyRowsText() {

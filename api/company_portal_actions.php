@@ -239,6 +239,8 @@ try {
             if (portal_company_opts($pdo, $request['company_id'])['custom']) $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
             $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']));
+            $p['report_pending'] = company_plate_report_pending($p['insurance_type'], $assignedTypes, $reqKind);
+            if ($p['report_pending'] && $p['status'] === 'READY_FOR_ISSUE') $p['status_fa'] = 'آماده‌ی صدور (گزارش بازدید)';
             // مالک / بیمه‌گذار / ذینفع (شرکت هم می‌تواند برای هر ردیف یا همه‌ی ردیف‌ها تعیین کند)
             $pr = party_resolve($p, $partyCompany, $request);
             $p['party'] = ['mode' => $pr['mode'], 'mode_fa' => $pr['mode_fa'], 'explicit' => $pr['explicit'], 'other' => $pr['other'],

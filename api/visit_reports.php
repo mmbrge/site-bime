@@ -442,6 +442,34 @@ function vr_health_photos_pick($pdo, $siteRoot, $inspId, array $keys) {
     return $out;
 }
 
+// عکس‌های بازدیدی که روی یک ردیفِ شرکتی بارگذاری شده (پوشه‌ی «بازدید سلامت»: زیپِ بازشده، پوشه یا عکسِ تکی)
+// => [['key', 'abs', 'ext', 'label', 'url'], ...]؛ کلید = مسیرِ نسبیِ فایل (برای انتخابِ دوباره در «صدور» بررسی می‌شود)
+function vr_row_photos($pdo, $siteRoot, $plateId) {
+    $st = $pdo->prepare("SELECT file_path FROM company_documents WHERE plate_id = ? AND doc_type = 'health_inspection' AND status = 'ASSIGNED'");
+    $st->execute([intval($plateId)]);
+    $root = realpath($siteRoot);
+    $files = [];
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $rel) {
+        $abs = realpath($siteRoot . '/' . ltrim((string)$rel, '/'));
+        if (!$abs || strpos($abs, $root . '/') !== 0) continue;
+        if (is_file($abs)) { $files[] = $abs; continue; }
+        if (!is_dir($abs)) continue;
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) if ($f->isFile()) $files[] = $f->getPathname();
+    }
+    $out = []; $seen = [];
+    foreach ($files as $abs) {
+        if (count($out) >= 60) break;
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) || isset($seen[$abs]) || preg_match('/\(old\)/u', basename($abs))) continue;
+        $seen[$abs] = true;
+        $rel = ltrim(substr($abs, strlen($root)), '/');
+        $out[] = ['key' => $rel, 'abs' => $abs, 'ext' => $ext === 'jpeg' ? 'jpg' : $ext, 'label' => pathinfo($abs, PATHINFO_FILENAME),
+                  'url' => '/' . implode('/', array_map('rawurlencode', explode('/', $rel)))];
+    }
+    return $out;
+}
+
 function vr_link_titles($pdo, $r) {
     $out = [];
     if ($r['health_inspection_id']) {
@@ -667,8 +695,9 @@ try {
         $cats = vr_user_categories($pdo, $user);
         $forms = [];
         foreach ($cats as $c) $forms[$c['id']] = vr_map_parsed($t['raw'], vr_fields($pdo, $c['id']), vr_visitors($pdo, $c['id']));
+        $rowPhotos = $type === 'company' ? array_map(function ($p) { return ['key' => $p['key'], 'url' => $p['url'], 'label' => $p['label']]; }, vr_row_photos($pdo, $siteRoot, $tid)) : [];
         vr_out(['ok' => true, 'forms' => $forms, 'category_id' => vr_suggest_category($cats, $t['insurer'], $t['class']), 'class' => $t['class'],
-                'title' => $t['title'], 'existing' => $existing, 'health_id' => $health]);
+                'title' => $t['title'], 'existing' => $existing, 'health_id' => $health, 'row_photos' => $rowPhotos]);
     }
 
     // «ساخت تستی»: همان فایل‌ها، ولی نه بایگانی می‌شود و نه ثبت؛ فقط همین لحظه دانلود می‌شود
@@ -740,7 +769,15 @@ try {
         $catOpts = json_decode($cat['options_json'] ?? '', true) ?: [];
         $photosRequired = !isset($catOpts['photos_required']) || !empty($catOpts['photos_required']);
         $noPhotosOk = !empty($catOpts['allow_no_photos']) && !empty($data['no_photos']);
-        if ($photosRequired && !$noPhotosOk && !$uploads && !($healthId && $healthKeys) && !$keptPhotos)
+        // عکس‌های بازدیدِ بارگذاری‌شده روی همان ردیفِ شرکتی (فقط فایل‌های خودِ همان ردیف پذیرفته می‌شوند)
+        $rowKeys = $data['row_photos'] ?? [];
+        if (is_string($rowKeys)) $rowKeys = json_decode($rowKeys, true) ?: [];
+        $rowPhotos = [];
+        if ($rowKeys && ($data['link_type'] ?? '') === 'company' && intval($data['link_id'] ?? 0)) {
+            $want = array_flip(array_map('strval', (array)$rowKeys));
+            foreach (vr_row_photos($pdo, $siteRoot, intval($data['link_id'])) as $rp) if (isset($want[$rp['key']])) $rowPhotos[] = $rp;
+        }
+        if ($photosRequired && !$noPhotosOk && !$uploads && !($healthId && $healthKeys) && !$rowPhotos && !$keptPhotos)
             vr_fail('بارگذاریِ عکس‌های بازدید (عکس، پوشه یا فایل ZIP) اجباری است. برای ساختِ بدونِ عکس از «ساخت تستی» استفاده کنید.');
         // اتصال به درخواستی که گزارش از رویش ساخته شده (ردیفِ شرکتی / درخواستِ کارکنان)
         $linkType = (string)($data['link_type'] ?? '');
@@ -749,7 +786,7 @@ try {
         $report = vr_produce($pdo, $siteRoot, $user, $cat, $fields, $form, $date[0], $date[1], $existing,
                              ['uploads' => $uploads, 'remove_photos' => $existing ? $removePhotos : [],
                               'attachments' => vr_uploaded_attachments(), 'remove_attachments' => $existing ? (array)(is_string($data['remove_attachments'] ?? null) ? (json_decode($data['remove_attachments'], true) ?: []) : ($data['remove_attachments'] ?? [])) : [],
-                              'health_photos' => $healthId ? vr_health_photos_pick($pdo, $siteRoot, $healthId, (array)$healthKeys) : []]);
+                              'health_photos' => $healthId ? vr_health_photos_pick($pdo, $siteRoot, $healthId, (array)$healthKeys) : $rowPhotos]);
         $link = null;
         try {
             if ($healthId) $link = vr_link_health($pdo, $siteRoot, $report, $healthId, $user['id']);

@@ -376,6 +376,11 @@
                     if (!p.ok) { this.root.innerHTML = `<div class="vr-card p-8 text-center text-red-500 font-bold text-sm">${esc(p.error)}</div>`; return; }
                     this.prefill = p;
                 }
+                // عکس‌های بازدیدی که شرکت/مشتری قبلاً روی همین ردیف فرستاده (زیپ، پوشه یا عکس): همه انتخاب‌شده
+                if ((this.prefill.row_photos || []).length) {
+                    this.health = { photos: this.prefill.row_photos, inspection: null, damages: [], forms: {}, fromRow: true };
+                    this.prefill.row_photos.forEach(p => this.healthSel.add(p.key));
+                }
             }
             if (!b.categories.length) {
                 this.root.innerHTML = `<div class="vr-card p-10 text-center vr-fade-up"><div class="w-16 h-16 rounded-2xl bg-amber-100 text-amber-500 flex items-center justify-center mx-auto text-2xl mb-3"><i class="fas fa-lock"></i></div>
@@ -397,7 +402,7 @@
                     <span class="text-[11px] text-slate-400 font-bold mr-auto">بعد از ذخیره، فایل‌های قبلی با «(old)» کنارِ فایل‌های تازه نگه داشته می‌شوند.</span></div>`
                 : `<div class="vr-card p-4 sm:p-5 vr-fade-up">
                     <div class="flex items-center justify-between gap-3 mb-3 flex-wrap"><div class="vr-sec-title"><span class="vr-ic bg-gradient-to-br from-indigo-500 to-violet-600"><i class="fas fa-shapes"></i></span> نوع گزارش</div>
-                    ${this.health ? `<span class="vr-chip bg-rose-50 text-rose-600"><i class="fas fa-heart-pulse"></i> از بازدید سلامت شماره ${fa(this.health.inspection.number)} · ${esc(this.health.inspection.holder || '')}</span>` : ''}
+                    ${this.health && this.health.inspection ? `<span class="vr-chip bg-rose-50 text-rose-600"><i class="fas fa-heart-pulse"></i> از بازدید سلامت شماره ${fa(this.health.inspection.number)} · ${esc(this.health.inspection.holder || '')}</span>` : ''}
                     ${this.mode === 'target' ? `<span class="vr-chip bg-sky-50 text-sky-700"><i class="fas fa-link"></i> از درخواست${this.prefill.title ? ': ' + esc(this.prefill.title) : ''} · ${this.prefill.class === 'HEAVY' ? 'سنگین' : 'سواری / وانت'}</span>` : ''}</div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 vr-stagger">${b.categories.map(c => `
                         <div class="vr-cat vr-card p-4 flex items-start gap-3" data-cat="${c.id}">
@@ -619,7 +624,7 @@
                 <div class="flex flex-wrap gap-2"><label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer"><i class="fas fa-camera"></i> دوربین<input type="file" accept="image/*,.heic,.heif" capture="environment" class="hidden vr-cam-in"></label>
                 <button type="button" class="vr-btn vr-btn-s !py-1.5 !text-[11px] vr-dir-btn" title="همه‌ی عکس‌ها و مدارکِ داخلِ یک پوشه (و زیرپوشه‌هایش)"><i class="fas fa-folder-open text-amber-500"></i> پوشه</button>
                 <label class="vr-btn vr-btn-s !py-1.5 !text-[11px] cursor-pointer" title="عکس‌های داخلِ فایلِ ZIP خودکار استخراج می‌شوند"><i class="fas fa-file-zipper text-violet-500"></i> ZIP<input type="file" accept=".zip,application/zip" multiple class="hidden vr-zip-in"></label></div></div>
-                ${hp.length ? `<p class="text-[11px] font-bold text-slate-500 mb-2"><i class="fas fa-heart-pulse text-rose-400"></i> عکس‌های بازدید سلامت (تیک‌خورده‌ها کنارِ گزارش ذخیره می‌شوند)</p>
+                ${hp.length ? `<p class="text-[11px] font-bold text-slate-500 mb-2">${this.health && this.health.fromRow ? '<i class="fas fa-folder-open text-amber-500"></i> عکس‌های بازدیدِ بارگذاری‌شده روی همین ردیف (تیک‌خورده‌ها کنارِ گزارش ذخیره می‌شوند)' : '<i class="fas fa-heart-pulse text-rose-400"></i> عکس‌های بازدید سلامت (تیک‌خورده‌ها کنارِ گزارش ذخیره می‌شوند)'}</p>
                     <div class="flex gap-2 mb-2"><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-all">انتخابِ همه</button><button type="button" class="vr-btn vr-btn-s !py-1 !text-[10px] vr-hp-none">هیچ‌کدام</button></div>
                     <div class="vr-hp grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-4"></div>` : ''}
                 <div class="vr-ex grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2 mb-3"></div>
@@ -1144,6 +1149,7 @@
                 fd.append('remove_attachments', JSON.stringify([...this.removeAtts]));
             }
             if (this.mode === 'health') { fd.append('health_inspection_id', this.health.inspection.id); fd.append('health_photos', JSON.stringify([...this.healthSel])); }
+            if (this.mode === 'target' && this.health && this.health.fromRow) fd.append('row_photos', JSON.stringify([...this.healthSel]));
             if (this.noPhotos && this.cat.allow_no_photos) fd.append('no_photos', '1');
             if (this.mode === 'target' && this.opts.target && ['company', 'case'].includes(this.opts.target.type)) { fd.append('link_type', this.opts.target.type); fd.append('link_id', this.opts.target.id); }
             if (this.mode === 'new' && this.link) { fd.append('link_type', this.link.type); fd.append('link_id', this.link.id); }

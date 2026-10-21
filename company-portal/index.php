@@ -903,6 +903,7 @@ async function submitNewRequest() {
 function portalChecklistChip(plate, item) {
     const ok = item.satisfied;
     const tone = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : (item.internal && plate.report_pending) ? 'bg-cyan-50 border-cyan-200 text-cyan-700'
                     : (item.required ? 'bg-red-50 border-red-200 text-red-600'
                                      : 'bg-slate-50 border-slate-200 text-slate-400');
     const star = item.required ? '<span class="text-red-400">*</span>' : '';
@@ -914,11 +915,19 @@ function portalChecklistChip(plate, item) {
     let uploader = '';
     if (item.custom && plate.status !== 'ISSUED') {
         // «مدرکِ دیگر»: نامش را خودتان می‌نویسید (چند مدرک هم می‌شود زد)
-        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="pr-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (مثلاً گواهی‌نامه)" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
+        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1"><input id="pr-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه" class="text-[10px] border rounded px-1 py-0.5 bg-white w-32">
             <input type="hidden" id="pr-type-${plate.id}-other" value="other">
             <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap">
-                + بارگذاری<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-other', this, 'pr-label-${plate.id}')">
+                + بارگذاری<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="portalUploadRowDoc(${plate.id}, 'pr-type-${plate.id}-other', this, 'pr-label-${plate.id}')">
             </label></span>`;
+    } else if (!ok && item.internal) {
+        // بازدید رسیده؛ گزارشِ بازدید را کارشناسِ ما می‌سازد
+        uploader = `<span class="block mt-1 text-[9.5px] ${plate.report_pending ? 'text-cyan-700 font-bold' : 'text-slate-400'}">${plate.report_pending ? 'بازدید رسیده؛ گزارش را ما می‌سازیم' : 'بعد از رسیدنِ بازدید، گزارش را ما می‌سازیم'}</span>`;
+    } else if (!ok && plate.status !== 'ISSUED' && item.key === 'health_inspection') {
+        // بازدیدی که خودتان انجام داده‌اید: زیپ، RAR، چند عکس یا یک پوشه
+        uploader = `<span class="flex flex-wrap items-center gap-1 mt-1">
+            <label class="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap" title="زیپ، RAR یا یک یا چند عکس/PDF">زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label>
+            <label class="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap" title="همه‌ی فایل‌های یک پوشه">پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="portalUploadInspection(${plate.id}, this)"></label></span>`;
     } else if (!ok && plate.status !== 'ISSUED') {
         const types = item.upload_types || [item.key];
         const sel = types.length > 1
@@ -934,7 +943,7 @@ function portalChecklistChip(plate, item) {
     }
 
     return `<div class="border ${tone} rounded-lg px-2 py-1 text-[10px] leading-relaxed" title="${item.hint || ''}">
-        <div class="font-bold whitespace-nowrap">${ok ? '✓' : '✗'} ${item.label}${star}</div>
+        <div class="font-bold whitespace-nowrap">${ok ? '✓' : (item.internal && plate.report_pending ? '◐' : '✗')} ${item.label}${star}</div>
         ${links ? `<div class="mt-0.5">${links}</div>` : ''}
         ${uploader}
     </div>`;
@@ -1117,26 +1126,53 @@ function portalEditAllParty() {
 }
 
 // آپلودِ هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست
+// «مدرکِ دیگر» می‌تواند چند فایل باشد: هر فایل یک مدرکِ جدا با نامِ نوشته‌شده («نام ۱»، «نام ۲») یا نامِ خودِ فایل
 async function portalUploadRowDoc(plateId, typeElId, input, labelElId) {
-    if (!input.files[0]) return;
-    const typeEl = document.getElementById(typeElId);
-    const fd = new FormData();
-    fd.append('action', 'upload_row_doc');
-    fd.append('plate_id', plateId);
-    fd.append('doc_type', typeEl ? typeEl.value : 'other');
-    if (labelElId) {
-        const lb = document.getElementById(labelElId), name = lb ? lb.value.trim() : '';
-        if (!name) { showToast('اول نامِ مدرک را بنویسید.'); input.value = ''; if (lb) lb.focus(); return; }
-        fd.append('doc_label', name);
-    }
-    fd.append('doc_file', input.files[0]);
-    try {
-        const res = await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd});
-        const data = await res.json();
-        showToast(data.ok ? 'مدرک ثبت شد.' : (data.error || 'خطا در بارگذاری.'));
-        if (data.ok && activeRequestId) openRequestDetail(activeRequestId);
-    } catch (e) { showToast('خطا در ارتباط با سرور.'); }
+    const files = [...(input.files || [])];
     input.value = '';
+    if (!files.length) return;
+    const typeEl = document.getElementById(typeElId);
+    const lb = labelElId ? document.getElementById(labelElId) : null, typed = lb ? lb.value.trim() : '';
+    let ok = 0, last = null;
+    for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const fd = new FormData();
+        fd.append('action', 'upload_row_doc');
+        fd.append('plate_id', plateId);
+        fd.append('doc_type', typeEl ? typeEl.value : 'other');
+        if (labelElId) fd.append('doc_label', typed ? (files.length > 1 ? typed + ' ' + faNum(i + 1) : typed) : f.name.replace(/\.[^.]+$/, '').slice(0, 80));
+        fd.append('doc_file', f, f.name);
+        try {
+            const data = await (await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd})).json();
+            if (data.ok) ok++; else last = data.error || 'خطا در بارگذاری.';
+        } catch (e) { last = 'خطا در ارتباط با سرور.'; }
+    }
+    showToast(ok ? (files.length > 1 ? faNum(ok) + ' مدرک ثبت شد.' : 'مدرک ثبت شد.') + (last ? ' (بقیه: ' + last + ')' : '') : (last || 'خطا'));
+    if (ok && activeRequestId) openRequestDetail(activeRequestId);
+}
+// بازدیدی که شرکت خودش انجام داده: زیپ/RAR همان‌طور؛ پوشه یا چند عکس در مرورگر یک زیپ می‌شود
+async function portalUploadInspection(plateId, input) {
+    const files = [...(input.files || [])].filter(f => !/^\./.test(f.name));
+    const isDir = !!input.webkitdirectory;
+    input.value = '';
+    if (!files.length) return;
+    let file = files[0];
+    if (files.length > 1 || isDir) {
+        try {
+            showToast('در حالِ آماده‌سازیِ ' + faNum(files.length) + ' فایل…');
+            const JSZip = await UploadKit.ensure('jszip');
+            const z = new JSZip();
+            files.forEach(f => z.file((f.webkitRelativePath || f.name).replace(/^[^/]*\//, '') || f.name, f));
+            file = new File([await z.generateAsync({type: 'blob'})], 'inspection.zip', {type: 'application/zip'});
+        } catch (e) { showToast('ساختِ زیپ ممکن نشد: ' + (e.message || e)); return; }
+    }
+    const fd = new FormData();
+    fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', 'health_inspection'); fd.append('doc_file', file, file.name);
+    try {
+        const data = await (await fetch('../api/company_portal_actions.php', {method: 'POST', body: fd})).json();
+        showToast(data.ok ? 'بازدید ثبت شد؛ گزارشِ بازدید را کارشناسِ ما می‌سازد.' : (data.error || 'خطا در بارگذاری.'));
+        if (data.ok && activeRequestId) openRequestDetail(activeRequestId);
+    } catch (e) { showToast('خطا در ارتباط با سرور (حجمِ فایل را بررسی کنید).'); }
 }
 
 const DOC_TYPE_OPTIONS = [

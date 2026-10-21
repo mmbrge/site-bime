@@ -1828,6 +1828,13 @@ try {
             $p['checklist'] = company_checklist_add_other($p['checklist'], $rowDocs);
             $p['present_labels'] = company_plate_present_labels($assignedTypes);
             $p['missing_docs'] = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'] ?? null, $reqKind, !empty($p['is_new_vehicle']));
+            // وضعیتِ خودکار با چک‌لیستِ فعلی هم‌گام می‌شود (مثلاً ردیفی که بازدیدش رسیده و فقط گزارشِ ما مانده => آماده‌ی صدور)
+            if (in_array($p['status'], ['PENDING', 'READY_FOR_ISSUE'], true) && ($p['missing_docs'] ? 'PENDING' : 'READY_FOR_ISSUE') !== $p['status'] && empty($request['is_import'])) {
+                $p['status'] = company_sync_plate_status($pdo, $p['id']) ?: $p['status'];
+                $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
+            }
+            $p['report_pending'] = company_plate_report_pending($p['insurance_type'], $assignedTypes, $reqKind);
+            if ($p['report_pending'] && $p['status'] === 'READY_FOR_ISSUE') $p['status_fa'] = 'آماده‌ی صدور (گزارش بازدید)';
             $p['expiry_date_jalali'] = $p['expiry_date'] ? jd(strtotime($p['expiry_date'])) : null;
             $p['issued_at_jalali'] = $p['issued_at'] ? jd(strtotime($p['issued_at'])) : null;
             $stmtInst = $pdo->prepare("SELECT * FROM company_installments WHERE plate_id = ? ORDER BY inst_number");
@@ -2580,7 +2587,7 @@ try {
     // ---- فهرست متنیِ ریزِ درخواست (همان قالبی که کارفرما خواسته) ----
     if ($action === 'request_rows_text') {
         $requestId = intval($data['request_id'] ?? ($_GET['request_id'] ?? 0));
-        $text = company_request_rows_text_report($pdo, $requestId);
+        $text = company_request_rows_text_report($pdo, $requestId, !empty($data['only_missing']));
         if ($text === null) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
         echo json_encode(['ok' => true, 'text' => $text], JSON_UNESCAPED_UNICODE);
         exit;

@@ -323,14 +323,17 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
         ];
 
         // ---- گزارش بازدید: فقط اگر بازدید سلامت در جریان/موجود باشد ----
+        // گزارش را خودمان با سایت می‌سازیم (internal = کارِ داخلیِ ما): کسریِ مشتری حساب نمی‌شود؛ وقتی عکس‌ها/فایلِ بازدید
+        // رسید (از شرکت یا ربات)، ردیف «آماده‌ی صدور (گزارش بازدید)» است
         if ($healthNeeded || $has('health_inspection')) {
             $items[] = [
                 'key' => 'health_report',
                 'label' => 'گزارش بازدید',
-                'required' => true,
+                'required' => false,
+                'internal' => true,
                 'satisfied' => $has('health_report'),
                 'upload_types' => ['health_report'],
-                'hint' => 'در صورت وجود بازدید سلامت، گزارشش هم اجباری است',
+                'hint' => $has('health_inspection') ? 'بازدید رسیده؛ گزارش با «ساخت گزارش بازدید» در سایت ساخته می‌شود' : 'بعد از رسیدنِ بازدید، گزارش در سایت ساخته می‌شود',
             ];
         }
     } else {
@@ -355,6 +358,12 @@ function company_plate_missing_docs($insuranceTypeEnum, $skipHealthInspection, a
         if ($it['required'] && !$it['satisfied']) $missing[$it['key']] = $it['label'];
     }
     return $missing;
+}
+
+// بازدید رسیده ولی گزارشِ بازدید هنوز با سایت ساخته نشده (کارِ داخلیِ ما، نه کسریِ مشتری)
+function company_plate_report_pending($insuranceTypeEnum, array $assignedDocTypes, $kind = 'NEW_POLICY') {
+    return ($kind ?: 'NEW_POLICY') === 'NEW_POLICY' && $insuranceTypeEnum === 'BODY'
+        && in_array('health_inspection', $assignedDocTypes, true) && !in_array('health_report', $assignedDocTypes, true);
 }
 
 // مدارکی که این ردیف دارد، به‌صورت برچسب فارسی (برای فهرست متنیِ خروجی)
@@ -455,7 +464,8 @@ function company_doc_foldername($docTypeKey, $plateDisplay) {
 // فهرست متنیِ ریزِ یک درخواست - همان قالبی که کارفرما خواسته:
 //   55ایران - 456 ص 25 ( بیمه بدنه قبل ، سند )
 //       ناموجود: بازدید سلامت، گزارش بازدید
-function company_request_rows_text_report($pdo, $requestId) {
+//   $onlyMissing: فقط ردیف‌هایی که هنوز مدرکی کم دارند (برای فرستادنِ کسری‌ها به شرکت)
+function company_request_rows_text_report($pdo, $requestId, $onlyMissing = false) {
     $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name FROM company_requests cr
                             JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
     $stmt->execute([$requestId]);
@@ -479,8 +489,12 @@ function company_request_rows_text_report($pdo, $requestId) {
     $lines[] = 'شرکت ' . $req['company_name'] . ' - نامه‌ی ' . jalali_from_gregorian_ts_dotted(strtotime($req['created_at']))
              . ' - ' . company_request_kind_fa($kind);
     $lines[] = '';
+    $shown = 0;
     foreach ($plates as $p) {
         $types = array_values(array_filter($byPlate[$p['id']] ?? []));
+        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind, !empty($p['is_new_vehicle']));
+        if ($onlyMissing && (!$missing || in_array($p['status'], ['ISSUED', 'CANCELLED'], true) || !empty($p['dup_of_id']))) continue;
+        $shown++;
         $display = company_row_label($p);
         $present = company_plate_present_labels($types);
         $line = $display . ' (' . company_kind_folder_label($kind, $p['insurance_type']) . ')';
@@ -489,9 +503,10 @@ function company_request_rows_text_report($pdo, $requestId) {
         $lines[] = $line;
         if ($kind === 'ENDORSEMENT' && !empty($p['endorsement_request'])) $lines[] = '    خواسته: ' . $p['endorsement_request'];
         if ($kind === 'CANCELLATION' && !empty($p['cancellation_reason'])) $lines[] = '    دلیل فسخ: ' . $p['cancellation_reason'];
-        $missing = company_plate_missing_docs($p['insurance_type'], (bool)$p['skip_health_inspection'], $types, $p['has_prev_body'] ?? null, $kind, !empty($p['is_new_vehicle']));
         if ($missing) $lines[] = '    ناموجود: ' . implode('، ', array_values($missing));
+        elseif (!$onlyMissing && company_plate_report_pending($p['insurance_type'], $types, $kind)) $lines[] = '    بازدید رسیده؛ آماده‌ی صدور (گزارش بازدید با ما)';
     }
+    if ($onlyMissing && !$shown) $lines[] = 'همه‌ی ردیف‌ها مدارکِ لازم را دارند؛ کسری‌ای نمانده است.';
 
     $total = count($plates);
     $body = 0; $third = 0; $issued = 0;
@@ -501,7 +516,7 @@ function company_request_rows_text_report($pdo, $requestId) {
     }
     $lines[] = '';
     $doneFa = $kind === 'CANCELLATION' ? 'فسخ‌شده' : ($kind === 'ENDORSEMENT' ? 'الحاقیه‌ی صادرشده' : 'صادرشده');
-    $lines[] = "جمع: {$total} ردیف ({$body} بدنه، {$third} ثالث) - {$doneFa}: {$issued}";
+    $lines[] = "جمع: {$total} ردیف ({$body} بدنه، {$third} ثالث) - {$doneFa}: {$issued}" . ($onlyMissing ? " - دارای کسری: {$shown}" : '');
     return implode("\n", $lines);
 }
 
@@ -1344,9 +1359,10 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     }
     $ext = upload_ext($fileArr['name']);
     $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-    if ($allowZip) $allowedExts[] = 'zip';
+    // بازدیدِ ارسالیِ شرکت‌ها: زیپ (باز می‌شود)، RAR یا 7z (همان‌طور داخلِ پوشه‌ی بازدید نگه داشته می‌شود)
+    if ($allowZip) array_push($allowedExts, 'zip', 'rar', '7z');
     if (!in_array($ext, $allowedExts, true)) {
-        return ['ok' => false, 'error' => $allowZip ? 'فقط فایل PDF، عکس یا زیپ مجاز است.' : 'فقط فایل PDF یا عکس مجاز است.'];
+        return ['ok' => false, 'error' => $allowZip ? 'فقط فایل PDF، عکس، زیپ یا RAR مجاز است.' : 'فقط فایل PDF یا عکس مجاز است.'];
     }
     if (!is_dir($destDir) && !@mkdir($destDir, 0755, true) && !is_dir($destDir)) {
         return ['ok' => false, 'error' => 'خطا در آماده‌سازی پوشه‌ی ذخیره‌سازی.'];
