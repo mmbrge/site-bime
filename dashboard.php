@@ -4519,6 +4519,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=6"></script>
     <script src="registry.js?v=1"></script>
+    <script src="issue-panel.js?v=1"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -6818,6 +6819,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             ? `<p class="text-[10px] text-slate-500">${p.policy_number || ''}</p>
                                ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a> <a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">(نامِ دقیق)</a>` : ''}`
                             : (p.dup_ref ? '<span class="text-[10px] text-rose-500">صادر نمی‌شود (تکراری)</span>' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>'))}
+                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}
                         ${isAdmin ? `<div class="flex gap-2 mt-1">
                             <button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px]">ویرایش</button>
                             ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px]">حذف</button>` : ''}
@@ -7837,7 +7839,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">کم دارد</span>
                            <p class="text-[9px] text-amber-600 mt-1">${missing.join('، ')}</p>`}</td>
                     <td class="p-3"><span class="status-badge ${statusCls} text-[10px] font-bold px-2 py-1 rounded-full">${statusFa}</span></td>
-                    <td class="p-3"><span class="text-blue-600 font-bold">مشاهده و صدور</span></td>
+                    <td class="p-3 whitespace-nowrap"><span class="text-blue-600 font-bold">مشاهده و صدور</span>
+                        ${window.IssuePanel ? `<button onclick="event.stopPropagation(); IssuePanel.open({type: '${isP ? 'P' : 'C'}', id: ${r.id}, onIssue: () => openIssueQueueDetail('${r.source}', ${r.id})})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}</td>
                 </tr>`;
             }).join('');
         }
@@ -11823,6 +11826,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <td class="p-4 text-xs font-bold ${CASE_STATUS_COLOR[c.status] || ''}">${CASE_STATUS_FA[c.status] || c.status}</td>
                             <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(c.created_at, false)}</td>
                             <td class="p-4 whitespace-nowrap"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button>
+                                ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'P', id: ${c.id}, onIssue: () => openCase(${c.id}, 'issue')})" title="همه‌ی اطلاعات و مدارک برای صدور، با کپی" class="mr-1 bg-sky-50 text-sky-700 hover:bg-sky-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}
                                 ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('case', c.id, 'loadCases')}</td>
                         </tr>`;
                 });

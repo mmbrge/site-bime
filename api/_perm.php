@@ -262,6 +262,10 @@ function perm_api_map() {
             'endorse' => 'bordereau:edit', 'endorse_delete' => 'bordereau:edit', 'note' => 'bordereau:edit', 'set_company' => 'bordereau:edit', 'delete' => 'bordereau:delete',
             'export_xlsx' => 'bordereau:export', 'export_pdf' => 'bordereau:export',
         ]],
+        // «پنلِ صدور» (فقط خواندنی): هر کس یکی از صفحه‌های صدور/درخواست‌ها را می‌بیند
+        'issue_panel_actions' => ['pages' => ['issue-queue', 'companies-requests', 'cases'], 'elevate' => true, 'actions' => [
+            'get' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view',
+        ]],
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [
             'list' => 'vehicles:view', 'detail' => 'vehicles:view', 'models' => 'vehicles:view', 'model_img' => 'vehicles:view', 'model_image' => 'vehicles:edit', 'model_image_delete' => 'vehicles:edit', 'note' => 'vehicles:edit',
             'report_pdf' => 'vehicles:export', 'export_xlsx' => 'vehicles:export',
