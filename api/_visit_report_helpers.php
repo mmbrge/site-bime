@@ -34,13 +34,17 @@ function vr_excel_columns() {
 // ---------------------------------------------------------------------
 function vr_current_user($pdo) {
     if (empty($_SESSION['user_id'])) return null;
-    $st = $pdo->prepare("SELECT id, full_name, role FROM users WHERE id = ?" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
+    vr_user_restrict_ensure($pdo);
+    $st = $pdo->prepare("SELECT * FROM users WHERE id = ?" . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : ''));
     $st->execute([intval($_SESSION['user_id'])]);
     $u = $st->fetch();
     if (!$u) return null;
+    $realRole = $u['role'];
     // کاربرِ با دسترسیِ سفارشی که اجازه‌ی این عملیات را دارد، در همین درخواست مثلِ مدیر کل (api/_perm.php)
     if (function_exists('perm_is_elevated') && perm_is_elevated()) $u['role'] = 'ADMIN';
-    return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role'], 'is_admin' => $u['role'] === 'ADMIN'];
+    // «فقط انواعِ انتخاب‌شده‌ی گزارش» (از پنجره‌ی دسترسی‌ها): برای غیرِ مدیرِ کلِ واقعی
+    $restrict = $realRole !== 'ADMIN' && !empty($u['vr_cats_restrict']);
+    return ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role'], 'real_role' => $realRole, 'is_admin' => $u['role'] === 'ADMIN', 'vr_restrict' => $restrict];
 }
 
 function vr_access($cat) {
@@ -48,12 +52,22 @@ function vr_access($cat) {
     return ['roles' => array_values(array_filter((array)($a['roles'] ?? []))), 'users' => array_map('intval', (array)($a['users'] ?? []))];
 }
 // مدیر کل همه‌ی انواع را دارد؛ بقیه فقط نوع‌هایی که نقش یا خودشان در «دسترسی» آن انتخاب شده باشند
+//   کاربری که در «دسترسی‌ها» به «فقط انواعِ انتخاب‌شده» محدود شده، حتی با دسترسیِ سفارشی هم فقط همان‌ها را دارد
 function vr_can_issue($cat, $user) {
     if (!$user) return false;
-    if ($user['is_admin']) return true;
+    if ($user['is_admin'] && empty($user['vr_restrict'])) return true;
     if (!intval($cat['is_active'] ?? 1)) return false;
     $a = vr_access($cat);
-    return in_array($user['role'], $a['roles'], true) || in_array($user['id'], $a['users'], true);
+    if (!empty($user['vr_restrict'])) return in_array($user['id'], $a['users'], true);
+    return in_array($user['real_role'] ?? $user['role'], $a['roles'], true) || in_array($user['role'], $a['roles'], true) || in_array($user['id'], $a['users'], true);
+}
+// ستونِ «محدود به انواعِ انتخاب‌شده» روی کاربر (خودکار)
+function vr_user_restrict_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'vr_cats_restrict'")->fetch()) $pdo->exec("ALTER TABLE users ADD COLUMN vr_cats_restrict TINYINT(1) NOT NULL DEFAULT 0"); }
+    catch (Throwable $e) { error_log('[vr_user_restrict_ensure] ' . $e->getMessage()); }
 }
 function vr_user_categories($pdo, $user, $activeOnly = true) {
     $rows = $pdo->query("SELECT * FROM report_categories " . ($activeOnly ? "WHERE is_active = 1 " : '') . "ORDER BY sort_order, id")->fetchAll();
@@ -985,7 +999,7 @@ function vr_target_raw($pdo, $type, $id) {
 // مدیر کل همه‌ی گزارش‌ها را می‌بیند؛ بقیه فقط گزارش‌هایی که خودشان صادر کرده‌اند (و نوعش هنوز برایشان مجاز است)
 function vr_report_visible($pdo, $r, $user) {
     if (!$r || !$user) return false;
-    if ($user['is_admin']) return true;
+    if ($user['is_admin']) { if (empty($user['vr_restrict'])) return true; $cat = vr_category($pdo, $r['category_id']); return $cat && vr_can_issue($cat, $user); }
     if (intval($r['issuer_user_id']) !== $user['id'] || $r['status'] !== 'ACTIVE') return false;
     $cat = vr_category($pdo, $r['category_id']);
     return $cat && vr_can_issue($cat, $user);

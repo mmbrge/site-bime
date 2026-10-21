@@ -375,7 +375,7 @@ function perm_api_map() {
             'list' => 'staff-users:view|login-logs:view', 'presence' => 'staff-users:view|login-logs:view', 'login_logs' => 'login-logs:view',
             'create' => 'staff-users:create', 'update' => 'staff-users:edit', 'update_role' => 'staff-users:edit', 'delete' => 'staff-users:delete',
             'send_message' => 'staff-users:view', 'reset_requests' => 'staff-users:view', 'handle_reset' => 'staff-users:edit',
-            'perm_get' => 'staff-users:view', 'perm_peek' => 'staff-users:view', 'perm_save' => 'staff-users:edit', 'fm_tree' => 'staff-users:edit',
+            'perm_get' => 'staff-users:view', 'perm_peek' => 'staff-users:view', 'perm_save' => 'staff-users:edit', 'vr_cats_get' => 'staff-users:view', 'vr_cats_save' => 'staff-users:edit', 'fm_tree' => 'staff-users:edit',
             'devices_get' => 'staff-users:view', 'devices_set_max' => 'staff-users:edit', 'device_end' => 'staff-users:edit', 'devices_end_all' => 'staff-users:edit',
             'inq_reset' => 'staff-users:edit',
         ]],

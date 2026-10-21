@@ -4020,6 +4020,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div class="flex-1 overflow-y-auto px-6 py-4 no-count pm-scroll">
                 <div id="pm-body"></div>
+                <div id="pm-vr"></div>
                 <div class="pm-sep"><span><i class="fas fa-star ml-1"></i>امکانات، ابزارها و سرویس — جدا از نقش، برای همین کاربر</span></div>
                 <div id="pm-comfort"></div>
                 <div id="pm-svc"></div>
@@ -10718,6 +10719,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             openModal('perm-modal');
             if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
             pmSvcLoad(d.user.id);   // دسترسی به سرویسِ رفت‌وآمد
+            pmVrLoad(d.user.id);    // نوع‌های گزارشِ بازدید
             pmFmInit(d);   // دسترسیِ پوشه‌به‌پوشه‌ی بایگانی
         }
         // ---------- دسترسیِ پوشه‌به‌پوشه‌ی «بایگانی فایل‌ها» ----------
@@ -10770,6 +10772,38 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const orphan = Object.keys(PMF.acl).filter(p => p && !shown.has(p) && !Object.keys(PMF.kids).some(k => (PMF.kids[k] || []).some(d => d.path === p)));
             if (t && orphan.length) t.insertAdjacentHTML('beforeend', `<div class="text-[10px] text-slate-400 font-bold mt-2 px-1">قاعده‌های پوشه‌های داخلی‌تر:</div>` + orphan.map(p => `<div class="pmf-row"><span class="nm" dir="auto">${fmEsc(p)}</span><span data-eff="${fmAttr(p)}"></span>${pmFmSel(p)}</div>`).join(''));
             pmFmPaint();
+        }
+        // نوع‌های گزارشِ بازدید: «همه‌ی انواع» (طبقِ دسترسیِ صفحه) یا «فقط انتخاب‌شده‌ها» برای همین کاربر
+        let PM_VR = null;
+        async function pmVrLoad(uid) {
+            const box = document.getElementById('pm-vr');
+            box.innerHTML = ''; PM_VR = null;
+            if (!REAL_ADMIN) return;
+            let r; try { r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'vr_cats_get', id: uid})})).json(); } catch (e) { return; }
+            if (!r.ok || r.is_admin || !(r.cats || []).length) return;
+            PM_VR = {uid, restrict: !!r.restrict, sel: new Set(r.cats.filter(c => c.checked).map(c => c.id)), cats: r.cats, dirty: false};
+            pmVrDraw();
+        }
+        function pmVrDraw() {
+            const V = PM_VR, box = document.getElementById('pm-vr');
+            if (!V) return;
+            box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#4f46e5;--b:#7c3aed"><i class="fas fa-clipboard-check"></i></span>انواعِ گزارشِ بازدید <small class="text-[10px] text-slate-400 font-bold mr-1">کدام نوع‌ها را بسازد و ببیند</small></h4>
+                <div class="px-1 py-2 text-[11.5px] space-y-2">
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700"><input type="radio" name="pm-vr-m" value="0" ${V.restrict ? '' : 'checked'}> همه‌ی انواع (طبقِ دسترسیِ صفحه‌های گزارشِ بازدید و نقش)</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700"><input type="radio" name="pm-vr-m" value="1" ${V.restrict ? 'checked' : ''}> فقط انواعِ انتخاب‌شده:</label>
+                    <div class="flex flex-wrap gap-1.5 pr-6 ${V.restrict ? '' : 'opacity-50 pointer-events-none'}">${V.cats.map(c => `<label class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 cursor-pointer ${V.sel.has(c.id) ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600'}">
+                        <input type="checkbox" data-vrc="${c.id}" ${V.sel.has(c.id) ? 'checked' : ''}> ${iiEsc(c.name)}${c.active ? '' : ' <small class="text-slate-400">(غیرفعال)</small>'}${c.by_role ? ' <small class="text-emerald-600" title="از نقشِ کاربر هم دسترسی دارد">· نقش</small>' : ''}</label>`).join('')}</div>
+                    <p class="text-[10.5px] text-slate-400">کاربرِ «فقط انتخاب‌شده‌ها» فقط همان نوع‌ها را در ساختِ گزارش و فهرستِ گزارش‌ها می‌بیند، حتی اگر دسترسیِ سفارشیِ کامل داشته باشد.</p></div></div>`;
+            box.querySelectorAll('[name="pm-vr-m"]').forEach(x => x.onchange = () => { V.restrict = x.value === '1'; V.dirty = true; pmVrDraw(); });
+            box.querySelectorAll('[data-vrc]').forEach(x => x.onchange = () => { const id = Number(x.dataset.vrc); x.checked ? V.sel.add(id) : V.sel.delete(id); V.dirty = true; pmVrDraw(); });
+        }
+        async function pmVrSave(pass) {
+            if (!PM_VR || !PM_VR.dirty) return;
+            if (PM_VR.restrict && !PM_VR.sel.size) showToast('این کاربر به هیچ نوعِ گزارشِ بازدیدی دسترسی نخواهد داشت.', 'warning');
+            try {
+                const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'vr_cats_save', id: PM_VR.uid, restrict: PM_VR.restrict ? 1 : 0, cat_ids: [...PM_VR.sel], admin_password: pass})})).json();
+                if (!r.ok) showToast('انواعِ گزارشِ بازدید: ' + (r.error || 'ذخیره نشد'), 'error');
+            } catch (e) { showToast('انواعِ گزارشِ بازدید ذخیره نشد.', 'error'); }
         }
         // دسترسی به سرویسِ رفت‌وآمد: بدونِ آن، بخشِ سرویس در «کارکرد من» و پنجره‌ی ثبتِ روز دیده نمی‌شود
         let PM_SVC = null;
@@ -10895,6 +10929,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
             if (window.CFAdmin) await CFAdmin.permSave();
             await pmSvcSave();
+            await pmVrSave(pass);
             showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
             closeModal('perm-modal');
             loadStaffUsers();

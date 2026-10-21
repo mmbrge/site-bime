@@ -73,7 +73,7 @@ function require_admin_password($pdo, $me, $pwd) {
 // کسی را مدیر کل نمی‌کند و دسترسی‌ها را تغییر نمی‌دهد
 $realAdmin = perm_real_role() === 'ADMIN';
 if (!$realAdmin) {
-    if ($action === 'perm_save') out(['ok' => false, 'error' => 'تعیینِ دسترسی‌ها فقط کارِ مدیر کل است.']);
+    if ($action === 'perm_save' || $action === 'vr_cats_save') out(['ok' => false, 'error' => 'تعیینِ دسترسی‌ها فقط کارِ مدیر کل است.']);
     if (in_array($action, ['create', 'update', 'update_role', 'delete'], true)) {
         if (($data['role'] ?? '') === 'ADMIN') out(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند کاربرِ «مدیر کل» بسازد یا نقشی را مدیر کل کند.']);
         $tid = intval($data['id'] ?? 0);
@@ -87,6 +87,36 @@ if (!$realAdmin) {
 }
 
 try {
+    // ---- نوع‌های گزارشِ بازدید برای یک کاربر: «همه‌ی انواع» یا «فقط انتخاب‌شده‌ها» (فهرستِ کاربرانِ هر نوع در access_json همان نوع) ----
+    if ($action === 'vr_cats_get' || $action === 'vr_cats_save') {
+        $id = intval($data['id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, role FROM users WHERE id = ?");
+        $st->execute([$id]);
+        $u = $st->fetch();
+        if (!$u) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
+        try { $cats = $pdo->query("SELECT id, name, insurer, is_active, access_json FROM report_categories ORDER BY sort_order, id")->fetchAll(); } catch (Throwable $e) { $cats = []; }
+        try { if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'vr_cats_restrict'")->fetch()) $pdo->exec("ALTER TABLE users ADD COLUMN vr_cats_restrict TINYINT(1) NOT NULL DEFAULT 0"); } catch (Throwable $e) {}
+        $acc = function ($c) { $a = json_decode((string)$c['access_json'], true) ?: []; return ['roles' => array_values((array)($a['roles'] ?? [])), 'users' => array_map('intval', (array)($a['users'] ?? []))] + $a; };
+        if ($action === 'vr_cats_get') {
+            $r = $pdo->prepare("SELECT vr_cats_restrict FROM users WHERE id = ?"); $r->execute([$id]);
+            out(['ok' => true, 'is_admin' => $u['role'] === 'ADMIN', 'restrict' => (int)$r->fetchColumn() === 1,
+                 'cats' => array_map(function ($c) use ($acc, $id, $u) { $a = $acc($c); return ['id' => (int)$c['id'], 'name' => $c['name'], 'insurer' => $c['insurer'], 'active' => (int)$c['is_active'] === 1,
+                     'checked' => in_array($id, $a['users'], true), 'by_role' => in_array($u['role'], $a['roles'], true)]; }, $cats)]);
+        }
+        require_admin_password($pdo, $me, (string)($data['admin_password'] ?? ''));
+        $restrict = !empty($data['restrict']) ? 1 : 0;
+        $want = array_map('intval', (array)($data['cat_ids'] ?? []));
+        foreach ($cats as $c) {
+            $a = $acc($c);
+            $has = in_array($id, $a['users'], true); $should = in_array((int)$c['id'], $want, true);
+            if ($has === $should) continue;
+            $a['users'] = $should ? array_values(array_unique(array_merge($a['users'], [$id]))) : array_values(array_diff($a['users'], [$id]));
+            $pdo->prepare("UPDATE report_categories SET access_json = ? WHERE id = ?")->execute([json_encode($a, JSON_UNESCAPED_UNICODE), $c['id']]);
+        }
+        $pdo->prepare("UPDATE users SET vr_cats_restrict = ? WHERE id = ?")->execute([$restrict, $id]);
+        out(['ok' => true]);
+    }
+
     // ---- دسترسیِ سفارشیِ صفحه به صفحه (api/_perm.php) ----
     if ($action === 'perm_get') {
         perm_ensure($pdo);

@@ -515,6 +515,10 @@ function vr_list_where($pdo, $data, $user) {
         $ids = array_map(fn($c) => intval($c['id']), vr_user_categories($pdo, $user, false));
         $w[] = $ids ? 'category_id IN (' . implode(',', $ids) . ')' : '0';
     }
+    elseif (!empty($user['vr_restrict'])) {   // دسترسیِ سفارشیِ محدود به چند نوعِ گزارش: فقط گزارش‌های همان نوع‌ها
+        $ids = array_map(fn($c) => intval($c['id']), vr_user_categories($pdo, $user, false));
+        $w[] = $ids ? 'category_id IN (' . implode(',', $ids) . ')' : '0';
+    }
     $q = trim(p2e_digits((string)($data['q'] ?? '')));
     if ($q !== '') {
         $core = plate_core($q);
