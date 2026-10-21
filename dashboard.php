@@ -14355,11 +14355,18 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 : ownOther ? {mode: 'self_relative', owner_name: v('mc-owner-name'), owner_national_id: p2e(v('mc-owner-nid')), owner_relation: v('mc-owner-rel')} : {mode: 'self_owner'}));
             fd.append('car_value_auto', document.getElementById('mc-car-value-auto').checked ? '1' : '');
             fd.append('coverages', JSON.stringify(mcSelectedCov));
-            Object.entries(mcFiles).forEach(([k, f]) => fd.append('doc_' + k, f));
-            mcOthers.filter(o => o.file).forEach(o => { fd.append('other_files[]', o.file); fd.append('other_names[]', o.name.trim()); });
+            // مدارک بعد از ثبتِ درخواست، در پس‌زمینه با نوارِ پیشرفت (upload-kit.js) فرستاده می‌شوند؛ اگر ابزار نبود، همراهِ همین فرم
+            const reqLabels = mcRequiredDocs();
+            const bgDocs = Object.entries(mcFiles).map(([k, f]) => ({key: k, label: reqLabels[k] || k, file: f}))
+                .concat(mcOthers.filter(o => o.file).map(o => ({key: 'other', label: o.name.trim(), other: o.name.trim(), file: o.file})));
+            const useBg = !!(window.UploadKit && UploadKit.enqueue) && bgDocs.length > 0;
+            if (!useBg) {
+                Object.entries(mcFiles).forEach(([k, f]) => fd.append('doc_' + k, f));
+                mcOthers.filter(o => o.file).forEach(o => { fd.append('other_files[]', o.file); fd.append('other_names[]', o.name.trim()); });
+            }
 
             const btn = document.getElementById('mc-submit-btn');
-            btn.disabled = true; const oldHtml = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت و بارگذاری مدارک...';
+            btn.disabled = true; const oldHtml = btn.innerHTML; btn.innerHTML = useBg ? '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبتِ درخواست...' : '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت و بارگذاری مدارک...';
             try {
                 const res = await fetch('api/record_actions.php', {method: 'POST', body: fd});
                 const data = await res.json();
@@ -14382,7 +14389,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 }
                 if (data.note) showToast(data.note, 'warning');
                 (data.doc_errors || []).forEach(e => showToast(e, 'error'));
-                showToast(`درخواست ${data.unique_code} ثبت شد` + (data.uploaded ? ` و ${e2p(data.uploaded)} مدرک بایگانی شد.` : '.'), 'success');
+                if (useBg) {
+                    const caseId = data.case_id, code = data.unique_code;
+                    UploadKit.enqueue({title: 'مدارکِ درخواست ' + code, url: 'api/case_actions.php',
+                        items: bgDocs.map(d => {
+                            const f2 = new FormData();
+                            f2.append('action', 'admin_upload_case_doc'); f2.append('case_id', caseId); f2.append('doc_key', d.key); f2.append('doc_label', d.label);
+                            if (d.other) f2.append('other_name', d.other);
+                            f2.append('file', d.file, d.file.name);
+                            return {name: d.label + ' — ' + d.file.name, size: d.file.size, form: f2};
+                        }),
+                        onDone: sum => {
+                            showToast(`مدارکِ درخواست ${code}: ${e2p(sum.ok)} از ${e2p(sum.total)} بارگذاری شد` + (sum.fail ? ` (${e2p(sum.fail)} ناموفق؛ دوباره بفرستید)` : '.'), sum.fail ? 'warning' : 'success');
+                            if (String(document.getElementById('mc-case-id').value) === String(caseId)) renderMcChecklist();
+                            if (typeof loadCases === 'function') try { loadCases(); } catch (e) {}
+                        }});
+                    showToast(`درخواست ${code} ثبت شد؛ ${e2p(bgDocs.length)} مدرک در پس‌زمینه بارگذاری می‌شود (نوارِ پیشرفت پایینِ صفحه).`, 'success');
+                } else showToast(`درخواست ${data.unique_code} ثبت شد` + (data.uploaded ? ` و ${e2p(data.uploaded)} مدرک بایگانی شد.` : '.'), 'success');
                 // اطلاعاتِ ثبت‌شده قفل می‌شود؛ وضعیتِ مدارک (و مدارکِ باقی‌مانده) نمایش داده می‌شود
                 document.getElementById('mc-request-section').classList.add('opacity-60', 'pointer-events-none');
                 document.getElementById('mc-person-section').classList.add('hidden');
@@ -14391,7 +14414,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 document.getElementById('mc-open-case-btn').classList.remove('hidden');
                 document.getElementById('mc-docs-section').classList.remove('hidden');
                 document.getElementById('mc-case-code').textContent = '(' + data.unique_code + ')';
-                document.getElementById('mc-result-note').textContent = data.status === 'ISSUING'
+                document.getElementById('mc-result-note').textContent = useBg ? '⏳ مدارک در پس‌زمینه بارگذاری می‌شوند؛ این پنجره را می‌توانید ببندید. بعد از پایانِ بارگذاری، وضعیت خودکار به‌روز می‌شود.'
+                    : data.status === 'ISSUING'
                     ? '✅ همه‌ی مدارک کامل است و درخواست وارد «در حال صدور» شد.'
                     : (type === 'BODY' && !Object.entries(mcRequiredDocs()).some(([k]) => !mcFiles[k])
                         ? 'مدارک کامل است؛ بعد از تاییدِ بازدید سلامت، درخواست وارد «در حال صدور» می‌شود.'

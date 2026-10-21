@@ -335,7 +335,7 @@ function perm_api_map() {
             'book' => 'health:edit|cases:edit', 'cancel' => 'health:edit|cases:edit',
         ]],
         'case_actions' => ['pages' => ['cases'], 'elevate' => true, 'actions' => [
-            'delete_case' => 'cases:delete|records:delete', 'admin_upload_case_doc' => 'cases:edit|health:edit|records:edit',
+            'delete_case' => 'cases:delete|records:delete', 'admin_upload_case_doc' => 'cases:edit|health:edit|records:edit|records:create|issue-queue:edit',
             'split_upload' => 'cases:edit|health:edit|records:edit', 'split_existing' => 'cases:edit|health:edit|records:edit', 'split_assign' => 'cases:edit|health:edit|records:edit', 'split_page' => 'cases:view|health:view|records:view', 'set_naming' => 'cases:edit|settings:edit',
             'list' => 'cases:view|health:view|records:view', 'detail' => 'cases:view|health:view|records:view|approved-reviews:view|fin-tracking:view', 'intro_info' => 'cases:view|records:view|issue-queue:view|issued-list:view',
             'approve_all_docs' => 'health:edit|cases:edit', 'approve_doc' => 'health:edit|cases:edit', 'reject_doc' => 'health:edit|cases:edit', 'request_fix' => 'health:edit|cases:edit',
