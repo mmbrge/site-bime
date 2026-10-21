@@ -673,6 +673,15 @@ async function openPersonalInfoForm() {
     document.getElementById('pi-phone').value = v(caseData.insured_phone, 'phone');
     document.getElementById('pi-postal').value = v(caseData.insured_postal_code, 'postal_code');
     document.getElementById('pi-saved-note').style.display = p ? 'block' : 'none';
+    // کد پستیِ تأییدشده‌ی قبلیِ همین کد ملی (اگر خانه خالی است): نوشته می‌شود و کاربر می‌تواند عوضش کند
+    const pin = document.getElementById('pi-postal');
+    if (!pin.value.trim()) {
+        const k = await inqCall('inq_known_postal', {});
+        if (k.ok && k.known && !pin.value.trim()) {
+            pin.value = toFa(k.known.postal); INQ.verified = k.known.postal;
+            inqMsg(document.getElementById('pi-postal-res'), '✅ این کد پستی قبلاً استعلام و تأیید شده (' + toFa(k.known.date) + ')؛ اگر عوض شده، کدِ تازه را بنویسید و دوباره استعلام بزنید.', '#047857');
+        }
+    }
 }
 async function submitPersonalInfo() {
     const birth_date = toEn(document.getElementById('pi-birthdate').value.trim());

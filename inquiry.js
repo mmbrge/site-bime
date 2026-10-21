@@ -195,6 +195,7 @@
 
     // ---------------- استعلامِ تکی ----------------
     function renderSingle(body) {
+        if (!V.boot.kinds[V.kind]) V.kind = Object.keys(V.boot.kinds)[0];
         const k = V.kind, kinds = V.boot.kinds;
         body.innerHTML = `<div class="inq-card space-y-4">
             <div class="inq-kinds">${Object.keys(kinds).map(x => `<button type="button" class="inq-kind ${k === x ? 'on' : ''}" data-k="${x}" style="--c:${KIND_UI[x].c}"><span class="ic"><i class="fas ${KIND_UI[x].ic}"></i></span><b>${kinds[x]}</b><small>${KIND_UI[x].d}</small></button>`).join('')}</div>
@@ -401,7 +402,7 @@
         const h = V.hist;
         body.innerHTML = `<div class="inq-card"><div class="flex flex-wrap gap-2 mb-3 items-center">
             <input id="inq-hq" class="inq-in !mt-0 flex-1 min-w-[12rem]" style="font-size:12px;letter-spacing:0;padding:8px 12px" placeholder="🔍 کد ملی، نام، کد پستی، کاربر" value="${esc(h.q)}">
-            <select id="inq-hk" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی نوع‌ها</option>${Object.entries(V.boot.kinds).map(([k, l]) => `<option value="${k}" ${h.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <select id="inq-hk" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی نوع‌ها</option>${Object.entries(V.boot.kinds_all || V.boot.kinds).map(([k, l]) => `<option value="${k}" ${h.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
             <select id="inq-hs" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی وضعیت‌ها</option>${['OK', 'WARN', 'FAIL', 'QUEUED'].map(s => `<option value="${s}" ${h.status === s ? 'selected' : ''}>${ST_UI[s][0]}</option>`).join('')}</select>
             <select id="inq-hsrc" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی منبع‌ها</option>${Object.entries(SRC_FA).map(([k, l]) => `<option value="${k}" ${h.source === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
             ${h.batch_id ? `<span class="inq-badge" style="background:#ede9fe;color:#5b21b6">گروهِ #${fa(h.batch_id)} <button data-clrb>✕</button></span>` : ''}
@@ -477,11 +478,32 @@
                     ${num('inq_cache_days', 'اعتبارِ نتیجه‌ی قبلی (روز)', '۰ = همیشه دوباره بپرس')}
                     ${num('inq_daily_limit', 'سقفِ روزانه برای هر کاربرِ مینی‌اپ', '۰ = بدونِ سقف')}
                     ${num('inq_nid_daily_limit', 'سقفِ روزانه برای هر کد ملی', 'همه‌ی کاربران روی هم؛ پیش‌فرض ۲؛ ۰ = بدونِ سقف')}
+                    ${num('inq_postal_daily_limit', 'سقفِ روزانه برای هر کد پستی', 'همه‌ی کاربران روی هم؛ پیش‌فرض ۲؛ ۰ = بدونِ سقف')}
                     ${num('inq_user_daily_limit', 'سقفِ روزانه‌ی پیش‌فرضِ هر کاربرِ پنل', '۰ = بدونِ سقف؛ عددِ هر نفر در «کاربران» قابلِ تغییر است')}
                     ${num('inq_keep_minutes', 'نگه‌داشتنِ نشست (دقیقه)', 'بعد از آخرین استعلام؛ پیش‌فرض ۶۰ (با cron)')}
                 </div>
                 <button class="inq-go w-full mt-2" id="inq-ssave"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیمات</button>
+            </div>
+            <div class="inq-card space-y-2.5">
+                <p class="font-black text-sm text-slate-800"><i class="fas fa-rotate-left ml-1 text-rose-500"></i>سقفِ امروزِ یک کد ملی یا کد پستی</p>
+                <p class="text-[10.5px] text-slate-400">ببینید امروز چند بار استعلام شده و در صورتِ نیاز شمارش را صفر کنید تا دوباره استعلام شود.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="inq-f">کد ملی<input id="inq-ln" class="inq-in" dir="ltr" inputmode="numeric" maxlength="10" style="font-size:13px"></label>
+                    <label class="inq-f">کد پستی<input id="inq-lp" class="inq-in" dir="ltr" inputmode="numeric" maxlength="10" style="font-size:13px"></label>
+                </div>
+                <div class="flex flex-wrap gap-2"><button class="inq-fbtn" id="inq-lpk"><i class="fas fa-eye ml-1"></i>نمایشِ شمارشِ امروز</button><button class="inq-fbtn" id="inq-lrs" style="color:#be123c"><i class="fas fa-rotate-left ml-1"></i>صفر کردن</button></div>
+                <p id="inq-lres" class="text-[11.5px] font-bold text-slate-600"></p>
             </div></div>`;
+        const limitCall = async action => {
+            const r = await post({ action, national_id: en(body.querySelector('#inq-ln').value), postal: en(body.querySelector('#inq-lp').value) });
+            const box = body.querySelector('#inq-lres');
+            if (!r.ok) { box.className = 'text-[11.5px] font-bold text-rose-600'; box.textContent = r.error; return; }
+            const part = (t, x) => x ? `${t} ${fa(x.value)}: امروز ${fa(x.used)} بار${x.limit ? ' از ' + fa(x.limit) : ' (بدونِ سقف)'}` : '';
+            box.className = 'text-[11.5px] font-bold ' + (r.reset ? 'text-emerald-600' : 'text-slate-600');
+            box.textContent = (r.reset ? 'صفر شد. ' : '') + [part('کد ملی', r.nid), part('کد پستی', r.postal)].filter(Boolean).join(' · ');
+        };
+        body.querySelector('#inq-lpk').onclick = () => limitCall('limit_peek');
+        body.querySelector('#inq-lrs').onclick = () => limitCall('limit_reset');
         body.querySelector('#inq-ss').onclick = async () => { const r = await post({ action: 'status' }); V.boot.status = r.status; renderSettings(body); };
         body.querySelector('#inq-sl').onclick = () => loginDialog(() => renderSettings(body));
         body.querySelector('#inq-cc').onclick = () => { try { navigator.clipboard.writeText(body.querySelector('#inq-cron').textContent); toast('کپی شد.', 'info'); } catch (e) {} };
@@ -548,7 +570,30 @@
             return wrap;
         };
         mk(opts.name, 'استعلامِ نام', 'person');
-        mk(opts.postal, 'استعلامِ کد پستی', 'postal');
+        const pw = mk(opts.postal, 'استعلامِ کد پستی', 'postal');
+        // کد پستیِ تأییدشده‌ی قبلیِ همین کد ملی خودکار نوشته می‌شود (کاربر می‌تواند عوضش کند)
+        if (pw && opts.postal) {
+            const pin = opts.postal, pmsg = pw.querySelector('span');
+            let lastNid = '', timer = 0;
+            pin.addEventListener('input', () => { pin.dataset.inqAuto = ''; });
+            const check = async () => {
+                const nid = en(typeof opts.nid === 'function' ? opts.nid() : (opts.nid && opts.nid.value) || '').replace(/\D/g, '');
+                if (nid.length !== 10 || nid === lastNid) return;
+                lastNid = nid;
+                if (pin.value.trim() && pin.dataset.inqAuto !== '1') return;
+                const r = await post({ action: 'known_postal', national_id: nid });
+                if (!r.ok || !r.known) { if (pin.dataset.inqAuto === '1') { pin.value = ''; pin.dataset.inqAuto = ''; pmsg.textContent = ''; } return; }
+                pin.value = fa(r.known.postal); pin.dataset.inqAuto = '1';
+                pin.dispatchEvent(new Event('change', { bubbles: true }));
+                pmsg.className = 'inq-fmsg text-emerald-600';
+                pmsg.innerHTML = `<i class="fas fa-circle-check ml-1"></i>این کد پستی قبلاً استعلام و تأیید شده (${esc(fa(r.known.date))})؛ اگر عوض شده، کدِ تازه را بنویسید.`;
+                if (opts.onPostal) opts.onPostal({ postal_valid: true, postal: r.known.postal, known: true });
+            };
+            const sched = () => { clearTimeout(timer); timer = setTimeout(check, 450); };
+            (opts.watch || []).forEach(el => { if (el) { el.addEventListener('input', sched); el.addEventListener('change', sched); } });
+            pin.addEventListener('focus', check);
+            sched();
+        }
     }
 
     window.Inquiry = { init, attachForm, run, login: loginDialog };

@@ -212,6 +212,17 @@ try {
         echo json_encode(order_inq_run($pdo, $c['id'], !$c['cached']), JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // ---- کد پستیِ تأییدشده‌ی قبلیِ کد ملیِ بیمه‌گذارِ همین پرونده ----
+    if ($action === 'inq_known_postal') {
+        $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');
+        if (!$person) { echo json_encode(['ok' => false, 'error' => 'نشست نامعتبر است.']); exit; }
+        require_once __DIR__ . '/_inquiry.php';
+        $nid = (string)($jsonBody['national_id'] ?? '');
+        if ($nid === '' && !empty($jsonBody['case_id'])) { $case = get_owned_case($pdo, $person['id'], intval($jsonBody['case_id'])); $nid = $case ? (string)($case['insured_national_id'] ?: '') : ''; }
+        if ($nid === '') $nid = (string)($person['national_code'] ?? '');
+        echo json_encode(['ok' => true, 'known' => inq_known_postal($pdo, $nid)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     // ---- اجرا و پیگیریِ یک استعلامِ مینی‌اپ ----
     if ($action === 'inq_exec' || $action === 'inq_poll') {
         $person = resolve_order_session($pdo, $jsonBody['token'] ?? '');

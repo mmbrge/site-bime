@@ -3682,10 +3682,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="float-input !mb-0"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
                 </div>
                 <div class="cmx-sec">
-                    <h4><i class="fas fa-building-circle-check ml-1"></i>مشخصاتِ ثبتی <small class="text-[10.5px] text-slate-400 font-bold">استعلام با شناسه‌ی ملی یا ورودِ دستی</small></h4>
+                    <h4><i class="fas fa-building-circle-check ml-1"></i>مشخصاتِ ثبتی <small class="text-[10.5px] text-slate-400 font-bold">ورودِ دستی</small></h4>
                     <div class="flex gap-2 items-start">
                         <div class="float-input flex-1"><input type="text" id="cm-national-id" dir="ltr" inputmode="numeric" maxlength="14" placeholder=" "><label>شناسه‌ی ملیِ شرکت (۱۱ رقم)</label></div>
-                        <button type="button" id="cm-inquiry-btn" onclick="cmInquiry()" class="shrink-0 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-4 rounded-xl h-[46px]"><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه</button>
+                        <button type="button" id="cm-inquiry-btn" onclick="cmInquiry()" class="hidden shrink-0 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-4 rounded-xl h-[46px]"><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه</button>
                     </div>
                     <div id="cm-inquiry-msg" class="hidden text-[11px] rounded-xl p-2.5 mb-3 leading-6"></div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -4492,7 +4492,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="inquiry.js?v=5"></script>
+    <script src="inquiry.js?v=6"></script>
     <script>
     // ثبتِ دستیِ درخواستِ کارکنان: «استعلامِ نام» کنارِ نام‌ها و «استعلامِ کد پستی» کنارِ کد پستی (دستی نوشتن هم آزاد است)
     document.addEventListener('DOMContentLoaded', () => {
@@ -4501,7 +4501,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         if (!g('mc-postal')) return;
         const selfRel = () => (g('mc-relationship') || {}).value === 'خودم';
         Inquiry.attachForm({ nid: () => g('mc-national-code').value, birth: g('mc-birth'), name: g('mc-full-name') });
-        Inquiry.attachForm({ nid: () => selfRel() ? g('mc-national-code').value : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name') });
+        Inquiry.attachForm({ nid: () => selfRel() ? g('mc-national-code').value : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name'),
+                             watch: [g('mc-national-code'), g('mc-insured-nid'), g('mc-relationship')] });
     });
     </script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>

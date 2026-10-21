@@ -53,7 +53,8 @@ $mine = function ($row) use ($isAdmin, $uid, $can) { return $isAdmin || $can('hi
 
 if ($action === 'boot') {
     $st = $isAdmin ? inq_px_status($pdo) : null;
-    $o = ['ok' => true, 'is_admin' => $isAdmin, 'kinds' => INQ_KINDS, 'status' => $st,
+    // شخصِ حقوقی (شناسه‌ی ملیِ شرکت) دیگر استعلام نمی‌شود؛ فقط در تاریخچه می‌ماند
+    $o = ['ok' => true, 'is_admin' => $isAdmin, 'kinds' => array_diff_key(INQ_KINDS, ['legal' => 1]), 'kinds_all' => INQ_KINDS, 'status' => $st,
           'can' => ['single' => $can('single'), 'group' => $can('group'), 'group_view' => $can('group_view') || $can('group'), 'export' => $can('export'), 'history' => $can('history'), 'delete' => $can('delete'), 'form' => $can('form')],
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
     $q = $pdo->query("SELECT COUNT(*) n, SUM(status = 'OK') ok, SUM(status = 'FAIL') fail, SUM(status IN ('QUEUED', 'RUNNING')) q FROM inq_requests WHERE created_at >= CURDATE()")->fetch();
@@ -211,7 +212,9 @@ if ($action === 'batch_cancel' || $action === 'batch_resume') {
 }
 
 // ---- تنظیمات و ورود به سامانه (فقط مدیر کل) ----
-if (in_array($action, ['settings_get', 'settings_save', 'status'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
+// کد پستیِ تأییدشده‌ی قبلیِ همین کد ملی (پر کردنِ خودکارِ فرم‌ها)
+if ($action === 'known_postal') $out(['ok' => true, 'known' => inq_known_postal($pdo, $in['national_id'] ?? '')]);
+if (in_array($action, ['settings_get', 'settings_save', 'status', 'limit_peek', 'limit_reset'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
 if ($action === 'settings_get') {
     $s = inq_settings($pdo);
     if (inq_get_setting($pdo, 'inq_cron_key') === '') inq_set_setting($pdo, 'inq_cron_key', bin2hex(random_bytes(16)));
@@ -223,7 +226,7 @@ if ($action === 'settings_get') {
 }
 if ($action === 'settings_save') {
     foreach (INQ_DEFAULTS as $k => $def) if (array_key_exists($k, $in)) {
-        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000]];
+        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000], 'inq_postal_daily_limit' => [0, 1000]];
         $v = isset($lims[$k]) ? (string)max($lims[$k][0], min($lims[$k][1], intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
         inq_set_setting($pdo, $k, $v);
     }
@@ -231,6 +234,22 @@ if ($action === 'settings_save') {
     if (($in['password'] ?? '') !== '') inq_set_setting($pdo, 'inq_px_pass', inq_enc((string)$in['password']));
     if (!empty($in['new_cron_key'])) inq_set_setting($pdo, 'inq_cron_key', bin2hex(random_bytes(16)));
     $out(['ok' => true]);
+}
+// سقفِ امروزِ یک کد ملی / کد پستی: دیدن و صفر کردن
+if ($action === 'limit_peek' || $action === 'limit_reset') {
+    $nid = inq_norm_nid($in['national_id'] ?? ''); $postal = inq_digits($in['postal'] ?? '');
+    if ($nid === '' && $postal === '') $out(['ok' => false, 'error' => 'کد ملی یا کد پستی را وارد کنید.']);
+    if ($nid !== '' && !inq_nid_ok($nid)) $out(['ok' => false, 'error' => 'کد ملی نامعتبر است.']);
+    if ($postal !== '' && strlen($postal) !== 10) $out(['ok' => false, 'error' => 'کد پستی باید ۱۰ رقم باشد.']);
+    if ($action === 'limit_reset') {
+        $by = (string)($_SESSION['full_name'] ?? '');
+        if ($nid !== '') inq_limit_reset($pdo, 'n:' . $nid, $by);
+        if ($postal !== '') inq_limit_reset($pdo, 'p:' . $postal, $by);
+    }
+    $o = ['ok' => true, 'reset' => $action === 'limit_reset'];
+    if ($nid !== '') $o['nid'] = ['value' => $nid, 'used' => inq_nid_used_today($pdo, $nid), 'limit' => (int)inq_limit_value(inq_get_setting($pdo, 'inq_nid_daily_limit'))];
+    if ($postal !== '') $o['postal'] = ['value' => $postal, 'used' => inq_postal_used_today($pdo, $postal), 'limit' => (int)inq_limit_value(inq_get_setting($pdo, 'inq_postal_daily_limit'))];
+    $out($o);
 }
 if ($action === 'status') $out(['ok' => true, 'status' => inq_px_status($pdo, true)]);
 $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);

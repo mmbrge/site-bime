@@ -250,6 +250,7 @@ function perm_api_map() {
         'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
+            'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
         ]],
         'renewal_actions' => ['pages' => ['renewals'], 'elevate' => true, 'actions' => [
             'list' => 'renewals:view', 'history' => 'renewals:view', 'preview' => 'renewals:create', 'send' => 'renewals:create', 'mark' => 'renewals:edit', 'export' => 'renewals:export',

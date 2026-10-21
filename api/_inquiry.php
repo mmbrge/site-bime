@@ -13,7 +13,7 @@
 const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
-                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0'];
+                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';
@@ -700,10 +700,61 @@ function inq_users_used_today($pdo, $type) {
         return array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
     } catch (Throwable $e) { return []; }
 }
+// صفر کردنِ سقفِ یک کد ملی یا کد پستی (مدیر کل): استعلام‌های پیش از این لحظه برای آن حساب نمی‌شوند
+function inq_resets_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS inq_limit_resets (k VARCHAR(16) NOT NULL PRIMARY KEY, reset_at DATETIME NOT NULL, reset_by VARCHAR(190) NULL)
+                      ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"); } catch (Throwable $e) { error_log('[inq_resets_ensure] ' . $e->getMessage()); }
+}
+function inq_reset_since($pdo, $k) {
+    inq_resets_ensure($pdo);
+    try { $st = $pdo->prepare("SELECT reset_at FROM inq_limit_resets WHERE k = ?"); $st->execute([$k]); $v = $st->fetchColumn(); } catch (Throwable $e) { $v = false; }
+    return $v ?: '1970-01-01 00:00:00';
+}
+function inq_limit_reset($pdo, $k, $by = '') {
+    inq_resets_ensure($pdo);
+    $pdo->prepare("INSERT INTO inq_limit_resets (k, reset_at, reset_by) VALUES (?, NOW(), ?) ON DUPLICATE KEY UPDATE reset_at = NOW(), reset_by = VALUES(reset_by)")->execute([$k, mb_substr((string)$by, 0, 190)]);
+}
 function inq_nid_used_today($pdo, $nid) {
-    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE national_id = ? AND kind <> 'legal' AND cached_from IS NULL AND created_at >= CURDATE()");
-    $st->execute([$nid]);
+    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE national_id = ? AND kind <> 'legal' AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
+    $st->execute([$nid, inq_reset_since($pdo, 'n:' . $nid)]);
     return intval($st->fetchColumn());
+}
+function inq_postal_used_today($pdo, $postal) {
+    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE postal = ? AND kind IN ('postal', 'person_postal') AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
+    $st->execute([$postal, inq_reset_since($pdo, 'p:' . $postal)]);
+    return intval($st->fetchColumn());
+}
+// کد پستیِ تأییدشده‌ی قبلیِ یک کد ملی (برای پر کردنِ خودکار؛ کاربر می‌تواند عوضش کند)
+function inq_known_postal($pdo, $nid) {
+    $nid = inq_norm_nid($nid);
+    if (!inq_nid_ok($nid)) return null;
+    inq_ensure($pdo);
+    try {
+        $st = $pdo->prepare("SELECT postal, finished_at FROM inq_requests WHERE national_id = ? AND kind IN ('postal', 'person_postal') AND postal_valid = 1 AND postal IS NOT NULL ORDER BY id DESC LIMIT 1");
+        $st->execute([$nid]);
+        $r = $st->fetch();
+    } catch (Throwable $e) { $r = null; }
+    return $r ? ['postal' => $r['postal'], 'date' => jdate_short($r['finished_at'])] : null;
+}
+
+// نام‌هایی که سامانه با «ي/ك» عربی و فاصله‌های نامرتب برمی‌گرداند => فارسیِ یکدست
+function inq_fa_norm($s) {
+    $s = (string)$s;
+    if ($s === '') return $s;
+    $s = strtr($s, ['ي' => 'ی', 'ى' => 'ی', 'ك' => 'ک', 'ة' => 'ه', 'ۀ' => 'ه‌ی', 'ؤ' => 'و', 'إ' => 'ا', 'أ' => 'ا', 'ٱ' => 'ا', 'ـ' => '',
+                    '٠' => '۰', '١' => '۱', '٢' => '۲', '٣' => '۳', '٤' => '۴', '٥' => '۵', '٦' => '۶', '٧' => '۷', '٨' => '۸', '٩' => '۹']);
+    $s = preg_replace('/[\x{064B}-\x{0652}\x{0670}]/u', '', $s);            // اعراب
+    $s = preg_replace('/\x{200C}+/u', "\u{200C}", $s);                            // نیم‌فاصله‌ی تکراری
+    $s = preg_replace('/\x{200C}?[ \t\x{00A0}]+\x{200C}?/u', ' ', $s);              // نیم‌فاصله کنارِ فاصله => فاصله
+    return trim(preg_replace('/\s+/u', ' ', $s));
+}
+function inq_norm_person($p) {
+    if (!is_array($p)) return $p;
+    foreach (['name', 'family', 'fatherName', 'father'] as $k) if (isset($p[$k]) && is_string($p[$k])) $p[$k] = inq_fa_norm($p[$k]);
+    return $p;
 }
 
 // نتیجه‌ی تازه‌ی همین استعلام (تا چند روز) برای استفاده‌ی دوباره
@@ -748,6 +799,8 @@ function inq_create($pdo, $kind, array $in, $source = 'panel', array $actor = nu
         }
         if ($kind !== 'legal' && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_nid_daily_limit'))) > 0 && inq_nid_used_today($pdo, $v['national_id']) >= $lim)
             return ['ok' => false, 'limit' => 'nid', 'error' => 'سقفِ استعلامِ امروزِ این کد ملی (' . $lim . ' بار) پر شده است؛ فردا دوباره امتحان کنید یا اطلاعات را دستی وارد کنید.', 'field' => 'national_id'];
+        if (in_array($kind, ['postal', 'person_postal'], true) && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_postal_daily_limit'))) > 0 && inq_postal_used_today($pdo, $v['postal']) >= $lim)
+            return ['ok' => false, 'limit' => 'postal', 'error' => 'سقفِ استعلامِ امروزِ این کد پستی (' . $lim . ' بار) پر شده است؛ فردا دوباره امتحان کنید.', 'field' => 'postal'];
         if (in_array($actor[0], ['STAFF', 'COMPANY'], true)) {
             $li = inq_user_limit_info($pdo, $actor[0], $actor[1]);
             if ($li['limit'] > 0 && $li['used'] >= $li['limit'])
@@ -792,6 +845,9 @@ function inq_execute($pdo, $id) {
     $row = $pdo->query("SELECT * FROM inq_requests WHERE id = " . intval($id))->fetch();
     $t0 = microtime(true);
     $finish = function ($status, $notice, array $res = [], $person = null, $postal = null) use ($pdo, $id, $t0) {
+        $person = inq_norm_person($person);
+        if (isset($res['person'])) $res['person'] = inq_norm_person($res['person']);
+        if ($status === 'OK' && $person && isset($person['name'])) $notice = trim(inq_fa_norm($notice));
         $pdo->prepare("UPDATE inq_requests SET status = ?, notice = ?, result_json = ?, person_name = ?, father_name = ?, postal_valid = ?, postal_text = ?, finished_at = NOW(), ms = ? WHERE id = ?")
             ->execute([$status, mb_substr((string)$notice, 0, 600), json_encode($res, JSON_UNESCAPED_UNICODE),
                        $person ? mb_substr(trim(($person['name'] ?? '') . ' ' . ($person['family'] ?? '')), 0, 190) ?: null : null, $person ? (($person['fatherName'] ?? '') ?: null) : null,
@@ -871,7 +927,10 @@ function inq_requeue_stale($pdo) {
 function inq_out(array $r, $full = false) {
     $res = json_decode((string)($r['result_json'] ?? ''), true) ?: [];
     $tl = json_decode((string)($r['timeline_json'] ?? ''), true) ?: ($res['timeline'] ?? []);
-    $p = $res['person'] ?? null;
+    $p = inq_norm_person($res['person'] ?? null);
+    $r['person_name'] = $r['person_name'] !== null ? inq_fa_norm($r['person_name']) : null;
+    $r['father_name'] = $r['father_name'] !== null ? inq_fa_norm($r['father_name']) : null;
+    if (in_array($r['status'], ['OK', 'WARN'], true) && $r['kind'] !== 'postal') $r['notice'] = inq_fa_norm($r['notice']);
     $o = ['id' => intval($r['id']), 'kind' => $r['kind'], 'kind_fa' => INQ_KINDS[$r['kind']] ?? $r['kind'], 'national_id' => $r['national_id'], 'birth' => $r['birth'], 'postal' => $r['postal'],
           'status' => $r['status'], 'status_fa' => INQ_ST_FA[$r['status']] ?? $r['status'], 'done' => in_array($r['status'], ['OK', 'WARN', 'FAIL'], true),
           'person' => $p ? ['name' => $p['name'] ?? '', 'family' => $p['family'] ?? '', 'father' => $p['fatherName'] ?? '', 'gender' => $p['gender'] ?? ''] : null,
