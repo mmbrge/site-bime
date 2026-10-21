@@ -36,6 +36,48 @@ function brd_ensure($pdo) {
         "CREATE TABLE IF NOT EXISTS brd_notes (id INT AUTO_INCREMENT PRIMARY KEY, row_id INT NOT NULL, channel VARCHAR(20) NOT NULL, note VARCHAR(600) NULL,
             created_by INT NULL, created_by_name VARCHAR(190) NULL, created_at DATETIME NOT NULL, KEY idx_row (row_id))$T",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[brd_ensure] ' . $e->getMessage()); } }
+    // الحاقیه‌ی «تغییرِ اطلاعات»: مقدارهای تازه‌ی ردیف (پلاک، ارزش، تعهد، پوشش‌ها، بیمه‌گذار، …)؛ اطلاعاتِ اولیه‌ی ردیف دست نمی‌خورد
+    try { if (!$pdo->query("SHOW COLUMNS FROM brd_endorsements LIKE 'changes_json'")->fetch()) $pdo->exec("ALTER TABLE brd_endorsements ADD COLUMN changes_json TEXT NULL"); }
+    catch (Throwable $e) { error_log('[brd_ensure changes] ' . $e->getMessage()); }
+}
+
+// فیلدهایی که الحاقیه می‌تواند عوض کند => برچسب
+const BRD_CHANGE_FIELDS = ['plate_p1' => 'پلاک (ایران)', 'plate_p2' => 'پلاک (سه رقم)', 'plate_letter' => 'پلاک (حرف)', 'plate_p4' => 'پلاک (دو رقم)', 'vin' => 'شماره شاسی',
+    'engine_no' => 'شماره موتور', 'car_name' => 'خودرو', 'model_year' => 'مدل', 'color' => 'رنگ', 'car_usage' => 'کاربری', 'insured' => 'بیمه‌گذار', 'insured_id' => 'کد / شناسه ملی',
+    'insured_kind' => 'حقیقی / حقوقی', 'owner_name' => 'مالک', 'phone' => 'تلفن', 'postal_code' => 'کد پستی', 'address' => 'نشانی', 'car_value' => 'ارزش خودرو', 'liability' => 'تعهد مالی',
+    'coverages' => 'پوشش‌ها'];
+
+// متنِ «نوع پوشش اضافی»ِ اکسلِ پاسارگاد => کلیدهای پوشش‌های خودمان (همان selected_coverages)
+function brd_cov_from_text($t) {
+    $t = str_replace(['ي', 'ك', '‌'], ['ی', 'ک', ' '], (string)$t);
+    if (trim($t) === '') return null;
+    $map = ['war_damage' => '/جنگ/u', 'price_fluctuation' => '/نوسان|افزایش\s*(ارزش|قیمت)/u', 'paint_acid' => '/رنگ|اسید|شیمیایی/u', 'glass_break' => '/شیشه/u',
+            'natural_disaster' => '/سیل|زلزله|آتشفشان|تگرگ|طوفان|بهمن|بلایای\s*طبیعی/u', 'parts_theft' => '/سرقت\s*(لوازم|قطعات|درجا)/u', 'transport_cost' => '/ایاب|ذهاب/u',
+            'depreciation_waiver' => '/استهلاک/u', 'deductible_adjust' => '/فرانشیز/u'];
+    $opts = function_exists('body_coverage_options') ? body_coverage_options() : [];
+    foreach ($opts as $k => $o) if (!isset($map[$k])) $map[$k] = '/' . preg_quote(mb_substr(preg_replace('/\s*\(.*$/u', '', $o['label']), 0, 14), '/') . '/u';
+    $out = [];
+    $segs = preg_split('/\s*[،,؛;|\n]+\s*|\s+-\s+/u', $t) ?: [$t];
+    foreach ($map as $k => $re) {
+        if (!isset($opts[$k]) || !preg_match($re, $t)) continue;
+        $tiers = $opts[$k]['tiers'];
+        if ($tiers) {
+            $v = array_key_first($tiers);
+            // سطحِ پوشش (درصد/مبلغ) فقط از همان تکه‌ای که نامِ پوشش در آن آمده
+            $seg = ''; foreach ($segs as $sg) if (preg_match($re, $sg)) { $seg = p2e_digits(str_replace(',', '', $sg)); break; }
+            foreach (array_keys($tiers) as $tk) if ($seg !== '' && preg_match('/(?<!\d)' . preg_quote((string)$tk, '/') . '(?!\d)/', $seg)) { $v = (string)$tk; break; }
+            $out[$k] = $v;
+        } else $out[$k] = true;
+    }
+    return $out;
+}
+// «حقیقی/حقوقی» از ستونِ اکسل یا طولِ شناسه
+function brd_kind_norm($kind, $id = '') {
+    $k = str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$kind);
+    if (mb_strpos($k, 'حقوقی') !== false) return 'LEGAL';
+    if (mb_strpos($k, 'حقیقی') !== false) return 'PERSON';
+    $d = preg_replace('/\D/', '', p2e_digits((string)$id));
+    return strlen($d) === 11 ? 'LEGAL' : (strlen($d) === 10 ? 'PERSON' : '');
 }
 
 const BRD_ENDORSE_KINDS = ['ADD' => 'اضافی (افزایشِ حق بیمه)', 'REFUND' => 'برگشتی (کاهشِ حق بیمه)', 'CHANGE' => 'تغییرِ مشخصات', 'EXTEND' => 'تغییرِ مدت / تمدید', 'CANCEL' => 'فسخ'];
@@ -204,6 +246,20 @@ function brd_rows($pdo, array $f = []) {
         $id = (int)$r['id'];
         $es = $endo[$id] ?? [];
         $end = $r['end_date']; $premium = (int)$r['premium']; $cancel = $r['status'] === 'CANCELLED';
+        // پوشش‌ها از متنِ اکسل؛ الحاقیه‌های «تغییرِ اطلاعات» به ترتیب روی ردیف اعمال می‌شوند و اطلاعاتِ اولیه کنارش می‌ماند
+        $dj = json_decode((string)$r['data_json'], true) ?: [];
+        $r['coverages'] = brd_cov_from_text($dj['covers'] ?? '');
+        $orig = [];
+        foreach ($es as $e) {
+            $ch = json_decode((string)($e['changes_json'] ?? ''), true);
+            if (!is_array($ch)) continue;
+            foreach ($ch as $f => $v) {
+                if (!array_key_exists($f, BRD_CHANGE_FIELDS)) continue;
+                if (!array_key_exists($f, $orig)) $orig[$f] = $r[$f] ?? null;
+                $r[$f] = $v;
+            }
+        }
+        if (array_intersect(array_keys($orig), ['plate_p1', 'plate_p2', 'plate_letter', 'plate_p4'])) $r['plate_core'] = brd_plate_core($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) ?: $r['plate_core'];
         foreach ($es as $e) {
             if ($e['new_end_date']) $end = $e['new_end_date'];
             if ($e['kind'] === 'ADD') $premium += abs((int)$e['amount']);
@@ -222,7 +278,23 @@ function brd_rows($pdo, array $f = []) {
         $last = $ns ? end($ns) : null;
         $state = $cancel ? 'cancelled' : ($renewed || ($last && $last['channel'] === 'renewed') ? 'renewed' : ($last && in_array($last['channel'], ['declined', 'renewed_out'], true) ? 'closed' : ($last ? 'notified' : 'none')));
         $plate = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) ?: '';
+        $kindN = brd_kind_norm($r['insured_kind'], $r['insured_id']);
+        $origFa = [];
+        foreach ($orig as $f => $v) {
+            if (in_array($f, ['plate_p1', 'plate_p2', 'plate_letter', 'plate_p4'], true)) continue;
+            $origFa[] = ['field' => $f, 'label' => BRD_CHANGE_FIELDS[$f], 'from' => $f === 'coverages' ? implode('، ', company_coverages_fa(json_encode($v ?: new stdClass()))) : (string)$v,
+                         'to' => $f === 'coverages' ? implode('، ', company_coverages_fa(json_encode($r[$f] ?: new stdClass()))) : (string)$r[$f]];
+        }
+        if (array_intersect(array_keys($orig), ['plate_p1', 'plate_p2', 'plate_letter', 'plate_p4']))
+            $origFa[] = ['field' => 'plate', 'label' => 'پلاک', 'from' => company_plate_display($orig['plate_p1'] ?? $r['plate_p1'], $orig['plate_p2'] ?? $r['plate_p2'], $orig['plate_letter'] ?? $r['plate_letter'], $orig['plate_p4'] ?? $r['plate_p4']), 'to' => $plate];
         $out[] = [
+            'plate_p1' => $r['plate_p1'], 'plate_p2' => $r['plate_p2'], 'plate_letter' => $r['plate_letter'], 'plate_p4' => $r['plate_p4'],
+            'insured_kind_n' => $kindN, 'insured_kind_fa' => $kindN === 'LEGAL' ? 'حقوقی' : ($kindN === 'PERSON' ? 'حقیقی' : ''),
+            'economic_code' => $dj['economic_code'] ?? '', 'covers_text' => $dj['covers'] ?? '', 'coverages' => $r['coverages'],
+            'coverages_fa' => $r['coverages'] === null ? [] : company_coverages_fa(json_encode($r['coverages'] ?: new stdClass())),
+            'prev_expiry' => $dj['prev_expiry'] ?? '', 'no_claim_years' => $dj['no_claim_years'] ?? '', 'prev_claims' => $dj['prev_claims'] ?? '', 'diya' => (int)($dj['diya'] ?? 0),
+            'driver_cover' => (int)($dj['driver_cover'] ?? 0), 'ncd' => $dj['ncd'] ?? '', 'capacity' => $dj['capacity'] ?? '', 'cylinders' => $dj['cylinders'] ?? '', 'customer_no' => $dj['customer_no'] ?? '',
+            'endorsed' => (bool)$orig, 'changes' => $origFa,
             'id' => $id, 'policy' => $r['policy_number'], 'type' => $r['insurance_type'], 'type_fa' => insurance_type_fa($r['insurance_type']),
             'insured' => $r['insured'], 'insured_id' => $r['insured_id'], 'insured_kind' => $r['insured_kind'], 'company_id' => $r['company_id'] ? (int)$r['company_id'] : null,
             'company_name' => $r['company_name'], 'person_id' => $r['person_id'] ? (int)$r['person_id'] : null, 'person_name' => $r['person_name'],
@@ -236,7 +308,9 @@ function brd_rows($pdo, array $f = []) {
             'status' => $r['status'], 'state' => $state,
             'state_fa' => ['cancelled' => 'فسخ‌شده', 'renewed' => 'تمدید شد', 'closed' => $last ? (BRD_CHANNELS[$last['channel']] ?? 'بسته') : 'بسته', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$state],
             'renewed_by' => $renewed, 'endorsements' => array_map(function ($e) {
+                $ch = json_decode((string)($e['changes_json'] ?? ''), true) ?: [];
                 return ['id' => (int)$e['id'], 'kind' => $e['kind'], 'kind_fa' => BRD_ENDORSE_KINDS[$e['kind']] ?? $e['kind'], 'no' => $e['endorse_no'], 'date' => $e['date_j'],
+                        'changes' => array_values(array_map(function ($f, $v) { return ['label' => BRD_CHANGE_FIELDS[$f] ?? $f, 'to' => $f === 'coverages' ? implode('، ', company_coverages_fa(json_encode($v ?: new stdClass()))) : (string)$v]; }, array_keys($ch), $ch)),
                         'amount' => (int)$e['amount'], 'new_end' => $e['new_end_date'], 'note' => $e['note'], 'file' => $e['file_path'] ? ltrim(str_replace(dirname(__DIR__), '', $e['file_path']), '/') : null,
                         'by' => $e['created_by_name'], 'at' => jalali_from_gregorian_ts_dotted(strtotime($e['created_at']))];
             }, $es),
@@ -269,18 +343,31 @@ function brd_add_endorsement($pdo, $rowId, array $d, array $actor, $file = null)
         $i = 1; while (is_file($path)) $path = $dir . '/' . pathinfo($name, PATHINFO_FILENAME) . ' (' . (++$i) . ').' . $ext;
         if (!move_uploaded_file($file['tmp_name'], $path)) return ['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.'];
     }
-    $pdo->prepare("INSERT INTO brd_endorsements (row_id, kind, endorse_no, date_j, amount, new_end_date, note, file_path, created_by, created_by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
+    // تغییرِ اطلاعات: فقط فیلدهای مجاز و فقط اگر با مقدارِ فعلی فرق دارند
+    $changes = [];
+    $chIn = is_array($d['changes'] ?? null) ? $d['changes'] : (json_decode((string)($d['changes'] ?? ''), true) ?: []);
+    foreach ($chIn as $f => $v) {
+        if (!array_key_exists($f, BRD_CHANGE_FIELDS)) continue;
+        if ($f === 'coverages') { $c = $v === 'none' ? '{}' : company_clean_coverages($v); if ($c !== null) $changes[$f] = json_decode($c, true) ?: []; continue; }
+        $v = trim((string)$v);
+        if (in_array($f, ['car_value', 'liability'], true)) $v = (string)intval(preg_replace('/\D/', '', p2e_digits($v)));
+        if (in_array($f, ['plate_p1', 'plate_p2', 'plate_p4', 'vin', 'engine_no', 'model_year', 'insured_id', 'phone', 'postal_code'], true)) $v = strtoupper(p2e_digits($v));
+        if ($v === '' || $v === '0') continue;
+        $changes[$f] = mb_substr($v, 0, 190);
+    }
+    if ($kind === 'CHANGE' && !$changes && !$newEnd && !$amount) return ['ok' => false, 'error' => 'برای «تغییرِ اطلاعات» حداقل یک مقدارِ تازه بنویسید.'];
+    $pdo->prepare("INSERT INTO brd_endorsements (row_id, kind, endorse_no, date_j, amount, new_end_date, note, file_path, created_by, created_by_name, created_at, changes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)")
         ->execute([$row['id'], $kind, mb_substr(p2e_digits((string)($d['no'] ?? '')), 0, 60) ?: null, $date, $amount, $newEnd, mb_substr(trim((string)($d['note'] ?? '')), 0, 600) ?: null,
-                   $path, $actor['id'] ?: null, mb_substr((string)$actor['name'], 0, 190)]);
+                   $path, $actor['id'] ?: null, mb_substr((string)$actor['name'], 0, 190), $changes ? json_encode($changes, JSON_UNESCAPED_UNICODE) : null]);
     if ($kind === 'CANCEL') $pdo->prepare("UPDATE brd_rows SET status = 'CANCELLED', updated_at = NOW() WHERE id = ?")->execute([$row['id']]);
     return ['ok' => true];
 }
 
 // ستون‌های خروجی (اکسل/PDF)
 function brd_export_cols() {
-    return [['#', null], ['گروه / شرکت', 'group'], ['بیمه‌گذار', 'insured'], ['کد / شناسه ملی', 'insured_id'], ['پلاک', 'plate'], ['شماره شاسی', 'vin'], ['شماره موتور', 'engine'],
+    return [['#', null], ['گروه / شرکت', 'group'], ['بیمه‌گذار', 'insured'], ['حقیقی/حقوقی', 'insured_kind_fa'], ['کد / شناسه ملی', 'insured_id'], ['پلاک', 'plate'], ['شماره شاسی', 'vin'], ['شماره موتور', 'engine'],
             ['خودرو', 'car'], ['مدل', 'model_year'], ['رنگ', 'color'], ['کاربری', 'usage'], ['نوع بیمه', 'type_fa'], ['شماره بیمه‌نامه', 'policy'], ['صدور', 'issue_date'],
-            ['شروع', 'start_date'], ['انقضا', 'end_date'], ['روزِ مانده', 'days_left'], ['حق بیمه (ریال)', 'premium'], ['ارزش خودرو (ریال)', 'car_value'], ['تعهد مالی (ریال)', 'liability'],
+            ['شروع', 'start_date'], ['انقضا', 'end_date'], ['روزِ مانده', 'days_left'], ['حق بیمه (ریال)', 'premium'], ['ارزش خودرو (ریال)', 'car_value'], ['تعهد مالی (ریال)', 'liability'], ['پوشش‌ها', '_cov'], ['بیمه‌نامه‌ی قبلی', 'prev_policy'],
             ['تلفن', 'phone'], ['مالک', 'owner_name'], ['طرف قرارداد', 'contract_party'], ['وضعیتِ تمدید', 'state_fa'], ['الحاقیه‌ها', '_endo']];
 }
 function brd_export_xlsx(array $rows, $title) {
@@ -293,6 +380,7 @@ function brd_export_xlsx(array $rows, $title) {
         foreach ($cols as $c) {
             if ($c[1] === null) $line[] = $i + 1;
             elseif ($c[1] === '_endo') $line[] = implode(' | ', array_map(function ($e) { return $e['kind_fa'] . ($e['no'] ? ' ' . $e['no'] : '') . ($e['date'] ? ' ' . fa_digits($e['date']) : ''); }, $r['endorsements']));
+            elseif ($c[1] === '_cov') $line[] = implode('، ', $r['coverages_fa'] ?? []) ?: ($r['covers_text'] ?? '');
             elseif (in_array($c[1], ['issue_date', 'start_date', 'end_date'], true)) $line[] = fa_digits((string)$r[$c[1]]);
             else $line[] = $r[$c[1]] ?? '';
         }

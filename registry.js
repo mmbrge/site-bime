@@ -656,14 +656,15 @@
     }
     function bRowsHtml(list, withGroup) {
         return `<div class="rg-wrap"><table class="rg-tbl"><thead><tr><th><input type="checkbox" class="rg-chk" data-all></th>${withGroup ? '<th data-s="group">شرکت / گروه</th>' : ''}<th data-s="insured">بیمه‌گذار</th><th data-s="plate">پلاک</th><th data-s="car">خودرو</th>
-            <th data-s="type">نوع</th><th data-s="policy">بیمه‌نامه</th><th data-s="issue_date">صدور</th><th data-s="end_date">انقضا</th><th data-s="days_left">مانده</th><th data-s="premium">حق بیمه</th><th data-s="state">وضعیت</th></tr></thead><tbody>
+            <th data-s="type">نوع</th><th data-s="car_value">ارزش / تعهد</th><th data-s="policy">بیمه‌نامه</th><th data-s="issue_date">صدور</th><th data-s="end_date">انقضا</th><th data-s="days_left">مانده</th><th data-s="premium">حق بیمه</th><th data-s="state">وضعیت</th></tr></thead><tbody>
             ${list.map(r => `<tr data-id="${r.id}" style="${r.state === 'cancelled' ? 'opacity:.55' : ''}"><td><input type="checkbox" class="rg-chk" data-sel="${r.id}" ${BR.sel.has(r.id) ? 'checked' : ''}></td>
                 ${withGroup ? `<td class="text-[11.5px]">${esc(r.group)}${r.company_id ? '' : ' <i class="fas fa-link-slash text-slate-300" title="به شرکتی در سامانه وصل نیست"></i>'}</td>` : ''}
-                <td>${esc(r.insured)}${r.person_id ? ' <i class="fas fa-id-badge text-pink-500" title="پرسنل"></i>' : ''}</td><td>${plateHtml(r.plate)}${!r.plate && r.vin ? `<div class="text-[10px] font-mono text-slate-400">${esc(r.vin)}</div>` : ''}</td>
+                <td>${esc(r.insured)}${r.person_id ? ' <i class="fas fa-id-badge text-pink-500" title="پرسنل"></i>' : ''}<div class="text-[10px] text-slate-400">${esc(r.insured_kind_fa || '')}${r.insured_id ? ' · <span dir="ltr">' + esc(fa(r.insured_id)) + '</span>' : ''}</div></td><td>${plateHtml(r.plate)}${!r.plate && r.vin ? `<div class="text-[10px] font-mono text-slate-400">${esc(r.vin)}</div>` : ''}</td>
                 <td class="text-[11.5px]">${esc(fa(r.car || ''))} ${r.model_year ? '<small class="text-slate-400">' + fa(r.model_year) + '</small>' : ''}</td><td>${esc(r.type_fa)}</td>
-                <td class="font-mono text-[11px]" dir="ltr" style="text-align:right">${esc(fa(r.policy))}${r.endorsements.length ? ` <span class="rg-pill" style="background:#fef3c7;color:#92400e">${fa(r.endorsements.length)} الحاقیه</span>` : ''}</td>
+                <td class="text-[11px]">${r.type === 'BODY' ? (r.car_value ? money(r.car_value) : '—') + (r.coverages_fa && r.coverages_fa.length ? `<div class="text-[9.5px] text-violet-600" title="${esc(r.coverages_fa.join('، '))}">${fa(r.coverages_fa.length)} پوشش</div>` : '') : (r.liability ? money(r.liability) : '—')}</td>
+                <td class="font-mono text-[11px]" dir="ltr" style="text-align:right">${esc(fa(r.policy))}${r.endorsements.length ? ` <span class="rg-pill" style="background:#fef3c7;color:#92400e">${fa(r.endorsements.length)} الحاقیه</span>` : ''}${r.endorsed ? ' <span class="rg-pill" style="background:#ede9fe;color:#6d28d9" title="اطلاعاتِ این ردیف با الحاقیه عوض شده">تغییر کرد</span>' : ''}</td>
                 <td>${fa(r.issue_date)}</td><td><b>${fa(r.end_date)}</b></td><td><span class="rg-left" style="${leftCls(r.state === 'renewed' || r.state === 'cancelled' ? null : r.days_left)}">${r.state === 'renewed' ? 'تمدید شد' : leftTxt(r.days_left)}</span></td>
-                <td>${money(r.premium)}</td><td>${bStatePill(r)}${r.notes.length ? `<div class="text-[10px] text-slate-400">${esc(r.notes[r.notes.length - 1].at)}</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="12">${empty('ردیفی نیست.')}</td></tr>`}
+                <td>${money(r.premium)}</td><td>${bStatePill(r)}${r.notes.length ? `<div class="text-[10px] text-slate-400">${esc(r.notes[r.notes.length - 1].at)}</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="13">${empty('ردیفی نیست.')}</td></tr>`}
             </tbody></table></div>`;
     }
     function bTable() {
@@ -702,29 +703,61 @@
                 <div class="flex gap-2 flex-wrap">${window.permCan && permCan('vehicles') ? '<button class="rg-btn s" data-veh><i class="fas fa-car-side"></i> پرونده‌ی خودرو</button>' : ''}${r.person_id && window.permCan && permCan('personnel') ? '<button class="rg-btn s" data-per><i class="fas fa-id-badge"></i> پرونده‌ی شخص</button>' : ''}<button class="rg-btn s" data-x>بستن ✕</button></div>
             </div></div>
             <div class="p-4 space-y-4">
-                <div class="rg-grid">${field('بیمه‌گذار', r.insured)}${field('کد / شناسه ملی', r.insured_id)}${field('نوع بیمه‌گذار', r.insured_kind)}${field('شماره بیمه‌نامه', r.policy)}${field('کد یکتا', r.central_no)}
+                ${r.endorsed ? `<div class="rg-card" style="border-color:#ddd6fe;background:#f5f3ff"><p class="text-xs font-black text-violet-800 mb-1"><i class="fas fa-file-pen ml-1"></i>اطلاعاتِ این ردیف با الحاقیه عوض شده (در تمدید، اطلاعاتِ تازه می‌نشیند)</p>
+                    <div class="text-[11.5px] leading-7">${r.changes.map(c => `<div><b>${esc(c.label)}:</b> <span class="text-slate-400 line-through">${esc(fa(c.from || '—'))}</span> ← <b class="text-violet-800">${esc(fa(c.to || '—'))}</b></div>`).join('')}</div></div>` : ''}
+                <div class="rg-grid">${field('بیمه‌گذار', r.insured)}${field('کد / شناسه ملی', r.insured_id)}${field('حقیقی / حقوقی', r.insured_kind_fa || r.insured_kind)}${field('کد اقتصادی', r.economic_code)}${field('شماره بیمه‌نامه', r.policy)}${field('کد یکتا', r.central_no)}
                     ${field('پلاک', r.plate)}${field('شماره شاسی', r.vin)}${field('شماره موتور', r.engine)}${field('خودرو', r.car)}${field('سیستم / تیپ', [r.car_system, r.car_tip].filter(Boolean).join(' '))}${field('مدل', r.model_year)}${field('رنگ', r.color)}${field('کاربری', r.usage)}
                     ${field('صدور', r.issue_date)}${field('شروع', r.start_date)}${field('انقضا', r.end_date + (r.end_orig && r.end_orig !== r.end_date ? ' (اصلی: ' + r.end_orig + ')' : ''))}${field('روزِ مانده', r.days_left === null ? '' : String(r.days_left))}
-                    ${field('حق بیمه (ریال)', money(r.premium))}${field('ارزش خودرو (ریال)', money(r.car_value))}${field('تعهد مالی (ریال)', money(r.liability))}${field('تلفن', r.phone)}${field('کد پستی', r.postal_code)}${field('نشانی', r.address)}
+                    ${field('حق بیمه (ریال)', money(r.premium))}${field('ارزش خودرو (ریال)', money(r.car_value))}${field('تعهد مالی (ریال)', money(r.liability))}${r.diya ? field('تعهد جانی (ریال)', money(r.diya)) : ''}${r.driver_cover ? field('حوادث راننده (ریال)', money(r.driver_cover)) : ''}
+                    ${r.type === 'BODY' ? field('پوشش‌ها', (r.coverages_fa || []).length ? r.coverages_fa.join('، ') : (r.covers_text || 'فقط پایه / نامشخص')) : ''}${field('سال‌های عدم خسارت', r.no_claim_years)}${field('انقضای بیمه‌نامه‌ی قبلی', r.prev_expiry)}${field('تخفیف عدم خسارت', r.ncd)}${field('تلفن', r.phone)}${field('کد پستی', r.postal_code)}${field('نشانی', r.address)}
                     ${field('مالک', r.owner_name)}${field('طرف قرارداد', r.contract_party)}${field('بیمه‌نامه‌ی قبلی', [r.prev_insurer, r.prev_policy].filter(Boolean).join(' '))}${r.renewed_by ? field('تمدید با', r.renewed_by.policy + ' (' + r.renewed_by.src + ' ' + r.renewed_by.issue + ')') : ''}</div>
                 <div class="rg-card"><p class="text-xs font-black text-slate-700 mb-2"><i class="fas fa-building ml-1 text-teal-600"></i>شرکت در سامانه</p><div class="rg-bar">
                     <select class="rg-in" data-co><option value="">— وصل نیست (گروه: ${esc(r.group)}) —</option>${(BR.meta.companies || []).map(c => `<option value="${c.id}" ${c.id === r.company_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
                     <button class="rg-btn s" data-co-save><i class="fas fa-floppy-disk"></i> ذخیره</button>${r.folder ? `<span class="text-[10.5px] text-slate-400 mr-2"><i class="fas fa-folder text-amber-500"></i> ${esc(r.folder.split('/').slice(-2).join(' / '))}</span>` : ''}</div></div>
                 <div class="rg-card"><p class="text-xs font-black text-slate-700 mb-2"><i class="fas fa-file-pen ml-1 text-amber-600"></i>الحاقیه‌ها (فقط روی همین فهرست؛ به مالی نمی‌رود)</p>
-                    ${r.endorsements.length ? `<div class="rg-wrap mb-2" style="max-height:none"><table class="rg-tbl"><thead><tr><th>نوع</th><th>شماره</th><th>تاریخ</th><th>مبلغ</th><th>انقضای تازه</th><th>توضیح</th><th></th></tr></thead><tbody>${r.endorsements.map(e => `<tr style="cursor:default"><td>${esc(e.kind_fa)}</td><td>${fa(e.no || '')}</td><td>${fa(e.date || '')}</td><td>${money(e.amount)}</td><td>${fa(e.new_end || '')}</td><td>${esc(e.note || '')}</td>
+                    ${r.endorsements.length ? `<div class="rg-wrap mb-2" style="max-height:none"><table class="rg-tbl"><thead><tr><th>نوع</th><th>شماره</th><th>تاریخ</th><th>مبلغ</th><th>انقضای تازه</th><th>تغییرات</th><th>توضیح</th><th></th></tr></thead><tbody>${r.endorsements.map(e => `<tr style="cursor:default"><td>${esc(e.kind_fa)}</td><td>${fa(e.no || '')}</td><td>${fa(e.date || '')}</td><td>${money(e.amount)}</td><td>${fa(e.new_end || '')}</td>
+                        <td class="text-[10.5px]">${(e.changes || []).map(c => esc(c.label) + ': <b>' + esc(fa(c.to)) + '</b>').join('<br>')}</td><td>${esc(e.note || '')}</td>
                         <td>${e.file ? `<a class="rg-btn s" style="padding:3px 7px" target="_blank" href="${fpath(e.file)}"><i class="fas fa-paperclip"></i></a>` : ''} <button class="text-rose-500" data-edel="${e.id}"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>` : ''}
                     <div class="rg-bar"><select class="rg-in" data-ek>${Object.entries(kinds).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select><input class="rg-in" style="width:90px" data-eno placeholder="شماره"><input class="rg-in" style="width:115px" data-edt dir="ltr" placeholder="۱۴۰۵/۰۷/۰۱">
                         <input class="rg-in" style="width:140px" data-eam placeholder="مبلغ (ریال)" inputmode="numeric"><input class="rg-in" style="width:125px" data-ene dir="ltr" placeholder="انقضای تازه ۱۴۰۶/۰۱/۰۱"><input class="rg-in flex-1" data-ent placeholder="توضیح">
-                        <input type="file" accept=".pdf,image/*" data-ef class="text-xs"><button class="rg-btn p" data-ego><i class="fas fa-plus"></i> ثبتِ الحاقیه</button></div></div>
+                        <input type="file" accept=".pdf,image/*" data-ef class="text-xs"><button class="rg-btn p" data-ego><i class="fas fa-plus"></i> ثبتِ الحاقیه</button></div>
+                    <div data-chg class="hidden mt-2 rounded-xl border border-violet-200 bg-violet-50/50 p-2.5">
+                        <p class="text-[11px] font-black text-violet-800 mb-1.5">مقدارهای تازه (فقط خانه‌هایی که عوض شده را پر کنید؛ اطلاعاتِ اولیه نگه داشته می‌شود):</p>
+                        <div class="grid gap-1.5" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+                            ${[['plate_p4', 'پلاک: دو رقم', r.plate_p4], ['plate_letter', 'پلاک: حرف', r.plate_letter], ['plate_p2', 'پلاک: سه رقم', r.plate_p2], ['plate_p1', 'پلاک: ایران', r.plate_p1], ['vin', 'شماره شاسی', r.vin], ['engine_no', 'شماره موتور', r.engine],
+                               ['car_name', 'خودرو', r.car], ['model_year', 'مدل', r.model_year], ['color', 'رنگ', r.color], ['car_usage', 'کاربری', r.usage], ['insured', 'بیمه‌گذار', r.insured], ['insured_id', 'کد / شناسه ملی', r.insured_id],
+                               ['owner_name', 'مالک', r.owner_name], ['phone', 'تلفن', r.phone], ['postal_code', 'کد پستی', r.postal_code], ['address', 'نشانی', r.address], ['car_value', 'ارزش خودرو (ریال)', r.car_value ? money(r.car_value) : ''], ['liability', 'تعهد مالی (ریال)', r.liability ? money(r.liability) : '']]
+                              .map(([k, l, cur]) => `<label class="text-[10px] text-slate-500 font-bold">${l}<input class="rg-in w-full mt-0.5" style="padding:5px 8px" data-cf="${k}" placeholder="${esc(fa(cur || ''))}"></label>`).join('')}
+                            <label class="text-[10px] text-slate-500 font-bold">حقیقی / حقوقی<select class="rg-in w-full mt-0.5" style="padding:5px 8px" data-cf="insured_kind"><option value="">— بدونِ تغییر —</option><option value="حقیقی">حقیقی</option><option value="حقوقی">حقوقی</option></select></label>
+                        </div>
+                        ${r.type === 'BODY' && window.CompanyManualRequest ? '<button type="button" class="rg-btn s mt-2" data-ccov><i class="fas fa-list-check text-violet-600"></i> پوشش‌های تازه…</button> <span class="text-[10.5px] text-violet-700" data-ccov-t></span>' : ''}
+                    </div></div>
                 <div class="rg-card"><p class="text-xs font-black text-slate-700 mb-2"><i class="fas fa-bell ml-1 text-indigo-500"></i>پیگیریِ تمدید</p>
                     ${r.notes.length ? `<div class="rg-tl mb-2">${r.notes.slice().reverse().map(n => `<div><b class="text-[12px]">${esc(n.channel_fa)}</b> <small class="text-slate-500">${esc(n.at)}${n.by ? ' · ' + esc(n.by) : ''}</small>${n.note ? `<div class="text-[11.5px] text-slate-600">${esc(n.note)}</div>` : ''}</div>`).join('')}</div>` : ''}
                     <div class="rg-bar"><select class="rg-in" data-nc>${Object.entries(BR.meta.channels || {}).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select><input class="rg-in flex-1" data-nt placeholder="توضیح (مثلاً: تماس گرفته شد، هفته‌ی بعد تمدید می‌کند)"><button class="rg-btn p" data-ngo><i class="fas fa-check"></i> ثبت</button></div></div>
             </div>`);
         const refresh = row => { if (!row) return; const i = BR.rows.findIndex(x => x.id === row.id); if (i >= 0) BR.rows[i] = row; m.close(); bTable(); bOpen(row.id); };
         m.el.querySelector('[data-co-save]').onclick = async () => { const x = await call(BR.api, { action: 'set_company', id, company_id: Number(m.el.querySelector('[data-co]').value) || 0 }); toast(x.ok ? 'ذخیره شد.' : x.error, x.ok ? 'success' : 'error'); if (x.ok) refresh(x.row); };
+        // «تغییرِ اطلاعات»: خانه‌های مقدارِ تازه فقط برای همین نوع دیده می‌شوند
+        const ekSel = m.el.querySelector('[data-ek]'), chg = m.el.querySelector('[data-chg]');
+        let newCov = null;
+        const togChg = () => chg.classList.toggle('hidden', ekSel.value !== 'CHANGE');
+        ekSel.onchange = togChg; togChg();
+        const ccb = m.el.querySelector('[data-ccov]');
+        if (ccb) ccb.onclick = async () => {
+            const x = await CompanyManualRequest.pickDefaults({title: 'پوشش‌های تازه (الحاقیه)', showLiab: false, coverages: newCov !== null ? newCov : (r.coverages || null)});
+            if (!x) return;
+            newCov = x.coverages; const t = CompanyManualRequest.defaultsText(newCov, ''); m.el.querySelector('[data-ccov-t]').textContent = t.cov;
+        };
         m.el.querySelector('[data-ego]').onclick = async () => {
             const fd = new FormData(); fd.append('action', 'endorse'); fd.append('id', id);
             [['kind', 'ek'], ['no', 'eno'], ['date', 'edt'], ['amount', 'eam'], ['new_end', 'ene'], ['note', 'ent']].forEach(([k, s]) => fd.append(k, en(m.el.querySelector('[data-' + s + ']').value)));
+            if (ekSel.value === 'CHANGE') {
+                const ch = {};
+                m.el.querySelectorAll('[data-cf]').forEach(i => { const v = i.tagName === 'SELECT' ? i.value : en(i.value).trim(); if (v) ch[i.dataset.cf] = v; });
+                if (newCov !== null) ch.coverages = newCov;
+                fd.append('changes', JSON.stringify(ch));
+            }
             const f = m.el.querySelector('[data-ef]').files[0]; if (f) fd.append('file', f);
             const x = await call(BR.api, fd, true); toast(x.ok ? 'الحاقیه ثبت شد.' : x.error, x.ok ? 'success' : 'error'); if (x.ok) refresh(x.row);
         };
