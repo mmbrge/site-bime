@@ -744,12 +744,13 @@ try {
     // ---- درخواست‌هایی که ردیفِ صادرنشده دارند (برای بخش «صدور گروهی» در صفحه‌ی جامعِ صدور) ----
     if ($action === 'group_issue_requests') {
         require_admin_only();
+        require_once __DIR__ . '/_renew_request.php'; rnr_ensure($pdo);   // ستونِ is_renewal (برچسبِ «تمدیدی»)
         $w = ["crp.status NOT IN ('ISSUED','CANCELLED')", "cr.is_import = 0"]; $p = [];
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $p[] = intval($data['company_id']); }
         if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $p[] = $data['insurer']; }
         $q = trim((string)($data['q'] ?? ''));
         if ($q !== '') { $w[] = "(c.name LIKE ? OR cr.id = ? OR cr.ref_code = ? OR cr.request_text LIKE ?)"; array_push($p, "%$q%", intval(p2e_digits($q)), p2e_digits($q), "%$q%"); }
-        $st = $pdo->prepare("SELECT cr.id, cr.company_id, cr.insurer, cr.request_kind, cr.created_at, c.name AS company_name,
+        $st = $pdo->prepare("SELECT cr.id, cr.company_id, cr.insurer, cr.request_kind, cr.created_at, cr.ref_code, cr.is_renewal, c.name AS company_name,
                                     COUNT(*) AS open_rows,
                                     SUM(crp.status IN ('READY_FOR_ISSUE','WITH_BOSS','IN_ISSUANCE')) AS ready_rows,
                                     SUM(crp.insurance_type = 'BODY') AS body_rows, SUM(crp.insurance_type = 'THIRDPARTY') AS third_rows,

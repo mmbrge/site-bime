@@ -6428,6 +6428,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             بررسی مدارک
                             ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
                         </button>
+                        ${IS_ADMIN && (r.row_stages || []).some(s => !['ISSUED', 'CANCELLED'].includes(s.status)) ? `<button onclick="openBundleModal(${r.id})" title="صدور گروهی (فایلِ خروجیِ بیمه‌گر) برای ردیف‌های صادرنشده‌ی همین درخواست" class="text-[11px] font-bold text-white px-2.5 py-1.5 rounded-lg whitespace-nowrap" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی</button>` : ''}
                         ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
                         <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests')}
                     </td>
@@ -6936,7 +6937,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
                     ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
-                    ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
+                    ${isAdmin && currentRequestRows.some(p => !['ISSUED', 'CANCELLED'].includes(p.status)) ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
                     ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی صادره‌ها</a>` : ''}
                 </div>
 
@@ -7980,7 +7981,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 return `<div class="card p-4 hover:shadow-lg transition">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0"><p class="font-black text-slate-800 truncate">${r.company_name}</p>
-                            <p class="text-[11px] text-slate-400">درخواست ${r.ref_code ? 'شناسه‌ی ' + e2pNum(r.ref_code) : '#' + e2pNum(r.id)} · ${r.request_kind_fa} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
+                            <p class="text-[11px] text-slate-400">درخواست ${r.ref_code ? 'شناسه‌ی ' + e2pNum(r.ref_code) : '#' + e2pNum(r.id)} · ${r.request_kind_fa}${Number(r.is_renewal) ? ' <b class="text-emerald-600"><i class="fas fa-rotate"></i> تمدیدی</b>' : ''} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
                         <span class="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${expCls}">${dte === null ? 'بدون انقضا' : (dte < 0 ? `${e2pNum(-dte)} روز گذشته` : `نزدیک‌ترین انقضا: ${e2pNum(dte)} روز`)}</span>
                     </div>
                     <div class="grid grid-cols-4 gap-1.5 mt-4 mb-3 text-center">
