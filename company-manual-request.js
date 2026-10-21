@@ -612,13 +612,18 @@
         if (st.letter) jobs.push({ plate: null, type: 'letter', file: st.letter });
         st.rows.forEach((r, i) => Object.entries(r.files).forEach(([t, fs]) => fs.forEach(f => jobs.push({ plate: d.plate_ids[i], type: t, file: f }))));
         let failed = 0;
-        for (let j = 0; j < jobs.length; j++) {
+        const mkForm = j => { const fd = new FormData(); fd.append('action', 'admin_upload_plate_doc'); fd.append('request_id', d.request_id);
+            if (j.plate) fd.append('plate_id', j.plate); fd.append('doc_type', j.type); fd.append('file', j.file); return fd; };
+        // مدارک در پس‌زمینه با نوارِ پیشرفت (upload-kit.js)؛ پنجره بسته می‌شود و کار ادامه دارد
+        const bg = jobs.length && window.UploadKit && UploadKit.enqueue;
+        if (bg) {
+            UploadKit.enqueue({ title: 'مدارکِ درخواست #' + fa(d.request_id), url: API,
+                items: jobs.map(j => ({ name: ((form.doc_types || {})[j.type] || (j.type === 'letter' ? 'نامه' : j.type)) + ' — ' + j.file.name, size: j.file.size, form: mkForm(j) })),
+                onDone: sum => { toast(`مدارکِ درخواست #${fa(d.request_id)}: ${fa(sum.ok)} از ${fa(sum.total)} بارگذاری شد` + (sum.fail ? ` (${fa(sum.fail)} ناموفق؛ از جزئیاتِ درخواست دوباره بفرستید)` : '.'), sum.fail ? 'warning' : 'success');
+                    if (typeof currentRequestId !== 'undefined' && String(currentRequestId) === String(d.request_id) && window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id); } });
+        } else for (let j = 0; j < jobs.length; j++) {
             btn.innerHTML = `<i class="fas fa-circle-notch fa-spin ml-1"></i> بارگذاری مدارک ${fa(j + 1)} از ${fa(jobs.length)}...`;
-            const fd = new FormData();
-            fd.append('action', 'admin_upload_plate_doc'); fd.append('request_id', d.request_id);
-            if (jobs[j].plate) fd.append('plate_id', jobs[j].plate);
-            fd.append('doc_type', jobs[j].type); fd.append('file', jobs[j].file);
-            try { const x = await (await fetch(API, { method: 'POST', body: fd })).json(); if (!x.ok) failed++; } catch (e) { failed++; }
+            try { const x = await (await fetch(API, { method: 'POST', body: mkForm(jobs[j]) })).json(); if (!x.ok) failed++; } catch (e) { failed++; }
         }
         // صفحه‌های شناسایی‌شده (فاکتور/سند/کارت) روی ردیفِ خودشان بایگانی و اطلاعاتشان روی ردیف نشانده می‌شود
         const docItems = [];
@@ -646,7 +651,7 @@
             try { const x = await VR.api('link', { id: r.report.id, type: 'company', target_id: d.plate_ids[i] }); if (x.ok) linked++; else failed++; } catch (e) { failed++; }
         }
         close();
-        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد` : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (regDone ? ` و ${fa(regDone)} مدرک از پرونده‌ی خودروها روی ردیف‌ها نشست` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
+        if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? (bg ? ` و ${fa(jobs.length)} فایل در پس‌زمینه بارگذاری می‌شود (نوارِ پیشرفت پایینِ صفحه)` : ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد`) : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (regDone ? ` و ${fa(regDone)} مدرک از پرونده‌ی خودروها روی ردیف‌ها نشست` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
         if (window.loadCompanyRequests) loadCompanyRequests();
         if (window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id);
     }
