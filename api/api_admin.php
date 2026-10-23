@@ -74,6 +74,16 @@ try {
             $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'کدِ ' . $code . $tf . ' فرستاده شد.' : $r['status'] . $tf, 'http' => $r['http'] ?? 0,
                                              'raw' => $r['raw'] ?? '', 'sent' => $r['sent'] ?? '', 'ms' => $r['ms'] ?? null]]);
         }
+        if ($svc === 'ai_vision') {
+            require_once __DIR__ . '/_vdoc_ai.php';
+            if (!vdoc_ai_ready($pdo)) $out(['ok' => true, 'result' => ['ok' => false, 'status' => 'آدرس و کلیدِ API را وارد و ذخیره کنید.']]);
+            $c = vdoc_ai_conf($pdo); $t0 = microtime(true);
+            $r = sms_http('POST', $c['base'] . '/chat/completions', json_encode(['model' => $c['model'], 'max_tokens' => 5, 'messages' => [['role' => 'user', 'content' => 'Reply with: ok']]]),
+                          ['Content-Type: application/json', 'Authorization: Bearer ' . $c['token']], $c['timeout']);
+            $ok = $r['error'] === '' && $r['http'] >= 200 && $r['http'] < 300;
+            $out(['ok' => true, 'result' => ['ok' => $ok, 'status' => $ok ? 'اتصال برقرار است ✓ (مدل ' . $c['model'] . ')' : ($r['error'] !== '' ? 'خطای اتصال: ' . $r['error'] : 'پاسخِ ناموفق (HTTP ' . $r['http'] . ')'),
+                                             'http' => $r['http'], 'raw' => mb_substr((string)$r['body'], 0, 600), 'ms' => (int)round((microtime(true) - $t0) * 1000)]]);
+        }
         if ($svc === 'sapi_company') {
             $r = sapi_company_info($pdo, $in['national_id'] ?? '');
             $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? ($r['company']['name'] . ' — ' . $r['company']['company_type']) : $r['error'], 'company' => $r['company'] ?? null, 'raw' => $r['raw'] ?? '']]);

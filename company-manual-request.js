@@ -248,7 +248,7 @@
         return `<div class="bg-white rounded-2xl border-2 border-amber-100 p-4">
             <h3 class="font-black text-sm text-amber-800 mb-1"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار / ذینفع (برای همه‌ی خودروها)</h3>
             <p class="text-[10.5px] text-slate-500 mb-2 leading-6">خودرو به نامِ خودِ شرکت است، یا به نامِ شخص/شرکتِ دیگری که «ذینفع» می‌شود (بیمه‌گذار: شرکت)، یا به نامِ دیگری که خودش بیمه‌گذار می‌شود. برای خودروی متفاوت، در کارتِ همان خودرو «مالک/بیمه‌گذارِ این خودرو فرق دارد» را بزنید.</p>
-            <div data-pty-scope="all">${PartyUI.editor({ mode: st.partyMode, party: st.party })}</div></div>`;
+            <div data-pty-scope="all">${PartyUI.editor({ mode: st.partyMode, party: st.party, insured: st.insured })}</div></div>`;
     }
     const pnorm = v => String(v || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/شرکت|سهامی|خاص|عام|[\s\u200c()«»\-ـ.]/g, '');
     function rowPartyHtml(r) {
@@ -262,7 +262,7 @@
             <label class="flex items-center gap-2 text-[11px] font-bold ${r.partyOpen ? 'text-amber-800' : 'text-slate-500'}"><input type="checkbox" data-r="partyOpen" ${r.partyOpen ? 'checked' : ''}> مالک/بیمه‌گذارِ این خودرو فرق دارد
               ${r.partyOpen ? '' : `<span class="font-normal text-slate-400">(طبقِ انتخابِ کلی: ${esc(PartyUI.SHORT[st.partyMode] || '')})</span>`}</label>
             ${r.partyAuto ? `<p class="text-[10.5px] text-amber-700 mt-1">مالکِ مدرک «${esc(r.party && r.party.name || '')}» با شرکت فرق دارد؛ طبقِ تنظیمِ شرکت «${esc(PartyUI.SHORT[r.partyMode] || '')}» انتخاب شد (قابلِ تغییر).</p>` : ''}
-            ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${PartyUI.editor({ mode: r.partyMode, party: r.party }, { allowInherit: true })}</div>` : ''}${warn}</div>`;
+            ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${PartyUI.editor({ mode: r.partyMode, party: r.party, insured: r.insured }, { allowInherit: true })}</div>` : ''}${warn}</div>`;
     }
 
     function liabilityOptions(val, withEmpty) {
@@ -524,8 +524,8 @@
         root.querySelectorAll('[data-pty-scope]').forEach(box => {
             const h = () => {
                 const v = PartyUI.collect(box);
-                if (box.dataset.ptyScope === 'all') { st.partyMode = v.party_mode || 'COMPANY'; st.party = v.party; }
-                else { const r = rowOf(box); r.partyMode = v.party_mode; r.party = v.party ? Object.assign({}, r.party || {}, v.party) : null; r.partyUser = true; r.partyAuto = false; }
+                if (box.dataset.ptyScope === 'all') { st.partyMode = v.party_mode || 'COMPANY'; st.party = v.party; st.insured = v.insured; }
+                else { const r = rowOf(box); r.partyMode = v.party_mode; r.party = v.party ? Object.assign({}, r.party || {}, v.party) : null; r.insured = v.insured; r.partyUser = true; r.partyAuto = false; }
             };
             box.addEventListener('input', h); box.addEventListener('change', h);
         });
@@ -582,7 +582,7 @@
             request_text: st.text,
             default_liability: st.liabilityPerRow ? '' : st.liabilityAll,
             default_coverages: st.covBaseOnly ? 'none' : (st.cov && Object.keys(st.cov).length ? st.cov : null),
-            party_mode: st.partyMode || 'COMPANY', party: st.party,
+            party_mode: st.partyMode || 'COMPANY', party: st.party, insured: st.partyMode === 'SPLIT' ? st.insured : null,
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
                 // صفرکیلومترِ بی‌پلاک: خانه‌های عددیِ پلاک خالی‌اند، پس حرفِ پیش‌فرضِ «الف» هم فرستاده نمی‌شود (وگرنه «پلاک ناقص» می‌شد)
@@ -596,7 +596,7 @@
                 vehicle_class: r.type === 'BODY' ? vclassOf(r) : '',
                 coverages: r.type === 'BODY' && r.customCov ? covOut(r.cov || {}) : null,
                 ref_policy_number: r.refPolicy, endorsement_request: r.endorse, cancellation_reason: r.cancelReason, row_note: r.note,
-                party_mode: r.partyOpen ? r.partyMode : '', party: r.partyOpen ? r.party : null,
+                party_mode: r.partyOpen ? r.partyMode : '', party: r.partyOpen ? r.party : null, insured: r.partyOpen && r.partyMode === 'SPLIT' ? r.insured : null,
             })),
         };
         const btn = root.querySelector('[data-act="submit"]');

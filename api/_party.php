@@ -4,6 +4,7 @@
 //   COMPANY      : خودرو به نامِ خودِ شرکت است  => مالک و بیمه‌گذار هر دو شرکت
 //   BENEFICIARY  : خودرو به نامِ شخص/شرکتِ دیگری است و شرکتِ درخواست‌دهنده بیمه‌گذار می‌شود => آن شخص «ذینفع»
 //   OWNER        : خودرو به نامِ شخص/شرکتِ دیگری است و بیمه‌گذار هم همان مالک می‌شود
+//   SPLIT        : مالک (= ذینفع) یک شخص/شرکت و بیمه‌گذار شخص/شرکتِ دیگری (insured_json)؛ شرکتِ درخواست‌دهنده فقط نامه را داده
 // برای هر ردیف جدا (party_mode / party_json) و برای کلِ درخواست (پیش‌فرضِ ردیف‌های بی‌تنظیم) تعیین می‌شود؛
 // ستون‌ها خودکار و افزودنی ساخته می‌شوند (ردیف‌های قبلی بی‌تنظیم = «خودِ شرکت»، مثلِ رفتارِ قبلی).
 
@@ -11,15 +12,16 @@ const PARTY_MODES = [
     'COMPANY' => 'مالک و بیمه‌گذار: خودِ شرکت',
     'BENEFICIARY' => 'به نامِ دیگری (ذینفع) · بیمه‌گذار: شرکت',
     'OWNER' => 'به نامِ دیگری · بیمه‌گذار: همان مالک',
+    'SPLIT' => 'مالک و ذینفع: یک شخص/شرکت · بیمه‌گذار: شخص/شرکتِ دیگر',
 ];
-const PARTY_MODES_SHORT = ['COMPANY' => 'خودِ شرکت', 'BENEFICIARY' => 'ذینفع', 'OWNER' => 'مالک = بیمه‌گذار'];
+const PARTY_MODES_SHORT = ['COMPANY' => 'خودِ شرکت', 'BENEFICIARY' => 'ذینفع', 'OWNER' => 'مالک = بیمه‌گذار', 'SPLIT' => 'بیمه‌گذار جدا'];
 
 function party_ensure($pdo) {
     static $done = false;
     if ($done) return;
     $done = true;
     foreach (['company_request_plates', 'company_requests'] as $t) {
-        foreach (['party_mode' => 'VARCHAR(16) NULL', 'party_json' => 'TEXT NULL'] as $c => $def) {
+        foreach (['party_mode' => 'VARCHAR(16) NULL', 'party_json' => 'TEXT NULL', 'insured_json' => 'TEXT NULL'] as $c => $def) {
             try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$c` $def"); }
             catch (Throwable $e) { error_log('[party_ensure] ' . $e->getMessage()); }
         }
@@ -51,13 +53,16 @@ function party_clean($in) {
 }
 
 // ذخیره روی ردیف‌ها؛ $party === false یعنی «اطلاعاتِ شخص دست نخورد» (فقط نوع عوض شود)
-function party_set_rows($pdo, array $plateIds, $mode, $party = false) {
+// $insured: بیمه‌گذارِ جدا (فقط حالتِ SPLIT)؛ false = دست نخورد. حالت‌های دیگر بیمه‌گذارِ جدا را پاک می‌کنند.
+function party_set_rows($pdo, array $plateIds, $mode, $party = false, $insured = false) {
     party_ensure($pdo);
     $mode = party_valid_mode($mode);
     if (!$mode || !$plateIds) return 0;
     $n = 0;
     foreach (array_unique(array_map('intval', $plateIds)) as $pid) {
         if ($pid <= 0) continue;
+        if ($mode !== 'SPLIT') $pdo->prepare("UPDATE company_request_plates SET insured_json = NULL WHERE id = ?")->execute([$pid]);
+        elseif ($insured !== false) { $ij = party_clean($insured); $pdo->prepare("UPDATE company_request_plates SET insured_json = ? WHERE id = ?")->execute([$ij ? json_encode($ij, JSON_UNESCAPED_UNICODE) : null, $pid]); }
         if ($party === false) {
             $st = $pdo->prepare("UPDATE company_request_plates SET party_mode = ? WHERE id = ?");
             $st->execute([$mode, $pid]);
@@ -77,7 +82,7 @@ function party_sync_issue_info($pdo, array $plateIds) {
     $plateIds = array_values(array_filter(array_unique(array_map('intval', $plateIds))));
     if (!$plateIds) return;
     $in = implode(',', array_fill(0, count($plateIds), '?'));
-    $st = $pdo->prepare("SELECT crp.id, crp.status, crp.party_mode, crp.party_json, crp.issue_info, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+    $st = $pdo->prepare("SELECT crp.id, crp.status, crp.party_mode, crp.party_json, crp.insured_json, crp.issue_info, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json,
                                 c.name, c.national_id, c.economic_code, c.phone, c.address
                            FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id IN ($in)");
     $st->execute($plateIds);
@@ -86,7 +91,7 @@ function party_sync_issue_info($pdo, array $plateIds) {
         if ($r['status'] === 'ISSUED') continue;
         $ii = json_decode((string)$r['issue_info'], true) ?: [];
         $old = $ii;
-        $pr = party_resolve($r, $r, ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+        $pr = party_resolve($r, $r, ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json'], 'insured_json' => $r['req_insured_json']]);
         $set = function ($prefix, $p) use (&$ii) {
             $map = ['name' => 'name', 'national_id' => 'national_id', 'phone' => 'phone', 'address' => 'address', 'postal_code' => 'postal_code'];
             foreach ($map as $k => $f) {
@@ -104,22 +109,25 @@ function party_sync_issue_info($pdo, array $plateIds) {
     }
 }
 
-function party_set_request_default($pdo, $requestId, $mode, $party = null) {
+function party_set_request_default($pdo, $requestId, $mode, $party = null, $insured = null) {
     party_ensure($pdo);
     $mode = party_valid_mode($mode);
     if (!$mode) return;
     $pj = $mode === 'COMPANY' ? null : party_clean($party);
-    $pdo->prepare("UPDATE company_requests SET party_mode = ?, party_json = ? WHERE id = ?")
-        ->execute([$mode, $pj ? json_encode($pj, JSON_UNESCAPED_UNICODE) : null, intval($requestId)]);
+    $ij = $mode === 'SPLIT' ? party_clean($insured) : null;
+    $pdo->prepare("UPDATE company_requests SET party_mode = ?, party_json = ?, insured_json = ? WHERE id = ?")
+        ->execute([$mode, $pj ? json_encode($pj, JSON_UNESCAPED_UNICODE) : null, $ij ? json_encode($ij, JSON_UNESCAPED_UNICODE) : null, intval($requestId)]);
 }
 
 // ورودیِ فرم (ثبتِ درخواست): هر ردیف party_mode/party اختیاری؛ وگرنه پیش‌فرضِ کلی
-function party_apply_from_input($pdo, $plateId, array $rowIn, $defMode = null, $defParty = null) {
+function party_apply_from_input($pdo, $plateId, array $rowIn, $defMode = null, $defParty = null, $defInsured = null) {
     $mode = party_valid_mode($rowIn['party_mode'] ?? '') ?: party_valid_mode($defMode);
     if (!$mode) return;
     $party = $rowIn['party'] ?? null;
     if (!party_clean($party)) $party = $defParty;
-    party_set_rows($pdo, [$plateId], $mode, $party);
+    $insured = $rowIn['insured'] ?? null;
+    if (!party_clean($insured)) $insured = $defInsured;
+    party_set_rows($pdo, [$plateId], $mode, $party, $mode === 'SPLIT' ? $insured : false);
 }
 
 // نقش‌های نهاییِ یک ردیف: ['mode','mode_fa','owner','insured','beneficiary','mismatch']
@@ -134,8 +142,14 @@ function party_resolve(array $plate, array $company, array $req = []) {
     $docOwner = party_clean(['name' => $ii['owner_name'] ?? '', 'national_id' => $ii['owner_national_id'] ?? '', 'phone' => $ii['owner_phone'] ?? '', 'address' => $ii['owner_address'] ?? '']);
     $co = ['kind' => 'COMPANY', 'name' => (string)($company['name'] ?? ''), 'national_id' => (string)($company['national_id'] ?? ''),
            'economic_code' => (string)($company['economic_code'] ?? ''), 'phone' => (string)($company['phone'] ?? ''), 'address' => (string)($company['address'] ?? ''), 'postal_code' => ''];
+    // بیمه‌گذارِ جدا (SPLIT): ردیف، وگرنه پیش‌فرضِ درخواست
+    $insOther = party_clean($plate['insured_json'] ?? null) ?: (party_valid_mode($plate['party_mode'] ?? '') ? null : party_clean($req['insured_json'] ?? null));
     if ($mode === 'COMPANY') {
         $owner = $co; $insured = $co; $ben = null;
+    } elseif ($mode === 'SPLIT') {
+        $owner = $other ?: $docOwner ?: ['kind' => 'PERSON', 'name' => '', 'national_id' => '', 'phone' => '', 'address' => '', 'postal_code' => ''];
+        $insured = $insOther ?: ['kind' => 'PERSON', 'name' => '', 'national_id' => '', 'phone' => '', 'address' => '', 'postal_code' => ''];
+        $ben = $owner;
     } else {
         $o = $other ?: $docOwner ?: ['kind' => 'PERSON', 'name' => '', 'national_id' => '', 'phone' => '', 'address' => '', 'postal_code' => ''];
         $owner = $o;
@@ -150,7 +164,7 @@ function party_resolve(array $plate, array $company, array $req = []) {
         $mismatch = $a !== '' && $b !== '' && mb_strpos($a, $b) === false && mb_strpos($b, $a) === false;
     }
     return ['mode' => $mode, 'mode_fa' => PARTY_MODES[$mode], 'mode_short' => PARTY_MODES_SHORT[$mode], 'explicit' => $explicit,
-            'other' => $other, 'owner' => $owner, 'insured' => $insured, 'beneficiary' => $ben, 'doc_owner' => $docOwner, 'mismatch' => $mismatch];
+            'other' => $other, 'insured_other' => $mode === 'SPLIT' ? $insOther : null, 'owner' => $owner, 'insured' => $insured, 'beneficiary' => $ben, 'doc_owner' => $docOwner, 'mismatch' => $mismatch];
 }
 
 // برای فهرست‌ها: شرکتِ ردیف‌ها یک‌بار خوانده می‌شود
@@ -180,12 +194,12 @@ function party_issue_fields(array $res) {
 // بعد از صدور (گروهی یا تکی): مالک/ذینفعِ ردیف اگر در «اطلاعات صدور» خالی است، از نوعِ مالکیت پر می‌شود (مقدارِ موجود دست نمی‌خورد)
 function party_fill_issue_info($pdo, $plateId) {
     party_ensure($pdo);
-    $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json
+    $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json
                            FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $st->execute([intval($plateId)]);
     $r = $st->fetch();
     if (!$r) return;
-    $res = party_resolve($r, party_company_row($pdo, $r['company_id']), ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+    $res = party_resolve($r, party_company_row($pdo, $r['company_id']), ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json'], 'insured_json' => $r['req_insured_json']]);
     $info = json_decode((string)($r['issue_info'] ?? ''), true) ?: [];
     $ch = false;
     foreach (party_issue_fields($res) as $k => $v) {

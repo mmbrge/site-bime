@@ -27,6 +27,7 @@ company_ensure_car_type($pdo);
 imp_ensure($pdo);   // «بایگانی وارداتی»: ستون‌های is_import و ... (خودکار)
 company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالث (شرکت و درخواست)
 company_claim_ensure($pdo);      // وضعیتِ خسارتِ ردیف‌های تمدیدی
+party_ensure($pdo);   // مالک / بیمه‌گذار / ذینفع (ستون‌ها، از جمله بیمه‌گذارِ جدا)
 
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
@@ -183,20 +184,30 @@ try {
     // ---- داشبورد: (۱) بیمه‌نامه‌های شرکتیِ صادرنشده که انقضایشان نزدیک است (۱۵ روز) یا گذشته
     //                (۲) درخواست‌های بیمه‌ی کارکنان که هنوز صادر نشده‌اند (قدیمی‌ترها اول) ----
     if ($action === 'dashboard_alerts') {
-        $days = max(1, min(60, intval($data['days'] ?? 15)));
+        // فیلترها: شرکت، نوعِ بیمه، بازه‌ی انقضا (از/تا، شمسی) یا «تا N روزِ آینده»
+        $days = max(1, min(365, intval($data['days'] ?? 15)));
         $today = date('Y-m-d');
-        $limitDate = date('Y-m-d', strtotime("+$days days"));
+        $cidF = intval($data['company_id'] ?? 0);
+        $typeF = in_array($data['type'] ?? '', ['BODY', 'THIRDPARTY'], true) ? $data['type'] : '';
+        $fromF = trim((string)($data['from'] ?? '')) !== '' ? fin_jalali_to_date((string)$data['from']) : null;
+        $toF = trim((string)($data['to'] ?? '')) !== '' ? fin_jalali_to_date((string)$data['to']) : null;
+        $w = ["crp.status NOT IN ('ISSUED', 'CANCELLED')", "cr.is_import = 0", "crp.expiry_date IS NOT NULL"]; $a = [];
+        if ($fromF || $toF) {
+            if ($fromF) { $w[] = "crp.expiry_date >= ?"; $a[] = $fromF; }
+            if ($toF) { $w[] = "crp.expiry_date <= ?"; $a[] = $toF; }
+        } else { $w[] = "crp.expiry_date <= ?"; $a[] = date('Y-m-d', strtotime("+$days days")); $w[] = "crp.expiry_date >= DATE_SUB(?, INTERVAL 60 DAY)"; $a[] = $today; }
+        if ($cidF) { $w[] = "cr.company_id = ?"; $a[] = $cidF; }
+        if ($typeF) { $w[] = "crp.insurance_type = ?"; $a[] = $typeF; }
         $st = $pdo->prepare("SELECT crp.id, crp.request_id, crp.plate_p1, crp.plate_p2, crp.plate_letter, crp.plate_p4, crp.chassis_no, crp.insurance_type,
-                                    crp.expiry_date, crp.status, crp.car_name, cr.request_kind, cr.insurer, c.name AS company_name
+                                    crp.expiry_date, crp.status, crp.car_name, cr.request_kind, cr.insurer, cr.company_id, c.name AS company_name
                                FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
-                              WHERE crp.status NOT IN ('ISSUED', 'CANCELLED') AND cr.is_import = 0 AND crp.expiry_date IS NOT NULL AND crp.expiry_date <= ?
-                                AND crp.expiry_date >= DATE_SUB(?, INTERVAL 60 DAY)
-                              ORDER BY crp.expiry_date ASC, crp.id ASC LIMIT 300");
-        $st->execute([$limitDate, $today]);
+                              WHERE " . implode(' AND ', $w) . "
+                              ORDER BY crp.expiry_date ASC, crp.id ASC LIMIT 500");
+        $st->execute($a);
         $company = [];
         foreach ($st->fetchAll() as $r) {
             $left = intval(floor((strtotime($r['expiry_date']) - strtotime($today)) / 86400));
-            $company[] = ['id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'company_name' => $r['company_name'],
+            $company[] = ['id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'company_name' => $r['company_name'], 'company_id' => intval($r['company_id']),
                           'plate_p1' => $r['plate_p1'], 'plate_p2' => $r['plate_p2'], 'plate_letter' => $r['plate_letter'], 'plate_p4' => $r['plate_p4'],
                           'chassis_no' => $r['chassis_no'], 'car_name' => $r['car_name'], 'insurance_type' => $r['insurance_type'],
                           'insurance_type_fa' => insurance_type_fa($r['insurance_type']), 'insurer' => $r['insurer'],
@@ -207,11 +218,18 @@ try {
         $personnel = [];
         if (($actor['role'] ?? '') === 'ADMIN') {
             try {
-                $st = $pdo->query("SELECT pc.id, pc.unique_code, pc.insurance_type, pc.status, pc.plate, pc.created_at, pc.insured_name,
+                // کارکنان: همان شرکت (کارفرما)، نوع و بازه‌ی تاریخِ ثبتِ درخواست
+                $pw = ["pc.status NOT IN ('ISSUED', 'CANCELLED', 'WITHDRAWN', 'REJECTED')"]; $pa = [];
+                if ($cidF) { $pw[] = "per.company_id = ?"; $pa[] = $cidF; }
+                if ($typeF) { $pw[] = "pc.insurance_type = ?"; $pa[] = $typeF; }
+                if ($fromF) { $pw[] = "pc.created_at >= ?"; $pa[] = $fromF . ' 00:00:00'; }
+                if ($toF) { $pw[] = "pc.created_at <= ?"; $pa[] = $toF . ' 23:59:59'; }
+                $st = $pdo->prepare("SELECT pc.id, pc.unique_code, pc.insurance_type, pc.status, pc.plate, pc.created_at, pc.insured_name,
                                           per.full_name, per.personnel_code, co.name AS employer
                                      FROM policy_cases pc LEFT JOIN persons per ON per.id = pc.person_id LEFT JOIN companies co ON co.id = per.company_id
-                                    WHERE pc.status NOT IN ('ISSUED', 'CANCELLED', 'WITHDRAWN', 'REJECTED')
-                                    ORDER BY pc.created_at ASC LIMIT 300");
+                                    WHERE " . implode(' AND ', $pw) . "
+                                    ORDER BY pc.created_at ASC LIMIT 500");
+                $st->execute($pa);
                 foreach ($st->fetchAll() as $r) {
                     $personnel[] = ['id' => intval($r['id']), 'unique_code' => $r['unique_code'], 'name' => $r['full_name'] ?: $r['insured_name'],
                                     'insured_name' => $r['insured_name'], 'personnel_code' => $r['personnel_code'], 'employer' => $r['employer'],
@@ -221,7 +239,7 @@ try {
                 }
             } catch (Throwable $e) {}
         }
-        echo json_encode(['ok' => true, 'days' => $days, 'company' => $company, 'personnel' => $personnel, 'show_personnel' => ($actor['role'] ?? '') === 'ADMIN'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'days' => $days, 'range' => $fromF || $toF, 'company' => $company, 'personnel' => $personnel, 'show_personnel' => ($actor['role'] ?? '') === 'ADMIN'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -285,7 +303,7 @@ try {
         if ($src !== 'PERSONNEL') {
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS request_created_at,
-                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json,
                        cr.letter_file_path, c.name AS company_name, c.phone AS company_phone, c.economic_code, c.address AS company_address
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -335,7 +353,7 @@ try {
             $r['is_ready'] ? $ready++ : $waiting++;
             // مالک / بیمه‌گذار / ذینفع برای پنجره‌ی صدور
             $r['party'] = party_resolve($r, ['name' => $r['company_name'], 'economic_code' => $r['economic_code'], 'phone' => $r['company_phone'], 'address' => $r['company_address']],
-                                        ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+                                        ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json'], 'insured_json' => $r['req_insured_json'] ?? null]);
             unset($r['req_party_json']);
             $r['source']              = 'COMPANY';
             $r['source_fa']           = 'شرکتی';
@@ -832,7 +850,7 @@ try {
             if ($impF === '1') $w[] = "cr.is_import = 1"; elseif ($impF === '0') $w[] = "cr.is_import = 0";
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import, cr.ref_code AS request_ref,
-                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone, c.address AS company_address
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -844,7 +862,7 @@ try {
                 // بیمه‌گذار / مالک / ذینفع: همان که در صدور ثبت شد، وگرنه طبقِ نوعِ مالکیتِ ردیف
                 $iiR = issue_info_decode($r['issue_info'] ?? null);
                 $pr = party_resolve($r, ['name' => $r['company_name'], 'economic_code' => $r['economic_code'], 'phone' => $r['company_phone'], 'address' => $r['company_address']],
-                                    ['party_mode' => $r['req_party_mode'] ?? null, 'party_json' => $r['req_party_json'] ?? null]);
+                                    ['party_mode' => $r['req_party_mode'] ?? null, 'party_json' => $r['req_party_json'] ?? null, 'insured_json' => $r['req_insured_json'] ?? null]);
                 $rows[] = [
                     'party_mode' => $pr['mode'], 'party_mode_fa' => $pr['mode_short'],
                     'owner_name' => ($iiR['owner_name'] ?? '') ?: ($pr['owner']['name'] ?? ''),
@@ -1594,7 +1612,7 @@ try {
                         $type === 'BODY' && in_array($r['has_prev_body'] ?? '', ['YES', 'NO'], true) ? $r['has_prev_body'] : null,
                         trim($r['row_note'] ?? '') ?: null, $cov];
             $classes[] = in_array($r['vehicle_class'] ?? '', ['LIGHT', 'HEAVY'], true) ? $r['vehicle_class'] : null;
-            $parties[] = ['party_mode' => $r['party_mode'] ?? '', 'party' => $r['party'] ?? null];
+            $parties[] = ['party_mode' => $r['party_mode'] ?? '', 'party' => $r['party'] ?? null, 'insured' => $r['insured'] ?? null];
             $vkinds[] = $r['vehicle_kind'] ?? '';
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
@@ -1622,8 +1640,8 @@ try {
         }
         // مالک / بیمه‌گذار / ذینفع: کلی (همه‌ی ردیف‌ها) و جدا برای هر ردیف
         $defPartyMode = party_valid_mode($data['party_mode'] ?? '');
-        if ($defPartyMode) party_set_request_default($pdo, $requestId, $defPartyMode, $data['party'] ?? null);
-        foreach ($plateIds as $i => $pid) party_apply_from_input($pdo, $pid, $parties[$i] ?? [], $defPartyMode, $data['party'] ?? null);
+        if ($defPartyMode) party_set_request_default($pdo, $requestId, $defPartyMode, $data['party'] ?? null, $data['insured'] ?? null);
+        foreach ($plateIds as $i => $pid) party_apply_from_input($pdo, $pid, $parties[$i] ?? [], $defPartyMode, $data['party'] ?? null, $data['insured'] ?? null);
         foreach ($plateIds as $i => $pid) company_set_vehicle_kind($pdo, $pid, $vkinds[$i] ?? '');   // موتورسیکلت
 
         // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
@@ -1711,7 +1729,7 @@ try {
                         $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null, mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null]);
         $newPlateId = $pdo->lastInsertId();
         // ردیفِ بی‌تنظیم از پیش‌فرضِ کلیِ درخواست پیروی می‌کند
-        party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null]);
+        party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null, 'insured' => $data['insured'] ?? null]);
         company_set_vehicle_kind($pdo, intval($newPlateId), $data['vehicle_kind'] ?? '');
         company_apply_defaults_to_rows($pdo, $requestId, [intval($newPlateId)]);   // تعهد/پوششِ خالی از پیش‌فرضِ درخواست یا شرکت
         ensure_plate_folder($pdo, dirname(__DIR__), $newPlateId);
@@ -1903,7 +1921,7 @@ try {
                           'coverage_options' => body_coverage_options(), 'liability_options' => liability_limit_options('C', $pdo),
                           'defaults' => company_effective_defaults($pdo, $request['company_id'], $requestId),
                           'request_kind' => $reqKind, 'cancellation_reasons' => company_cancellation_reasons(),
-                          'party_modes' => PARTY_MODES, 'party_default' => ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)]], JSON_UNESCAPED_UNICODE);
+                          'party_modes' => PARTY_MODES, 'party_default' => ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null), 'insured' => party_clean($request['insured_json'] ?? null)]], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -1925,14 +1943,14 @@ try {
             $st->execute([$requestId]);
             $ids = [];
             foreach ($st->fetchAll() as $r) { if ($r['status'] === 'ISSUED') $skipped++; else $ids[] = intval($r['id']); }
-            party_set_request_default($pdo, $requestId, $mode, $party === false ? null : $party);
+            party_set_request_default($pdo, $requestId, $mode, $party === false ? null : $party, $mode === 'SPLIT' ? ($data['insured'] ?? null) : null);
         } elseif ($ids) {
             $in = implode(',', array_fill(0, count($ids), '?'));
             $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE id IN ($in)");
             $st->execute($ids);
             $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
         }
-        $n = party_set_rows($pdo, $ids, $mode, $party);
+        $n = party_set_rows($pdo, $ids, $mode, $party, $mode === 'SPLIT' ? ($data['insured'] ?? null) : false);
         try { party_sync_issue_info($pdo, $ids); } catch (Throwable $e) { error_log('[set_party sync] ' . $e->getMessage()); }
         echo json_encode(['ok' => true, 'updated' => $n, 'skipped_issued' => $skipped], JSON_UNESCAPED_UNICODE);
         exit;
@@ -2127,6 +2145,21 @@ try {
     }
 
     // ---- شناساییِ خودکارِ مدارکِ صف‌شده (صندوقِ مدارک در پنل تا خالی شدنِ صف تکرار می‌کند) ----
+    // «بررسیِ خودکارِ همه»: همه‌ی مدارکِ تخصیص‌نیافته‌ی یک درخواست (هر صفحه جدا) در صفِ خواندن؛ هر فاکتور/سندِ کامل که ردیف ندارد
+    // ردیفِ تازه می‌سازد و هر مدرک روی ردیفِ خودش می‌نشیند (حتی اگر «خواندنِ خودکار» برای این شرکت خاموش باشد — درخواستِ دستیِ کارشناس است)
+    if ($action === 'doc_ai_queue_request') {
+        require_once __DIR__ . '/_vdoc.php';
+        vdoc_ensure($pdo);
+        $rid = intval($data['request_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id FROM company_documents WHERE request_id = ? AND status = 'UNASSIGNED' AND file_kind = 'SUPPORTING_DOC' AND COALESCE(ai_status, '') NOT IN ('PENDING', 'RUNNING')");
+        $st->execute([$rid]);
+        $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        $n = $ids ? vdoc_queue($pdo, $ids, true) : 0;
+        $p = $pdo->prepare("SELECT COUNT(*) FROM company_documents WHERE request_id = ? AND ai_status IN ('PENDING', 'RUNNING')");
+        $p->execute([$rid]);
+        echo json_encode(['ok' => true, 'queued' => $n, 'pending' => intval($p->fetchColumn())], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'doc_ai_step') {
         require_once __DIR__ . '/_vdoc.php';
         if (function_exists('sess_release')) sess_release();

@@ -41,6 +41,7 @@
             <button data-test="sapi_otp" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-paper-plane ml-1"></i>ارسالِ کدِ آزمایشی</button>`;
         if (svc === 'sapi_company') return `<input data-tin="sapi_company" dir="ltr" placeholder="شناسه‌ی ملیِ ۱۱ رقمی" class="border rounded-xl px-3 py-2 text-xs w-48">
             <button data-test="sapi_company" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-magnifying-glass ml-1"></i>استعلامِ آزمایشی</button>`;
+        if (svc === 'ai_vision') return `<button data-test="ai_vision" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-plug-circle-check ml-1"></i>آزمایشِ اتصال</button>`;
         return '';
     }
 
@@ -79,7 +80,7 @@
             const body = { action: 'test', service: svc };
             if (svc === 'sapi_otp') { body.phone = inp.value; const t = el.querySelector('[data-svc="sapi_otp"][data-k="template"]'); if (t) body.template = t.value; }
             if (svc === 'sapi_company') body.national_id = inp.value;
-            b.disabled = true; box.innerHTML = '<p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ارتباط با s.api.ir…</p>';
+            b.disabled = true; box.innerHTML = `<p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ارتباط با ${svc === 'ai_vision' ? 'سرویسِ هوشِ مصنوعی' : 's.api.ir'}…</p>`;
             const r = await post(body);
             b.disabled = false;
             if (!r.ok) { box.innerHTML = `<p class="text-[11px] text-rose-600 font-bold">${esc(r.error)}</p>`; return; }

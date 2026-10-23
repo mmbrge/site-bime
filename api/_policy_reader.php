@@ -30,6 +30,21 @@ function pb_sort(array $a, callable $key, $desc = false) {
 
 function pb_norm($t) { return pdf_norm_text((string)$t); }
 
+// شماره‌ی بیمه‌نامه‌ی پاسارگاد از متنِ کامل: شماره‌ای که پشتِ «سال قبل / بیمه‌نامه‌ی قبلی» آمده کنار می‌رود؛ از بقیه سالِ تازه‌تر
+function pb_pick_policy_num($tn) {
+    $best = ''; $by = -1;
+    if (!preg_match_all('~\d+/\d+/\d+-\d+/(\d{4})/\d+~u', (string)$tn, $mm, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) return '';
+    foreach ($mm as $m) {
+        $before = mb_strcut((string)$tn, max(0, $m[0][1] - 120), min(120, $m[0][1]), "UTF-8");
+        $line = mb_substr($before, max(0, mb_strrpos($before, "\n") === false ? 0 : mb_strrpos($before, "\n")));
+        if (pb_m('سال\s*قبل|نامه\s*قبل', $line)) continue;
+        $y = (int)$m[1][0];
+        if ($y > $by) { $by = $y; $best = $m[0][0]; }
+    }
+    if ($best === '' && preg_match('~\d+/\d+/\d+-\d+/\d+/\d+~u', (string)$tn, $m)) $best = $m[0];
+    return $best;
+}
+
 // ---- همان منطقِ context_processor.extract_insurance_data ----
 function pb_extract_insurance_data($raw) {
     $tn = pb_norm($raw);
@@ -48,8 +63,8 @@ function pb_extract_insurance_data($raw) {
     elseif ($co === 'ایران' && $ty === 'بدنه') { if (pb_m('(\d{4}/\d+/\d+/\d+/\d+)', $tn, $m)) $pn = $m[1]; }
     elseif ($co === 'پاسارگاد' && $ty === 'ثالث') {
         if (pb_m('([\d/]+-)\s*:\s*شماره\s*بیمه\s*نامه[\s\n]*([\d/]+)', $tn, $m)) $pn = $m[1] . $m[2];
-        if (!$pn && pb_m('(\d+/\d+/\d+-\d+/\d+/\d+)', $tn, $m)) $pn = $m[1];
-    } elseif ($co === 'پاسارگاد' && $ty === 'بدنه') { if (pb_m('(\d+/\d+/\d+-\d+/\d+/\d+)', $tn, $m)) $pn = $m[1]; }
+        if (!$pn) $pn = pb_pick_policy_num($tn);
+    } elseif ($co === 'پاسارگاد' && $ty === 'بدنه') { $pn = pb_pick_policy_num($tn); }
     if (!$pn && pb_m('شماره\s*بیمه\s*نامه\s*[:\n]*\s*([A-Za-z0-9/]+(?:-[A-Za-z0-9/]+)?)', $tn, $m)) $pn = $m[1];
     $d['policy_num'] = str_replace(' ', '', $pn);
 
@@ -317,7 +332,30 @@ function pb_extract_layout(array $sp, $pageW, $pageH) {
         if (mb_strpos($h['t'], 'بدنه') !== false) { $d['ins_type'] = 'بدنه'; break; }
     }
 
-    foreach ($sp as $s) if (pb_m('\d{1,2}/\d{4,6}/\d{3,5}-\d{1,3}/\d{4}/\d+', $s['t'], $m)) { $d['policy_num'] = $m[0]; break; }
+    // شماره‌ی بیمه‌نامه: همه‌ی نامزدها؛ نامزدی که در ردیفِ «بیمه‌نامه‌ی سال قبل» است کنار می‌رود (در ثالث شماره‌ی قبلی هم با همین الگو
+    // در صفحه هست و گاهی زودتر از شماره‌ی اصلی می‌آید). اگر باز چند نامزد ماند: نزدیک‌ترین به برچسبِ «شماره بیمه‌نامه»، وگرنه سالِ تازه‌تر.
+    $pnRx = '\d{1,2}/\d{4,6}/\d{3,5}-\d{1,3}/\d{4}/\d+';
+    $prevLabels = pb_find_labels($sp, 'سال\s*قبل|بیمه\s*نامه\s*قبل(?:ی)?');
+    $isPrevRow = function ($s) use ($prevLabels) {
+        if (pb_m('سال\s*قبل|نامه\s*قبل', $s['t'])) return true;
+        foreach ($prevLabels as $lb) if ($s['i'] === $lb['i'] || pb_same_row($s, $lb)) return true;
+        return false;
+    };
+    $cands = [];
+    foreach ($sp as $s) foreach (pb_all($pnRx, $s['t']) as $mm) $cands[] = ['n' => $mm[0], 's' => $s, 'prev' => $isPrevRow($s)];
+    $main = array_values(array_filter($cands, function ($c) { return !$c['prev']; }));
+    if ($main) {
+        $pnLabels = array_values(array_filter(pb_find_labels($sp, 'شماره\s*بیمه\s*نامه'), function ($lb) { return !pb_m('سال\s*قبل|قبل', $lb['t']); }));
+        $year = function ($n) { return pb_m('/(1[34]\d\d)/\d+$', $n, $y) ? (int)$y[1] : 0; };
+        usort($main, function ($a, $b) use ($pnLabels, $year) {
+            $near = function ($c) use ($pnLabels) {
+                foreach ($pnLabels as $lb) if ($c['s']['i'] === $lb['i'] || pb_same_row($c['s'], $lb)) return 0;
+                return 1;
+            };
+            return [$near($a), -$year($a['n'])] <=> [$near($b), -$year($b['n'])];
+        });
+        $d['policy_num'] = $main[0]['n'];
+    } elseif (count($cands) === 1 && !$prevLabels) $d['policy_num'] = $cands[0]['n'];
     if (empty($d['policy_num'])) {
         foreach (pb_find_labels($sp, 'شماره\s*بیمه\s*نامه') as $lb) {
             foreach (pb_row_values($sp, $lb) as $v) {
@@ -490,6 +528,11 @@ function pb_extract_layout(array $sp, $pageW, $pageH) {
             }
         }
         break;
+    }
+    // بیمه‌نامه‌ی قبلی هیچ‌وقت همان شماره‌ی خودِ بیمه‌نامه نیست
+    if (!empty($d['prev_policy']) && !empty($d['policy_num']) && str_replace(' ', '', $d['prev_policy']) === str_replace(' ', '', $d['policy_num'])) {
+        $other = array_values(array_filter($cands ?? [], function ($c) use ($d) { return $c['prev'] && $c['n'] !== $d['policy_num']; }));
+        if ($other) $d['prev_policy'] = $other[0]['n']; else unset($d['prev_policy'], $d['prev_insurer']);
     }
     foreach (pb_find_labels($sp, 'شماره\s*بیمه\s*مرکزی|کد\s*یکتا') as $lb) {
         if (pb_m('\d{8,}', $lb['t'], $m)) { $d['central_no'] = $m[0]; break; }

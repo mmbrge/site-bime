@@ -585,6 +585,8 @@
             if (f.group && r.group !== f.group) return false;
             if (f.type && r.type !== f.type) return false;
             if (f.state === 'active' && r.state === 'cancelled') return false;
+            // «تمدید شده»ها (بیمه‌نامه‌ی تازه صادر شد) فقط در «تمدید شده» دیده می‌شوند
+            if (!f.state && r.state === 'renewed' && !f.q) return false;
             if (f.state && f.state !== 'active' && r.state !== f.state) return false;
             const d = r.days_left;
             if (f.exp === '30' && !(d !== null && d >= 0 && d <= 30 && r.state !== 'cancelled' && r.state !== 'renewed')) return false;
@@ -601,11 +603,11 @@
             return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'fa')) * dir;
         });
     }
-    const bStatePill = r => { const c = { renewed: ['#dcfce7', '#15803d'], cancelled: ['#e2e8f0', '#475569'], closed: ['#fce7f3', '#be185d'], notified: ['#e0e7ff', '#4338ca'], none: ['#fff7ed', '#c2410c'] }[r.state];
+    const bStatePill = r => { const c = { renewed: ['#dcfce7', '#15803d'], requested: ['#e0f2fe', '#0369a1'], cancelled: ['#e2e8f0', '#475569'], closed: ['#fce7f3', '#be185d'], notified: ['#e0e7ff', '#4338ca'], none: ['#fff7ed', '#c2410c'] }[r.state] || ['#f1f5f9', '#475569'];
         return `<span class="rg-pill" style="background:${c[0]};color:${c[1]}">${esc(r.state_fa)}</span>`; };
     function bRender() {
         const R = BR.rows, f = BR.f, act = R.filter(r => r.state !== 'cancelled' && r.state !== 'renewed');
-        const cnt = { all: R.length, 30: act.filter(r => r.days_left !== null && r.days_left >= 0 && r.days_left <= 30).length, expired: act.filter(r => r.days_left !== null && r.days_left < 0).length,
+        const cnt = { all: R.filter(r => r.state !== 'renewed').length, requested: R.filter(r => r.state === 'requested').length, 30: act.filter(r => r.days_left !== null && r.days_left >= 0 && r.days_left <= 30).length, expired: act.filter(r => r.days_left !== null && r.days_left < 0).length,
             renewed: R.filter(r => r.state === 'renewed').length, groups: new Set(R.map(r => r.group)).size };
         const groups = [...new Set(R.map(r => r.group))].sort((a, b) => String(a).localeCompare(String(b), 'fa'));
         BR.root.innerHTML = `
@@ -614,7 +616,7 @@
                 <div><p class="text-[11px] opacity-75">فهرستِ بیمه‌نامه‌های بردروی بیمه‌گر برای اعلامِ تمدید (جدا از مالی و صادره‌ها)؛ به پرونده‌ی خودرو و اشخاص وصل است</p><h2 class="text-xl font-black mt-0.5"><i class="fas fa-table-list ml-1"></i>بردروی پاسارگاد</h2></div>
                 <div class="flex gap-2 flex-wrap"><button class="rg-btn a" data-up><i class="fas fa-file-arrow-up"></i> ورودِ اکسلِ بردرو</button></div>
             </div>
-            <div class="rg-stats">${[['', 'all', 'همه‌ی ردیف‌ها'], ['30', '30', 'تمدید تا ۳۰ روز'], ['expired', 'expired', 'منقضی (تمدید نشده)'], ['renewed', 'renewed', 'تمدید شده'], ['', 'groups', 'شرکت / گروه']]
+            <div class="rg-stats">${[['', 'all', 'همه (جز تمدید شده)'], ['30', '30', 'تمدید تا ۳۰ روز'], ['expired', 'expired', 'منقضی (تمدید نشده)'], ['requested', 'requested', 'درخواستِ تمدید ثبت شد'], ['renewed', 'renewed', 'تمدید شده'], ['', 'groups', 'شرکت / گروه']]
                 .map(([v, k, t]) => `<div class="rg-stat ${k !== 'all' && k !== 'groups' && (f.exp === v || f.state === v) && v ? 'on' : ''}" data-st="${k}"><b>${fa(cnt[k])}</b><small>${t}</small></div>`).join('')}</div>
         </div>
         <div class="rg-card mb-3"><div class="rg-bar">
@@ -622,7 +624,7 @@
             <input class="rg-in flex-1" style="min-width:220px" data-q placeholder="جستجو در همه‌ی ستون‌ها…" value="${esc(f.q)}">
             <select class="rg-in" data-f="group"><option value="">همه‌ی شرکت‌ها / گروه‌ها</option>${groups.map(g => `<option ${g === f.group ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
             <select class="rg-in" data-f="type"><option value="">بدنه و ثالث</option><option value="BODY" ${f.type === 'BODY' ? 'selected' : ''}>بدنه</option><option value="THIRDPARTY" ${f.type === 'THIRDPARTY' ? 'selected' : ''}>ثالث</option></select>
-            <select class="rg-in" data-f="state"><option value="">همه‌ی وضعیت‌ها</option>${[['active', 'غیرِ فسخ‌شده'], ['none', 'اعلام نشده'], ['notified', 'اعلام شد'], ['renewed', 'تمدید شد'], ['closed', 'بسته (تمدید نمی‌کند)'], ['cancelled', 'فسخ‌شده']].map(([k, t]) => `<option value="${k}" ${k === f.state ? 'selected' : ''}>${t}</option>`).join('')}</select>
+            <select class="rg-in" data-f="state"><option value="">همه‌ی وضعیت‌ها</option>${[['active', 'غیرِ فسخ‌شده'], ['none', 'اعلام نشده'], ['notified', 'اعلام شد'], ['requested', 'درخواستِ تمدید ثبت شد'], ['renewed', 'تمدید شد'], ['closed', 'بسته (تمدید نمی‌کند)'], ['cancelled', 'فسخ‌شده']].map(([k, t]) => `<option value="${k}" ${k === f.state ? 'selected' : ''}>${t}</option>`).join('')}</select>
             <select class="rg-in" data-f="exp"><option value="">همه‌ی تاریخ‌ها</option>${[['30', 'تمدید تا ۳۰ روز'], ['60', 'تمدید تا ۶۰ روز'], ['expired', 'منقضی (تمدید نشده)']].map(([k, t]) => `<option value="${k}" ${k === f.exp ? 'selected' : ''}>${t}</option>`).join('')}</select>
         </div>
         <div class="rg-bar mt-2"><span class="text-[11px] font-bold text-slate-500" data-n></span>
@@ -637,7 +639,7 @@
         R2.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { BR.mode = b.dataset.mode; bRender(); });
         R2.querySelectorAll('[data-st]').forEach(s => s.onclick = () => {
             const k = s.dataset.st;
-            if (k === 'groups') { BR.mode = 'group'; } else if (k === 'renewed') { BR.f.state = BR.f.state === 'renewed' ? '' : 'renewed'; BR.f.exp = ''; } else if (k === 'all') { BR.f.exp = ''; BR.f.state = ''; } else { BR.f.exp = BR.f.exp === k ? '' : k; BR.f.state = ''; }
+            if (k === 'groups') { BR.mode = 'group'; } else if (k === 'renewed' || k === 'requested') { BR.f.state = BR.f.state === k ? '' : k; BR.f.exp = ''; } else if (k === 'all') { BR.f.exp = ''; BR.f.state = ''; } else { BR.f.exp = BR.f.exp === k ? '' : k; BR.f.state = ''; }
             bRender();
         });
         R2.querySelector('[data-up]').onclick = bUpload;

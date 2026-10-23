@@ -1026,7 +1026,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 </style>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="iran-time.js?v=2"></script>
-<script src="jdate-picker.js?v=1" defer></script>
+<script src="jdate-picker.js?v=2" defer></script>
 <script>window.IDLE_GUARD = {alive: 'api/alive.php', login: 'index.php?idle=1'};</script>
 <script src="idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="plate.css?v=4">
@@ -1320,6 +1320,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
 
             <!-- ===== اعلان‌های صدور: (۱) انقضای نزدیکِ بیمه‌نامه‌های شرکتیِ صادرنشده  (۲) درخواست‌های کارکنانِ صادرنشده ===== -->
+            <div id="da-filters" class="card p-3 flex flex-wrap items-center gap-2 text-xs">
+                <span class="font-black text-slate-600"><i class="fas fa-filter text-rose-500 ml-1"></i>هشدارها:</span>
+                <select id="da-f-company" onchange="loadDashAlerts()" class="border rounded-lg px-2 py-1.5 font-bold"><option value="">همه‌ی شرکت‌ها</option></select>
+                <select id="da-f-type" onchange="loadDashAlerts()" class="border rounded-lg px-2 py-1.5 font-bold"><option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option></select>
+                <select id="da-f-days" onchange="loadDashAlerts()" class="border rounded-lg px-2 py-1.5 font-bold"><option value="7">تا ۷ روزِ آینده</option><option value="15" selected>تا ۱۵ روزِ آینده</option><option value="30">تا ۳۰ روزِ آینده</option><option value="60">تا ۶۰ روزِ آینده</option></select>
+                <input id="da-f-from" data-jdate placeholder="از تاریخ" dir="ltr" class="border rounded-lg px-2 py-1.5 w-28" onchange="loadDashAlerts()">
+                <input id="da-f-to" data-jdate placeholder="تا تاریخ" dir="ltr" class="border rounded-lg px-2 py-1.5 w-28" onchange="loadDashAlerts()">
+                <button type="button" onclick="['da-f-company','da-f-type','da-f-from','da-f-to'].forEach(i => document.getElementById(i).value = ''); document.getElementById('da-f-days').value = '15'; loadDashAlerts();" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-eraser ml-1"></i>پاک‌کردن</button>
+                <span class="text-[10.5px] text-slate-400">با «از/تا تاریخ»، انقضای ردیف‌های شرکتی و تاریخِ ثبتِ درخواست‌های کارکنان در همان بازه نشان داده می‌شود.</span>
+            </div>
             <div id="dash-alerts" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <div class="card p-0 overflow-hidden da-card">
                     <div class="da-head" style="--c1:#f43f5e;--c2:#f97316">
@@ -3778,7 +3788,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <span>می‌توانند «مدارکِ کلی» بفرستند (چند فایل، زیپ، پوشه، بدونِ ردیفِ مشخص)<small class="block text-slate-400 font-normal">خاموش = فقط بعد از اینکه ردیف‌ها را ساختید، مدارکِ هر خودرو را در چک‌لیستِ همان خودرو بارگذاری می‌کنند</small></span></label>
                             <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-custom" class="mt-0.5 accent-blue-600" checked>
                                 <span>می‌توانند برای هر خودرو «مدرکِ دیگر» با نامِ دلخواه (جز مدارکِ پیش‌فرض) اضافه کنند</span></label>
-                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-doc-read" class="mt-0.5 accent-blue-600" checked>
+                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-doc-read" class="mt-0.5 accent-blue-600">
                                 <span>مدارکِ این شرکت خودکار خوانده شود (شناساییِ نوعِ مدرک و استخراجِ اطلاعاتِ کارت/سند/فاکتور)<small class="block text-slate-400 font-normal">خاموش = مدارک فقط بارگذاری و بایگانی می‌شوند و نوع‌گذاری دستی است؛ دکمه‌ی «شناساییِ دوباره» در صندوق همچنان دستی کار می‌کند</small></span></label>
                         </div>
                         <div class="sm:col-span-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
@@ -4536,7 +4546,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=2"></script>
-    <script src="api-keys.js?v=2"></script>
+    <script src="api-keys.js?v=3"></script>
     <script src="visit-appt.js?v=1"></script>
     <script src="contacts.js?v=3"></script>
     <script src="trash.js?v=1"></script>
@@ -4548,7 +4558,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
     <script src="inquiry.js?v=7"></script>
-    <script src="registry.js?v=5"></script>
+    <script src="registry.js?v=6"></script>
     <script src="issue-panel.js?v=1"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
@@ -4583,7 +4593,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="import-archive.js?v=3"></script>
     <script src="renewals.js?v=4"></script>
     <script src="endorse.js?v=6"></script>
-    <script src="party-ui.js?v=2"></script>
+    <script src="party-ui.js?v=3"></script>
     <script src="company-pick.js?v=1"></script>
     <script src="legacy-import.js?v=3"></script>
     <script src="edit-lock.js?v=1"></script>
@@ -4599,7 +4609,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=17"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=13"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=14"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -5050,7 +5060,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const cBox = document.getElementById('da-company'), pBox = document.getElementById('da-personnel');
             if (!cBox) return;
             let d;
-            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dashboard_alerts', days: 15})})).json(); }
+            const fv = id => (document.getElementById(id) || {}).value || '';
+            const csel = document.getElementById('da-f-company');
+            if (csel && !csel.dataset.filled) {
+                csel.dataset.filled = '1';
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(x => {
+                    if (x.ok) csel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (x.companies || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                }).catch(() => { csel.dataset.filled = ''; });
+            }
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dashboard_alerts',
+                days: Number(fv('da-f-days')) || 15, company_id: fv('da-f-company'), type: fv('da-f-type'), from: fv('da-f-from'), to: fv('da-f-to')})})).json(); }
             catch (e) { cBox.innerHTML = pBox.innerHTML = '<p class="da-empty text-red-400">خطا در ارتباط با سرور.</p>'; return; }
             if (!d.ok) { cBox.innerHTML = pBox.innerHTML = `<p class="da-empty text-red-400">${d.error || 'خطا'}</p>`; return; }
             document.getElementById('da-days').textContent = e2pNum(d.days);
@@ -5066,7 +5085,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <span class="da-chip ${CREQ_STAGE_COLOR[r.status] || 'bg-slate-100 text-slate-600'}">${r.status_fa}</span>
                             <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
                     <div class="da-pill ${u[1]}">${u[2]}<small>${u[3]}</small></div></div>`;
-            }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای در ۱۵ روزِ آینده منقضی نمی‌شود.</p>';
+            }).join('') : `<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای ${d.range ? 'در این بازه' : 'در ' + e2pNum(d.days) + ' روزِ آینده'} منقضی نمی‌شود.</p>`;
             const pc = document.getElementById('da-personnel-card');
             if (!d.show_personnel) { pc.classList.add('hidden'); document.getElementById('dash-alerts').classList.remove('lg:grid-cols-2'); return; }
             document.getElementById('da-p-count').textContent = e2pNum(d.personnel.length);
@@ -6428,7 +6447,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             بررسی مدارک
                             ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
                         </button>
-                        ${IS_ADMIN && (r.row_stages || []).some(s => !['ISSUED', 'CANCELLED'].includes(s.status)) ? `<button onclick="openBundleModal(${r.id})" title="صدور گروهی (فایلِ خروجیِ بیمه‌گر) برای ردیف‌های صادرنشده‌ی همین درخواست" class="text-[11px] font-bold text-white px-2.5 py-1.5 rounded-lg whitespace-nowrap" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی</button>` : ''}
                         ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
                         <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests')}
                     </td>
@@ -6938,7 +6956,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => !['ISSUED', 'CANCELLED'].includes(p.status)) ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
-                    ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلود همه‌ی صادره‌ها</a>` : ''}
+                    ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌های صادره (${faDigits(String(currentRequestRows.filter(p => p.status === 'ISSUED').length))})</a>`
+                        : `<span class="text-[11px] font-bold bg-slate-100 text-slate-400 px-3 py-1.5 rounded-xl cursor-not-allowed" title="هنوز بیمه‌نامه‌ای در این درخواست صادر نشده"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌ها</span>`}
                 </div>
 
                 <div class="overflow-x-auto border border-slate-100 rounded-xl mb-4">
@@ -6986,13 +7005,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function editRowParty(plateId) {
             const p = (currentRequestRows || []).find(x => String(x.id) === String(plateId));
             if (!p || !window.PartyUI) return;
-            PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفع — ' + faDigits(p.plate_display || ''), value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other},
+            PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفع — ' + faDigits(p.plate_display || ''), value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other, insured: (p.party || {}).insured_other},
                           onSave: v => partySave(Object.assign({plate_ids: [plateId]}, v))});
         }
         function editAllParty(requestId) {
             const def = window.currentPartyDefault || {};
             PartyUI.open({bulk: true, title: 'مالک / بیمه‌گذار برای همه‌ی ردیف‌ها', sub: 'برای همه‌ی ردیف‌های صادرنشده‌ی این درخواست (و ردیف‌هایی که بعداً اضافه می‌شوند) اعمال می‌شود؛ بعد می‌توانید هر ردیف را جدا عوض کنید.',
-                          value: {mode: def.mode || 'COMPANY', party: def.party}, onSave: v => partySave(Object.assign({request_id: requestId, all: 1}, v))});
+                          value: {mode: def.mode || 'COMPANY', party: def.party, insured: def.insured}, onSave: v => partySave(Object.assign({request_id: requestId, all: 1}, v))});
         }
 
         // =================================================================
@@ -8948,7 +8967,42 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         function citStartBar(docs) {
             return `<div class="flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-2xl p-3">
                 <span class="text-xs font-bold text-blue-800"><i class="fas fa-layer-group ml-1"></i>${faDigits(String(docs.length))} مدرک منتظرِ بررسی</span>
-                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></div>`;
+                <span class="flex gap-2 flex-wrap"><button onclick="aiReviewAll(${Number(currentDocsReviewRequestId) || 0})" title="همه‌ی صفحه‌ها خوانده می‌شوند؛ برای هر فاکتور/سندِ کامل ردیفِ تازه ساخته و هر مدرک روی ردیفِ خودش می‌نشیند" class="bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>بررسیِ خودکارِ همه</button>
+                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></span></div>
+                <div id="ai-all-prog" class="hidden"></div>`;
+        }
+        // «بررسیِ خودکارِ همه»: صف + خواندنِ یکی‌یکی با نوارِ پیشرفت؛ پنجره را می‌شود بست، کار تا پایانِ صف ادامه دارد
+        async function aiReviewAll(reqId) {
+            if (!reqId) return;
+            let q;
+            try { q = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_queue_request', request_id: reqId})})).json(); }
+            catch (e) { q = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!q.ok) { showToast(q.error || 'خطا', 'error'); return; }
+            const total = q.pending;
+            if (!total) { showToast('مدرکی برای بررسی نماند (همه قبلاً خوانده شده‌اند).', 'info'); return; }
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0};
+            const paint = (done, cur) => {
+                const el = document.getElementById('ai-all-prog');
+                if (!el) return;
+                el.className = 'rounded-2xl border border-violet-200 bg-violet-50 p-3 text-[11px] text-violet-900';
+                el.innerHTML = `<div class="flex justify-between font-bold mb-1"><span><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ مدارک… ${faDigits(String(done))} از ${faDigits(String(total))}</span><span>${escapeHtml(cur || '')}</span></div>
+                    <div class="h-2 rounded-full bg-white overflow-hidden"><div class="h-full bg-violet-600" style="width:${Math.round(done * 100 / total)}%"></div></div>
+                    <p class="mt-1">ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · روی ردیفِ موجود: ${faDigits(String(sum.AUTO))} · ناقص: ${faDigits(String(sum.PARTIAL))} · شناسایی‌نشده: ${faDigits(String(sum.NONE + sum.FAIL))}</p>`;
+            };
+            let done = 0; paint(0);
+            aiStepBusy = true;
+            try {
+                for (let i = 0; i < total * 3 + 5; i++) {
+                    const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json();
+                    if (!r.ok) break;
+                    (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; paint(Math.min(done, total), x.vin || x.kind_fa || ''); });
+                    if (!r.pending) break;
+                }
+            } catch (e) {}
+            aiStepBusy = false;
+            showToast(`بررسیِ خودکار تمام شد: ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.AUTO))} مدرک روی ردیفِ موجود، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} مدرک برای بررسیِ دستی ماند.`, 'success');
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            if (currentRequestId === reqId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(reqId);
         }
         async function loadCompanyInbox() {
             await loadCompanyInboxList();
@@ -9671,19 +9725,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // کارتِ اطلاعاتِ کامل بالای فرمِ صدورِ شرکتی: شرکت، مالک (از مدارک)، خودرو، پیشنهاد و مدارکِ ردیف
         function companyIssueInfoHtml(p) {
             const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
-            const kv = (k, v, ltr) => v ? `<span class="inline-flex gap-1 ml-3"><span class="text-slate-400">${k}:</span><b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(v)))}</b></span>` : '';
-            const sec = (ic, t, body) => body.replace(/\s/g, '') ? `<div class="mb-1.5"><span class="font-black text-slate-600 ml-2"><i class="fas ${ic} text-teal-600 ml-1"></i>${t}</span>${body}</div>` : '';
-            const docs = (p.checklist || []).flatMap(it => (it.docs || []).map(d => d.is_dir ? '' : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline ml-2">${pesc(d.label)}</a>`)).join('');
+            // هر بخش یک کارتِ جدا؛ مقدارها با فاصله و شکستنِ خط کنارِ هم (روی هم نمی‌افتند)
+            const kv = (k, v, ltr) => v ? `<span class="inline-flex items-baseline gap-1 bg-white border border-slate-100 rounded-lg px-2 py-0.5 max-w-full"><span class="text-slate-400 shrink-0">${k}:</span><b class="break-all" ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(v)))}</b></span>` : '';
+            const sec = (ic, t, body) => body.replace(/\s/g, '') ? `<div class="rounded-xl border border-slate-200 bg-slate-50/70 p-2"><p class="font-black text-slate-600 mb-1"><i class="fas ${ic} text-teal-600 ml-1"></i>${t}</p><div class="flex flex-wrap gap-1.5">${body}</div></div>` : '';
+            const docs = (p.checklist || []).flatMap(it => (it.docs || []).map(d => d.is_dir ? '' : `<a href="../${d.file_path}" target="_blank" class="inline-flex items-center gap-1 bg-white border border-blue-100 text-blue-700 hover:bg-blue-50 rounded-lg px-2 py-0.5"><i class="fas fa-file-lines text-[9px]"></i>${pesc(d.label)}</a>`)).join('');
             const prop = p.proposal;
             const html = sec('fa-building', 'شرکت', kv('نام', rq.company_name) + kv('کد اقتصادی', rq.company_economic_code, 1) + kv('تلفن', rq.company_phone, 1) + kv('درخواست', rq.request_ref || (rq.id ? '#' + rq.id : '')))
-                + (p.party ? sec('fa-user-shield', 'مالکیت', `<span class="ml-3">${pesc(p.party.mode_fa || '')}</span>` + kv('بیمه‌گذار', (p.party.insured || {}).name) + (p.party.beneficiary ? kv('ذینفع', p.party.beneficiary.name || 'از مدارک') : '')
+                + (p.party ? sec('fa-user-shield', 'مالکیت', `<span class="inline-flex bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-0.5 font-bold">${pesc(p.party.mode_fa || '')}</span>` + kv('بیمه‌گذار', (p.party.insured || {}).name) + (p.party.beneficiary ? kv('ذینفع', p.party.beneficiary.name || 'از مدارک') : '')
                     + (p.party.mismatch ? '<span class="text-amber-700 font-bold">⚠ مالکِ کارت/سند با شرکت فرق دارد؛ نوعِ مالکیت را بررسی کنید.</span>' : '')) : '')
                 + sec('fa-user', 'مالک', kv('نام', ii.owner_name || (p.party && p.party.mode !== 'COMPANY' ? (p.party.owner || {}).name : '') || dd.owner_name) + kv('کد/شناسه ملی', ii.owner_national_id || dd.national_id, 1) + kv('تلفن', ii.owner_phone || dd.mobile || dd.phone, 1) + kv('نشانی', ii.owner_address || dd.address))
                 + sec('fa-car-side', 'خودرو', kv('نام', p.car_name) + kv('شاسی', p.chassis_no || p.vin, 1) + kv('موتور', p.engine_no, 1) + kv('سیستم', ii.car_system || dd.car_system) + kv('مدل', ii.car_model_year || dd.model_year, 1)
                     + (p.insurance_type === 'BODY' ? kv('ارزش', p.car_value ? money(p.car_value) : '') + kv('پوشش‌ها', [].concat(p.coverages_fa || []).join('، ')) : kv('تعهد مالی', p.liability_limit ? money(p.liability_limit) : '')))
-                + (prop && prop.data ? `<div class="mb-1.5"><span class="font-black text-indigo-700 ml-2"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</span>${prop.file ? `<a href="../${prop.file}" target="_blank" class="text-blue-600 hover:underline ml-2">مشاهده</a>` : ''}<span class="text-slate-500">فرم با آن پر شد و فایلِ بیمه‌نامه با آن چک می‌شود.</span></div>` : '')
-                + (docs ? `<div><span class="font-black text-slate-600 ml-2"><i class="fas fa-folder-open text-teal-600 ml-1"></i>مدارک</span>${docs}</div>` : '');
-            return html ? `<div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5 my-2 text-[11px] leading-6">${html}</div>` : '';
+                + (prop && prop.data ? `<div class="rounded-xl border border-indigo-100 bg-indigo-50/60 p-2 md:col-span-2"><span class="font-black text-indigo-700 ml-2"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</span>${prop.file ? `<a href="../${prop.file}" target="_blank" class="text-blue-600 hover:underline ml-2">مشاهده</a>` : ''}<span class="text-slate-500">فرم با آن پر شد و فایلِ بیمه‌نامه با آن چک می‌شود.</span></div>` : '')
+                + (docs ? sec('fa-folder-open', 'مدارک', docs) : '');
+            return html ? `<div class="grid grid-cols-1 md:grid-cols-2 gap-2 my-2 text-[11px] leading-6">${html}</div>` : '';
         }
         function openMarkIssued(plateId, pre) {
             // ردیفِ «الحاقیه» یا «فسخ»: صدورش یعنی ثبتِ الحاقیه روی بیمه‌نامه‌ی اصلی (با اثرِ مالی) - endorse.js
@@ -10107,7 +10162,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = '';
             document.getElementById('cm-portal-general').checked = true;
             document.getElementById('cm-portal-custom').checked = true;
-            document.getElementById('cm-doc-read').checked = true;
+            document.getElementById('cm-doc-read').checked = false;
             document.getElementById('cm-slip-mode').value = '';
             cmSetDefaults(null, '');
         }
@@ -10169,7 +10224,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
             document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
             document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
-            document.getElementById('cm-doc-read').checked = c.doc_read === undefined || c.doc_read === null || +c.doc_read === 1;
+            document.getElementById('cm-doc-read').checked = +c.doc_read === 1;
             document.getElementById('cm-slip-mode').value = ['auto', 'site', 'site_all'].includes(c.slip_mode) ? c.slip_mode : '';
             cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
 

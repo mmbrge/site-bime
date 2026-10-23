@@ -10,7 +10,7 @@
 function rnr_source($pdo, $src, $id) {
     $id = intval($id);
     if ($src === 'C' || $src === 'I') {
-        $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.insurer, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json FROM company_request_plates crp
+        $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.insurer, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json FROM company_request_plates crp
                                JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ? AND crp.status = 'ISSUED'");
         $st->execute([$id]);
         $r = $st->fetch();
@@ -24,7 +24,8 @@ function rnr_source($pdo, $src, $id) {
                 'car_value' => (int)$r['car_value'], 'liability' => (int)$r['liability_limit'], 'coverages' => $r['selected_coverages'] ?? null,
                 'policy' => $r['policy_number'] ?: ($r['import_policy_number'] ?? ''), 'end' => vh_j($pick('end_date')), 'start' => vh_j($pick('start_date')),
                 'issue' => vh_j($r['policy_issue_date'] ?: (($r['import_issue_date'] ?? '') ?: $pick('issue_date'))),
-                'party_mode' => $r['party_mode'] ?? null, 'party_json' => $r['party_json'] ?? null, 'issue_info' => $ii, 'file_src' => ['IC', (int)$r['id']], 'label' => 'بیمه‌نامه‌ی ' . ($r['policy_number'] ?: '')];
+                'party_mode' => ($r['party_mode'] ?? null) ?: ($r['req_party_mode'] ?? null), 'party_json' => ($r['party_mode'] ?? null) ? ($r['party_json'] ?? null) : ($r['req_party_json'] ?? null),
+                'insured_json' => ($r['party_mode'] ?? null) ? ($r['insured_json'] ?? null) : ($r['req_insured_json'] ?? null), 'issue_info' => $ii, 'file_src' => ['IC', (int)$r['id']], 'label' => 'بیمه‌نامه‌ی ' . ($r['policy_number'] ?: '')];
     }
     if ($src === 'B') {
         // اطلاعاتِ آخرِ ردیف (بعد از الحاقیه‌های «تغییرِ اطلاعات»)
@@ -37,6 +38,7 @@ function rnr_source($pdo, $src, $id) {
                 'chassis' => $x['vin'], 'engine' => $x['engine'], 'car_name' => $x['car'] ?: car_join([($raw['car_system'] ?? ''), ($raw['car_tip'] ?? '')]), 'car_type' => $raw['car_tip'] ?? '',
                 'car_value' => (int)$x['car_value'], 'liability' => (int)$x['liability'], 'coverages' => $x['coverages'] === null ? null : json_encode($x['coverages'] ?: new stdClass()),
                 'policy' => $x['policy'], 'end' => $x['end_date'], 'start' => $x['start_date'], 'issue' => $x['issue_date'], 'party_mode' => null, 'party_json' => null,
+                'owner' => trim((string)$x['owner_name']) !== '' ? ['kind' => 'PERSON', 'name' => $x['owner_name']] : null,
                 'insured' => ['kind' => $kind === 'LEGAL' ? 'COMPANY' : 'PERSON', 'name' => $x['insured'], 'national_id' => $x['insured_id'], 'phone' => $x['phone'], 'address' => $x['address'], 'postal_code' => $x['postal_code']],
                 'issue_info' => array_filter(['insured_name' => $x['insured'], 'insured_national_id' => $x['insured_id'], 'insured_phone' => $x['phone'], 'insured_postal_code' => $x['postal_code'],
                                               'insured_address' => $x['address'], 'owner_name' => $x['owner_name'], 'car_system' => $raw['car_system'] ?? '', 'car_type' => $raw['car_tip'] ?? '', 'car_kind' => $raw['car_kind'] ?? '',
@@ -108,11 +110,13 @@ function rnr_create($pdo, $siteRoot, array $items, $actorId = null, array $opts 
                 if ($s['type'] === 'THIRDPARTY' && $coDef['liability']) $pdo->prepare("UPDATE company_request_plates SET liability_limit = ? WHERE id = ?")->execute([$coDef['liability'], $pid]);
             }
             $pdo->prepare("UPDATE company_request_plates SET renew_src = ? WHERE id = ?")->execute([$s['src_key'] ?? null, $pid]);
-            if ($s['party_mode']) { try { $pdo->prepare("UPDATE company_request_plates SET party_mode = ?, party_json = ? WHERE id = ?")->execute([$s['party_mode'], $s['party_json'], $pid]); } catch (Throwable $e) {} }
-            // بیمه‌گذارِ بردرو کسِ دیگری است (نه خودِ شرکت): «مالک = بیمه‌گذار» با همان مشخصات
+            if ($s['party_mode']) { try { $pdo->prepare("UPDATE company_request_plates SET party_mode = ?, party_json = ?, insured_json = ? WHERE id = ?")->execute([$s['party_mode'], $s['party_json'], $s['insured_json'] ?? null, $pid]); } catch (Throwable $e) {} }
+            // بیمه‌گذارِ بردرو کسِ دیگری است (نه خودِ شرکت): اگر مالکِ جدا هم دارد «بیمه‌گذار جدا» (مالک = ذینفع)، وگرنه «مالک = بیمه‌گذار»
             elseif (!empty($s['insured']['name']) && rnr_norm($s['insured']['name']) !== rnr_norm($cname) && mb_strpos(rnr_norm($s['insured']['name']), rnr_norm($cname)) === false) {
                 $pj = party_clean($s['insured']);
-                if ($pj) $pdo->prepare("UPDATE company_request_plates SET party_mode = 'OWNER', party_json = ? WHERE id = ?")->execute([json_encode($pj, JSON_UNESCAPED_UNICODE), $pid]);
+                $oj = !empty($s['owner']['name']) && rnr_norm($s['owner']['name']) !== rnr_norm($s['insured']['name']) ? party_clean($s['owner']) : null;
+                if ($pj && $oj) $pdo->prepare("UPDATE company_request_plates SET party_mode = 'SPLIT', party_json = ?, insured_json = ? WHERE id = ?")->execute([json_encode($oj, JSON_UNESCAPED_UNICODE), json_encode($pj, JSON_UNESCAPED_UNICODE), $pid]);
+                elseif ($pj) $pdo->prepare("UPDATE company_request_plates SET party_mode = 'OWNER', party_json = ? WHERE id = ?")->execute([json_encode($pj, JSON_UNESCAPED_UNICODE), $pid]);
             }
             if (!empty($s['vehicle_kind'])) company_set_vehicle_kind($pdo, $pid, $s['vehicle_kind']);
             company_apply_defaults_to_rows($pdo, $reqId, [$pid]);

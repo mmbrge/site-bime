@@ -21,6 +21,13 @@ const API_SERVICES = [
     'sapi_company' => ['fa' => 'استعلامِ شخصِ حقوقی (s.api.ir)', 'icon' => 'fa-building-circle-check', 'site' => 's.api.ir', 'endpoint' => '/api/sw1/CompanyInfo',
         'desc' => 'با شناسه‌ی ملیِ شرکت، اطلاعاتِ ثبتی (نام، نوع، شماره و تاریخِ ثبت، آدرس، کدپستی، استان و شهر، فعال بودن) خوانده و در «تعریفِ شرکت» نشانده می‌شود.',
         'fields' => [['token', 'کلیدِ اختصاصی (اختیاری)', 'secret', 'خالی = کلیدِ مشترکِ s.api.ir']]],
+    'ai_vision' => ['fa' => 'خواندنِ اسکن (هوش مصنوعی)', 'icon' => 'fa-wand-magic-sparkles', 'site' => 'OpenAI-compatible',
+        'desc' => 'مدارکِ اسکن‌شده (عکس یا PDFِ بدونِ متن، مثلِ سند فروشِ کارخانه) با یک مدلِ تصویری خوانده می‌شوند: شاسی، موتور، مشخصاتِ خودرو و مالک. هر سرویسی که API سازگار با OpenAI (chat/completions) و مدلِ تصویری دارد کار می‌کند. بدونِ این تنظیم، اسکن‌ها مثلِ قبل دستی وارد می‌شوند.',
+        'fields' => [['base_url', 'آدرسِ API', 'text', 'مثلاً https://api.openai.com/v1 یا آدرسِ سرویسِ داخلیِ سازگار؛ تا پیش از /chat/completions'],
+                     ['token', 'کلیدِ API', 'secret', 'کلیدِ همان سرویس (بدونِ Bearer)'],
+                     ['model', 'مدل', 'text', 'مدلِ تصویری، مثلاً gpt-4o-mini یا gpt-4o'],
+                     ['timeout', 'مهلتِ پاسخ (ثانیه)', 'text', 'پیش‌فرض ۶۰'],
+                     ['enabled', 'وضعیت', 'select:1=فعال,0=غیرفعال', '']]],
 ];
 
 function api_cfg($pdo) { return json_decode((string)sms_get($pdo, 'api_services', '{}'), true) ?: []; }

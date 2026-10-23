@@ -3,27 +3,34 @@
 //   COMPANY      خودرو به نامِ خودِ شرکت  => مالک و بیمه‌گذار: شرکت
 //   BENEFICIARY  خودرو به نامِ دیگری     => بیمه‌گذار: شرکت، مالک «ذینفع»
 //   OWNER        خودرو به نامِ دیگری     => مالک و بیمه‌گذار: همان شخص/شرکت
+//   SPLIT        مالک و ذینفع یک شخص/شرکت، بیمه‌گذار شخص/شرکتِ دیگر (شرکتِ درخواست‌دهنده فقط نامه را داده)
 (function () {
     if (window.PartyUI) return;
     const MODES = {
         COMPANY: 'خودرو به نامِ خودِ شرکت (مالک و بیمه‌گذار: شرکت)',
         BENEFICIARY: 'به نامِ شخص/شرکتِ دیگر · بیمه‌گذار: شرکت · مالک = ذینفع',
         OWNER: 'به نامِ شخص/شرکتِ دیگر · بیمه‌گذار: همان مالک',
+        SPLIT: 'مالک و ذینفع: یک شخص/شرکت · بیمه‌گذار: شخص/شرکتِ دیگر',
     };
-    const SHORT = {COMPANY: 'خودِ شرکت', BENEFICIARY: 'ذینفع', OWNER: 'مالک = بیمه‌گذار'};
+    const SHORT = {COMPANY: 'خودِ شرکت', BENEFICIARY: 'ذینفع', OWNER: 'مالک = بیمه‌گذار', SPLIT: 'بیمه‌گذار جدا'};
+    const OTHER = ['BENEFICIARY', 'OWNER', 'SPLIT'];
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const fa = s => String(s ?? '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     const en = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 
     const css = `
-    .pty-chip{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:10px;line-height:1.7;margin-top:3px}
-    .pty-chip .pty-b{border-radius:999px;padding:0 7px;font-weight:800;border:1px solid}
+    .pty-chip{display:flex;flex-direction:column;align-items:stretch;gap:3px;font-size:10px;line-height:1.6;margin-top:4px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:5px 7px;max-width:260px}
+    .pty-chip .pty-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+    .pty-chip .pty-b{border-radius:999px;padding:0 8px;font-weight:800;border:1px solid;white-space:nowrap}
+    .pty-chip .pty-n{display:flex;gap:4px;align-items:baseline;min-width:0}.pty-chip .pty-n i{color:#94a3b8;width:12px;text-align:center;font-size:9px}
+    .pty-chip .pty-n span{color:#94a3b8;white-space:nowrap}.pty-chip .pty-n b{color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pty-chip .m-SPLIT{background:#fae8ff;color:#86198f;border-color:#f5d0fe}
     .pty-chip .m-COMPANY{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
     .pty-chip .m-BENEFICIARY{background:#fef3c7;color:#92400e;border-color:#fde68a}
     .pty-chip .m-OWNER{background:#e0e7ff;color:#3730a3;border-color:#c7d2fe}
-    .pty-chip .pty-n{color:#64748b}.pty-chip .pty-n b{color:#334155}
     .pty-chip .pty-warn{color:#b45309;font-weight:800}
-    .pty-chip button{color:#2563eb;text-decoration:underline;font-size:10px;background:none;border:0;cursor:pointer;padding:0}
+    .pty-chip button{color:#2563eb;font-weight:800;font-size:10px;background:#eff6ff;border:1px solid #dbeafe;border-radius:8px;cursor:pointer;padding:0 8px;white-space:nowrap}
+    .pty-ed .pty-sec{margin-top:8px;padding-top:6px;border-top:1px dashed #cbd5e1}.pty-ed .pty-sec>b{font-size:11px;color:#334155}
     .pty-ed{border:1px solid #e2e8f0;border-radius:12px;padding:8px;background:#f8fafc;font-size:12px}
     .pty-ed select,.pty-ed input{width:100%;border:1px solid #cbd5e1;border-radius:9px;padding:6px 8px;font-size:12px;background:#fff;color:#0f172a;font-family:inherit;box-sizing:border-box}
     .pty-ed label{display:block;font-size:10.5px;color:#64748b;font-weight:700;margin:6px 0 3px}
@@ -48,29 +55,31 @@
         if (!p) return '';
         const name = v => typeof v === 'string' ? v : (v && v.name) || '';
         const owner = name(p.owner), insured = name(p.insured), ben = name(p.beneficiary);
+        const line = (ic, k, v) => `<span class="pty-n" title="${esc(k + ': ' + v)}"><i class="fas ${ic}"></i><span>${k}:</span><b>${esc(v)}</b></span>`;
         const parts = [];
-        if (p.mode === 'COMPANY') parts.push(`<span class="pty-n">مالک و بیمه‌گذار: <b>${esc(insured || 'شرکت')}</b></span>`);
+        if (p.mode === 'COMPANY') parts.push(line('fa-building', 'مالک و بیمه‌گذار', insured || 'شرکت'));
         else {
-            parts.push(`<span class="pty-n">بیمه‌گذار: <b>${esc(insured || '—')}</b></span>`);
-            parts.push(`<span class="pty-n">مالک${p.mode === 'BENEFICIARY' ? ' (ذینفع)' : ''}: <b>${esc(owner || 'از مدارک')}</b></span>`);
+            parts.push(line('fa-user-shield', 'بیمه‌گذار', insured || '—'));
+            parts.push(line('fa-user', p.mode === 'BENEFICIARY' || p.mode === 'SPLIT' ? 'مالک (ذینفع)' : 'مالک', owner || 'از مدارک'));
         }
         const warn = p.mismatch ? `<span class="pty-warn" title="مالکِ کارت/سند: ${esc(name(p.doc_owner))}">⚠ مالکِ مدرک فرق دارد${p.doc_owner ? ' (' + esc(name(p.doc_owner)) + ')' : ''}</span>` : '';
-        const btn = opts.onEdit ? `<button type="button" onclick="${opts.onEdit}">تعیین</button>` : '';
-        return `<span class="pty-chip"><span class="pty-b m-${p.mode}" title="${esc(MODES[p.mode] || '')}">${SHORT[p.mode] || ''}${p.explicit ? '' : ' (طبقِ کلی)'}</span>${parts.join(' · ')}${warn}${btn}</span>`;
+        const btn = opts.onEdit ? `<button type="button" onclick="${opts.onEdit}"><i class="fas fa-pen" style="font-size:8px"></i> تعیین</button>` : '';
+        return `<span class="pty-chip"><span class="pty-top"><span class="pty-b m-${p.mode}" title="${esc(MODES[p.mode] || '')}">${SHORT[p.mode] || ''}${p.explicit ? '' : ' (طبقِ کلی)'}</span>${btn}</span>${parts.join('')}${warn}</span>`;
     }
 
     // ویرایشگرِ درون‌فرم: value = {mode, party:{kind,name,national_id,phone,address}}
     function editor(value = {}, opts = {}) {
         const mode = value.mode || value.party_mode || opts.defaultMode || '';
         const pt = value.party || value.other || {};
+        const ins = value.insured || value.insured_other || {};
         const id = 'pty' + Math.random().toString(36).slice(2, 8);
         const opt = (k, l) => `<option value="${k}" ${mode === k ? 'selected' : ''}>${l}</option>`;
         return `<div class="pty-ed" data-pty="${id}">
             <select data-pty-mode onchange="PartyUI._toggle(this)">
                 ${opts.allowInherit ? opt('', opts.inheritLabel || 'طبقِ انتخابِ کلی (همه‌ی ردیف‌ها)') : ''}
-                ${opt('COMPANY', MODES.COMPANY)}${opt('BENEFICIARY', MODES.BENEFICIARY)}${opt('OWNER', MODES.OWNER)}
+                ${opt('COMPANY', MODES.COMPANY)}${opt('BENEFICIARY', MODES.BENEFICIARY)}${opt('OWNER', MODES.OWNER)}${opt('SPLIT', MODES.SPLIT)}
             </select>
-            <div data-pty-other style="display:${mode === 'BENEFICIARY' || mode === 'OWNER' ? '' : 'none'}">
+            <div data-pty-other style="display:${OTHER.includes(mode) ? '' : 'none'}">
                 <div class="pty-kind"><span style="color:#64748b">مالک:</span>
                     <label><input type="radio" name="${id}-k" value="PERSON" ${pt.kind !== 'COMPANY' ? 'checked' : ''}> شخص</label>
                     <label><input type="radio" name="${id}-k" value="COMPANY" ${pt.kind === 'COMPANY' ? 'checked' : ''}> شرکت</label></div>
@@ -81,22 +90,42 @@
                 </div>
                 <p class="pty-hint">اگر خالی بماند، مالک از کارت/سندِ بارگذاری‌شده‌ی همان ردیف خوانده می‌شود.</p>
             </div>
+            <div data-pty-ins class="pty-sec" style="display:${mode === 'SPLIT' ? '' : 'none'}">
+                <b><i class="fas fa-user-shield"></i> بیمه‌گذار (جدا از مالک)</b>
+                <div class="pty-kind"><label><input type="radio" name="${id}-ik" value="PERSON" ${ins.kind !== 'COMPANY' ? 'checked' : ''}> شخص</label>
+                    <label><input type="radio" name="${id}-ik" value="COMPANY" ${ins.kind === 'COMPANY' ? 'checked' : ''}> شرکت</label></div>
+                <div class="pty-grid">
+                    <div><label>نامِ بیمه‌گذار</label><input data-pty-i="name" value="${esc(ins.name || '')}"></div>
+                    <div><label>کد ملی / شناسه ملی</label><input data-pty-i="national_id" dir="ltr" inputmode="numeric" value="${esc(fa(ins.national_id || ''))}"></div>
+                    <div><label>تلفن</label><input data-pty-i="phone" dir="ltr" inputmode="tel" value="${esc(fa(ins.phone || ''))}"></div>
+                    <div><label>کد پستی</label><input data-pty-i="postal_code" dir="ltr" inputmode="numeric" value="${esc(fa(ins.postal_code || ''))}"></div>
+                </div>
+                <label>نشانی</label><input data-pty-i="address" value="${esc(ins.address || '')}">
+            </div>
         </div>`;
     }
     function _toggle(sel) {
-        const o = sel.closest('.pty-ed').querySelector('[data-pty-other]');
-        if (o) o.style.display = ['BENEFICIARY', 'OWNER'].includes(sel.value) ? '' : 'none';
+        const ed = sel.closest('.pty-ed'), o = ed.querySelector('[data-pty-other]'), i = ed.querySelector('[data-pty-ins]');
+        if (o) o.style.display = OTHER.includes(sel.value) ? '' : 'none';
+        if (i) i.style.display = sel.value === 'SPLIT' ? '' : 'none';
     }
     // خواندنِ مقدار از ویرایشگر: {party_mode, party}
     function collect(root) {
         const ed = root && (root.matches && root.matches('.pty-ed') ? root : root.querySelector('.pty-ed'));
         if (!ed) return {party_mode: '', party: null};
         const mode = ed.querySelector('[data-pty-mode]').value;
-        if (!['BENEFICIARY', 'OWNER'].includes(mode)) return {party_mode: mode, party: null};
+        if (!OTHER.includes(mode)) return {party_mode: mode, party: null, insured: null};
         const g = k => en((ed.querySelector(`[data-pty-f="${k}"]`) || {}).value || '').trim();
-        const kind = (ed.querySelector('input[type=radio]:checked') || {}).value || 'PERSON';
+        const kind = (ed.querySelector('[data-pty-other] input[type=radio]:checked') || {}).value || 'PERSON';
         const party = {kind, name: g('name'), national_id: g('national_id').replace(/\D/g, ''), phone: g('phone')};
-        return {party_mode: mode, party: party.name || party.national_id ? party : null};
+        let insured = null;
+        if (mode === 'SPLIT') {
+            const gi = k => en((ed.querySelector(`[data-pty-i="${k}"]`) || {}).value || '').trim();
+            const ik = (ed.querySelector('[data-pty-ins] input[type=radio]:checked') || {}).value || 'PERSON';
+            const x = {kind: ik, name: gi('name'), national_id: gi('national_id').replace(/\D/g, ''), phone: gi('phone'), postal_code: gi('postal_code').replace(/\D/g, ''), address: gi('address')};
+            insured = x.name || x.national_id ? x : null;
+        }
+        return {party_mode: mode, party: party.name || party.national_id ? party : null, insured};
     }
 
     // پنجره برای یک ردیف یا همه‌ی ردیف‌ها. o: {title, sub, value, bulk, onSave: async ({mode, party, keep_party}) => true|false}
@@ -119,9 +148,10 @@
             const same = ov.querySelector('[data-pty-same]');
             const keep = o.bulk && v.party_mode !== 'COMPANY' && !(same && same.checked);
             if (o.bulk && same && same.checked && !v.party) { alert('نام یا کد/شناسه ملیِ مالک را وارد کنید.'); return; }
+            if (v.party_mode === 'SPLIT' && !v.insured) { alert('نام یا کد/شناسه ملیِ بیمه‌گذار را وارد کنید.'); return; }
             this.disabled = true;
             let ok = true;
-            try { ok = await o.onSave({mode: v.party_mode, party: keep ? null : v.party, keep_party: keep ? 1 : 0}); } catch (e) { ok = false; }
+            try { ok = await o.onSave({mode: v.party_mode, party: keep ? null : v.party, insured: v.insured, keep_party: keep ? 1 : 0}); } catch (e) { ok = false; }
             this.disabled = false;
             if (ok !== false) close();
         };

@@ -2151,8 +2151,8 @@ function companies_extra_ensure($pdo) {
               'city' => 'VARCHAR(60) NULL', 'legal_active' => 'TINYINT(1) NULL', 'legal_checked_at' => 'DATETIME NULL',
               // پنلِ شرکت: «مدارکِ کلی» (بدونِ ردیفِ مشخص) مجاز است؟ «مدرکِ دیگر» با نامِ دلخواه برای هر خودرو مجاز است؟
               'portal_general_docs' => 'TINYINT(1) NOT NULL DEFAULT 1', 'portal_custom_docs' => 'TINYINT(1) NOT NULL DEFAULT 1',
-              // مدارکِ این شرکت با الگوریتمِ خودمان خوانده شود (۱) یا فقط بارگذاری شود (۰)
-              'doc_read' => 'TINYINT(1) NOT NULL DEFAULT 1',
+              // مدارکِ این شرکت با الگوریتمِ خودمان خوانده شود (۱) یا فقط بارگذاری شود (۰) — پیش‌فرض: فقط بارگذاری
+              'doc_read' => 'TINYINT(1) NOT NULL DEFAULT 0',
               // وقتی فیش‌های بیمه‌نامه با اقساطِ قرارداد فرق داشت: خالی = تنظیمِ کلیِ صدور | auto | site | site_all
               'slip_mode' => 'VARCHAR(10) NULL'] as $c => $def) {
         try {
@@ -2160,6 +2160,17 @@ function companies_extra_ensure($pdo) {
             if ($pdo->inTransaction()) { $ok = false; continue; }
             $pdo->exec("ALTER TABLE companies ADD COLUMN `$c` $def");
         } catch (Throwable $e) { $ok = false; error_log('[companies_extra_ensure] ' . $e->getMessage()); }
+    }
+    // یک بار: «خواندنِ خودکارِ مدارک» برای همه‌ی شرکت‌ها خاموش و پیش‌فرضِ ستون ۰ (هر شرکت را می‌شود جدا روشن کرد)
+    if ($ok && !$pdo->inTransaction()) {
+        try {
+            $f = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'doc_read_off_v1'")->fetchColumn();
+            if ($f !== '1') {
+                $pdo->exec("ALTER TABLE companies ALTER COLUMN doc_read SET DEFAULT 0");
+                $pdo->exec("UPDATE companies SET doc_read = 0");
+                $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('doc_read_off_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+            }
+        } catch (Throwable $e) { error_log('[doc_read default] ' . $e->getMessage()); }
     }
     return $ok;
 }

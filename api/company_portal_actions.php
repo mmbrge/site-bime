@@ -14,6 +14,7 @@ $session = require_company_portal_session($pdo);
 ref_codes_ensure($pdo);
 company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌ها و تعهدِ شرکت (برای ردیف‌هایی که فرم نداده)
 company_claim_ensure($pdo);
+party_ensure($pdo);   // مالک / بیمه‌گذار / ذینفع (ستون‌ها، از جمله بیمه‌گذارِ جدا)
 $allowedCompanyIds = $session['company_ids'];
 
 // اگر مایگریشنِ لازم اجرا نشده باشد، به‌جای «خطای سرور» پیامِ روشن بده
@@ -271,7 +272,7 @@ try {
             if ($p['report_pending'] && $p['status'] === 'READY_FOR_ISSUE') $p['status_fa'] = 'آماده‌ی صدور (گزارش بازدید)';
             // مالک / بیمه‌گذار / ذینفع (شرکت هم می‌تواند برای هر ردیف یا همه‌ی ردیف‌ها تعیین کند)
             $pr = party_resolve($p, $partyCompany, $request);
-            $p['party'] = ['mode' => $pr['mode'], 'mode_fa' => $pr['mode_fa'], 'explicit' => $pr['explicit'], 'other' => $pr['other'],
+            $p['party'] = ['mode' => $pr['mode'], 'mode_fa' => $pr['mode_fa'], 'explicit' => $pr['explicit'], 'other' => $pr['other'], 'insured_other' => $pr['insured_other'],
                            'owner' => $pr['owner']['name'] ?? '', 'insured' => $pr['insured']['name'] ?? '', 'beneficiary' => $pr['beneficiary']['name'] ?? '', 'mismatch' => $pr['mismatch'],
                            'doc_owner' => $pr['doc_owner']['name'] ?? ''];
             unset($p['party_json'], $p['issue_info']);
@@ -287,7 +288,7 @@ try {
             if ($p['status'] === 'ISSUED') $counts[$k . '_issued']++;
         }
 
-        $request['party_default'] = ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null)];
+        $request['party_default'] = ['mode' => $request['party_mode'] ?? null, 'party' => party_clean($request['party_json'] ?? null), 'insured' => party_clean($request['insured_json'] ?? null)];
         unset($request['party_json']);
         echo json_encode(['ok' => true, 'request' => $request, 'documents' => $docs, 'plates' => $plates, 'upload_opts' => portal_company_opts($pdo, $request['company_id']),
                           'counts' => $counts, 'doc_types' => company_doc_types(), 'party_modes' => PARTY_MODES,
@@ -359,8 +360,10 @@ try {
             if (in_array($r['status'], ['ISSUED', 'IN_ISSUANCE'], true)) { $locked++; continue; }
             $ids[] = intval($r['id']);
         }
-        if (!empty($data['all'])) party_set_request_default($pdo, $requestId, $mode, $party === false ? null : $party);
-        $n = party_set_rows($pdo, $ids, $mode, $party);
+        $insured = $mode === 'SPLIT' ? ($data['insured'] ?? null) : false;
+        if (!empty($data['all'])) party_set_request_default($pdo, $requestId, $mode, $party === false ? null : $party, $insured === false ? null : $insured);
+        $n = party_set_rows($pdo, $ids, $mode, $party, $insured);
+        try { party_sync_issue_info($pdo, $ids); } catch (Throwable $e) { error_log('[portal set_party sync] ' . $e->getMessage()); }
         echo json_encode(['ok' => true, 'updated' => $n, 'locked' => $locked], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -611,7 +614,8 @@ try {
         party_ensure($pdo);
         $partyDefMode = party_valid_mode($data['party_mode'] ?? '');
         $partyDef = is_string($data['party'] ?? null) ? json_decode($data['party'], true) : ($data['party'] ?? null);
-        if ($partyDefMode) party_set_request_default($pdo, $requestId, $partyDefMode, $partyDef);
+        $insuredDef = is_string($data['insured'] ?? null) ? json_decode($data['insured'], true) : ($data['insured'] ?? null);
+        if ($partyDefMode) party_set_request_default($pdo, $requestId, $partyDefMode, $partyDef, $insuredDef);
 
         // پلاک‌های اولیه‌ی این درخواست (اختیاری، چند تا مجاز؛ برای هر پلاک هم نوع بیمه‌ی
         // درخواستی‌اش - ثالث/بدنه - مشخص می‌شود؛ اگر «هردو» خواسته شده بود، سمتِ کلاینت
@@ -649,7 +653,7 @@ try {
                                     $pExp, mb_substr(trim((string)($p['note'] ?? '')), 0, 500) ?: null]);
                 $newPlateId = intval($pdo->lastInsertId());
                 // مالک / بیمه‌گذار / ذینفع: جدا برای همین ردیف یا طبقِ انتخابِ کلیِ فرم
-                party_apply_from_input($pdo, $newPlateId, ['party_mode' => $p['party_mode'] ?? '', 'party' => $p['party'] ?? null], $partyDefMode, $partyDef);
+                party_apply_from_input($pdo, $newPlateId, ['party_mode' => $p['party_mode'] ?? '', 'party' => $p['party'] ?? null, 'insured' => $p['insured'] ?? null], $partyDefMode, $partyDef, $insuredDef);
                 company_set_vehicle_kind($pdo, $newPlateId, $p['vehicle_kind'] ?? '');   // موتورسیکلت
                 // پوشش‌های بدنه‌ی همین ردیف (جزئی) یا پیش‌فرضِ کلیِ فرم
                 if ($pInsType === 'BODY' && array_key_exists('coverages', $p) && $p['coverages'] !== null && $p['coverages'] !== '') {

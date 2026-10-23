@@ -32,8 +32,14 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280) {
     $ext = upload_ext($abs);
     if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'bmp'], true)) return ['ok' => false, 'error' => 'این نوع فایل خوانده نمی‌شود.'];
     require_once __DIR__ . '/_vdoc_reader.php';
-    try { return vdr_read($abs, intval($page) ?: 1); }
+    try { $r = vdr_read($abs, intval($page) ?: 1); }
     catch (Throwable $e) { error_log('[vdoc_run] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.']; }
+    // اسکن/عکس (بی‌متن): اگر سرویسِ «خواندنِ اسکن (هوش مصنوعی)» تنظیم شده، با همان خوانده می‌شود
+    if (empty($r['ok']) && !empty($r['scan']) && $pdo) {
+        try { require_once __DIR__ . '/_vdoc_ai.php'; if (vdoc_ai_ready($pdo)) return vdoc_ai_read($pdo, $abs, intval($page) ?: 1); }
+        catch (Throwable $e) { error_log('[vdoc_ai] ' . $e->getMessage()); }
+    }
+    return $r;
 }
 
 // چند فایلِ تک‌صفحه‌ای => [i => نتیجه]

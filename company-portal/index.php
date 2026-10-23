@@ -54,7 +54,7 @@ if (!$companies) {
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../notif-bell.js?v=3"></script>
-<script src="../party-ui.js?v=2"></script>
+<script src="../party-ui.js?v=3"></script>
 <script src="../upload-kit.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
@@ -67,7 +67,7 @@ if (!$companies) {
 <script src="zerokm.js?v=3"></script>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
 <script src="../iran-time.js?v=2"></script>
-<script src="../jdate-picker.js?v=1" defer></script>
+<script src="../jdate-picker.js?v=2" defer></script>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
 <script src="../idle-guard.js?v=2"></script>
 <link rel="stylesheet" href="../plate.css?v=4">
@@ -75,7 +75,7 @@ if (!$companies) {
 <script src="../money-input.js?v=1"></script>
 <script src="../letters-portal.js?v=2" defer></script>
 <script src="../reg-link.js?v=1" defer></script>
-<script src="../registry.js?v=5" defer></script>
+<script src="../registry.js?v=6" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -279,7 +279,7 @@ if (!$companies) {
         <h3 class="font-bold text-lg mb-4">ثبت درخواست جدید</h3>
         <?php if (count($companies) > 1): ?>
         <div class="float-input">
-            <label>برای کدام شرکت؟</label>
+            <label>شرکتِ درخواست‌دهنده (نامه از طرفِ کدام شرکت است؟)</label>
             <select id="nr-company" onchange="updateInsurerOptions()"><?php foreach ($companies as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?></select>
         </div>
         <?php else: ?>
@@ -942,6 +942,7 @@ async function submitNewRequest() {
         const pv = PartyUI.collect(document.getElementById('nr-party'));
         fd.append('party_mode', pv.party_mode || 'COMPANY');
         if (pv.party) fd.append('party', JSON.stringify(pv.party));
+        if (pv.insured) fd.append('insured', JSON.stringify(pv.insured));
     }
     const zk = window.ZeroKm ? ZeroKm.payload() : null;   // خودروهای صفر کیلومتر با فاکتور (company-portal/zerokm.js)
     fd.append('plates', JSON.stringify(collectPlateRows('nr-plates-list').concat(zk ? zk.plates : [])));
@@ -1176,13 +1177,13 @@ async function portalPartySave(body) {
 function portalEditParty(plateId) {
     const p = (currentRequestPlates || []).find(x => String(x.id) === String(plateId));
     if (!p) return;
-    PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفعِ این خودرو', value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other},
+    PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفعِ این خودرو', value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other, insured: (p.party || {}).insured_other},
                   onSave: v => portalPartySave(Object.assign({plate_ids: [plateId]}, v))});
 }
 function portalEditAllParty() {
     const def = window.portalPartyDefault || {};
     PartyUI.open({bulk: true, title: 'مالک / بیمه‌گذار برای همه‌ی ردیف‌ها', sub: 'برای همه‌ی ردیف‌هایی که هنوز صادر نشده‌اند اعمال می‌شود؛ بعد می‌توانید هر ردیف را جدا عوض کنید.',
-                  value: {mode: def.mode || 'COMPANY', party: def.party}, onSave: v => portalPartySave(Object.assign({all: 1}, v))});
+                  value: {mode: def.mode || 'COMPANY', party: def.party, insured: def.insured}, onSave: v => portalPartySave(Object.assign({all: 1}, v))});
 }
 
 // آپلودِ هدفمندِ یک مدرک روی یک ردیف، از دکمه‌ی همان خانه‌ی چک‌لیست

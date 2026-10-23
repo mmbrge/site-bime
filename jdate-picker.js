@@ -104,6 +104,9 @@ html.dark .jdp-day,html.dark .jdp-cell,html.dark .jdp-nav,html.dark .jdp-btn{bac
 
     // ---------------- تشخیصِ خانه‌ی تاریخ ----------------
     const LABEL_RE = /تاریخ|سررسید|انقضا|تولد/;
+    const SHORT_RE = /^\*?\s*(شروع|پایان|صدور|شروعِ?\s*بیمه|پایانِ?\s*بیمه)\s*\*?$/;
+    const RANGE_RE = /^(صدور|انقضا|انقضای\s*\S+|شروع|پایان|ثبت|پرداخت|سررسید|دریافت)\s*(از|تا)(\s|$)|^(از|تا)\s*تاریخ/;
+    const NOT_DATE_RE = /شماره|کد|روز|مبلغ|ساعت|تعداد|ماه|جستجو|توضیح|مثلاً|نام/;
     function labelText(el) {
         let t = '';
         const lb = el.closest('label'); if (lb) t += ' ' + lb.textContent;
@@ -124,8 +127,15 @@ html.dark .jdp-day,html.dark .jdp-cell,html.dark .jdp-nav,html.dark .jdp-btn{bac
         // جفتِ «تا» کنارِ خانه‌ی «از تاریخ» (placeholder بدونِ نمونه، مثلاً «تا تاریخ» یا «صدور تا»)
         const pv = el.previousElementSibling;
         if (/(^|\s)تا(\s|$)/.test(ph) && pv && pv.tagName === 'INPUT' && DATE_RE.test(EN(pv.getAttribute('placeholder') || ''))) return true;
+        // بازه‌ها: «صدور از / انقضا تا / شروع از / از تاریخ …» حتی بدونِ نمونه‌ی تاریخ
+        if (RANGE_RE.test(ph.trim()) && !NOT_DATE_RE.test(ph)) return true;
         const v = EN(el.value || '').trim();
-        return LABEL_RE.test(labelText(el) + ' ' + ph) && /^1[34]\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2}(\s+\d{1,2}:\d{2})?$/.test(v);
+        const isDateVal = /^1[34]\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2}(\s+\d{1,2}:\d{2})?$/.test(v);
+        const lt = labelText(el).replace(/\s+/g, ' ').trim();
+        if (LABEL_RE.test(lt + ' ' + ph) && isDateVal) return true;
+        // خانه‌ی خالی با برچسبِ کوتاهِ تاریخ (مثلاً «تاریخ صدور»، «شروع»، «پایان»، «انقضای بیمه‌نامه‌ی قبلی»)
+        const short = lt.length <= 60 ? lt : '';
+        return v === '' && !NOT_DATE_RE.test(short + ' ' + ph) && (LABEL_RE.test(short + ' ' + ph) || SHORT_RE.test(short));
     }
     function decorate(el) {
         if (el._jdp !== undefined) return el._jdp;

@@ -282,6 +282,8 @@ function brd_rows($pdo, array $f = []) {
         $ns = $notes[$id] ?? [];
         $last = $ns ? end($ns) : null;
         $state = $cancel ? 'cancelled' : ($renewed || ($last && $last['channel'] === 'renewed') ? 'renewed' : ($last && in_array($last['channel'], ['declined', 'renewed_out'], true) ? 'closed' : ($last ? 'notified' : 'none')));
+        // درخواستِ تمدیدِ ثبت‌شده که هنوز صادر نشده
+        if ($lk && !$lk['issued'] && !in_array($state, ['cancelled', 'renewed'], true)) $state = 'requested';
         $plate = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) ?: '';
         $kindN = brd_kind_norm($r['insured_kind'], $r['insured_id']);
         $origFa = [];
@@ -311,7 +313,7 @@ function brd_rows($pdo, array $f = []) {
             'car_value' => (int)$r['car_value'], 'liability' => (int)$r['liability'], 'phone' => $r['phone'], 'postal_code' => $r['postal_code'], 'address' => $r['address'],
             'owner_name' => $r['owner_name'], 'prev_insurer' => $r['prev_insurer'], 'prev_policy' => $r['prev_policy'], 'central_no' => $r['central_no'],
             'status' => $r['status'], 'state' => $state,
-            'state_fa' => ['cancelled' => 'فسخ‌شده', 'renewed' => 'تمدید شد', 'closed' => $last ? (BRD_CHANNELS[$last['channel']] ?? 'بسته') : 'بسته', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$state],
+            'state_fa' => ['cancelled' => 'فسخ‌شده', 'renewed' => 'تمدید شد', 'requested' => 'درخواستِ تمدید ثبت شد', 'closed' => $last ? (BRD_CHANNELS[$last['channel']] ?? 'بسته') : 'بسته', 'notified' => 'اعلام شد', 'none' => 'اعلام نشده'][$state],
             'renewed_by' => $renewed, 'renewal' => $lk, 'endorsements' => array_map(function ($e) {
                 $ch = json_decode((string)($e['changes_json'] ?? ''), true) ?: [];
                 return ['id' => (int)$e['id'], 'kind' => $e['kind'], 'kind_fa' => BRD_ENDORSE_KINDS[$e['kind']] ?? $e['kind'], 'no' => $e['endorse_no'], 'date' => $e['date_j'],

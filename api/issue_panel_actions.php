@@ -58,7 +58,7 @@ try {
     if ($type === 'C') {
         if (!in_array($role, ['ADMIN', 'COMPANY_LIAISON'], true)) $out(['ok' => false, 'error' => 'به پنلِ صدورِ ردیف‌های شرکتی دسترسی ندارید.']);
         company_ensure_issue_info_cols($pdo); company_ensure_coverage_column($pdo); party_ensure($pdo); companies_extra_ensure($pdo); company_doc_label_ensure($pdo);
-        $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS req_at, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json,
+        $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.insurer, cr.request_kind, cr.request_text, cr.created_at AS req_at, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json,
                                     c.name AS company_name, c.economic_code, c.national_id AS company_nid, c.phone AS company_phone, c.address AS company_address, c.postal_code AS company_postal
                                FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
         $st->execute([$id]);
@@ -75,7 +75,7 @@ try {
             if (is_array($aj) && !empty($aj['data'])) foreach ((array)$aj['data'] as $k => $v) if (is_scalar($v) && trim((string)$v) !== '' && !isset($dd[$k])) $dd[$k] = trim((string)$v);
         }
         $pr = party_resolve($r, ['name' => $r['company_name'], 'national_id' => $r['company_nid'], 'economic_code' => $r['economic_code'], 'phone' => $r['company_phone'], 'address' => $r['company_address']],
-                            ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json']]);
+                            ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json'], 'insured_json' => $r['req_insured_json'] ?? null]);
         $ins = $pr['insured'] ?: []; $own = $pr['owner'] ?: []; $ben = $pr['beneficiary'] ?: [];
         $plate = company_row_label($r);
         $kind = $r['request_kind'] ?: 'NEW_POLICY';
