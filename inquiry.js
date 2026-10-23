@@ -1,5 +1,6 @@
 // فایل: inquiry.js
-// پنل ← «استعلامات»: استعلامِ تکی (شخص حقیقی، شخص + کد پستی، کد پستی، شخص حقوقی)، گروهی با اکسل، تاریخچه، تنظیمات (مدیر کل)
+// پنل ← «استعلامات»: استعلامِ تکی (شخص حقیقی، شخص + کد پستی، کد پستی، شخص حقوقی، سنهاب)، گروهی با اکسل، استعلامِ حق بیمه،
+// تاریخچه، تنظیمات (مدیر کل: نام کاربری/رمزِ پاسارگاد و سنهاب)
 // + Inquiry.attachForm: دکمه‌ی «استعلام» کنارِ نام و کد پستی در فرم‌های ثبتِ درخواست.
 // مدیر کل جزئیاتِ کامل (تایم‌لاینِ گام‌ها، صفحه‌ی واقعیِ سامانه در هر گام، پیامِ خامِ سامانه) را می‌بیند؛ بقیه فقط نتیجه را.
 // منطق: api/inquiry_actions.php و api/_inquiry.php
@@ -18,11 +19,12 @@
         person: { ic: 'fa-id-card', c: '#2563eb', d: 'نام، نام خانوادگی، نام پدر و جنسیت با کد ملی و تاریخ تولد' },
         person_postal: { ic: 'fa-house-user', c: '#7c3aed', d: 'مشخصاتِ شخص + تأییدِ کد پستی در املاک و اسکان' },
         postal: { ic: 'fa-map-location-dot', c: '#0891b2', d: 'فقط نتیجه‌ی کد پستی (کد ملی و تولدِ یک شخص هم لازم است)' },
-        legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتیِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی' },
+        legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتی و تماسِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی (اول پاسارگاد، بعد سرویسِ API)' },
+        sanhab: { ic: 'fa-shield-halved', c: '#0e7490', d: 'سوابقِ بیمه‌نامه‌ها از بیمه مرکزی: عدمِ خسارت یا خسارت، تخفیف‌ها، بیمه‌گر و انقضا' },
     };
     const ST_UI = { OK: ['موفق', '#059669', 'fa-circle-check'], WARN: ['با هشدار', '#d97706', 'fa-triangle-exclamation'], FAIL: ['ناموفق', '#e11d48', 'fa-circle-xmark'],
                     QUEUED: ['در صف', '#64748b', 'fa-hourglass-half'], RUNNING: ['در حال اجرا', '#4f46e5', 'fa-spinner fa-spin'] };
-    const SRC_FA = { panel: 'پنل', form: 'فرمِ ثبت', group: 'گروهی', miniapp: 'مینی‌اپ' };
+    const SRC_FA = { panel: 'پنل', form: 'فرمِ ثبت', group: 'گروهی', miniapp: 'مینی‌اپ', premium: 'استعلامِ حق بیمه' };
     const V = { el: null, boot: null, tab: 'single', kind: 'person_postal', hist: { page: 1, q: '', kind: '', status: '', source: '' }, running: false, batchRun: {} };
 
     function css() {
@@ -79,7 +81,8 @@
     const CAPW = new Set();   // کپچاهای باز: با ورودِ موفق از هر جا، همه‌ی استعلام‌های منتظر ادامه پیدا می‌کنند
     // ---------------- کپچا: هر کاربری که به نشستِ بسته‌ی سامانه برسد، کدِ تصویر را زیرِ همان فیلدهایش می‌زند ----------------
     // نام کاربری و رمز را مدیر کل در تنظیمات گذاشته؛ کاربر فقط متنِ تصویر را می‌نویسد. خروجی: true (وارد شد) / false (انصراف)
-    function captchaBox(host, image, err) {
+    // alt: دکمه‌ی جایگزین (مثلاً «بدونِ پاسارگاد، از سرویسِ API») => نتیجه 'alt'
+    function captchaBox(host, image, err, alt) {
         css();
         return new Promise(resolve => {
             host.innerHTML = `<div class="inq-cap"><p class="text-[11.5px] font-black text-indigo-800 mb-2"><i class="fas fa-shield-halved ml-1"></i>برای انجامِ استعلام، کدِ تصویرِ امنیتی را وارد کنید</p>
@@ -87,6 +90,7 @@
                     <button type="button" class="inq-fbtn" data-c="re" title="تصویرِ دیگر"><i class="fas fa-rotate"></i></button>
                     <input class="inq-in !mt-0" style="width:150px;font-size:15px;text-align:center" dir="ltr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="کد تصویر">
                     <button type="button" class="inq-go !py-2 !px-4 text-xs" data-c="ok">ادامه‌ی استعلام</button>
+                    ${alt ? `<button type="button" class="inq-fbtn" data-c="alt" style="background:#d1fae5;color:#065f46">${esc(alt)}</button>` : ''}
                     <button type="button" class="inq-fbtn" data-c="no" style="background:#f1f5f9;color:#475569">انصراف</button></div>
                 <p class="inq-caperr text-[11px] font-bold text-rose-600 mt-1.5">${esc(err || '')}</p></div>`;
             const inp = host.querySelector('input'), er = host.querySelector('.inq-caperr'), img = host.querySelector('.inq-capimg');
@@ -118,15 +122,16 @@
             host.querySelector('[data-c="ok"]').onclick = go;
             host.querySelector('[data-c="re"]').onclick = () => refresh(true);
             host.querySelector('[data-c="no"]').onclick = () => done(false);
+            if (alt) host.querySelector('[data-c="alt"]').onclick = () => done('alt');
             inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
         });
     }
     // جای کپچا وقتی فرمی میزبانش نیست (پنجره‌ی کوچک)
-    function captchaModal(image, err) {
+    function captchaModal(image, err, alt) {
         const m = document.createElement('div'); m.className = 'inq-modal';
         m.innerHTML = '<div style="width:min(460px,100%)"><div class="p-4" data-h></div></div>';
         document.body.appendChild(m);
-        return captchaBox(m.querySelector('[data-h]'), image, err).then(v => { m.remove(); return v; });
+        return captchaBox(m.querySelector('[data-h]'), image, err, alt).then(v => { m.remove(); return v; });
     }
 
     // ---------------- اجرای یک استعلام (ثبت ← اجرا + خواندنِ پیشرفت؛ اگر نشست بسته بود: کپچا و ادامه) ----------------
@@ -135,10 +140,10 @@
         if (!c.ok) return c;
         if (!c.cached && V.boot && V.boot.my_quota) V.boot.my_quota.used++;
         if (c.item.done) { if (onProg) onProg(c.item); return { ok: true, item: c.item }; }
-        let last = c.item;
+        let last = c.item, viaApi = 0;
         for (let attempt = 0; attempt < 6; attempt++) {
             let done = null;
-            const ex = post({ action: 'exec', id: c.id }).then(r => { done = r; });
+            const ex = post({ action: 'exec', id: c.id, via_api: viaApi }).then(r => { done = r; });
             const t0 = Date.now();
             while (!done) {
                 await sleep(1300);
@@ -150,8 +155,10 @@
             await ex.catch(() => {});
             if (done && done.need_captcha) {
                 if (onProg) onProg(Object.assign({}, done.item, { notice: 'منتظرِ کدِ تصویرِ امنیتی…' }));
-                const ok = capHost ? await captchaBox(capHost, done.captcha, done.captcha_error) : await captchaModal(done.captcha, done.captcha_error);
+                const alt = done.api_alt ? 'بدونِ پاسارگاد، از سرویسِ API' : '';
+                const ok = capHost ? await captchaBox(capHost, done.captcha, done.captcha_error, alt) : await captchaModal(done.captcha, done.captcha_error, alt);
                 if (!ok) return { ok: false, error: 'استعلام انجام نشد (کدِ امنیتی وارد نشد).', item: done.item };
+                if (ok === 'alt') { viaApi = 1; continue; }
                 if (V.boot) V.boot.status = 'logged_in';
                 continue;
             }
@@ -169,7 +176,7 @@
         const b = await post({ action: 'boot' });
         if (!b.ok) { el.innerHTML = `<div class="inq-card text-red-600 text-xs">${esc(b.error)}</div>`; return; }
         V.boot = b;
-        if (!b.can.single && V.tab === 'single') V.tab = b.can.group_view ? 'group' : 'history';
+        if (!Object.keys(b.kinds || {}).length && V.tab === 'single') V.tab = b.can.group_view ? 'group' : (b.can.premium ? 'premium' : 'history');
         render();
     }
     function statusChip(s) {
@@ -178,11 +185,13 @@
     }
     function render() {
         const b = V.boot, t = b.today || {};
-        const tabs = [['single', 'fa-magnifying-glass', 'استعلامِ تکی', b.can.single], ['group', 'fa-file-excel', 'استعلامِ گروهی', b.can.group_view], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
+        const tabs = [['single', 'fa-magnifying-glass', 'استعلامِ تکی', Object.keys(b.kinds || {}).length > 0], ['group', 'fa-file-excel', 'استعلامِ گروهی', b.can.group_view],
+                      ['premium', 'fa-calculator', 'استعلامِ حق بیمه', b.can.premium], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
         V.el.innerHTML = `
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
-            <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان) و شخص حقوقی</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
-            <div class="flex flex-wrap items-center gap-2">${b.is_admin ? statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '') : ''}
+            <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان)، شخص حقوقی، سنهاب (سوابقِ بیمه‌نامه) و حق بیمه</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
+            <div class="flex flex-wrap items-center gap-2">${b.is_admin ? '<span class="inq-chip">پاسارگاد:</span>' + statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '')
+                    + '<span class="inq-chip">سنهاب:</span>' + (statusChip(b.sh_status) || '<span class="inq-chip">تنظیم نشده</span>') : ''}
                 <span class="inq-chip">امروز: ${fa(t.total || 0)} استعلام، ${fa(t.ok || 0)} موفق${t.queue ? '، ' + fa(t.queue) + ' در صف' : ''}</span>
                 ${!b.is_admin && b.my_quota && b.my_quota.limit ? `<span class="inq-chip" title="سقفِ استعلامِ روزانه‌ی شما"><i class="fas fa-gauge"></i>سهمِ امروزِ شما: ${fa(b.my_quota.used)} از ${fa(b.my_quota.limit)}</span>` : ''}</div></div></div>
         <div class="inq-tabs mb-4">${tabs.filter(x => x[3]).map(x => `<button class="inq-tab ${V.tab === x[0] ? 'on' : ''}" data-tab="${x[0]}"><i class="fas ${x[1]}"></i>${x[2]}</button>`).join('')}</div>
@@ -190,7 +199,7 @@
         V.el.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => { V.tab = x.dataset.tab; render(); });
         const lb = V.el.querySelector('[data-a="login"]'); if (lb) lb.onclick = () => loginDialog();
         const body = V.el.querySelector('#inq-body');
-        ({ single: renderSingle, group: renderGroup, history: renderHistory, settings: renderSettings })[V.tab](body);
+        ({ single: renderSingle, group: renderGroup, premium: renderPremium, history: renderHistory, settings: renderSettings })[V.tab](body);
     }
 
     // ---------------- استعلامِ تکی ----------------
@@ -199,9 +208,11 @@
         const k = V.kind, kinds = V.boot.kinds;
         body.innerHTML = `<div class="inq-card space-y-4">
             <div class="inq-kinds">${Object.keys(kinds).map(x => `<button type="button" class="inq-kind ${k === x ? 'on' : ''}" data-k="${x}" style="--c:${KIND_UI[x].c}"><span class="ic"><i class="fas ${KIND_UI[x].ic}"></i></span><b>${kinds[x]}</b><small>${KIND_UI[x].d}</small></button>`).join('')}</div>
-            ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>کلیدِ s.api.ir هنوز در «تنظیمات ← کلیدهای API» وارد نشده است.</p>' : ''}
+            ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>استعلام از سامانه‌ی پاسارگاد انجام می‌شود؛ اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی پاسارگاد نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
+            ${k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-sh"></div>` : `
             <form id="inq-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" autocomplete="off">
-                ${k === 'legal' ? `<label class="inq-f md:col-span-2">شناسه‌ی ملیِ شرکت (۱۱ رقم)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>`
+                ${k === 'legal' ? `<label class="inq-f md:col-span-2">شناسه‌ی ملیِ شرکت (۱۱ رقم)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>
+                       <label class="inq-f">کد پستی (اختیاری؛ برای تأیید)<input class="inq-in" name="postal" dir="ltr" inputmode="numeric" maxlength="10" placeholder="1234567890"></label>`
                     : `<label class="inq-f">کد ملی<input class="inq-in" name="national_id" dir="ltr" inputmode="numeric" maxlength="10" placeholder="0012345678"></label>
                        <label class="inq-f">تاریخ تولد<input class="inq-in" name="birth" dir="ltr" inputmode="numeric" placeholder="1370/05/12"></label>
                        ${k !== 'person' ? '<label class="inq-f">کد پستی (۱۰ رقم)<input class="inq-in" name="postal" dir="ltr" inputmode="numeric" maxlength="10" placeholder="1234567890"></label>' : ''}`}
@@ -209,8 +220,9 @@
             </form>
             ${V.boot.is_admin ? '<label class="flex items-center gap-2 text-[11px] font-bold text-slate-500"><input type="checkbox" id="inq-fresh" class="accent-indigo-600"> نتیجه‌ی قبلی (کش) استفاده نشود و دوباره از سامانه پرسیده شود</label>' : ''}
             <div id="inq-capbox"></div>
-            <div id="inq-out"></div></div>`;
+            <div id="inq-out"></div>`}</div>`;
         body.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { V.kind = x.dataset.k; renderSingle(body); });
+        if (k === 'sanhab') { if (window.SanhabUI) SanhabUI.form(body.querySelector('#inq-sh'), { source: 'panel' }); else body.querySelector('#inq-sh').innerHTML = '<p class="text-xs text-rose-600">فایلِ sanhab-ui.js بارگذاری نشده.</p>'; return; }
         const f = body.querySelector('#inq-form');
         f.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { if (i.name !== 'birth') i.value = en(i.value).replace(/\D/g, ''); i.classList.remove('err'); }));
         f.onsubmit = async e => {
@@ -245,13 +257,15 @@
         else {
             if (it.company) {
                 const c = it.company;
-                inner += `<div class="inq-dl">${[['نام', c.name], ['نوع', c.company_type], ['شماره ثبت', c.register_number], ['تاریخ ثبت', c.register_date], ['استان / شهر', [c.province, c.city].filter(Boolean).join(' / ')],
-                    ['کد پستی', c.postal_code], ['وضعیت', c.active === false ? 'غیرفعال' : c.active ? 'فعال' : '—'], ['آدرس', c.address]].map(x => `<div><span>${x[0]}</span><b>${esc(fa(x[1] || '—'))}</b></div>`).join('')}</div>`;
+                inner += `<div class="inq-dl">${[['نام', c.name], ['نوع', c.company_type], ['شناسه‌ی ملی', c.national_id], ['شماره ثبت', c.register_number], ['تاریخ ثبت / تأسیس', c.register_date], ['کد اقتصادی', c.economic_code],
+                    ['استان / شهر', [c.province, c.city].filter(Boolean).join(' / ')], ['کد پستی', c.postal_code], ['تلفن', c.phone], ['موبایل', c.mobile], ['ایمیل', c.email], ['وضعیت', c.active === false ? 'غیرفعال' : c.active ? 'فعال' : '—'],
+                    ['آدرس', c.address]].filter(x => x[1] || ['نام', 'شماره ثبت', 'آدرس'].includes(x[0])).map(x => `<div><span>${x[0]}</span><b>${esc(fa(x[1] || '—'))}</b></div>`).join('')}</div>
+                    <p class="text-[10.5px] text-slate-500 mt-2"><i class="fas fa-database ml-1"></i>منبع: ${c.source === 'api' || it.via === 'api' ? 'سرویسِ API (s.api.ir)' : 'سامانه‌ی پاسارگاد'}</p>`;
             } else if (it.person || it.person_name) {
                 const p = it.person || {};
                 inner += `<div class="inq-dl">${[['نام', p.name || it.person_name], ['نام خانوادگی', p.family], ['نام پدر', p.father || it.father_name], ['جنسیت', p.gender]].map(x => `<div><span>${x[0]}</span><b>${esc(x[1] || '—')}</b></div>`).join('')}</div>`;
             }
-            if (it.kind === 'person_postal' || it.kind === 'postal') {
+            if (it.kind === 'person_postal' || it.kind === 'postal' || (it.kind === 'legal' && it.postal)) {
                 const v = it.postal_valid, c = v === true ? '#059669' : v === false ? '#e11d48' : '#d97706';
                 inner += `<div class="mt-3 rounded-xl p-3 text-xs font-bold" style="background:${c}14;color:${c}"><i class="fas ${v === true ? 'fa-circle-check' : v === false ? 'fa-circle-xmark' : 'fa-triangle-exclamation'} ml-1"></i>کد پستی ${fa(it.postal || '')}: ${esc(it.postal_text || (v === true ? 'تأیید شد' : v === false ? 'تأیید نشد' : 'نامشخص'))}</div>`;
             }
@@ -295,47 +309,64 @@
     }
 
     // ---------------- گروهی ----------------
+    // اجازه‌ی ساختن/ادامه‌ی گروهیِ هر نوع (شخصِ حقیقی، حقوقی، سنهاب جدا)
+    const canGroupKind = k => { const c = V.boot.can; return k === 'legal' ? c.legal_group : k === 'sanhab' ? c.sanhab_group : c.group; };
     async function renderGroup(body) {
         const can = V.boot.can;
+        const gk = Object.entries(V.boot.group_kinds || {}).filter(([k]) => canGroupKind(k));
+        const canNew = gk.length > 0;
+        const sht = V.boot.sh_types || {};
         body.innerHTML = `<div class="grid grid-cols-1 xl:grid-cols-5 gap-4">
-            ${can.group ? `<div class="inq-card xl:col-span-2 space-y-3">
+            ${canNew ? `<div class="inq-card xl:col-span-2 space-y-3">
                 <p class="font-black text-sm text-slate-800"><i class="fas fa-file-arrow-up ml-1 text-indigo-500"></i>استعلامِ گروهیِ تازه</p>
-                <label class="inq-f">نوعِ استعلام<select id="inq-gk" class="inq-in" style="font-size:12.5px">${Object.entries(V.boot.kinds).map(([k, l]) => `<option value="${k}" ${k === 'person_postal' ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                <label class="inq-f">نوعِ استعلام<select id="inq-gk" class="inq-in" style="font-size:12.5px">${gk.map(([k, l]) => `<option value="${k}" ${k === 'person_postal' ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                <div id="inq-gsh" class="grid grid-cols-2 gap-2 hidden"><label class="inq-f">جستجو با<select id="inq-gst" class="inq-in" style="font-size:12px">${(Array.isArray(sht) ? sht : Object.entries(sht)).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+                    <label class="inq-f">نوع<select id="inq-gsp" class="inq-in" style="font-size:12px"><option value="0">بیمه‌نامه</option><option value="1">سوابقِ خسارت</option></select></label>
+                    <p class="col-span-2 text-[10.5px] text-sky-700 font-bold">سنهاب برای هر ردیف کدِ امنیتیِ خودش را می‌خواهد؛ بعد از شروع، ردیف‌ها یکی‌یکی با کپچا جلو می‌روند (کپچای بعدی خودکار می‌آید).</p></div>
                 <label class="inq-f">عنوان (اختیاری)<input id="inq-gt" class="inq-in" style="font-size:12.5px;letter-spacing:0" placeholder="مثلاً پرسنلِ شرکتِ نمونه - مهر"></label>
                 <label class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl p-5 text-center cursor-pointer">
                     <i class="fas fa-file-excel text-3xl text-emerald-500"></i><p class="text-xs font-black text-slate-600 mt-2" id="inq-gfn">انتخابِ فایلِ اکسل (xlsx / csv)</p>
-                    <p class="text-[10.5px] text-slate-400 mt-1">ستون‌ها با نامِ سرستون شناخته می‌شوند: کد ملی، تاریخ تولد، کد پستی (برای حقوقی: شناسه ملی)</p>
+                    <p class="text-[10.5px] text-slate-400 mt-1" id="inq-ghint">ستون‌ها با نامِ سرستون شناخته می‌شوند: کد ملی، تاریخ تولد، کد پستی (برای حقوقی: شناسه ملی)</p>
                     <input type="file" id="inq-gf" accept=".xlsx,.xls,.csv" class="hidden"></label>
                 <div class="flex flex-wrap gap-2"><a id="inq-gs" class="inq-fbtn" href="#"><i class="fas fa-download ml-1"></i>دانلودِ اکسلِ نمونه</a></div>
                 <div id="inq-gp"></div>
                 <button id="inq-gstart" class="inq-go w-full hidden"><i class="fas fa-play ml-1"></i>شروعِ استعلامِ گروهی</button>
                 <p class="text-[10.5px] text-slate-400 leading-6">ردیف‌ها یکی‌یکی و پشتِ سرِ هم استعلام می‌شوند (نشستِ سامانه یکی است). اگر این صفحه را ببندید، با «ادامه» از همان‌جا جلو می‌رود${V.boot.is_admin ? '؛ اگر cron را در تنظیمات گذاشته باشید، در پس‌زمینه هم ادامه پیدا می‌کند' : ''}.</p>
             </div>` : ''}
-            <div class="inq-card ${can.group ? 'xl:col-span-3' : 'xl:col-span-5'}"><div class="flex items-center justify-between mb-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-layer-group ml-1 text-violet-500"></i>استعلام‌های گروهی</p><button class="inq-fbtn" id="inq-gr"><i class="fas fa-rotate"></i></button></div><div id="inq-gcap"></div><div id="inq-gl" class="space-y-2 mt-2"></div></div></div>`;
-        if (can.group) {
+            <div class="inq-card ${canNew ? 'xl:col-span-3' : 'xl:col-span-5'}"><div class="flex items-center justify-between mb-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-layer-group ml-1 text-violet-500"></i>استعلام‌های گروهی</p><button class="inq-fbtn" id="inq-gr"><i class="fas fa-rotate"></i></button></div><div id="inq-gcap"></div><div id="inq-gl" class="space-y-2 mt-2"></div></div></div>`;
+        if (canNew) {
             const kindSel = body.querySelector('#inq-gk'), fileIn = body.querySelector('#inq-gf'), sample = body.querySelector('#inq-gs');
-            const setSample = () => sample.href = `${API}?action=batch_sample&kind=${kindSel.value}`;
-            kindSel.onchange = setSample; setSample();
+            const isSh = () => kindSel.value === 'sanhab';
+            const shT = () => body.querySelector('#inq-gst').value, shP = () => body.querySelector('#inq-gsp').value;
+            const setSample = () => {
+                body.querySelector('#inq-gsh').classList.toggle('hidden', !isSh());
+                body.querySelector('#inq-ghint').textContent = isSh() ? 'پلاک: چهار ستون (ایران، سه‌رقمی، حرف، دورقمیِ چپ) یا یک ستونِ کامل مثلِ «۲۱ ایران - ۱۲۳ ب ۱۱»؛ بقیه: مقدار در ستونِ اول (موتور و شاسی: دو ستون)'
+                    : 'ستون‌ها با نامِ سرستون شناخته می‌شوند: کد ملی، تاریخ تولد، کد پستی (برای حقوقی: شناسه ملی)';
+                sample.href = isSh() ? `${API}?action=sh_batch_sample&type=${shT()}` : `${API}?action=batch_sample&kind=${kindSel.value}`;
+                body.querySelector('#inq-gp').innerHTML = ''; body.querySelector('#inq-gstart').classList.add('hidden'); fileIn.value = ''; body.querySelector('#inq-gfn').textContent = 'انتخابِ فایلِ اکسل (xlsx / csv)';
+            };
+            kindSel.onchange = setSample; body.querySelector('#inq-gst').onchange = setSample; setSample();
             fileIn.onchange = async () => {
                 const f = fileIn.files[0]; if (!f) return;
                 body.querySelector('#inq-gfn').textContent = f.name;
-                const fd = new FormData(); fd.append('action', 'batch_upload'); fd.append('kind', kindSel.value); fd.append('preview', '1'); fd.append('file', f);
+                const fd = new FormData(); fd.append('action', isSh() ? 'sh_batch_upload' : 'batch_upload'); fd.append('kind', kindSel.value); fd.append('type', shT()); fd.append('plcy', shP()); fd.append('preview', '1'); fd.append('file', f);
                 const p = body.querySelector('#inq-gp'); p.innerHTML = '<p class="text-xs text-indigo-600"><i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندن…</p>';
                 let d; try { d = await (await fetch(API, { method: 'POST', body: fd })).json(); } catch (e) { d = { ok: false, error: 'خطا در ارتباط.' }; }
                 if (!d.ok) { p.innerHTML = `<p class="text-xs text-rose-600 font-bold">${esc(d.error)}</p>`; return; }
                 p.innerHTML = `<p class="text-xs font-bold text-emerald-700 mb-1"><i class="fas fa-circle-check ml-1"></i>${fa(d.count)} ردیف خوانده شد</p>
-                    <div class="max-h-48 overflow-auto border rounded-xl"><table class="inq-tbl"><thead><tr><th>#</th><th>کد ملی</th><th>تاریخ تولد</th><th>کد پستی</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r.national_id))}</td><td dir="ltr">${esc(fa(r.birth || ''))}</td><td dir="ltr">${esc(fa(r.postal || ''))}</td></tr>`).join('')}</tbody></table></div>`;
+                    <div class="max-h-48 overflow-auto border rounded-xl"><table class="inq-tbl">${isSh() ? `<thead><tr><th>#</th><th>${esc(body.querySelector('#inq-gst').selectedOptions[0].textContent)}</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r))}</td></tr>`).join('')}</tbody>`
+                        : `<thead><tr><th>#</th><th>کد ملی</th><th>تاریخ تولد</th><th>کد پستی</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r.national_id))}</td><td dir="ltr">${esc(fa(r.birth || ''))}</td><td dir="ltr">${esc(fa(r.postal || ''))}</td></tr>`).join('')}</tbody>`}</table></div>`;
                 const st = body.querySelector('#inq-gstart'); st.classList.remove('hidden');
                 st.onclick = async () => {
                     st.disabled = true;
-                    const fd2 = new FormData(); fd2.append('action', 'batch_upload'); fd2.append('kind', kindSel.value); fd2.append('title', body.querySelector('#inq-gt').value.trim()); fd2.append('file', f);
+                    const fd2 = new FormData(); fd2.append('action', isSh() ? 'sh_batch_upload' : 'batch_upload'); fd2.append('kind', kindSel.value); fd2.append('type', shT()); fd2.append('plcy', shP()); fd2.append('title', body.querySelector('#inq-gt').value.trim()); fd2.append('file', f);
                     let r; try { r = await (await fetch(API, { method: 'POST', body: fd2 })).json(); } catch (e) { r = { ok: false, error: 'خطا در ارتباط.' }; }
                     st.disabled = false;
                     if (!r.ok) { toast(r.error, 'error'); return; }
                     toast(`${fa(r.queued)} ردیف در صف` + (r.invalid.length ? ` · ${fa(r.invalid.length)} ردیف نامعتبر کنار گذاشته شد` : ''), r.invalid.length ? 'warning' : 'success');
                     p.innerHTML = r.invalid.length ? `<p class="text-[11px] text-amber-700 font-bold">ردیف‌های نامعتبر: ${r.invalid.slice(0, 20).map(x => fa(x.row) + ' (' + esc(x.error) + ')').join('، ')}</p>` : '';
                     st.classList.add('hidden'); fileIn.value = ''; body.querySelector('#inq-gfn').textContent = 'انتخابِ فایلِ اکسل (xlsx / csv)';
-                    await loadBatches(body); runBatch(r.batch_id, body);
+                    await loadBatches(body); if (isSh()) runShBatch(r.batch_id, body); else runBatch(r.batch_id, body);
                 };
             };
         }
@@ -351,7 +382,7 @@
         bindBatches(body);
     }
     function batchCard(b) {
-        const p = b.total ? b.done / b.total * 100 : 100, c = b.counts, running = V.batchRun[b.id];
+        const p = b.total ? b.done / b.total * 100 : 100, c = b.counts, running = V.batchRun[b.id], cg = canGroupKind(b.kind);
         const st = b.status === 'RUNNING' ? (running ? '<span class="inq-badge" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-spinner fa-spin"></i>در حال اجرا</span>' : '<span class="inq-badge" style="background:#fef3c7;color:#92400e">متوقف / منتظرِ ادامه</span>')
             : b.status === 'CANCELED' ? '<span class="inq-badge" style="background:#f1f5f9;color:#64748b">لغو شد</span>' : '<span class="inq-badge" style="background:#d1fae5;color:#065f46"><i class="fas fa-check"></i>تمام شد</span>';
         return `<div class="border border-slate-100 rounded-2xl p-3" data-b="${b.id}">
@@ -359,9 +390,9 @@
             <div class="inq-bar mt-2"><i style="width:${p.toFixed(1)}%"></i></div>
             <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-[10.5px] font-bold text-slate-500">
                 <span>${fa(b.done)} از ${fa(b.total)} · <span class="text-emerald-600">${fa(c.OK)} موفق</span> · <span class="text-amber-600">${fa(c.WARN)} هشدار</span> · <span class="text-rose-600">${fa(c.FAIL)} ناموفق</span></span>
-                <span class="flex flex-wrap gap-1">${V.boot.can.group && b.status === 'RUNNING' && !running ? `<button class="inq-fbtn" data-ba="run"><i class="fas fa-play ml-1"></i>ادامه</button>` : ''}
-                ${V.boot.can.group && b.status === 'RUNNING' ? `<button class="inq-fbtn" data-ba="cancel" style="background:#fee2e2;color:#be123c">لغو</button>` : ''}
-                ${V.boot.can.group && b.status !== 'RUNNING' && c.FAIL ? `<button class="inq-fbtn" data-ba="retry"><i class="fas fa-rotate-right ml-1"></i>دوباره برای ناموفق‌ها</button>` : ''}
+                <span class="flex flex-wrap gap-1">${cg && b.status === 'RUNNING' && !running ? `<button class="inq-fbtn" data-ba="run" data-kind="${esc(b.kind)}"><i class="fas fa-play ml-1"></i>ادامه${b.kind === 'sanhab' ? ' (با کپچا)' : ''}</button>` : ''}
+                ${cg && b.status === 'RUNNING' ? `<button class="inq-fbtn" data-ba="cancel" style="background:#fee2e2;color:#be123c">لغو</button>` : ''}
+                ${cg && b.status !== 'RUNNING' && c.FAIL ? `<button class="inq-fbtn" data-ba="retry" data-kind="${esc(b.kind)}"><i class="fas fa-rotate-right ml-1"></i>دوباره برای ناموفق‌ها</button>` : ''}
                 <button class="inq-fbtn" data-ba="rows"><i class="fas fa-list ml-1"></i>ردیف‌ها</button>
                 ${V.boot.can.export ? `<a class="inq-fbtn" href="${API}?action=batch_export&id=${b.id}"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</a>` : ''}</span></div></div>`;
     }
@@ -370,9 +401,10 @@
             const id = +card.dataset.b;
             card.querySelectorAll('[data-ba]').forEach(btn => btn.onclick = async () => {
                 const a = btn.dataset.ba;
-                if (a === 'run') runBatch(id, body);
+                const sh = btn.dataset.kind === 'sanhab';
+                if (a === 'run') (sh ? runShBatch : runBatch)(id, body);
                 else if (a === 'rows') { V.hist = { page: 1, q: '', kind: '', status: '', source: '', batch_id: id }; V.tab = 'history'; render(); }
-                else if (a === 'cancel' || a === 'retry') { delete V.batchRun[id]; const d = await post({ action: a === 'cancel' ? 'batch_cancel' : 'batch_resume', id }); if (!d.ok) toast(d.error, 'error'); await loadBatches(body); if (a === 'retry') runBatch(id, body); }
+                else if (a === 'cancel' || a === 'retry') { delete V.batchRun[id]; const d = await post({ action: a === 'cancel' ? 'batch_cancel' : 'batch_resume', id }); if (!d.ok) toast(d.error, 'error'); await loadBatches(body); if (a === 'retry') (sh ? runShBatch : runBatch)(id, body); }
             });
         });
     }
@@ -397,11 +429,117 @@
         } finally { delete V.batchRun[id]; const b = body.querySelector('#inq-gl'); if (b && b.isConnected) loadBatches(body); }
     }
 
+    // ---------------- استعلامِ حق بیمه‌ی ثالث (همان محاسبه‌ی مینی‌اپ) + پر شدنِ خودکارِ سابقه از سنهاب ----------------
+    const PQ = { init: null, model: null, kind: '', tier: 0 };
+    async function renderPremium(body) {
+        const P = 'api/premium_actions.php';
+        if (!PQ.init) { try { PQ.init = await (await fetch(P + '?action=init')).json(); } catch (e) { PQ.init = { ok: false }; } }
+        const I = PQ.init;
+        if (!I || !I.ok) { body.innerHTML = '<div class="inq-card text-xs text-rose-600">اطلاعاتِ استعلامِ حق بیمه نیامد.</div>'; return; }
+        const curY = (() => { try { return JDatePick.jToday()[0]; } catch (e) { return 1405; } })();
+        const pctOpts = Array.from({ length: 15 }, (x, i) => i * 5).map(p => `<option value="${p}">${fa(p)}٪${p === 0 ? ' (بدون تخفیف)' : ''}</option>`).join('');
+        const nOpts = Array.from({ length: 4 }, (x, i) => `<option value="${i}">${i === 3 ? '۳ و بیشتر' : fa(i)}</option>`).join('');
+        const tierFa = t => t === 1000 ? 'یک میلیارد تومان' : fa(t) + ' میلیون تومان';
+        body.innerHTML = `<div class="grid grid-cols-1 xl:grid-cols-5 gap-4">
+            <div class="inq-card xl:col-span-2 space-y-3">
+                <p class="font-black text-sm text-slate-800"><i class="fas fa-shield-halved ml-1 text-cyan-600"></i>سابقه از سنهاب (اختیاری)</p>
+                <p class="text-[10.5px] text-slate-500 leading-6">با پلاک یا شماره بیمه‌نامه استعلام بزنید و «نشاندن در فرم» را بزنید: تاریخ‌های بیمه‌نامه‌ی قبلی، درصدهای تخفیف و تعدادِ خسارت‌ها خودکار پر می‌شود؛ بیمه‌گر، انقضا و جزئیات هم همان‌جا دیده می‌شود.</p>
+                ${V.boot.sh_ready ? '<div id="pq-sh"></div>' : '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5">سنهاب هنوز در تنظیمات تنظیم نشده؛ اطلاعات را دستی وارد کنید.</p>'}
+            </div>
+            <div class="inq-card xl:col-span-3 space-y-3">
+                <p class="font-black text-sm text-slate-800"><i class="fas fa-calculator ml-1 text-indigo-500"></i>محاسبه‌ی حق بیمه‌ی ثالث</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="inq-f">نوعِ وسیله<select id="pq-kind" class="inq-in" style="font-size:12.5px"><option value="">انتخاب کنید</option>${(I.kinds || []).map(k => `<option value="${esc(k.key)}">${esc(k.icon || '')} ${esc(k.fa)}</option>`).join('')}</select></label>
+                    <label class="inq-f md:col-span-2">نامِ خودرو (جستجو)<input id="pq-q" class="inq-in" style="font-size:12.5px;letter-spacing:0" placeholder="مثلاً پژو ۲۰۶، پراید ۱۳۱، کشنده ..." autocomplete="off"></label></div>
+                <div id="pq-models" class="flex flex-wrap gap-1.5"></div>
+                <p id="pq-model" class="text-[11.5px] font-bold text-slate-600"></p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="inq-f">سال ساخت<select id="pq-year" class="inq-in" style="font-size:12.5px">${Array.from({ length: curY - 1299 }, (x, i) => curY - i).map(y => `<option value="${y}">${fa(y)}</option>`).join('')}</select></label>
+                    <label class="inq-f">شروعِ بیمه‌نامه‌ی قبلی<input id="pq-start" class="inq-in" dir="ltr" data-jdate placeholder="۱۴۰۴/۰۸/۱۵"></label>
+                    <label class="inq-f">انقضای بیمه‌نامه‌ی قبلی<input id="pq-exp" class="inq-in" dir="ltr" data-jdate placeholder="۱۴۰۵/۰۸/۱۵"></label></div>
+                <div><span class="inq-f mb-1">سقف تعهد مالی</span><div class="flex flex-wrap gap-1.5" id="pq-tiers">${(I.liability_tiers || []).map(t => `<button type="button" class="inq-fbtn" data-tier="${t}">${tierFa(t)}</button>`).join('')}</div></div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <label class="inq-f">تخفیفِ ثالثِ قبلی<select id="pq-tp" class="inq-in" style="font-size:12.5px">${pctOpts}</select></label>
+                    <label class="inq-f">تخفیفِ حوادثِ راننده‌ی قبلی<select id="pq-dr" class="inq-in" style="font-size:12.5px">${pctOpts}</select></label>
+                    <span></span>
+                    <label class="inq-f">خسارتِ مالیِ ثالث (سالِ قبل)<select id="pq-tpm" class="inq-in" style="font-size:12.5px">${nOpts}</select></label>
+                    <label class="inq-f">خسارتِ بدنیِ ثالث (سالِ قبل)<select id="pq-tpb" class="inq-in" style="font-size:12.5px">${nOpts}</select></label>
+                    <label class="inq-f">خسارتِ حوادثِ راننده (سالِ قبل)<select id="pq-drb" class="inq-in" style="font-size:12.5px">${nOpts}</select></label></div>
+                <p id="pq-from" class="text-[11px] font-bold text-cyan-700"></p>
+                <button class="inq-go w-full" id="pq-go"><i class="fas fa-calculator ml-1"></i>محاسبه‌ی حق بیمه</button>
+                <div id="pq-out"></div>
+            </div></div>`;
+        const g = id => body.querySelector('#' + id);
+        try { body.querySelectorAll('[data-jdate]').forEach(el => window.JDatePick && JDatePick.attach(el)); } catch (e) {}
+        // پیش‌فرض مثلِ مینی‌اپ: انقضا = امروز، شروع = یک سال قبل
+        try { const t = JDatePick.jToday(); g('pq-exp').value = fa(JDatePick.jFmt(t)); g('pq-start').value = fa(JDatePick.jFmt([t[0] - 1, t[1], t[2]])); } catch (e) {}
+        const paintModel = () => { g('pq-model').innerHTML = PQ.model ? `<i class="fas fa-car ml-1 text-indigo-500"></i>${esc(PQ.model.title)}${PQ.model.sub ? ' · ' + esc(PQ.model.sub) : ''}${PQ.model.rate == null ? ' <span class="text-amber-700">(استعلامِ آنلاین ندارد؛ برای کارشناس ثبت می‌شود)</span>' : ''}` : ''; };
+        let tm;
+        const search = async () => {
+            const k = g('pq-kind').value, q = g('pq-q').value.trim();
+            if (!k) { g('pq-models').innerHTML = '<span class="text-[11px] text-amber-700">اول نوعِ وسیله را انتخاب کنید.</span>'; return; }
+            let d; try { d = await (await fetch('api/vehicle_catalog.php?action=vsearch&kind=' + encodeURIComponent(k) + '&q=' + encodeURIComponent(q))).json(); } catch (e) { d = {}; }
+            const list = (d.models || []).slice(0, 40);
+            if (!list.length && d.brands) { g('pq-models').innerHTML = d.brands.slice(0, 40).map(b => `<button type="button" class="inq-fbtn" data-brand="${esc(b.brand || b)}">${esc(b.brand || b)}</button>`).join(''); g('pq-models').querySelectorAll('[data-brand]').forEach(x => x.onclick = () => { g('pq-q').value = x.dataset.brand; search(); }); return; }
+            g('pq-models').innerHTML = list.map((m, i) => `<button type="button" class="inq-fbtn ${PQ.model && PQ.model.id === m.id ? '!bg-indigo-600 !text-white' : ''}" data-m="${i}">${esc(m.title)}</button>`).join('') || '<span class="text-[11px] text-slate-400">چیزی پیدا نشد.</span>';
+            g('pq-models').querySelectorAll('[data-m]').forEach(x => x.onclick = () => { PQ.model = list[+x.dataset.m]; paintModel(); search(); });
+        };
+        g('pq-kind').onchange = () => { PQ.model = null; paintModel(); search(); };
+        g('pq-q').oninput = () => { clearTimeout(tm); tm = setTimeout(search, 300); };
+        body.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => { PQ.tier = +b.dataset.tier; body.querySelectorAll('[data-tier]').forEach(x => { x.style.background = +x.dataset.tier === PQ.tier ? '#4338ca' : ''; x.style.color = +x.dataset.tier === PQ.tier ? '#fff' : ''; }); });
+        // نتیجه‌ی سنهاب => فرم
+        const near5 = v => Math.max(0, Math.min(70, Math.round((+v || 0) / 5) * 5));
+        const apply = (b) => {
+            if (!b) return;
+            if (b.start_date) g('pq-start').value = fa(b.start_date);
+            if (b.end_date) g('pq-exp').value = fa(b.end_date);
+            if (b.tp_disc != null) g('pq-tp').value = String(near5(b.tp_disc));
+            if (b.dr_disc != null) g('pq-dr').value = String(near5(b.dr_disc));
+            const lc = b.loss_counts || {};
+            g('pq-tpm').value = String(Math.min(3, lc.mali || 0)); g('pq-tpb').value = String(Math.min(3, lc.jani || 0)); g('pq-drb').value = String(Math.min(3, lc.driver || 0));
+            g('pq-from').innerHTML = `<i class="fas fa-shield-halved ml-1"></i>از سنهاب: ${esc(b.insurer || '')} · بیمه‌نامه ${esc(fa(b.policy_no || ''))} · ${b.has_loss ? 'خسارت دارد' : 'عدم خسارت'}${b.vehicle ? ' · ' + esc(b.vehicle) : ''}`;
+            if (b.vehicle && !g('pq-q').value) g('pq-q').value = b.vehicle;
+        };
+        if (window.SanhabUI && g('pq-sh')) SanhabUI.form(g('pq-sh'), { source: 'premium', onApply: apply, applyLabel: 'نشاندن در فرمِ حق بیمه' });
+        g('pq-go').onclick = async () => {
+            if (!PQ.model) { toast('نوع و نامِ خودرو را انتخاب کنید.', 'warning'); g('pq-q').focus(); return; }
+            if (!PQ.tier) { toast('سقف تعهد مالی را انتخاب کنید.', 'warning'); return; }
+            const b = { action: 'calculate', panel: 1, model_id: PQ.model.id, liability_tier: PQ.tier, model_year: +g('pq-year').value,
+                        prev_start_jalali: en(g('pq-start').value).trim(), prev_expiry_jalali: en(g('pq-exp').value).trim(),
+                        tp_prev_percent: g('pq-tp').value, dr_prev_percent: g('pq-dr').value, tp_mali: g('pq-tpm').value, tp_badani: g('pq-tpb').value, dr_mali: 0, dr_badani: g('pq-drb').value };
+            const btn = g('pq-go'); btn.disabled = true;
+            let d; try { d = await (await fetch(P, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(b) })).json(); } catch (e) { d = { ok: false, error: 'خطا در ارتباط.' }; }
+            btn.disabled = false;
+            const o = g('pq-out');
+            if (!d.ok) { o.innerHTML = `<div class="inq-res mt-1" style="background:#fffbeb;border-color:#fde68a"><p class="text-xs font-bold text-amber-800">${esc(d.error || 'خطا')}</p></div>`; return; }
+            const k = d.breakdown || {}, m = v => fa(Math.round(+v || 0).toLocaleString('en-US'));
+            o.innerHTML = `<div class="inq-res mt-1" style="background:#eef2ff;border-color:#c7d2fe">
+                <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm text-indigo-900">${esc(d.category_name || '')} · تعهد ${tierFa(d.liability_tier)}</b><span class="text-[10.5px] text-slate-500">استعلامِ شماره‌ی ${fa(d.inquiry_id || '')}</span></div>
+                <p class="text-2xl font-black text-indigo-700 mt-2">${m(d.grand_total)} <small class="text-xs">ریال</small></p>
+                <div class="inq-dl mt-3">${[['حقِ بیمه‌ی پایه (بعد از تخفیف)', m(k.base_final)], ['مازادِ تعهد', m(k.excess_final)], ['حوادثِ راننده', m(k.driver_final)], ['سهمِ صندوق', m(k.fund_contribution)],
+                    ['مالیات', m(d.tax)], ['درصدِ تخفیف/جریمه‌ی ثالث', fa(d.thirdparty_percent) + '٪'], ['درصدِ حوادثِ راننده', fa(d.driver_percent) + '٪'], ['روزهای دیرکرد', fa(d.days_late || 0)]]
+                    .map(x => `<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div>
+                <p class="text-[10.5px] text-slate-500 mt-2">مبلغ تقریبی است و به درستیِ اطلاعاتِ واردشده بستگی دارد.</p></div>`;
+        };
+    }
+
+    // سنهابِ گروهی: هر ردیف با کپچای خودش (در همین صفحه)
+    function runShBatch(id, body) {
+        const host = body.querySelector('#inq-gcap');
+        if (!host || !window.SanhabUI || V.batchRun[id]) return;
+        V.batchRun[id] = true;
+        SanhabUI.batch(host, id, {
+            onUpdate: b => { const card = body.querySelector(`[data-b="${id}"]`); if (card) { card.outerHTML = batchCard(b); bindBatches(body); } },
+            onDone: () => { delete V.batchRun[id]; const b = body.querySelector('#inq-gl'); if (b && b.isConnected) loadBatches(body); },
+        });
+        host.scrollIntoView({block: 'nearest'});
+    }
+
     // ---------------- تاریخچه ----------------
     async function renderHistory(body) {
         const h = V.hist;
         body.innerHTML = `<div class="inq-card"><div class="flex flex-wrap gap-2 mb-3 items-center">
-            <input id="inq-hq" class="inq-in !mt-0 flex-1 min-w-[12rem]" style="font-size:12px;letter-spacing:0;padding:8px 12px" placeholder="🔍 کد ملی، نام، کد پستی، کاربر" value="${esc(h.q)}">
+            <input id="inq-hq" class="inq-in !mt-0 flex-1 min-w-[12rem]" style="font-size:12px;letter-spacing:0;padding:8px 12px" placeholder="🔍 کد ملی، نام، کد پستی، پلاک، کاربر" value="${esc(h.q)}">
             <select id="inq-hk" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی نوع‌ها</option>${Object.entries(V.boot.kinds_all || V.boot.kinds).map(([k, l]) => `<option value="${k}" ${h.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
             <select id="inq-hs" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی وضعیت‌ها</option>${['OK', 'WARN', 'FAIL', 'QUEUED'].map(s => `<option value="${s}" ${h.status === s ? 'selected' : ''}>${ST_UI[s][0]}</option>`).join('')}</select>
             <select id="inq-hsrc" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی منبع‌ها</option>${Object.entries(SRC_FA).map(([k, l]) => `<option value="${k}" ${h.source === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -421,11 +559,11 @@
         const d = await post(Object.assign({ action: 'history' }, h));
         if (!d.ok) { box.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
         if (!d.items.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">استعلامی پیدا نشد.</p>'; return; }
-        box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>منبع / کاربر</th><th></th></tr></thead><tbody>
+        box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی / پلاک</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>منبع / کاربر</th><th></th></tr></thead><tbody>
             ${d.items.map(it => `<tr>
                 <td class="text-slate-400">${fa(it.batch_id ? it.row_no : it.id)}</td><td class="whitespace-nowrap">${esc(fa(it.created_j))}</td><td>${esc(it.kind_fa)}</td>
-                <td dir="ltr" class="font-mono">${esc(fa(it.national_id || ''))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
-                <td><b>${esc(it.company ? it.company.name : pName(it) || '—')}</b>${it.father_name ? `<small class="block text-slate-400">فرزند ${esc(it.father_name)}</small>` : ''}</td>
+                <td dir="ltr" class="font-mono">${esc(fa(it.kind === 'sanhab' ? (it.query || '') : (it.national_id || '')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
+                <td><b>${esc(it.company ? it.company.name : pName(it) || '—')}</b>${it.father_name ? `<small class="block text-slate-400">فرزند ${esc(it.father_name)}</small>` : ''}${it.kind === 'sanhab' && it.sanhab && window.SanhabUI ? `<small class="block font-bold" style="color:${SanhabUI.tone(it)[1]}">${esc(fa(SanhabUI.shortText(it)))}</small>` : ''}</td>
                 <td>${it.postal ? `<span dir="ltr">${fa(it.postal)}</span>${it.postal_valid === true ? ' <i class="fas fa-circle-check text-emerald-600"></i>' : it.postal_valid === false ? ' <i class="fas fa-circle-xmark text-rose-600"></i>' : ''}${it.postal_text ? `<small class="block text-slate-400 max-w-[14rem]">${esc(it.postal_text)}</small>` : ''}` : '—'}</td>
                 <td>${badge(it.status)}${it.cached ? ' <i class="fas fa-bolt text-indigo-400" title="از نتیجه‌ی قبلی"></i>' : ''}${it.status === 'FAIL' && it.notice ? `<small class="block text-rose-500 max-w-[14rem]">${esc(it.notice)}</small>` : ''}</td>
                 <td><small>${esc(SRC_FA[it.source] || it.source)}</small><small class="block text-slate-400">${esc(it.user_name || '')}</small></td>
@@ -438,6 +576,17 @@
     async function detail(id) {
         const d = await post({ action: 'get', id });
         if (!d.ok) { toast(d.error, 'error'); return; }
+        if (d.item.kind === 'sanhab' && window.SanhabUI) {
+            const m = document.createElement('div'); m.className = 'inq-modal';
+            m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex items-center justify-between p-4 border-b"><b class="text-sm">سنهاب #${fa(id)}${d.item.user_name ? ' · ' + esc(d.item.user_name) : ''}</b><button class="inq-fbtn" data-x>بستن</button></div><div class="p-4 overflow-y-auto" data-h></div></div>`;
+            m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
+            document.body.appendChild(m);
+            const h = m.querySelector('[data-h]');
+            h.innerHTML = SanhabUI.resultHtml(d.item, {});
+            const db = h.querySelector('[data-shd]'); if (db) db.onclick = () => SanhabUI.details(d.item);
+            const cb = h.querySelector('[data-shc]'); if (cb) cb.onclick = async () => { try { await navigator.clipboard.writeText((d.item.sanhab || {}).summary_text || ''); toast('کپی شد.', 'success'); } catch (e) {} };
+            return;
+        }
         const m = document.createElement('div'); m.className = 'inq-modal';
         m.innerHTML = `<div><div class="flex items-center justify-between p-4 border-b"><b class="text-sm">استعلامِ #${fa(id)} · ${esc(fa(d.item.created_j))}${d.item.user_name ? ' · ' + esc(d.item.user_name) : ''}</b><button class="inq-fbtn" data-x>بستن</button></div><div class="p-4 overflow-y-auto">${resultHtml(d.item, true)}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
@@ -466,6 +615,20 @@
                     <p class="text-[10.5px] text-slate-500 leading-6 mt-1">cPanel ← Cron Jobs ← Common Settings: <b>Once Per Five Minutes (*/5 * * * *)</b> و در Command این را بگذارید:</p>
                     <code class="block text-[10.5px] bg-white border rounded-lg p-2 mt-1 break-all" dir="ltr" id="inq-cron">curl -s -o /dev/null "${esc(d.cron_url)}"</code>
                     <div class="flex gap-2 mt-2"><button class="inq-fbtn" id="inq-cc"><i class="far fa-copy ml-1"></i>کپی</button><button class="inq-fbtn" id="inq-ck">کلیدِ تازه</button></div></div>
+            </div>
+            <div class="inq-card space-y-3">
+                <p class="font-black text-sm text-slate-800"><i class="fas fa-shield-halved ml-1 text-cyan-600"></i>اتصال به سامانه‌ی سنهاب (بیمه مرکزی)</p>
+                <div class="flex flex-wrap items-center gap-2">${(statusChip(d.sh_status) || '<span class="inq-chip">تنظیم نشده</span>').replace('inq-chip', 'inq-chip !bg-slate-800 text-white')}<button class="inq-fbtn" id="inq-shs"><i class="fas fa-rotate ml-1"></i>بررسیِ دوباره</button><button class="inq-go !py-2 !px-4 text-xs" id="inq-shl"><i class="fas fa-key ml-1"></i>ورود با کپچا</button>
+                    <button class="inq-fbtn" id="inq-shp"><i class="fas fa-eye ml-1"></i>صفحه‌ی آخرِ سامانه</button></div>
+                <div id="inq-shlbox"></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="inq-f">نام کاربریِ سنهاب<input id="inq-shu" class="inq-in" dir="ltr" style="font-size:13px" value="${esc(d.sh_username || '')}"></label>
+                    <label class="inq-f">رمزِ سنهاب<input id="inq-shpw" type="password" class="inq-in" dir="ltr" style="font-size:13px" placeholder="${d.sh_has_password ? '•••••• (ذخیره شده؛ برای تغییر بنویسید)' : ''}"></label></div>
+                ${sw('inq_sh_enabled', 'استعلامِ سنهاب فعال باشد', 'در استعلامات، ثبتِ درخواست (ردیف‌های ثالث)، پنلِ صدور و استعلامِ حق بیمه')}
+                ${num('inq_sh_daily_limit', 'سقفِ روزانه‌ی سنهاب برای هر کاربر', '۰ = بدونِ سقف؛ مدیر کل سقف ندارد')}
+                <p class="text-[10.5px] text-slate-400 leading-6">رمز رمزنگاری‌شده ذخیره می‌شود و فقط مدیر کل آن را می‌بیند/عوض می‌کند. بقیه‌ی کاربران فقط کدِ تصویر را می‌زنند: اگر نشست بسته باشد کدِ «ورود»، و برای هر استعلام کدِ خودِ آن استعلام. نشستِ سنهاب بینِ همه مشترک است، پس در هر لحظه یک نفر استعلام می‌زند (حداکثر ۹۰ ثانیه نوبت؛ بقیه چند ثانیه صبر می‌کنند). با cronِ بالا، نشستِ سنهاب هم تا «نگه‌داشتنِ نشست» دقیقه بعد از آخرین استعلام باز می‌ماند.</p>
+                <p class="font-black text-sm text-slate-800 pt-2"><i class="fas fa-building-circle-check ml-1 text-emerald-600"></i>شخصِ حقوقی</p>
+                ${sw('inq_legal_px', 'اول از سامانه‌ی پاسارگاد استعلام شود', 'از فهرستِ اشخاصِ حقوقیِ پاسارگاد (نام، شماره ثبت، کد اقتصادی، نشانی، تلفن، ...)؛ اگر نتیجه نداد یا خاموش بود، از سرویسِ s.api.ir')}
             </div>
             <div class="inq-card space-y-2.5">
                 <p class="font-black text-sm text-slate-800"><i class="fas fa-sliders ml-1 text-violet-500"></i>رفتارِ استعلام‌ها</p>
@@ -506,10 +669,30 @@
         body.querySelector('#inq-lrs').onclick = () => limitCall('limit_reset');
         body.querySelector('#inq-ss').onclick = async () => { const r = await post({ action: 'status' }); V.boot.status = r.status; renderSettings(body); };
         body.querySelector('#inq-sl').onclick = () => loginDialog(() => renderSettings(body));
+        body.querySelector('#inq-shs').onclick = async () => { await post({ action: 'sh_boot' }); renderSettings(body); };
+        body.querySelector('#inq-shp').onclick = () => {
+            const url = `${API}?action=sh_page`;
+            const m = document.createElement('div'); m.className = 'inq-modal';
+            m.innerHTML = `<div><div class="flex items-center justify-between p-3 border-b"><b class="text-sm">صفحه‌ی آخرِ سامانه‌ی سنهاب</b><button class="inq-fbtn" data-x>بستن</button></div><iframe src="${url}" sandbox="" style="flex:1;width:100%;min-height:75vh;border:0;background:#fff"></iframe></div>`;
+            m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
+            document.body.appendChild(m);
+        };
+        body.querySelector('#inq-shl').onclick = async () => {
+            const box = body.querySelector('#inq-shlbox');
+            const r = await post({ action: 'sh_login_captcha', refresh: 1 });
+            if (r.logged_in) { toast('نشستِ سنهاب باز است.', 'success'); renderSettings(body); return; }
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+            box.innerHTML = `<div class="inq-cap"><div class="flex flex-wrap items-center gap-2"><span class="inq-capimg"><img src="${r.image}"></span><input class="inq-in !mt-0" style="width:150px;text-align:center" dir="ltr" data-c><button class="inq-go !py-2 !px-4 text-xs" data-ok>ورود</button></div><p class="text-[11px] text-rose-600 font-bold mt-1" data-e></p></div>`;
+            const go = async () => { const x = await post({ action: 'sh_login', captcha: en(box.querySelector('[data-c]').value).trim() }); if (x.ok) { toast('به سنهاب وارد شدید.', 'success'); renderSettings(body); } else { box.querySelector('[data-e]').textContent = x.error || ''; if (x.image) box.querySelector('img').src = x.image; box.querySelector('[data-c]').value = ''; } };
+            box.querySelector('[data-ok]').onclick = go;
+            box.querySelector('[data-c]').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+            box.querySelector('[data-c]').focus();
+        };
         body.querySelector('#inq-cc').onclick = () => { try { navigator.clipboard.writeText(body.querySelector('#inq-cron').textContent); toast('کپی شد.', 'info'); } catch (e) {} };
         body.querySelector('#inq-ck').onclick = async () => { if (!(await ask('کلیدِ cron', 'کلیدِ cron عوض شود؟ دستورِ قبلی دیگر کار نمی‌کند.', { ok: 'عوض شود' }))) return; await post({ action: 'settings_save', new_cron_key: 1 }); renderSettings(body); };
         body.querySelector('#inq-ssave').onclick = async () => {
-            const b = { action: 'settings_save', username: body.querySelector('#inq-su').value.trim(), password: body.querySelector('#inq-sp').value };
+            const b = { action: 'settings_save', username: body.querySelector('#inq-su').value.trim(), password: body.querySelector('#inq-sp').value,
+                        sh_username: body.querySelector('#inq-shu').value.trim(), sh_password: body.querySelector('#inq-shpw').value };
             body.querySelectorAll('[data-s]').forEach(i => b[i.dataset.s] = i.type === 'checkbox' ? (i.checked ? 1 : 0) : en(i.value));
             const r = await post(b); toast(r.ok ? 'ذخیره شد.' : r.error, r.ok ? 'success' : 'error');
             if (r.ok) renderSettings(body);

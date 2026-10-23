@@ -419,6 +419,7 @@
               <div><label class="lbl">تیپ خودرو</label><input data-r="carType" class="inp" value="${esc(r.carType || '')}" placeholder="مثلاً تیپ ۵"></div>
               ${r.isNew ? '<div class="md:col-span-4 text-[10.5px] text-emerald-700 font-bold bg-emerald-50 rounded-lg px-2 py-1.5">صفر کیلومتر: بیمه‌نامه‌ی قبلی و تاریخِ انقضا ندارد و بازدیدِ سلامت لازم نیست.</div>'
                 : `<div><label class="lbl">تاریخ انقضای بیمه‌نامه‌ی قبلی</label><input data-r="expiry" class="inp text-center" dir="ltr" value="${esc(fa(r.expiry))}" placeholder="۱۴۰۵/۰۸/۱۵"></div>`}
+              ${!body && !r.isNew && window.SanhabUI ? '<div class="md:col-span-4 rounded-xl bg-cyan-50/70 border border-cyan-100 px-2 py-1.5" data-sh-row></div>' : ''}
               ${kindFields}
               <div class="md:col-span-4"><label class="lbl">توضیح این ردیف</label><input data-r="note" class="inp" value="${esc(r.note)}"></div>
             </div>
@@ -519,6 +520,18 @@
                     render();
                 } else { const s = root.querySelector('#cmr-summary'); if (s) s.innerHTML = summary(); }
             });
+        });
+        // استعلامِ سنهاب برای ردیف‌های ثالث: عدمِ خسارت / خسارت، تخفیف‌ها، بیمه‌گر و انقضا؛ «نشاندن در همین ردیف» تاریخِ انقضا و شماره‌ی بیمه‌نامه‌ی قبلی را پر می‌کند
+        root.querySelectorAll('[data-sh-row]').forEach(h => {
+            const r = rowOf(h);
+            SanhabUI.button(h, {
+                getPrefill: () => ({plate: r.moto || r.noPlate ? null : {p1: en(r.p1), p2: en(r.p2), letter: r.letter, p4: en(r.p4)}, moto: r.moto ? {city: en(r.mcity), num: en(r.mnum)} : null, chassis: r.chassis, engine: r.engine}),
+                lastItem: r.shItem || null, lookup: !r.shLooked, source: 'form', title: (r.carName || 'ردیفِ ثالث') + (r.p2 ? ' · ' + fa(r.p4 + ' ' + r.letter + ' ' + r.p2 + ' ایران ' + r.p1) : ''),
+                label: 'استعلامِ سنهاب', applyLabel: 'نشاندن در همین ردیف',
+                onResult: it => { r.shItem = it; },
+                onApply: b => { if (b.end_date) r.expiry = b.end_date; if (b.policy_no && st.kind === 'NEW_POLICY') r.refPolicy = b.policy_no; if (!r.carName && b.vehicle) r.carName = b.vehicle; render(); },
+            });
+            r.shLooked = true;
         });
         // مالک / بیمه‌گذار: مقدارِ ویرایشگر همان لحظه در وضعیتِ فرم نگه داشته می‌شود
         root.querySelectorAll('[data-pty-scope]').forEach(box => {

@@ -111,6 +111,12 @@ try {
         $out(['ok' => true, 'type' => 'C', 'id' => $id, 'request_id' => (int)$r['request_id'], 'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $kind),
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
               'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true),
+              // استعلامِ سنهاب از داخلِ پنل (ثالث): پلاک/شاسی/موتور و شماره بیمه‌نامه‌ی قبلیِ همین ردیف
+              'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'crp', 'id' => $id], 'prefill' => [
+                  'plate' => $r['plate_letter'] === 'موتور' ? null : ['p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4']],
+                  'moto' => $r['plate_letter'] === 'موتور' ? ['city' => $r['plate_p1'], 'num' => $r['plate_p2']] : null,
+                  'vin' => $r['vin'] ?: '', 'chassis' => $r['chassis_no'] ?: '', 'engine' => $r['engine_no'] ?: '',
+                  'nid' => preg_replace('/\D/', '', (string)(($ii['insured_national_id'] ?? '') ?: ($ins['national_id'] ?? ''))), 'policy_no' => ($r['ref_policy_number'] ?? '') ?: ($ii['prev_policy_number'] ?? '')]],
               'vehicle_key' => ($pc = plate_core($plate)) ? 'p:' . p2e_digits($pc) : (($v = brd_vin_key_safe($r['chassis_no'] ?: $r['vin'])) ? 'v:' . $v : '')]);
     }
 
@@ -167,6 +173,8 @@ try {
     $out(['ok' => true, 'type' => 'P', 'id' => $id, 'status' => $c['status'] ?? '', 'status_fa' => $stFa[$c['status'] ?? ''] ?? ($c['status'] ?? ''),
           'title' => $plate ?: ($c['full_name'] ?: 'پرونده‌ی کارکنان'), 'subtitle' => trim(($c['full_name'] ?? '') . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($c['employer'] ? ' · ' . $c['employer'] : '')),
           'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true),
+          'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'case', 'id' => $id], 'prefill' => ['plate' => $plate, 'vin' => $g('vin') ?: '', 'chassis' => $g('chassis_num') ?: '', 'engine' => $g('engine_num') ?: '',
+                       'nid' => preg_replace('/\D/', '', (string)($g('insured_national_id') ?: ($c['national_code'] ?? ''))), 'policy_no' => ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number')]],
           'vehicle_key' => ($pc = plate_core($plate)) ? 'p:' . p2e_digits($pc) : (($v = brd_vin_key_safe($g('chassis_num') ?: $g('vin'))) ? 'v:' . $v : '')]);
 } catch (Throwable $e) {
     error_log('[issue_panel] ' . $e->getMessage() . ' @' . basename($e->getFile()) . ':' . $e->getLine());

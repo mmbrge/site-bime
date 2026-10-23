@@ -102,6 +102,11 @@ try {
     if ($action === 'calculate') {
         $data = $jsonBody;
         $who = pq_who($pdo, $data['token'] ?? '', $data['init_data'] ?? '');
+        // استعلام از پنل (استعلامات ← استعلامِ حق بیمه): نامِ کارمندِ واردشده
+        if (!empty($data['panel']) && !$who['name'] && isset($_COOKIE[session_name()])) {
+            @session_start(['read_and_close' => true]);
+            if (!empty($_SESSION['user_id'])) $who['name'] = trim((string)($_SESSION['full_name'] ?? 'کارمند')) . ' (پنل)';
+        }
 
         // وسیله‌ی نقلیه: از فهرستِ پنل (نوع ← گروه ← مدل)
         $model = !empty($data['model_id']) ? vc_get($pdo, intval($data['model_id'])) : null;

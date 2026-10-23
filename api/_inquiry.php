@@ -1,7 +1,8 @@
 <?php
 // فایل: api/_inquiry.php
 // «استعلامات»: شخصِ حقیقی، شخصِ حقیقی + کد پستی، کد پستی (املاک و اسکان) از راهِ سامانه‌ی ریتونِ بیمه پاسارگاد،
-// و شخصِ حقوقی از s.api.ir (api/_apis.php). همان گام‌های ابزارِ PasargadFlow (ورود به فرمِ پیش‌نویس ← loadCodeMelli ←
+// و شخصِ حقوقی: اول از فهرستِ اشخاصِ حقوقیِ همان سامانه (LOV)، اگر نتیجه نداد از s.api.ir (api/_apis.php).
+// استعلامِ سنهاب (سوابقِ بیمه‌نامه) جداست: api/_sanhab.php (همین جدول، kind = sanhab). همان گام‌های ابزارِ PasargadFlow (ورود به فرمِ پیش‌نویس ← loadCodeMelli ←
 // «استعلام شخص حقیقی» ← افزودن به «لیست طرف قرارداد» ← «استعلامِ کد پستی»)، با این تفاوت‌ها:
 //   - هر استعلام یک ردیف در inq_requests (تاریخچه، نتیجه، تایم‌لاین)، و صفحه‌ی هر گام در پوشه‌ی خصوصیِ همان استعلام
 //     (api/data/inq/jobs/{id}/stepN.html) فقط برای مدیر کل؛
@@ -10,10 +11,11 @@
 //   - نام کاربری و رمزِ سامانه رمزنگاری‌شده ذخیره می‌شود (کلید در فایلی خارج از پایگاه‌داده).
 // جدول‌ها خودکار ساخته می‌شوند (inq_ensure).
 
-const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی'];
+const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
-                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2'];
+                      'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',
+                      'inq_legal_px' => '1', 'inq_sh_enabled' => '1', 'inq_sh_daily_limit' => '0'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';
@@ -105,7 +107,7 @@ class InqPasargad
 {
     private $sso = 'https://sso.pasargadinsurance.ir';
     private $core = 'https://core.pasargadinsurance.ir';
-    private $listUrl, $formUrl, $cookieFile, $jobDir;
+    private $listUrl, $formUrl, $lovInitUrl, $lovSearchUrl, $cookieFile, $jobDir;
     private $lastUrl = '';
     private $state = [];
     private $html = [];
@@ -114,6 +116,8 @@ class InqPasargad
     {
         $this->listUrl = $this->core . '/cins/bimehshakhssalespishnevis/bimehShakhsSalesPishnevis.simplelist.html';
         $this->formUrl = $this->core . '/cins/bimehshakhssalespishnevis/bimehShakhsSalesPishnevis.simpleform.html';
+        $this->lovInitUrl = $this->core . '/cins/shakhsHoghooghi.lov.html?shakhsInfoSelectable=true&moshakhasatInfoSelectable=true';
+        $this->lovSearchUrl = $this->core . '/cins/shakhshoghooghi/shakhsHoghooghi.simplelov.html';
         $this->cookieFile = inq_dir() . '/session.cookies';
         $this->jobDir = $jobDir;
     }
@@ -304,10 +308,11 @@ class InqPasargad
         $f = $this->fields($html, 'editform');
         $n = $this->parseNotices($html);
         $ns = $f['editform:noeShakhs'] ?? null;
-        return ['token' => $f['token'] ?? '—', 'noeShakhs' => $ns === '0' ? 'حقیقی (0)' : ($ns ?? '—'),
+        return ['token' => $f['token'] ?? '—', 'noeShakhs' => $ns === '0' ? 'حقیقی (0)' : ($ns === '1' ? 'حقوقی (1)' : ($ns ?? '—')),
                 'checkboxes' => ['isBimehgozar' => !empty($f['editform:isBimehgozar']), 'isTarafAsli' => !empty($f['editform:isTarafAsli']), 'isPardakhtKonandeh' => !empty($f['editform:isPardakhtKonandeh'])],
-                'codeMelli' => !empty($f['shakhsHaghighi_codeMelli']) ? $f['shakhsHaghighi_codeMelli'] : ($f['shakhsHaghighi_codeMelli_hidden'] ?? '—'),
-                'shakhsId' => $f['shakhsHaghighi_ID'] ?? '—', 'birthHidden' => $f['editform:shakhsHaghighi_tarikhTavalod'] ?? '—',
+                'codeMelli' => !empty($f['shakhsHaghighi_codeMelli']) ? $f['shakhsHaghighi_codeMelli'] : (!empty($f['shakhsHoghooghi_shenasehMelli_hidden']) ? $f['shakhsHoghooghi_shenasehMelli_hidden'] : ($f['shakhsHaghighi_codeMelli_hidden'] ?? '—')),
+                'shakhsId' => !empty($f['shakhsHaghighi_ID']) ? $f['shakhsHaghighi_ID'] : ($f['shakhsHoghooghi_ID'] ?? '—'),
+                'birthHidden' => !empty($f['editform:shakhsHaghighi_tarikhTavalod']) ? $f['editform:shakhsHaghighi_tarikhTavalod'] : ($f['editform:shakhsHoghooghi_tarikhTasis'] ?? '—'),
                 'birthYMD' => ($f['editform:shakhsHaghighi_tarikhTavalod_y'] ?? '') . '/' . ($f['editform:shakhsHaghighi_tarikhTavalod_m'] ?? '') . '/' . ($f['editform:shakhsHaghighi_tarikhTavalod_d'] ?? ''),
                 'person' => $this->readPerson($html), 'tarafTable' => $this->inspectTarafTable($html, $nid),
                 'codePostiInForm' => $f['moshakhasatOmumi_codePosti'] ?? '—', 'serverNotice' => $n['summaryText'], 'serverNoticeOk' => $n['hasSuccess'] ? true : ($n['hasError'] ? false : null)];
@@ -316,7 +321,7 @@ class InqPasargad
     private function hasField($html, $name)
     {
         $q = preg_quote($name, '/');
-        return (bool)(preg_match('/\b(name|id)=["\'](editform:)?' . $q . '["\']/i', $html));
+        return (bool)(preg_match('/\b(name|id)=["\'](editform:|exampleform:)?' . $q . '["\']/i', $html));
     }
     private function loggedOut($html) { return $html === '' || strpos($html, 'ssoLoginForm') !== false; }
 
@@ -494,6 +499,680 @@ class InqPasargad
         return ['ok' => false, 'message' => 'گام نامعتبر است'];
     }
 
+    // =====================================================================
+    //  شخصِ حقوقی (فهرستِ اشخاصِ حقوقیِ سامانه؛ همان گام‌های ابزارِ PasargadFlow) + گامِ ۵ِ اختیاری: کد پستی
+    // =====================================================================
+    private function operatorPrefix($opId)
+    {
+        $map = array(
+            '1' => '0911', '2' => '0912', '3' => '0914', '4' => '0916', '5' => '0913',
+            '6' => '0936', '7' => '0939', '8' => '0937', '9' => '0938', '10' => '0935',
+            '11' => '0919', '12' => '0915', '13' => '0910', '14' => '0918', '15' => '0917',
+            '16' => '0934', '17' => '0933', '18' => '0930', '19' => '0921', '20' => '0932',
+            '21' => '0920', '22' => '0901', '42' => '0902', '62' => '0903', '63' => '0990',
+            '82' => '0922', '102' => '0991', '122' => '0905', '142' => '0992', '162' => '0994',
+            '182' => '0904', '222' => '0993', '242' => '0999', '262' => '0998', '282' => '0996',
+            '302' => '0900', '322' => '0923', '342' => '0906',
+        );
+        $k = trim((string)$opId);
+        return isset($map[$k]) ? $map[$k] : '';
+    }
+
+    private function tabaghebandiLabel($code)
+    {
+        $map = array(
+            '4' => 'پیشفرض', '142' => 'نظامی', '102' => 'موسسه', '81' => 'مدارس',
+            '63' => 'شهرداری', '203' => 'شعبه تامین اجتماعی', '3' => 'شعب بانکی',
+            '162' => 'شرکت ملی', '182' => 'دولتی', '122' => 'دانشگاه',
+            '101' => 'تعاونی', '202' => 'تامین اجتماعی', '1' => 'بیمه ها', '2' => 'بانک ها',
+        );
+        $k = trim((string)$code);
+        return isset($map[$k]) ? $map[$k] : $k;
+    }
+
+    private function noeSherkatLabel($code)
+    {
+        $k = trim((string)$code);
+        if ($k === '0') return 'دولتی';
+        if ($k === '1') return 'غیر دولتی';
+        return $k;
+    }
+
+    private function goroohHesabdariLabel($code)
+    {
+        $map = array(
+            '1' => 'حقیقی:پیش فرض',
+            '2' => 'حقوقی:پیش فرض',
+            '3' => 'حقوقی:گروه مالی پاسارگاد',
+        );
+        $k = trim((string)$code);
+        return isset($map[$k]) ? $map[$k] : $k;
+    }
+
+    private function melliatLabel($code)
+    {
+        $k = trim((string)$code);
+        if ($k === '29' or $k === '') return 'ایران';
+        return $k;
+    }
+
+    /** تجزیه آرگومان‌های یک تابع جاوااسکریپت مانند fillShakhsHoghooghiInfo(...) */
+    private function parseJsArgs($argStr)
+    {
+        $args = array();
+        $len  = strlen($argStr);
+        $cur  = '';
+        $inQ  = false;
+        $qChr = '';
+        $esc  = false;
+
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $argStr[$i];
+            if ($esc) {
+                $cur .= $ch;
+                $esc = false;
+                continue;
+            }
+            if ($ch === '\\') {
+                $esc = true;
+                continue;
+            }
+            if ($inQ) {
+                if ($ch === $qChr) {
+                    $inQ = false;
+                } else {
+                    $cur .= $ch;
+                }
+                continue;
+            }
+            if ($ch === "'" or $ch === '"') {
+                $inQ  = true;
+                $qChr = $ch;
+                continue;
+            }
+            if ($ch === ',') {
+                $val = trim($cur);
+                if (strtolower($val) === 'null' or strtolower($val) === 'undefined') $val = '';
+                $args[] = $this->decodeHtml($val);
+                $cur = '';
+                continue;
+            }
+            $cur .= $ch;
+        }
+        $val = trim($cur);
+        if (strtolower($val) === 'null' or strtolower($val) === 'undefined') $val = '';
+        $args[] = $this->decodeHtml($val);
+        return $args;
+    }
+
+    /** استخراج اطلاعات شرکت از صفحه پاپ‌آپ shakhsHoghooghi.simplelov.html */
+    private function parseLovLegalResult($html)
+    {
+        $info = array(
+            'found'             => false,
+            'id'                => '',
+            'shomarehShenasai'  => '',
+            'shenasehMelli'     => '',
+            'shomarehSabt'      => '',
+            'codeEghtesadi'     => '',
+            'naam'              => '',
+            'tabaghebandi'      => '4',
+            'tarikhTasisDay'    => '',
+            'tarikhTasisMonth'  => '',
+            'tarikhTasisYear'   => '',
+            'tarikhTasis'       => '',
+            'noeSherkat'        => '',
+            'melliatId'         => '29',
+            'goroohHesabdariId' => '2',
+            'telefon'           => '',
+            'mobile'            => '',
+            'operatorId'        => '',
+            'fax'               => '',
+            'email'             => '',
+            'webSite'           => '',
+            'codePosti'         => '',
+            'address'           => '',
+            'shahrDesc'         => '',
+            'shahrId'           => '',
+            'jsfSelectId'       => '',
+        );
+
+        // ۱. بررسی فراخوانی مستقیم fillShakhsHoghooghiInfo(...)
+        if (preg_match_all('/fillShakhsHoghooghiInfo\s*\(([^)]+)\)/is', $html, $matches)) {
+            foreach ($matches[1] as $argStr) {
+                $args = $this->parseJsArgs($argStr);
+                if (count($args) >= 6 && $args[0] !== 'id' && (is_numeric($args[0]) or is_numeric($args[2]))) {
+                    $info['found']             = true;
+                    $info['id']                = isset($args[0]) ? $args[0] : '';
+                    $info['shomarehShenasai']  = isset($args[1]) ? $args[1] : '';
+                    $info['shenasehMelli']     = isset($args[2]) ? $args[2] : '';
+                    $info['shomarehSabt']      = isset($args[3]) ? $args[3] : '';
+                    $info['codeEghtesadi']     = isset($args[4]) ? $args[4] : '';
+                    $info['naam']              = isset($args[5]) ? $args[5] : '';
+                    $info['tabaghebandi']      = isset($args[6]) && $args[6] !== '' ? $args[6] : '4';
+                    $info['tarikhTasisDay']    = isset($args[7]) ? $args[7] : '';
+                    $info['tarikhTasisMonth']  = isset($args[8]) ? $args[8] : '';
+                    $info['tarikhTasisYear']   = isset($args[9]) ? $args[9] : '';
+                    $info['noeSherkat']        = isset($args[10]) ? $args[10] : '';
+                    $info['melliatId']         = isset($args[11]) && $args[11] !== '' ? $args[11] : '29';
+                    $info['goroohHesabdariId'] = isset($args[12]) && $args[12] !== '' ? $args[12] : '2';
+                    break;
+                }
+            }
+        }
+
+        // ۲. بررسی فراخوانی مستقیم fillMoshakhasatInfo(...)
+        if (preg_match_all('/fillMoshakhasatInfo\s*\(([^)]+)\)/is', $html, $mMatches)) {
+            foreach ($mMatches[1] as $argStr) {
+                $args = $this->parseJsArgs($argStr);
+                if (count($args) >= 7 && $args[0] !== 'prefix') {
+                    $info['telefon']    = isset($args[1]) ? $args[1] : '';
+                    $info['mobile']     = isset($args[2]) ? $args[2] : '';
+                    $info['fax']        = isset($args[3]) ? $args[3] : '';
+                    $info['email']      = isset($args[4]) ? $args[4] : '';
+                    $info['codePosti']  = isset($args[5]) ? $args[5] : '';
+                    $info['address']    = isset($args[6]) ? $args[6] : '';
+                    $info['shahrDesc']  = isset($args[7]) ? $args[7] : '';
+                    $info['shahrId']    = isset($args[8]) ? $args[8] : '';
+                    $info['operatorId'] = isset($args[9]) ? $args[9] : '';
+                    break;
+                }
+            }
+        }
+
+        // ۳. بررسی دکمه انتخاب در جدول exampleform:dataTable
+        $tableChunk = $html;
+        if (preg_match('/<tbody\b[^>]*\bid=["\']exampleform:dataTable:tbody_element["\'][^>]*>(.*?)<\/tbody>/is', $html, $tm)) {
+            $tableChunk = $tm[1];
+        } elseif (preg_match('/<table\b[^>]*\bid=["\']exampleform:dataTable["\'][^>]*>(.*?)<\/table>/is', $html, $tm)) {
+            $tableChunk = $tm[1];
+        }
+
+        if (!$info['found']) {
+            // بررسی onclickهای داخل جدول که تابع انتخاب (مثل select یا selectShakhsHoghooghi) را صدا می‌زنند
+            if (preg_match_all('/onclick=["\']([^"\']+)["\']/is', $tableChunk, $ocMatches)) {
+                foreach ($ocMatches[1] as $oc) {
+                    if (stripos($oc, 'submitForm') !== false) {
+                        if (preg_match('/submitForm\s*\(\s*["\']exampleform["\']\s*,\s*["\'](exampleform:dataTable:0:[^"\']+)["\']/i', $oc, $sm)) {
+                            $info['jsfSelectId'] = $sm[1];
+                        }
+                        continue;
+                    }
+                    if (preg_match_all('/([a-zA-Z0-9_$.]+)\s*\(([^)]*)\)/s', $oc, $fnCalls, PREG_SET_ORDER)) {
+                        foreach ($fnCalls as $fn) {
+                            $fnName = strtolower($fn[1]);
+                            if (strpos($fnName, 'close') !== false) continue;
+                            $args = $this->parseJsArgs($fn[2]);
+                            if (count($args) >= 6 && (is_numeric($args[0]) or is_numeric($args[2]))) {
+                                $info['found']             = true;
+                                $info['id']                = isset($args[0]) ? $args[0] : '';
+                                $info['shomarehShenasai']  = isset($args[1]) ? $args[1] : '';
+                                $info['shenasehMelli']     = isset($args[2]) ? $args[2] : '';
+                                $info['shomarehSabt']      = isset($args[3]) ? $args[3] : '';
+                                $info['codeEghtesadi']     = isset($args[4]) ? $args[4] : '';
+                                $info['naam']              = isset($args[5]) ? $args[5] : '';
+                                $info['tabaghebandi']      = isset($args[6]) && $args[6] !== '' ? $args[6] : '4';
+                                $info['tarikhTasisDay']    = isset($args[7]) ? $args[7] : '';
+                                $info['tarikhTasisMonth']  = isset($args[8]) ? $args[8] : '';
+                                $info['tarikhTasisYear']   = isset($args[9]) ? $args[9] : '';
+                                $info['noeSherkat']        = isset($args[10]) ? $args[10] : '';
+                                $info['melliatId']         = isset($args[11]) && $args[11] !== '' ? $args[11] : '29';
+                                $info['goroohHesabdariId'] = isset($args[12]) && $args[12] !== '' ? $args[12] : '2';
+                                if (count($args) >= 20) {
+                                    $info['telefon']    = isset($args[13]) ? $args[13] : '';
+                                    $info['mobile']     = isset($args[14]) ? $args[14] : '';
+                                    $info['fax']        = isset($args[15]) ? $args[15] : '';
+                                    $info['email']      = isset($args[16]) ? $args[16] : '';
+                                    $info['codePosti']  = isset($args[17]) ? $args[17] : '';
+                                    $info['address']    = isset($args[18]) ? $args[18] : '';
+                                    $info['shahrDesc']  = isset($args[19]) ? $args[19] : '';
+                                    $info['shahrId']    = isset($args[20]) ? $args[20] : '';
+                                    $info['operatorId'] = isset($args[21]) ? $args[21] : '';
+                                }
+                            } elseif (count($args) >= 7 && $args[0] === 'moshakhasatOmumi') {
+                                $info['telefon']    = isset($args[1]) ? $args[1] : '';
+                                $info['mobile']     = isset($args[2]) ? $args[2] : '';
+                                $info['fax']        = isset($args[3]) ? $args[3] : '';
+                                $info['email']      = isset($args[4]) ? $args[4] : '';
+                                $info['codePosti']  = isset($args[5]) ? $args[5] : '';
+                                $info['address']    = isset($args[6]) ? $args[6] : '';
+                                $info['shahrDesc']  = isset($args[7]) ? $args[7] : '';
+                                $info['shahrId']    = isset($args[8]) ? $args[8] : '';
+                                $info['operatorId'] = isset($args[9]) ? $args[9] : '';
+                            }
+                        }
+                    }
+                    if ($info['found']) break;
+                }
+            }
+        }
+
+        // ۴. استخراج مکمل از متن ستون‌های جدول (در صورتی که برخی مقادیر در جدول نمایش داده شده باشند)
+        if (preg_match_all('/<tr\b[^>]*>(.*?)<\/tr>/is', $tableChunk, $trMatches) && !empty($trMatches[1])) {
+            foreach ($trMatches[1] as $trHtml) {
+                if (preg_match_all('/<td\b[^>]*>(.*?)<\/td>/is', $trHtml, $tdMatches) && count($tdMatches[1]) >= 3) {
+                    $col0 = trim(strip_tags(str_replace(array('<br>', '<br/>', '<br />'), "\n", $tdMatches[1][0])));
+                    $col1 = trim(strip_tags(str_replace(array('<br>', '<br/>', '<br />'), "\n", $tdMatches[1][1])));
+                    $col2 = trim(strip_tags(str_replace(array('<br>', '<br/>', '<br />'), "\n", $tdMatches[1][2])));
+
+                    if (preg_match('/\b(\d{10,11})\b/', $col1, $smMatch)) {
+                        $info['found'] = true;
+                        if ($info['shenasehMelli'] === '') $info['shenasehMelli'] = $smMatch[1];
+                    }
+                    $c1Lines = array_values(array_filter(array_map('trim', explode("\n", $col1))));
+                    if (count($c1Lines) >= 2 && $info['shomarehSabt'] === '') $info['shomarehSabt'] = $c1Lines[1];
+                    if (count($c1Lines) >= 3 && $info['codeEghtesadi'] === '') $info['codeEghtesadi'] = $c1Lines[2];
+
+                    $c0Lines = array_values(array_filter(array_map('trim', explode("\n", $col0))));
+                    if (count($c0Lines) >= 1 && $info['naam'] === '') $info['naam'] = $c0Lines[0];
+                    if (count($c0Lines) >= 2 && $info['shomarehShenasai'] === '') $info['shomarehShenasai'] = $c0Lines[1];
+
+                    if (preg_match('/(\d{4})\/(\d{1,2})\/(\d{1,2})/', $col2, $dtMatch)) {
+                        if ($info['tarikhTasisYear'] === '') {
+                            $info['tarikhTasisYear']  = $dtMatch[1];
+                            $info['tarikhTasisMonth'] = $dtMatch[2];
+                            $info['tarikhTasisDay']   = $dtMatch[3];
+                        }
+                    }
+                    if ($info['noeSherkat'] === '') {
+                        if (strpos($col2, 'غير دولتي') !== false or strpos($col2, 'غیر دولتی') !== false) {
+                            $info['noeSherkat'] = '1';
+                        } elseif (strpos($col2, 'دولتي') !== false or strpos($col2, 'دولتی') !== false) {
+                            $info['noeSherkat'] = '0';
+                        }
+                    }
+                    break;
+                }
+            }
+            // خواندن نام کامل شرکت از متن دکمه انتخاب در ردیف دوم
+            foreach ($trMatches[1] as $trHtml) {
+                if (preg_match('/<(?:a|button)\b[^>]*>([^<]+)<\/(?:a|button)>/is', $trHtml, $btnTxt)) {
+                    $t = trim($this->decodeHtml($btnTxt[1]));
+                    if ($t !== '' && strpos($t, 'تعداد کل') === false) {
+                        if ($info['naam'] === '' or strpos($info['naam'], '...') !== false) {
+                            $info['naam'] = $t;
+                        }
+                    }
+                } elseif (preg_match('/<input\b[^>]*\btype=["\']button["\'][^>]*\bvalue=["\']([^"\']+)["\']/is', $trHtml, $btnTxt)) {
+                    $t = trim($this->decodeHtml($btnTxt[1]));
+                    if ($t !== '' && ($info['naam'] === '' or strpos($info['naam'], '...') !== false)) {
+                        $info['naam'] = $t;
+                    }
+                }
+            }
+        }
+
+        if ($info['tarikhTasisYear'] !== '' && $info['tarikhTasisMonth'] !== '' && $info['tarikhTasisDay'] !== '') {
+            $info['tarikhTasis'] = $info['tarikhTasisYear'] . '/' . sprintf('%02d', (int)$info['tarikhTasisMonth']) . '/' . sprintf('%02d', (int)$info['tarikhTasisDay']);
+        }
+
+        return $info;
+    }
+
+    /** خواندن کامل تمام فیلدهای شخص حقوقی و مشخصات ارتباطی از فرم اصلی editform */
+    private function readLegalEntityFromEditForm($html, $lovInfo = array())
+    {
+        $f = $this->fields($html, 'editform');
+
+        $get = function ($keys, $fallback = '') use ($f, $html) {
+            foreach ($keys as $k) {
+                if (isset($f[$k]) && trim($f[$k]) !== '') return trim($f[$k]);
+                if (preg_match('/<input\b[^>]*\b(?:name|id)=["\']' . preg_quote($k, '/') . '["\'][^>]*>/is', $html, $tm)) {
+                    if (preg_match('/\bvalue=["\']([^"\']*)["\']/i', $tm[0], $vm)) {
+                        $v = trim($this->decodeHtml($vm[1]));
+                        if ($v !== '') return $v;
+                    }
+                }
+            }
+            return $fallback;
+        };
+
+        $id               = $get(array('shakhsHoghooghi_ID'), isset($lovInfo['id']) ? $lovInfo['id'] : '');
+        $shenasehMelli    = $get(array('shakhsHoghooghi_shenasehMelli_hidden', 'shakhsHoghooghi_shenasehMelli'), isset($lovInfo['shenasehMelli']) ? $lovInfo['shenasehMelli'] : '');
+        $shomarehShenasai = $get(array('shakhsHoghooghi_shomarehShenasai_hidden', 'shakhsHoghooghi_shomarehShenasai'), isset($lovInfo['shomarehShenasai']) ? $lovInfo['shomarehShenasai'] : '');
+        $naam             = $get(array('shakhsHoghooghi_naam_hidden', 'shakhsHoghooghi_naam'), isset($lovInfo['naam']) ? $lovInfo['naam'] : '');
+        $shomarehSabt     = $get(array('shakhsHoghooghi_shomarehSabt_hidden', 'shakhsHoghooghi_shomarehSabt'), isset($lovInfo['shomarehSabt']) ? $lovInfo['shomarehSabt'] : '');
+        $codeEghtesadi    = $get(array('shakhsHoghooghi_codeEghtesadi_hidden', 'shakhsHoghooghi_codeEghtesadi'), isset($lovInfo['codeEghtesadi']) ? $lovInfo['codeEghtesadi'] : '');
+        $tabaghebandiCode = $get(array('shakhsHoghooghi_tabaghebandi_hidden', 'shakhsHoghooghi_tabaghebandi'), isset($lovInfo['tabaghebandi']) ? $lovInfo['tabaghebandi'] : '4');
+        $noeSherkatCode   = $get(array('shakhsHoghooghi_noeSherkat_hidden', 'shakhsHoghooghi_noeSherkat'), isset($lovInfo['noeSherkat']) ? $lovInfo['noeSherkat'] : '');
+        $tarikhTasis      = $get(array('editform:shakhsHoghooghi_tarikhTasis'), isset($lovInfo['tarikhTasis']) ? $lovInfo['tarikhTasis'] : '');
+        if ($tarikhTasis === '//' or $tarikhTasis === ';HIJRI') {
+            $tarikhTasis = isset($lovInfo['tarikhTasis']) ? $lovInfo['tarikhTasis'] : '';
+        }
+        $melliatCode      = $get(array('shakhsHoghooghi_melliat_hidden', 'shakhsHoghooghi_melliat'), isset($lovInfo['melliatId']) ? $lovInfo['melliatId'] : '29');
+        $goroohCode       = $get(array('shakhsHoghooghi_goroohHesabdari_hidden', 'shakhsHoghooghi_goroohHesabdari'), isset($lovInfo['goroohHesabdariId']) ? $lovInfo['goroohHesabdariId'] : '2');
+
+        $shahrDesc = $get(array('editform:moshakhasatOmumi_shahr.desc', 'editform:tarafBimeh_shahr.desc'), isset($lovInfo['shahrDesc']) ? $lovInfo['shahrDesc'] : '');
+        $shahrId   = $get(array('editform:moshakhasatOmumi_shahr', 'editform:tarafBimeh_shahr'), isset($lovInfo['shahrId']) ? $lovInfo['shahrId'] : '');
+        $telefon   = $get(array('moshakhasatOmumi_telefon', 'shomarehTelephoneTarafGharardad'), isset($lovInfo['telefon']) ? $lovInfo['telefon'] : '');
+        $mobNum    = $get(array('moshakhasatOmumi_mobile_number', 'shomarehMobileTarafGharardad_number'), isset($lovInfo['mobile']) ? $lovInfo['mobile'] : '');
+        $mobOp     = $get(array('moshakhasatOmumi_mobile_operator', 'shomarehMobileTarafGharardad_operator'), isset($lovInfo['operatorId']) ? $lovInfo['operatorId'] : '');
+        $fax       = $get(array('moshakhasatOmumi_fax'), isset($lovInfo['fax']) ? $lovInfo['fax'] : '');
+        $webSite   = $get(array('moshakhasatOmumi_webSite'), isset($lovInfo['webSite']) ? $lovInfo['webSite'] : '');
+        $email     = $get(array('moshakhasatOmumi_email'), isset($lovInfo['email']) ? $lovInfo['email'] : '');
+        $codePosti = $get(array('moshakhasatOmumi_codePosti', 'tarafGharardad_codePosti'), isset($lovInfo['codePosti']) ? $lovInfo['codePosti'] : '');
+        $address   = $get(array('moshakhasatOmumi_address', 'tarafGharardad_address'), isset($lovInfo['address']) ? $lovInfo['address'] : '');
+
+        $prefix = $this->operatorPrefix($mobOp);
+        $fullMobile = $mobNum;
+        if ($mobNum !== '' && strlen($mobNum) <= 8 && $prefix !== '') {
+            $fullMobile = $prefix . $mobNum;
+        }
+
+        return array(
+            'id'               => $id,
+            'naam'             => $naam,
+            'shenasehMelli'    => $shenasehMelli,
+            'shomarehShenasai' => $shomarehShenasai,
+            'shomarehSabt'     => $shomarehSabt,
+            'codeEghtesadi'    => $codeEghtesadi,
+            'tabaghebandi'     => $this->tabaghebandiLabel($tabaghebandiCode),
+            'noeSherkat'       => $this->noeSherkatLabel($noeSherkatCode),
+            'tarikhTasis'      => $tarikhTasis,
+            'melliat'          => $this->melliatLabel($melliatCode),
+            'goroohHesabdari'  => $this->goroohHesabdariLabel($goroohHesabCode = $goroohCode),
+            'shahr'            => $shahrDesc,
+            'shahrId'          => $shahrId,
+            'telefon'          => $telefon,
+            'mobile'           => $fullMobile,
+            'fax'              => $fax,
+            'webSite'          => $webSite,
+            'email'            => $email,
+            'codePosti'        => $codePosti,
+            'address'          => $address,
+        );
+    }
+
+    /** اجرای گام‌به‌گام استعلام اشخاص حقوقی (۴ گام) */
+    public function runLegalStep($step, $legalQuery)
+    {
+        $tStart = microtime(true);
+        $state  = $this->state;
+
+        $qShenaseh  = isset($legalQuery['shenasehMelli']) ? trim((string)$legalQuery['shenasehMelli']) : '';
+        $qNaam      = isset($legalQuery['naam']) ? trim((string)$legalQuery['naam']) : '';
+        $qEghtesadi = isset($legalQuery['codeEghtesadi']) ? trim((string)$legalQuery['codeEghtesadi']) : '';
+
+        // ==================== گام ۱: باز کردن لیست و کلیک روی «ایجاد» ====================
+        if ($step === 1) {
+            $list = $this->http('GET', $this->listUrl);
+            if ($this->loggedOut($list['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            if (strpos($list['body'], 'exampleform:create') === false) {
+                return array(
+                    'ok'     => false,
+                    'step'   => 1,
+                    'status' => 'bad',
+                    'title'  => '۱. ورود به فرم ایجاد پیش‌نویس',
+                    'detail' => 'دکمه exampleform:create در صفحه لیست پیدا نشد',
+                    'time'   => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                );
+            }
+
+            $r = $this->submit($this->listUrl, $list['body'], array(), 'exampleform:create', $this->listUrl);
+            if ($this->loggedOut($r['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            $html = $r['body'];
+            $this->saveStepHtml(1, $html);
+
+            if (!$this->hasField($html, 'shakhsHoghooghi_shenasehMelli') && !$this->hasField($html, 'shakhsHaghighi_codeMelli')) {
+                return array(
+                    'ok'     => false,
+                    'step'   => 1,
+                    'status' => 'bad',
+                    'title'  => '۱. ورود به فرم ایجاد پیش‌نویس',
+                    'detail' => 'فرم ایجاد پیش‌نویس باز نشد',
+                    'time'   => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                );
+            }
+
+            $this->state = array('legalQuery' => $legalQuery, 'lastStep' => 1);
+
+            $live = $this->inspectLivePage($html);
+            return array(
+                'ok'     => true,
+                'step'   => 1,
+                'status' => 'ok',
+                'title'  => '۱. باز کردن لیست و کلیک روی «ایجاد»',
+                'detail' => "فرم ایجاد پیش‌نویس باز شد (توکن: {$live['token']})",
+                'time'   => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                'live'   => $live,
+            );
+        }
+
+        // ==================== گام ۲: انتخاب «حقوقی»، زدن ۳ تیک و باز کردن پنجره فهرست اشخاص حقوقی ====================
+        if ($step === 2) {
+            $rLov = $this->http('GET', $this->lovInitUrl, array(), $this->formUrl);
+            if ($this->loggedOut($rLov['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            $lovHtml = $rLov['body'];
+            if (!$this->hasField($lovHtml, 'shenasehMelli')) {
+                $rLov2 = $this->http('GET', $this->lovSearchUrl . '?shakhsInfoSelectable=true&moshakhasatInfoSelectable=true', array(), $this->lovInitUrl);
+                if (!$this->loggedOut($rLov2['body']) && $this->hasField($rLov2['body'], 'shenasehMelli')) {
+                    $lovHtml = $rLov2['body'];
+                }
+            }
+
+            $this->saveStepHtml(2, $lovHtml);
+
+            if (!$this->hasField($lovHtml, 'shenasehMelli')) {
+                return array(
+                    'ok'      => false,
+                    'step'    => 2,
+                    'status'  => 'bad',
+                    'title'   => '۲. باز کردن پنجره فهرست اشخاص حقوقی',
+                    'detail'  => 'پنجره فهرست اشخاص حقوقی (shakhsHoghooghi.lov.html) لود نشد',
+                    'message' => 'پنجره فهرست اشخاص حقوقی باز نشد',
+                    'time'    => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                );
+            }
+
+            $state['lastStep'] = 2;
+            $this->state = $state;
+
+            return array(
+                'ok'     => true,
+                'step'   => 2,
+                'status' => 'ok',
+                'title'  => '۲. انتخاب شخص «حقوقی» + تیک‌ها + باز کردن پنجره فهرست اشخاص حقوقی',
+                'detail' => 'نوع شخص روی «حقوقی» تنظیم شد، هر ۳ تیک فعال شد و پنجره جستجوی اشخاص حقوقی باز گردید',
+                'time'   => round(microtime(true) - $tStart, 1) . ' ثانیه',
+            );
+        }
+
+        // ==================== گام ۳: باز کردن نوار جستجو (fa-search-plus) و کلیک روی دکمه «جستجو» ====================
+        if ($step === 3) {
+            $lovHtml = (string)($this->html[2] ?? '');
+
+            $searchOverrides = array(
+                'entity'                         => 'shakhsHoghooghi',
+                'naam'                           => $qNaam,
+                'code'                           => '',
+                'codeShobeh'                     => '',
+                'shomarehSabt'                   => '',
+                'exampleform:noeShenasehMaaliat' => '',
+                'codeEghtesadi'                  => $qEghtesadi,
+                'shenasehMelli'                  => $qShenaseh,
+                'shomarehEghtesadi'              => '',
+                'exampleform:tabaghebandi'       => '',
+                'exampleform:pedar.desc'         => '',
+                'exampleform:pedar'              => '',
+                'exampleform:noeSherkat'         => '',
+                'filesHidden'                    => '',
+                'filesId'                        => '@(item.Value.Id)',
+                'autoScroll'                     => '0,0',
+                'exampleform:tarikhSabt_ge'      => ';HIJRI',
+                'exampleform:tarikhSabt_ge_y'    => '',
+                'exampleform:tarikhSabt_ge_m'    => '',
+                'exampleform:tarikhSabt_ge_d'    => '',
+                'exampleform:tarikhSabt_le'      => ';HIJRI',
+                'exampleform:tarikhSabt_le_y'    => '',
+                'exampleform:tarikhSabt_le_m'    => '',
+                'exampleform:tarikhSabt_le_d'    => '',
+                'exampleform:dataTable:goto'     => '1',
+            );
+
+            $r = $this->submit($this->lovSearchUrl, $lovHtml, $searchOverrides, 'exampleform:search', $this->lovInitUrl);
+            if ($this->loggedOut($r['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            $resHtml = $r['body'];
+            $parsed  = $this->parseLovLegalResult($resHtml);
+
+            // اگر کد اقتصادی وارد شده و در فیلد codeEghtesadi نتیجه‌ای نیامد، فیلد shomarehEghtesadi را هم امتحان می‌کنیم
+            if (!$parsed['found'] && empty($parsed['jsfSelectId']) && $qEghtesadi !== '') {
+                $searchOverrides['codeEghtesadi']     = '';
+                $searchOverrides['shomarehEghtesadi'] = $qEghtesadi;
+                $r2 = $this->submit($this->lovSearchUrl, $resHtml, $searchOverrides, 'exampleform:search', $this->lovSearchUrl);
+                if (!$this->loggedOut($r2['body'])) {
+                    $resHtml = $r2['body'];
+                    $parsed  = $this->parseLovLegalResult($resHtml);
+                }
+            }
+
+            // اگر دکمه انتخاب ردیف اول از نوع اکشن JSF بود، آن را هم ارسال می‌کنیم تا اسکریپت پرکننده برگردد
+            if (!$parsed['found'] && !empty($parsed['jsfSelectId'])) {
+                $rSel = $this->submit($this->lovSearchUrl, $resHtml, array(), $parsed['jsfSelectId'], $this->lovSearchUrl);
+                if (!$this->loggedOut($rSel['body'])) {
+                    $resHtml = $rSel['body'];
+                    $parsed2 = $this->parseLovLegalResult($resHtml);
+                    if ($parsed2['found']) $parsed = $parsed2;
+                }
+            }
+
+            $this->saveStepHtml(3, $resHtml);
+
+            if (!$parsed['found']) {
+                $notices = $this->parseNotices($resHtml);
+                $msg = 'هیچ شخص حقوقی با مشخصات وارد شده در فهرست پاسارگاد یافت نشد';
+                if ($notices['hasError']) $msg .= ' (' . implode(' - ', $notices['errors']) . ')';
+                return array(
+                    'ok'      => false,
+                    'step'    => 3,
+                    'status'  => 'bad',
+                    'title'   => '۳. جستجوی شخص حقوقی در فهرست',
+                    'detail'  => $msg,
+                    'message' => $msg,
+                    'time'    => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                );
+            }
+
+            $state['lovParsed'] = $parsed;
+            $state['lastStep']  = 3;
+            $this->state = $state;
+
+            return array(
+                'ok'     => true,
+                'step'   => 3,
+                'status' => 'ok',
+                'title'  => '۳. جستجوی شخص حقوقی در پنجره فهرست',
+                'detail' => "ردیف شرکت یافت شد: «{$parsed['naam']}» (شناسه ملی: {$parsed['shenasehMelli']} - شماره ثبت: {$parsed['shomarehSabt']})",
+                'time'   => round(microtime(true) - $tStart, 1) . ' ثانیه',
+            );
+        }
+
+        // ==================== گام ۴: کلیک روی دکمه نام شرکت، انتقال به فرم اصلی و استخراج کامل اطلاعات ====================
+        if ($step === 4) {
+            $editHtml = (string)($this->html[1] ?? '');
+            $lp       = isset($state['lovParsed']) ? $state['lovParsed'] : array();
+
+            $tasisVal = ';HIJRI';
+            if (!empty($lp['tarikhTasisYear']) && !empty($lp['tarikhTasisMonth']) && !empty($lp['tarikhTasisDay'])) {
+                $tasisVal = $lp['tarikhTasisYear'] . '/' . $lp['tarikhTasisMonth'] . '/' . $lp['tarikhTasisDay'];
+            }
+
+            // شبیه‌سازی دقیق fillShakhsHoghooghiInfo و fillMoshakhasatInfo روی فرم اصلی editform
+            $legalFormFields = array(
+                'editform:noeShakhs'                           => '1',
+                'editform:noeTarafGharardad'                   => '',
+                'editform:isBimehgozar'                        => 'true',
+                'editform:isTarafAsli'                         => 'true',
+                'editform:isPardakhtKonandeh'                  => 'true',
+                'shakhsHoghooghi_ID'                           => isset($lp['id']) ? $lp['id'] : '',
+                'shakhsHoghooghi_shenasehMelli_hidden'         => isset($lp['shenasehMelli']) ? $lp['shenasehMelli'] : '',
+                'shakhsHoghooghi_shomarehShenasai_hidden'      => isset($lp['shomarehShenasai']) ? $lp['shomarehShenasai'] : '',
+                'shakhsHoghooghi_naam_hidden'                  => isset($lp['naam']) ? $lp['naam'] : '',
+                'shakhsHoghooghi_shomarehSabt_hidden'          => isset($lp['shomarehSabt']) ? $lp['shomarehSabt'] : '',
+                'shakhsHoghooghi_codeEghtesadi_hidden'         => isset($lp['codeEghtesadi']) ? $lp['codeEghtesadi'] : '',
+                'shakhsHoghooghi_tabaghebandi_hidden'          => isset($lp['tabaghebandi']) && $lp['tabaghebandi'] !== '' ? $lp['tabaghebandi'] : '4',
+                'shakhsHoghooghi_noeSherkat_hidden'            => isset($lp['noeSherkat']) ? $lp['noeSherkat'] : '',
+                'editform:shakhsHoghooghi_tarikhTasis'         => $tasisVal,
+                'shakhsHoghooghi_melliat_hidden'               => isset($lp['melliatId']) && $lp['melliatId'] !== '' ? $lp['melliatId'] : '29',
+                'shakhsHoghooghi_goroohHesabdari_hidden'       => isset($lp['goroohHesabdariId']) && $lp['goroohHesabdariId'] !== '' ? $lp['goroohHesabdariId'] : '2',
+                'editform:moshakhasatOmumi_shahr'              => isset($lp['shahrId']) ? $lp['shahrId'] : '',
+                'editform:moshakhasatOmumi_shahr.desc'         => isset($lp['shahrDesc']) ? $lp['shahrDesc'] : '',
+                'moshakhasatOmumi_telefon'                     => isset($lp['telefon']) ? $lp['telefon'] : '',
+                'moshakhasatOmumi_mobile_number'               => isset($lp['mobile']) ? $lp['mobile'] : '',
+                'moshakhasatOmumi_mobile_operator'             => isset($lp['operatorId']) ? $lp['operatorId'] : '',
+                'moshakhasatOmumi_fax'                         => isset($lp['fax']) ? $lp['fax'] : '',
+                'moshakhasatOmumi_email'                       => isset($lp['email']) ? $lp['email'] : '',
+                'moshakhasatOmumi_codePosti'                   => isset($lp['codePosti']) ? $lp['codePosti'] : '',
+                'moshakhasatOmumi_address'                     => isset($lp['address']) ? $lp['address'] : '',
+            );
+
+            $r = $this->submit($this->formUrl, $editHtml, $legalFormFields, 'editform:addTotarafGharardadList', $this->formUrl);
+            if ($this->loggedOut($r['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            $finalHtml = $r['body'];
+            $this->saveStepHtml(4, $finalHtml);
+
+            $company = $this->readLegalEntityFromEditForm($finalHtml, $lp);
+            $this->state['company'] = $company;
+            $notices = $this->parseNotices($finalHtml);
+            $live    = $this->inspectLivePage($finalHtml, $company['shenasehMelli']);
+
+            return array(
+                'ok'      => true,
+                'step'    => 4,
+                'status'  => $notices['hasWarning'] ? 'warn' : 'ok',
+                'title'   => '۴. انتخاب دکمه نام شرکت و استخراج کامل اطلاعات ثبتی و ارتباطی',
+                'detail'  => "اطلاعات کامل شرکت «{$company['naam']}» در فیلدهای فرم نشست و استخراج گردید (کد پستی: " . ($company['codePosti'] ? $company['codePosti'] : '—') . " - شهر: " . ($company['shahr'] ? $company['shahr'] : '—') . ")",
+                'time'    => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                'live'    => $live,
+                'company' => $company,
+            );
+        }
+
+        // ==================== گام ۵ (اختیاری): استعلامِ کد پستیِ شخصِ حقوقی از املاک و اسکان ====================
+        if ($step === 5) {
+            $html = (string)($this->html[4] ?? '');
+            $comp = isset($state['company']) ? $state['company'] : array();
+            $target = isset($legalQuery['postal']) && $legalQuery['postal'] !== '' ? $legalQuery['postal'] : (isset($comp['codePosti']) ? $comp['codePosti'] : '');
+            $btn = $this->findPostalButton($html);
+            $r = $this->submit($this->formUrl, $html, array('editform:noeShakhs' => '1', 'moshakhasatOmumi_codePosti' => $target), $btn, $this->formUrl);
+            if ($this->loggedOut($r['body'])) {
+                return array('ok' => false, 'error' => 'need_login');
+            }
+            $html5 = $r['body'];
+            $this->saveStepHtml(5, $html5);
+            $n = $this->parseNotices($html5);
+            $valid = null; $msg = '';
+            if ($n['hasSuccess']) { $valid = true; $msg = implode(' - ', $n['messages']); }
+            elseif ($n['hasError']) { $valid = false; $msg = implode(' - ', $n['errors']); }
+            elseif ($n['hasWarning']) {
+                $msg = implode(' - ', $n['warnings']);
+                if (strpos($msg, 'ثبت شده') !== false && strpos($msg, 'نشده') === false) $valid = true;
+                elseif (strpos($msg, 'نشده') !== false || strpos($msg, 'ندارد') !== false || strpos($msg, 'نامعتبر') !== false) $valid = false;
+            }
+            return array(
+                'ok'      => true,
+                'step'    => 5,
+                'status'  => $valid === true ? 'ok' : ($valid === false ? 'bad' : 'warn'),
+                'title'   => '۵. استعلام کد پستی شخص حقوقی',
+                'detail'  => "کد پستی {$target} استعلام شد - پاسخ سامانه: " . $n['summaryText'],
+                'time'    => round(microtime(true) - $tStart, 1) . ' ثانیه',
+                'company' => $comp,
+                'postal'  => array('valid' => $valid, 'message' => $msg !== '' ? $msg : ($valid === true ? 'کد پستی در املاک و اسکان ثبت شده است' : ($valid === false ? 'کد پستی در املاک و اسکان ثبت نشده است' : 'پاسخی از سامانه دریافت نشد'))),
+            );
+        }
+
+        return array('ok' => false, 'message' => 'گام نامعتبر است');
+    }
+
     private function extractPersonFields($html, $nid, $ymd, $y, $m, $d)
     {
         $f = $this->fields($html, 'editform');
@@ -619,11 +1298,13 @@ function inq_actor_from_session() {
 
 // ورودی => [ok, fields] یا [ok=false, error]
 function inq_validate($kind, array $in) {
-    if (!isset(INQ_KINDS[$kind])) return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
+    if (!isset(INQ_KINDS[$kind]) || $kind === 'sanhab') return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
     if ($kind === 'legal') {
         $c = inq_digits($in['company_nid'] ?? ($in['national_id'] ?? ''));
         if (strlen($c) !== 11) return ['ok' => false, 'error' => 'شناسه‌ی ملیِ شخصِ حقوقی باید ۱۱ رقم باشد.', 'field' => 'national_id'];
-        return ['ok' => true, 'national_id' => $c, 'birth' => null, 'postal' => null];
+        $postal = inq_digits($in['postal'] ?? '');
+        if ($postal !== '' && strlen($postal) !== 10) return ['ok' => false, 'error' => 'کد پستی باید دقیقاً ۱۰ رقم باشد (یا خالی بماند).', 'field' => 'postal'];
+        return ['ok' => true, 'national_id' => $c, 'birth' => null, 'postal' => $postal !== '' ? $postal : null];
     }
     $nid = inq_norm_nid($in['national_id'] ?? '');
     if (!inq_nid_ok($nid)) return ['ok' => false, 'error' => 'کد ملی نامعتبر است.', 'field' => 'national_id'];
@@ -671,7 +1352,7 @@ function inq_user_limit_info($pdo, $type, $id) {
     $o['own'] = inq_limit_value($u['inq_daily_limit'] ?? null);
     $o['limit'] = $o['admin'] ? 0 : ($o['own'] !== null ? $o['own'] : $def);
     try {
-        $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE user_type = ? AND user_id = ? AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
+        $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE user_type = ? AND user_id = ? AND kind <> 'sanhab' AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
         $st->execute([$type, intval($id), !empty($u['inq_reset_at']) ? $u['inq_reset_at'] : '1970-01-01 00:00:00']);
         $o['used'] = intval($st->fetchColumn());
     } catch (Throwable $e) {}
@@ -693,7 +1374,7 @@ function inq_users_used_today($pdo, $type) {
     if (!($t = inq_user_table($type))) return [];
     inq_ensure($pdo); inq_limits_ensure($pdo);
     try {
-        $st = $pdo->prepare("SELECT u.id, (SELECT COUNT(*) FROM inq_requests r WHERE r.user_type = ? AND r.user_id = u.id AND r.cached_from IS NULL
+        $st = $pdo->prepare("SELECT u.id, (SELECT COUNT(*) FROM inq_requests r WHERE r.user_type = ? AND r.user_id = u.id AND r.kind <> 'sanhab' AND r.cached_from IS NULL
                                                   AND r.created_at >= CURDATE() AND (u.inq_reset_at IS NULL OR r.created_at > u.inq_reset_at)) AS n
                                FROM `$t` u WHERE EXISTS (SELECT 1 FROM inq_requests r2 WHERE r2.user_type = ? AND r2.user_id = u.id AND r2.created_at >= CURDATE())");
         $st->execute([$type, $type]);
@@ -718,7 +1399,7 @@ function inq_limit_reset($pdo, $k, $by = '') {
     $pdo->prepare("INSERT INTO inq_limit_resets (k, reset_at, reset_by) VALUES (?, NOW(), ?) ON DUPLICATE KEY UPDATE reset_at = NOW(), reset_by = VALUES(reset_by)")->execute([$k, mb_substr((string)$by, 0, 190)]);
 }
 function inq_nid_used_today($pdo, $nid) {
-    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE national_id = ? AND kind <> 'legal' AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
+    $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE national_id = ? AND kind NOT IN ('legal', 'sanhab') AND cached_from IS NULL AND created_at >= CURDATE() AND created_at > ?");
     $st->execute([$nid, inq_reset_since($pdo, 'n:' . $nid)]);
     return intval($st->fetchColumn());
 }
@@ -763,8 +1444,8 @@ function inq_find_cached($pdo, $kind, $nid, $birth, $postal) {
     if ($days <= 0) return null;
     $since = date('Y-m-d H:i:s', time() - $days * 86400);
     if ($kind === 'legal') {
-        $st = $pdo->prepare("SELECT * FROM inq_requests WHERE kind = 'legal' AND national_id = ? AND status = 'OK' AND finished_at >= ? ORDER BY id DESC LIMIT 1");
-        $st->execute([$nid, $since]); return $st->fetch() ?: null;
+        $st = $pdo->prepare("SELECT * FROM inq_requests WHERE kind = 'legal' AND national_id = ? AND COALESCE(postal, '') = ? AND status = 'OK' AND finished_at >= ? ORDER BY id DESC LIMIT 1");
+        $st->execute([$nid, (string)$postal, $since]); return $st->fetch() ?: null;
     }
     // شخص: همان کد ملی و تاریخ تولد، از هر استعلامِ موفقی که مشخصات را داده
     $pRow = null;
@@ -815,9 +1496,10 @@ function inq_create($pdo, $kind, array $in, $source = 'panel', array $actor = nu
         $res = json_decode((string)($p['result_json'] ?? ''), true) ?: [];
         if ($kind === 'person_postal') $res['postal'] = (json_decode((string)$z['result_json'], true) ?: [])['postal'] ?? ['valid' => $z['postal_valid'] === null ? null : (bool)$z['postal_valid'], 'message' => $z['postal_text']];
         $status = $kind === 'person' || $kind === 'legal' ? 'OK' : ($z['postal_valid'] === null ? 'WARN' : ((int)$z['postal_valid'] === 1 ? 'OK' : 'FAIL'));
+        if ($kind === 'legal') { $z = $p; }
         $pdo->prepare("UPDATE inq_requests SET status = ?, notice = ?, person_name = ?, father_name = ?, postal_valid = ?, postal_text = ?, result_json = ?, cached_from = ?, started_at = ?, finished_at = ?, ms = 0 WHERE id = ?")
             ->execute([$status, 'از نتیجه‌ی استعلامِ قبلی (' . jdate_short($p['finished_at'] ?? $z['finished_at']) . ')', $kind === 'postal' ? null : ($p['person_name'] ?? null), $kind === 'postal' ? null : ($p['father_name'] ?? null),
-                       $kind === 'person' || $kind === 'legal' ? null : $z['postal_valid'], $kind === 'person' || $kind === 'legal' ? null : $z['postal_text'],
+                       $kind === 'person' ? null : $z['postal_valid'], $kind === 'person' ? null : $z['postal_text'],
                        json_encode($res, JSON_UNESCAPED_UNICODE), intval($p['id'] ?? $z['id']), $now, $now, $id]);
         return ['ok' => true, 'id' => $id, 'cached' => true];
     }
@@ -856,15 +1538,20 @@ function inq_execute($pdo, $id) {
         return ['ok' => true, 'status' => $status];
     };
     if (inq_get_setting($pdo, 'inq_enabled') !== '1') return $finish('FAIL', 'استعلام‌ها در تنظیمات خاموش است.');
+    if ($row['kind'] === 'sanhab') return $finish('FAIL', 'استعلامِ سنهاب با کپچای خودش انجام می‌شود.');
+    $prev = json_decode((string)($row['result_json'] ?? ''), true) ?: [];
 
-    if ($row['kind'] === 'legal') {
+    // شخصِ حقوقی از s.api.ir (وقتی پاسارگاد نتیجه نداد، یا کاربر «بدونِ پاسارگاد» را زد)
+    $legalApi = function ($pxNote = '', array $tl = []) use ($pdo, $row, $finish) {
         require_once __DIR__ . '/_apis.php';
-        if (!sapi_ready($pdo, 'sapi_company')) return $finish('FAIL', 'کلیدِ s.api.ir در «تنظیمات ← کلیدهای API» وارد نشده است.');
+        if (!sapi_ready($pdo, 'sapi_company')) return $finish('FAIL', $pxNote !== '' ? $pxNote : 'کلیدِ s.api.ir در «تنظیمات ← کلیدهای API» وارد نشده است.', ['timeline' => $tl]);
         $r = sapi_company_info($pdo, $row['national_id']);
-        if (!$r['ok']) return $finish('FAIL', $r['error'] ?? 'خطا', ['raw' => $r['raw'] ?? '']);
-        $co = $r['company'];
-        return $finish('OK', ($co['name'] ?: 'شرکت') . ($co['active'] === false ? ' (غیرفعال)' : ''), ['company' => $co], ['name' => $co['name'], 'family' => '']);
-    }
+        if (!$r['ok']) return $finish('FAIL', ($pxNote !== '' ? $pxNote . ' / ' : '') . ($r['error'] ?? 'خطا'), ['raw' => $r['raw'] ?? '', 'timeline' => $tl]);
+        $co = $r['company'] + ['source' => 'api'];
+        return $finish('OK', ($co['name'] ?: 'شرکت') . ($co['active'] === false ? ' (غیرفعال)' : '') . ' — از سرویسِ API' . ($pxNote !== '' ? ' (پاسارگاد: ' . $pxNote . ')' : ''),
+                       ['company' => $co, 'timeline' => $tl, 'via' => 'api'], ['name' => $co['name'], 'family' => '']);
+    };
+    if ($row['kind'] === 'legal' && (!empty($prev['via_api']) || inq_get_setting($pdo, 'inq_legal_px') !== '1' || inq_creds($pdo)['user'] === '' || !function_exists('curl_init'))) return $legalApi();
 
     if (!function_exists('curl_init')) return $finish('FAIL', 'افزونه‌ی curl روی سرور فعال نیست.');
     $needCaptcha = function () use ($pdo, $id) {
@@ -877,15 +1564,18 @@ function inq_execute($pdo, $id) {
     $lk = inq_lock(90, function () use ($pdo, $id) { $pdo->prepare("UPDATE inq_requests SET notice = 'در صف (استعلامِ دیگری در حالِ اجراست)…' WHERE id = ?")->execute([$id]); });
     if (!$lk) return $finish('FAIL', 'سامانه مشغولِ استعلام‌های دیگر بود؛ کمی بعد دوباره امتحان کنید.');
     try {
-        [$y, $m, $d] = array_map('intval', explode('/', $row['birth']));
+        $legal = $row['kind'] === 'legal';
+        [$y, $m, $d] = $legal ? [0, 0, 0] : array_map('intval', explode('/', $row['birth']));
         $birth = ['y' => $y, 'm' => $m, 'd' => $d];
-        $max = $row['kind'] === 'person' ? 3 : 5;
+        $max = $legal ? ($row['postal'] ? 5 : 4) : ($row['kind'] === 'person' ? 3 : 5);
+        $company = null; $lpostal = null;
         $wait = max(0, min(9, intval(inq_get_setting($pdo, 'inq_wait_sec'))));
         $px = new InqPasargad($jobDir);
         $last = null; $person = null;
         for ($s = 1; $s <= $max; $s++) {
             $pdo->prepare("UPDATE inq_requests SET notice = ? WHERE id = ?")->execute(['گام ' . $s . ' از ' . $max . '…', $id]);
-            $r = $px->runStep($s, $row['national_id'], $birth, (string)$row['postal']);
+            $r = $legal ? $px->runLegalStep($s, ['shenasehMelli' => $row['national_id'], 'naam' => '', 'codeEghtesadi' => '', 'postal' => (string)$row['postal']])
+                        : $px->runStep($s, $row['national_id'], $birth, (string)$row['postal']);
             if (($r['error'] ?? '') === 'need_login') {
                 // نشست بسته است: تازه‌ترین کپچا همین‌جا گرفته می‌شود و استعلام در صف می‌ماند تا کاربر کد را بزند
                 $c = $px->getCaptcha();
@@ -896,15 +1586,26 @@ function inq_execute($pdo, $id) {
             inq_timeline_push($pdo, $id, $tl, ['step' => $s, 'status' => $r['status'] ?? ($r['ok'] ? 'ok' : 'bad'), 'title' => $r['title'] ?? ('گام ' . $s), 'detail' => $r['detail'] ?? '', 'time' => $r['time'] ?? '',
                                               'live' => $r['live'] ?? null]);
             if (!empty($r['person']) && !empty($r['person']['name'])) $person = $r['person'];
+            if (!empty($r['company']) && !empty($r['company']['naam'])) $company = $r['company'];
+            if (!empty($r['postal'])) $lpostal = $r['postal'];
             if (empty($r['ok'])) {
                 if (($r['error'] ?? '') === 'down') inq_px_mark('down');
                 $msg = $r['message'] ?? ($r['detail'] ?? 'خطا در اجرای مرحله');
+                if ($legal) { inq_unlock($lk); $lk = null; return $legalApi($msg, $tl); }
                 return $finish('FAIL', $msg, ['timeline' => $tl, 'failed_step' => $s, 'birth_mismatch' => !empty($r['birth_mismatch'])], $person);
             }
             $last = $r;
             if ($s < $max && $wait > 0) sleep($wait);
         }
         inq_px_mark('logged_in');
+        if ($legal) {
+            $co = inq_px_company($company ?: []);
+            if ($co['name'] === '') { inq_unlock($lk); $lk = null; return $legalApi('نامِ شرکت از پاسارگاد خوانده نشد', $tl); }
+            $res = ['timeline' => $tl, 'company' => $co, 'via' => 'pasargad'];
+            if ($lpostal) $res['postal'] = $lpostal;
+            $st = $lpostal ? ($lpostal['valid'] === false ? 'WARN' : 'OK') : 'OK';
+            return $finish($st, $co['name'] . ($lpostal ? ' — کد پستی: ' . $lpostal['message'] : ''), $res, ['name' => $co['name'], 'family' => ''], $lpostal);
+        }
         $res = ['timeline' => $tl, 'person' => $person];
         if ($row['kind'] === 'person') return $finish($person ? 'OK' : 'WARN', $person ? trim($person['name'] . ' ' . $person['family']) : 'مشخصات خوانده نشد', $res, $person);
         $z = $last['postal'] ?? ['valid' => null, 'message' => 'پاسخی دریافت نشد'];
@@ -914,8 +1615,26 @@ function inq_execute($pdo, $id) {
     } catch (Throwable $e) {
         return $finish('FAIL', 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 200), ['timeline' => $tl]);
     } finally {
-        inq_unlock($lk);
+        if ($lk) inq_unlock($lk);
     }
+}
+
+// شرکتِ خوانده‌شده از پاسارگاد => همان شکلِ خروجیِ s.api.ir (+ فیلدهای بیشتر)
+function inq_px_company(array $c) {
+    $t = function ($k) use ($c) { return inq_fa_norm(trim((string)($c[$k] ?? ''))); };
+    $digits = function ($k) use ($c) { return inq_digits($c[$k] ?? ''); };
+    return ['name' => $t('naam'), 'company_type' => trim($t('noeSherkat') . ($t('tabaghebandi') !== '' && $t('tabaghebandi') !== 'پیشفرض' ? ' · ' . $t('tabaghebandi') : '')),
+            'national_id' => $digits('shenasehMelli'), 'register_number' => $digits('shomarehSabt'), 'register_date' => inq_digits_fa_date($c['tarikhTasis'] ?? ''), 'active' => null,
+            'address' => $t('address'), 'postal_code' => $digits('codePosti'), 'province' => '', 'city' => $t('shahr'), 'end_date' => '',
+            'economic_code' => $digits('codeEghtesadi'), 'shenasai' => $digits('shomarehShenasai'), 'phone' => $digits('telefon'), 'mobile' => $digits('mobile'),
+            'fax' => $digits('fax'), 'email' => trim((string)($c['email'] ?? '')), 'website' => trim((string)($c['webSite'] ?? '')), 'category' => $t('tabaghebandi'),
+            'ownership' => $t('noeSherkat'), 'px_id' => (string)($c['id'] ?? ''), 'source' => 'pasargad'];
+}
+function inq_digits_fa_date($s) {
+    $s = trim((string)$s);
+    if ($s === '' || $s === '//' || strpos($s, 'HIJRI') !== false) return '';
+    $p = array_values(array_filter(preg_split('/\D+/', strtr($s, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9'])), 'strlen'));
+    return count($p) === 3 ? sprintf('%04d/%02d/%02d', (int)$p[0], (int)$p[1], (int)$p[2]) : $s;
 }
 
 // استعلام‌هایی که بیشتر از ۱۰ دقیقه «در حال اجرا» مانده‌اند (قطعِ درخواست) دوباره به صف برمی‌گردند
@@ -935,10 +1654,10 @@ function inq_out(array $r, $full = false) {
           'status' => $r['status'], 'status_fa' => INQ_ST_FA[$r['status']] ?? $r['status'], 'done' => in_array($r['status'], ['OK', 'WARN', 'FAIL'], true),
           'person' => $p ? ['name' => $p['name'] ?? '', 'family' => $p['family'] ?? '', 'father' => $p['fatherName'] ?? '', 'gender' => $p['gender'] ?? ''] : null,
           'person_name' => $r['person_name'], 'father_name' => $r['father_name'],
-          'postal_valid' => $r['postal_valid'] === null ? null : (bool)$r['postal_valid'], 'postal_text' => $r['postal_text'], 'company' => $res['company'] ?? null,
+          'postal_valid' => $r['postal_valid'] === null ? null : (bool)$r['postal_valid'], 'postal_text' => $r['postal_text'], 'company' => $res['company'] ?? null, 'via' => $res['via'] ?? null,
           'notice' => $r['notice'], 'cached' => !empty($r['cached_from']), 'source' => $r['source'], 'user_name' => $r['user_name'], 'batch_id' => $r['batch_id'] ? intval($r['batch_id']) : null, 'row_no' => $r['row_no'],
           'created' => $r['created_at'], 'created_j' => jdate_short($r['created_at']) . ' ' . substr((string)$r['created_at'], 11, 5), 'ms' => $r['ms'] !== null ? intval($r['ms']) : null,
-          'step' => count($tl), 'steps' => $r['kind'] === 'person' ? 3 : ($r['kind'] === 'legal' ? 1 : 5), 'need_login' => !empty($res['need_login']), 'birth_mismatch' => !empty($res['birth_mismatch'])];
+          'step' => count($tl), 'steps' => $r['kind'] === 'person' ? 3 : ($r['kind'] === 'legal' ? ($r['postal'] ? 5 : 4) : ($r['kind'] === 'sanhab' ? 1 : 5)), 'need_login' => !empty($res['need_login']), 'birth_mismatch' => !empty($res['birth_mismatch'])];
     if ($full) {
         $o['timeline'] = $tl;
         $dir = __DIR__ . '/data/inq/jobs/' . intval($r['id']);
@@ -985,18 +1704,18 @@ function inq_batch_create($pdo, $kind, $title, array $rows, $fileName = '') {
 function inq_batch_tick($pdo, $batchId = null) {
     inq_ensure($pdo);
     inq_requeue_stale($pdo);
-    $w = "status = 'QUEUED' AND batch_id IS NOT NULL" . ($batchId ? " AND batch_id = " . intval($batchId) : '') . " AND batch_id IN (SELECT id FROM inq_batches WHERE status = 'RUNNING')";
+    $w = "status = 'QUEUED' AND kind <> 'sanhab' AND batch_id IS NOT NULL" . ($batchId ? " AND batch_id = " . intval($batchId) : '') . " AND batch_id IN (SELECT id FROM inq_batches WHERE status = 'RUNNING')";
     $id = $pdo->query("SELECT id FROM inq_requests WHERE $w ORDER BY id LIMIT 1")->fetchColumn();
     $ran = null;
     if ($id) {
         $kind = $pdo->query("SELECT kind FROM inq_requests WHERE id = " . intval($id))->fetchColumn();
-        if ($kind !== 'legal' && inq_px_status($pdo) === 'logged_out') return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
+        if (($kind !== 'legal' || (inq_get_setting($pdo, 'inq_legal_px') === '1' && inq_creds($pdo)['user'] !== '')) && inq_px_status($pdo) === 'logged_out') return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
         $r = inq_execute($pdo, intval($id));
         if (!empty($r['need_captcha'])) return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
         $ran = intval($id);
     }
     // گروه‌هایی که چیزی در صف ندارند تمام می‌شوند
-    $pdo->exec("UPDATE inq_batches b SET status = 'DONE', finished_at = NOW() WHERE status = 'RUNNING' AND NOT EXISTS (SELECT 1 FROM inq_requests r WHERE r.batch_id = b.id AND r.status IN ('QUEUED', 'RUNNING'))");
+    $pdo->exec("UPDATE inq_batches b SET status = 'DONE', finished_at = NOW() WHERE status = 'RUNNING' AND kind <> 'sanhab' AND NOT EXISTS (SELECT 1 FROM inq_requests r WHERE r.batch_id = b.id AND r.status IN ('QUEUED', 'RUNNING'))");
     return ['ran' => $ran, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
 }
 function inq_batch_info($pdo, $bid) {

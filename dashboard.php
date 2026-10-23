@@ -3726,12 +3726,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="float-input !mb-0"><input type="text" id="cm-address" placeholder=" "><label>آدرس</label></div>
                 </div>
                 <div class="cmx-sec">
-                    <h4><i class="fas fa-building-circle-check ml-1"></i>مشخصاتِ ثبتی <small class="text-[10.5px] text-slate-400 font-bold">ورودِ دستی</small></h4>
+                    <h4><i class="fas fa-building-circle-check ml-1"></i>مشخصاتِ ثبتی <small class="text-[10.5px] text-slate-400 font-bold">استعلام (پاسارگاد، بعد سرویسِ API) یا ورودِ دستی</small></h4>
                     <div class="flex gap-2 items-start">
                         <div class="float-input flex-1"><input type="text" id="cm-national-id" dir="ltr" inputmode="numeric" maxlength="14" placeholder=" "><label>شناسه‌ی ملیِ شرکت (۱۱ رقم)</label></div>
-                        <button type="button" id="cm-inquiry-btn" onclick="cmInquiry()" class="hidden shrink-0 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-4 rounded-xl h-[46px]"><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه</button>
+                        <button type="button" id="cm-inquiry-btn" onclick="cmInquiry()" class="shrink-0 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-4 rounded-xl h-[46px]"><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه</button>
                     </div>
                     <div id="cm-inquiry-msg" class="hidden text-[11px] rounded-xl p-2.5 mb-3 leading-6"></div>
+                    <div id="cm-inquiry-cap" class="mb-3"></div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div class="float-input"><input type="text" id="cm-company-type" placeholder=" "><label>نوعِ شرکت</label></div>
                         <div class="float-input"><input type="text" id="cm-register-number" dir="ltr" placeholder=" "><label>شماره‌ی ثبت</label></div>
@@ -4257,6 +4258,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-[11px] font-bold text-slate-600 mb-1"><i class="fas fa-shield-halved ml-1 text-slate-300"></i>بیمه ثالث</p>
                     <label class="text-[11px] font-bold text-slate-500 block max-w-xs">سقف تعهد مالی *
                         <select id="mc-liability" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"><option value="">انتخاب کنید</option></select></label>
+                    <div id="mc-sanhab" class="mt-2 rounded-xl bg-cyan-50/70 border border-cyan-100 px-2 py-1.5"></div>
                 </div>
 
                 <!-- بدنه -->
@@ -4560,9 +4562,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="inquiry.js?v=7"></script>
+    <script src="inquiry.js?v=8"></script>
     <script src="registry.js?v=6"></script>
-    <script src="issue-panel.js?v=1"></script>
+    <script src="sanhab-ui.js?v=1"></script>
+    <script src="issue-panel.js?v=2"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
     <script>
@@ -4577,6 +4580,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         Inquiry.attachForm({ nid: selfNid, birth: g('mc-birth'), name: g('mc-full-name') });
         Inquiry.attachForm({ nid: () => selfRel() ? selfNid() : g('mc-insured-nid').value, birth: g('mc-birth'), postal: g('mc-postal'), name: g('mc-insured-name'),
                              watch: [g('mc-national-code'), g('mc-insured-nid'), g('mc-relationship')] });
+        // استعلامِ سنهابِ بیمه‌نامه‌ی ثالثِ قبلی (با پلاکِ همین فرم)
+        if (window.SanhabUI && g('mc-sanhab')) SanhabUI.button(g('mc-sanhab'), {lookup: false, source: 'form', label: 'استعلامِ سنهاب (عدمِ خسارت و تخفیف‌ها)',
+            getPrefill: () => ({plate: (g('mc-plate') || {}).value || '', nid: (selfRel() ? selfNid() : (g('mc-insured-nid') || {}).value || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))}),
+            title: 'درخواستِ کارکنان'});
     });
     </script>
     <script>window.TP_SID = <?php echo json_encode(substr(md5(session_id() . 'tp'), 0, 10)); ?>;</script>
@@ -4612,7 +4619,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=17"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=14"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=15"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
@@ -4690,7 +4697,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
-            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
+            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }
@@ -10258,14 +10265,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             m.className = html ? 'text-[11px] rounded-xl p-2.5 mb-3 leading-6 ' + ({ok: 'bg-emerald-50 text-emerald-800', err: 'bg-rose-50 text-rose-700', warn: 'bg-amber-50 text-amber-800'}[kind] || 'bg-slate-50 text-slate-600') : 'hidden';
             m.innerHTML = html || '';
         }
-        // استعلامِ شخصِ حقوقی (s.api.ir) و نشاندنِ نتیجه در فیلدها؛ نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
+        // استعلامِ شخصِ حقوقی: اول از سامانه‌ی پاسارگاد (فهرستِ اشخاصِ حقوقی؛ اگر نشست بسته بود کپچا همین‌جا)، اگر نتیجه نداد از s.api.ir؛
+        // نتیجه در فیلدها می‌نشیند و نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
         async function cmInquiry() {
             const nid = (document.getElementById('cm-national-id').value || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
             if (nid.length !== 11) { cmInquiryMsg('شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد.', 'err'); return; }
             const btn = document.getElementById('cm-inquiry-btn');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…';
+            const body = {action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0};
             let d;
-            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0})})).json(); }
+            if (window.Inquiry && Inquiry.run) {
+                cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام از سامانه‌ی پاسارگاد…', '');
+                const r = await Inquiry.run({kind: 'legal', source: 'form', company_nid: nid}, it => { if (!it.done) cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>' + iiEsc(it.notice || 'در حالِ استعلام…'), ''); }, document.getElementById('cm-inquiry-cap'));
+                if (r.ok && r.item && r.item.company) body.inq_id = r.item.id;
+                else { cmInquiryMsg(iiEsc((r.item && r.item.notice) || r.error || 'نتیجه‌ای پیدا نشد.') + ' — می‌توانید دستی وارد کنید.', 'err'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه'; return; }
+            }
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json(); }
             catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه';
             if (!d.ok) { cmInquiryMsg(iiEsc(d.error || 'خطا'), 'err'); return; }
@@ -10273,11 +10288,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             set('cm-national-id', c.national_id); set('cm-company-type', c.company_type); set('cm-register-number', c.register_number); set('cm-register-date', c.register_date);
             set('cm-postal-code', c.postal_code); set('cm-province', c.province); set('cm-city', c.city);
             if (c.address) set('cm-address', [c.address, c.postal_code ? 'کدپستی ' + c.postal_code : ''].filter(Boolean).join('، '));
-            if (!document.getElementById('cm-economic-code').value.trim()) set('cm-economic-code', c.national_id);
+            if (!document.getElementById('cm-economic-code').value.trim()) set('cm-economic-code', c.economic_code || c.national_id);
+            if (!document.getElementById('cm-phone').value.trim()) set('cm-phone', c.phone || c.mobile);
             document.getElementById('cm-legal-active').value = c.active === false ? '0' : (c.active === true ? '1' : '');
             document.getElementById('cm-legal-checked').value = '1';
             const nameEl = document.getElementById('cm-company-name');
-            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
+            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد${c.source === 'pasargad' ? ' (پاسارگاد)' : c.source === 'api' ? ' (سرویسِ API)' : ''}:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
             if (!nameEl.value.trim()) nameEl.value = c.name;
             else if (c.name && nameEl.value.trim() !== c.name) note += `<br>نامِ ثبتی با نامِ فعلی فرق دارد: <button type="button" class="text-sky-700 font-bold underline" onclick="document.getElementById('cm-company-name').value=${iiEsc(JSON.stringify(c.name))};this.parentNode.removeChild(this)">استفاده از «${iiEsc(c.name)}»</button>`;
             if (d.duplicate) note += `<br><b class="text-amber-800">⚠️ شرکتِ «${iiEsc(d.duplicate.name)}» با همین شناسه‌ی ملی قبلاً در سایت ثبت شده است.</b>`;

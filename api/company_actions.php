@@ -1226,8 +1226,17 @@ try {
     // ---- استعلامِ شخصِ حقوقی با شناسه‌ی ملی (s.api.ir؛ کلید در «تنظیمات ← کلیدهای API») ----
     if ($action === 'company_inquiry') {
         require_once __DIR__ . '/_apis.php';
-        if (!sapi_ready($pdo, 'sapi_company')) { echo json_encode(['ok' => false, 'error' => 'سرویسِ استعلام هنوز تنظیم نشده؛ مدیر کل باید کلیدِ s.api.ir را در «تنظیمات ← کلیدهای API» وارد کند. تا آن موقع اطلاعات را دستی وارد کنید.']); exit; }
-        $r = sapi_company_info($pdo, $data['national_id'] ?? '');
+        // نتیجه‌ی استعلامِ «استعلامات» (اول پاسارگاد، بعد سرویسِ API) — inq_id؛ وگرنه مثلِ قبل مستقیم از s.api.ir
+        if (!empty($data['inq_id'])) {
+            require_once __DIR__ . '/_inquiry.php';
+            $q = inq_get($pdo, intval($data['inq_id']));
+            $res = $q && $q['kind'] === 'legal' ? (json_decode((string)$q['result_json'], true) ?: []) : [];
+            if (empty($res['company'])) { echo json_encode(['ok' => false, 'error' => $q ? ($q['notice'] ?: 'نتیجه‌ای پیدا نشد.') : 'استعلام پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+            $r = ['ok' => true, 'company' => $res['company'] + ['active' => null]];
+        } else {
+            if (!sapi_ready($pdo, 'sapi_company')) { echo json_encode(['ok' => false, 'error' => 'سرویسِ استعلام هنوز تنظیم نشده؛ مدیر کل باید کلیدِ s.api.ir را در «تنظیمات ← کلیدهای API» وارد کند. تا آن موقع اطلاعات را دستی وارد کنید.']); exit; }
+            $r = sapi_company_info($pdo, $data['national_id'] ?? '');
+        }
         if (!$r['ok']) { echo json_encode(['ok' => false, 'error' => $r['error']], JSON_UNESCAPED_UNICODE); exit; }
         // شرکتِ دیگری با همین شناسه‌ی ملی در سایت هست؟
         $dup = null;

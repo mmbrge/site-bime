@@ -91,8 +91,13 @@ function perm_catalog() {
             'bordereau' => ['بردروی پاسارگاد (فهرست و تمدیدها، الحاقیه، خروجی)', ['view', 'create', 'edit', 'delete', 'export']],
         ]],
         ['استعلامات', [
-            'inq-single' => ['استعلامِ تکی (شخص حقیقی، شخص + کد پستی، کد پستی، شخص حقوقی)', ['view', 'create']],
-            'inq-group' => ['استعلامِ گروهی با اکسل', ['view', 'create', 'export']],
+            'inq-single' => ['استعلامِ تکیِ شخصِ حقیقی (شخص، شخص + کد پستی، کد پستی)', ['view', 'create']],
+            'inq-group' => ['استعلامِ گروهیِ شخصِ حقیقی با اکسل', ['view', 'create', 'export']],
+            'inq-legal' => ['استعلامِ تکیِ شخصِ حقوقی (پاسارگاد، بعد سرویسِ API)', ['view', 'create']],
+            'inq-legal-group' => ['استعلامِ گروهیِ شخصِ حقوقی با اکسل', ['view', 'create', 'export']],
+            'inq-sanhab' => ['استعلامِ تکیِ سنهاب (سوابقِ بیمه‌نامه، خسارت و تخفیف‌ها)', ['view', 'create']],
+            'inq-sanhab-group' => ['استعلامِ گروهیِ سنهاب با اکسل', ['view', 'create', 'export']],
+            'inq-premium' => ['استعلامِ حق بیمه‌ی ثالث (با سوابقِ سنهاب)', ['view', 'create']],
             'inq-history' => ['تاریخچه‌ی همه‌ی استعلام‌ها', ['view', 'delete', 'export']],
         ]],
         ['بایگانی و مدیریت', [
@@ -252,10 +257,12 @@ function perm_api_map() {
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
         ]],
         // دسترسیِ دقیق داخلِ خودِ inquiry_actions بررسی می‌شود (استعلامِ داخلِ فرم‌ها برای همه‌ی کارشناسانِ ثبت آزاد است)
-        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
+        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
+            'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any',
+            'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',

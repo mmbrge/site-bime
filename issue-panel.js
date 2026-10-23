@@ -2,6 +2,7 @@
 // «پنلِ صدور»: پاپ‌آپی روی هر ردیفِ شرکتی یا درخواستِ کارکنان با همه‌ی اطلاعاتِ لازم برای صدور —
 // بیمه‌گذار، مالک، ذینفع، خودرو، درخواست — هر خانه با دکمه‌ی کپی (و کپیِ هر بخش / همه)، و نمایشگرِ مدارک کنارش.
 //   IssuePanel.open({type: 'C'|'P', id, onIssue})   onIssue(data): دکمه‌ی «ثبت صدور» (اگر داده شود)
+// ردیفِ ثالث: بخشِ «استعلامِ سنهاب» (عدمِ خسارت / خسارت، تخفیف‌ها، بیمه‌گر و انقضا + جزئیات) با sanhab-ui.js
 (function () {
     'use strict';
     if (window.IssuePanel) return;
@@ -85,6 +86,7 @@
             <div class="ipn-body">
                 <div class="ipn-col">
                     <p class="text-[10.5px] text-slate-500 font-bold mb-2"><i class="fas fa-hand-pointer ml-1"></i>روی هر خانه بزنید تا کپی شود؛ برای هر بخش هم «کپیِ بخش» هست.</p>
+                    ${d.sanhab && d.sanhab.third && window.SanhabUI ? '<div class="ipn-sec" style="border-color:#a5f3fc;background:#f0fdff"><h4><span><i class="fas fa-shield-halved text-cyan-600 ml-1"></i>استعلامِ سنهاب (بیمه‌نامه‌ی ثالثِ قبلی)</span></h4><div data-sh></div></div>' : ''}
                     ${(d.sections || []).map((s, si) => `<div class="ipn-sec"><h4><span><i class="fas ${esc(s.icon)} text-blue-600 ml-1"></i>${esc(s.title)}</span>
                         <button class="ipn-btn s" data-sec="${si}" style="padding:3px 8px;font-size:10px"><i class="far fa-copy"></i> کپیِ بخش</button></h4>
                         <div class="ipn-grid">${s.fields.map((f, fi) => `<div class="ipn-f" data-f="${si}:${fi}" title="کپیِ ${esc(f.label)}"><i class="far fa-copy ipn-cp"></i><small>${esc(f.label)}</small><b ${f.ltr ? 'dir="ltr" style="text-align:right"' : ''}>${esc(fa(f.value))}</b></div>`).join('')}</div></div>`).join('')
@@ -114,6 +116,8 @@
             if (pv) pv.onclick = () => show(cur - 1); if (nx) nx.onclick = () => show(cur + 1);
         };
         box.querySelectorAll('.ipn-th').forEach(t => t.onclick = () => show(Number(t.dataset.i)));
+        const shHost = box.querySelector('[data-sh]');
+        if (shHost) SanhabUI.button(shHost, {prefill: d.sanhab.prefill, ref: d.sanhab.ref, source: 'form', title: d.title, label: 'استعلام از سنهاب (عدمِ خسارت و تخفیف‌ها)'});
         box.querySelectorAll('[data-f]').forEach(el => el.onclick = async () => {
             const [si, fi] = el.dataset.f.split(':').map(Number), f = d.sections[si].fields[fi];
             if (await copy(f.value)) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); toast(`${f.label} کپی شد.`, 'success'); }
