@@ -29,6 +29,88 @@ company_defaults_ensure($pdo);   // پیش‌فرضِ پوشش‌های بدنه
 company_claim_ensure($pdo);      // وضعیتِ خسارتِ ردیف‌های تمدیدی
 party_ensure($pdo);   // مالک / بیمه‌گذار / ذینفع (ستون‌ها، از جمله بیمه‌گذارِ جدا)
 
+// اطلاعاتِ خوانده‌شده از فایلِ بیمه‌نامه روی ردیفِ درخواست: $fields از plate, vin, engine, car_value, liability, expiry, insured
+// (بیمه‌گذار: «خودِ شرکت» / «مالک = بیمه‌گذار» / «بیمه‌گذار جدا»)؛ ردیفِ صادرشده دست نمی‌خورد
+function company_apply_policy_to_row($pdo, $pid, array $d, array $fields) {
+    $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json, c.name AS company_name, c.national_id AS company_nid, c.economic_code
+                           FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+    $st->execute([$pid]);
+    $row = $st->fetch();
+    if (!$row || $row['status'] === 'ISSUED') return false;
+    $set = []; $args = [];
+    foreach ($fields as $field) {
+        switch ($field) {
+            case 'plate':
+                if (preg_match('/^(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})$/u', p2e_digits(trim((string)($d['plate'] ?? ''))), $m)) { array_push($set, 'plate_p1 = ?', 'plate_p2 = ?', 'plate_letter = ?', 'plate_p4 = ?'); array_push($args, $m[1], $m[2], $m[3], $m[4]); }
+                break;
+            case 'vin':
+                $v = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? '')))));
+                if ($v !== '') { $set[] = 'chassis_no = ?'; $args[] = $v; }
+                break;
+            case 'engine': if (!empty($d['engine_no'])) { $set[] = 'engine_no = ?'; $args[] = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$d['engine_no']))); } break;
+            case 'car_value': if (!empty($d['car_value'])) { $set[] = 'car_value = ?'; $args[] = preg_replace('/\D/', '', p2e_digits((string)$d['car_value'])); } break;
+            case 'liability': if (!empty($d['liability'])) { $set[] = 'liability_limit = ?'; $args[] = preg_replace('/\D/', '', p2e_digits((string)$d['liability'])); } break;
+            case 'expiry': if (!empty($d['prev_expiry']) && ($g = fin_jalali_to_date((string)$d['prev_expiry']))) { $set[] = 'expiry_date = ?'; $args[] = $g; } break;
+            case 'insured':
+                // بیمه‌گذارِ بیمه‌نامه: اگر همان شرکت است «خودِ شرکت»، اگر همان مالک است «مالک = بیمه‌گذار»، وگرنه «بیمه‌گذار جدا»
+                $nm = function ($v) { return preg_replace('/\s+|شرکت|سهامی|خاص|عام|[()\-.\x{200C}]/u', '', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$v)); };
+                $ins = party_clean(['name' => $d['insured_name'] ?? '', 'national_id' => $d['national_id'] ?? '', 'phone' => $d['phone'] ?? '', 'address' => $d['address'] ?? '', 'postal_code' => $d['postal_code'] ?? '']);
+                if (!$ins) break;
+                $pr = party_resolve($row, ['name' => $row['company_name'], 'national_id' => $row['company_nid'], 'economic_code' => $row['economic_code']],
+                                    ['party_mode' => $row['req_party_mode'], 'party_json' => $row['req_party_json'], 'insured_json' => $row['req_insured_json']]);
+                $ownerName = (string)($pr['owner']['name'] ?? '');
+                if ($nm($ins['name']) !== '' && ($nm($ins['name']) === $nm($row['company_name']) || preg_replace('/\D/', '', $ins['national_id']) === preg_replace('/\D/', '', (string)$row['company_nid']))) party_set_rows($pdo, [$pid], 'COMPANY', null);
+                elseif ($pr['mode'] !== 'COMPANY' && $ownerName !== '' && $nm($ownerName) === $nm($ins['name'])) party_set_rows($pdo, [$pid], 'OWNER', $pr['other'] ?: $ins);
+                else party_set_rows($pdo, [$pid], 'SPLIT', $pr['mode'] === 'COMPANY' ? ['kind' => 'COMPANY', 'name' => $row['company_name'], 'national_id' => (string)$row['company_nid']] : ($pr['other'] ?: false), $ins);
+                party_sync_issue_info($pdo, [$pid]);
+                break;
+        }
+    }
+    if ($set) { $args[] = $pid; $pdo->prepare("UPDATE company_request_plates SET " . implode(', ', $set) . " WHERE id = ?")->execute($args); }
+    ensure_plate_folder($pdo, dirname(__DIR__), $pid);
+    return true;
+}
+
+// صدورِ گروهی: بعد از جدا شدنِ بیمه‌نامه‌ها (یک‌جا یا مرحله‌ای) — خواندنِ اسکن‌ها، تطبیق با ردیف‌ها و ذخیره‌ی نتیجه
+function cbundle_finish($pdo, $dir, $token, $requestId, $importScope, $name, array $res, $actor) {
+    $policies = $res['policies'] ?? [];
+    // صفحه‌هایی که متن ندارند (اسکن) با موتورِ OCR خوانده می‌شوند
+    $ocrCount = 0;
+    foreach ($policies as &$p) {
+        if (!empty($p['has_text']) && is_array($p['data'])) continue;
+        if ($ocrCount >= 30) { $p['ocr_error'] = 'تعدادِ صفحه‌های اسکن‌شده زیاد است (حداکثر ۳۰)'; continue; }
+        $ocrCount++;
+        $o = run_document_ocr_verbose($dir . '/pages/' . $p['file']);
+        if ($o['data']) {
+            $p['data'] = policy_data_clean($o['data'] + ['premium' => '']);
+            if (empty($p['data']['policy_num']) && !empty($p['data']['policy_number'])) $p['data']['policy_num'] = $p['data']['policy_number'];
+            if (empty($p['data']['premium']) && !empty($p['data']['total_premium'])) $p['data']['premium'] = $p['data']['total_premium'];
+            $p['via_ocr'] = true;
+            $p['missing'] = [];
+            foreach (['plate' => 'پلاک', 'insured_name' => 'نام بیمه‌گذار', 'premium' => 'حق بیمه', 'policy_num' => 'شماره بیمه‌نامه'] as $fk => $fl) {
+                if (empty($p['data'][$fk]) && !($fk === 'plate' && !empty($p['data']['vin']))) $p['missing'][] = $fl;
+            }
+        }
+        else $p['ocr_error'] = $o['debug'] ?: 'متنی خوانده نشد';
+    }
+    unset($p);
+    $items = cbundle_match($pdo, $requestId, $policies, $importScope);
+    if ($items === null) { cbundle_rrmdir($dir); return ['ok' => false, 'error' => 'درخواست پیدا نشد.']; }
+    $valid = array_values(array_filter($items, fn($it) => $it['state'] !== 'unknown'));
+    if (!$valid) {
+        cbundle_rrmdir($dir);
+        return ['ok' => false, 'error' => 'در این فایل هیچ بیمه‌نامه‌ی معتبری شناسایی نشد (' . intval($res['pages']) . ' صفحه بررسی شد). مطمئن شوید همان فایلِ خروجیِ بیمه‌نامه‌هاست.',
+                          'pages' => intval($res['pages'])];
+    }
+    $meta = ['request_id' => $requestId, 'import' => $importScope ? 1 : 0, 'user_id' => intval($actor['id'] ?? 0), 'created' => time(), 'name' => $name, 'pages' => intval($res['pages']),
+             'policies' => $policies, 'items' => $items];
+    file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
+    $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
+    return ['ok' => true, 'token' => $token, 'pages' => intval($res['pages']), 'policies' => count($items), 'counts' => $cnt, 'items' => $items,
+                      'split' => $res['split'] ?? ''];
+}
+
+
 // اطمینان از وجود پوشه‌ی ریشه‌ی «بایگانی شرکتی» تا همیشه در بایگانی فایل‌ها دیده شود
 @mkdir(company_archive_root(dirname(__DIR__)), 0775, true);
 
@@ -1281,6 +1363,8 @@ try {
         $stmt = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $stmt->execute([$portalUserId, $cid]);
         $pdo->commit();
+        portal_renewals_ensure($pdo);
+        $pdo->prepare("UPDATE company_portal_users SET can_renewals = ? WHERE id = ?")->execute([!empty($data['can_renewals']) ? 1 : 0, $portalUserId]);
         echo json_encode(['ok' => true, 'portal_user_id' => $portalUserId]);
         exit;
     }
@@ -1321,6 +1405,7 @@ try {
         $stmt = $pdo->prepare("INSERT INTO company_portal_user_companies (portal_user_id, company_id) VALUES (?, ?)");
         foreach ($companyIds as $cid) $stmt->execute([$id, $cid]);
         $pdo->commit();
+        if (array_key_exists('can_renewals', $data)) { portal_renewals_ensure($pdo); $pdo->prepare("UPDATE company_portal_users SET can_renewals = ? WHERE id = ?")->execute([!empty($data['can_renewals']) ? 1 : 0, $id]); }
         // شماره عوض شد: از ربات بیرون می‌آید و باید با شماره‌ی جدید دوباره وارد شود
         $unlinked = false;
         if ($oldUser && !empty($oldUser['bale_chat_id']) && auth_norm_phone($oldUser['mobile_number']) !== (string)$mobile) {
@@ -1368,7 +1453,8 @@ try {
     if ($action === 'list_portal_users') {
         require_admin_only(); // همکار شرکت‌ها نباید حتی فهرست حساب‌های ورود را ببیند
         $ready = auth_schema_ready($pdo);
-        $stmt = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active,
+        portal_renewals_ensure($pdo);
+        $stmt = $pdo->query("SELECT cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.can_renewals,
                                      " . ($ready ? "(cpu.bale_chat_id IS NOT NULL AND cpu.bot_linked_at IS NOT NULL) AS bot_linked," : "0 AS bot_linked,") . "
                                      GROUP_CONCAT(c.name SEPARATOR '، ') AS company_names,
                                      GROUP_CONCAT(c.id) AS company_ids
@@ -1376,7 +1462,7 @@ try {
                               LEFT JOIN company_portal_user_companies cpuc ON cpuc.portal_user_id = cpu.id
                               LEFT JOIN companies c ON c.id = cpuc.company_id
                               " . ($ready ? "WHERE COALESCE(cpu.is_deleted, 0) = 0" : "WHERE cpu.is_active = 1") . "
-                              GROUP BY cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.created_at
+                              GROUP BY cpu.id, cpu.username, cpu.full_name, cpu.mobile_number, cpu.is_active, cpu.can_renewals, cpu.created_at
                               ORDER BY cpu.created_at DESC");
         echo json_encode(['ok' => true, 'users' => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
         exit;
@@ -2863,41 +2949,107 @@ try {
             cbundle_rrmdir($dir);
             echo json_encode(['ok' => false, 'error' => ($res['error'] ?? 'پردازشِ فایل ممکن نشد.')], JSON_UNESCAPED_UNICODE); exit;
         }
-        $policies = $res['policies'] ?? [];
-        // صفحه‌هایی که متن ندارند (اسکن) با موتورِ OCR خوانده می‌شوند
-        $ocrCount = 0;
-        foreach ($policies as &$p) {
-            if (!empty($p['has_text']) && is_array($p['data'])) continue;
-            if ($ocrCount >= 30) { $p['ocr_error'] = 'تعدادِ صفحه‌های اسکن‌شده زیاد است (حداکثر ۳۰)'; continue; }
-            $ocrCount++;
-            $o = run_document_ocr_verbose($dir . '/pages/' . $p['file']);
-            if ($o['data']) {
-                $p['data'] = policy_data_clean($o['data'] + ['premium' => '']);
-                if (empty($p['data']['policy_num']) && !empty($p['data']['policy_number'])) $p['data']['policy_num'] = $p['data']['policy_number'];
-                if (empty($p['data']['premium']) && !empty($p['data']['total_premium'])) $p['data']['premium'] = $p['data']['total_premium'];
-                $p['via_ocr'] = true;
-                $p['missing'] = [];
-                foreach (['plate' => 'پلاک', 'insured_name' => 'نام بیمه‌گذار', 'premium' => 'حق بیمه', 'policy_num' => 'شماره بیمه‌نامه'] as $fk => $fl) {
-                    if (empty($p['data'][$fk]) && !($fk === 'plate' && !empty($p['data']['vin']))) $p['missing'][] = $fl;
-                }
-            }
-            else $p['ocr_error'] = $o['debug'] ?: 'متنی خوانده نشد';
+        echo json_encode(cbundle_finish($pdo, $dir, $token, $requestId, $importScope, $name, $res, $actor), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- صدورِ گروهیِ فایل‌های بزرگ: بارگذاری تکه‌تکه (هر تکه چند مگابایت، بی‌نیاز به سقفِ بزرگِ آپلود) ----
+    if ($action === 'bundle_chunk') {
+        require_admin_only();
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($data['token'] ?? ''));
+        $idx = intval($data['idx'] ?? 0); $total = max(1, intval($data['total'] ?? 1));
+        if ($idx === 0) {
+            $requestId = intval($data['request_id'] ?? 0); $importScope = !empty($data['import']);
+            if (!$requestId && !$importScope) { echo json_encode(['ok' => false, 'error' => 'درخواست مشخص نیست.']); exit; }
+            if (upload_ext((string)($data['name'] ?? '')) !== 'pdf') { echo json_encode(['ok' => false, 'error' => 'فایل باید PDF باشد (همان فایلِ خروجیِ سایتِ بیمه‌گر).'], JSON_UNESCAPED_UNICODE); exit; }
+            $token = bin2hex(random_bytes(8));
+            @mkdir(cbundle_root() . '/b_' . $token, 0777, true);
+            file_put_contents(cbundle_root() . '/b_' . $token . '/meta.json', json_encode(['request_id' => $requestId, 'import' => $importScope ? 1 : 0, 'name' => (string)($data['name'] ?? 'bundle.pdf'),
+                                                                                         'user_id' => intval($actor['user_id'] ?? 0), 'total' => $total], JSON_UNESCAPED_UNICODE));
         }
-        unset($p);
-        $items = cbundle_match($pdo, $requestId, $policies, $importScope);
-        if ($items === null) { cbundle_rrmdir($dir); echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
-        $valid = array_values(array_filter($items, fn($it) => $it['state'] !== 'unknown'));
-        if (!$valid) {
-            cbundle_rrmdir($dir);
-            echo json_encode(['ok' => false, 'error' => 'در این فایل هیچ بیمه‌نامه‌ی معتبری شناسایی نشد (' . intval($res['pages']) . ' صفحه بررسی شد). مطمئن شوید همان فایلِ خروجیِ بیمه‌نامه‌هاست.',
-                              'pages' => intval($res['pages'])], JSON_UNESCAPED_UNICODE); exit;
+        $dir = cbundle_root() . '/b_' . $token;
+        if (!$token || !is_file($dir . '/meta.json')) { echo json_encode(['ok' => false, 'error' => 'این بارگذاری پیدا نشد؛ دوباره شروع کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (empty($_FILES['chunk']['tmp_name']) || !is_uploaded_file($_FILES['chunk']['tmp_name'])) { echo json_encode(['ok' => false, 'error' => 'تکه‌ی فایل نرسید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $part = $dir . '/source.part';
+        if ($idx === 0 && is_file($part)) @unlink($part);
+        $have = is_file($part) ? intval(filesize($part)) : 0;
+        if ($have !== intval($data['offset'] ?? $have)) { echo json_encode(['ok' => false, 'error' => 'ترتیبِ تکه‌ها به‌هم ریخت؛ دوباره بارگذاری کنید.', 'have' => $have], JSON_UNESCAPED_UNICODE); exit; }
+        file_put_contents($part, file_get_contents($_FILES['chunk']['tmp_name']), FILE_APPEND);
+        if ($idx < $total - 1) { echo json_encode(['ok' => true, 'token' => $token, 'received' => $idx + 1]); exit; }
+        if ((string)@file_get_contents($part, false, null, 0, 5) !== '%PDF-') { cbundle_rrmdir($dir); echo json_encode(['ok' => false, 'error' => 'فایل باید PDF باشد (همان فایلِ خروجیِ سایتِ بیمه‌گر).'], JSON_UNESCAPED_UNICODE); exit; }
+        rename($part, $dir . '/source.pdf');
+        require_once __DIR__ . '/_policy_reader.php';
+        $r = pb_bundle_job_init($dir . '/source.pdf', $dir);
+        if (empty($r['ok'])) { cbundle_rrmdir($dir); echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'token' => $token, 'uploaded' => true, 'pages' => $r['pages']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- هر فراخوانی چند ثانیه پردازش؛ در پایان همان خروجیِ bundle_analyze ----
+    if ($action === 'bundle_step') {
+        require_admin_only();
+        if (function_exists('sess_release')) sess_release();
+        @set_time_limit(120);
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($data['token'] ?? ''));
+        $dir = cbundle_root() . '/b_' . $token;
+        $meta = $token && is_file($dir . '/meta.json') ? json_decode((string)file_get_contents($dir . '/meta.json'), true) : null;
+        if (!$meta || !is_file($dir . '/source.pdf')) { echo json_encode(['ok' => false, 'error' => 'کارِ این فایل پیدا نشد (منقضی شده)؛ دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (is_file($dir . '/result.json')) { echo file_get_contents($dir . '/result.json'); exit; }
+        require_once __DIR__ . '/_policy_reader.php';
+        @touch($dir);
+        $r = pb_bundle_job_step($dir . '/source.pdf', $dir, 12);
+        if (empty($r['ok'])) { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
+        if ($r['phase'] !== 'done') {
+            echo json_encode(['ok' => true, 'token' => $token, 'phase' => $r['phase'], 'done' => intval($r['next']), 'total' => $r['phase'] === 'text' ? intval($r['n']) : count($r['starts'] ?? []),
+                              'pages' => intval($r['n'])], JSON_UNESCAPED_UNICODE);
+            exit;
         }
-        $meta = ['request_id' => $requestId, 'import' => $importScope ? 1 : 0, 'user_id' => intval($actor['id'] ?? 0), 'created' => time(), 'name' => $name, 'pages' => intval($res['pages']),
-                 'policies' => $policies, 'items' => $items];
+        $res = ['ok' => true, 'pages' => $r['n'], 'text_pages' => $r['text_pages'] ?? 0, 'split' => $r['split'] ?? '', 'policies' => $r['policies']];
+        $out = cbundle_finish($pdo, $dir, $token, intval($meta['request_id']), !empty($meta['import']), (string)$meta['name'], $res, $actor) + ['phase' => 'done'];
+        if (!empty($out['ok'])) file_put_contents($dir . '/result.json', json_encode($out, JSON_UNESCAPED_UNICODE));
+        echo json_encode($out, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- مغایرتِ فایلِ بیمه‌نامه با ردیف: اطلاعاتِ خودِ بیمه‌نامه (پلاک، شاسی، موتور، ارزش، تعهد، انقضای قبلی، بیمه‌گذار) روی ردیف می‌نشیند ----
+    //      items: شماره‌ی بیمه‌نامه‌ها در همین بررسی (یا all) ؛ ردیف‌های صادرشده دست نمی‌خورند؛ بعد وضعیت دوباره بررسی می‌شود
+    if ($action === 'bundle_apply_diffs') {
+        require_admin_only();
+        $token = preg_replace('/[^a-f0-9]/', '', (string)($data['token'] ?? ''));
+        $dir = cbundle_root() . '/b_' . $token;
+        $meta = $token && is_file($dir . '/analysis.json') ? json_decode((string)file_get_contents($dir . '/analysis.json'), true) : null;
+        if (!$meta || empty($meta['items'])) { echo json_encode(['ok' => false, 'error' => 'نتیجه‌ی بررسیِ فایل پیدا نشد (منقضی شده)؛ فایل را دوباره بارگذاری کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $want = !empty($data['all']) ? null : array_map('intval', (array)($data['items'] ?? []));
+        $n = 0; $ids = [];
+        foreach ($meta['items'] as $it) {
+            if ($want !== null && !in_array(intval($it['i']), $want, true)) continue;
+            $pid = intval($it['row']['id'] ?? 0); $d = (array)($it['data'] ?? []);
+            if (!$pid || empty($it['diffs'])) continue;
+            if (!company_apply_policy_to_row($pdo, $pid, $d, array_column($it['diffs'], 'field'))) continue;
+            $ids[] = $pid; $n++;
+        }
+        $items = cbundle_match($pdo, intval($meta['request_id']), $meta['policies'], !empty($meta['import']));
+        if ($items === null) { echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.']); exit; }
+        $meta['items'] = $items;
         file_put_contents($dir . '/analysis.json', json_encode($meta, JSON_UNESCAPED_UNICODE));
         $cnt = array_count_values(array_map(fn($it) => $it['state'], $items));
-        echo json_encode(['ok' => true, 'token' => $token, 'pages' => intval($res['pages']), 'policies' => count($items), 'counts' => $cnt, 'items' => $items,
-                          'split' => $res['split'] ?? ''], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'applied' => $n, 'token' => $token, 'pages' => intval($meta['pages'] ?? 0), 'policies' => count($items), 'counts' => $cnt, 'items' => $items,
+                          'name' => $meta['name'] ?? ''], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- پنجره‌ی «ثبت صدور» یک ردیف: اطلاعاتِ خوانده‌شده از فایل روی همان ردیف (یا بیمه‌گذار روی همه‌ی ردیف‌های صادرنشده‌ی درخواست) ----
+    if ($action === 'row_apply_policy_info') {
+        require_admin_only();
+        $pid = intval($data['plate_id'] ?? 0);
+        $d = is_array($data['data'] ?? null) ? $data['data'] : [];
+        $fields = array_values(array_intersect((array)($data['fields'] ?? []), ['plate', 'vin', 'engine', 'car_value', 'liability', 'expiry', 'insured']));
+        if (!$pid || !$fields) { echo json_encode(['ok' => false, 'error' => 'چیزی برای نشاندن انتخاب نشده.'], JSON_UNESCAPED_UNICODE); exit; }
+        $ids = [$pid];
+        if (!empty($data['all_rows'])) {
+            $st = $pdo->prepare("SELECT id FROM company_request_plates WHERE request_id = (SELECT request_id FROM company_request_plates WHERE id = ?) AND status NOT IN ('ISSUED', 'CANCELLED')");
+            $st->execute([$pid]);
+            $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        }
+        $n = 0;
+        foreach ($ids as $id) if (company_apply_policy_to_row($pdo, $id, $d, $id === $pid ? $fields : array_values(array_intersect($fields, ['insured'])))) $n++;
+        echo json_encode(['ok' => true, 'updated' => $n], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'bundle_recheck') {   // بعد از انجامِ مراحلِ باقی‌مانده: بررسیِ دوباره بدونِ بارگذاریِ مجدد

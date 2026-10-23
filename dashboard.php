@@ -3228,7 +3228,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="bdl-progress" class="hidden text-center py-10">
                     <div class="bdl-spinner mx-auto mb-4"></div>
                     <p class="font-black text-slate-700" id="bdl-progress-text">در حالِ جدا کردنِ صفحه‌ها و شناسایی…</p>
-                    <p class="text-[11px] text-slate-400 mt-1">بسته به تعدادِ صفحه‌ها ممکن است تا چند دقیقه طول بکشد؛ صفحه را نبندید.</p>
+                    <div class="max-w-md mx-auto mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden"><div id="bdl-progress-bar" class="h-full bg-gradient-to-l from-indigo-600 to-violet-500 transition-all" style="width:0%"></div></div>
+                    <p class="text-[11px] text-slate-400 mt-2">می‌توانید این پنجره را ببندید و کارِ دیگری بکنید؛ پیشرفت پایینِ صفحه دیده می‌شود و وقتی تمام شد خبر می‌دهد.</p>
                 </div>
                 <div id="bdl-error" class="hidden"></div>
                 <div id="bdl-result" class="hidden"></div>
@@ -3862,6 +3863,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             <div class="float-input"><input type="text" id="cm-pu-username" dir="ltr" placeholder=" "><label>نام کاربری</label></div>
             <div class="float-input"><input type="text" id="cm-pu-password" dir="ltr" placeholder=" "><label id="cm-pu-password-label">رمز عبور</label></div>
             <div class="float-input"><input type="text" id="cm-pu-mobile" dir="ltr" placeholder=" "><label>شماره موبایل (اختیاری)</label></div>
+            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer mb-3"><input type="checkbox" id="cm-pu-renewals" class="mt-0.5 accent-emerald-600">
+                <span>دسترسی به «تمدیدی‌ها»<small class="block text-slate-400 font-normal">بیمه‌نامه‌های قبلیِ شرکت‌های همین کاربر (صادره‌ها و بردرو) را با اطلاعاتِ کلی (پلاک/شاسی، شرکت، شروع/انقضا، حق بیمه‌ی قبلی) می‌بیند، جستجو/فیلتر می‌کند و برای چند تا یک‌جا «درخواستِ تمدید» می‌فرستد.</small></span></label>
             <button onclick="submitPortalUser()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm"><span id="cm-pu-submit-label">ساخت حساب کاربری</span></button>
         </div>
     </div>
@@ -7163,25 +7166,94 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             bundleShow('error');
         }
 
+        // ---- صدورِ گروهی (هر حجمی): بارگذاریِ تکه‌تکه، بعد پردازشِ مرحله‌ای (هر بار چند ثانیه) با نوارِ پیشرفت.
+        //      پنجره را می‌شود بست: کار ادامه دارد (نوارِ شناورِ پایینِ صفحه)؛ اگر صفحه تازه شود، بعد از ورود ادامه پیدا می‌کند ----
+        const BDL_JOB_KEY = 'bdl:job';
+        let bdlJob = null;
+        async function bdlPost(body, isForm) {
+            for (let tries = 0; tries < 4; tries++) {
+                try {
+                    const res = await fetch(COMPANY_API, isForm ? {method: 'POST', body} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                    const txt = await res.text();
+                    try { return JSON.parse(txt); } catch (e) { if (res.status >= 500 && tries < 3) { await new Promise(r => setTimeout(r, 2500)); continue; } return {ok: false, error: res.ok ? 'پاسخِ نامعتبر از سرور.' : `خطای سرور (${res.status}).`}; }
+                } catch (e) { if (tries < 3) { await new Promise(r => setTimeout(r, 2500)); continue; } return {ok: false, error: 'خطا در ارتباط با سرور. دوباره تلاش کنید.'}; }
+            }
+            return {ok: false, error: 'خطا در ارتباط با سرور.'};
+        }
+        function bdlPaint(text, pct) {
+            const t = document.getElementById('bdl-progress-text'), b = document.getElementById('bdl-progress-bar');
+            if (t) t.textContent = text; if (b) b.style.width = Math.max(2, Math.min(100, pct)) + '%';
+            let fl = document.getElementById('bdl-float');
+            const modalOpen = document.getElementById('bundle-modal')?.classList.contains('active');
+            if (!bdlJob || modalOpen) { if (fl) fl.remove(); return; }
+            if (!fl) {
+                fl = document.createElement('div'); fl.id = 'bdl-float';
+                fl.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#0f172a;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #0f172a;cursor:pointer;font-size:11.5px';
+                fl.onclick = () => { if (bdlJob) { openBundleModal(bdlJob.requestId, bdlJob.importMode ? 'import' : ''); bundleShow('progress'); bdlPaint(bdlJob.text || '', bdlJob.pct || 0); } };
+                document.body.appendChild(fl);
+            }
+            fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-layer-group ml-1"></i>صدورِ گروهی · ${escapeHtml(bdlJob.name || '')}</span><span>${faDigits(String(Math.round(pct)))}٪</span></div>
+                <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2, pct)}%;background:linear-gradient(90deg,#818cf8,#a855f7)"></div></div>
+                <div style="margin-top:5px;opacity:.8">${escapeHtml(text)}</div>`;
+        }
         async function bundleAnalyze() {
             const f = document.getElementById('bdl-file').files[0];
             if (!f) return;
-            const fd = new FormData();
-            fd.append('action', 'bundle_analyze');
-            fd.append('request_id', BDL.requestId);
-            if (BDL.importMode) fd.append('import', '1');
-            fd.append('bundle', f);
-            document.getElementById('bdl-progress-text').textContent = 'در حالِ جدا کردنِ صفحه‌ها و شناسایی…';
+            if (bdlJob) { showToast('یک صدورِ گروهیِ دیگر در حالِ انجام است؛ تا تمام شود صبر کنید.', 'warning'); return; }
+            bdlJob = {requestId: BDL.requestId, importMode: !!BDL.importMode, name: f.name, token: null, pct: 0, text: ''};
             bundleShow('progress');
-            let data;
-            try {
-                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
-                const txt = await res.text();
-                try { data = JSON.parse(txt); } catch (e) { data = {ok: false, error: res.ok ? 'پاسخِ نامعتبر از سرور.' : `خطای سرور (${res.status}).`}; }
-            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور. دوباره تلاش کنید.'}; }
-            if (!data.ok) { bundleError(data.error || 'خطا'); return; }
-            bundleLoad(data, f.name);
+            const CH = 1536 * 1024, total = Math.max(1, Math.ceil(f.size / CH));
+            let token = '';
+            for (let i = 0; i < total; i++) {
+                const fd = new FormData();
+                fd.append('action', 'bundle_chunk'); fd.append('idx', i); fd.append('total', total); fd.append('offset', i * CH);
+                fd.append('request_id', BDL.requestId); fd.append('name', f.name);
+                if (BDL.importMode) fd.append('import', '1');
+                if (token) fd.append('token', token);
+                fd.append('chunk', f.slice(i * CH, Math.min(f.size, (i + 1) * CH)), 'chunk.bin');
+                bdlJob.text = `بارگذاری ${faDigits(String(Math.round((i + 1) * 100 / total)))}٪ (${faDigits((f.size / 1048576).toFixed(1))} مگابایت)`; bdlJob.pct = (i + 1) * 30 / total;
+                bdlPaint(bdlJob.text, bdlJob.pct);
+                const r = await bdlPost(fd, true);
+                if (!r.ok) { bdlJob = null; bdlPaint('', 0); bundleError(r.error || 'خطا'); return; }
+                token = r.token;
+            }
+            bdlJob.token = token;
+            try { localStorage.setItem(BDL_JOB_KEY, JSON.stringify(bdlJob)); } catch (e) {}
+            bundleSteps();
         }
+        async function bundleSteps() {
+            const job = bdlJob;
+            if (!job) return;
+            for (let n = 0; n < 2000; n++) {
+                const r = await bdlPost({action: 'bundle_step', token: job.token});
+                if (!r.ok) {
+                    bdlJob = null; try { localStorage.removeItem(BDL_JOB_KEY); } catch (e) {} bdlPaint('', 0);
+                    if (document.getElementById('bundle-modal')?.classList.contains('active') && BDL && BDL.requestId === job.requestId) bundleError(r.error || 'خطا');
+                    else showToast('صدورِ گروهیِ «' + job.name + '»: ' + (r.error || 'خطا'), 'error');
+                    return;
+                }
+                if (r.phase === 'done') {
+                    bdlJob = null; try { localStorage.removeItem(BDL_JOB_KEY); } catch (e) {} bdlPaint('', 100);
+                    const open = document.getElementById('bundle-modal')?.classList.contains('active');
+                    if (!open || !BDL || BDL.requestId !== job.requestId) {
+                        BDL = {requestId: job.requestId, importMode: job.importMode, token: null, items: [], filter: 'all', results: {}};
+                        bundleLoad(r, job.name);
+                        if (typeof showConfirm === 'function') showConfirm('صدورِ گروهی آماده است', `بررسیِ «${job.name}» تمام شد (${faDigits(String(r.policies || 0))} بیمه‌نامه). پنجره‌ی نتیجه باز شود؟`, () => openBundleModal(job.requestId, job.importMode ? 'import' : ''));
+                        else showToast('بررسیِ صدورِ گروهی تمام شد.', 'success');
+                    } else bundleLoad(r, job.name);
+                    return;
+                }
+                const ph = r.phase === 'text' ? 'خواندنِ صفحه‌ها' : 'جدا کردنِ بیمه‌نامه‌ها و فیش‌ها';
+                job.pct = r.phase === 'text' ? 30 + r.done * 40 / Math.max(1, r.total) : 70 + r.done * 30 / Math.max(1, r.total);
+                job.text = `${ph}: ${faDigits(String(r.done))} از ${faDigits(String(r.total))}` + (r.pages ? ` · ${faDigits(String(r.pages))} صفحه` : '');
+                bdlPaint(job.text, job.pct);
+            }
+        }
+        // کارِ نیمه‌تمام (صفحه تازه شد): ادامه بعد از بارگذاریِ صفحه
+        window.addEventListener('load', () => {
+            let j = null; try { j = JSON.parse(localStorage.getItem(BDL_JOB_KEY) || 'null'); } catch (e) {}
+            if (j && j.token && !bdlJob) { bdlJob = j; bdlPaint(j.text || 'ادامه‌ی صدورِ گروهی…', j.pct || 30); bundleSteps(); }
+        });
         function bundleLoad(data, name) {
             BDL.token = data.token; BDL.items = data.items || []; BDL.pages = data.pages; BDL.name = name || data.name || BDL.name || '';
             BDL.results = {}; BDL.expired = false;
@@ -7257,7 +7329,23 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="text-slate-500">درخواست:</span><b class="text-slate-700" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && x.row ? formatPlateHtml(x.row) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.row || '—') : faDigits(bdlEsc(x.row || '—')))}</b>
                     <i class="fas fa-arrow-left text-slate-400 text-[9px]"></i>
                     <span class="text-slate-500">بیمه‌نامه:</span><b class="${x.level === 'hard' ? 'text-red-700' : 'text-amber-900'}" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && /ایران/.test(x.policy) ? formatPlateHtml(x.policy) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.policy || '—') : faDigits(bdlEsc(x.policy || '—')))}</b>
-                </div>`).join('')}</div></div>`;
+                </div>`).join('')}</div>
+                ${it.row && it.row.status !== 'ISSUED' && diffs.some(x => x.field !== 'type') ? `<div class="flex flex-wrap gap-2 mt-2"><button type="button" onclick="bundleApplyDiffs([${it.i}])" class="text-[10.5px] font-black bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-lg px-2.5 py-1"><i class="fas fa-file-import ml-1"></i>اطلاعاتِ بیمه‌نامه روی همین ردیف بنشیند</button>
+                    <span class="text-[10px] text-slate-500 self-center">یا بدونِ تغییر، با همان اطلاعاتِ درخواست صادر کنید.</span></div>` : ''}</div>`;
+        }
+        // اطلاعاتِ خوانده‌شده از بیمه‌نامه روی ردیف(ها): بیمه‌گذار/مالک (نوعِ مالکیت)، پلاک، شاسی، موتور، ارزش، تعهد، انقضای قبلی
+        async function bundleApplyDiffs(list) {
+            if (!BDL || !BDL.token) return;
+            const n = list ? list.length : BDL.items.filter(it => it.row && it.row.status !== 'ISSUED' && (it.diffs || []).some(x => x.field !== 'type')).length;
+            if (!(await uiConfirm('نشاندنِ اطلاعاتِ بیمه‌نامه', `اطلاعاتِ ${faDigits(String(n))} بیمه‌نامه (بیمه‌گذار، مالک، پلاک، شاسی، موتور، ارزش، تعهد و انقضای قبلی) روی ردیف‌های درخواست نوشته شود؟ (نوعِ بیمه عوض نمی‌شود)`, {ok: 'بله، اعمال شود'}))) return;
+            bundleCollectEdits();
+            const keep = {}; BDL.items.forEach(it => { keep[it.i] = {pn: it._pn, pr: it._pr, pay: it._pay, sel: it._sel}; });
+            const d = await bdlPost(list ? {action: 'bundle_apply_diffs', token: BDL.token, items: list} : {action: 'bundle_apply_diffs', token: BDL.token, all: 1});
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            bundleLoad(d);
+            BDL.items.forEach(it => { const k = keep[it.i]; if (k) { it._pn = k.pn; it._pr = k.pr; it._pay = k.pay; if (k.sel !== undefined && bundleSelectable(it)) it._sel = k.sel; } });
+            bundleRender();
+            showToast(`اطلاعاتِ ${faDigits(String(d.applied || 0))} ردیف از روی بیمه‌نامه به‌روز شد.`, 'success');
         }
 
         function bundleCardHtml(it) {
@@ -7375,6 +7463,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     ${stat('صادرشده', (cnt.issued || 0) + issuedNow, 'bg-slate-50 border-slate-200 text-slate-700')}
                 </div>
                 ${cnt.unknown ? `<p class="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-triangle-exclamation ml-1"></i>${e2pNum(cnt.unknown)} بیمه‌نامه شناسایی نشد؛ پیش‌نمایشِ صفحه‌اش را ببینید و در صورتِ نیاز از «ثبت صدور»ِ همان ردیف دستی صادر کنید.</p>` : ''}
+                ${(() => { const dn = items.filter(it => it.row && it.row.status !== 'ISSUED' && (it.diffs || []).some(x => x.field !== 'type')).length;
+                    return dn ? `<div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3"><span class="text-amber-900 font-bold"><i class="fas fa-code-compare ml-1"></i>${e2pNum(dn)} بیمه‌نامه با اطلاعاتِ ردیفِ درخواست (بیمه‌گذار، مالک، پلاک، شاسی، ارزش، تعهد، …) فرق دارد. می‌توانید اطلاعاتِ فایل را روی ردیف‌ها بنشانید یا با همان اطلاعاتِ درخواست صادر کنید.</span>
+                        <button type="button" onclick="bundleApplyDiffs(null)" class="bg-amber-600 hover:bg-amber-700 text-white font-black px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-import ml-1"></i>اطلاعاتِ فایل روی همه‌ی این ردیف‌ها</button></div>` : ''; })()}
                 <div class="bdl-filters flex flex-wrap gap-1.5 mb-3">
                     ${fbtn('all', 'همه', items.length)}
                     ${fbtn('ready', 'آماده', Math.max(0, (cnt.ready || 0) - issuedNow))}
@@ -9665,6 +9756,45 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         // «درخواست تغییر کرده؟»: ارزشِ خودرو (بدنه) یا تعهدِ مالی (ثالث) در بیمه‌نامه با درخواست فرق دارد => پیشنهادِ به‌روزرسانیِ درخواست
         // req: {car_value, liability_limit} درخواست؛ o: داده‌ی فرم/فایل؛ apply(vals) => Promise<{ok}>
+        // مغایرتِ فایلِ بیمه‌نامه با ردیف (بیمه‌گذار طبقِ «مالک / بیمه‌گذار / ذینفع»، پلاک، شاسی، موتور، انقضای قبلی):
+        // «اطلاعاتِ بیمه‌نامه روی ردیف» یا «بیمه‌گذار روی همه‌ی ردیف‌ها» یا «با همان اطلاعاتِ درخواست صادر شود»
+        function pfPartyDiffNotice(holder, row, o) {
+            if (!holder || !row) return;
+            const nm = v => String(v || '').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/\s+|شرکت|سهامی|خاص|عام|[()\-.\u200c]/g, '');
+            const dg = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
+            const cd = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const ins = ((row.party || {}).insured) || {}, items = [];
+            const pIns = pfVal(o, 'insured_name'), pNid = dg(pfVal(o, 'national_id'));
+            const rIns = ins.name || (window.currentRequestInfo || {}).company_name || '', rNid = dg(ins.national_id || ins.economic_code);
+            if ((pIns && rIns && !nm(pIns).includes(nm(rIns)) && !nm(rIns).includes(nm(pIns))) || (pNid && rNid && pNid !== rNid)) items.push({f: 'insured', label: 'بیمه‌گذار', from: rIns + (rNid ? ' (' + rNid + ')' : ''), to: pIns + (pNid ? ' (' + pNid + ')' : '')});
+            const pv = cd(pfVal(o, 'chassis_no') || pfVal(o, 'vin')), rv = cd(row.chassis_no || row.vin);
+            if (pv && rv && pv !== rv && pv.slice(-8) !== rv.slice(-8)) items.push({f: 'vin', label: 'شماره شاسی', from: rv, to: pv});
+            const pe = cd(pfVal(o, 'engine_no')), re = cd(row.engine_no);
+            if (pe && re && pe !== re) items.push({f: 'engine', label: 'شماره موتور', from: re, to: pe});
+            const pp = pfVal(o, 'plate'), rp = row.plate_display || '';
+            if (pp && rp && /ایران/.test(pp) && cd(pp.replace(/ایران/, '')) !== cd(rp.replace(/ایران/, ''))) items.push({f: 'plate', label: 'پلاک', from: rp, to: pp});
+            const px = pfVal(o, 'prev_expiry'), rx = String(row.expiry_date_jalali || (row.expiry_date && typeof toJalali === 'function' ? toJalali(row.expiry_date, false) : '') || '').replace(/\./g, '/');
+            if (px && rx && dg(px) !== dg(rx)) items.push({f: 'expiry', label: 'انقضای بیمه‌نامه‌ی قبلی', from: rx, to: px});
+            if (!items.length) { holder.className = 'hidden'; holder.innerHTML = ''; return; }
+            holder.className = 'text-[11px] rounded-xl p-3 mb-2 bg-rose-50 border border-rose-200 text-rose-900 leading-6';
+            holder.innerHTML = `<b><i class="fas fa-triangle-exclamation ml-1"></i>اطلاعاتِ فایلِ بیمه‌نامه با این ردیف فرق دارد</b>
+                <div class="grid gap-0.5 mt-1">${items.map(i => `<div>${i.label}: در درخواست <b>${escapeHtml(faDigits(i.from || '—'))}</b> ← در بیمه‌نامه <b>${escapeHtml(faDigits(i.to))}</b></div>`).join('')}</div>
+                <div class="mt-2 flex flex-wrap gap-2"><button type="button" data-ap="row" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded-lg">اطلاعاتِ بیمه‌نامه روی همین ردیف</button>
+                ${items.some(i => i.f === 'insured') ? '<button type="button" data-ap="all" class="bg-white border border-rose-300 text-rose-800 font-bold px-3 py-1 rounded-lg">بیمه‌گذارِ بیمه‌نامه برای همه‌ی ردیف‌های این درخواست</button>' : ''}
+                <button type="button" data-keep class="bg-white border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg">با همان اطلاعاتِ درخواست صادر شود</button></div>`;
+            holder.querySelector('[data-keep]').onclick = () => { holder.className = 'hidden'; holder.innerHTML = ''; };
+            holder.querySelectorAll('[data-ap]').forEach(b => b.onclick = async () => {
+                const data = {insured_name: pIns, national_id: pNid, phone: pfVal(o, 'phone'), address: pfVal(o, 'address'), postal_code: pfVal(o, 'postal_code'),
+                              plate: pp, chassis_no: pfVal(o, 'chassis_no') || pfVal(o, 'vin'), engine_no: pfVal(o, 'engine_no'), prev_expiry: px};
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'row_apply_policy_info', plate_id: row.id, data,
+                    fields: items.map(i => i.f), all_rows: b.dataset.ap === 'all' ? 1 : 0})})).json(); } catch (e) { r = {ok: false}; }
+                if (!r || !r.ok) { showToast((r && r.error) || 'به‌روزرسانی نشد.', 'error'); return; }
+                showToast(`اطلاعاتِ ${faDigits(String(r.updated || 0))} ردیف از روی بیمه‌نامه به‌روز شد.`, 'success');
+                holder.className = 'text-[11px] rounded-xl p-2 mb-2 bg-emerald-50 border border-emerald-200 text-emerald-700';
+                holder.innerHTML = '<i class="fas fa-check ml-1"></i>ردیف با اطلاعاتِ بیمه‌نامه به‌روز شد؛ حالا صدور را ثبت کنید.';
+            });
+        }
         function pfDiffNotice(holder, req, o, apply) {
             if (!holder) return;
             const num = v => Number(String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '')) || 0;
@@ -9752,6 +9882,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
             window.CIS_PRE = pre || null;
             const cisCh = document.getElementById('cis-change'); if (cisCh) cisCh.remove();
+            const cisPc = document.getElementById('cis-party-change'); if (cisPc) cisPc.remove();
             document.getElementById('cis-plate-id').value = plateId;
             document.getElementById('cis-file').value = '';
             document.getElementById('cis-file-name').textContent = 'انتخابِ فایلِ بیمه‌نامه‌ی صادرشده (PDF یا عکس)';
@@ -9813,6 +9944,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     cisRow.insurance_type === 'BODY' ? Object.assign({}, o, {liability: ''}) : Object.assign({}, o, {car_value: ''}),
                     vals => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_row_values', plate_id: cisRow.id}, vals))}).then(r => r.json())
                         .then(d => { if (d.ok) Object.assign(cisRow, vals); return d; }));
+                let pch = document.getElementById('cis-party-change');
+                if (!pch) { pch = document.createElement('div'); pch.id = 'cis-party-change'; ch.after(pch); }
+                pfPartyDiffNotice(pch, cisRow, data.ocr || {});
             }
             pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: (data.missing || []).filter(m => !(window.CIS_PRE && CIS_PRE.pf)), source: data.source, layout_debug: data.layout_debug});
             if (window._issueProp) { window._issueOcr = data.ocr || {}; propCheck(document.getElementById('cis-form')); }
@@ -10279,6 +10413,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-pu-password-label').textContent = 'رمز عبور';
             document.getElementById('cm-pu-id').value = '';
             ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cm-pu-renewals').checked = false;
             document.querySelectorAll('.cm-pu-company-cb:checked').forEach(cb => cb.checked = false);
         }
         function openAddPortalUserModal() {
@@ -10296,6 +10431,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-pu-username').value = u.username || '';
             document.getElementById('cm-pu-password').value = '';
             document.getElementById('cm-pu-mobile').value = u.mobile_number || '';
+            document.getElementById('cm-pu-renewals').checked = +u.can_renewals === 1;
             const ids = (u.company_ids || '').split(',').filter(Boolean);
             document.querySelectorAll('.cm-pu-company-cb').forEach(cb => cb.checked = ids.includes(cb.value));
             openModal('add-portal-user-modal');
@@ -10311,6 +10447,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 username: document.getElementById('cm-pu-username').value.trim(),
                 password: document.getElementById('cm-pu-password').value,
                 mobile_number: document.getElementById('cm-pu-mobile').value.trim(),
+                can_renewals: document.getElementById('cm-pu-renewals').checked ? 1 : 0,
             };
             if (!companyIds.length || !payload.full_name || !payload.username || (!userId && !payload.password)) {
                 showToast('همه‌ی فیلدها الزامی هستند و حداقل یک شرکت باید انتخاب شود.', 'error'); return;

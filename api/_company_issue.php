@@ -176,11 +176,20 @@ function cbundle_diffs($row, $d) {
         $pe = date('Y-m-d', jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])));
         if ($pe !== substr((string)$row['expiry_date'], 0, 10)) $add('expiry', 'انقضای بیمه‌نامه‌ی قبلی', cbundle_jdate($row['expiry_date']), $d['prev_expiry'], 'soft');
     }
-    // نامِ بیمه‌گذار با نامِ شرکتِ درخواست‌دهنده (بی‌توجه به «شرکت»، فاصله و ی/ک)
+    // بیمه‌گذارِ بیمه‌نامه با بیمه‌گذارِ ردیف (طبقِ «مالک / بیمه‌گذار / ذینفع»: شرکت، مالک یا بیمه‌گذارِ جدا) — نام و کد/شناسه ملی
     $nm = function ($v) { $v = str_replace(['ي', 'ك', "\u{200C}", 'ـ'], ['ی', 'ک', '', ''], (string)$v); return preg_replace('/\s+|شرکت|سهامی|خاص|عام|[()\-.]/u', '', $v); };
-    $comp = $nm($row['company_name'] ?? ''); $ins = $nm($d['insured_name'] ?? '');
-    if ($comp !== '' && $ins !== '' && mb_strpos($comp, $ins) === false && mb_strpos($ins, $comp) === false)
-        $add('insured', 'بیمه‌گذار', $row['company_name'], $d['insured_name'], 'soft');
+    $rowIns = ['name' => (string)($row['company_name'] ?? ''), 'national_id' => ''];
+    if (function_exists('party_resolve')) {
+        $pr = party_resolve($row, ['name' => $row['company_name'] ?? '', 'national_id' => $row['company_nid'] ?? '', 'economic_code' => $row['company_economic_code'] ?? ''],
+                            ['party_mode' => $row['req_party_mode'] ?? null, 'party_json' => $row['req_party_json'] ?? null, 'insured_json' => $row['req_insured_json'] ?? null]);
+        if (!empty($pr['insured']['name']) || !empty($pr['insured']['national_id'])) $rowIns = ['name' => (string)($pr['insured']['name'] ?? ''), 'national_id' => (string)(($pr['insured']['national_id'] ?? '') ?: ($pr['insured']['economic_code'] ?? ''))];
+    }
+    $comp = $nm($rowIns['name']); $ins = $nm($d['insured_name'] ?? '');
+    $rid = preg_replace('/\D/', '', p2e_digits($rowIns['national_id'])); $pid = preg_replace('/\D/', '', p2e_digits((string)($d['national_id'] ?? '')));
+    $nameDiff = $comp !== '' && $ins !== '' && mb_strpos($comp, $ins) === false && mb_strpos($ins, $comp) === false;
+    $idDiff = $rid !== '' && $pid !== '' && $rid !== $pid;
+    if ($nameDiff || $idDiff)
+        $add('insured', 'بیمه‌گذار', trim($rowIns['name'] . ($rid !== '' ? ' (' . $rid . ')' : '')), trim(($d['insured_name'] ?? '') . ($pid !== '' ? ' (' . $pid . ')' : '')), 'soft');
     return $out;
 }
 
@@ -197,7 +206,8 @@ function cbundle_match($pdo, $requestId, array $policies, $importScope = false) 
         $st->execute([$requestId]);
         $req = $st->fetch();
         if (!$req) return null;
-        $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, cr.is_import, c.name AS company_name
+        $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, cr.is_import, c.name AS company_name, c.national_id AS company_nid, c.economic_code AS company_economic_code,
+                                    cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json
                                FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
                               WHERE crp.status <> 'CANCELLED' AND (cr.id = ? OR cr.company_id = ?)");
         $st->execute([$requestId, $req['company_id']]);

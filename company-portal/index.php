@@ -76,6 +76,7 @@ if (!$companies) {
 <script src="../letters-portal.js?v=2" defer></script>
 <script src="../reg-link.js?v=1" defer></script>
 <script src="../registry.js?v=6" defer></script>
+<script src="portal-renewals.js?v=1" defer></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -216,6 +217,7 @@ if (!$companies) {
     <div class="pt-tabs" role="tablist">
         <button type="button" data-ptab="requests" class="on" onclick="showPortalTab('requests')"><i class="fas fa-clipboard-list"></i>درخواست‌ها<b id="pt-req-count"></b></button>
         <button type="button" data-ptab="vehicles" onclick="showPortalTab('vehicles')"><i class="fas fa-car-side"></i>خودروها</button>
+        <?php if (!empty($cuRow['can_renewals'])): ?><button type="button" data-ptab="renewals" onclick="showPortalTab('renewals')"><i class="fas fa-rotate"></i>تمدیدی‌ها</button><?php endif; ?>
         <button type="button" data-ptab="letters" onclick="showPortalTab('letters')"><i class="fas fa-envelope-open-text"></i>اتوماسیون نامه‌ها<b id="pt-letters-badge" class="hidden red"></b></button>
     </div>
 
@@ -243,6 +245,7 @@ if (!$companies) {
 
     <!-- ================= پرونده‌ی خودروهای شرکت (registry.js) ================= -->
     <section id="pt-vehicles" class="hidden"><div id="vh-root"></div></section>
+    <?php if (!empty($cuRow['can_renewals'])): ?><section id="pt-renewals" class="hidden"><div id="rn-portal-root"></div></section><?php endif; ?>
 </div>
 
 <button onclick="openChatModal()" title="گفتگو با پشتیبانی" class="fixed bottom-5 left-5 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center z-50">
@@ -543,6 +546,9 @@ function showPortalTab(t) {
     if (t === 'letters' && window.PortalLetters) PortalLetters.open(document.getElementById('letters-root'));
     document.getElementById('pt-vehicles').classList.toggle('hidden', t !== 'vehicles');
     if (t === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'), {portal: true, api: '../api/vehicle_actions.php?portal=1'});
+    const rs = document.getElementById('pt-renewals');
+    if (rs) rs.classList.toggle('hidden', t !== 'renewals');
+    if (t === 'renewals' && rs && window.PortalRenewals) PortalRenewals.open(document.getElementById('rn-portal-root'));
     try { sessionStorage.setItem('pt-tab', t); } catch (e) {}
 }
 const REQ_STEPS = ['NEW', 'DOCS_PENDING', 'DOCS_REVIEW', 'READY_FOR_ISSUE', 'ISSUED'];
@@ -1448,7 +1454,8 @@ window.addEventListener('load', () => {
     let t = 'requests'; try { t = sessionStorage.getItem('pt-tab') || 'requests'; } catch (e) {}
     if (location.hash === '#letters') t = 'letters';
     if (location.hash === '#vehicles') t = 'vehicles';
-    if (t === 'letters' || t === 'vehicles') showPortalTab(t);
+    if (t === 'renewals' && !document.getElementById('pt-renewals')) t = 'requests';
+    if (t === 'letters' || t === 'vehicles' || t === 'renewals') showPortalTab(t);
     if (window.PortalLetters) PortalLetters.badge();
 });
 

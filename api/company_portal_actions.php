@@ -341,6 +341,46 @@ try {
 
     // ---- مالک / بیمه‌گذار / ذینفع: شرکت برای یک ردیف یا همه‌ی ردیف‌های درخواستش تعیین می‌کند
     //      (ردیفی که صادر شده یا در حالِ صدور است دیگر عوض نمی‌شود؛ باید به کارشناس پیام بدهند) ----
+    // ---- «تمدیدی‌ها» (اگر برای این کاربر باز شده): بیمه‌نامه‌های قبلیِ شرکت‌های خودش (صادره‌ها و بردرو) فقط با اطلاعاتِ کلی ----
+    if ($action === 'renewals_list' || $action === 'renewals_request') {
+        portal_renewals_ensure($pdo);
+        $cu = $pdo->prepare("SELECT can_renewals FROM company_portal_users WHERE id = ?");
+        $cu->execute([intval($session['company_user_id'] ?? 0)]);
+        if (!intval($cu->fetchColumn())) { echo json_encode(['ok' => false, 'error' => 'دسترسی به «تمدیدی‌ها» برای حسابِ شما باز نشده است.'], JSON_UNESCAPED_UNICODE); exit; }
+        if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
+        require_once __DIR__ . '/_renewals.php';
+        rn_ensure($pdo);
+        $allowed = array_flip(array_map('intval', $allowedCompanyIds));
+        $mine = array_values(array_filter(rn_rows($pdo), function ($r) use ($allowed) { return in_array($r['src'], ['C', 'I', 'B'], true) && isset($allowed[intval($r['owner_id'])]); }));
+        if ($action === 'renewals_list') {
+            $out = array_map(function ($r) {
+                return ['key' => $r['key'], 'origin' => $r['origin'] ?? 'panel', 'origin_fa' => $r['origin_fa'] ?? '', 'type' => $r['type'], 'type_fa' => $r['type_fa'],
+                        'company' => $r['company'], 'company_id' => intval($r['owner_id']), 'plate' => $r['plate'], 'chassis' => $r['chassis'], 'car' => $r['car'],
+                        'start_date' => $r['start_date'], 'end_date' => $r['end_date'], 'end_est' => $r['end_est'], 'days_left' => $r['days_left'], 'premium' => $r['premium'],
+                        'state' => $r['state'], 'state_fa' => $r['state'] === 'renewed' ? 'تمدید شد' : ($r['state'] === 'requested' ? 'درخواستِ تمدید ثبت شد' : ''),
+                        'renewal' => $r['renewal'] ? ['ref' => $r['renewal']['ref'], 'date' => $r['renewal']['date'], 'issued' => $r['renewal']['issued'], 'request_id' => $r['renewal']['request_id']] : null];
+            }, $mine);
+            echo json_encode(['ok' => true, 'rows' => $out], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        // درخواستِ تمدید برای ردیف‌های انتخاب‌شده (هر ردیف برای شرکتِ خودش؛ ردیف‌های یک شرکت در یک درخواست)
+        $keys = array_flip(array_map('strval', (array)($data['keys'] ?? [])));
+        $items = [];
+        foreach ($mine as $r) if (isset($keys[$r['key']]) && $r['state'] !== 'renewed') $items[] = ['src' => $r['src'], 'id' => $r['id'], 'type' => $r['type'], 'company_id' => intval($r['owner_id']),
+                                                                                                    'claim' => ($data['claims'][$r['key']] ?? '') === 'CLAIM' ? 'CLAIM' : 'NO_CLAIM'];
+        if (!$items) { echo json_encode(['ok' => false, 'error' => 'ردیفی انتخاب نشده (یا قبلاً تمدید شده).'], JSON_UNESCAPED_UNICODE); exit; }
+        rn_require_brd(); brd_ensure($pdo);
+        @set_time_limit(300);
+        $res = rnr_create($pdo, dirname(__DIR__), $items, null, ['values' => 'prev', 'text' => trim((string)($data['text'] ?? '')) ?: 'درخواستِ تمدید از پنلِ شرکت']);
+        $puid = intval($session['company_user_id'] ?? 0);
+        foreach ($res['created'] as $c) {
+            try { $pdo->prepare("UPDATE company_requests SET submitted_by = ? WHERE id = ? AND submitted_by IS NULL")->execute([$puid ?: null, $c['request_id']]); } catch (Throwable $e) {}
+            if (!empty($c['src_key'])) rn_log($pdo, [$c['src_key']], 'request', true, $c['company'], 'درخواستِ تمدید از پنلِ شرکت ثبت شد', null, null);
+        }
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'set_party') {
         party_ensure($pdo);
         $mode = party_valid_mode($data['mode'] ?? '');

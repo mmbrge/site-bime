@@ -734,26 +734,17 @@ function pb_word_set($t) {
 }
 
 // «صدور گروهی» (همان main ِ policy_bundle.py)؛ خروجی آرایه‌ی همان JSON
-function pb_bundle($src, $outdir) {
-    try { $doc = PdfDoc::open($src); } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد (خراب است یا PDF نیست).', 'debug' => mb_substr($e->getMessage(), 0, 300)]; }
-    @set_time_limit(600);
-    $n = $doc->pageCount();
-    if ($n === 0) return ['ok' => false, 'error' => 'فایل هیچ صفحه‌ای ندارد.'];
-    if (!is_dir($outdir)) @mkdir($outdir, 0755, true);
-    $pt = new PdfText($doc);
-    $texts = []; $counters = []; $spanCache = []; $dims = [];
-    for ($i = 0; $i < $n; $i++) {
-        try {
-            $sp = pb_page_spans($pt, $i, $w, $h);
-            $texts[] = $pt->text($i);
-            $counters[] = pb_footer_counter($sp, $h);
-            $dims[$i] = [$w, $h];
-            if ($i < 400) $spanCache[$i] = $sp;
-        } catch (Throwable $e) { $texts[] = ''; $counters[] = null; $dims[$i] = [595, 842]; }
-    }
+// یک صفحه: متن، شمارنده‌ی پایینِ صفحه و ابعاد
+function pb_bundle_page($pt, $i, &$sp) {
+    try {
+        $sp = pb_page_spans($pt, $i, $w, $h);
+        return ['text' => $pt->text($i), 'counter' => pb_footer_counter($sp, $h), 'dim' => [$w, $h]];
+    } catch (Throwable $e) { $sp = null; return ['text' => '', 'counter' => null, 'dim' => [595, 842]]; }
+}
+// جای شروعِ هر بیمه‌نامه (شمارنده‌ی «۱ از n» پایینِ صفحه، شباهتِ متن به صفحه‌ی اول، یا هر صفحه اگر همه اسکن‌اند)
+function pb_bundle_starts(array $texts, array $counters, $n) {
     $words = array_map('pb_word_set', $texts);
     $textPages = count(array_filter($texts, function ($t) { return mb_strlen(pb_ustrip($t)) > 30; }));
-
     $starts = []; $sims = array_fill(0, $n, null); $split = 'similarity';
     $withCounter = count(array_filter($counters));
     if ($textPages === 0) { $starts = range(0, $n - 1); $split = 'scan'; }
@@ -769,70 +760,145 @@ function pb_bundle($src, $outdir) {
             if ($i === 0 || $s > 0.25) $starts[] = $i;
         }
     }
+    return [$starts, $sims, $split, $textPages];
+}
+// بیمه‌نامه‌ی k‌ام (صفحه‌ی شروع تا پیش از بیمه‌نامه‌ی بعدی): فایل‌ها، اطلاعات، فیش‌ها و اعلامیه
+function pb_bundle_policy($doc, $pt, array $starts, $k, $n, $split, array $texts, array $dims, array $counters, array $sims, $outdir, array $spanCache = []) {
+    $i = $starts[$k];
+    $end = isset($starts[$k + 1]) ? $starts[$k + 1] - 1 : $n - 1;
+    if ($split === 'scan') $end = $i;
+    $pend = $i;
+    while ($pend + 1 <= $end && !pb_is_payment_page($texts[$pend + 1])) $pend++;
+    $hasText = mb_strlen(pb_ustrip($texts[$i])) > 30;
+    $data = null; $missing = [];
+    if ($hasText) {
+        $sp = $spanCache[$i] ?? pb_page_spans($pt, $i);
+        [$data, $missing] = pb_extract_policy($sp, $dims[$i][0], $dims[$i][1], $texts[$i]);
+    }
+    $fn = sprintf('pol_%03d.pdf', $i + 1); $sfn = sprintf('seg_%03d.pdf', $i + 1);
+    try {
+        $w1 = new PdfWriter(); for ($p = $i; $p <= $pend; $p++) $w1->addPage($doc, $p); $w1->save($outdir . '/' . $fn);
+        $w2 = new PdfWriter(); for ($p = $i; $p <= $end; $p++) $w2->addPage($doc, $p); $w2->save($outdir . '/' . $sfn);
+    } catch (Throwable $e) { return ['__error' => 'جدا کردنِ صفحه‌ها ممکن نشد.', 'debug' => mb_substr($e->getMessage(), 0, 300)]; }
+    $receipts = []; $statement = null; $stmPages = [];
+    for ($j = $pend + 1; $j <= $end; $j++) {
+        $tj = mb_substr(pb_norm($texts[$j]), 0, 600);
+        if (pb_m(PB_RECEIPT_RX, $tj)) {
+            $info = pb_receipt_info($texts[$j]);
+            $rfn = sprintf('rcp_%03d_%02d.pdf', $i + 1, count($receipts) + 1);
+            try { $w3 = new PdfWriter(); $w3->addPage($doc, $j); $w3->save($outdir . '/' . $rfn); } catch (Throwable $e) { continue; }
+            $info['page'] = $j; $info['file'] = $rfn;
+            $receipts[] = $info;
+        } elseif (pb_m('اعلامیه\s*آخرین\s*وضعیت', $tj)) $stmPages[] = $j;
+    }
+    if ($stmPages) {
+        $statement = sprintf('stm_%03d.pdf', $i + 1);
+        try { $w4 = new PdfWriter(); foreach ($stmPages as $j) $w4->addPage($doc, $j); $w4->save($outdir . '/' . $statement); } catch (Throwable $e) { $statement = null; }
+    }
+    $receipts = pb_sort($receipts, function ($r) { return [$r['date'] ?? '9999', $r['page']]; });
+    $stRows = [];
+    for ($j = $pend + 1; $j <= $end; $j++) if (pb_m('اعلامیه\s*آخرین\s*وضعیت', mb_substr(pb_norm($texts[$j]), 0, 600))) $stRows = array_merge($stRows, pb_statement_rows($texts[$j]));
+    foreach ($receipts as &$r) {
+        $hit = null;
+        foreach ($stRows as $x) if (!empty($x['fish']) && $x['fish'] === ($r['fish'] ?? null)) { $hit = $x; break; }
+        if (!$hit) foreach ($stRows as $x) if (($x['due'] ?? null) === ($r['date'] ?? null) && ($x['amount'] ?? null) === ($r['amount'] ?? null)) { $hit = $x; break; }
+        if ($hit && !empty($hit['kind'])) $r['kind'] = $hit['kind'];
+    }
+    unset($r);
+    $kinds = array_values(array_unique(array_filter(array_map(function ($r) { return $r['kind'] ?? ''; }, $receipts), 'strlen')));
+    sort($kinds, SORT_STRING);
+    if ($data !== null) {
+        [$cno, $ckey] = pb_contract_info(array_slice($texts, $i, $pend - $i + 1));
+        $pkey = pb_contract_key_from_policy($data['policy_num'] ?? '');
+        if ($cno) $data['contract_no'] = $cno;
+        if ($ckey || $pkey) $data['contract_key'] = $ckey ?: $pkey;
+        if ($pkey) $data['contract_key_policy'] = $pkey;
+        if ($receipts) {
+            $data['pay_kind'] = $kinds ? implode('، ', $kinds) : (count($receipts) === 1 ? 'نقد' : 'اقساط');
+            $data['installments_count'] = (string)count($receipts);
+        }
+    }
+    if ($data !== null && empty($data['issue_date'])) {
+        for ($j = $i + 1; $j <= $pend; $j++) {
+            if (pb_m('تاریخ\s*صدور[^\d]{0,40}(1[34]\d{2}/\d{1,2}/\d{1,2})', pb_norm($texts[$j]), $m)) { $data['issue_date'] = pb_dates_in($m[1])[0]; break; }
+        }
+    }
+    return ['page' => $i, 'end' => $end, 'policy_end' => $pend, 'has_text' => $hasText, 'file' => $fn, 'seg_file' => $sfn,
+                   'similarity' => $sims[$i] ?? null, 'counter' => $counters[$i], 'data' => $data, 'missing' => $missing,
+                   'receipts' => $receipts, 'statement_file' => $statement];
+}
 
+function pb_bundle($src, $outdir) {
+    try { $doc = PdfDoc::open($src); } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد (خراب است یا PDF نیست).', 'debug' => mb_substr($e->getMessage(), 0, 300)]; }
+    @set_time_limit(600);
+    $n = $doc->pageCount();
+    if ($n === 0) return ['ok' => false, 'error' => 'فایل هیچ صفحه‌ای ندارد.'];
+    if (!is_dir($outdir)) @mkdir($outdir, 0755, true);
+    $pt = new PdfText($doc);
+    $texts = []; $counters = []; $spanCache = []; $dims = [];
+    for ($i = 0; $i < $n; $i++) {
+        $pg = pb_bundle_page($pt, $i, $sp);
+        $texts[] = $pg['text']; $counters[] = $pg['counter']; $dims[$i] = $pg['dim'];
+        if ($i < 400 && $sp !== null) $spanCache[$i] = $sp;
+    }
+    [$starts, $sims, $split, $textPages] = pb_bundle_starts($texts, $counters, $n);
     $policies = [];
     foreach ($starts as $k => $i) {
-        $end = isset($starts[$k + 1]) ? $starts[$k + 1] - 1 : $n - 1;
-        if ($split === 'scan') $end = $i;
-        $pend = $i;
-        while ($pend + 1 <= $end && !pb_is_payment_page($texts[$pend + 1])) $pend++;
-        $hasText = mb_strlen(pb_ustrip($texts[$i])) > 30;
-        $data = null; $missing = [];
-        if ($hasText) {
-            $sp = $spanCache[$i] ?? pb_page_spans($pt, $i);
-            [$data, $missing] = pb_extract_policy($sp, $dims[$i][0], $dims[$i][1], $texts[$i]);
-        }
-        $fn = sprintf('pol_%03d.pdf', $i + 1); $sfn = sprintf('seg_%03d.pdf', $i + 1);
-        try {
-            $w1 = new PdfWriter(); for ($p = $i; $p <= $pend; $p++) $w1->addPage($doc, $p); $w1->save($outdir . '/' . $fn);
-            $w2 = new PdfWriter(); for ($p = $i; $p <= $end; $p++) $w2->addPage($doc, $p); $w2->save($outdir . '/' . $sfn);
-        } catch (Throwable $e) { return ['ok' => false, 'error' => 'جدا کردنِ صفحه‌ها ممکن نشد.', 'debug' => mb_substr($e->getMessage(), 0, 300)]; }
-        $receipts = []; $statement = null; $stmPages = [];
-        for ($j = $pend + 1; $j <= $end; $j++) {
-            $tj = mb_substr(pb_norm($texts[$j]), 0, 600);
-            if (pb_m(PB_RECEIPT_RX, $tj)) {
-                $info = pb_receipt_info($texts[$j]);
-                $rfn = sprintf('rcp_%03d_%02d.pdf', $i + 1, count($receipts) + 1);
-                try { $w3 = new PdfWriter(); $w3->addPage($doc, $j); $w3->save($outdir . '/' . $rfn); } catch (Throwable $e) { continue; }
-                $info['page'] = $j; $info['file'] = $rfn;
-                $receipts[] = $info;
-            } elseif (pb_m('اعلامیه\s*آخرین\s*وضعیت', $tj)) $stmPages[] = $j;
-        }
-        if ($stmPages) {
-            $statement = sprintf('stm_%03d.pdf', $i + 1);
-            try { $w4 = new PdfWriter(); foreach ($stmPages as $j) $w4->addPage($doc, $j); $w4->save($outdir . '/' . $statement); } catch (Throwable $e) { $statement = null; }
-        }
-        $receipts = pb_sort($receipts, function ($r) { return [$r['date'] ?? '9999', $r['page']]; });
-        $stRows = [];
-        for ($j = $pend + 1; $j <= $end; $j++) if (pb_m('اعلامیه\s*آخرین\s*وضعیت', mb_substr(pb_norm($texts[$j]), 0, 600))) $stRows = array_merge($stRows, pb_statement_rows($texts[$j]));
-        foreach ($receipts as &$r) {
-            $hit = null;
-            foreach ($stRows as $x) if (!empty($x['fish']) && $x['fish'] === ($r['fish'] ?? null)) { $hit = $x; break; }
-            if (!$hit) foreach ($stRows as $x) if (($x['due'] ?? null) === ($r['date'] ?? null) && ($x['amount'] ?? null) === ($r['amount'] ?? null)) { $hit = $x; break; }
-            if ($hit && !empty($hit['kind'])) $r['kind'] = $hit['kind'];
-        }
-        unset($r);
-        $kinds = array_values(array_unique(array_filter(array_map(function ($r) { return $r['kind'] ?? ''; }, $receipts), 'strlen')));
-        sort($kinds, SORT_STRING);
-        if ($data !== null) {
-            [$cno, $ckey] = pb_contract_info(array_slice($texts, $i, $pend - $i + 1));
-            $pkey = pb_contract_key_from_policy($data['policy_num'] ?? '');
-            if ($cno) $data['contract_no'] = $cno;
-            if ($ckey || $pkey) $data['contract_key'] = $ckey ?: $pkey;
-            if ($pkey) $data['contract_key_policy'] = $pkey;
-            if ($receipts) {
-                $data['pay_kind'] = $kinds ? implode('، ', $kinds) : (count($receipts) === 1 ? 'نقد' : 'اقساط');
-                $data['installments_count'] = (string)count($receipts);
-            }
-        }
-        if ($data !== null && empty($data['issue_date'])) {
-            for ($j = $i + 1; $j <= $pend; $j++) {
-                if (pb_m('تاریخ\s*صدور[^\d]{0,40}(1[34]\d{2}/\d{1,2}/\d{1,2})', pb_norm($texts[$j]), $m)) { $data['issue_date'] = pb_dates_in($m[1])[0]; break; }
-            }
-        }
-        $policies[] = ['page' => $i, 'end' => $end, 'policy_end' => $pend, 'has_text' => $hasText, 'file' => $fn, 'seg_file' => $sfn,
-                       'similarity' => $sims[$i], 'counter' => $counters[$i], 'data' => $data, 'missing' => $missing,
-                       'receipts' => $receipts, 'statement_file' => $statement];
+        $p = pb_bundle_policy($doc, $pt, $starts, $k, $n, $split, $texts, $dims, $counters, $sims, $outdir, $spanCache);
+        if (isset($p['__error'])) return ['ok' => false, 'error' => $p['__error'], 'debug' => $p['debug'] ?? ''];
+        $policies[] = $p;
     }
     return ['ok' => true, 'pages' => $n, 'text_pages' => $textPages, 'split' => $split, 'policies' => $policies];
+}
+
+// =====================================================================
+//  نسخه‌ی مرحله‌ای (فایل‌های بزرگ): هر فراخوانی چند ثانیه کار می‌کند و وضعیت در پوشه‌ی کار ذخیره می‌شود
+//  مراحل: text (خواندنِ صفحه‌ها) → pol (جدا کردنِ بیمه‌نامه‌ها و فیش‌ها) → done
+// =====================================================================
+function pb_bundle_job_state($dir) { $s = json_decode((string)@file_get_contents($dir . '/job.json'), true); return is_array($s) ? $s : null; }
+function pb_bundle_job_save($dir, array $s) { file_put_contents($dir . '/job.json', json_encode($s, JSON_UNESCAPED_UNICODE)); }
+function pb_bundle_job_init($src, $dir) {
+    try { $doc = PdfDoc::open($src); } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد (خراب است یا PDF نیست).']; }
+    $n = $doc->pageCount();
+    if ($n === 0) return ['ok' => false, 'error' => 'فایل هیچ صفحه‌ای ندارد.'];
+    $s = ['phase' => 'text', 'n' => $n, 'next' => 0, 'texts' => [], 'counters' => [], 'dims' => [], 'policies' => []];
+    pb_bundle_job_save($dir, $s);
+    return ['ok' => true, 'pages' => $n];
+}
+function pb_bundle_job_step($src, $dir, $budget = 15) {
+    $s = pb_bundle_job_state($dir);
+    if (!$s) return ['ok' => false, 'error' => 'کارِ این فایل پیدا نشد؛ دوباره بارگذاری کنید.'];
+    if ($s['phase'] === 'done') return ['ok' => true] + $s;
+    $t0 = microtime(true);
+    try { $doc = PdfDoc::open($src); } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد.']; }
+    $pt = new PdfText($doc);
+    $outdir = $dir . '/pages';
+    if (!is_dir($outdir)) @mkdir($outdir, 0755, true);
+    if ($s['phase'] === 'text') {
+        $first = true;   // هر فراخوانی دست‌کم یک صفحه جلو می‌رود
+        while ($s['next'] < $s['n'] && ($first || microtime(true) - $t0 < $budget)) {
+            $first = false;
+            $pg = pb_bundle_page($pt, $s['next'], $sp);
+            $s['texts'][] = $pg['text']; $s['counters'][] = $pg['counter']; $s['dims'][] = $pg['dim'];
+            $s['next']++;
+        }
+        if ($s['next'] >= $s['n']) {
+            [$starts, $sims, $split, $textPages] = pb_bundle_starts($s['texts'], $s['counters'], $s['n']);
+            $s['starts'] = $starts; $s['sims'] = $sims; $s['split'] = $split; $s['text_pages'] = $textPages;
+            $s['phase'] = 'pol'; $s['next'] = 0;
+        }
+    }
+    if ($s['phase'] === 'pol') {
+        $first = true;
+        while ($s['next'] < count($s['starts']) && ($first || microtime(true) - $t0 < $budget)) {
+            $first = false;
+            $p = pb_bundle_policy($doc, $pt, $s['starts'], $s['next'], $s['n'], $s['split'], $s['texts'], $s['dims'], $s['counters'], $s['sims'], $outdir);
+            if (isset($p['__error'])) return ['ok' => false, 'error' => $p['__error']];
+            $s['policies'][] = $p;
+            $s['next']++;
+        }
+        if ($s['next'] >= count($s['starts'])) $s['phase'] = 'done';
+    }
+    pb_bundle_job_save($dir, $s);
+    return ['ok' => true] + $s;
 }

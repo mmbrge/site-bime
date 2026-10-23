@@ -81,6 +81,7 @@ function site_slip_make($pdo, $kind, $refId, $planLabel = '') {
         $insts = $st->fetchAll();
         $todo = array_filter($insts, function ($i) { $j = json_decode((string)$i['slip_json'], true); return !empty($j['site']) && empty($i['slip_file']); });
         if (!$todo) return 0;
+        site_slip_move_originals($pdo, $kind, $refId);   // فیش‌های بیمه‌نامه => «فیش‌های قدیمی»
         $ctx = site_slip_context($pdo, $kind, $refId);
         if (!$ctx) return 0;
         if (!is_dir($ctx['dir']) && !@mkdir($ctx['dir'], 0755, true) && !is_dir($ctx['dir'])) return 0;
@@ -105,48 +106,96 @@ function site_slip_pdf(array $ctx, array $inst, array $all, array $slip, $planLa
     if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
     require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
     $e = function ($v) { return htmlspecialchars(fa_digits((string)$v), ENT_QUOTES, 'UTF-8'); };
-    $ltr = function ($v) use ($e) { return $v === '' || $v === null ? '—' : '<span dir="ltr">' . $e($v) . '</span>'; };
     $money = function ($v) use ($e) { return $e(number_format((int)$v)); };
-    $pdf = new TCPDF('L', 'mm', 'A5', true, 'UTF-8', false);
+    $cnt = count($all);
+    $fish = (string)($slip['fish'] ?? '');
+    $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->setPrintHeader(false); $pdf->setPrintFooter(false);
-    $pdf->SetMargins(10, 10, 10); $pdf->SetAutoPageBreak(true, 8);
+    $pdf->SetMargins(10, 8, 10); $pdf->SetAutoPageBreak(true, 8);
     $pdf->AddFont('vazir', '', 'vazir.php'); $pdf->AddFont('vazir', 'B', 'vazirb.php');
     $pdf->setRTL(true); $pdf->SetFont('vazir', '', 9);
     $pdf->AddPage();
-    $pdf->SetFillColor(30, 58, 138); $pdf->Rect(0, 0, 210, 24, 'F');
-    $pdf->SetFillColor(14, 116, 144); $pdf->Rect(0, 22, 210, 3, 'F');
-    $pdf->SetTextColor(255, 255, 255);
-    $cnt = count($all);
-    $pdf->writeHTMLCell(190, 0, 10, 5, '<b style="font-size:15pt">فیشِ پرداختِ قسطِ بیمه‌نامه</b>&nbsp;&nbsp;<span style="font-size:11pt">قسطِ ' . $e($inst['inst_number']) . ' از ' . $e($cnt) . '</span><br/>'
-        . '<span style="font-size:8pt;color:#c7d2fe">ساخته‌شده توسطِ سامانه بر اساسِ اقساطِ قرارداد' . ($planLabel !== '' ? ' (' . $e($planLabel) . ')' : '') . '</span>', 0, 1, false, true, 'R');
-    $pdf->SetTextColor(15, 23, 42);
-    $pdf->SetY(30);
-    $cell = function ($k, $v, $raw = false) use ($e) { return '<td width="17%" style="color:#64748b;font-size:8pt;background-color:#f8fafc">' . $k . '</td><td width="33%" style="font-size:9pt"><b>' . ($raw ? $v : $e($v === '' ? '—' : $v)) . '</b></td>'; };
-    $rows = [
-        [['بیمه‌گذار', $ctx['insured']], ['کد ملی / شناسه', $ltr($ctx['nid']), true]],
-        [['شماره بیمه‌نامه', $ltr($ctx['policy']), true], ['نوع بیمه', $ctx['type_fa']]],
-        [['پلاک / خودرو', trim($ctx['plate'] . ($ctx['car'] !== '' ? ' · ' . $ctx['car'] : ''))], ['شرکت', $ctx['company']]],
-        [['سررسید', (string)$inst['due_jalali']], ['شماره فیش / کد رهگیری', $ltr($slip['fish'] ?? ''), true]],
-        [['شناسه پرداخت', $ltr($slip['shenase'] ?? ''), true], ['نوع', $slip['kind'] ?? 'اقساط']],
-        [['شماره حساب', $ltr($slip['account'] ?? ''), true], ['بانک', $slip['bank'] ?? '']],
-    ];
-    $h = '<table cellpadding="4" style="border:1px solid #c7d2fe;">';
-    foreach ($rows as $pair) $h .= '<tr>' . $cell(...$pair[0]) . $cell(...$pair[1]) . '</tr>';
-    $h .= '<tr><td width="17%" style="color:#64748b;font-size:8pt;background-color:#eef2ff">مبلغ قابلِ پرداخت</td><td width="83%" style="background-color:#eef2ff"><b style="font-size:13pt;color:#1e3a8a">'
-        . $money($inst['amount']) . ' ریال</b>&nbsp;&nbsp;<span style="font-size:8pt;color:#475569">(' . $e(fin_num_to_words((int)$inst['amount'])) . ' ریال)</span></td></tr></table><br/>';
+    // دو نسخه‌ی هم‌شکل (پرداخت‌کننده / بایگانی) با خطِ برش، مثلِ «سند دریافت»ِ بیمه‌گر و فیش‌های بانکی (همه با جدول، برای راست‌چینِ درست)
+    $kv = function ($k, $v, $ltr = false) use ($e) {
+        return '<td width="18%" style="color:#64748b;font-size:7.5pt;background-color:#f8fafc;border-bottom:0.3px solid #e2e8f0">' . $k . '</td>'
+             . '<td width="32%" style="font-size:8.5pt;border-bottom:0.3px solid #e2e8f0"><b' . ($ltr ? ' dir="ltr"' : '') . '>' . $e($v === '' || $v === null ? '—' : $v) . '</b></td>';
+    };
+    $copy = function ($title) use ($e, $money, $kv, $ctx, $inst, $cnt, $slip, $fish, $planLabel) {
+        $rows = [
+            [['بیمه‌گذار / پرداخت‌کننده', $ctx['insured']], ['کد ملی / شناسه', $ctx['nid'], true]],
+            [['شماره بیمه‌نامه', $ctx['policy'], true], ['شرکت', $ctx['company']]],
+            [['پلاک / خودرو', trim($ctx['plate'] . ($ctx['car'] !== '' ? ' · ' . $ctx['car'] : ''))], ['نوعِ پرداخت', $slip['kind'] ?? 'اقساط']],
+            [['شناسه پرداخت', $slip['shenase'] ?? '', true], ['شماره حساب', $slip['account'] ?? '', true]],
+            [['بانک / شعبه', $slip['bank'] ?? ''], ['قرارداد', $planLabel]],
+        ];
+        $info = '';
+        foreach ($rows as $pr) $info .= '<tr>' . $kv(...$pr[0]) . $kv(...$pr[1]) . '</tr>';
+        return '<table cellpadding="0" cellspacing="0" style="border:0.6px solid #c7d2fe;">'
+            . '<tr><td style="background-color:#1e3a8a;color:#ffffff;" width="100%"><table cellpadding="5"><tr>'
+            . '<td width="66%"><b style="font-size:14pt">سندِ دریافت · فیشِ پرداختِ قسط</b><br/><span style="font-size:8.5pt;color:#c7d2fe">بیمه‌نامه‌ی ' . $e($ctx['type_fa']) . ' · قسطِ ' . $e($inst['inst_number']) . ' از ' . $e($cnt) . '</span></td>'
+            . '<td width="34%" style="background-color:#ffffff;color:#1e3a8a;text-align:center"><span style="font-size:7pt;color:#64748b">' . $e($title) . '</span><br/><b style="font-size:11pt">شماره فیش</b><br/><b style="font-size:12pt" dir="ltr">' . $e($fish ?: '—') . '</b></td>'
+            . '</tr></table></td></tr>'
+            . '<tr><td style="background-color:#0ea5e9;font-size:2pt"> </td></tr>'
+            . '<tr><td><table cellpadding="6"><tr>'
+            . '<td width="62%" style="background-color:#eef2ff;text-align:center"><span style="font-size:8pt;color:#475569">مبلغِ قابلِ پرداخت</span><br/><b style="font-size:17pt;color:#1e3a8a"><span dir="ltr">' . $money($inst['amount']) . '</span> ریال</b><br/><span style="font-size:7pt;color:#64748b">' . $e(fin_num_to_words((int)$inst['amount'])) . ' ریال</span></td>'
+            . '<td width="38%" style="background-color:#fef3c7;text-align:center"><span style="font-size:8pt;color:#92400e">مهلتِ پرداخت (سررسید)</span><br/><b style="font-size:15pt;color:#92400e">' . $e($inst['due_jalali']) . '</b></td>'
+            . '</tr></table></td></tr>'
+            . '<tr><td><table cellpadding="3">' . $info . '</table></td></tr>'
+            . '<tr><td><table cellpadding="4"><tr><td style="font-size:7pt;color:#64748b">این فیش طبقِ اقساطِ قراردادِ ثبت‌شده در سامانه ساخته شده است. پس از پرداخت، تصویرِ رسیدِ بانکی را با شماره‌ی فیش برای کارشناس بفرستید. تاریخِ ساخت: ' . $e(jalali_from_gregorian_ts_dotted(time())) . '</td></tr></table></td></tr>'
+            . '</table>';
+    };
+    $h = $copy('نسخه‌ی پرداخت‌کننده')
+       . '<table cellpadding="4"><tr><td style="text-align:center;color:#94a3b8;font-size:7pt;border-bottom:0.4px dashed #94a3b8">- - - محلِ برش - - -</td></tr></table><br/>'
+       . $copy('نسخه‌ی بایگانی') . '<br/>';
     // جدولِ همه‌ی اقساط؛ قسطِ همین فیش پررنگ
-    $h .= '<table cellpadding="3" style="font-size:7.5pt;border:1px solid #e2e8f0;"><tr style="background-color:#f1f5f9;font-weight:bold;"><td width="12%">قسط</td><td width="22%">سررسید</td><td width="26%">مبلغ (ریال)</td>'
-        . '<td width="12%">قسط</td><td width="28%">سررسید / مبلغ</td></tr>';
+    $h .= '<b style="font-size:8pt;color:#334155">جدولِ اقساطِ این بیمه‌نامه</b><table cellpadding="2.2" style="font-size:7pt;border:0.3px solid #e2e8f0;"><tr style="background-color:#f1f5f9;font-weight:bold;"><td width="8%">قسط</td><td width="17%">سررسید</td><td width="25%">مبلغ (ریال)</td><td width="8%">قسط</td><td width="17%">سررسید</td><td width="25%">مبلغ (ریال)</td></tr>';
     $half = (int)ceil($cnt / 2);
+    $hi = function ($x) use ($inst) { return $x && intval($x['id']) === intval($inst['id']) ? 'background-color:#fef3c7;font-weight:bold;' : ''; };
     for ($k = 0; $k < $half; $k++) {
         $a = $all[$k]; $b = $all[$k + $half] ?? null;
-        $hi = function ($x) use ($inst) { return $x && intval($x['id']) === intval($inst['id']) ? 'background-color:#fef3c7;font-weight:bold;' : ''; };
         $h .= '<tr><td style="' . $hi($a) . '">' . $e($a['inst_number']) . '</td><td style="' . $hi($a) . '">' . $e($a['due_jalali']) . '</td><td style="' . $hi($a) . '">' . $money($a['amount']) . '</td>'
-            . ($b ? '<td style="' . $hi($b) . '">' . $e($b['inst_number']) . '</td><td style="' . $hi($b) . '">' . $e($b['due_jalali']) . ' · ' . $money($b['amount']) . '</td>' : '<td></td><td></td>') . '</tr>';
+            . ($b ? '<td style="' . $hi($b) . '">' . $e($b['inst_number']) . '</td><td style="' . $hi($b) . '">' . $e($b['due_jalali']) . '</td><td style="' . $hi($b) . '">' . $money($b['amount']) . '</td>' : '<td></td><td></td><td></td>') . '</tr>';
     }
-    $h .= '</table><br/><span style="font-size:7.5pt;color:#64748b">این فیش با اطلاعاتِ اقساطِ قرارداد در سامانه ساخته شده است (نه از فایلِ بیمه‌نامه). تاریخِ ساخت: '
-        . $e(jalali_from_gregorian_ts_dotted(time())) . '</span>';
+    $h .= '</table>';
     $pdf->writeHTML($h, true, false, true, false, '');
     $pdf->Output($dest, 'F');
     return is_file($dest);
+}
+
+// فیش‌های داخلِ فایلِ بیمه‌نامه وقتی با اقساطِ قرارداد یکی نیستند: به پوشه‌ی «فیش‌های قدیمی» (کنارِ «فیش‌های پرداختی») با نامِ «فیش قدیمی (سررسید)»
+// می‌روند تا با فیش‌های سامانه قاطی نشوند؛ مسیرِ تازه در receipts_json نوشته می‌شود (کپیِ «بایگانی صادره» هم همین‌طور)
+function site_slip_move_originals($pdo, $kind, $refId) {
+    $t = $kind === 'C' ? 'company_request_plates' : 'policy_cases';
+    $root = dirname(__DIR__);
+    try {
+        $st = $pdo->prepare("SELECT receipts_json FROM `$t` WHERE id = ?");
+        $st->execute([intval($refId)]);
+        $rc = json_decode((string)$st->fetchColumn(), true);
+        if (!is_array($rc) || !$rc) return 0;
+        $ctx = site_slip_context($pdo, $kind, $refId);
+        $n = 0;
+        foreach ($rc as &$r) {
+            $f = (string)($r['file'] ?? '');
+            if ($f === '' || mb_strpos($f, '/فیش‌های قدیمی/') !== false) continue;
+            $abs = $root . '/' . ltrim($f, '/');
+            if (!is_file($abs)) continue;
+            $oldDir = dirname(dirname($abs)) . '/فیش‌های قدیمی';
+            if (basename(dirname($abs)) !== 'فیش‌های پرداختی') $oldDir = dirname($abs) . '/فیش‌های قدیمی';
+            if (!is_dir($oldDir) && !@mkdir($oldDir, 0755, true) && !is_dir($oldDir)) continue;
+            $due = !empty($r['date']) ? str_replace('/', '.', p2e_digits((string)$r['date'])) : ('قسط ' . intval($r['n'] ?? 0));
+            $dest = unique_dest_path($oldDir . '/' . sanitize_folder_name('فیش قدیمی (' . $due . ')') . '.pdf');
+            if (!@rename($abs, $dest)) continue;
+            // کپیِ «بایگانی صادره»
+            if (!empty($ctx['sadere'])) {
+                $sOld = $ctx['sadere'] . '/' . basename($abs);
+                if (is_file($sOld)) { $sd = dirname($ctx['sadere']) . '/فیش‌های قدیمی'; if (is_dir($sd) || @mkdir($sd, 0755, true)) @rename($sOld, $sd . '/' . basename($dest)); }
+            }
+            $r['file'] = ltrim(str_replace($root, '', $dest), '/');
+            $r['old'] = 1;
+            $n++;
+        }
+        unset($r);
+        if ($n) $pdo->prepare("UPDATE `$t` SET receipts_json = ? WHERE id = ?")->execute([json_encode($rc, JSON_UNESCAPED_UNICODE), intval($refId)]);
+        return $n;
+    } catch (Throwable $e) { error_log('[site_slip_move_originals] ' . $e->getMessage()); return 0; }
 }

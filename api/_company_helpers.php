@@ -1898,3 +1898,12 @@ function imp_missing_info($row) {
     if (!preg_match('/^1[34]\d{2}\/\d{2}\/\d{2}$/', (string)($row['import_issue_date'] ?? ''))) $miss['issue_date'] = 'تاریخ صدور';
     return $miss;
 }
+
+// پنلِ شرکت‌ها: «تمدیدی‌ها» (اعلامِ تمدید و درخواستِ تمدید از بیمه‌نامه‌های قبلی و بردرو) برای هر کاربر جدا (پیش‌فرض: بسته)
+function portal_renewals_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    try { if (!$pdo->query("SHOW COLUMNS FROM company_portal_users LIKE 'can_renewals'")->fetch()) $pdo->exec("ALTER TABLE company_portal_users ADD COLUMN can_renewals TINYINT(1) NOT NULL DEFAULT 0"); }
+    catch (Throwable $e) { error_log('[portal_renewals_ensure] ' . $e->getMessage()); }
+}
