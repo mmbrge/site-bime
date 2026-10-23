@@ -21,6 +21,7 @@
         postal: { ic: 'fa-map-location-dot', c: '#0891b2', d: 'فقط نتیجه‌ی کد پستی (کد ملی و تولدِ یک شخص هم لازم است)' },
         legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتی و تماسِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی (اول پاسارگاد، بعد سرویسِ API)' },
         sanhab: { ic: 'fa-shield-halved', c: '#0e7490', d: 'سوابقِ بیمه‌نامه‌ها از بیمه مرکزی: عدمِ خسارت یا خسارت، تخفیف‌ها، بیمه‌گر و انقضا' },
+        ocr: { ic: 'fa-file-lines', c: '#9333ea', d: 'متنِ PDF و عکس' },
     };
     const ST_UI = { OK: ['موفق', '#059669', 'fa-circle-check'], WARN: ['با هشدار', '#d97706', 'fa-triangle-exclamation'], FAIL: ['ناموفق', '#e11d48', 'fa-circle-xmark'],
                     QUEUED: ['در صف', '#64748b', 'fa-hourglass-half'], RUNNING: ['در حال اجرا', '#4f46e5', 'fa-spinner fa-spin'] };
@@ -176,7 +177,7 @@
         const b = await post({ action: 'boot' });
         if (!b.ok) { el.innerHTML = `<div class="inq-card text-red-600 text-xs">${esc(b.error)}</div>`; return; }
         V.boot = b;
-        if (!Object.keys(b.kinds || {}).length && V.tab === 'single') V.tab = b.can.group_view ? 'group' : (b.can.premium ? 'premium' : 'history');
+        if (!Object.keys(b.kinds || {}).length && V.tab === 'single') V.tab = b.can.group_view ? 'group' : (b.can.premium ? 'premium' : (b.can.ocr && window.SmartOCR ? 'ocr' : 'history'));
         render();
     }
     function statusChip(s) {
@@ -186,7 +187,7 @@
     function render() {
         const b = V.boot, t = b.today || {};
         const tabs = [['single', 'fa-magnifying-glass', 'استعلامِ تکی', Object.keys(b.kinds || {}).length > 0], ['group', 'fa-file-excel', 'استعلامِ گروهی', b.can.group_view],
-                      ['premium', 'fa-calculator', 'استعلامِ حق بیمه', b.can.premium], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
+                      ['premium', 'fa-calculator', 'استعلامِ حق بیمه', b.can.premium], ['ocr', 'fa-file-lines', 'پردازش فایل هوشمند', b.can.ocr && !!window.SmartOCR], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
         V.el.innerHTML = `
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
             <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان)، شخص حقوقی، سنهاب (سوابقِ بیمه‌نامه) و حق بیمه</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
@@ -199,7 +200,7 @@
         V.el.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => { V.tab = x.dataset.tab; render(); });
         const lb = V.el.querySelector('[data-a="login"]'); if (lb) lb.onclick = () => loginDialog();
         const body = V.el.querySelector('#inq-body');
-        ({ single: renderSingle, group: renderGroup, premium: renderPremium, history: renderHistory, settings: renderSettings })[V.tab](body);
+        ({ single: renderSingle, group: renderGroup, premium: renderPremium, ocr: renderOcr, history: renderHistory, settings: renderSettings })[V.tab](body);
     }
 
     // ---------------- استعلامِ تکی ----------------
@@ -211,8 +212,11 @@
             ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>استعلام از سامانه‌ی پاسارگاد انجام می‌شود؛ اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی پاسارگاد نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
             ${k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-sh"></div>` : `
             <form id="inq-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" autocomplete="off">
-                ${k === 'legal' ? `<label class="inq-f md:col-span-2">شناسه‌ی ملیِ شرکت (۱۱ رقم)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>
-                       <label class="inq-f">کد پستی (اختیاری؛ برای تأیید)<input class="inq-in" name="postal" dir="ltr" inputmode="numeric" maxlength="10" placeholder="1234567890"></label>`
+                ${k === 'legal' ? `<label class="inq-f md:col-span-2">نامِ شرکت (اولویتِ جستجو)<input class="inq-in" name="company_name" style="letter-spacing:0" placeholder="مثلاً بازرگانی نمونه"></label>
+                       <label class="inq-f">شناسه‌ی ملی (اختیاری)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>
+                       <label class="inq-f">کد اقتصادی (اختیاری)<input class="inq-in" name="economic_code" dir="ltr" inputmode="numeric" maxlength="14"></label>
+                       <label class="inq-f">کد پستی (اختیاری؛ برای تأیید)<input class="inq-in" name="postal" dir="ltr" inputmode="numeric" maxlength="10" placeholder="1234567890"></label>
+                       <p class="md:col-span-3 text-[10.5px] text-slate-500 self-center">دست‌کم یکی از نام، شناسه‌ی ملی یا کد اقتصادی؛ اول با همه جستجو می‌شود، بعد با نام به‌تنهایی، بعد شناسه و کد اقتصادی.</p>`
                     : `<label class="inq-f">کد ملی<input class="inq-in" name="national_id" dir="ltr" inputmode="numeric" maxlength="10" placeholder="0012345678"></label>
                        <label class="inq-f">تاریخ تولد<input class="inq-in" name="birth" dir="ltr" inputmode="numeric" placeholder="1370/05/12"></label>
                        ${k !== 'person' ? '<label class="inq-f">کد پستی (۱۰ رقم)<input class="inq-in" name="postal" dir="ltr" inputmode="numeric" maxlength="10" placeholder="1234567890"></label>' : ''}`}
@@ -224,7 +228,7 @@
         body.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { V.kind = x.dataset.k; renderSingle(body); });
         if (k === 'sanhab') { if (window.SanhabUI) SanhabUI.form(body.querySelector('#inq-sh'), { source: 'panel' }); else body.querySelector('#inq-sh').innerHTML = '<p class="text-xs text-rose-600">فایلِ sanhab-ui.js بارگذاری نشده.</p>'; return; }
         const f = body.querySelector('#inq-form');
-        f.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { if (i.name !== 'birth') i.value = en(i.value).replace(/\D/g, ''); i.classList.remove('err'); }));
+        f.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { if (i.name !== 'birth' && i.name !== 'company_name') i.value = en(i.value).replace(/\D/g, ''); i.classList.remove('err'); }));
         f.onsubmit = async e => {
             e.preventDefault();
             const d = Object.fromEntries(new FormData(f).entries());
@@ -272,7 +276,7 @@
             if (it.status === 'FAIL' && !(it.kind === 'person_postal' || it.kind === 'postal') || (it.status === 'FAIL' && !it.person && !it.postal_text)) inner += `<p class="mt-2 text-xs font-bold text-rose-700">${esc(it.notice || 'استعلام انجام نشد.')}</p>`;
         }
         return `<div class="inq-res mt-1" style="background:${tone}">
-            <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm text-slate-800"><i class="fas ${(KIND_UI[it.kind] || {}).ic || 'fa-search'} ml-1"></i>${esc(it.kind_fa)} ${it.national_id ? '· <span dir="ltr">' + fa(it.national_id) + '</span>' : ''}</b>
+            <div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm text-slate-800"><i class="fas ${(KIND_UI[it.kind] || {}).ic || 'fa-search'} ml-1"></i>${esc(it.kind_fa)} ${it.query ? '· ' + esc(it.query) : ''} ${it.national_id ? '· <span dir="ltr">' + fa(it.national_id) + '</span>' : ''}</b>
                 <span class="flex items-center gap-2">${it.cached ? '<span class="inq-badge" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-bolt"></i>از نتیجه‌ی قبلی</span>' : ''}${badge(it.status)}${it.ms ? `<small class="text-slate-400">${fa((it.ms / 1000).toFixed(1))} ثانیه</small>` : ''}</span></div>
             ${it.kind !== 'legal' && isAdm(it) ? stepsBar(it) : ''}${inner}
             ${isAdm(it) && it.timeline && it.timeline.length ? `<details class="mt-3" open><summary class="text-[11px] font-black text-slate-500 cursor-pointer">جزئیاتِ گام‌ها (فقط مدیر کل)</summary>${timelineHtml(it)}</details>` : ''}</div>`;
@@ -562,7 +566,7 @@
         box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی / پلاک</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>منبع / کاربر</th><th></th></tr></thead><tbody>
             ${d.items.map(it => `<tr>
                 <td class="text-slate-400">${fa(it.batch_id ? it.row_no : it.id)}</td><td class="whitespace-nowrap">${esc(fa(it.created_j))}</td><td>${esc(it.kind_fa)}</td>
-                <td dir="ltr" class="font-mono">${esc(fa(it.kind === 'sanhab' ? (it.query || '') : (it.national_id || '')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
+                <td ${it.query && it.kind !== 'legal' ? '' : 'dir="ltr"'} class="${it.kind === 'ocr' ? '' : 'font-mono'}">${esc(fa(it.kind === 'sanhab' || it.kind === 'ocr' ? (it.query || '') : [it.national_id, it.kind === 'legal' ? it.query : ''].filter(Boolean).join(' · ')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
                 <td><b>${esc(it.company ? it.company.name : pName(it) || '—')}</b>${it.father_name ? `<small class="block text-slate-400">فرزند ${esc(it.father_name)}</small>` : ''}${it.kind === 'sanhab' && it.sanhab && window.SanhabUI ? `<small class="block font-bold" style="color:${SanhabUI.tone(it)[1]}">${esc(fa(SanhabUI.shortText(it)))}</small>` : ''}</td>
                 <td>${it.postal ? `<span dir="ltr">${fa(it.postal)}</span>${it.postal_valid === true ? ' <i class="fas fa-circle-check text-emerald-600"></i>' : it.postal_valid === false ? ' <i class="fas fa-circle-xmark text-rose-600"></i>' : ''}${it.postal_text ? `<small class="block text-slate-400 max-w-[14rem]">${esc(it.postal_text)}</small>` : ''}` : '—'}</td>
                 <td>${badge(it.status)}${it.cached ? ' <i class="fas fa-bolt text-indigo-400" title="از نتیجه‌ی قبلی"></i>' : ''}${it.status === 'FAIL' && it.notice ? `<small class="block text-rose-500 max-w-[14rem]">${esc(it.notice)}</small>` : ''}</td>
@@ -576,6 +580,7 @@
     async function detail(id) {
         const d = await post({ action: 'get', id });
         if (!d.ok) { toast(d.error, 'error'); return; }
+        if (d.item.kind === 'ocr') { ocrDetail(d.item); return; }
         if (d.item.kind === 'sanhab' && window.SanhabUI) {
             const m = document.createElement('div'); m.className = 'inq-modal';
             m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex items-center justify-between p-4 border-b"><b class="text-sm">سنهاب #${fa(id)}${d.item.user_name ? ' · ' + esc(d.item.user_name) : ''}</b><button class="inq-fbtn" data-x>بستن</button></div><div class="p-4 overflow-y-auto" data-h></div></div>`;
@@ -593,6 +598,98 @@
         document.body.appendChild(m);
         const det = m.querySelector('details'); if (det) det.open = true;
         bindResult(m, d.item);
+    }
+
+    // ---------------- پردازش فایل هوشمند ----------------
+    // صفحه‌ها در مرورگر به عکس تبدیل و هم‌زمان خوانده می‌شوند (smart-ocr.js)؛ متن قابلِ ویرایش، ذخیره در تاریخچه و خروجیِ TXT/Word/PDF
+    const OCR = { pages: [], res: [], id: 0, name: '', busy: false };
+    const ocrUrl = (id, fmt, n) => `${API}?action=ocr_export&id=${id}&fmt=${fmt}${n ? '&page=' + n : ''}`;
+    const ocrDl = (id, n) => ['txt', 'docx', 'pdf'].map(f => `<a class="inq-fbtn" target="_blank" href="${ocrUrl(id, f, n)}"><i class="fas ${{ txt: 'fa-file-lines', docx: 'fa-file-word', pdf: 'fa-file-pdf' }[f]} ml-1"></i>${{ txt: 'TXT', docx: 'Word', pdf: 'PDF' }[f]}</a>`).join(' ');
+    function renderOcr(body) {
+        const en = V.boot.ocr_engines || {}, opt = (v, l, ok) => `<option value="${v}" ${ok === false ? 'disabled' : ''}>${l}${ok === false ? ' (تنظیم نشده)' : ''}</option>`;
+        body.innerHTML = `<div class="inq-card">
+            <div class="flex flex-wrap items-end gap-3">
+                <label class="inq-f flex-1 min-w-[220px]">فایلِ PDF یا عکس (چند عکس هم می‌شود)<input id="ocr-f" type="file" accept="application/pdf,image/*" multiple class="inq-in" style="font-size:12px"></label>
+                <label class="inq-f">زبان<select id="ocr-l" class="inq-in" style="font-size:12px"><option value="fas">فارسی (+ انگلیسی)</option><option value="eng">انگلیسی</option><option value="auto">خودکار</option></select></label>
+                <label class="inq-f">موتور<select id="ocr-e" class="inq-in" style="font-size:12px">${opt('auto', 'خودکار (بهترینِ موجود)')}${opt('ai', 'هوشِ مصنوعی', !!en.ai)}${opt('ocrspace', 'OCR.space', !!en.ocrspace)}${opt('browser', 'مرورگر (Tesseract)')}</select></label>
+                <button id="ocr-go" class="inq-go" disabled><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش</button></div>
+            <p class="text-[10.5px] text-slate-400 mt-2 leading-6">صفحه‌ها هم‌زمان پردازش می‌شوند. ${en.ai ? 'موتورِ اصلی: هوشِ مصنوعیِ تصویری.' : 'برای بهترین کیفیتِ فارسی، کلیدِ هوشِ مصنوعی (GapGPT) را در «تنظیمات ← API» وارد کنید.'} ${en.ocrspace ? 'OCR.space هم آماده است.' : ''}</p>
+            <div id="ocr-th" class="flex flex-wrap gap-2 mt-3"></div></div>
+            <div id="ocr-out" class="mt-4"></div>`;
+        const f = body.querySelector('#ocr-f'), go = body.querySelector('#ocr-go'), th = body.querySelector('#ocr-th');
+        const thumbs = () => {
+            th.innerHTML = OCR.pages.map((p, i) => `<label class="relative cursor-pointer" title="${esc(p.src)}"><img src="${p.thumb}" style="height:110px;border-radius:10px;border:2px solid ${p.on ? '#7c3aed' : '#e2e8f0'};opacity:${p.on ? 1 : .45}">
+                <input type="checkbox" data-pi="${i}" ${p.on ? 'checked' : ''} class="absolute top-1 right-1"><small class="absolute bottom-1 left-1 bg-white/90 rounded px-1 text-[10px] font-bold" data-ps="${p.n}">${fa(p.n)}</small></label>`).join('');
+            th.querySelectorAll('[data-pi]').forEach(c => c.onchange = () => { OCR.pages[+c.dataset.pi].on = c.checked; thumbs(); });
+            go.disabled = OCR.busy || !OCR.pages.some(p => p.on);
+        };
+        f.onchange = async () => {
+            if (!f.files.length) return;
+            OCR.busy = true; go.disabled = true; OCR.res = []; OCR.id = 0; OCR.name = f.files[0].name + (f.files.length > 1 ? ' (+' + (f.files.length - 1) + ')' : '');
+            th.innerHTML = '<span class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>آماده‌سازیِ صفحه‌ها…</span>';
+            try { OCR.pages = (await SmartOCR.pagesFromFiles(f.files, n => { th.innerHTML = `<span class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>صفحه‌ی ${fa(n)}…</span>`; })).map(p => Object.assign(p, { on: true })); }
+            catch (e) { OCR.pages = []; toast(e.message || 'فایل خوانده نشد.', 'error'); }
+            OCR.busy = false;
+            if (!OCR.pages.length) th.innerHTML = '<span class="text-xs text-rose-600">صفحه‌ای پیدا نشد (فقط PDF و عکس).</span>'; else thumbs();
+            body.querySelector('#ocr-out').innerHTML = '';
+        };
+        go.onclick = async () => {
+            const sel = OCR.pages.filter(p => p.on); if (!sel.length || OCR.busy) return;
+            OCR.busy = true; go.disabled = true; OCR.id = 0;
+            const out = body.querySelector('#ocr-out'), t0 = Date.now();
+            out.innerHTML = `<div class="inq-card"><div class="flex items-center justify-between gap-2"><b class="text-sm"><i class="fas fa-spinner fa-spin ml-1 text-violet-600"></i>در حالِ پردازش <span data-c>۰</span> از ${fa(sel.length)} صفحه</b><small class="text-slate-400" data-t>۰ ثانیه</small></div>
+                <div class="inq-steps">${sel.map(p => `<span class="inq-step" data-st="${p.n}"></span>`).join('')}</div></div>`;
+            const tm = setInterval(() => { const e = out.querySelector('[data-t]'); if (e) e.textContent = fa(Math.round((Date.now() - t0) / 1000)) + ' ثانیه'; }, 500);
+            let done = 0;
+            const res = await SmartOCR.run(sel, { lang: body.querySelector('#ocr-l').value, engine: body.querySelector('#ocr-e').value,
+                onStart: p => { const s = out.querySelector(`[data-st="${p.n}"]`); if (s) s.className = 'inq-step run'; },
+                onPage: (p, r) => { done++; const s = out.querySelector(`[data-st="${p.n}"]`); if (s) s.className = 'inq-step ' + (r.ok ? (r.text ? 'ok' : 'warn') : 'bad'); const c = out.querySelector('[data-c]'); if (c) c.textContent = fa(done); } });
+            clearInterval(tm);
+            OCR.res = res.map(r => ({ n: r.n, text: r.text || '', engine: r.engine || '', engine_fa: r.engine_fa || '', ms: r.ms || 0, error: r.ok ? (r.note || '') : (r.error || 'خوانده نشد.') }));
+            OCR.ms = Date.now() - t0; OCR.busy = false; go.disabled = false;
+            ocrResult(out);
+            ocrSave(out, true);
+        };
+        if (OCR.pages.length) thumbs();
+        if (OCR.res.length) ocrResult(body.querySelector('#ocr-out'));
+    }
+    function ocrResult(out) {
+        out.innerHTML = `<div class="inq-card">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><b class="text-sm"><i class="fas fa-circle-check text-emerald-600 ml-1"></i>${esc(OCR.name)} — ${fa(OCR.res.length)} صفحه${OCR.ms ? ' در ' + fa((OCR.ms / 1000).toFixed(1)) + ' ثانیه' : ''}</b>
+                <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="all"><i class="fas fa-copy ml-1"></i>کپیِ همه</button><button class="inq-fbtn" data-sv><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی ویرایش</button><span data-dl></span></span></div>
+            ${OCR.res.map((r, i) => `<div class="mb-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(r.n)}${r.engine_fa ? ` · <small class="text-slate-400">${esc(r.engine_fa)}${r.ms ? ' · ' + fa((r.ms / 1000).toFixed(1)) + ' ث' : ''}</small>` : ''}</b>
+                <span class="flex gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy"></i></button><span data-dlp="${r.n}"></span></span></div>
+                ${r.error ? `<p class="text-[10.5px] ${r.text ? 'text-amber-600' : 'text-rose-600'} mb-1">${esc(r.error)}</p>` : ''}
+                <textarea class="inq-in" data-tx="${i}" dir="auto" style="min-height:180px;font-size:13px;font-weight:600;line-height:1.9;letter-spacing:0">${esc(r.text)}</textarea></div>`).join('')}</div>`;
+        out.querySelectorAll('[data-tx]').forEach(t => t.oninput = () => { OCR.res[+t.dataset.tx].text = t.value; });
+        out.querySelectorAll('[data-cp]').forEach(b => b.onclick = async () => {
+            const v = b.dataset.cp === 'all' ? OCR.res.map(r => r.text).join('\n\n') : OCR.res[+b.dataset.cp].text;
+            try { await navigator.clipboard.writeText(v); toast('کپی شد.', 'success'); } catch (e) {}
+        });
+        out.querySelector('[data-sv]').onclick = () => ocrSave(out, false);
+        ocrLinks(out);
+    }
+    function ocrLinks(out) {
+        if (!OCR.id) return;
+        const a = out.querySelector('[data-dl]'); if (a) a.innerHTML = ocrDl(OCR.id);
+        out.querySelectorAll('[data-dlp]').forEach(s => { if (OCR.res.length > 1) s.innerHTML = ocrDl(OCR.id, +s.dataset.dlp); });
+    }
+    async function ocrSave(out, auto) {
+        const r = await post({ action: 'ocr_save', id: OCR.id, name: OCR.name, lang: (document.getElementById('ocr-l') || {}).value || 'fas',
+                               pages: OCR.res.map(p => ({ n: p.n, text: p.text, engine: p.engine, ms: p.ms })) });
+        if (!r.ok) { toast(r.error || 'ذخیره نشد.', 'error'); return; }
+        OCR.id = r.id; ocrLinks(out);
+        if (!auto) toast('ذخیره شد.', 'success');
+    }
+    function ocrDetail(it) {
+        const pages = it.pages || [];
+        const m = document.createElement('div'); m.className = 'inq-modal';
+        m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex flex-wrap items-center justify-between gap-2 p-4 border-b"><b class="text-sm"><i class="fas fa-file-lines ml-1 text-violet-600"></i>${esc(it.query || 'پردازش فایل')} · ${fa(pages.length)} صفحه · ${esc(fa(it.created_j || ''))}</b>
+            <span class="flex flex-wrap gap-1.5">${ocrDl(it.id)}<button class="inq-fbtn" data-x>بستن</button></span></div>
+            <div class="p-4 overflow-y-auto">${pages.map(p => `<div class="mb-3"><div class="flex items-center justify-between mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(p.n)}</b>${pages.length > 1 ? `<span>${ocrDl(it.id, p.n)}</span>` : ''}</div>
+                <pre dir="auto" class="bg-slate-50 rounded-xl p-3 text-[12.5px] leading-7 whitespace-pre-wrap" style="font-family:inherit">${esc(p.text || '—')}</pre></div>`).join('') || '<p class="text-xs text-slate-400">متنی ذخیره نشده.</p>'}</div></div>`;
+        m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
+        document.body.appendChild(m);
     }
 
     // ---------------- تنظیمات (مدیر کل) ----------------

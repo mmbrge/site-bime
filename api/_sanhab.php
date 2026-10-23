@@ -132,7 +132,15 @@ function sh_status($pdo, $fresh = false) {
 function sh_up($s) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', inq_digits_keep($s))); }
 // «۲۱ ایران - ۱۲۳ ب ۱۱» یا «۱۱ ب ۱۲۳ ایران ۲۱» => اجزای پلاک (Plk1 = ایران، Plk2 = سه‌رقمی، plk3 = حرف، Plk4 = دورقمیِ چپ)
 function sh_parse_plate($str) {
-    $s = trim(inq_digits_keep($str));
+    $s = trim(str_replace(['ي', 'ك'], ['ی', 'ک'], inq_digits_keep($str)));
+    $L = '([\x{0600}-\x{06FF}A-Za-z]{1,3})';
+    $fix = function ($l) { $l = trim($l); return in_array($l, ['آ', 'ا', 'الف'], true) ? 'الف' : $l; };
+    // قالبِ سایت: «۲۱ایران - ۱۲۳ ب ۱۱»
+    if (preg_match('/(\d{2})\s*ایران\s*-?\s*(\d{3})\s*' . $L . '\s*(\d{2})(?!\d)/u', $s, $m)) return ['plk1' => $m[1], 'plk2' => $m[2], 'plk3' => $fix($m[3]), 'plk4' => $m[4]];
+    // قالبِ سنهاب و نامه‌ها: «۹۹۴ط۵۹ ۷۸»، «۹۹۴ط۵۹-۷۸»، «۹۹۴ ط ۵۹ ایران ۷۸» (سه‌رقمی، حرف، دورقمی، کدِ ایران)
+    if (preg_match('/(?<!\d)(\d{3})\s*' . $L . '\s*(\d{2})\s*(?:[-\/|_]|\s)+\s*(?:ایران\s*)?(\d{2})(?!\d)/u', $s, $m) && $m[2] !== 'ایران') return ['plk1' => $m[4], 'plk2' => $m[1], 'plk3' => $fix($m[2]), 'plk4' => $m[3]];
+    // «۱۱ ب ۱۲۳ ایران ۲۱» یا «۱۱ ب ۱۲۳ - ۲۱»
+    if (preg_match('/(?<!\d)(\d{2})\s*' . $L . '\s*(\d{3})\s*(?:ایران|-|\s)\s*(?:ایران\s*)?(\d{2})(?!\d)/u', $s, $m) && $m[2] !== 'ایران') return ['plk1' => $m[4], 'plk2' => $m[3], 'plk3' => $fix($m[2]), 'plk4' => $m[1]];
     if (!preg_match_all('/\d+/', $s, $nm) || count($nm[0]) < 3 || !preg_match('/[\x{0600}-\x{06FF}A-Za-z]+/u', preg_replace('/ایران/u', ' ', $s), $lm)) return null;
     $nums = $nm[0];
     $letter = $lm[0] === 'آ' ? 'الف' : $lm[0];
@@ -214,7 +222,91 @@ function sh_brief(array $res) {
             'insurer' => inq_fa_norm($f['company'] ?? ''), 'policy_type' => inq_fa_norm($f['policyType'] ?? ''), 'policy_no' => $d('policyNo'), 'prev_policy_no' => $d('prevPolicyNo'),
             'unique_code' => $d('uniqueCode'), 'insured' => inq_fa_norm($f['insuredName'] ?? ''), 'vehicle' => inq_fa_norm($f['vehicleName'] ?? ''), 'plate' => inq_fa_norm($f['plate'] ?? ''),
             'engine' => $d('motorNo'), 'chassis' => $d('chassisNo'), 'vin' => $d('vin'), 'issue_date' => $d('issueDate'), 'start_date' => $d('startDate'), 'end_date' => $d('endDate'),
-            'penalty' => $d('penaltyCost'), 'inquirer' => $res['inquirerName'] ?? '', 'inquiry_date' => inq_digits_keep((string)($res['inquiryDate'] ?? ''))];
+            'penalty' => $d('penaltyCost'), 'inquirer' => $res['inquirerName'] ?? '', 'inquiry_date' => inq_digits_keep((string)($res['inquiryDate'] ?? '')),
+            'plate_parts' => ($pp = sh_parse_plate((string)($f['plate'] ?? ''))) ? ['p1' => $pp['plk1'], 'p2' => $pp['plk2'], 'letter' => $pp['plk3'], 'p4' => $pp['plk4']] : null,
+            'plate_fa' => $pp ? "{$pp['plk1']}ایران - {$pp['plk2']} {$pp['plk3']} {$pp['plk4']}" : inq_fa_norm($f['plate'] ?? '')];
+}
+// پلاکِ یک ردیفِ سنهاب به قالبِ سایت («۷۸ایران - ۹۹۴ ط ۵۹»)
+function sh_plate_fa($v) { $pp = sh_parse_plate((string)$v); return $pp ? "{$pp['plk1']}ایران - {$pp['plk2']} {$pp['plk3']} {$pp['plk4']}" : inq_fa_norm((string)$v); }
+
+// ---- خروجیِ سوابق (اکسل و PDFِ «خروجیِ سایت») — sel: اندیسِ ردیف‌های انتخاب‌شده (خالی = همه) ----
+function sh_export_rows(array $r, array $sel) {
+    $res = json_decode((string)($r['result_json'] ?? ''), true) ?: [];
+    $rows = $res['sanhab']['rows'] ?? [];
+    if ($sel) $rows = array_values(array_filter($rows, function ($x, $i) use ($sel) { return in_array($i, $sel, true); }, ARRAY_FILTER_USE_BOTH));
+    return [$res, $rows];
+}
+function sh_loss_text(array $row) {
+    return implode(' | ', array_map(function ($l) { return trim(($l['lossType'] ?? '') . ' ' . ($l['paidAmount'] ?? '') . ' ریال · پرداخت ' . ($l['paidDate'] ?? '')); }, $row['losses'] ?? []));
+}
+function sh_export_xlsx(array $r, array $sel) {
+    require_once __DIR__ . '/_xlsx_writer.php';
+    [$res, $rows] = sh_export_rows($r, $sel);
+    $out = [];
+    foreach ($rows as $i => $x) {
+        $rs = $x['rowSummary'] ?? [];
+        $out[] = [$x['radif'] ?? ($i + 1), $rs['lossStatus'] ?? '', $x['policyType'] ?? '', $x['company'] ?? '', $x['insuredName'] ?? '', inq_digits_keep($x['policyNo'] ?? ''), inq_digits_keep($x['prevPolicyNo'] ?? ''),
+                  $x['vehicleName'] ?? '', sh_plate_fa($x['plate'] ?? ''), $x['chassisNo'] ?? '', $x['vin'] ?? '', $x['motorNo'] ?? '', inq_digits_keep($x['issueDate'] ?? ''), inq_digits_keep($x['startDate'] ?? ''),
+                  inq_digits_keep($x['endDate'] ?? ''), ($x['discFinPct'] ?? '0') . '٪', ($x['discLifePct'] ?? '0') . '٪', ($x['discPassPct'] ?? '0') . '٪', $x['noLossFinYr'] ?? '', $x['noLossLifeYr'] ?? '',
+                  $x['noLossPassYr'] ?? '', count($x['endorsements'] ?? []), sh_loss_text($x), $x['uniqueCode'] ?? ''];
+    }
+    return xlsx_build(['ردیف', 'وضعیتِ خسارت', 'نوع', 'بیمه‌گر', 'بیمه‌گذار', 'شماره بیمه‌نامه', 'بیمه‌نامه‌ی قبل', 'خودرو', 'پلاک', 'شاسی', 'VIN', 'موتور', 'صدور', 'شروع', 'انقضا',
+                       'تخفیف ثالث', 'تخفیف جانی', 'تخفیف حوادث راننده', 'سال عدم خسارت مالی', 'سال عدم خسارت جانی', 'سال عدم خسارت سرنشین', 'تعداد الحاقیه', 'خسارت‌ها', 'کد یکتا'], $out, 'سوابق سنهاب', [0]);
+}
+// PDFِ «خروجیِ سایت»: افقی، فونتِ وزیر، خلاصه‌ی نتیجه + جدولِ کامل با زیرجدولِ الحاقیه‌ها و خسارت‌ها
+function sh_export_pdf(array $r, array $sel, $dest) {
+    if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
+    require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
+    [$res, $rows] = sh_export_rows($r, $sel);
+    $b = sh_brief(['rows' => $rows ?: ($res['sanhab']['rows'] ?? []), 'latestSummary' => $res['sanhab']['latestSummary'] ?? []] + ($res['sanhab'] ?? []));
+    if ($rows) { $first = $rows[0]; $b['has_loss'] = !empty($first['rowSummary']['hasLoss']); }
+    $fa = function ($v) { return strtr((string)$v, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']); };
+    $e = function ($v) use ($fa) { $v = trim((string)$v); return $v === '' ? '—' : htmlspecialchars($fa($v), ENT_QUOTES, 'UTF-8'); };
+    $el = function ($v) { $v = trim((string)$v); return $v === '' ? '—' : htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); };
+    $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
+    $pdf->SetCreator('بیمه با ما'); $pdf->SetTitle('خروجیِ سایت — سوابقِ سنهاب');
+    $pdf->setPrintHeader(false); $pdf->setPrintFooter(true); $pdf->setFooterFont(['vazir', '', 7]); $pdf->setFooterMargin(6);
+    $pdf->SetMargins(8, 8, 8); $pdf->SetAutoPageBreak(true, 12);
+    $pdf->AddFont('vazir', '', 'vazir.php'); $pdf->AddFont('vazir', 'B', 'vazirb.php');
+    $pdf->setRTL(true); $pdf->SetFont('vazir', '', 8);
+    $pdf->AddPage();
+    $ok = !$b['has_loss'];
+    $col = $ok ? '#059669' : '#e11d48';
+    $h = '<table cellpadding="5" style="width:100%"><tr>
+        <td width="62%" style="background-color:#0c4a6e;color:#ffffff"><span style="font-size:7.5pt;color:#bae6fd">خروجیِ سایت — بیمه با ما</span><br><b style="font-size:13pt">سوابقِ بیمه‌نامه از سامانه‌ی سنهاب (بیمه مرکزی)</b><br>
+            <span style="font-size:8pt">جستجو: ' . $e(($r['query_text'] ?? '')) . ' · تاریخِ استعلام: ' . $e(jdate_short($r['created_at'] ?? date('Y-m-d')) . ' ' . substr((string)($r['created_at'] ?? ''), 11, 5)) . ' · ' . $e(count($rows)) . ' بیمه‌نامه</span></td>
+        <td width="38%" style="background-color:' . $col . ';color:#ffffff;text-align:center"><b style="font-size:16pt">' . ($ok ? 'عدمِ خسارت' : 'خسارت دارد') . '</b><br>
+            <span style="font-size:8.5pt">' . ($ok ? 'جدیدترین بیمه‌نامه بدونِ خسارت است' : $e($b['loss_types'])) . '</span></td></tr></table>';
+    $kv = function ($k, $v) use ($e) { return '<td style="background-color:#f8fafc;border:0.3px solid #e2e8f0"><span style="color:#64748b;font-size:7pt">' . $k . '</span><br><b style="font-size:9pt">' . $e($v) . '</b></td>'; };
+    $h .= '<table cellpadding="4" style="width:100%;margin-top:4px"><tr>' . $kv('تخفیفِ ثالث (مالی/جانی)', $b['tp_disc'] === null ? '' : $b['tp_disc'] . '٪') . $kv('تخفیفِ حوادثِ راننده', $b['dr_disc'] === null ? '' : $b['dr_disc'] . '٪')
+        . $kv('بیمه‌گر', $b['insurer']) . $kv('شماره بیمه‌نامه', $b['policy_no']) . $kv('شروع / انقضا', $b['start_date'] . ' تا ' . $b['end_date']) . $kv('بیمه‌گذار', $b['insured']) . '</tr><tr>'
+        . $kv('خودرو', $b['vehicle']) . $kv('پلاک', $b['plate_fa']) . $kv('شاسی / VIN', $b['chassis'] ?: $b['vin']) . $kv('موتور', $b['engine']) . $kv('سال‌های عدمِ خسارت (مالی/جانی)', ($b['no_loss_fin'] ?? '—') . ' / ' . ($b['no_loss_life'] ?? '—'))
+        . $kv('خسارتِ سال‌های قبل', $b['older_losses']) . '</tr></table>';
+    $th = function ($t, $w) { return '<th width="' . $w . '" style="background-color:#0f172a;color:#ffffff;font-size:7pt;text-align:center"><b>' . $t . '</b></th>'; };
+    $h .= '<br><table cellpadding="3" style="width:100%;border-collapse:collapse"><thead><tr>' . $th('#', '3%') . $th('وضعیتِ خسارت', '9%') . $th('نوع', '5%') . $th('بیمه‌گر', '8%') . $th('بیمه‌گذار', '10%')
+        . $th('شماره بیمه‌نامه', '9%') . $th('بیمه‌نامه‌ی قبل', '8%') . $th('خودرو', '8%') . $th('پلاک', '8%') . $th('شاسی / VIN', '10%') . $th('شروع', '5.5%') . $th('انقضا', '5.5%')
+        . $th('تخفیف ثالث/جانی/راننده', '7%') . $th('عدم خسارت (سال)', '4%') . '</tr></thead><tbody>';
+    foreach ($rows as $i => $x) {
+        $rs = $x['rowSummary'] ?? [];
+        $bg = $i % 2 ? '#f8fafc' : '#ffffff';
+        $st = !empty($rs['hasLoss']) ? '<span style="color:#be123c"><b>' . $e($rs['lossStatus'] ?? '') . '</b></span>' : '<span style="color:#047857"><b>عدمِ خسارت</b></span>';
+        $td = function ($v, $w, $ltr = false) use ($bg) { return '<td width="' . $w . '" style="background-color:' . $bg . ';border-bottom:0.3px solid #e2e8f0;font-size:7pt;text-align:center"' . ($ltr ? ' dir="ltr"' : '') . '>' . $v . '</td>'; };
+        $h .= '<tr nobr="true">' . $td($e($x['radif'] ?? ($i + 1)), '3%') . $td($st, '9%') . $td($e($x['policyType'] ?? ''), '5%') . $td('<b>' . $e($x['company'] ?? '') . '</b>', '8%') . $td($e($x['insuredName'] ?? ''), '10%')
+            . $td($e($x['policyNo'] ?? ''), '9%') . $td($e($x['prevPolicyNo'] ?? ''), '8%') . $td($e($x['vehicleName'] ?? ''), '8%') . $td($e(sh_plate_fa($x['plate'] ?? '')), '8%')
+            . $td($el(($x['chassisNo'] ?? '') ?: ($x['vin'] ?? '')), '10%', true) . $td($e($x['startDate'] ?? ''), '5.5%') . $td($e($x['endDate'] ?? ''), '5.5%')
+            . $td($e((($x['discFinPct'] ?? '') ?: '0') . '٪ / ' . (($x['discLifePct'] ?? '') ?: '0') . '٪ / ' . (($x['discPassPct'] ?? '') ?: '0') . '٪'), '7%') . $td($e(($x['noLossFinYr'] ?? '') . '/' . ($x['noLossLifeYr'] ?? '')), '4%') . '</tr>';
+        foreach (($x['endorsements'] ?? []) as $en)
+            $h .= '<tr nobr="true"><td width="3%"></td><td colspan="13" width="97%" style="background-color:#ecfdf5;font-size:6.8pt;color:#065f46">الحاقیه: <b>' . $e($en['endorsementType'] ?? '') . '</b> · تاریخ ' . $e($en['issueDate'] ?? '')
+                . ' · بیمه‌گذار ' . $e($en['insuredName'] ?? '') . ' · تخفیف مالی/جانی/سرنشین ' . $e(($en['discFinPct'] ?? '0') . '٪ / ' . ($en['discLifePct'] ?? '0') . '٪ / ' . ($en['discPassPct'] ?? '0') . '٪') . '</td></tr>';
+        foreach (($x['losses'] ?? []) as $l)
+            $h .= '<tr nobr="true"><td width="3%"></td><td colspan="13" width="97%" style="background-color:#fff1f2;font-size:6.8pt;color:#9f1239">خسارت: <b>' . $e($l['lossType'] ?? '') . '</b> · مبلغِ پرداختی ' . $e($l['paidAmount'] ?? '')
+                . ' ریال · اعلام ' . $e($l['declareDate'] ?? '') . ' · پرداخت ' . $e($l['paidDate'] ?? '') . '</td></tr>';
+    }
+    if (!$rows) $h .= '<tr><td colspan="14" style="text-align:center;color:#94a3b8">سابقه‌ای نیست.</td></tr>';
+    $h .= '</tbody></table><p style="font-size:6.5pt;color:#94a3b8">این گزارش از روی نتیجه‌ی استعلامِ سامانه‌ی سنهاب ساخته شده است' . (!empty($res['sanhab']['inquirerName']) ? ' · ' . $e($res['sanhab']['inquirerName']) : '') . '.</p>';
+    $pdf->writeHTML($h, true, false, true, false, '');
+    $pdf->Output($dest, 'F');
+    return is_file($dest);
 }
 // خروجیِ یک استعلامِ سنهاب برای مرورگر (همه‌ی کاربرانِ مجاز جزئیات را می‌بینند؛ صفحه‌ی خامِ سامانه فقط مدیر کل)
 function sh_out(array $r, $rows = true) {

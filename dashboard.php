@@ -66,6 +66,9 @@ $mkMenuHtml = !$mkAccess ? '' : '
 // «استعلامات»: مدیر کل، یا دسترسیِ سفارشی به یکی از بخش‌های استعلام (تکی/گروهی/تاریخچه)
 $inqAccess = ($_SESSION['role'] ?? '') === 'ADMIN' && empty($permBoot['custom']);
 if (!empty($permBoot['custom'])) foreach ((array)($permBoot['p'] ?? []) as $__k => $__ops) if (strpos((string)$__k, 'inq-') === 0 && in_array('view', (array)$__ops, true)) $inqAccess = true;
+// «هوشیکس X ai»: مدیر کل، یا کاربری که در تنظیماتِ هوشیکس دسترسی دارد (api/_hooshix.php)
+$hxAccess = ($_SESSION['role'] ?? '') === 'ADMIN';
+if (!$hxAccess) { try { require_once __DIR__ . '/api/_hooshix.php'; $__hc = hx_cfg($pdo); $hxAccess = $__hc['enabled'] && hx_user_state($pdo, intval($_SESSION['user_id']), false, $__hc)['allowed']; } catch (Throwable $e) { $hxAccess = false; } }
 // «پرونده‌ها و بردرو» (خودروها، پرسنل، بردروی پاسارگاد): مدیر کل و دسترسی‌های سفارشی (لینکِ بی‌اجازه را permCan پنهان می‌کند)
 $regAccess = ($_SESSION['role'] ?? '') === 'ADMIN' || !empty($permBoot['custom']);
 // منوی «اتوماسیون نامه‌ها»: مدیر کل و دسترسی‌های سفارشی
@@ -1097,6 +1100,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <?php endif; ?>
                 <?php echo $chatNavHtml; ?>
                 <?php if ($inqAccess): ?><a href="#" onclick="switchTab('inquiries')" id="nav-inquiries" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0" data-perm-skip><i class="fas fa-user-check ml-1"></i> استعلامات</a><?php endif; ?>
+                <?php if ($hxAccess): ?><a href="#" onclick="switchTab('hooshix')" id="nav-hooshix" class="nav-item hover-target transition-colors block lg:inline py-2 lg:py-0" data-perm-skip><i class="fas fa-robot ml-1" style="background:linear-gradient(90deg,#7c3aed,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent"></i> هوشیکس X ai</a><?php endif; ?>
 
                 <!-- ===== «بیمه با ما»: منوی درختیِ بزرگ به تفکیکِ رشته‌ی بیمه (هر بخش با کارها و تنظیماتِ خودش) ===== -->
                 <?php
@@ -2967,6 +2971,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- ======================= مغایرت‌گیری با پاسارگاد - recon.js ======================= -->
         <!-- استعلامات: شخص حقیقی، کد پستی، شخص حقوقی؛ تکی، گروهی، تاریخچه، تنظیمات (inquiry.js) -->
         <div id="tab-inquiries" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden" data-perm-skip><div id="inq-root"></div></div>
+        <!-- هوشیکس X ai: گفتگو با هوشِ مصنوعی (hooshix.js) -->
+        <div id="tab-hooshix" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden" data-perm-skip><div id="hx-root"></div></div>
         <!-- پرونده‌ی خودروها، پرسنل و بردروی پاسارگاد (registry.js) -->
         <div id="tab-vehicles" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="vh-root"></div></div>
         <div id="tab-personnel" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="per-root"></div></div>
@@ -3604,6 +3610,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با همان ساختارِ نمونه برگردان. در «letter.counts» تعدادِ درخواستی از هر نوع را با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ» بنویس. در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)؛ پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (دو رقمِ کدِ ایران، کنارِ کلمه‌ی «ایران»). مهم: در نامه‌ها پلاک معمولاً به شکلِ «۷۹۸ع۸۱-۱۱» نوشته می‌شود که یعنی plate_three=798، plate_letter=ع، plate_two=81 و عددِ بعد از خط تیره plate_iran=11؛ یا به شکلِ «۸۱ ع ۷۹۸ ایران ۱۱» که همان پلاک است. هیچ‌وقت کدِ ایران را با دو رقمِ اول جابه‌جا نکن. اگر وسیله موتورسیکلت است، پلاکِ موتور را در دو فیلد بنویس: moto_city (سه رقمِ بالای پلاک، کدِ شهر) و moto_number (پنج رقمِ پایین)؛ مثلاً «۵۸۳-۷۶۲۲۴» یعنی moto_city=583 و moto_number=76224، و فیلدهای پلاکِ خودرو را خالی بگذار. اگر خودرو پلاک ندارد، فیلدهای پلاک را خالی بگذار و chassis_no را بنویس. بقیه‌ی فیلدها: insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخِ انقضا/اتمامِ بیمه‌نامه‌ی فعلی به شمسی مثل 1405/07/30)، car_name (نوع خودرو)، model_year (مدل/سال ساخت)، chassis_no، engine_no، prev_policy_number (شماره‌ی بیمه‌نامه‌ی قبلی)، prev_insurer (بیمه‌گرِ قبلی)؛ فقط برای ثالث: liability_limit (تعهد مالی به ریال)؛ فقط برای بدنه: car_value (ارزش خودرو به ریال)، has_prev_body («بله»/«خیر»)، health_inspection («لازم»/«لازم نیست»)؛ برای تغییر اطلاعات و فسخ: policy_number، change_request (چه تغییری) یا cancellation_reason (دلیل)؛ و note برای هر توضیحِ دیگر. هر فیلدی که در نامه نیست یا به آن نوع بیمه مربوط نیست را نگذار یا خالی بگذار؛ چیزی حدس نزن.</p>
             </div>
             <input type="hidden" id="cli-request-id">
+            <div class="rounded-xl border border-fuchsia-200 bg-gradient-to-l from-fuchsia-50 to-violet-50 p-3 mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div class="text-[11px] text-slate-600 leading-6"><b class="text-fuchsia-800"><i class="fas fa-brain ml-1"></i>خواندنِ هوشمندِ نامه:</b> نامه‌ی همین درخواست (یا فایلی که انتخاب می‌کنید) OCR می‌شود، متنش به هوشِ مصنوعی داده می‌شود و ردیف‌ها در پیش‌نمایش می‌آیند؛ بعد از بررسی «ساختن ردیف‌ها» را بزنید.
+                    <span id="cli-smart-st" class="block text-[10.5px] text-fuchsia-700 font-bold"></span></div>
+                <span class="flex gap-2"><input type="file" id="cli-smart-file" accept="application/pdf,image/*" multiple class="hidden" onchange="cliSmartRead(this.files)">
+                    <button type="button" id="cli-smart-btn" onclick="cliSmartRead()" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[11px] font-black px-3 py-2 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>خواندنِ نامه‌ی درخواست</button>
+                    <button type="button" onclick="document.getElementById('cli-smart-file').click()" class="bg-white border border-fuchsia-200 text-fuchsia-700 text-[11px] font-bold px-3 py-2 rounded-xl"><i class="fas fa-file-arrow-up ml-1"></i>فایلِ دیگر</button></span>
+            </div>
 
             <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
                 <summary class="text-xs font-bold text-slate-600 cursor-pointer">قالبِ خروجی که باید به هوش مصنوعی بگویید (کلیک کنید)</summary>
@@ -4562,9 +4575,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="inquiry.js?v=8"></script>
+    <script src="smart-ocr.js?v=1"></script>
+    <?php if ($hxAccess): ?><script src="hooshix.js?v=1"></script><?php endif; ?>
+    <script src="inquiry.js?v=9"></script>
     <script src="registry.js?v=6"></script>
-    <script src="sanhab-ui.js?v=1"></script>
+    <script src="sanhab-ui.js?v=2"></script>
     <script src="issue-panel.js?v=3"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
@@ -4697,7 +4712,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
-            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
+            if (page === 'hooshix') return true;   // دسترسی را خودِ تنظیماتِ هوشیکس تعیین می‌کند (لینک فقط برای مجازها ساخته می‌شود)
+            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }
@@ -7844,7 +7860,43 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             cliDefaults = {coverages: null, liability: ''};
             cliRenderDefaults();
             fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})})
-                .then(r => r.json()).then(x => { if (x.ok && x.defaults) { cliDefaults = {coverages: x.defaults.coverages, liability: x.defaults.liability || ''}; cliRenderDefaults(); } }).catch(() => {});
+                .then(r => r.json()).then(x => { cliLetterPath = x.ok && x.request ? (x.request.letter_file_path || '') : ''; cliSmartPaint(); if (x.ok && x.defaults) { cliDefaults = {coverages: x.defaults.coverages, liability: x.defaults.liability || ''}; cliRenderDefaults(); } }).catch(() => {});
+        }
+        // ---- خواندنِ هوشمندِ نامه: OCR (smart-ocr.js) ← فقط متنِ نامه به هوشِ مصنوعی ← JSONِ ردیف‌ها ← پیش‌نمایشِ همیشگی ----
+        let cliLetterPath = '', cliSmartBusy = false;
+        function cliSmartPaint(msg) {
+            const st = document.getElementById('cli-smart-st'), b = document.getElementById('cli-smart-btn');
+            if (b) b.disabled = cliSmartBusy || !cliLetterPath;
+            if (st) st.innerHTML = msg != null ? msg : (cliLetterPath ? '' : 'این درخواست فایلِ نامه ندارد؛ «فایلِ دیگر» را بزنید.');
+        }
+        async function cliSmartRead(files) {
+            if (cliSmartBusy) return;
+            if (!window.SmartOCR) { showToast('ابزارِ پردازش فایل بارگذاری نشده.', 'error'); return; }
+            const src = files && files.length ? files : (cliLetterPath ? '../' + cliLetterPath : null);
+            if (!src) { showToast('فایلِ نامه را انتخاب کنید.', 'error'); return; }
+            cliSmartBusy = true; const t0 = Date.now();
+            const tick = setInterval(() => { const st = document.getElementById('cli-smart-st'); if (st && st.dataset.ph) st.innerHTML = st.dataset.ph + ` (${faDigits(String(Math.round((Date.now() - t0) / 1000)))} ثانیه)`; }, 500);
+            const ph = t => { const st = document.getElementById('cli-smart-st'); if (st) { st.dataset.ph = '<i class="fas fa-spinner fa-spin ml-1"></i>' + t; st.innerHTML = st.dataset.ph; } };
+            cliSmartPaint(''); ph('آماده‌سازیِ صفحه‌ها…');
+            try {
+                let done = 0, total = 0;
+                const o = await SmartOCR.textOf(src, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 30, onPages: n => { total = n; ph(`خواندنِ متنِ ${faDigits(String(n))} صفحه…`); },
+                                                     onPage: () => { done++; ph(`خواندنِ متن: ${faDigits(String(done))} از ${faDigits(String(total))} صفحه…`); }});
+                if (!o.text) throw new Error('متنی از نامه خوانده نشد.');
+                ph('هوشِ مصنوعی در حالِ استخراجِ ردیف‌ها…');
+                const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'smart_letter_extract', text: o.text})})).json();
+                if (!r.ok) throw new Error(r.error || 'استخراج نشد.');
+                document.getElementById('cli-raw').value = r.raw;
+                document.getElementById('cli-file').value = '';
+                clearInterval(tick); document.getElementById('cli-smart-st').dataset.ph = '';
+                cliSmartBusy = false;
+                cliSmartPaint(`<i class="fas fa-circle-check ml-1"></i>${faDigits(String(r.count))} ردیف در ${faDigits(String(Math.round((Date.now() - t0) / 1000)))} ثانیه استخراج شد؛ پیش‌نمایش را با نامه مقایسه کنید.`);
+                await previewLetterRows();
+            } catch (e) {
+                clearInterval(tick); const st = document.getElementById('cli-smart-st'); if (st) st.dataset.ph = '';
+                cliSmartBusy = false; cliSmartPaint('<span class="text-rose-600">' + escapeHtml(e.message || 'خطا') + '</span>');
+            }
+            const sf = document.getElementById('cli-smart-file'); if (sf) sf.value = '';
         }
 
         async function previewLetterRows() {
@@ -9060,6 +9112,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">ثبت اطلاعات (تگ‌گذاری)</button>
                         <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
                     </div>
@@ -9071,7 +9124,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             return `<div class="flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-2xl p-3">
                 <span class="text-xs font-bold text-blue-800"><i class="fas fa-layer-group ml-1"></i>${faDigits(String(docs.length))} مدرک منتظرِ بررسی</span>
                 <span class="flex gap-2 flex-wrap"><button onclick="aiReviewAll(${Number(currentDocsReviewRequestId) || 0})" title="همه‌ی صفحه‌ها خوانده می‌شوند؛ برای هر فاکتور/سندِ کامل ردیفِ تازه ساخته و هر مدرک روی ردیفِ خودش می‌نشیند" class="bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>بررسیِ خودکارِ همه</button>
-                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></span></div>
+<button onclick="smartReadAll()" title="هر مدرک OCR می‌شود، متنش به هوشِ مصنوعی داده می‌شود و نتیجه مثلِ شناساییِ خودکار روی ردیف می‌نشیند" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-brain ml-1"></i>خواندنِ هوشمندِ همه</button>
+                                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></span></div>
                 <div id="ai-all-prog" class="hidden"></div>`;
         }
         // «بررسیِ خودکارِ همه»: صف + خواندنِ یکی‌یکی با نوارِ پیشرفت؛ پنجره را می‌شود بست، کار تا پایانِ صف ادامه دارد
@@ -9131,6 +9185,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         ${aiBadge(d)}
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
                         ${['FAIL', 'NONE', 'PARTIAL'].includes(d.ai_status) ? `<button onclick="aiRetry(${d.id})" title="خواندنِ دوباره‌ی این صفحه" class="bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-xl"><i class="fas fa-rotate"></i></button>` : ''}
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
                         <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
@@ -9166,6 +9221,45 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 }
             } catch (e) {}
             aiStepBusy = false;
+        }
+        // ---- خواندنِ هوشمندِ مدرک (دستی): OCRِ فایل در مرورگر ← متن ← هوشِ مصنوعی ← همان شناسایی/نشاندن روی ردیف ----
+        async function smartReadOne(d) {
+            const o = await SmartOCR.textOf('../' + d.file_path, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 4, name: d.orig_name});
+            if (!o.text) return {status: 'FAIL', error: 'متنی خوانده نشد.'};
+            return await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'smart_doc_read', doc_id: d.id, text: o.text})})).json();
+        }
+        const smartMsg = r => r.status === 'AUTO' || r.status === 'AUTO_NEW' ? (r.status === 'AUTO_NEW' ? 'شناسایی شد و ردیفِ تازه ساخته شد.' : 'شناسایی و روی ردیف ثبت شد.')
+            : r.status === 'PARTIAL' ? 'ناقص شناسایی شد؛ در تگ‌گذاری کاملش کنید.' : ((r.result && r.result.error) || r.error || 'شناسایی نشد.');
+        function smartRefresh() {
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            else if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+        }
+        async function smartReadDoc(id) {
+            const d = (companyInboxCache || []).find(x => String(x.id) === String(id));
+            if (!d || !window.SmartOCR) return;
+            const b = document.querySelector(`[data-smart="${id}"]`); if (b) { b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+            let r;
+            try { r = await smartReadOne(d); } catch (e) { r = {status: 'FAIL', error: e.message}; }
+            showToast(smartMsg(r), r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'success' : 'info');
+            smartRefresh();
+            if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        }
+        async function smartReadAll() {
+            const docs = (companyInboxCache || []).filter(d => d.file_kind !== 'LETTER');
+            if (!docs.length || !window.SmartOCR) { showToast('مدرکی برای خواندن نیست.', 'info'); return; }
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0}; let done = 0, next = 0;
+            const paint = () => { const el = document.getElementById('ai-all-prog'); if (!el) return;
+                el.className = 'rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-3 text-[11px] text-fuchsia-900';
+                el.innerHTML = `<div class="font-bold mb-1"><i class="fas ${done < docs.length ? 'fa-spinner fa-spin' : 'fa-circle-check'} ml-1"></i>خواندنِ هوشمند… ${faDigits(String(done))} از ${faDigits(String(docs.length))}</div>
+                    <div class="h-2 rounded-full bg-white overflow-hidden"><div class="h-full bg-fuchsia-600" style="width:${Math.round(done * 100 / docs.length)}%"></div></div>
+                    <p class="mt-1">ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · روی ردیفِ موجود: ${faDigits(String(sum.AUTO))} · ناقص: ${faDigits(String(sum.PARTIAL))} · شناسایی‌نشده: ${faDigits(String(sum.NONE + sum.FAIL))}</p>`; };
+            paint();
+            const lane = async () => { while (next < docs.length) { const d = docs[next++]; let r;
+                try { r = await smartReadOne(d); } catch (e) { r = {status: 'FAIL'}; }
+                sum[r.status] = (sum[r.status] || 0) + 1; done++; paint(); } };
+            await Promise.all([lane(), lane()]);
+            showToast(`خواندنِ هوشمند تمام شد: ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.AUTO))} روی ردیفِ موجود، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} برای بررسیِ دستی.`, 'success');
+            smartRefresh();
         }
         async function aiRetry(id) {
             showToast('در حالِ خواندنِ دوباره…', 'info');
@@ -10273,15 +10367,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // استعلامِ شخصِ حقوقی: اول از سامانه‌ی پاسارگاد (فهرستِ اشخاصِ حقوقی؛ اگر نشست بسته بود کپچا همین‌جا)، اگر نتیجه نداد از s.api.ir؛
         // نتیجه در فیلدها می‌نشیند و نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
         async function cmInquiry() {
-            const nid = (document.getElementById('cm-national-id').value || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
-            if (nid.length !== 11) { cmInquiryMsg('شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد.', 'err'); return; }
+            const dg = v => (v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
+            const nid = dg(document.getElementById('cm-national-id').value);
+            const cname = (document.getElementById('cm-company-name').value || '').trim(), eco = dg(document.getElementById('cm-economic-code').value);
+            // جستجو با نامِ شرکت (اولویت) و/یا شناسه‌ی ملی و کد اقتصادی
+            if (nid && nid.length !== 11) { cmInquiryMsg('شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد (یا خالی بماند و با نام جستجو شود).', 'err'); return; }
+            if (!nid && !cname && !eco) { cmInquiryMsg('نامِ شرکت، شناسه‌ی ملی یا کد اقتصادی را بنویسید.', 'err'); return; }
+            if (!nid && !window.Inquiry) { cmInquiryMsg('برای جستجو با نام، بخشِ استعلامات لازم است؛ شناسه‌ی ملی را وارد کنید.', 'err'); return; }
             const btn = document.getElementById('cm-inquiry-btn');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…';
             const body = {action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0};
             let d;
             if (window.Inquiry && Inquiry.run) {
                 cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام از سامانه‌ی پاسارگاد…', '');
-                const r = await Inquiry.run({kind: 'legal', source: 'form', company_nid: nid}, it => { if (!it.done) cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>' + iiEsc(it.notice || 'در حالِ استعلام…'), ''); }, document.getElementById('cm-inquiry-cap'));
+                const r = await Inquiry.run({kind: 'legal', source: 'form', company_nid: nid, company_name: cname, economic_code: eco}, it => { if (!it.done) cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>' + iiEsc(it.notice || 'در حالِ استعلام…'), ''); }, document.getElementById('cm-inquiry-cap'));
                 if (r.ok && r.item && r.item.company) body.inq_id = r.item.id;
                 else { cmInquiryMsg(iiEsc((r.item && r.item.notice) || r.error || 'نتیجه‌ای پیدا نشد.') + ' — می‌توانید دستی وارد کنید.', 'err'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه'; return; }
             }
@@ -11474,6 +11573,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'contacts' && window.Contacts) Contacts.init(document.getElementById('ct-root'));
             if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
             if (tabId === 'inquiries' && window.Inquiry) Inquiry.init(document.getElementById('inq-root'));
+            if (tabId === 'hooshix' && window.Hooshix) Hooshix.init(document.getElementById('hx-root'));
             if (tabId === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'));
             if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
             if (tabId === 'bordereau' && window.Bordereau) Bordereau.init(document.getElementById('brd-root'));

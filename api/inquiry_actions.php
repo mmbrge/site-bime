@@ -50,7 +50,7 @@ $can = function ($what) use ($isAdmin, $custom) {
     $spec = ['single' => 'inq-single:create', 'single_view' => 'inq-single:view|inq-single:create', 'group' => 'inq-group:create', 'group_view' => 'inq-group:view|inq-group:create',
              'legal' => 'inq-legal:create', 'legal_group' => 'inq-legal-group:create', 'legal_group_view' => 'inq-legal-group:view|inq-legal-group:create',
              'sanhab' => 'inq-sanhab:create', 'sanhab_group' => 'inq-sanhab-group:create', 'sanhab_group_view' => 'inq-sanhab-group:view|inq-sanhab-group:create',
-             'premium' => 'inq-premium:view|inq-premium:create',
+             'premium' => 'inq-premium:view|inq-premium:create', 'ocr' => 'inq-ocr:create|inq-ocr:view',
              'export' => 'inq-history:export|inq-group:export|inq-legal-group:export|inq-sanhab-group:export', 'history' => 'inq-history:view', 'delete' => 'inq-history:delete',
              'form' => 'inq-single:create|' . $forms, 'sanhab_form' => 'inq-sanhab:create|' . $forms, 'legal_form' => 'inq-legal:create|companies-manage:create|companies-manage:edit'][$what] ?? '';
     // کاربرِ بدونِ دسترسیِ سفارشی: فقط استعلام‌های داخلِ فرم‌ها (همان قاعده‌ی قبلی)
@@ -65,13 +65,15 @@ if ($action === 'boot') {
     // شخصِ حقوقی (شناسه‌ی ملیِ شرکت) دیگر استعلام نمی‌شود؛ فقط در تاریخچه می‌ماند
     // انواعِ استعلامِ تکی (شخصِ حقیقی / حقوقی / سنهاب) به تفکیکِ دسترسی
     $kinds = [];
-    foreach (INQ_KINDS as $k => $fa) if ($k === 'legal' ? $can('legal') : ($k === 'sanhab' ? $can('sanhab') : $can('single'))) $kinds[$k] = $fa;
+    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && ($k === 'legal' ? $can('legal') : ($k === 'sanhab' ? $can('sanhab') : $can('single')))) $kinds[$k] = $fa;
     $gkinds = [];
-    foreach (INQ_KINDS as $k => $fa) if ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : $can('group_view'))) $gkinds[$k] = $fa;
+    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : $can('group_view')))) $gkinds[$k] = $fa;
     $o = ['ok' => true, 'is_admin' => $isAdmin, 'kinds' => $kinds, 'group_kinds' => $gkinds, 'kinds_all' => INQ_KINDS, 'status' => $st,
           'sh_status' => $isAdmin ? sh_status($pdo) : null, 'sh_ready' => sh_enabled($pdo) && sh_creds($pdo)['user'] !== '', 'sh_types' => array_map(null, array_map('strval', array_keys(SH_TYPES)), array_values(SH_TYPES)), 'sh_plcy' => SH_PLCY,
           'can' => ['single' => $can('single'), 'group' => $can('group'), 'group_view' => (bool)$gkinds, 'export' => $can('export'), 'history' => $can('history'), 'delete' => $can('delete'), 'form' => $can('form'),
-                    'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form')],
+                    'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form'),
+                    'ocr' => $can('ocr')],
+          'ocr_engines' => (function () use ($pdo) { require_once __DIR__ . '/_smart_ocr.php'; return so_engines($pdo); })(),
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
     $q = $pdo->query("SELECT COUNT(*) n, SUM(status = 'OK') ok, SUM(status = 'FAIL') fail, SUM(status IN ('QUEUED', 'RUNNING')) q FROM inq_requests WHERE created_at >= CURDATE()")->fetch();
     $o['today'] = ['total' => intval($q['n']), 'ok' => intval($q['ok']), 'fail' => intval($q['fail']), 'queue' => intval($q['q'])];
@@ -95,7 +97,8 @@ if ($action === 'exec') {
     $row = inq_get($pdo, $in['id'] ?? 0);
     if (!$row || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
     // شخصِ حقوقی: کاربر به‌جای کپچای پاسارگاد «استعلام از سرویسِ API» را زد
-    if (!empty($in['via_api']) && $row['kind'] === 'legal' && $row['status'] === 'QUEUED') $pdo->prepare("UPDATE inq_requests SET result_json = ? WHERE id = ?")->execute([json_encode(['via_api' => 1]), intval($row['id'])]);
+    if (!empty($in['via_api']) && $row['kind'] === 'legal' && $row['status'] === 'QUEUED')
+        $pdo->prepare("UPDATE inq_requests SET result_json = ? WHERE id = ?")->execute([json_encode(['via_api' => 1] + (json_decode((string)$row['result_json'], true) ?: []), JSON_UNESCAPED_UNICODE), intval($row['id'])]);
     $r = $row['status'] === 'QUEUED' ? inq_execute($pdo, intval($row['id'])) : [];
     $o = ['ok' => true, 'item' => inq_out(inq_get($pdo, $row['id']), $isAdmin)];
     // نشستِ سامانه بسته بود: تصویرِ امنیتی برای همین کاربر (زیرِ فیلدها) و بعد از واردکردنش همین استعلام دوباره اجرا می‌شود
@@ -114,6 +117,7 @@ if ($action === 'captcha' || $action === 'captcha_login') {
 if ($action === 'get') {
     $row = inq_get($pdo, $in['id'] ?? 0);
     if (!$row || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
+    if ($row['kind'] === 'ocr') { require_once __DIR__ . '/_smart_ocr.php'; [$pg, $lg] = so_pages_of($row); $out(['ok' => true, 'item' => inq_out($row, false) + ['query' => $row['query_text'], 'pages' => $pg, 'lang' => $lg]]); }
     $out(['ok' => true, 'item' => $row['kind'] === 'sanhab' ? sh_out($row) : inq_out($row, $isAdmin)]);
 }
 // صفحه‌ی واقعیِ سامانه در هر گام (فقط مدیر کل؛ بدونِ اجرای اسکریپت)
@@ -197,7 +201,7 @@ if ($action === 'batch_sample') {
     if (!$can('group_view') && !$can('legal_group_view')) $out(['ok' => false, 'error' => 'دسترسی ندارید.']);
     require_once __DIR__ . '/_xlsx_writer.php';
     $kind = isset(INQ_KINDS[$in['kind'] ?? '']) ? $in['kind'] : 'person_postal';
-    if ($kind === 'legal') $path = xlsx_build(['شناسه ملی', 'نام (اختیاری)'], [['10101234567', 'شرکت نمونه'], ['14001234567', '']], 'شخص حقوقی');
+    if ($kind === 'legal') $path = xlsx_build(['نام شرکت', 'شناسه ملی', 'کد اقتصادی'], [['شرکت نمونه', '10101234567', ''], ['', '14001234567', ''], ['بازرگانی نمونه', '', '']], 'شخص حقوقی');
     else $path = xlsx_build(['کد ملی', 'تاریخ تولد', 'کد پستی', 'نام (اختیاری)'], [['0012345678', '1370/05/12', '1234567890', 'علی رضایی'], ['0098765432', '1365/11/03', '9876543210', '']], 'اشخاص');
     xlsx_send($path, 'نمونه‌ی استعلامِ گروهی - ' . INQ_KINDS[$kind] . '.xlsx');
     exit;
@@ -248,6 +252,43 @@ if ($action === 'batch_cancel' || $action === 'batch_resume') {
     $out(['ok' => true, 'batch' => inq_batch_info($pdo, $bid)]);
 }
 
+// ---- پردازش فایل هوشمند: یک صفحه (عکسِ صفحه از مرورگر)، ذخیره در تاریخچه، خروجی ----
+if (strpos($action, 'ocr_') === 0) {
+    $need('ocr');
+    require_once __DIR__ . '/_smart_ocr.php';
+    if ($action === 'ocr_page') {
+        @set_time_limit(150);
+        session_write_close();   // صفحه‌های هم‌زمانِ همین کاربر پشتِ قفلِ نشست نمانند
+        $lang = in_array($in['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $in['lang'] : 'fas';
+        $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['ai', 'ocrspace'], true) ? $in['engine'] : 'auto'));
+    }
+    if ($action === 'ocr_save') {
+        $id = intval($in['id'] ?? 0);
+        if ($id) { $r = inq_get($pdo, $id); if (!$r || $r['kind'] !== 'ocr' || !$mine($r)) $out(['ok' => false, 'error' => 'پیدا نشد.']); }
+        $out(['ok' => true, 'id' => so_save($pdo, $id, (string)($in['name'] ?? ''), (string)($in['lang'] ?? 'fas'), (array)($in['pages'] ?? []))]);
+    }
+    if ($action === 'ocr_export') {
+        $r = inq_get($pdo, $in['id'] ?? 0);
+        if (!$r || $r['kind'] !== 'ocr' || !$mine($r)) $out(['ok' => false, 'error' => 'پیدا نشد.']);
+        [$pages] = so_pages_of($r);
+        $only = intval($in['page'] ?? 0);
+        if ($only) $pages = array_values(array_filter($pages, function ($p) use ($only) { return intval($p['n']) === $only; }));
+        $name = preg_replace('/\.[a-z0-9]{2,5}$/i', '', (string)$r['query_text']) . ($only ? ' - صفحه ' . $only : '') . ' (متن)';
+        $fmt = in_array($in['fmt'] ?? '', ['txt', 'docx', 'pdf'], true) ? $in['fmt'] : 'txt';
+        $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.' . $fmt;
+        if ($fmt === 'txt') file_put_contents($tmp, "\xEF\xBB\xBF" . implode("\r\n\r\n", array_map(function ($p) use ($pages) { return (count($pages) > 1 ? '--- صفحه ' . $p['n'] . " ---\r\n" : '') . str_replace("\n", "\r\n", (string)$p['text']); }, $pages)));
+        elseif ($fmt === 'docx') so_docx($pages, $name, $tmp);
+        else so_pdf($pages, $name, $tmp);
+        if (!is_file($tmp)) $out(['ok' => false, 'error' => 'ساختِ فایل ممکن نشد.']);
+        header_remove('Content-Type');
+        header('Content-Type: ' . ['txt' => 'text/plain; charset=utf-8', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'pdf' => 'application/pdf'][$fmt]);
+        header('Content-Disposition: ' . ($fmt === 'pdf' ? 'inline' : 'attachment') . "; filename=\"ocr.$fmt\"; filename*=UTF-8''" . rawurlencode($name . '.' . $fmt));
+        readfile($tmp); @unlink($tmp);
+        exit;
+    }
+    $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
+}
+
 // ---- سنهاب (سوابقِ بیمه‌نامه‌ها): کپچای ورود (مشترک) و کپچای هر استعلام (نوبتِ همین پنجره) ----
 if (strpos($action, 'sh_') === 0) {
     $shAny = $can('sanhab') || $can('sanhab_form') || $can('sanhab_group') || $can('premium');
@@ -281,6 +322,27 @@ if (strpos($action, 'sh_') === 0) {
         }
         header('Content-Type: text/html; charset=utf-8');
         echo '<p style="font-family:tahoma;direction:rtl;padding:20px">فایلِ PDF از سنهاب دریافت نشد (شاید نشست بسته شده باشد؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).</p>';
+        exit;
+    }
+    // خروجیِ سوابقِ یک استعلام: اکسل یا PDFِ «خروجیِ سایت» (همه یا ردیف‌های انتخاب‌شده)
+    if ($action === 'sh_export') {
+        $row = inq_get($pdo, $in['id'] ?? 0);
+        if (!$row || $row['kind'] !== 'sanhab' || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
+        $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
+        $base = 'سنهاب ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']) . ' ' . jdate_short(date('Y-m-d'));
+        if (($in['fmt'] ?? '') === 'pdf') {
+            $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
+            if (!sh_export_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']);
+            header_remove('Content-Type');
+            header('Content-Type: application/pdf');
+            header("Content-Disposition: inline; filename=\"sanhab.pdf\"; filename*=UTF-8''" . rawurlencode('خروجی سایت - ' . $base . '.pdf'));
+            readfile($tmp); @unlink($tmp);
+            exit;
+        }
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $path = sh_export_xlsx($row, $sel);
+        if (!$path) $out(['ok' => false, 'error' => 'ساختِ اکسل ممکن نشد.']);
+        xlsx_send($path, $base . '.xlsx');
         exit;
     }
     if ($action === 'sh_page') {

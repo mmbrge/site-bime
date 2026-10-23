@@ -68,6 +68,23 @@
         document.head.appendChild(s);
     }
     const pct = v => v == null ? '—' : fa(v) + '٪';
+    // پلاک از هر نوشتاری => {p1: ایران، p2: سه‌رقمی، letter، p4: دورقمیِ چپ}
+    //   «۲۱ایران - ۱۲۳ ب ۱۱» (سایت)، «۹۹۴ط۵۹ ۷۸» / «۹۹۴ط۵۹-۷۸» (سنهاب و نامه‌ها)، «۱۱ ب ۱۲۳ ایران ۲۱»
+    function parsePlate(str) {
+        const s = en(str).replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim();
+        const L = '([\u0600-\u06FFA-Za-z]{1,3})', fix = l => (['آ', 'ا'].includes(l) ? 'الف' : l);
+        let m = s.match(new RegExp('(\\d{2})\\s*ایران\\s*-?\\s*(\\d{3})\\s*' + L + '\\s*(\\d{2})(?!\\d)'));
+        if (m) return {p1: m[1], p2: m[2], letter: fix(m[3]), p4: m[4]};
+        m = s.match(new RegExp('(?:^|\\D)(\\d{3})\\s*' + L + '\\s*(\\d{2})\\s*(?:[-\\/|_]|\\s)+\\s*(?:ایران\\s*)?(\\d{2})(?!\\d)'));
+        if (m && m[2] !== 'ایران') return {p1: m[4], p2: m[1], letter: fix(m[2]), p4: m[3]};
+        m = s.match(new RegExp('(?:^|\\D)(\\d{2})\\s*' + L + '\\s*(\\d{3})\\s*(?:ایران|-|\\s)\\s*(?:ایران\\s*)?(\\d{2})(?!\\d)'));
+        if (m && m[2] !== 'ایران') return {p1: m[4], p2: m[3], letter: fix(m[2]), p4: m[1]};
+        return null;
+    }
+    const plateFa = str => { const p = parsePlate(str); return p ? `${p.p1}ایران - ${p.p2} ${p.letter} ${p.p4}` : (str || ''); };
+    // خروجی‌ها: اکسل و PDFِ «خروجیِ سایت» (sel: اندیسِ ردیف‌ها، خالی = همه)؛ PDFِ خودِ سنهاب با کدِ یکتای بیمه‌نامه‌ها
+    const exportUrl = (it, fmt, sel) => `${API}?action=sh_export&fmt=${fmt}&id=${it.id}${sel && sel.length ? '&rows=' + sel.join(',') : ''}`;
+    const sanhabPdfUrl = (it, codes) => `${API}?action=sh_pdf&typ=${it.sh_plcy === '1' ? '2' : '1'}&pu=${encodeURIComponent(codes.join(','))}`;
     // وضعیتِ نتیجه => [برچسب، رنگ، آیکن، کلاس]
     function tone(it) {
         const b = it.sanhab || {};
@@ -94,13 +111,14 @@
                 ${k('تخفیفِ ثالث (مالی/جانی)', b.tp_disc == null ? '—' : b.tp_disc + '٪', true)}${k('تخفیفِ حوادثِ راننده', b.dr_disc == null ? '—' : b.dr_disc + '٪', true)}
                 ${k('بیمه‌گر (آخرین بیمه‌نامه)', b.insurer)}${k('شماره بیمه‌نامه', b.policy_no)}
                 ${k('شروع', b.start_date)}${k('انقضا', b.end_date)}${k('بیمه‌گذار', b.insured)}${k('خودرو', b.vehicle)}
-                ${k('نوعِ بیمه‌نامه', b.policy_type)}${k('سال‌های عدمِ خسارتِ مالی / جانی', [b.no_loss_fin, b.no_loss_life].map(x => x == null ? '—' : x).join(' / '))}${k('پلاک', b.plate)}${k('تعدادِ سوابق', b.count)}</div>
+                ${k('نوعِ بیمه‌نامه', b.policy_type)}${k('سال‌های عدمِ خسارتِ مالی / جانی', [b.no_loss_fin, b.no_loss_life].map(x => x == null ? '—' : x).join(' / '))}${k('پلاک', b.plate_fa || b.plate)}${k('تعدادِ سوابق', b.count)}</div>
                 ${b.older_losses && b.older_losses !== 'ندارد' ? `<p class="mt-2 text-[11px] font-bold text-amber-800"><i class="fas fa-clock-rotate-left ml-1"></i>خسارت در بیمه‌نامه‌های قبلی: ${esc(fa(b.older_losses))}</p>` : ''}`
               : `<p class="mt-2 text-xs font-bold text-slate-700">${esc(it.notice || '')}</p>`}
             <div class="flex flex-wrap gap-1.5 mt-3">
                 ${b.found ? '<button type="button" class="shu-b" data-shd><i class="fas fa-table-list"></i>جزئیاتِ کامل (بیمه‌نامه‌ها، الحاقیه‌ها، خسارت‌ها)</button>' : ''}
                 ${b.found && b.summary_text ? '<button type="button" class="shu-b g" data-shc><i class="far fa-copy"></i>کپیِ نتیجه</button>' : ''}
-                ${b.found && b.unique_code ? `<a class="shu-b g" target="_blank" href="${API}?action=sh_pdf&typ=${it.sh_plcy === '1' ? '2' : '1'}&pu=${encodeURIComponent(b.unique_code)}"><i class="fas fa-file-pdf"></i>PDFِ بیمه‌نامه</a>` : ''}
+                ${b.found && b.unique_code ? `<a class="shu-b g" target="_blank" href="${sanhabPdfUrl(it, [b.unique_code])}"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</a>` : ''}
+                ${b.found && it.id ? `<a class="shu-b g" target="_blank" href="${exportUrl(it, 'pdf')}"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</a><a class="shu-b g" href="${exportUrl(it, 'xlsx')}"><i class="fas fa-file-excel"></i>اکسل</a>` : ''}
                 ${o.onApply && b.found ? `<button type="button" class="shu-b ok" data-sha><i class="fas fa-check-double"></i>${esc(o.applyLabel || 'نشاندن در فرم')}</button>` : ''}
                 ${o.again ? '<button type="button" class="shu-b g" data-shr><i class="fas fa-rotate"></i>استعلامِ دوباره</button>' : ''}</div></div>`;
     }
@@ -117,23 +135,40 @@
         if (!it.sanhab_rows) { const d = await post({action: 'get', id: it.id}); if (d.ok) it = d.item; }
         const rows = it.sanhab_rows || [];
         const m = document.createElement('div'); m.className = 'shu-modal';
-        const sub = (cls, head, cols, list, map) => `<tr><td colspan="16" style="background:${cls};padding:6px 12px"><table class="shu-sub"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${list.map(x => `<tr>${map(x).map(v => `<td>${esc(fa(v || '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table></td></tr>`;
+        const sub = (cls, head, cols, list, map) => `<tr><td colspan="17" style="background:${cls};padding:6px 12px"><table class="shu-sub"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${list.map(x => `<tr>${map(x).map(v => `<td>${esc(fa(v || '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table></td></tr>`;
         m.innerHTML = `<div style="width:min(1250px,100%)"><div class="shu-mh"><b class="text-sm"><i class="fas fa-table-list ml-1"></i>سوابقِ کاملِ سنهاب · ${qv(it.query)} (${fa(rows.length)} بیمه‌نامه)</b><button class="shu-b g" data-x>بستن</button></div>
-            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف ثالث / جانی / راننده</th><th>عدمِ خسارت (مالی/جانی/سرنشین)</th></tr></thead><tbody>
+            <div class="flex flex-wrap items-center gap-1.5 px-3 pt-3"><span class="text-[11px] font-bold text-slate-600" data-selc>همه‌ی ردیف‌ها</span>
+                <button class="shu-b" data-ex="spdf"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</button>
+                <button class="shu-b" data-ex="pdf"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</button>
+                <button class="shu-b" data-ex="xlsx"><i class="fas fa-file-excel"></i>اکسل</button>
+                <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
+            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف ثالث / جانی / راننده</th><th>عدمِ خسارت (مالی/جانی/سرنشین)</th></tr></thead><tbody>
             ${rows.map((r, i) => {
                 const rs = r.rowSummary || {};
-                let h = `<tr><td>${fa(r.radif || i + 1)}</td><td><span class="shu-chip" style="background:${rs.hasLoss ? '#fee2e2' : '#d1fae5'};color:${rs.hasLoss ? '#be123c' : '#065f46'}">${esc(rs.lossStatus || '')}</span></td>
-                    <td>${esc(r.policyType)}</td><td><b>${esc(r.company)}</b></td><td>${esc(r.insuredName)}</td><td dir="ltr">${esc(fa(r.policyNo))}</td><td dir="ltr">${esc(fa(r.prevPolicyNo))}</td><td>${esc(r.vehicleName)}</td><td>${esc(fa(r.plate))}</td>
+                let h = `<tr><td><input type="checkbox" data-ri="${i}"></td><td>${fa(r.radif || i + 1)}</td><td><span class="shu-chip" style="background:${rs.hasLoss ? '#fee2e2' : '#d1fae5'};color:${rs.hasLoss ? '#be123c' : '#065f46'}">${esc(rs.lossStatus || '')}</span></td>
+                    <td>${esc(r.policyType)}</td><td><b>${esc(r.company)}</b></td><td>${esc(r.insuredName)}</td><td dir="ltr">${esc(fa(r.policyNo))}</td><td dir="ltr">${esc(fa(r.prevPolicyNo))}</td><td>${esc(r.vehicleName)}</td><td>${esc(fa(plateFa(r.plate)))}</td>
                     <td dir="ltr">${esc(r.chassisNo || r.vin)}</td><td dir="ltr">${esc(r.motorNo)}</td><td dir="ltr">${esc(fa(r.issueDate))}</td><td dir="ltr"><b>${esc(fa(r.startDate))}</b></td><td dir="ltr"><b>${esc(fa(r.endDate))}</b></td>
                     <td><b>${pct(r.discFinPct || 0)} / ${pct(r.discLifePct || 0)} / ${pct(r.discPassPct || 0)}</b></td><td>${esc(fa([r.noLossFinYr, r.noLossLifeYr, r.noLossPassYr].join(' / ')))}</td></tr>`;
                 if ((r.endorsements || []).length) h += sub('#f0fdf4', ['ردیف', 'نوعِ الحاقیه', 'تاریخ', 'بیمه‌گذار', 'پلاک', 'شاسی', 'تخفیف مالی', 'تخفیف جانی', 'تخفیف سرنشین'], 0, r.endorsements,
                     e => [e.radif, e.endorsementType, e.issueDate, e.insuredName, e.plate, e.chassisNo || e.vin, (e.discFinPct || 0) + '٪', (e.discLifePct || 0) + '٪', (e.discPassPct || 0) + '٪']);
                 if ((r.losses || []).length) h += sub('#fef2f2', ['ردیف', 'نوعِ خسارت', 'مبلغِ پرداختی (ریال)', 'تاریخِ اعلام', 'تاریخِ پرداخت'], 0, r.losses, l => [l.radif, l.lossType, l.paidAmount, l.declareDate, l.paidDate]);
                 return h;
-            }).join('') || '<tr><td colspan="16" class="text-center text-slate-400 py-8">سابقه‌ای نیست.</td></tr>'}</tbody></table></div>
+            }).join('') || '<tr><td colspan="17" class="text-center text-slate-400 py-8">سابقه‌ای نیست.</td></tr>'}</tbody></table></div>
             ${(it.sanhab || {}).inquirer ? `<p class="text-[10.5px] text-slate-400 mt-2">${esc(it.sanhab.inquirer)} · ${esc(fa(it.sanhab.inquiry_date || ''))}</p>` : ''}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
         document.body.appendChild(m);
+        const sel = () => [...m.querySelectorAll('[data-ri]:checked')].map(x => +x.dataset.ri);
+        const paint = () => { const n = sel().length; m.querySelector('[data-selc]').textContent = n ? `${fa(n)} ردیفِ انتخاب‌شده` : 'همه‌ی ردیف‌ها'; };
+        m.querySelectorAll('[data-ri]').forEach(x => x.addEventListener('change', paint));
+        const all = m.querySelector('[data-all]'); if (all) all.onchange = () => { m.querySelectorAll('[data-ri]').forEach(x => { x.checked = all.checked; }); paint(); };
+        m.querySelectorAll('[data-ex]').forEach(bt => bt.onclick = () => {
+            const ix = sel();
+            if (bt.dataset.ex === 'spdf') {
+                const codes = (ix.length ? ix.map(i => rows[i]) : rows).map(r => r.uniqueCode).filter(Boolean);
+                if (!codes.length) return toast('کدِ یکتای بیمه‌نامه پیدا نشد.', 'warning');
+                window.open(sanhabPdfUrl(it, codes), '_blank');
+            } else window.open(exportUrl(it, bt.dataset.ex, ix), bt.dataset.ex === 'pdf' ? '_blank' : '_self');
+        });
     }
 
     // ---------------- فرمِ جستجو ----------------
@@ -143,7 +178,7 @@
             const s = en(p.plate);
             const mm = s.match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);
             if (mm) p.moto = {city: mm[1], num: mm[2]};
-            else { const m = s.match(/(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})/); if (m) p.plate = {p1: m[1], p2: m[2], letter: m[3], p4: m[4]}; else p.plate = null; }
+            else p.plate = parsePlate(s);
         }
         if (p.plate && p.plate.letter === 'موتور') { p.moto = {city: p.plate.p1, num: p.plate.p2}; p.plate = null; }
         if (!p.type) p.type = p.plate && p.plate.p2 ? '4' : p.moto && p.moto.num ? '8' : p.vin || p.chassis ? (p.chassis && !p.vin ? '2' : '5') : p.policy_no ? '7' : p.nid ? '3' : p.engine ? '1' : '4';
@@ -152,7 +187,7 @@
     function fieldsHtml(type, p) {
         if (type === '4') {
             const pl = p.plate || {};
-            return `<label class="shu-f">پلاکِ خودرو</label><div class="shu-plate mt-1"><span class="fl"></span>
+            return `<label class="shu-f">پلاکِ خودرو <input data-pq class="shu-in !mt-0 !py-1" style="display:inline-block;width:auto;min-width:220px;font-size:12px;margin-right:6px" placeholder="یا یک‌جا بنویسید/بچسبانید: ۹۹۴ط۵۹ ۷۸"></label><div class="shu-plate mt-1"><span class="fl"></span>
                 <input data-k="plk4" maxlength="2" inputmode="numeric" style="width:52px" placeholder="۱۱" value="${esc(fa(pl.p4 || ''))}">
                 <select data-k="plk3" style="width:62px">${LETTERS.map(l => `<option ${l === (pl.letter === 'آ' ? 'الف' : pl.letter) ? 'selected' : ''}>${l}</option>`).join('')}</select>
                 <input data-k="plk2" maxlength="3" inputmode="numeric" style="width:70px" placeholder="۱۲۳" value="${esc(fa(pl.p2 || ''))}">
@@ -261,6 +296,14 @@
         q('[data-plcy]').onchange = e => { S.plcy = e.target.value; if (S.hasCap) getCap(true); };
         const bindFields = () => host.querySelectorAll('[data-fields] input').forEach(i => i.addEventListener('input', () => {
             i.classList.remove('err');
+            // پلاکِ یک‌جا («۹۹۴ط۵۹ ۷۸»، «۲۱ایران - ۱۲۳ ب ۱۱» و ...) => خانه‌های پلاک
+            if (i.hasAttribute('data-pq')) {
+                const pp = parsePlate(i.value); if (!pp) return;
+                const set = (k, v) => { const x = host.querySelector(`[data-fields] [data-k="${k}"]`); if (x) x.value = k === 'plk3' ? v : fa(v); };
+                set('plk4', pp.p4); set('plk2', pp.p2); set('plk1', pp.p1);
+                const sl = host.querySelector('[data-fields] [data-k="plk3"]'); if (sl && ![...sl.options].some(o => o.value === pp.letter)) sl.insertAdjacentHTML('beforeend', `<option>${esc(pp.letter)}</option>`); if (sl) sl.value = pp.letter;
+                i.style.borderColor = '#10b981'; return;
+            }
             if (['plk1', 'plk2', 'plk4', 'plk1m', 'plk2m'].includes(i.dataset.k)) i.value = fa(en(i.value).replace(/\D/g, ''));
             if (i.maxLength > 0 && en(i.value).length >= i.maxLength && i.dataset.k !== 'plk1') { const all = [...host.querySelectorAll('[data-fields] input')]; const n = all[all.indexOf(i) + 1]; if (n) n.focus(); }
         }));
@@ -387,5 +430,5 @@
         next();
     }
 
-    window.SanhabUI = {form, open, button, batch, details, resultHtml, shortText, tone};
+    window.SanhabUI = {form, open, button, batch, details, resultHtml, shortText, tone, parsePlate, plateFa};
 })();

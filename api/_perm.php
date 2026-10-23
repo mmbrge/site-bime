@@ -98,6 +98,7 @@ function perm_catalog() {
             'inq-sanhab' => ['استعلامِ تکیِ سنهاب (سوابقِ بیمه‌نامه، خسارت و تخفیف‌ها)', ['view', 'create']],
             'inq-sanhab-group' => ['استعلامِ گروهیِ سنهاب با اکسل', ['view', 'create', 'export']],
             'inq-premium' => ['استعلامِ حق بیمه‌ی ثالث (با سوابقِ سنهاب)', ['view', 'create']],
+            'inq-ocr' => ['پردازش فایل هوشمند (متنِ PDF و عکس)', ['view', 'create', 'export']],
             'inq-history' => ['تاریخچه‌ی همه‌ی استعلام‌ها', ['view', 'delete', 'export']],
         ]],
         ['بایگانی و مدیریت', [
@@ -229,6 +230,7 @@ function perm_api_map() {
             'excel_sample' => $req . ':view|companies-manage:view|settings:view', 'excel_map_get' => 'settings:view|companies-manage:view', 'excel_map_save' => 'settings:edit|companies-manage:edit', 'excel_headers' => 'settings:edit|companies-manage:edit',
             'dashboard_alerts' => 'dashboard:view', 'issue_queue' => 'issue-queue:view|issued-list:view|issue-group:view',
             'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_queue_request' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_retry' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
+            'smart_ocr_page' => 'companies-inbox:edit|companies-requests:edit', 'smart_doc_read' => 'companies-inbox:edit|companies-requests:edit', 'smart_letter_extract' => $req . ':create|' . $req . ':edit',
             'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
@@ -257,12 +259,12 @@ function perm_api_map() {
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
         ]],
         // دسترسیِ دقیق داخلِ خودِ inquiry_actions بررسی می‌شود (استعلامِ داخلِ فرم‌ها برای همه‌ی کارشناسانِ ثبت آزاد است)
-        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
+        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-ocr', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
             'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any',
-            'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
+            'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',
@@ -499,7 +501,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'smart_ocr_page', 'smart_letter_extract', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
@@ -513,7 +515,7 @@ function perm_activity_labels() {
         'company_actions.reject_document' => 'ردِ مدرکِ شرکتی', 'company_actions.split_document' => 'جدا کردنِ صفحه‌های مدرکِ شرکتی', 'company_actions.upload_combined_pdf' => 'بارگذاریِ PDFِ چند مدرکیِ شرکتی', 'company_actions.upload_row_doc' => 'بارگذاریِ مدرکِ ردیف', 'company_actions.admin_upload_plate_doc' => 'بارگذاریِ مدرکِ ردیف',
         'company_actions.delete_row_doc' => 'حذفِ مدرکِ ردیف', 'company_actions.set_row_stage' => 'تغییرِ مرحله‌ی ردیف', 'company_actions.update_row' => 'ویرایشِ ردیفِ درخواست',
         'company_actions.set_row_coverages' => 'ویرایشِ پوشش‌های ردیف', 'company_actions.delete_row' => 'حذفِ ردیفِ درخواست', 'company_actions.import_letter_rows' => 'ورودِ ردیف‌ها از نامه',
-        'company_actions.doc_ai_create_row' => 'ساختِ ردیف از مدرکِ شناسایی‌شده', 'company_actions.mark_duplicate' => 'تکراری زدنِ ردیفِ شرکتی', 'company_actions.unmark_duplicate' => 'برداشتنِ «تکراری» از ردیف', 'company_actions.doc_ai_retry' => 'شناساییِ دوباره‌ی مدرکِ شرکتی',
+        'company_actions.doc_ai_create_row' => 'ساختِ ردیف از مدرکِ شناسایی‌شده', 'company_actions.mark_duplicate' => 'تکراری زدنِ ردیفِ شرکتی', 'company_actions.unmark_duplicate' => 'برداشتنِ «تکراری» از ردیف', 'company_actions.doc_ai_retry' => 'شناساییِ دوباره‌ی مدرکِ شرکتی', 'company_actions.smart_doc_read' => 'خواندنِ هوشمندِ مدرکِ شرکتی',
         'company_actions.create_company' => 'ثبتِ شرکت', 'company_actions.update_company' => 'ویرایشِ شرکت', 'company_actions.delete_company' => 'حذفِ شرکت', 'company_actions.company_import' => 'ورودِ شرکت‌ها از اکسل',
         'company_actions.create_portal_user' => 'ساختِ کاربرِ شرکت', 'company_actions.save_issue_info' => 'ثبتِ اطلاعاتِ صدور', 'company_actions.retry_folder_transfer' => 'تلاشِ دوباره برای بایگانی',
         'company_actions.create_company_payment' => 'ثبتِ پرداختِ شرکت', 'company_actions.settle_company_pasargad' => 'تسویه با بیمه‌گر',

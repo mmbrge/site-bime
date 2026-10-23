@@ -129,7 +129,7 @@ function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
 $adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
-              'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'mark_issued', 'retry_folder_transfer',
+              'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'smart_letter_extract', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
     echo json_encode(['ok' => false, 'error' => 'ثبت و ویرایش درخواست فقط برای مدیر کل مجاز است.'], JSON_UNESCAPED_UNICODE);
@@ -2349,6 +2349,38 @@ try {
         exit;
     }
     // ---- دوباره خواندنِ یک مدرک (دکمه‌ی «شناساییِ دوباره» در صندوق) ----
+    // ---- «خواندنِ هوشمند» (دستیِ کارشناس): OCRِ صفحه در مرورگر ← متن ← هوشِ مصنوعی ← همان مسیرِ شناسایی (api/_doc_smart.php) ----
+    if ($action === 'smart_ocr_page') {
+        require_once __DIR__ . '/_smart_ocr.php';
+        @set_time_limit(150);
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        $lang = in_array($data['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $data['lang'] : 'fas';
+        echo json_encode(so_page($pdo, (string)($data['image'] ?? ''), $lang, in_array($data['engine'] ?? '', ['ai', 'ocrspace'], true) ? $data['engine'] : 'auto'), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'smart_letter_extract') {
+        require_once __DIR__ . '/_doc_smart.php';
+        @set_time_limit(200);
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        echo json_encode(ds_letter_rows($pdo, (string)($data['text'] ?? '')), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'smart_doc_read') {
+        require_once __DIR__ . '/_vdoc.php';
+        require_once __DIR__ . '/_doc_smart.php';
+        @set_time_limit(200);
+        $docId = intval($data['doc_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, file_kind, status FROM company_documents WHERE id = ?");
+        $st->execute([$docId]);
+        $doc = $st->fetch();
+        if (!$doc || $doc['file_kind'] !== 'SUPPORTING_DOC') { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد (نامه را از «ورود ردیف‌ها از نامه» بخوانید).'], JSON_UNESCAPED_UNICODE); exit; }
+        $res = ds_doc_result($pdo, (string)($data['text'] ?? ''));
+        vdoc_queue($pdo, [$docId], true);
+        $r = vdoc_process_company_doc($pdo, dirname(__DIR__), $docId, $res);
+        echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'doc_ai_retry') {
         require_once __DIR__ . '/_vdoc.php';
         vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)], true);   // درخواستِ دستی: حتی اگر خواندنِ خودکارِ این شرکت خاموش باشد

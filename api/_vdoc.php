@@ -163,7 +163,8 @@ function vdoc_request_type($pdo, $requestId) {
 // مدارکِ خودرو که اطلاعاتشان روی ردیف می‌نشیند (کارت، سند، فاکتورِ فروش)؛ وقتی مستقیم روی یک ردیف بارگذاری می‌شوند هم خوانده می‌شوند
 function vdoc_vehicle_types() { return ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'new_car_card', 'new_ownership_doc', 'car_card_or_title']; }
 
-function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
+// \$pre: نتیجه‌ی آماده (مثلاً «خواندنِ هوشمند» = OCR + هوشِ مصنوعی در api/_doc_smart.php) به‌جای خواندنِ دوباره‌ی فایل
+function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     vdoc_ensure($pdo);
     // برداشتنِ اتمی از صف (دو درخواستِ هم‌زمان یک مدرک را دو بار نمی‌خوانند)
     $up = $pdo->prepare("UPDATE company_documents SET ai_status = 'RUNNING', ai_at = NOW() WHERE id = ? AND ai_status = 'PENDING'");
@@ -179,7 +180,7 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId) {
     $onRow = $doc && $doc['status'] === 'ASSIGNED' && $doc['plate_id'] && in_array($doc['doc_type'], vdoc_vehicle_types(), true);
     if (!$doc || ($doc['status'] !== 'UNASSIGNED' && !$onRow)) return $save('NONE', ['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.']);
     $abs = $siteRoot . '/' . ltrim($doc['file_path'], '/');
-    $res = vdoc_run($pdo, $abs);
+    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs);
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)

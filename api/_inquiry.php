@@ -11,7 +11,7 @@
 //   - نام کاربری و رمزِ سامانه رمزنگاری‌شده ذخیره می‌شود (کلید در فایلی خارج از پایگاه‌داده).
 // جدول‌ها خودکار ساخته می‌شوند (inq_ensure).
 
-const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)'];
+const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)', 'ocr' => 'پردازش فایل هوشمند'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
                       'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',
@@ -44,6 +44,9 @@ function inq_ensure($pdo) {
             total INT NOT NULL DEFAULT 0, status VARCHAR(10) NOT NULL DEFAULT 'RUNNING', user_id INT NULL, user_name VARCHAR(190) NULL,
             created_at DATETIME NOT NULL, finished_at DATETIME NULL, KEY idx_created (created_at))$T",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[inq_ensure] ' . $e->getMessage()); } }
+    // متنِ جستجو (نامِ شرکت در استعلامِ حقوقی، پلاک/مقدار در سنهاب)
+    try { if (!$pdo->query("SHOW COLUMNS FROM inq_requests LIKE 'query_text'")->fetch()) $pdo->exec("ALTER TABLE inq_requests ADD COLUMN query_text VARCHAR(190) NULL"); }
+    catch (Throwable $e) { error_log('[inq_ensure query_text] ' . $e->getMessage()); }
 }
 
 function inq_get_setting($pdo, $k) {
@@ -1298,13 +1301,18 @@ function inq_actor_from_session() {
 
 // ورودی => [ok, fields] یا [ok=false, error]
 function inq_validate($kind, array $in) {
-    if (!isset(INQ_KINDS[$kind]) || $kind === 'sanhab') return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
+    if (!isset(INQ_KINDS[$kind]) || in_array($kind, ['sanhab', 'ocr'], true)) return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
     if ($kind === 'legal') {
+        // جستجو با نامِ شرکت (اولویت)، شناسه‌ی ملی و/یا کد اقتصادی — دست‌کم یکی
         $c = inq_digits($in['company_nid'] ?? ($in['national_id'] ?? ''));
-        if (strlen($c) !== 11) return ['ok' => false, 'error' => 'شناسه‌ی ملیِ شخصِ حقوقی باید ۱۱ رقم باشد.', 'field' => 'national_id'];
+        $name = inq_fa_norm(mb_substr(trim((string)($in['company_name'] ?? '')), 0, 150));
+        $eco = inq_digits($in['economic_code'] ?? '');
+        if ($c === '' && $name === '' && $eco === '') return ['ok' => false, 'error' => 'نامِ شرکت، شناسه‌ی ملی یا کد اقتصادی را وارد کنید.', 'field' => 'company_name'];
+        if ($c !== '' && strlen($c) !== 11) return ['ok' => false, 'error' => 'شناسه‌ی ملیِ شخصِ حقوقی باید ۱۱ رقم باشد (یا خالی بماند و با نام جستجو شود).', 'field' => 'national_id'];
+        if ($name !== '' && mb_strlen($name) < 2) return ['ok' => false, 'error' => 'نامِ شرکت خیلی کوتاه است.', 'field' => 'company_name'];
         $postal = inq_digits($in['postal'] ?? '');
         if ($postal !== '' && strlen($postal) !== 10) return ['ok' => false, 'error' => 'کد پستی باید دقیقاً ۱۰ رقم باشد (یا خالی بماند).', 'field' => 'postal'];
-        return ['ok' => true, 'national_id' => $c, 'birth' => null, 'postal' => $postal !== '' ? $postal : null];
+        return ['ok' => true, 'national_id' => $c !== '' ? $c : null, 'birth' => null, 'postal' => $postal !== '' ? $postal : null, 'name' => $name, 'eco' => $eco];
     }
     $nid = inq_norm_nid($in['national_id'] ?? '');
     if (!inq_nid_ok($nid)) return ['ok' => false, 'error' => 'کد ملی نامعتبر است.', 'field' => 'national_id'];
@@ -1439,13 +1447,15 @@ function inq_norm_person($p) {
 }
 
 // نتیجه‌ی تازه‌ی همین استعلام (تا چند روز) برای استفاده‌ی دوباره
-function inq_find_cached($pdo, $kind, $nid, $birth, $postal) {
+function inq_find_cached($pdo, $kind, $nid, $birth, $postal, $name = '') {
     $days = max(0, intval(inq_get_setting($pdo, 'inq_cache_days')));
     if ($days <= 0) return null;
     $since = date('Y-m-d H:i:s', time() - $days * 86400);
     if ($kind === 'legal') {
-        $st = $pdo->prepare("SELECT * FROM inq_requests WHERE kind = 'legal' AND national_id = ? AND COALESCE(postal, '') = ? AND status = 'OK' AND finished_at >= ? ORDER BY id DESC LIMIT 1");
-        $st->execute([$nid, (string)$postal, $since]); return $st->fetch() ?: null;
+        if ($nid) { $st = $pdo->prepare("SELECT * FROM inq_requests WHERE kind = 'legal' AND national_id = ? AND COALESCE(postal, '') = ? AND status = 'OK' AND finished_at >= ? ORDER BY id DESC LIMIT 1"); $st->execute([$nid, (string)$postal, $since]); }
+        elseif ($name !== '') { $st = $pdo->prepare("SELECT * FROM inq_requests WHERE kind = 'legal' AND national_id IS NULL AND query_text = ? AND COALESCE(postal, '') = ? AND status = 'OK' AND finished_at >= ? ORDER BY id DESC LIMIT 1"); $st->execute([$name, (string)$postal, $since]); }
+        else return null;
+        return $st->fetch() ?: null;
     }
     // شخص: همان کد ملی و تاریخ تولد، از هر استعلامِ موفقی که مشخصات را داده
     $pRow = null;
@@ -1469,13 +1479,13 @@ function inq_create($pdo, $kind, array $in, $source = 'panel', array $actor = nu
     if (!$v['ok']) return $v;
     $actor = $actor ?: inq_actor_from_session();
     $now = date('Y-m-d H:i:s');
-    $c = $useCache ? inq_find_cached($pdo, $kind, $v['national_id'], $v['birth'], $v['postal']) : null;
+    $c = $useCache ? inq_find_cached($pdo, $kind, $v['national_id'], $v['birth'], $v['postal'], $v['name'] ?? '') : null;
     if (!$c) {
         // همین استعلام قبلاً ساخته شده و منتظرِ کپچا مانده (کاربر انصراف داده بود): همان دوباره استفاده می‌شود و سقف را دوباره مصرف نمی‌کند
         if (!$batchId) {
-            $st = $pdo->prepare("SELECT id FROM inq_requests WHERE status = 'QUEUED' AND batch_id IS NULL AND kind = ? AND national_id = ? AND COALESCE(birth, '') = ? AND COALESCE(postal, '') = ?
+            $st = $pdo->prepare("SELECT id FROM inq_requests WHERE status = 'QUEUED' AND batch_id IS NULL AND kind = ? AND COALESCE(national_id, '') = ? AND COALESCE(query_text, '') = '' AND COALESCE(birth, '') = ? AND COALESCE(postal, '') = ?
                                    AND user_type = ? AND COALESCE(user_id, 0) = ? AND created_at >= CURDATE() ORDER BY id DESC LIMIT 1");
-            $st->execute([$kind, $v['national_id'], (string)$v['birth'], (string)$v['postal'], $actor[0], intval($actor[1])]);
+            $st->execute([$kind, (string)$v['national_id'], (string)$v['birth'], (string)$v['postal'], $actor[0], intval($actor[1])]);
             if (($old = $st->fetchColumn())) return ['ok' => true, 'id' => intval($old), 'cached' => false];
         }
         if ($kind !== 'legal' && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_nid_daily_limit'))) > 0 && inq_nid_used_today($pdo, $v['national_id']) >= $lim)
@@ -1491,6 +1501,9 @@ function inq_create($pdo, $kind, array $in, $source = 'panel', array $actor = nu
     $pdo->prepare("INSERT INTO inq_requests (kind, national_id, birth, postal, status, source, batch_id, row_no, user_type, user_id, user_name, created_at) VALUES (?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$kind, $v['national_id'], $v['birth'], $v['postal'], $source, $batchId, $rowNo, $actor[0], $actor[1] ?: null, mb_substr((string)$actor[2], 0, 190), $now]);
     $id = intval($pdo->lastInsertId());
+    // شخصِ حقوقی: نام و کد اقتصادیِ جستجو
+    if ($kind === 'legal' && (($v['name'] ?? '') !== '' || ($v['eco'] ?? '') !== ''))
+        $pdo->prepare("UPDATE inq_requests SET query_text = ?, result_json = ? WHERE id = ?")->execute([$v['name'] !== '' ? $v['name'] : null, json_encode(['q' => ['name' => $v['name'], 'eco' => $v['eco']]], JSON_UNESCAPED_UNICODE), $id]);
     if ($c) {
         $p = isset($c['person']) ? $c['person'] : $c; $z = isset($c['postal']) ? $c['postal'] : $c;
         $res = json_decode((string)($p['result_json'] ?? ''), true) ?: [];
@@ -1538,13 +1551,14 @@ function inq_execute($pdo, $id) {
         return ['ok' => true, 'status' => $status];
     };
     if (inq_get_setting($pdo, 'inq_enabled') !== '1') return $finish('FAIL', 'استعلام‌ها در تنظیمات خاموش است.');
-    if ($row['kind'] === 'sanhab') return $finish('FAIL', 'استعلامِ سنهاب با کپچای خودش انجام می‌شود.');
+    if (in_array($row['kind'], ['sanhab', 'ocr'], true)) return $finish('FAIL', 'این مورد از صف اجرا نمی‌شود.');
     $prev = json_decode((string)($row['result_json'] ?? ''), true) ?: [];
 
     // شخصِ حقوقی از s.api.ir (وقتی پاسارگاد نتیجه نداد، یا کاربر «بدونِ پاسارگاد» را زد)
     $legalApi = function ($pxNote = '', array $tl = []) use ($pdo, $row, $finish) {
         require_once __DIR__ . '/_apis.php';
         if (!sapi_ready($pdo, 'sapi_company')) return $finish('FAIL', $pxNote !== '' ? $pxNote : 'کلیدِ s.api.ir در «تنظیمات ← کلیدهای API» وارد نشده است.', ['timeline' => $tl]);
+        if (strlen((string)$row['national_id']) !== 11) return $finish('FAIL', ($pxNote !== '' ? $pxNote . ' — ' : '') . 'برای استعلام از سرویسِ API شناسه‌ی ملیِ ۱۱ رقمی لازم است.', ['timeline' => $tl]);
         $r = sapi_company_info($pdo, $row['national_id']);
         if (!$r['ok']) return $finish('FAIL', ($pxNote !== '' ? $pxNote . ' / ' : '') . ($r['error'] ?? 'خطا'), ['raw' => $r['raw'] ?? '', 'timeline' => $tl]);
         $co = $r['company'] + ['source' => 'api'];
@@ -1569,12 +1583,23 @@ function inq_execute($pdo, $id) {
         $birth = ['y' => $y, 'm' => $m, 'd' => $d];
         $max = $legal ? ($row['postal'] ? 5 : 4) : ($row['kind'] === 'person' ? 3 : 5);
         $company = null; $lpostal = null;
+        // شخصِ حقوقی: جستجو اول با همه‌ی اطلاعات (نام در اولویت)، اگر چیزی نیامد با نام به‌تنهایی، بعد شناسه‌ی ملی، بعد کد اقتصادی
+        $lq = $prev['q'] ?? [];
+        $lname = trim((string)($lq['name'] ?? '')); $leco = inq_digits($lq['eco'] ?? ''); $lnid = (string)$row['national_id'];
+        $attempts = [];
+        if ($legal) {
+            foreach ([[$lname, $lnid, $leco], [$lname, '', ''], ['', $lnid, ''], ['', '', $leco]] as $c) {
+                $q = ['naam' => $c[0], 'shenasehMelli' => $c[1], 'codeEghtesadi' => $c[2]];
+                if (implode('', $q) !== '' && !in_array($q, $attempts, true)) $attempts[] = $q;
+            }
+        }
+        $ai = 0;
         $wait = max(0, min(9, intval(inq_get_setting($pdo, 'inq_wait_sec'))));
         $px = new InqPasargad($jobDir);
         $last = null; $person = null;
         for ($s = 1; $s <= $max; $s++) {
             $pdo->prepare("UPDATE inq_requests SET notice = ? WHERE id = ?")->execute(['گام ' . $s . ' از ' . $max . '…', $id]);
-            $r = $legal ? $px->runLegalStep($s, ['shenasehMelli' => $row['national_id'], 'naam' => '', 'codeEghtesadi' => '', 'postal' => (string)$row['postal']])
+            $r = $legal ? $px->runLegalStep($s, ($attempts[$ai] ?? ['naam' => '', 'shenasehMelli' => $lnid, 'codeEghtesadi' => '']) + ['postal' => (string)$row['postal']])
                         : $px->runStep($s, $row['national_id'], $birth, (string)$row['postal']);
             if (($r['error'] ?? '') === 'need_login') {
                 // نشست بسته است: تازه‌ترین کپچا همین‌جا گرفته می‌شود و استعلام در صف می‌ماند تا کاربر کد را بزند
@@ -1591,6 +1616,8 @@ function inq_execute($pdo, $id) {
             if (empty($r['ok'])) {
                 if (($r['error'] ?? '') === 'down') inq_px_mark('down');
                 $msg = $r['message'] ?? ($r['detail'] ?? 'خطا در اجرای مرحله');
+                // جستجوی بعدی (فهرستِ اشخاصِ حقوقی دوباره باز می‌شود)
+                if ($legal && $s === 3 && $ai + 1 < count($attempts)) { $ai++; $s = 1; continue; }
                 if ($legal) { inq_unlock($lk); $lk = null; return $legalApi($msg, $tl); }
                 return $finish('FAIL', $msg, ['timeline' => $tl, 'failed_step' => $s, 'birth_mismatch' => !empty($r['birth_mismatch'])], $person);
             }
@@ -1654,7 +1681,7 @@ function inq_out(array $r, $full = false) {
           'status' => $r['status'], 'status_fa' => INQ_ST_FA[$r['status']] ?? $r['status'], 'done' => in_array($r['status'], ['OK', 'WARN', 'FAIL'], true),
           'person' => $p ? ['name' => $p['name'] ?? '', 'family' => $p['family'] ?? '', 'father' => $p['fatherName'] ?? '', 'gender' => $p['gender'] ?? ''] : null,
           'person_name' => $r['person_name'], 'father_name' => $r['father_name'],
-          'postal_valid' => $r['postal_valid'] === null ? null : (bool)$r['postal_valid'], 'postal_text' => $r['postal_text'], 'company' => $res['company'] ?? null, 'via' => $res['via'] ?? null,
+          'postal_valid' => $r['postal_valid'] === null ? null : (bool)$r['postal_valid'], 'postal_text' => $r['postal_text'], 'company' => $res['company'] ?? null, 'via' => $res['via'] ?? null, 'query' => $r['query_text'] ?? null,
           'notice' => $r['notice'], 'cached' => !empty($r['cached_from']), 'source' => $r['source'], 'user_name' => $r['user_name'], 'batch_id' => $r['batch_id'] ? intval($r['batch_id']) : null, 'row_no' => $r['row_no'],
           'created' => $r['created_at'], 'created_j' => jdate_short($r['created_at']) . ' ' . substr((string)$r['created_at'], 11, 5), 'ms' => $r['ms'] !== null ? intval($r['ms']) : null,
           'step' => count($tl), 'steps' => $r['kind'] === 'person' ? 3 : ($r['kind'] === 'legal' ? ($r['postal'] ? 5 : 4) : ($r['kind'] === 'sanhab' ? 1 : 5)), 'need_login' => !empty($res['need_login']), 'birth_mismatch' => !empty($res['birth_mismatch'])];
@@ -1704,7 +1731,7 @@ function inq_batch_create($pdo, $kind, $title, array $rows, $fileName = '') {
 function inq_batch_tick($pdo, $batchId = null) {
     inq_ensure($pdo);
     inq_requeue_stale($pdo);
-    $w = "status = 'QUEUED' AND kind <> 'sanhab' AND batch_id IS NOT NULL" . ($batchId ? " AND batch_id = " . intval($batchId) : '') . " AND batch_id IN (SELECT id FROM inq_batches WHERE status = 'RUNNING')";
+    $w = "status = 'QUEUED' AND kind NOT IN ('sanhab', 'ocr') AND batch_id IS NOT NULL" . ($batchId ? " AND batch_id = " . intval($batchId) : '') . " AND batch_id IN (SELECT id FROM inq_batches WHERE status = 'RUNNING')";
     $id = $pdo->query("SELECT id FROM inq_requests WHERE $w ORDER BY id LIMIT 1")->fetchColumn();
     $ran = null;
     if ($id) {
@@ -1735,13 +1762,14 @@ function inq_excel_rows($path, $kind) {
     if (!$t) return ['ok' => false, 'error' => 'فایل خوانده نشد (xlsx یا csv).'];
     $norm = function ($h) { return preg_replace('/\s+/u', '', str_replace(['ي', 'ك', "\xE2\x80\x8C"], ['ی', 'ک', ''], mb_strtolower(trim((string)$h)))); };
     $map = ['national_id' => ['کدملی', 'کد ملی', 'شماره ملی', 'nationalid', 'nid', 'شناسه ملی', 'شناسه‌ملی', 'شناسهملی'], 'birth' => ['تاریختولد', 'تولد', 'birth', 'birthdate'],
-            'postal' => ['کدپستی', 'کد پستی', 'postal', 'postalcode', 'zip'], 'name' => ['نام', 'نامونامخانوادگی', 'name']];
+            'postal' => ['کدپستی', 'کد پستی', 'postal', 'postalcode', 'zip'], 'name' => ['نام', 'نامونامخانوادگی', 'name', 'نامشرکت', 'نام شرکت', 'company', 'نام (اختیاری)'],
+            'economic_code' => ['کداقتصادی', 'کد اقتصادی', 'economiccode']];
     $look = []; foreach ($map as $f => $ns) foreach ($ns as $n) $look[$norm($n)] = $f;
     $hdr = -1; $cols = [];
     foreach (array_slice($t, 0, 15, true) as $i => $row) {
         $found = [];
         foreach ((array)$row as $c => $cell) { $k = $norm($cell); if ($k !== '' && isset($look[$k])) $found[$c] = $look[$k]; }
-        if (isset(array_flip($found)['national_id'])) { $hdr = $i; $cols = $found; break; }
+        if (isset(array_flip($found)['national_id']) || ($kind === 'legal' && isset(array_flip($found)['name']))) { $hdr = $i; $cols = $found; break; }
     }
     if ($hdr < 0) {   // بدونِ سرستون: ستون‌های ۱ تا ۳ = کد ملی، تاریخ تولد، کد پستی
         $cols = $kind === 'legal' ? [0 => 'national_id'] : [0 => 'national_id', 1 => 'birth', 2 => 'postal'];
@@ -1750,8 +1778,8 @@ function inq_excel_rows($path, $kind) {
     foreach (array_slice($t, $hdr + 1) as $row) {
         $r = [];
         foreach ($cols as $c => $f) $r[$f] = trim((string)($row[$c] ?? ''));
-        if (($r['national_id'] ?? '') === '') continue;
-        if ($kind === 'legal') $r['company_nid'] = $r['national_id'];
+        if (($r['national_id'] ?? '') === '' && !($kind === 'legal' && ($r['name'] ?? '') !== '')) continue;
+        if ($kind === 'legal') { $r['company_nid'] = $r['national_id']; $r['company_name'] = $r['name'] ?? ''; }
         $out[] = $r;
         if (count($out) >= 2000) break;
     }

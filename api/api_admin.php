@@ -26,8 +26,8 @@ function aa_public($pdo) {
     $cfg = api_cfg($pdo);
     $list = [];
     foreach (API_SERVICES as $k => $sv) $list[] = ['key' => $k, 'fa' => $sv['fa'], 'icon' => $sv['icon'], 'desc' => $sv['desc'], 'endpoint' => $sv['endpoint'] ?? '',
-                                                 'fields' => $sv['fields'], 'ready' => $k === 'sapi' ? sapi_conf($pdo, 'sapi')['token'] !== '' : ($k === 'gapgpt' ? gapgpt_conf($pdo)['token'] !== ''
-                                                           : ($k === 'ai_vision' ? (function () use ($pdo) { require_once __DIR__ . '/_vdoc_ai.php'; return vdoc_ai_conf($pdo)['token'] !== ''; })() : sapi_ready($pdo, $k))),
+                                                 'fields' => $sv['fields'], 'ready' => $k === 'sapi' ? sapi_conf($pdo, 'sapi')['token'] !== '' : ($k === 'gapgpt' ? gapgpt_conf($pdo)['token'] !== '' : ($k === 'ocr_space' ? trim((string)($cfg['ocr_space']['token'] ?? '')) !== ''
+                                                           : ($k === 'ai_vision' ? (function () use ($pdo) { require_once __DIR__ . '/_vdoc_ai.php'; return vdoc_ai_conf($pdo)['token'] !== ''; })() : sapi_ready($pdo, $k)))),
                                                  'own_key' => trim((string)($cfg[$k]['token'] ?? '')) !== ''];
     return ['services' => $list, 'cfg' => aa_masked($cfg), 'curl' => function_exists('curl_init'),
             'usage' => ['otp_bot' => otp_bot_channel($pdo), 'panel_otp' => panel_otp_channel($pdo)]];
