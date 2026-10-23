@@ -53,7 +53,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="../notif-bell.js?v=3"></script>
+<script src="../notif-bell.js?v=4"></script>
 <script src="../party-ui.js?v=3"></script>
 <script src="../upload-kit.js?v=2"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
@@ -61,7 +61,7 @@ if (!$companies) {
 <script src="../net-watch.js?v=5"></script>
 <script src="../cursor-fx.js?v=2" defer></script>
 <script src="../tools.js?v=4"></script>
-<script src="../comfort.js?v=17"></script>
+<script src="../comfort.js?v=18"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
 <script src="zerokm.js?v=3"></script>
@@ -485,11 +485,15 @@ function pushNotification(title, body, type, id) {
     el.className = 'notif-card';
     el.innerHTML = `<button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button><p class="font-bold text-[13.5px] mb-0.5">${title}</p>
                     <p class="text-[12.5px] text-slate-500 leading-relaxed">${body || ''}</p>`;
-    const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
+    let tl = null;
+    const close = () => { if (tl) tl.stop(); el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
     el.onclick = close;
     box.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
-    setTimeout(close, 10000);
+    // ۵ ثانیه از وقتی واقعاً دیده شود؛ موس روی اعلان = مکث
+    if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, close, 5000); else setTimeout(close, 5000);
+    // اعلانِ سیستم وقتی پنل در پس‌زمینه است (جعبه‌ابزار ← ظاهر)
+    if (window.CF && CF.osNotify) CF.osNotify(title, body || '', {tag: 'p' + (id || Date.now())});
 }
 
 async function pollNotifications() {

@@ -185,7 +185,7 @@ function bot_save_incoming_file($message, $destDir, $allowZip = false) {
     require_once __DIR__ . '/_heic.php';
     $dest = heic_fix_saved_file($GLOBALS['pdo'] ?? null, $dest);   // عکسِ HEIC (آیفون) => PNG
     if (preg_match('/\.png$/i', $dest) && preg_match('/\.(heic|heif)$/i', $name)) $name = preg_replace('/\.(heic|heif)$/i', '.png', $name);
-    if (in_array(upload_ext($dest), ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($dest);
+    if (in_array(upload_ext($dest), ['jpg', 'jpeg', 'png', 'webp'], true)) { if (function_exists('doc_image_normalize')) doc_image_normalize($dest); else compress_image_if_needed($dest); }
     return ['ok' => true, 'path' => $dest, 'orig_name' => $name];
 }
 

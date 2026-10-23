@@ -14,6 +14,8 @@
 //   NotifBell.init({ mount: el, storageKey: 'notif:admin:12', onOpenItem: item => ..., onServerAction: (act, id) => Promise<items> });
 //   NotifBell.setServerItems(items)   // حالتِ سرور
 //   NotifBell.add({ title, body, type, tab })   // حالتِ محلی
+//   NotifBell.timeline(card, close, ms)          // نوارِ زمانِ ۵ ثانیه‌ای روی اعلانِ گوشه‌ی صفحه: از وقتی واقعاً دیده شود
+//                                               (صفحه پنهان باشد شروع نمی‌شود؛ با رفتنِ موس روی اعلان مکث می‌کند)
 (function () {
     const MAX_ITEMS = 60;
     const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -204,5 +206,41 @@
         save(); render();
     }
 
-    window.NotifBell = { init, add, setServerItems };
+    let tlCss = false;
+    function timeline(card, close, ms) {
+        ms = ms || 5000;
+        if (!tlCss) {
+            tlCss = true;
+            const st = document.createElement('style');
+            st.textContent = `.nb-tl{position:absolute;left:10px;right:10px;bottom:5px;height:3px;border-radius:3px;background:rgba(148,163,184,.25);overflow:hidden;pointer-events:none}
+                .nb-tl i{display:block;height:100%;width:100%;background:currentColor;opacity:.55;transform-origin:right;transform:scaleX(1)}`;
+            document.head.appendChild(st);
+        }
+        if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+        const bar = document.createElement('div'); bar.className = 'nb-tl';
+        const col = getComputedStyle(card).borderRightColor || '#3b82f6';
+        bar.style.color = col && col !== 'rgba(0, 0, 0, 0)' ? col : '#3b82f6';
+        bar.innerHTML = '<i></i>';
+        card.appendChild(bar);
+        const fill = bar.firstChild;
+        let left = ms, started = 0, timer = 0, done = false, hover = false;
+        const paint = () => { fill.style.transition = 'none'; fill.style.transform = `scaleX(${left / ms})`; };
+        const run = () => {
+            if (done || hover || document.hidden || timer) return;
+            started = Date.now();
+            paint(); void fill.offsetWidth;
+            fill.style.transition = `transform ${left}ms linear`; fill.style.transform = 'scaleX(0)';
+            timer = setTimeout(finish, left);
+        };
+        const pause = () => { if (!timer) return; clearTimeout(timer); timer = 0; left = Math.max(0, left - (Date.now() - started)); paint(); };
+        const finish = () => { if (done) return; done = true; document.removeEventListener('visibilitychange', vis); close(); };
+        const vis = () => { if (document.hidden) pause(); else run(); };
+        card.addEventListener('mouseenter', () => { hover = true; pause(); });
+        card.addEventListener('mouseleave', () => { hover = false; run(); });
+        document.addEventListener('visibilitychange', vis);
+        requestAnimationFrame(run);
+        return { stop: () => { done = true; clearTimeout(timer); document.removeEventListener('visibilitychange', vis); } };
+    }
+
+    window.NotifBell = { init, add, setServerItems, timeline };
 })();

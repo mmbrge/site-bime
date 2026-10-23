@@ -864,7 +864,7 @@ function save_incoming_case_file($message, $bot_token, $nationalId = null, $plat
     file_put_contents($destPath, file_get_contents($file_url));
     require_once __DIR__ . '/_heic.php';
     $destPath = heic_fix_saved_file($GLOBALS['pdo'] ?? null, $destPath);   // عکسِ HEIC (آیفون) => PNG
-    compress_image_if_needed($destPath);
+    if (function_exists('doc_image_normalize')) doc_image_normalize($destPath); else compress_image_if_needed($destPath);
     return ltrim(str_replace($siteRoot, '', $destPath), '/');
 }
 

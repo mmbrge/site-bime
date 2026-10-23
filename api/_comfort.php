@@ -179,7 +179,7 @@ function cf_prefs_save($pdo, $type, $id, array $in) {
         $p['birth'] = preg_match('/^(\d{1,2})[\/\-.](\d{1,2})$/', $md, $m) && $m[1] >= 1 && $m[1] <= 12 && $m[2] >= 1 && $m[2] <= 31
             ? ['md' => sprintf('%02d/%02d', $m[1], $m[2]), 'show' => !empty($in['birth']['show'])] : null;
     }
-    if (isset($in['notify']) && is_array($in['notify'])) $p['notify'] = ['browser' => !empty($in['notify']['browser'])];
+    if (isset($in['notify']) && is_array($in['notify'])) $p['notify'] = ['browser' => !empty($in['notify']['browser']), 'all' => !empty($in['notify']['all'])];
     if (isset($in['morning_seen'])) $p['morning_seen'] = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$in['morning_seen']) ? $in['morning_seen'] : null;
     $pdo->prepare("INSERT INTO cf_prefs (actor_type, actor_id, prefs, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE prefs = VALUES(prefs), updated_at = NOW()")
         ->execute([$type, intval($id), json_encode($p, JSON_UNESCAPED_UNICODE)]);

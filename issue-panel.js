@@ -39,8 +39,8 @@
         .ipn-btn.s{background:#f1f5f9;color:#334155}.ipn-btn.s:hover{background:#e2e8f0}
         .ipn-viewer{background:#0f172a;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
         .ipn-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;position:relative}
-        .ipn-stage img{max-width:100%;max-height:100%;object-fit:contain}
-        .ipn-stage iframe{width:100%;height:100%;border:0;background:#fff}
+        .ipn-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+        .ipn-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
         .ipn-thumbs{display:flex;gap:6px;overflow-x:auto;padding:8px;background:#1e293b}
         .ipn-th{flex:none;border-radius:8px;padding:5px 9px;font-size:10.5px;font-weight:800;color:#cbd5e1;background:#334155;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .ipn-th.on{background:#3b82f6;color:#fff}

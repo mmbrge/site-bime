@@ -4543,11 +4543,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
-    <script src="notif-bell.js?v=3"></script>
+    <script src="notif-bell.js?v=4"></script>
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=4"></script>
-    <script src="comfort.js?v=17"></script>
+    <script src="comfort.js?v=18"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=2"></script>
@@ -4565,7 +4565,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="inquiry.js?v=8"></script>
     <script src="registry.js?v=6"></script>
     <script src="sanhab-ui.js?v=1"></script>
-    <script src="issue-panel.js?v=2"></script>
+    <script src="issue-panel.js?v=3"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
     <script>
@@ -6213,10 +6213,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             el.className = 'notif-card t-' + (ev.type || 'info');
             el.innerHTML = `<span class="nc-ic" style="--c:${ic[1]}"><i class="fas ${ic[0]}"></i></span><div class="min-w-0 flex-1"><p class="nc-t">${ev.title || 'اعلان'}</p>
                             <p class="nc-b">${ev.body || ''}</p></div><button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
-            el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+            let tl = null;
+            const closeCard = () => { if (tl) tl.stop(); el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
+            el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); closeCard(); };
             box.appendChild(el);
             requestAnimationFrame(() => el.classList.add('show'));
-            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 10000);
+            // ۵ ثانیه از وقتی واقعاً دیده شود (صفحه‌ی پنهان صبر می‌کند؛ موس روی اعلان = مکث)
+            if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, closeCard, 5000); else setTimeout(closeCard, 5000);
+            // اعلانِ سیستم (ویندوز/گوشی) وقتی پنل در پس‌زمینه است — اگر کاربر در «جعبه‌ابزار ← ظاهر» روشن کرده باشد
+            if (window.CF && CF.osNotify) CF.osNotify(ev.title || 'اعلان', ev.body || '', {tag: 'n' + (ev.id || Date.now()), onClick: () => { if (ev.tab) switchTab(ev.tab); }});
         }
 
         async function pollNotifications() {
@@ -12531,10 +12536,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             </select>` : ''}
                         </div>
                         <button onclick="saveAdminCaseInfo(${caseId})" class="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره اطلاعات</button>
-                    </div>
-
+                    </div>` : ''}
+                    ${(!isIssueMode || c.status === 'ISSUED') && CAN_MANUAL ? `
                     <div class="bg-teal-50 border border-teal-100 rounded-xl p-4">
-                        <p class="text-xs font-bold text-teal-700 mb-3"><i class="fas fa-cloud-arrow-up ml-1"></i>بارگذاری مستقیمِ مدرک توسط خودمان (نیازی به تاییدِ جداگانه ندارد)</p>
+                        <p class="text-xs font-bold text-teal-700 mb-3"><i class="fas fa-cloud-arrow-up ml-1"></i>${c.status === 'ISSUED' ? 'افزودنِ مدرکِ تکمیلی بعد از صدور (در پوشه‌ی صادره‌ی همین درخواست و «بایگانی صادره» می‌نشیند)' : 'بارگذاری مستقیمِ مدرک توسط خودمان (نیازی به تاییدِ جداگانه ندارد)'}</p>
                         <div class="grid grid-cols-1 gap-2">
                             <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs" onchange="document.getElementById('adm-other-name').classList.toggle('hidden', this.value !== 'other')">
                                 ${Object.entries(data.required_docs || {}).map(([k, l]) => `<option value="${k}">${l}</option>`).join('') || ''}

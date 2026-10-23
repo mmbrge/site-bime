@@ -685,7 +685,28 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
     }
 
     $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([$newRel, $docId]);
+    // ردیفِ صادرشده: مدرکِ تکمیلی (بعد از صدور) در کپیِ «بایگانی صادره» هم می‌نشیند
+    try { company_sync_doc_to_sadere($pdo, $siteRoot, $plate, $newRel); } catch (Throwable $e) { error_log('[sadere doc sync] ' . $e->getMessage()); }
     return $newRel;
+}
+
+// مدرکی که بعد از صدور به پوشه‌ی ردیف اضافه شد => همان‌جا در کپیِ «بایگانی صادره»ی همان بیمه‌نامه (با همان مسیرِ نسبی)
+function company_sync_doc_to_sadere($pdo, $siteRoot, array $plate, $relPath) {
+    if (($plate['status'] ?? '') !== 'ISSUED' || ($plate['folder_status'] ?? '') !== 'TRANSFERRED' || empty($plate['folder_path']) || !$relPath) return false;
+    $st = $pdo->prepare("SELECT request_kind FROM company_requests WHERE id = ?");
+    $st->execute([intval($plate['request_id'])]);
+    if (!company_kind_goes_to_sadere($st->fetchColumn() ?: 'NEW_POLICY')) return false;
+    $folder = rtrim($plate['folder_path'], '/');
+    $abs = $siteRoot . '/' . ltrim($relPath, '/');
+    if (strpos($abs, $folder . '/') !== 0 || !file_exists($abs)) return false;
+    if (!function_exists('policy_issue_ts')) require_once __DIR__ . '/_case_helpers.php';
+    $ts = policy_issue_ts((string)($plate['policy_issue_date'] ?? ''), !empty($plate['issued_at']) ? strtotime($plate['issued_at']) : time());
+    $sadere = build_sadere_base_path($siteRoot, $ts, $plate['insurance_type']) . '/' . basename($folder);
+    if (!is_dir($sadere)) return false;   // کپیِ صادره پیدا نشد (جابه‌جا شده)؛ فقط در بایگانیِ شرکتی می‌ماند
+    $dest = $sadere . substr($abs, strlen($folder));
+    if (is_dir($abs)) { copy_dir_recursive($abs, $dest); return true; }
+    if (!is_dir(dirname($dest))) @mkdir(dirname($dest), 0755, true);
+    return @copy($abs, $dest);
 }
 
 // =====================================================================
@@ -1371,6 +1392,10 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     if (empty($fileArr) || !is_uploaded_file($fileArr['tmp_name'] ?? '')) {
         return ['ok' => false, 'error' => 'فایلی دریافت نشد.'];
     }
+    // آپلودِ نیمه‌کاره (قطعیِ اینترنت): فایلِ ناقص ذخیره نمی‌شود
+    if (($fileArr['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'error' => ($fileArr['error'] ?? 0) === UPLOAD_ERR_PARTIAL ? 'فایل کامل نرسید (اینترنت قطع شد)؛ دوباره بفرستید.' : 'فایل دریافت نشد؛ دوباره بفرستید.'];
+    }
     if (($fileArr['size'] ?? 0) > $maxBytes) {
         return ['ok' => false, 'error' => 'حجم فایل بیشتر از حد مجاز (۱۵ مگابایت) است.'];
     }
@@ -1402,7 +1427,11 @@ function company_store_uploaded_file($fileArr, $destDir, $maxBytes = 15728640, $
     if (!move_uploaded_file($fileArr['tmp_name'], $destPath)) {
         return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل روی سرور.'];
     }
-    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && function_exists('compress_image_if_needed')) {
+    // عکس: تشخیصِ فایلِ ناقص، چرخشِ درست و اندازه‌ی استاندارد بدونِ افتِ خوانایی
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && function_exists('doc_image_normalize')) {
+        $nr = doc_image_normalize($destPath);
+        if (!$nr['ok']) { @unlink($destPath); return ['ok' => false, 'error' => $nr['error']]; }
+    } elseif (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && function_exists('compress_image_if_needed')) {
         compress_image_if_needed($destPath);
     }
     return ['ok' => true, 'path' => $destPath, 'orig_name' => $fileArr['name'], 'is_dir' => false];

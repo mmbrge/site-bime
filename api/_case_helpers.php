@@ -636,6 +636,69 @@ function compress_image_if_needed($absolutePath, $maxBytes = 1048576, $maxDim = 
     } catch (Exception $e) { /* اگر GD موجود نبود یا خطایی رخ داد، فایل اصلی دست‌نخورده باقی می‌ماند */ }
 }
 
+// =====================================================================
+//  استانداردسازیِ عکسِ مدارک بعد از آپلود (کارشناس یا کاربر) — بدونِ افتِ خوانایی:
+//   - فایلِ ناقص (آپلودِ نیمه‌کاره) تشخیص داده می‌شود => ['ok' => false, 'broken' => true]
+//   - چرخشِ عکسِ گوشی (EXIF) درست می‌شود
+//   - ضلعِ بزرگ‌تر حداکثر ۲۶۰۰ پیکسل (برای خواندنِ شاسی/موتور کافی است) و JPEG با کیفیتِ ۹۰ (پلکانی پایین نمی‌آید)
+//   - فقط اگر نتیجه کوچک‌تر شد یا چرخش/کوچک‌سازی لازم بود جایگزین می‌شود؛ PDF دست نمی‌خورد
+// =====================================================================
+function doc_image_intact($path) {
+    $ext = upload_ext($path);
+    $size = @filesize($path);
+    if (!$size) return false;
+    $fh = @fopen($path, 'rb');
+    if (!$fh) return true;
+    $head = fread($fh, 16);
+    fseek($fh, max(0, $size - 2048));
+    $tail = fread($fh, 2048);
+    fclose($fh);
+    if (strncmp($head, "\xFF\xD8", 2) === 0) return strpos($tail, "\xFF\xD9") !== false;          // JPEG: نشانِ پایان
+    if (strncmp($head, "\x89PNG", 4) === 0) return strpos($tail, 'IEND') !== false;              // PNG
+    return true;
+}
+function doc_image_normalize($path, $maxDim = 2600, $maxBytes = 1572864) {
+    $ext = upload_ext($path);
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) || !is_file($path)) return ['ok' => true];
+    if (!doc_image_intact($path)) return ['ok' => false, 'broken' => true, 'error' => 'فایلِ عکس ناقص رسید (آپلود کامل نشد)؛ دوباره بفرستید.'];
+    if (!function_exists('imagecreatefromjpeg')) return ['ok' => true];
+    $info = @getimagesize($path);
+    if (!$info) return ['ok' => true];
+    [$w, $h] = $info;
+    $orient = 1;
+    if (in_array($ext, ['jpg', 'jpeg'], true) && function_exists('exif_read_data')) { $ex = @exif_read_data($path); $orient = intval($ex['Orientation'] ?? 1); }
+    $needResize = max($w, $h) > $maxDim;
+    $needRotate = in_array($orient, [3, 6, 8], true);
+    if (!$needResize && !$needRotate && filesize($path) <= $maxBytes) return ['ok' => true];
+    // حافظه‌ی لازم برای بازکردنِ عکس (عکسِ ۴۸ مگاپیکسلی بیش از ۲۰۰ مگابایت)
+    $need = $w * $h * 5 + 32 * 1048576;
+    $lim = ini_get('memory_limit');
+    $limB = $lim === '-1' ? PHP_INT_MAX : (int)$lim * (stripos($lim, 'G') !== false ? 1073741824 : (stripos($lim, 'M') !== false ? 1048576 : (stripos($lim, 'K') !== false ? 1024 : 1)));
+    if ($need > $limB - memory_get_usage()) @ini_set('memory_limit', (string)min(1024, (int)ceil((memory_get_usage() + $need) / 1048576) + 64) . 'M');
+    try {
+        $img = $ext === 'png' ? @imagecreatefrompng($path) : ($ext === 'webp' ? (function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : null) : @imagecreatefromjpeg($path));
+        if (!$img) return ['ok' => true];
+        if ($needRotate) { $r = imagerotate($img, $orient === 3 ? 180 : ($orient === 6 ? -90 : 90), 0); if ($r) { imagedestroy($img); $img = $r; } }
+        $w = imagesx($img); $h = imagesy($img);
+        if (max($w, $h) > $maxDim) {
+            $k = $maxDim / max($w, $h);
+            $nw = max(1, (int)round($w * $k)); $nh = max(1, (int)round($h * $k));
+            $n = imagecreatetruecolor($nw, $nh);
+            if ($ext === 'png') { imagealphablending($n, false); imagesavealpha($n, true); }
+            imagecopyresampled($n, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+            imagedestroy($img); $img = $n;
+        }
+        $tmp = $path . '.norm';
+        if ($ext === 'png') { imagesavealpha($img, true); $ok = imagepng($img, $tmp, 9); }
+        elseif ($ext === 'webp' && function_exists('imagewebp')) $ok = imagewebp($img, $tmp, 90);
+        else { imageinterlace($img, true); $ok = imagejpeg($img, $tmp, 90); }
+        imagedestroy($img);
+        if ($ok && is_file($tmp) && @getimagesize($tmp) && ($needRotate || $needResize || filesize($tmp) < filesize($path))) { @rename($tmp, $path); return ['ok' => true, 'changed' => true]; }
+        @unlink($tmp);
+    } catch (Throwable $e) { error_log('[doc_image_normalize] ' . $e->getMessage()); @unlink($path . '.norm'); }
+    return ['ok' => true];
+}
+
 function insurance_type_fa($enumType) {
     return $enumType === 'BODY' ? 'بدنه' : 'ثالث';
 }
@@ -1844,7 +1907,7 @@ function admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel,
     $destPath = $tmpDir . '/' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
     $moved = $isUpload ? move_uploaded_file($srcPath, $destPath) : (@rename($srcPath, $destPath) || (@copy($srcPath, $destPath) && @unlink($srcPath)));
     if (!$moved) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل.'];
-    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($destPath, 2621440, 3200);
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) { $nr = doc_image_normalize($destPath); if (!$nr['ok']) { @unlink($destPath); return ['ok' => false, 'error' => $nr['error']]; } }
     $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
     // نسخه‌ی قبلیِ همان مدرک (در انتظار/ردشده) جایش را به این می‌دهد؛ «سایر مدارک» روی هم انباشته می‌شوند
     if ($docKey !== 'other') {
@@ -1854,7 +1917,37 @@ function admin_store_case_doc_file($pdo, $siteRoot, $caseId, $docKey, $docLabel,
         ->execute([$caseId, $docKey, $docLabel, $relPath]);
     $docId = intval($pdo->lastInsertId());
     $stage = approve_case_document_and_maybe_finalize($pdo, $docId, $userId, 'بارگذاری توسط کارشناس');
+    // پرونده‌ی صادرشده: مدرکِ تکمیلی همان لحظه در پوشه‌ی صادره‌ی همین درخواست و کپیِ «بایگانی صادره» می‌نشیند
+    try { case_place_post_issue_doc($pdo, $siteRoot, $caseId, $docId); } catch (Throwable $e) { error_log('[case post-issue doc] ' . $e->getMessage()); }
     return ['ok' => true, 'doc_id' => $docId, 'stage' => $stage];
+}
+
+// مدرکی که بعد از صدورِ پرونده‌ی کارکنان اضافه شد => پوشه‌ی صادره‌ی همان پرونده (folder_path) با نام‌گذاریِ استاندارد
+// و یک کپی هم در «بایگانی صادره» (همان پوشه‌ای که هنگامِ صدور کپی شده بود)
+function case_place_post_issue_doc($pdo, $siteRoot, $caseId, $docId) {
+    $st = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");
+    $st->execute([$caseId]);
+    $case = $st->fetch();
+    if (!$case || ($case['status'] ?? '') !== 'ISSUED' || empty($case['folder_path'])) return false;
+    $folder = rtrim($case['folder_path'], '/');
+    if (!is_dir($folder)) @mkdir($folder, 0777, true);
+    $st = $pdo->prepare("SELECT * FROM case_documents WHERE id = ?");
+    $st->execute([$docId]);
+    $doc = $st->fetch();
+    if (!$doc || !$doc['file_path']) return false;
+    $abs = $siteRoot . '/' . $doc['file_path'];
+    if (!is_file($abs)) return false;
+    if (strpos($abs, $folder . '/') !== 0) {
+        $ext = pathinfo($abs, PATHINFO_EXTENSION) ?: 'jpg';
+        $dest = unique_dest_path($folder . '/' . build_doc_filename($doc['doc_key'], $doc['doc_label'], $case['plate'], $case['insured_name'], $case['insured_national_id'], $ext));
+        if (!@rename($abs, $dest) && !(@copy($abs, $dest) && @unlink($abs))) return false;
+        cleanup_empty_dirs_upward(dirname($abs), temp_archive_root($siteRoot));
+        $abs = $dest;
+        $pdo->prepare("UPDATE case_documents SET file_path = ? WHERE id = ?")->execute([ltrim(str_replace($siteRoot, '', $abs), '/'), $docId]);
+    }
+    $sadere = build_sadere_base_path($siteRoot, policy_issue_ts((string)($case['policy_issue_date'] ?? ''), !empty($case['issued_at']) ? strtotime($case['issued_at']) : time()), $case['insurance_type']) . '/' . basename($folder);
+    if (is_dir($sadere)) @copy($abs, $sadere . '/' . basename($abs));
+    return true;
 }
 
 // =====================================================================

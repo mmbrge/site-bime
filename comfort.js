@@ -1175,9 +1175,10 @@
                 <button class="cf-ib" style="width:26px;height:26px;font-size:11px;color:#f43f5e" data-del="${t.id}"><i class="fas fa-xmark"></i></button></div>`;
         };
         b.innerHTML = `<div class="cf-card" style="background:linear-gradient(120deg,#eef2ff,#fff)">
-                <input class="cf-in" data-f="text" placeholder="کارِ تازه… (Enter)" style="background:#fff">
-                <div style="display:flex;gap:6px;margin-top:6px"><input class="cf-in" data-f="due" placeholder="تاریخ (اختیاری) ${fa(tj)}" dir="ltr" style="background:#fff">
-                <input class="cf-in" data-f="time" type="time" title="ساعتِ یادآور (اختیاری)" style="background:#fff;width:110px"><button class="cf-btn" data-a="add">افزودن</button></div>
+                <div style="display:flex;gap:6px;align-items:center"><input class="cf-in" data-f="text" placeholder="کارِ تازه… (Enter)" style="background:#fff;flex:1;min-width:0">
+                <button class="cf-btn" data-a="add" style="flex:none;white-space:nowrap"><i class="fas fa-plus ml-1"></i>افزودن</button></div>
+                <div style="display:flex;gap:6px;margin-top:6px"><input class="cf-in" data-f="due" placeholder="تاریخ (اختیاری) ${fa(tj)}" dir="ltr" style="background:#fff;flex:1;min-width:0">
+                <input class="cf-in" data-f="time" type="time" title="ساعتِ یادآور (اختیاری)" style="background:#fff;width:110px;flex:none"></div>
                 ${S.boot.kind === 'S' ? '<p style="font-size:10px;color:#64748b;margin-top:6px"><i class="fas fa-circle-info ml-1"></i>کارِ تیک‌خورده خودکار به «شرحِ کارهای امروز» در کارکرد من اضافه می‌شود.</p>' : ''}</div>
             <div class="cf-card"><h4><i class="fas fa-list-check" style="color:#6366f1"></i>در انتظار (${fa(pend.length)})</h4>${pend.length ? pend.map(item).join('') : '<div class="cf-empty">کارِ ماندهای ندارید 🎉</div>'}</div>
             ${done.length ? `<div class="cf-card"><h4><i class="fas fa-check-double" style="color:#10b981"></i>انجام‌شده‌های اخیر</h4>${done.map(item).join('')}</div>` : ''}`;
@@ -1447,8 +1448,12 @@
             ${window.CursorPref && window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches ? `<div class="cf-card"><h4><i class="fas fa-arrow-pointer" style="color:#7c3aed"></i>نشانگرِ موس <small style="font-weight:600;color:#94a3b8">فقط روی همین دستگاه</small></h4>
                 <div class="cf-seg" data-cur style="background:#f1f5f9;flex-wrap:wrap">${[['fancy', 'با انیمیشن'], ['simple', 'بدونِ انیمیشن'], ['native', 'معمولیِ سیستم']].map(([k, x]) => `<button data-v="${k}" class="${CursorPref.get() === k ? 'on' : ''}">${x}</button>`).join('')}</div>
                 <p style="font-size:10.5px;color:#64748b;margin-top:6px;line-height:1.9">اگر پنل روی این سیستم کُند است «معمولیِ سیستم» را بزنید؛ نشانگرِ اولیه‌ی ویندوز برمی‌گردد و هیچ انیمیشنی اجرا نمی‌شود.${CursorPref.chosen() ? ' <a href="#" data-cur-auto style="color:#4f46e5">خودکار (بر اساسِ توانِ سیستم)</a>' : ' الان: خودکار.'}</p></div>` : ''}
-            <div class="cf-card"><h4><i class="fas fa-bell" style="color:#0ea5e9"></i>اعلانِ مرورگر</h4>
-                <div class="cf-line"><span class="grow" style="font-size:11px">یادآورها وقتی پنل در پس‌زمینه است هم اعلان بدهند</span><label class="cf-sw"><input type="checkbox" data-f="notif" ${S.prefs.notify && S.prefs.notify.browser ? 'checked' : ''}><span></span></label></div></div>`;
+            <div class="cf-card"><h4><i class="fas fa-bell" style="color:#0ea5e9"></i>اعلان روی سیستم (ویندوز)</h4>
+                <div class="cf-line"><span class="grow" style="font-size:11px">همه‌ی اعلان‌های سایت (درخواست‌ها، مدارک، گفتگوها، تیکت‌ها و ...) روی خودِ سیستم هم بیاید؛ وقتی مرورگر پایین است یا در برنامه‌ی دیگری هستید</span><label class="cf-sw"><input type="checkbox" data-f="notifall" ${S.prefs.notify && S.prefs.notify.all ? 'checked' : ''}><span></span></label></div>
+                <div class="cf-line"><span class="grow" style="font-size:11px">یادآورهای کارها و سلامت هم روی سیستم بیایند</span><label class="cf-sw"><input type="checkbox" data-f="notif" ${S.prefs.notify && S.prefs.notify.browser ? 'checked' : ''}><span></span></label></div>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:6px"><button class="cf-btn s" style="background:#f1f5f9;color:#334155" data-a="ntest"><i class="fas fa-paper-plane ml-1"></i>اعلانِ آزمایشی</button>
+                    <small style="font-size:10px;color:#64748b" data-nst>${!('Notification' in window) ? 'این مرورگر اعلانِ سیستم ندارد.' : Notification.permission === 'denied' ? 'اجازه‌ی اعلان در مرورگر بسته شده؛ از قفلِ کنارِ آدرسِ سایت ← Notifications ← Allow را بزنید.' : Notification.permission === 'granted' ? 'اجازه داده شده ✓' : 'با روشن کردن، مرورگر اجازه می‌خواهد؛ «Allow» را بزنید.'}</small></div>
+                <p style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.8">در ویندوز اگر اعلان نمی‌آید: Settings ← System ← Notifications و اعلانِ مرورگر (Chrome/Edge) روشن باشد و «Focus assist / Do not disturb» خاموش. «مزاحم نشوید»ِ خودِ پنل هم اعلان‌ها را نگه می‌دارد.</p></div>`;
         const saveT = part => { const n = Object.assign(t, part); savePrefs({theme: n}); applyTheme(); };
         b.querySelectorAll('[data-cur] button').forEach(x => x.addEventListener('click', () => { CursorPref.set(x.dataset.v); toast('نشانگرِ موس: ' + CursorPref.LABELS[x.dataset.v], 'success'); hubTheme(b); }));
         const ca = b.querySelector('[data-cur-auto]'); if (ca) ca.addEventListener('click', e => { e.preventDefault(); CursorPref.set(''); hubTheme(b); });
@@ -1458,10 +1463,28 @@
         b.querySelectorAll('[data-c]').forEach(x => x.addEventListener('click', () => { saveT({accent: x.dataset.c}); renderHub(); }));
         const bs = b.querySelector('[data-a="bsave"]');
         if (bs) bs.onclick = async () => { const md = en(b.querySelector('[data-f="bmd"]').value.trim()); await savePrefs({birth: md ? {md, show: b.querySelector('[data-f="bshow"]').checked} : null}); toast('ثبت شد.', 'success'); };
+        const perm = async el => {
+            if (!el.checked) return true;
+            if (!('Notification' in window)) { el.checked = false; toast('این مرورگر اعلانِ سیستم ندارد.', 'warning'); return false; }
+            if (Notification.permission !== 'granted') { const p = await Notification.requestPermission(); if (p !== 'granted') { el.checked = false; toast('مرورگر اجازه‌ی اعلان نداد؛ از قفلِ کنارِ آدرسِ سایت اجازه را باز کنید.', 'warning'); hubTheme(b); return false; } }
+            return true;
+        };
         b.querySelector('[data-f="notif"]').addEventListener('change', async e => {
-            if (e.target.checked && 'Notification' in window && Notification.permission !== 'granted') { const p = await Notification.requestPermission(); if (p !== 'granted') { e.target.checked = false; toast('مرورگر اجازه‌ی اعلان نداد.', 'warning'); return; } }
-            savePrefs({notify: {browser: e.target.checked}});
+            if (!(await perm(e.target))) return;
+            savePrefs({notify: Object.assign({}, S.prefs.notify || {}, {browser: e.target.checked})});
         });
+        b.querySelector('[data-f="notifall"]').addEventListener('change', async e => {
+            if (!(await perm(e.target))) return;
+            await savePrefs({notify: Object.assign({}, S.prefs.notify || {}, {all: e.target.checked})});
+            toast(e.target.checked ? 'اعلان‌های سایت روی سیستم هم می‌آید.' : 'اعلانِ سیستم خاموش شد.', 'success');
+            if (e.target.checked) hubTheme(b);
+        });
+        b.querySelector('[data-a="ntest"]').onclick = async () => {
+            if (!('Notification' in window)) return toast('این مرورگر اعلانِ سیستم ندارد.', 'warning');
+            if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') return toast('مرورگر اجازه‌ی اعلان نداد.', 'warning');
+            try { new Notification('بیمه با ما', {body: 'اعلانِ آزمایشی: اعلان‌های سایت این‌طوری روی سیستم می‌آید.', icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined}); } catch (e) { toast('اعلان ساخته نشد.', 'error'); }
+            hubTheme(b);
+        };
     }
     function hubKeys(b) {
         const k = (keys, t) => `<div class="cf-line"><span class="grow">${t}</span>${keys.map(x => `<span class="cf-kbd">${x}</span>`).join(' + ')}</div>`;
@@ -1493,6 +1516,18 @@
     function notifyBrowser(title, body) {
         if (dnd() || !(S.prefs.notify && S.prefs.notify.browser) || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
         try { new Notification(title, {body, icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined, silent: true}); } catch (e) {}
+    }
+    // همه‌ی اعلان‌های سایت (درخواست، مدرک، گفتگو، تیکت، نامه، ...) روی سیستم (ویندوز/مک/گوشی) — اگر کاربر در «ظاهر» روشن کرده باشد؛
+    // فقط وقتی پنل دیده نمی‌شود (مرورگر پایین است، تبِ دیگر یا برنامه‌ی دیگر)
+    function osNotify(title, body, o) {
+        o = o || {};
+        if (dnd() || !(S.prefs.notify && S.prefs.notify.all) || !('Notification' in window) || Notification.permission !== 'granted') return;
+        if (!o.force && !document.hidden && document.hasFocus()) return;
+        const plain = h => { const d = document.createElement('div'); d.innerHTML = String(h == null ? '' : h); return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
+        try {
+            const n = new Notification(plain(title) || 'اعلان', {body: plain(body).slice(0, 240), tag: o.tag || undefined, icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined});
+            n.onclick = () => { try { window.focus(); } catch (e) {} if (o.onClick) o.onClick(); n.close(); };
+        } catch (e) {}
     }
     function askNotify() {
         if (!('Notification' in window) || Notification.permission !== 'default' || LS.get('askedNotif', false)) return;
@@ -1795,6 +1830,6 @@
         setTimeout(() => { birthdayBanner(); morning(false); }, Math.max(0, ((S.boot.morning_cfg || {}).delay ?? 2)) * 1000 || 1500);
         window.addEventListener('beforeunload', saveResume);
     }
-    window.CF = {boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, upAdd, upMount, upActive, has, morning: () => morning(true), morningPreview: cfg => morning(true, cfg), state: S, api};
+    window.CF = {osNotify, boot, openPlayer, openHub, openPalette, playPause, next, uploadFiles, uploadSummary, upAdd, upMount, upActive, has, morning: () => morning(true), morningPreview: cfg => morning(true, cfg), state: S, api};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

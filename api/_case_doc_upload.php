@@ -38,7 +38,7 @@ function case_doc_store_user($pdo, $siteRoot, $case, $person, $docKey, $docLabel
     $destPath = unique_dest_path($tmpDir . '/' . sanitize_folder_name("({$docLabel}) " . ($ownerNid ?: 'نامشخص')) . '.' . $ext);
     $moved = $isUpload ? move_uploaded_file($srcPath, $destPath) : (@rename($srcPath, $destPath) || (@copy($srcPath, $destPath) && @unlink($srcPath)));
     if (!$moved) return ['ok' => false, 'error' => 'خطا در ذخیره‌ی فایل. لطفاً دوباره تلاش کنید.'];
-    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) compress_image_if_needed($destPath);
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) { $nr = doc_image_normalize($destPath); if (!$nr['ok']) { @unlink($destPath); return ['ok' => false, 'error' => $nr['error']]; } }
     $relPath = ltrim(str_replace($siteRoot, '', $destPath), '/');
     $caseId = intval($case['id']);
     // ارسالِ دوباره‌ی مدرکی که رد شده بود در تاریخچه‌ی بررسی ثبت می‌شود
