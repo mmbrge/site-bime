@@ -26,7 +26,8 @@ function aa_public($pdo) {
     $cfg = api_cfg($pdo);
     $list = [];
     foreach (API_SERVICES as $k => $sv) $list[] = ['key' => $k, 'fa' => $sv['fa'], 'icon' => $sv['icon'], 'desc' => $sv['desc'], 'endpoint' => $sv['endpoint'] ?? '',
-                                                 'fields' => $sv['fields'], 'ready' => $k === 'sapi' ? sapi_conf($pdo, 'sapi')['token'] !== '' : sapi_ready($pdo, $k),
+                                                 'fields' => $sv['fields'], 'ready' => $k === 'sapi' ? sapi_conf($pdo, 'sapi')['token'] !== '' : ($k === 'gapgpt' ? gapgpt_conf($pdo)['token'] !== ''
+                                                           : ($k === 'ai_vision' ? (function () use ($pdo) { require_once __DIR__ . '/_vdoc_ai.php'; return vdoc_ai_conf($pdo)['token'] !== ''; })() : sapi_ready($pdo, $k))),
                                                  'own_key' => trim((string)($cfg[$k]['token'] ?? '')) !== ''];
     return ['services' => $list, 'cfg' => aa_masked($cfg), 'curl' => function_exists('curl_init'),
             'usage' => ['otp_bot' => otp_bot_channel($pdo), 'panel_otp' => panel_otp_channel($pdo)]];
@@ -83,6 +84,22 @@ try {
             $ok = $r['error'] === '' && $r['http'] >= 200 && $r['http'] < 300;
             $out(['ok' => true, 'result' => ['ok' => $ok, 'status' => $ok ? 'اتصال برقرار است ✓ (مدل ' . $c['model'] . ')' : ($r['error'] !== '' ? 'خطای اتصال: ' . $r['error'] : 'پاسخِ ناموفق (HTTP ' . $r['http'] . ')'),
                                              'http' => $r['http'], 'raw' => mb_substr((string)$r['body'], 0, 600), 'ms' => (int)round((microtime(true) - $t0) * 1000)]]);
+        }
+        if ($svc === 'gapgpt') {
+            $c = gapgpt_conf($pdo);
+            if ($c['token'] === '') $out(['ok' => true, 'result' => ['ok' => false, 'status' => 'کلیدِ GapGPT را وارد و ذخیره کنید.']]);
+            if (($in['mode'] ?? '') === 'systemone') {
+                $j = json_decode((string)($in['payload'] ?? ''), true);
+                if (!is_array($j) || !isset($j['questions']) || !is_array($j['questions'])) $out(['ok' => false, 'error' => 'ورودی باید JSON با «state» و «questions» باشد.']);
+                $r = gapgpt_systemone($pdo, (array)($j['state'] ?? []), $j['questions'], trim((string)($j['model'] ?? '')) ?: null);
+                $out(['ok' => true, 'result' => ['ok' => $r['ok'], 'status' => $r['ok'] ? 'systemone پاسخ داد ✓' : $r['error'], 'http' => $r['http'], 'raw' => $r['raw'], 'sent' => $r['sent'] ?? '', 'ms' => $r['ms'] ?? null]]);
+            }
+            $t0 = microtime(true);
+            $r = sms_http('POST', $c['base'] . '/chat/completions', json_encode(['model' => $c['model'], 'max_tokens' => 5, 'messages' => [['role' => 'user', 'content' => 'Reply with: ok']]]),
+                          ['Content-Type: application/json', 'Authorization: Bearer ' . $c['token']], $c['timeout']);
+            $ok = $r['error'] === '' && $r['http'] >= 200 && $r['http'] < 300;
+            $out(['ok' => true, 'result' => ['ok' => $ok, 'status' => $ok ? 'اتصال به GapGPT برقرار است ✓ (مدل ' . $c['model'] . ')' : ($r['error'] !== '' ? 'خطای اتصال: ' . $r['error'] : 'پاسخِ ناموفق (HTTP ' . $r['http'] . ')'),
+                                             'http' => $r['http'], 'raw' => mb_substr((string)$r['body'], 0, 1500), 'ms' => (int)round((microtime(true) - $t0) * 1000)]]);
         }
         if ($svc === 'sapi_company') {
             $r = sapi_company_info($pdo, $in['national_id'] ?? '');

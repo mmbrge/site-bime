@@ -1,5 +1,6 @@
 // فایل: api-keys.js
-// پنل → تنظیمات «کلیدهای API»: کلیدِ دسترسی و تنظیماتِ هر وب‌سرویسِ بیرونی (s.api.ir: کلیدِ مشترک، پیامکی OTP، استعلامِ شخصِ حقوقی) + آزمایشِ هر کدام
+// پنل → تنظیمات «کلیدهای API»: کلیدِ دسترسی و تنظیماتِ هر وب‌سرویسِ بیرونی (s.api.ir: کلیدِ مشترک، پیامکی OTP، استعلامِ شخصِ حقوقی؛
+// هوش مصنوعی: خواندنِ اسکن، GapGPT با آزمایشِ systemone) + آزمایشِ هر کدام
 // منطق: api/_apis.php  (api/api_admin.php)
 (function () {
     const API = 'api/api_admin.php';
@@ -42,6 +43,8 @@
         if (svc === 'sapi_company') return `<input data-tin="sapi_company" dir="ltr" placeholder="شناسه‌ی ملیِ ۱۱ رقمی" class="border rounded-xl px-3 py-2 text-xs w-48">
             <button data-test="sapi_company" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-magnifying-glass ml-1"></i>استعلامِ آزمایشی</button>`;
         if (svc === 'ai_vision') return `<button data-test="ai_vision" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-plug-circle-check ml-1"></i>آزمایشِ اتصال</button>`;
+        if (svc === 'gapgpt') return `<button data-test="gapgpt" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-plug-circle-check ml-1"></i>آزمایشِ اتصال (chat)</button>
+            <button data-sys1 class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-list-check ml-1"></i>آزمایشِ systemone (نمونه‌ی ورودی/خروجی)</button>`;
         return '';
     }
 
@@ -80,6 +83,7 @@
             const body = { action: 'test', service: svc };
             if (svc === 'sapi_otp') { body.phone = inp.value; const t = el.querySelector('[data-svc="sapi_otp"][data-k="template"]'); if (t) body.template = t.value; }
             if (svc === 'sapi_company') body.national_id = inp.value;
+            if (svc === 'gapgpt' && b.dataset.mode === 'systemone') { body.mode = 'systemone'; body.payload = el.querySelector('[data-sys1-in]').value; }
             b.disabled = true; box.innerHTML = `<p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ارتباط با ${svc === 'ai_vision' ? 'سرویسِ هوشِ مصنوعی' : 's.api.ir'}…</p>`;
             const r = await post(body);
             b.disabled = false;
@@ -94,6 +98,48 @@
                 ${x.raw ? `<details class="mt-1"><summary class="cursor-pointer text-slate-500">پاسخِ خامِ سرویس</summary><pre dir="ltr" class="whitespace-pre-wrap text-[10px] text-slate-600 mt-1">${esc(x.raw)}</pre></details>` : ''}</div>`;
         });
     }
+
+    // نمونه‌ی ورودیِ systemone (همان مثالِ مستندِ GapGPT + یک نمونه‌ی فارسیِ بیمه‌ای)؛ کاربر می‌تواند ویرایش کند
+    const SYS1_SAMPLE = {
+        model: 'typesafe/jev-1.13',
+        state: { text: 'شرکتِ نمونه درخواستِ تمدیدِ بیمه‌نامه‌ی ثالثِ ۳ دستگاه خودرو را دارد و یکی از خودروها پارسال خسارتِ مالی داشته است.' },
+        questions: {
+            renewal: { type: 'noul', instructions: { question: 'آیا درخواستِ تمدید است؟' } },
+            kind: { type: 'choice', instructions: ['نوعِ بیمه‌نامه چیست؟'], criteria: { thirdparty: 'بیمه‌ی ثالث', body: 'بیمه‌ی بدنه' } },
+            claim: { type: 'score', instructions: 'شدتِ سابقه‌ی خسارت چقدر است؟', criteria: ['بدونِ خسارت', 'خسارتِ مالی', 'خسارتِ جانی'] },
+        },
+    };
+    document.addEventListener('click', e => {
+        const b = e.target.closest && e.target.closest('[data-sys1]');
+        if (!b || !AK.el) return;
+        const box = AK.el.querySelector('[data-tout="gapgpt"]');
+        box.innerHTML = `<div class="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+            <p class="text-[11px] font-bold text-violet-800 mb-1">ورودیِ systemone (JSON: model اختیاری، state و questions) — نوع‌ها: <code>noul</code> بله/خیر، <code>choice</code> انتخاب از criteria، <code>score</code> امتیاز روی فهرستِ criteria</p>
+            <textarea data-sys1-in dir="ltr" rows="14" class="w-full border rounded-xl p-2 text-[11px] font-mono">${esc(JSON.stringify(SYS1_SAMPLE, null, 2))}</textarea>
+            <div class="flex gap-2 mt-2"><button data-test="gapgpt" data-mode="systemone" class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2 rounded-xl text-[11px] font-bold"><i class="fas fa-play ml-1"></i>اجرا و نمایشِ خروجی</button>
+                <button data-sys1-en class="bg-white border px-3 py-2 rounded-xl text-[11px] font-bold">نمونه‌ی انگلیسیِ مستندِ GapGPT</button></div>
+            <div data-sys1-out class="mt-2"></div></div>`;
+        box.querySelector('[data-sys1-en]').onclick = () => {
+            box.querySelector('[data-sys1-in]').value = JSON.stringify({ model: 'typesafe/jev-1.13', state: { text: 'The customer requests a refund for a duplicate payment.' }, questions: {
+                refund: { type: 'noul', instructions: { question: 'Is a refund requested?' } },
+                team: { type: 'choice', instructions: ['Which team should handle this?'], criteria: { billing: 'Payments and refunds', technical: 'Software errors' } },
+                urgency: { type: 'score', instructions: 'How urgent is it?', criteria: ['Routine', 'Urgent', 'Emergency'] } } }, null, 2);
+        };
+        const run = box.querySelector('[data-mode="systemone"]');
+        run.onclick = async () => {
+            const out = box.querySelector('[data-sys1-out]');
+            run.disabled = true; out.innerHTML = '<p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ارتباط با GapGPT…</p>';
+            const r = await post({ action: 'test', service: 'gapgpt', mode: 'systemone', payload: box.querySelector('[data-sys1-in]').value });
+            run.disabled = false;
+            if (!r.ok) { out.innerHTML = `<p class="text-[11px] text-rose-600 font-bold">${esc(r.error)}</p>`; return; }
+            const x = r.result || {};
+            let pretty = x.raw || '';
+            try { pretty = JSON.stringify(JSON.parse(x.raw), null, 2); } catch (er) {}
+            out.innerHTML = `<div class="rounded-xl p-3 text-[11px] ${x.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}"><b>${x.ok ? '✅' : '❌'} ${esc(x.status || '')}</b>
+                ${x.http ? `<span class="text-slate-400 mr-2">HTTP ${fa(x.http)}${x.ms ? ' · ' + fa(x.ms) + ' ms' : ''}</span>` : ''}
+                <p class="font-bold mt-2 mb-1">خروجی:</p><pre dir="ltr" class="whitespace-pre-wrap text-[10.5px] bg-white rounded-lg p-2 text-slate-700">${esc(pretty || '—')}</pre></div>`;
+        };
+    });
 
     window.ApiKeys = { card };
 })();

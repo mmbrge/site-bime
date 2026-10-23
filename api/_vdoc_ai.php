@@ -7,6 +7,11 @@ require_once __DIR__ . '/_apis.php';
 
 function vdoc_ai_conf($pdo) {
     $c = api_cfg($pdo)['ai_vision'] ?? [];
+    // سرویس‌دهنده‌ی GapGPT: آدرس، کلید و مدل از کارتِ GapGPT
+    if (($c['provider'] ?? '') === 'gapgpt') {
+        $g = gapgpt_conf($pdo);
+        return ['base' => $g['base'], 'token' => $g['token'], 'model' => trim((string)($c['model'] ?? '')) ?: $g['model'], 'timeout' => $g['timeout'], 'on' => ($c['enabled'] ?? '1') !== '0'];
+    }
     $base = rtrim(trim((string)($c['base_url'] ?? '')), '/');
     $token = preg_replace('/^Bearer\s+/i', '', trim((string)($c['token'] ?? '')));
     return ['base' => $base, 'token' => $token, 'model' => trim((string)($c['model'] ?? '')) ?: 'gpt-4o-mini',

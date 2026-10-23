@@ -23,12 +23,41 @@ const API_SERVICES = [
         'fields' => [['token', 'کلیدِ اختصاصی (اختیاری)', 'secret', 'خالی = کلیدِ مشترکِ s.api.ir']]],
     'ai_vision' => ['fa' => 'خواندنِ اسکن (هوش مصنوعی)', 'icon' => 'fa-wand-magic-sparkles', 'site' => 'OpenAI-compatible',
         'desc' => 'مدارکِ اسکن‌شده (عکس یا PDFِ بدونِ متن، مثلِ سند فروشِ کارخانه) با یک مدلِ تصویری خوانده می‌شوند: شاسی، موتور، مشخصاتِ خودرو و مالک. هر سرویسی که API سازگار با OpenAI (chat/completions) و مدلِ تصویری دارد کار می‌کند. بدونِ این تنظیم، اسکن‌ها مثلِ قبل دستی وارد می‌شوند.',
-        'fields' => [['base_url', 'آدرسِ API', 'text', 'مثلاً https://api.openai.com/v1 یا آدرسِ سرویسِ داخلیِ سازگار؛ تا پیش از /chat/completions'],
+        'fields' => [['provider', 'سرویس‌دهنده', 'select:custom=سرویسِ دلخواه (آدرس و کلیدِ همین‌جا),gapgpt=GapGPT (کلیدِ کارتِ GapGPT)', 'با GapGPT آدرس و کلید از کارتِ «GapGPT» پایین‌تر خوانده می‌شود'],
+                     ['base_url', 'آدرسِ API', 'text', 'مثلاً https://api.openai.com/v1 یا آدرسِ سرویسِ داخلیِ سازگار؛ تا پیش از /chat/completions'],
                      ['token', 'کلیدِ API', 'secret', 'کلیدِ همان سرویس (بدونِ Bearer)'],
                      ['model', 'مدل', 'text', 'مدلِ تصویری، مثلاً gpt-4o-mini یا gpt-4o'],
                      ['timeout', 'مهلتِ پاسخ (ثانیه)', 'text', 'پیش‌فرض ۶۰'],
                      ['enabled', 'وضعیت', 'select:1=فعال,0=غیرفعال', '']]],
+    'gapgpt' => ['fa' => 'GapGPT (هوش مصنوعی)', 'icon' => 'fa-robot', 'site' => 'gapgpt.app', 'endpoint' => '/v1/chat/completions · /v1/systemone',
+        'desc' => 'سرویسِ ایرانیِ GapGPT: هم chat/completions سازگار با OpenAI (برای خواندنِ اسکن‌ها، اگر در کارتِ «خواندنِ اسکن» سرویس‌دهنده را GapGPT بگذارید) و هم systemone (پرسش‌های ساختاریافته از یک متن: بله/خیر، انتخاب، امتیاز). با «آزمایشِ systemone» نمونه‌ی ورودی را بفرستید و خروجی را ببینید.',
+        'fields' => [['token', 'کلیدِ API', 'secret', 'کلیدی که با sk- شروع می‌شود (بدونِ Bearer)'],
+                     ['base_url', 'آدرسِ پایه', 'text', 'پیش‌فرض https://api.gapgpt.app/v1'],
+                     ['model', 'مدلِ تصویری (اسکن‌ها)', 'text', 'مثلاً gpt-4o یا gpt-4o-mini'],
+                     ['model_systemone', 'مدلِ systemone', 'text', 'پیش‌فرض typesafe/jev-1.13'],
+                     ['timeout', 'مهلتِ پاسخ (ثانیه)', 'text', 'پیش‌فرض ۶۰']]],
 ];
+
+// تنظیماتِ GapGPT: آدرس، کلید، مدل‌ها
+function gapgpt_conf($pdo) {
+    $c = api_cfg($pdo)['gapgpt'] ?? [];
+    return ['base' => rtrim(trim((string)($c['base_url'] ?? '')) ?: 'https://api.gapgpt.app/v1', '/'), 'token' => preg_replace('/^Bearer\s+/i', '', trim((string)($c['token'] ?? ''))),
+            'model' => trim((string)($c['model'] ?? '')) ?: 'gpt-4o-mini', 'model_systemone' => trim((string)($c['model_systemone'] ?? '')) ?: 'typesafe/jev-1.13',
+            'timeout' => max(10, min(180, intval($c['timeout'] ?? 60) ?: 60))];
+}
+// systemone: پرسش‌های ساختاریافته از یک «state» (مثلاً متنِ نامه) — questions: {key: {type: noul|choice|score, instructions, criteria}}
+// خروجی: ok، http، data (پاسخِ JSON)، raw، error، ms
+function gapgpt_systemone($pdo, array $state, array $questions, $model = null) {
+    $c = gapgpt_conf($pdo);
+    if ($c['token'] === '') return ['ok' => false, 'http' => 0, 'error' => 'کلیدِ GapGPT در «تنظیمات ← کلیدهای API» وارد نشده است.', 'data' => null, 'raw' => ''];
+    $t0 = microtime(true);
+    $body = json_encode(['model' => $model ?: $c['model_systemone'], 'state' => $state, 'questions' => $questions], JSON_UNESCAPED_UNICODE);
+    $r = sms_http('POST', $c['base'] . '/systemone', $body, ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $c['token']], $c['timeout']);
+    $d = json_decode((string)$r['body'], true);
+    $ok = $r['error'] === '' && $r['http'] >= 200 && $r['http'] < 300 && is_array($d);
+    $err = $ok ? '' : ($r['error'] !== '' ? 'خطای اتصال: ' . $r['error'] : 'پاسخِ ناموفق (HTTP ' . $r['http'] . ')' . (is_array($d) && !empty($d['error']) ? ': ' . (is_array($d['error']) ? ($d['error']['message'] ?? json_encode($d['error'], JSON_UNESCAPED_UNICODE)) : $d['error']) : ''));
+    return ['ok' => $ok, 'http' => $r['http'], 'data' => $d, 'raw' => mb_substr((string)$r['body'], 0, 6000), 'error' => $err, 'sent' => $body, 'ms' => (int)round((microtime(true) - $t0) * 1000)];
+}
 
 function api_cfg($pdo) { return json_decode((string)sms_get($pdo, 'api_services', '{}'), true) ?: []; }
 function api_save_cfg($pdo, array $cfg) { sms_set($pdo, 'api_services', json_encode($cfg, JSON_UNESCAPED_UNICODE)); }
