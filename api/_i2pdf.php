@@ -146,7 +146,7 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
     $urls = array_values(array_filter($urls));
     if (!$urls) return ['fields' => [], 'hash_hint' => '', 'meta' => [], 'keys' => [], 'cookie' => [], 'csrf_hints' => []];
     $cache = so_tmp_dir() . '/i2js_' . md5(implode('|', $urls)) . '.json';
-    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && ($j['v'] ?? 0) === 2) return $j;
+    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && ($j['v'] ?? 0) === 3) return $j;
     $js = ''; $size = 0;
     foreach ($urls as $u) { $r = i2_http('GET', $u, $hdr + ['Accept' => '*/*'], $jar, null, 30); if ($r['http'] === 200) { $js .= "\n" . $r['body']; $size += strlen($r['body']); } }
     preg_match_all('/\.(?:append|set)\(\s*["\']([A-Za-z0-9_\[\]-]{2,40})["\']/', $js, $m);
@@ -168,7 +168,13 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
         $off = 0; $k = 0;
         while ($k < 2 && ($p = strpos($js, $needle, $off)) !== false) { $up[] = '[' . $needle . '] ' . substr($js, max(0, $p - 700), 1400); $off = $p + strlen($needle); $k++; }
     }
-    $j = ['v' => 2, 'upload_hints' => $up, 'apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
+    // تابعی که input_hash را می‌سازد (برای گزارش): ...Promise.all([x(), NAME(h)]) ... input_hash:T
+    $hashFn = '';
+    if (preg_match('/Promise\.all\(\[\w+\(\),\s*(\w+)\(/', $hint, $hm)) {
+        $nm = $hm[1];
+        if (preg_match('/(?:async\s+)?function\s+' . preg_quote($nm, '/') . '\s*\(|[,;\s]' . preg_quote($nm, '/') . '\s*=\s*(?:async\s*)?(?:function|\()/', $js, $fm, PREG_OFFSET_CAPTURE)) $hashFn = $nm . ': ' . substr($js, $fm[0][1], 700);
+    }
+    $j = ['v' => 3, 'hash_fn' => $hashFn, 'upload_hints' => $up, 'apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
           'keys' => array_values(array_unique($keys)), 'cookie' => array_values(array_unique($cookie)), 'csrf_hints' => $hints];
     if ($js !== '') @file_put_contents($cache, json_encode($j));
     return $j;
@@ -257,29 +263,28 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
         $F = $jsInfo['fields'];
         $optArr = json_decode($options, true);
         $sep = $optArr;   // گزینه‌ها جدا: pages, language, engine, layout, format, area, download_formats
-        $variants = [
-            ['files[]', 'sep'], ['files[]', 'sep+json'], ['file', 'sep'], ['files[]', 'json'], ['file', 'json'],
-        ];
-        if (!in_array('files[]', $F, true) && in_array('file', $F, true)) $variants = [['file', 'sep'], ['file', 'sep+json'], ['files[]', 'sep'], ['file', 'json'], ['files[]', 'json']];
+        // شکلِ اسکریپتِ سایت: Object.entries({...options, altcha_context, altcha_grant}) ← فیلدهای جدا، و بعد files[]
+        $variants = [['files[]', 'exact'], ['files[]', 'exact+hash'], ['files[]', 'superset'], ['file', 'superset']];
         $dbg['attempts'] = [];
         $res = null;
         foreach ($variants as $vi => [$fileField, $mode]) {
             if ($vi > 0) { $g = $getGrant(); if (isset($g['err'])) break; }
-            $post = [$fileField => new CURLFile($tmpPdf, 'application/pdf', 'document.pdf')];
-            if (strpos($mode, 'sep') !== false) $post += $sep;
-            if (strpos($mode, 'json') !== false) $post['options'] = $options;
-            $post += ['grant' => $g['grant'], 'input_hash' => $hash, 'scope' => 'pdf-ocr', 'context' => $g['context']];
+            $post = $sep + ['altcha_context' => $g['context'], 'altcha_grant' => $g['grant']];
+            if ($mode !== 'exact') $post['input_hash'] = $hash;
+            if ($mode === 'superset') $post += ['scope' => 'pdf-ocr', 'options' => $options, 'grant' => $g['grant'], 'context' => $g['context']];
+            $post[$fileField] = new CURLFile($tmpPdf, 'application/pdf', 'document.pdf');
             $res = i2_http('POST', $base . '/api/pdf-ocr', $hdr + ['Accept' => '*/*', 'X-I2PDF-Attempt' => i2_hex(16), 'X-I2PDF-Build' => $d['build'], 'X-I2PDF-Case' => i2_hex(16), 'X-I2PDF-Sequence' => (string)($vi + 1)],
                            $jar, $post, $c['timeout']);
             $ej = json_decode($res['body'], true);
-            $dbg['attempts'][] = ['file_field' => $fileField, 'mode' => $mode, 'fields' => array_keys($post), 'http' => $res['http'], 'error' => is_array($ej) ? ($ej['error'] ?? '') : ''];
+            $dbg['attempts'][] = ['file_field' => $fileField, 'mode' => $mode, 'fields' => array_keys($post), 'http' => $res['http'], 'error' => is_array($ej) ? ($ej['error'] ?? '') : '', 'reason' => is_array($ej) ? ($ej['reason'] ?? '') : ''];
             if ($res['http'] === 200 || $res['error'] !== '') break;
-            // فقط خطاهای مربوط به شکلِ فرم را با شکلِ دیگر تکرار کن
-            if (!is_array($ej) || !preg_match('/option|field|file|missing|invalid_(?:request|input)/i', (string)($ej['error'] ?? ''))) break;
+            // فقط خطاهای مربوط به شکلِ فرم/تأیید را با شکلِ دیگر تکرار کن
+            if (!is_array($ej) || !preg_match('/option|field|file|missing|invalid|altcha|verif|grant/i', (string)($ej['error'] ?? ''))) break;
         }
         @unlink($tmpPdf);
         $dbg['upload'] = ['http' => $res['http'], 'type' => $res['type'], 'size' => strlen($res['body'])];
         if ($res['error'] !== '' || $res['http'] !== 200) {
+            $dbg['js_hash_fn'] = $jsInfo['hash_fn'] ?? '';
             $dbg['js_upload_hints'] = $jsInfo['upload_hints'] ?? [];
             $j = json_decode($res['body'], true);
             $msg = is_array($j) ? (string)($j['error'] ?? ($j['message'] ?? '')) : trim(mb_substr(strip_tags($res['body']), 0, 160));
@@ -288,6 +293,8 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
 
         // ۵) نتیجه: text + document + pdf
         $parts = stripos($res['type'], 'multipart') !== false ? i2_multipart($res['body'], $res['type']) : [];
+        if (!$parts && stripos($res['type'], 'json') !== false && is_array($rj = json_decode($res['body'], true)) && isset($rj['text']) && is_string($rj['text']))
+            $parts = ['text' => ['filename' => 'ocr.txt', 'type' => 'text/plain', 'body' => $rj['text']]];
         $dbg['parts'] = array_keys($parts);
         $text = isset($parts['text']) ? i2_text_of($parts['text']['body'], 'txt') : '';
         if ($text === '' && isset($parts['document'])) $text = i2_text_of($parts['document']['body'], 'docx');
