@@ -22,6 +22,18 @@
         });
         return pdfjsP;
     }
+    let pdflibP = null;
+    function pdflib() {
+        if (window.PDFLib) return Promise.resolve(window.PDFLib);
+        if (pdflibP) return pdflibP;
+        pdflibP = new Promise((res, rej) => {
+            const s = document.createElement('script'); s.src = BASE + 'pdf-lib.min.js?v=1';
+            s.onload = () => window.PDFLib ? res(window.PDFLib) : (pdflibP = null, rej(new Error('pdf-lib')));
+            s.onerror = () => { pdflibP = null; rej(new Error('بارگذاریِ pdf-lib ممکن نشد.')); };
+            document.head.appendChild(s);
+        });
+        return pdflibP;
+    }
     // یک worker برای همه‌ی صفحه‌ها (ساختنِ worker برای هر صفحه یکی از دلیل‌های کندیِ نسخه‌ی قبلی بود)
     function tess(lang) {
         if (tessP) return tessP;
@@ -58,23 +70,59 @@
         for (const f of Array.from(files || [])) {
             if (isPdf(f)) {
                 const lib = await pdfjs();
-                const doc = await lib.getDocument({ data: await f.arrayBuffer() }).promise;
+                const buf = await f.arrayBuffer();
+                const doc = await lib.getDocument({ data: buf.slice(0) }).promise;   // pdf.js بافر را به worker می‌دهد؛ اصلش برای PDFِ تک‌صفحه می‌ماند
                 for (let i = 1; i <= doc.numPages; i++) {
                     const pg = await doc.getPage(i), v1 = pg.getViewport({ scale: 1 });
                     const sc = Math.min(2.2, MAXSIDE / Math.max(v1.width, v1.height));
                     const vp = pg.getViewport({ scale: sc }), [cv, g] = fitCanvas(vp.width, vp.height);
                     await pg.render({ canvasContext: g, viewport: vp }).promise;
-                    out.push(Object.assign({ n: out.length + 1, src: f.name + (doc.numPages > 1 ? ' — ص ' + i : '') }, canvasOut(cv)));
+                    out.push(Object.assign({ n: out.length + 1, src: f.name + (doc.numPages > 1 ? ' — ص ' + i : ''), pdfSrc: { buf, i: i - 1 } }, canvasOut(cv)));
                     if (onProgress) onProgress(out.length);
                 }
             } else if (isImg(f)) {
                 const im = await loadImg(f), [cv, g] = fitCanvas(im.naturalWidth, im.naturalHeight);
                 g.drawImage(im, 0, 0, cv.width, cv.height);
-                out.push(Object.assign({ n: out.length + 1, src: f.name }, canvasOut(cv)));
+                out.push(Object.assign({ n: out.length + 1, src: f.name, imgFile: f, imgW: im.naturalWidth, imgH: im.naturalHeight }, canvasOut(cv)));
                 if (onProgress) onProgress(out.length);
             }
         }
         return out;
+    }
+    // PDFِ تک‌صفحه با بیشترین کیفیت برای موتورهایی که PDF می‌گیرند (i2pdf، OCR.space):
+    //   PDF ← همان صفحه از فایلِ اصلی (بدونِ تبدیل به عکس)؛ عکس ← خودِ عکسِ اصلی (JPEG/PNG بدونِ فشرده‌سازیِ دوباره) داخلِ PDF
+    const srcDocs = new WeakMap();
+    function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+    async function pagePdf(p) {
+        if (p._pdf !== undefined) return p._pdf;
+        p._pdf = '';
+        try {
+            const L = await pdflib();
+            const out = await L.PDFDocument.create();
+            if (p.pdfSrc) {
+                let src = srcDocs.get(p.pdfSrc.buf);
+                if (!src) { src = await L.PDFDocument.load(p.pdfSrc.buf, { ignoreEncryption: true }); srcDocs.set(p.pdfSrc.buf, src); }
+                const [pg] = await out.copyPages(src, [p.pdfSrc.i]); out.addPage(pg);
+            } else if (p.imgFile) {
+                const f = p.imgFile, type = (f.type || '').toLowerCase(), raw = new Uint8Array(await f.arrayBuffer());
+                const MAXB = 5.4 * 1024 * 1024;   // تا با base64 زیرِ سقفِ درخواست (حدودِ ۷.۵ مگابایت) بماند
+                let img;
+                if (/jpe?g/.test(type) && raw.length <= MAXB) img = await out.embedJpg(raw);          // خودِ عکسِ اصلی، بدونِ فشرده‌سازیِ دوباره
+                else if (/png/.test(type) && raw.length <= MAXB) img = await out.embedPng(raw);
+                else {   // webp/bmp/… یا خیلی بزرگ: یک بار با کیفیتِ بالا به JPEG (تا ۴۰۰۰ پیکسل، کیفیتِ ۰.۹۲ و در صورتِ نیاز کمی کمتر)
+                    const im = await loadImg(f), k = Math.min(1, 4000 / Math.max(im.naturalWidth, im.naturalHeight));
+                    const cv = document.createElement('canvas'); cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+                    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(im, 0, 0, cv.width, cv.height);
+                    let blob = null;
+                    for (const q of [0.92, 0.85, 0.78, 0.7]) { blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', q)); if (blob.size <= MAXB) break; }
+                    img = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+                }
+                const w = img.width * 72 / 200, h = img.height * 72 / 200;   // ۲۰۰ نقطه در اینچ؛ خودِ عکس با همان وضوحِ اصلی می‌ماند
+                out.addPage([w, h]).drawImage(img, { x: 0, y: 0, width: w, height: h });
+            } else return '';
+            p._pdf = b64(await out.save());
+        } catch (e) { p._pdf = ''; }
+        return p._pdf;
     }
     async function post(body, api) {
         try { return await (await fetch(api || API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json(); }
@@ -168,7 +216,10 @@
                     };
                     timer = setTimeout(poll, 700);
                 }
-                r = await post({ action: opt.action || 'ocr_page', image: p.dataUrl, lang, engine, format: opt.format || '', ptoken }, opt.api);
+                // اول PDFِ باکیفیت (برای i2pdf / OCR.space)؛ اگر حجمِ درخواست زیاد شد فقط یکی فرستاده می‌شود
+                let pdf = opt.noPdf || engine === 'ai' ? '' : await pagePdf(p), image = p.dataUrl;
+                if (pdf && pdf.length + image.length > 7.5 * 1024 * 1024) { if (pdf.length <= 7.5 * 1024 * 1024 && engine !== 'ai') image = ''; else pdf = ''; }
+                r = await post({ action: opt.action || 'ocr_page', image, pdf, lang, engine, format: opt.format || '', ptoken }, opt.api);
                 if (timer) clearTimeout(timer); timer = null;
                 if (ptoken) { const g = await post({ action: 'ocr_progress', token: ptoken }, opt.api); if (g && g.ok && (g.steps || []).length) opt.onProgress(p, g.steps, g.elapsed || 0); }   // تایم‌لاینِ کامل
             }
@@ -185,5 +236,5 @@
         await Promise.all(Array.from({ length: Math.min(conc, pages.length) }, lane));
         return res;
     }
-    window.SmartOCR = { pagesFromFiles, pagesFromUrl, pickPages, textOf, run, isPdf, isImg };
+    window.SmartOCR = { pagesFromFiles, pagesFromUrl, pickPages, pagePdf, textOf, run, isPdf, isImg };
 })();

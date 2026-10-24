@@ -2357,7 +2357,7 @@ try {
         @set_time_limit(300);
         if (function_exists('sess_release')) sess_release(); else session_write_close();
         $lang = in_array($data['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $data['lang'] : 'fas';
-        echo json_encode(so_page($pdo, (string)($data['image'] ?? ''), $lang, in_array($data['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $data['engine'] : 'auto', ['format' => 'txt']), JSON_UNESCAPED_UNICODE);
+        echo json_encode(so_page($pdo, (string)($data['image'] ?? ''), $lang, in_array($data['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $data['engine'] : 'auto', ['format' => 'txt', 'pdf' => so_pdf_param($data['pdf'] ?? '')]), JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'smart_letter_extract') {

@@ -46,7 +46,7 @@ function i2_http($method, $url, $headers, $jar, $body = null, $timeout = 60) {
     $ch = curl_init($url);
     $h = [];
     foreach ($headers as $k => $v) $h[] = $k . ': ' . $v;
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 4, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 15,
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 4, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 25,
         CURLOPT_COOKIEJAR => $jar, CURLOPT_COOKIEFILE => $jar, CURLOPT_HTTPHEADER => $h, CURLOPT_ENCODING => '', CURLOPT_HEADER => true]);
     if ($method !== 'GET') { curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method); curl_setopt($ch, CURLOPT_POSTFIELDS, $body === null ? '' : $body); }
     $resp = curl_exec($ch);
@@ -198,7 +198,12 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
     try {
         // ۱) صفحه‌ی ابزار
         $prog('open', 'باز کردنِ i2pdf.com/pdf-ocr');
-        $pg = i2_http('GET', $c['page_url'], ['User-Agent' => I2_UA, 'Accept' => 'text/html,application/xhtml+xml', 'Accept-Language' => $hdr['Accept-Language']], $jar, null, 30);
+        // اتصالِ هاست به i2pdf گاهی کُند است: یک بار دیگر امتحان می‌شود
+        for ($try = 0; $try < 2; $try++) {
+            $pg = i2_http('GET', $c['page_url'], ['User-Agent' => I2_UA, 'Accept' => 'text/html,application/xhtml+xml', 'Accept-Language' => $hdr['Accept-Language']], $jar, null, 45);
+            if ($pg['http'] >= 200 && $pg['http'] < 400) break;
+            if ($try === 0) { $prog('open', 'باز کردنِ i2pdf.com/pdf-ocr — تلاشِ دوباره'); sleep(2); }
+        }
         $dbg['page'] = ['http' => $pg['http'], 'url' => $pg['url'], 'size' => strlen($pg['body'])];
         if ($pg['http'] < 200 || $pg['http'] >= 400) return $fail('صفحه باز نشد (' . ($pg['error'] ?: 'HTTP ' . $pg['http']) . ')', $pg);
         $d0 = i2_discover_page($pg['body'], $pg['url'] ?: $c['page_url'], $pg['headers']);

@@ -4579,7 +4579,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="smart-ocr.js?v=3"></script>
+    <script src="smart-ocr.js?v=4"></script>
     <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
     <script src="inquiry.js?v=14"></script>
     <script src="registry.js?v=6"></script>

@@ -132,31 +132,57 @@ function so_ai_page($pdo, $dataUrl, $lang) {
 }
 
 // یک صفحه با OCR.space (زبانِ per برای فارسی؛ موتورِ ۱ فارسی را پشتیبانی می‌کند)
+// PDFِ تک‌صفحه‌ای که مرورگر ساخته (base64) ← بایت‌ها (حداکثر ۱۵ مگابایت، فقط PDF)
+function so_pdf_param($b64) {
+    if (!is_string($b64) || $b64 === '' || strlen($b64) > 21 * 1024 * 1024) return '';
+    $b = base64_decode($b64, true);
+    return ($b !== false && substr($b, 0, 5) === '%PDF-') ? $b : '';
+}
+// یک صفحه با OCR.space. فارسی: OCR.space کدِ «per» را در همه‌ی حساب‌ها/موتورها نمی‌پذیرد (E201)،
+//   پس به ترتیب امتحان می‌شود: per (موتورِ ۱) ← auto (موتورِ ۲، تشخیصِ خودکار) ← ara (موتورِ ۱، خطِ عربی/فارسی)
 function so_ocrspace_page($pdo, $dataUrl, $lang) {
     $o = so_ocrspace_conf($pdo);
     $t0 = microtime(true);
-    $fields = ['base64Image' => $dataUrl, 'filetype' => strpos((string)$dataUrl, 'data:application/pdf') === 0 ? 'PDF' : 'JPG', 'language' => $lang === 'eng' ? 'eng' : 'per', 'isOverlayRequired' => 'false', 'scale' => 'true', 'detectOrientation' => 'true',
-               'OCREngine' => $lang === 'eng' ? $o['engine'] : '1'];
-    $ch = curl_init('https://api.ocr.space/parse/image');
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $fields, CURLOPT_HTTPHEADER => ['apikey: ' . $o['token']],
-                            CURLOPT_TIMEOUT => 60, CURLOPT_CONNECTTIMEOUT => 12]);
-    $body = curl_exec($ch);
-    $err = curl_error($ch);
-    curl_close($ch);
-    $ms = (int)round((microtime(true) - $t0) * 1000);
-    $j = json_decode((string)$body, true);
-    if (!is_array($j)) return ['ok' => false, 'ms' => $ms, 'error' => 'OCR.space: ' . ($err ?: 'پاسخِ نامعتبر')];
-    if (!empty($j['IsErroredOnProcessing'])) return ['ok' => false, 'ms' => $ms, 'error' => 'OCR.space: ' . implode(' ', (array)($j['ErrorMessage'] ?? ['خطا']))];
-    $txt = trim(implode("\n", array_map(function ($r) { return (string)($r['ParsedText'] ?? ''); }, (array)($j['ParsedResults'] ?? []))));
-    $txt = preg_replace("/\r\n?/", "\n", $txt);
-    return ['ok' => $txt !== '', 'text' => $txt, 'ms' => $ms, 'engine' => 'ocrspace', 'error' => $txt === '' ? 'OCR.space متنی پیدا نکرد.' : ''];
+    $isPdf = strpos((string)$dataUrl, 'data:application/pdf') === 0;
+    $tries = $lang === 'eng' ? [['eng', $o['engine']]] : [['per', '1'], ['auto', '2'], ['ara', '1']];
+    $last = 'OCR.space: خطا';
+    foreach ($tries as [$lc, $engine]) {
+        $fields = ['base64Image' => $dataUrl, 'filetype' => $isPdf ? 'PDF' : 'JPG', 'language' => $lc, 'isOverlayRequired' => 'false', 'scale' => 'true',
+                   'detectOrientation' => 'true', 'OCREngine' => $engine];
+        $ch = curl_init('https://api.ocr.space/parse/image');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $fields, CURLOPT_HTTPHEADER => ['apikey: ' . $o['token']],
+                                CURLOPT_TIMEOUT => 90, CURLOPT_CONNECTTIMEOUT => 20]);
+        $body = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $j = json_decode((string)$body, true);
+        if (!is_array($j)) { $last = 'OCR.space: ' . ($err ?: 'پاسخِ نامعتبر'); break; }
+        if (!empty($j['IsErroredOnProcessing'])) {
+            $last = 'OCR.space: ' . implode(' ', (array)($j['ErrorMessage'] ?? ['خطا']));
+            if (preg_match('/E201|language/i', $last)) continue;   // کدِ زبان پذیرفته نشد: کدِ بعدی
+            break;
+        }
+        $txt = trim(implode("\n", array_map(function ($r) { return (string)($r['ParsedText'] ?? ''); }, (array)($j['ParsedResults'] ?? []))));
+        $txt = preg_replace("/\r\n?/", "\n", $txt);
+        $ms = (int)round((microtime(true) - $t0) * 1000);
+        return ['ok' => $txt !== '', 'text' => $txt, 'ms' => $ms, 'engine' => 'ocrspace', 'lang_code' => $lc, 'error' => $txt === '' ? 'OCR.space متنی پیدا نکرد.' : ''];
+    }
+    return ['ok' => false, 'ms' => (int)round((microtime(true) - $t0) * 1000), 'error' => $last];
 }
 
 // یک صفحه: engine = auto (ترتیبِ تنظیمات) | i2pdf | ai | ocrspace
 //   $opt: format (قالبِ خروجیِ i2pdf)، ptoken (برای تایم‌لاین)، pdf (PDFِ تک‌صفحه‌ی آماده، اختیاری)
 function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
-    if (!preg_match('~^data:image/(jpeg|png|webp);base64,~', (string)$dataUrl)) return ['ok' => false, 'error' => 'عکسِ صفحه نرسید.'];
-    if (strlen($dataUrl) > 9 * 1024 * 1024) return ['ok' => false, 'error' => 'عکسِ صفحه خیلی بزرگ است.'];
+    $pdfIn = !empty($opt['pdf']) && substr((string)$opt['pdf'], 0, 5) === '%PDF-' ? (string)$opt['pdf'] : '';
+    if ($pdfIn === '' && !preg_match('~^data:image/(jpeg|png|webp);base64,~', (string)$dataUrl)) return ['ok' => false, 'error' => 'عکس یا PDFِ صفحه نرسید.'];
+    if (strlen((string)$dataUrl) > 12 * 1024 * 1024) return ['ok' => false, 'error' => 'عکسِ صفحه خیلی بزرگ است.'];
+    // عکسِ صفحه برای هوشِ مصنوعی وقتی فقط PDF رسیده (اسکن/عکس داخلِ PDF یک JPEG است)
+    $imgOf = function () use (&$dataUrl, $pdfIn) {
+        if (preg_match('~^data:image/~', (string)$dataUrl) || $pdfIn === '') return (string)$dataUrl;
+        $tmp = tempnam(sys_get_temp_dir(), 'sop') . '.pdf'; file_put_contents($tmp, $pdfIn);
+        $x = vdoc_ai_page_image($tmp, 1); @unlink($tmp);
+        return $dataUrl = $x ? 'data:' . $x['mime'] . ';base64,' . base64_encode($x['bytes']) : '';
+    };
     if (mt_rand(1, 30) === 1) foreach (array_merge(glob(so_tmp_dir() . '/ocrp_*') ?: [], glob(so_tmp_dir() . '/i2_*') ?: []) as $old) if (@filemtime($old) < time() - 86400) @unlink($old);
     $av = so_engines($pdo);
     $cfg = so_cfg($pdo);
@@ -170,10 +196,15 @@ function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
         $prog('engine', 'موتور: ' . SO_ENGINES[$e]);
         if ($e === 'i2pdf') {
             require_once __DIR__ . '/_i2pdf.php';
-            $pdf = !empty($opt['pdf']) ? $opt['pdf'] : so_image_pdf($dataUrl);
+            $pdf = $pdfIn !== '' ? $pdfIn : so_image_pdf($dataUrl);
             $r = $pdf ? i2_page($pdo, $pdf, $lang, (string)($opt['format'] ?? $cfg['format']), $prog) : ['ok' => false, 'error' => 'i2pdf: ساختِ PDFِ صفحه ممکن نشد.'];
-        } elseif ($e === 'ai') $r = so_ai_page($pdo, $dataUrl, $lang);
-        else $r = so_ocrspace_page($pdo, $dataUrl, $lang);
+        } elseif ($e === 'ai') {
+            $im = $imgOf();
+            $r = $im !== '' ? so_ai_page($pdo, $im, $lang) : ['ok' => false, 'error' => 'هوشِ مصنوعی: عکسِ صفحه از PDF بیرون کشیده نشد.'];
+        } else {
+            // OCR.space: اول همان PDFِ باکیفیت، وگرنه عکس
+            $r = so_ocrspace_page($pdo, $pdfIn !== '' ? 'data:application/pdf;base64,' . base64_encode($pdfIn) : $dataUrl, $lang);
+        }
         if ($r['ok']) { if ($e !== 'i2pdf') $prog('done', 'Your result is ready. (' . SO_ENGINES[$e] . ')'); return $r + ['engine_fa' => SO_ENGINES[$e], 'text_verbatim' => $r['text']]; }
         $prog('fail', $r['error']);
         $errs[] = $r['error'];
@@ -218,8 +249,8 @@ function so_file_text($pdo, $abs, $page = 1, $lang = 'fas') {
             if (($im = $getImg()) === '') { $errs[] = 'هوشِ مصنوعی: عکسِ صفحه بیرون کشیده نشد.'; continue; }
             $r = so_ai_page($pdo, $im, $lang);
         } else {
-            $src = $getImg();
-            if ($src === '' && ($p = $getPdf()) !== '') $src = 'data:application/pdf;base64,' . base64_encode($p);
+            // اول PDFِ باکیفیت (عکس هم اول PDF می‌شود)، وگرنه عکس
+            $src = ($p = $getPdf()) !== '' && strlen($p) < 9 * 1024 * 1024 ? 'data:application/pdf;base64,' . base64_encode($p) : $getImg();
             if ($src === '') { $errs[] = 'OCR.space: فایلِ صفحه آماده نشد.'; continue; }
             $r = so_ocrspace_page($pdo, $src, $lang);
         }

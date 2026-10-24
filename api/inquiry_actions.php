@@ -269,7 +269,7 @@ if (strpos($action, 'ocr_') === 0) {
         session_write_close();   // صفحه‌های هم‌زمانِ همین کاربر پشتِ قفلِ نشست نمانند
         $lang = in_array($in['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $in['lang'] : 'fas';
         $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $in['engine'] : 'auto',
-                     ['format' => (string)($in['format'] ?? ''), 'ptoken' => (string)($in['ptoken'] ?? '')]));
+                     ['format' => (string)($in['format'] ?? ''), 'ptoken' => (string)($in['ptoken'] ?? ''), 'pdf' => so_pdf_param($in['pdf'] ?? '')]));
     }
     // پردازش: متنِ OCR ← پرامپتِ نوعِ انتخابی (یا تشخیصِ خودکار) ← فیلدها
     if ($action === 'ocr_extract') {
