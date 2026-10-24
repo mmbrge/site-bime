@@ -31,25 +31,26 @@ function ip_money($v) { $v = intval($v); return $v > 0 ? number_format($v) . ' �
 function ip_jd($d) { return $d ? jalali_from_gregorian_ts_dotted(strtotime($d)) : ''; }
 function ip_rel($siteRoot, $p) { return $p ? ltrim(str_replace($siteRoot, '', (string)$p), '/') : ''; }
 // همه‌ی فایل‌های یک مدرکِ پوشه‌ای (بازدید) به‌صورتِ فایل‌های جدا
-function ip_doc_files($siteRoot, $rel, $label, $group) {
+//   $extra: کلیدهای اضافه‌ی هر فایل (doc_id، doc_type، ext = قابلِ «استخراج اطلاعات»)
+function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
     $abs = realpath($siteRoot . '/' . ltrim((string)$rel, '/'));
     $root = realpath($siteRoot);
     if (!$abs || strpos($abs, $root . '/') !== 0) return [];
-    if (is_file($abs)) return [['label' => $label, 'path' => ip_rel($root, $abs), 'group' => $group]];
+    if (is_file($abs)) return [['label' => $label, 'path' => ip_rel($root, $abs), 'group' => $group] + $extra];
     if (!is_dir($abs)) return [];
     $out = [];
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS));
     foreach ($it as $f) {
         if (!$f->isFile() || count($out) >= 80) continue;
         if (!preg_match('/\.(jpe?g|png|webp|gif|pdf)$/i', $f->getFilename()) || preg_match('/\(old\)/u', $f->getFilename())) continue;
-        $out[] = ['label' => $label . ' · ' . pathinfo($f->getFilename(), PATHINFO_FILENAME), 'path' => ip_rel($root, $f->getPathname()), 'group' => $group];
+        $out[] = ['label' => $label . ' · ' . pathinfo($f->getFilename(), PATHINFO_FILENAME), 'path' => ip_rel($root, $f->getPathname()), 'group' => $group] + $extra;
     }
     usort($out, function ($a, $b) { return strnatcasecmp($a['path'], $b['path']); });
     return $out;
 }
 
 try {
-    if ($action !== 'get') $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
+    if (!in_array($action, ['get', 'doc_text', 'extract'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
     $type = ($data['type'] ?? '') === 'P' ? 'P' : 'C';
     $id = intval($data['id'] ?? 0);
     $siteRoot = dirname(__DIR__);
@@ -105,12 +106,14 @@ try {
         $files = [];
         foreach ($docs as $d) {
             $lab = $d['doc_type'] === 'letter' ? 'نامه‌ی درخواست' : company_doc_display_label($d);
-            $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, $d['doc_type'] === 'health_inspection' ? 'بازدید' : ($d['doc_type'] === 'letter' ? 'نامه' : 'مدارک')));
+            $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, $d['doc_type'] === 'health_inspection' ? 'بازدید' : ($d['doc_type'] === 'letter' ? 'نامه' : 'مدارک'),
+                                                     ['doc_id' => (int)$d['id'], 'doc_type' => (string)$d['doc_type'], 'ext' => !in_array($d['doc_type'], ['letter', 'health_inspection', 'health_report'], true)]));
         }
-        if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور'), $files);
+        if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]), $files);
+        if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'C', $id, $files, intval($r['company_id']), $data, $out);
         $out(['ok' => true, 'type' => 'C', 'id' => $id, 'request_id' => (int)$r['request_id'], 'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $kind),
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
-              'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true),
+              'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true), 'can_extract' => ip_can_extract($pdo),
               // استعلامِ سنهاب از داخلِ پنل (ثالث): پلاک/شاسی/موتور و شماره بیمه‌نامه‌ی قبلیِ همین ردیف
               'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'crp', 'id' => $id], 'prefill' => [
                   'plate' => $r['plate_letter'] === 'موتور' ? null : ['p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4']],
@@ -122,7 +125,7 @@ try {
 
     // P: درخواستِ کارکنان
     if ($role !== 'ADMIN') $out(['ok' => false, 'error' => 'به پنلِ صدورِ کارکنان دسترسی ندارید.']);
-    $st = $pdo->prepare("SELECT pc.*, p.full_name, p.national_code, p.mobile_number, p.personnel_code, co.name AS employer FROM policy_cases pc
+    $st = $pdo->prepare("SELECT pc.*, p.full_name, p.national_code, p.mobile_number, p.personnel_code, p.company_id AS person_company_id, co.name AS employer FROM policy_cases pc
                            LEFT JOIN persons p ON p.id = pc.person_id LEFT JOIN companies co ON co.id = p.company_id WHERE pc.id = ?");
     $st->execute([$id]);
     $c = $st->fetch();
@@ -148,13 +151,13 @@ try {
         ($c['status'] ?? '') === 'ISSUED' ? ip_sec('صدور', 'fa-stamp', [ip_f('شماره بیمه‌نامه', $g('policy_number'), true), ip_f('تاریخ صدور', $g('policy_issue_date') ?: ip_jd($g('issued_at')), true), ip_f('حق بیمه', ip_money($g('total_premium')))]) : null,
     ]));
     $files = [];
-    if (!empty($c['issued_file_path'])) $files = ip_doc_files($siteRoot, $c['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور');
+    if (!empty($c['issued_file_path'])) $files = ip_doc_files($siteRoot, $c['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]);
     $req = company_doc_types();
     try { foreach ([['BODY', 'سند', 'بله', 'خود'], ['BODY', 'کارت', 'بله', 'پدر'], [$g('insurance_type'), $g('ownership_choice'), $g('prev_body_insurance'), $g('insured_relationship')]] as $a) $req = get_required_docs_v2(...$a) + $req; } catch (Throwable $e) {}
     foreach ($pdo->query("SELECT * FROM case_documents WHERE case_id = " . intval($id) . " ORDER BY id") as $d) {
         if (($d['status'] ?? '') === 'REJECTED') continue;
         $lab = ($d['doc_label'] ?? '') ?: ($req[$d['doc_key'] ?? ($d['doc_type'] ?? '')] ?? (($d['doc_key'] ?? '') ?: ($d['doc_type'] ?? 'مدرک')));
-        $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, 'مدارک'));
+        $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, 'مدارک', ['doc_type' => (string)(($d['doc_key'] ?? '') ?: ($d['doc_type'] ?? '')), 'ext' => true]));
     }
     try {
         $h = $pdo->prepare("SELECT photos FROM health_inspections WHERE case_id = ? ORDER BY id DESC LIMIT 1");
@@ -167,12 +170,13 @@ try {
             }
         }
     } catch (Throwable $e) {}
+    if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'P', $id, $files, intval($c['person_company_id'] ?? 0), $data, $out);
     $plate = (string)$g('plate');
     $stFa = ['REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک', 'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
              'ISSUING' => 'در حال صدور', 'ISSUED' => 'صادر شده', 'REJECTED' => 'رد شده', 'WITHDRAWN' => 'خارج از فاز عملیاتی'];
     $out(['ok' => true, 'type' => 'P', 'id' => $id, 'status' => $c['status'] ?? '', 'status_fa' => $stFa[$c['status'] ?? ''] ?? ($c['status'] ?? ''),
           'title' => $plate ?: ($c['full_name'] ?: 'پرونده‌ی کارکنان'), 'subtitle' => trim(($c['full_name'] ?? '') . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($c['employer'] ? ' · ' . $c['employer'] : '')),
-          'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true),
+          'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true), 'can_extract' => ip_can_extract($pdo),
           'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'case', 'id' => $id], 'prefill' => ['plate' => $plate, 'vin' => $g('vin') ?: '', 'chassis' => $g('chassis_num') ?: '', 'engine' => $g('engine_num') ?: '',
                        'nid' => preg_replace('/\D/', '', (string)($g('insured_national_id') ?: ($c['national_code'] ?? ''))), 'policy_no' => ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number')]],
           'vehicle_key' => ($pc = plate_core($plate)) ? 'p:' . p2e_digits($pc) : (($v = brd_vin_key_safe($g('chassis_num') ?: $g('vin'))) ? 'v:' . $v : '')]);
@@ -185,4 +189,122 @@ try {
 function brd_vin_key_safe($v) {
     $v = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v)));
     return strlen($v) >= 6 ? $v : '';
+}
+
+// ---------------- «استخراج اطلاعات» از یک مدرکِ پنلِ صدور ----------------
+// doc_text: متنِ یک صفحه (متنِ خودِ PDF یا OCR با موتورهای سروری)؛ extract: متن ← پرامپتِ همان نوعِ مدرک (اختصاصیِ شرکت یا کلی) ← فقط خانه‌های خالیِ ردیف
+function ip_can_extract($pdo) {
+    require_once __DIR__ . '/_vdoc_ai.php';
+    if (!vdoc_ai_ready($pdo)) return false;
+    if (perm_real_role() === 'ADMIN') return true;
+    $p = perm_user_custom($pdo, $_SESSION['user_id'] ?? 0);
+    return $p === null || perm_allows($p, 'issue-queue:edit|companies-requests:edit|cases:edit');
+}
+function ip_extract_action($pdo, $siteRoot, $type, $id, array $files, $companyId, array $data, callable $out) {
+    require_once __DIR__ . '/_vdoc.php';
+    require_once __DIR__ . '/_doc_smart.php';
+    $f = null;
+    foreach ($files as $x) if ($x['path'] === (string)($data['path'] ?? '')) { $f = $x; break; }
+    if (!$f || empty($f['ext'])) $out(['ok' => false, 'error' => 'این فایل برای استخراجِ اطلاعات در دسترس نیست.']);
+    $abs = $siteRoot . '/' . $f['path'];
+    @set_time_limit(600);
+    if (($data['action'] ?? '') === 'doc_text') {
+        $pages = 1;
+        if (upload_ext($abs) === 'pdf') { try { require_once __DIR__ . '/_pdf_text.php'; $pages = max(1, PdfDoc::open($abs)->pageCount()); } catch (Throwable $e) {} }
+        $page = max(1, min($pages, intval($data['page'] ?? 1)));
+        $t = ds_page_text($pdo, $abs, $page);
+        if (empty($t['ok'])) $out(['ok' => false, 'error' => $t['error'] ?? 'متنی خوانده نشد.', 'pages' => $pages]);
+        $out(['ok' => true, 'pages' => $pages, 'page' => $page, 'engine' => $t['engine'] ?? '', 'text_verbatim' => (string)$t['text']]);
+    }
+    if (!vdoc_ai_ready($pdo)) $out(['ok' => false, 'error' => 'سرویسِ هوشِ مصنوعی (تنظیمات ← کلیدهای API) تنظیم نشده.']);
+    $text = trim((string)($data['text'] ?? ''));
+    if ($text === '') $out(['ok' => false, 'error' => 'متنی برای استخراج نیست.']);
+    $types = ds_types();
+    $want = (string)($data['doc_kind'] ?? '');
+    $kind = isset($types[$want]) && $want !== 'letter' ? $want : (ds_type_of_doc($f['doc_type'] ?? '') ?: 'auto');
+    if ($kind === 'letter') $kind = 'auto';
+    $x = ds_extract($pdo, $kind, mb_substr($text, 0, DS_MAX_TEXT), $companyId);
+    if (empty($x['ok'])) $out(['ok' => false, 'error' => $x['error'] ?? 'استخراج نشد.']);
+    $applied = [];
+    if ($x['type'] !== 'letter' && $x['type'] !== 'generic') {
+        $applied = $type === 'C' ? ip_apply_company_row($pdo, $id, $x, $f) : ip_apply_case($pdo, $id, $x, $f);
+    }
+    $out(['ok' => true, 'type' => $x['type'], 'type_fa' => $x['type_fa'] ?? '', 'fields_verbatim' => (array)($x['fields'] ?? []), 'applied_verbatim' => $applied]);
+}
+// برچسبِ خانه‌هایی که پر شدند (برای نمایش)
+function ip_fill_labels() {
+    return ['chassis_no' => 'شماره شاسی', 'chassis_num' => 'شماره شاسی', 'vin' => 'VIN', 'engine_no' => 'شماره موتور', 'engine_num' => 'شماره موتور', 'car_name' => 'نام خودرو',
+            'plate_p2' => 'پلاک', 'is_new_vehicle' => 'صفر کیلومتر', 'party_mode' => 'نقشِ مالک / ذینفع', 'owner_name' => 'نام مالک', 'owner_national_id' => 'کد ملیِ مالک',
+            'owner_phone' => 'تلفنِ مالک', 'owner_address' => 'نشانیِ مالک', 'car_system' => 'سیستم', 'car_type' => 'تیپ', 'car_kind' => 'نوع', 'car_usage' => 'کاربری',
+            'car_model_year' => 'مدل', 'car_color' => 'رنگ', 'car_capacity' => 'ظرفیت', 'car_cylinders' => 'تعداد سیلندر', 'prev_policy_number' => 'بیمه‌نامه‌ی قبلی',
+            'prev_insurer' => 'بیمه‌گرِ قبلی', 'prev_expiry' => 'انقضای بیمه‌نامه‌ی قبلی', 'insured_name' => 'نامِ بیمه‌گذار', 'insured_national_id' => 'کد ملیِ بیمه‌گذار'];
+}
+function ip_diff(array $before, array $after) {
+    $lab = ip_fill_labels(); $o = [];
+    foreach ($after as $k => $v) {
+        if (!isset($lab[$k]) || !is_scalar($v) || trim((string)$v) === '' || (string)$v === '0') continue;
+        if (trim((string)($before[$k] ?? '')) !== '' && (string)($before[$k] ?? '') !== '0') continue;
+        $o[$lab[$k]] = $k === 'is_new_vehicle' ? 'بله' : ($k === 'party_mode' ? (PARTY_MODES_SHORT[$v] ?? (string)$v) : (string)$v);
+    }
+    return $o;
+}
+// ردیفِ شرکتی: همان قاعده‌ی مدارکِ ردیف (vdoc_apply_to_row) — هیچ مقدارِ موجودی عوض نمی‌شود
+function ip_apply_company_row($pdo, $id, array $x, array $f) {
+    $snap = function () use ($pdo, $id) {
+        $s = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $s->execute([$id]);
+        $r = $s->fetch() ?: []; $ii = issue_info_decode($r['issue_info'] ?? null); unset($r['issue_info']);
+        return $ii + $r;
+    };
+    $d = (array)$x['data'];
+    $before = $snap();
+    if (in_array($x['type'], ['car_card', 'ownership_doc', 'sales_invoice', 'policy'], true)) {
+        // بیمه‌نامه: فقط مشخصاتِ خودرو (بیمه‌گذارِ بیمه‌نامه نقشِ مالکِ ردیف را عوض نکند)
+        $dv = $x['type'] === 'policy' ? array_diff_key($d, array_flip(['owner_name', 'national_id', 'mobile', 'address', 'postal_code'])) : $d;
+        vdoc_apply_to_row($pdo, $id, $dv, $x['type']);
+        if ($x['type'] === 'policy' && empty($f['issued'])) {
+            $s = $pdo->prepare("SELECT issue_info FROM company_request_plates WHERE id = ?"); $s->execute([$id]);
+            $ii = issue_info_decode($s->fetchColumn()); $ch = false;
+            foreach (['policy_number' => 'prev_policy_number', 'insurer' => 'prev_insurer', 'end_date' => 'prev_expiry'] as $from => $to)
+                if (trim((string)($d[$from] ?? '')) !== '' && trim((string)($ii[$to] ?? '')) === '') { $ii[$to] = mb_substr(trim((string)$d[$from]), 0, 120); $ch = true; }
+            if ($ch) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $id]);
+        }
+        // نتیجه روی خودِ مدرک هم ذخیره شود (پنل و پرونده‌ی خودرو از آن می‌خوانند)
+        if (!empty($f['doc_id'])) {
+            $res = !empty($x['result']) ? $x['result'] : ['ok' => true, 'kind' => $x['type'], 'data' => $d];
+            $res['by'] = 'issue_panel';
+            try {
+                vdoc_ensure($pdo);
+                $pdo->prepare("UPDATE company_documents SET ai_json = ?, ai_at = NOW() WHERE id = ?")->execute([json_encode($res, JSON_UNESCAPED_UNICODE), intval($f['doc_id'])]);
+            } catch (Throwable $e) { error_log('[issue_panel extract] ' . $e->getMessage()); }
+        }
+    }
+    return ip_diff($before, $snap());
+}
+// درخواستِ کارکنان: اطلاعاتِ صدور (issue_info) و شاسی/موتور — فقط خانه‌های خالی
+function ip_apply_case($pdo, $id, array $x, array $f) {
+    $snap = function () use ($pdo, $id) {
+        $s = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?"); $s->execute([$id]);
+        $r = $s->fetch() ?: []; $ii = issue_info_decode($r['issue_info'] ?? null);
+        return $ii + ['chassis_num' => $r['chassis_num'] ?? '', 'engine_num' => $r['engine_num'] ?? '', 'vin' => $r['vin'] ?? ''];
+    };
+    $d = (array)$x['data'];
+    $before = $snap();
+    $map = ['car_system' => 'car_system', 'car_tip' => 'car_type', 'model_year' => 'car_model_year', 'color' => 'car_color', 'usage' => 'car_usage', 'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders'];
+    if (in_array($x['type'], ['car_card', 'ownership_doc', 'sales_invoice'], true)) $map += ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'mobile' => 'owner_phone', 'address' => 'owner_address'];
+    if ($x['type'] === 'policy' && empty($f['issued'])) $map += ['policy_number' => 'prev_policy_number', 'insurer' => 'prev_insurer', 'end_date' => 'prev_expiry'];
+    if ($x['type'] === 'personnel') $map = ['insured_name' => 'insured_name', 'national_id' => 'insured_national_id'];
+    $s = $pdo->prepare("SELECT issue_info FROM policy_cases WHERE id = ?"); $s->execute([$id]);
+    $ii = issue_info_decode($s->fetchColumn()); $ch = false;
+    foreach ($map as $from => $to)
+        if (isset($d[$from]) && is_scalar($d[$from]) && trim((string)$d[$from]) !== '' && trim((string)($ii[$to] ?? '')) === '') { $ii[$to] = mb_substr(trim((string)$d[$from]), 0, 250); $ch = true; }
+    if ($ch) $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $id]);
+    if ($x['type'] !== 'personnel') {
+        $code = function ($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); };
+        $vin = $code($d['vin'] ?? ''); $eng = $code($d['engine_no'] ?? '');
+        try {
+            $pdo->prepare("UPDATE policy_cases SET chassis_num = COALESCE(NULLIF(chassis_num, ''), NULLIF(?, '')), engine_num = COALESCE(NULLIF(engine_num, ''), NULLIF(?, '')),
+                           vin = COALESCE(NULLIF(vin, ''), NULLIF(?, '')) WHERE id = ?")->execute([$vin, $eng, strlen($vin) === 17 ? $vin : '', $id]);
+        } catch (Throwable $e) { error_log('[issue_panel extract] ' . $e->getMessage()); }
+    }
+    return ip_diff($before, $snap());
 }

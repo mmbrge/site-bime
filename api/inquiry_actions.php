@@ -288,6 +288,16 @@ if (strpos($action, 'ocr_') === 0) {
         require_once __DIR__ . '/_i2pdf.php';
         $out(i2_test($pdo));
     }
+    // پرامپت‌های یک شرکت: base = پرامپتِ کلی (اگر اختصاصی ندارد همین اعمال می‌شود)، custom = اختصاصیِ همین شرکت
+    if ($action === 'ocr_prompts_company') {
+        if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        require_once __DIR__ . '/_doc_smart.php';
+        $cid = intval($in['company_id'] ?? 0);
+        $cfgAll = api_cfg($pdo)['smart_ocr'] ?? [];
+        $list = [];
+        foreach (ds_types() as $t => $x) $list[] = ['type' => $t, 'label' => $x[0], 'base_verbatim' => trim((string)($cfgAll['prompts'][$t] ?? '')) ?: $x[1], 'custom_verbatim' => (string)($cfgAll['company_prompts'][(string)$cid][$t] ?? '')];
+        $out(['ok' => true, 'company_id' => $cid, 'prompts' => $list]);
+    }
     if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
         require_once __DIR__ . '/_i2pdf.php';
@@ -296,7 +306,9 @@ if (strpos($action, 'ocr_') === 0) {
         $c = so_cfg($pdo); $custom = (api_cfg($pdo)['smart_ocr'] ?? [])['prompts'] ?? [];
         $prompts = [];
         foreach (ds_types() as $t => $x) $prompts[] = ['type' => $t, 'label' => $x[0], 'default_verbatim' => $x[1], 'custom_verbatim' => (string)($custom[$t] ?? '')];
-        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS, 'i2pdf' => i2_conf($pdo), 'prompts' => $prompts, 'ai_ready' => vdoc_ai_ready($pdo)]);
+        $cmap = ds_company_prompt_map($pdo); $companies = [];
+        try { foreach ($pdo->query("SELECT id, name FROM companies ORDER BY name")->fetchAll() as $co) $companies[] = ['id' => intval($co['id']), 'name' => $co['name'], 'custom' => count($cmap[intval($co['id'])] ?? [])]; } catch (Throwable $e) {}
+        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS, 'i2pdf' => i2_conf($pdo), 'prompts' => $prompts, 'ai_ready' => vdoc_ai_ready($pdo), 'companies' => $companies]);
     }
     if ($action === 'ocr_save') {
         $id = intval($in['id'] ?? 0);

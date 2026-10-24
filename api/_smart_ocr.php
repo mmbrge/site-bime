@@ -40,6 +40,17 @@ function so_save_cfg($pdo, array $in) {
             if ($v === '' || $v === trim($x[1])) unset($c['prompts'][$t]); else $c['prompts'][$t] = mb_substr($v, 0, 8000);
         }
     }
+    // پرامپت‌های اختصاصیِ یک شرکت: ['id' => company_id, 'prompts' => [نوع => متن]] — خالی یا برابر با پرامپتِ کلی = حذفِ اختصاصی
+    if (isset($in['company_prompts']['id']) && is_array($in['company_prompts']['prompts'] ?? null)) {
+        require_once __DIR__ . '/_doc_smart.php';
+        $cid = (string)intval($in['company_prompts']['id']);
+        foreach (ds_types() as $t => $x) if (array_key_exists($t, $in['company_prompts']['prompts'])) {
+            $v = trim((string)$in['company_prompts']['prompts'][$t]);
+            $base = trim((string)($c['prompts'][$t] ?? '')) ?: trim($x[1]);
+            if ($v === '' || $v === $base) unset($c['company_prompts'][$cid][$t]); else $c['company_prompts'][$cid][$t] = mb_substr($v, 0, 8000);
+        }
+        if (empty($c['company_prompts'][$cid])) unset($c['company_prompts'][$cid]);
+    }
     $i2 = $c['i2pdf'] ?? [];
     foreach (['page_url', 'lang_fa', 'lang_en', 'engine', 'layout', 'format', 'timeout'] as $k) if (isset($in['i2pdf'][$k])) $i2[$k] = trim((string)$in['i2pdf'][$k]);
     $c['i2pdf'] = $i2;

@@ -787,6 +787,10 @@
                 ${(d.prompts || []).map(p => `<div class="mt-2"><div class="flex items-center justify-between"><b class="text-[11.5px] text-slate-700">${esc(p.label)} <code class="text-[10px] text-slate-400">${p.type}</code>${p.custom_verbatim ? ' <span class="text-[10px] text-fuchsia-600">(ویرایش‌شده)</span>' : ''}</b>
                     <button class="inq-fbtn !py-0.5" data-pdef="${p.type}">پیش‌فرض</button></div>
                     <textarea class="inq-in" rows="5" dir="rtl" data-prompt="${p.type}" style="font-size:11px;font-weight:500;letter-spacing:0;line-height:1.9">${esc(p.custom_verbatim || p.default_verbatim)}</textarea></div>`).join('')}</details>
+            <details class="rounded-2xl border border-sky-100 bg-sky-50/40 p-3" data-cpbox><summary class="text-[12px] font-black text-sky-900 cursor-pointer"><i class="fas fa-building ml-1"></i>پرامپتِ اختصاصیِ هر شرکت ${(d.companies || []).some(x => x.custom) ? `<span class="text-[10px] text-sky-600">(${fa((d.companies || []).filter(x => x.custom).length)} شرکت تنظیم‌شده)</span>` : ''}</summary>
+                <p class="text-[10.5px] text-slate-500 leading-6 mt-2">پرامپت‌های بالا برای همه‌ی شرکت‌ها اعمال می‌شود؛ اگر برای یک شرکت پرامپتِ یک مدرک را اینجا عوض کنید، فقط برای همان شرکت (مدارکِ درخواست‌ها، نامه‌ها و پنلِ صدور) به جای پرامپتِ کلی استفاده می‌شود.</p>
+                <select class="inq-in mt-2" style="font-size:12px" data-cpco><option value="">— انتخابِ شرکت —</option>${(d.companies || []).map(x => `<option value="${x.id}">${esc(x.name)}${x.custom ? ` ★ (${fa(x.custom)} پرامپتِ اختصاصی)` : ''}</option>`).join('')}</select>
+                <div data-cplist class="mt-2"></div></details>
             <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" open><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● cURL روی هاست نیست</span>'}</summary>
                 <p class="text-[10.5px] text-slate-600 leading-6 mt-2">چیزی برای چسباندن لازم نیست: هر صفحه مثلِ خودِ سایت (باز کردنِ صفحه، «I'm not a robot» با حلِ خودکار، Start و دریافتِ txt، Word و PDF با هم) از روی هاست پردازش می‌شود. برای اطمینان «آزمایشِ اتصال» را بزنید؛ اگر خطا داد، گزارشش را بفرستید.</p>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
@@ -801,6 +805,27 @@
             <button class="inq-go w-full" data-osave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ پردازش فایل</button>`;
         paint();
         box.querySelectorAll('[data-pdef]').forEach(b => b.onclick = () => { const p = (d.prompts || []).find(x => x.type === b.dataset.pdef); if (p) box.querySelector(`[data-prompt="${p.type}"]`).value = p.default_verbatim; });
+        box.querySelector('[data-cpco]').onchange = async e => {
+            const cid = +e.target.value, lb = box.querySelector('[data-cplist]');
+            if (!cid) { lb.innerHTML = ''; return; }
+            lb.innerHTML = '<p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i></p>';
+            const r = await post({ action: 'ocr_prompts_company', company_id: cid });
+            if (!r.ok) { lb.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
+            lb.innerHTML = r.prompts.map(p => `<div class="mt-2"><div class="flex items-center justify-between"><b class="text-[11.5px] text-slate-700">${esc(p.label)} <code class="text-[10px] text-slate-400">${p.type}</code> <span class="text-[10px] ${p.custom_verbatim ? 'text-sky-600' : 'text-slate-400'}" data-cpst="${p.type}">${p.custom_verbatim ? '(اختصاصیِ این شرکت)' : '(همان پرامپتِ کلی)'}</span></b>
+                    <button class="inq-fbtn !py-0.5" data-cpdef="${p.type}">برگرداندن به پرامپتِ کلی</button></div>
+                    <textarea class="inq-in" rows="5" dir="rtl" data-cprompt="${p.type}" style="font-size:11px;font-weight:500;letter-spacing:0;line-height:1.9">${esc(p.custom_verbatim || p.base_verbatim)}</textarea></div>`).join('')
+                + '<button class="inq-go w-full mt-3" data-cpsave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی پرامپت‌های این شرکت</button>';
+            lb.querySelectorAll('[data-cpdef]').forEach(b => b.onclick = () => { const p = r.prompts.find(x => x.type === b.dataset.cpdef); if (p) lb.querySelector(`[data-cprompt="${p.type}"]`).value = p.base_verbatim; });
+            lb.querySelector('[data-cpsave]').onclick = async () => {
+                const prompts = {}; lb.querySelectorAll('[data-cprompt]').forEach(x => prompts[x.dataset.cprompt] = x.value);
+                const s = await post({ action: 'ocr_cfg_save', cfg: { company_prompts: { id: cid, prompts } } });
+                if (!s.ok) return toast(s.error, 'error');
+                toast('پرامپت‌های این شرکت ذخیره شد.', 'success');
+                const co = (s.companies || []).find(x => x.id === cid), op = e.target.selectedOptions[0];
+                if (co && op) op.textContent = co.name + (co.custom ? ` ★ (${fa(co.custom)} پرامپتِ اختصاصی)` : '');
+                e.target.onchange({ target: e.target });
+            };
+        };
         box.querySelector('[data-i2test]').onclick = async () => {
             const rb = box.querySelector('[data-i2res]'), t0 = Date.now();
             const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-violet-700"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ آزمایش (یک صفحه‌ی نمونه)… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);

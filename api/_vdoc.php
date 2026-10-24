@@ -42,7 +42,7 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280, array $opt = []) {
         try {
             require_once __DIR__ . '/_doc_smart.php';
             if (ds_smart_available($pdo)) {
-                $s = ds_smart_file($pdo, $abs, intval($page) ?: 1, (string)($opt['hint'] ?? ''));
+                $s = ds_smart_file($pdo, $abs, intval($page) ?: 1, (string)($opt['hint'] ?? ''), intval($opt['company_id'] ?? 0));
                 $rank = ['full' => 3, 'partial' => 2, 'none' => 1];
                 if (!empty($s['ok']) && (empty($r['ok']) || ($rank[$s['status'] ?? 'none'] ?? 0) >= ($rank[$r['status'] ?? 'none'] ?? 0))) {
                     if (!empty($r['ok'])) $s['data'] += array_diff_key((array)$r['data'], $s['data']);   // جاهای خالی از خواننده‌ی متنی
@@ -200,7 +200,7 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     // «پردازشِ هوشمند»ِ این شرکت (تعریفِ شرکت ← خواندنِ مدارک = ۲): OCR + پرامپتِ نوعِ مدرک
     $mode = 1;
     try { $m = $pdo->prepare("SELECT doc_read FROM companies WHERE id = ?"); $m->execute([$doc['company_id']]); $mode = intval($m->fetchColumn()); } catch (Throwable $e) {}
-    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs, 1, 280, ['smart' => $mode === 2 ? true : false, 'hint' => (string)($doc['doc_type'] ?? '')]);
+    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs, 1, 280, ['smart' => $mode === 2 ? true : false, 'hint' => (string)($doc['doc_type'] ?? ''), 'company_id' => intval($doc['company_id'])]);
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)

@@ -2364,7 +2364,9 @@ try {
         require_once __DIR__ . '/_doc_smart.php';
         @set_time_limit(200);
         if (function_exists('sess_release')) sess_release(); else session_write_close();
-        echo json_encode(ds_letter_rows($pdo, (string)($data['text'] ?? '')), JSON_UNESCAPED_UNICODE);
+        $cid = 0;   // پرامپتِ اختصاصیِ شرکتِ همین درخواست (اگر هست)
+        if (!empty($data['request_id'])) { $q = $pdo->prepare("SELECT company_id FROM company_requests WHERE id = ?"); $q->execute([intval($data['request_id'])]); $cid = intval($q->fetchColumn()); }
+        echo json_encode(ds_letter_rows($pdo, (string)($data['text'] ?? ''), $cid), JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'smart_doc_read') {
@@ -2372,11 +2374,11 @@ try {
         require_once __DIR__ . '/_doc_smart.php';
         @set_time_limit(200);
         $docId = intval($data['doc_id'] ?? 0);
-        $st = $pdo->prepare("SELECT id, file_kind, status, doc_type FROM company_documents WHERE id = ?");
+        $st = $pdo->prepare("SELECT id, file_kind, status, doc_type, company_id FROM company_documents WHERE id = ?");
         $st->execute([$docId]);
         $doc = $st->fetch();
         if (!$doc || $doc['file_kind'] !== 'SUPPORTING_DOC') { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد (نامه را از «ورود ردیف‌ها از نامه» بخوانید).'], JSON_UNESCAPED_UNICODE); exit; }
-        $res = ds_doc_result($pdo, (string)($data['text'] ?? ''), (string)($doc['doc_type'] ?? ''));   // پرامپتِ مخصوصِ نوعِ مدرک (یا تشخیصِ نوع)
+        $res = ds_doc_result($pdo, (string)($data['text'] ?? ''), (string)($doc['doc_type'] ?? ''), intval($doc['company_id']));   // پرامپتِ مخصوصِ نوعِ مدرک (یا تشخیصِ نوع)
         vdoc_queue($pdo, [$docId], true);
         $r = vdoc_process_company_doc($pdo, dirname(__DIR__), $docId, $res);
         echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);
@@ -3463,8 +3465,11 @@ try {
     }
     if ($action === 'download_issued_zip') {
         $requestId = intval($_GET['request_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT plate_p1, plate_p2, plate_letter, plate_p4, issued_file_path FROM company_request_plates WHERE request_id = ? AND issued_file_path IS NOT NULL");
-        $stmt->execute([$requestId]);
+        // plate_ids (اختیاری): فقط ردیف‌های انتخاب‌شده (زبانه‌ی «صادر شده» در جزئیاتِ درخواست)
+        $ids = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['plate_ids'] ?? '')))));
+        $stmt = $pdo->prepare("SELECT plate_p1, plate_p2, plate_letter, plate_p4, issued_file_path FROM company_request_plates WHERE request_id = ? AND issued_file_path IS NOT NULL"
+                              . ($ids ? " AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")" : ''));
+        $stmt->execute(array_merge([$requestId], $ids));
         $rows = $stmt->fetchAll();
         if (!$rows) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'فایل صادرشده‌ای یافت نشد.']); exit; }
 

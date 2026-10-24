@@ -59,11 +59,21 @@ function ds_type_of_doc($docType) {
           'sales_invoice' => 'sales_invoice', 'prev_third_policy' => 'policy', 'prev_body_policy' => 'policy', 'policy_doc' => 'policy', 'letter' => 'letter'];
     return $m[(string)$docType] ?? '';
 }
-function ds_prompt($pdo, $type) {
+// پرامپتِ نهایی: پرامپتِ اختصاصیِ همان شرکت (اگر تنظیم شده) ← پرامپتِ کلیِ تنظیمات ← پیش‌فرض
+function ds_prompt($pdo, $type, $companyId = 0) {
     $t = ds_types();
     if (!isset($t[$type])) return '';
-    $c = (api_cfg($pdo)['smart_ocr'] ?? [])['prompts'][$type] ?? '';
-    return trim((string)$c) !== '' ? (string)$c : $t[$type][1];
+    $cfg = api_cfg($pdo)['smart_ocr'] ?? [];
+    $cp = $companyId ? (string)($cfg['company_prompts'][(string)intval($companyId)][$type] ?? '') : '';
+    if (trim($cp) !== '') return $cp;
+    $c = (string)($cfg['prompts'][$type] ?? '');
+    return trim($c) !== '' ? $c : $t[$type][1];
+}
+// شرکت‌هایی که پرامپتِ اختصاصی دارند: [company_id => [نوع‌ها]]
+function ds_company_prompt_map($pdo) {
+    $m = [];
+    foreach ((array)((api_cfg($pdo)['smart_ocr'] ?? [])['company_prompts'] ?? []) as $cid => $list) { $k = array_keys(array_filter((array)$list, function ($v) { return trim((string)$v) !== ''; })); if ($k) $m[(int)$cid] = $k; }
+    return $m;
 }
 
 // متنِ تمیز برای فرستادن: فقط متنِ همان فایل، با سقفِ طول
@@ -109,8 +119,8 @@ function ds_classify($pdo, $text) {
 }
 
 // نامه ← JSONِ ردیف‌ها (همان قالبِ «ورود ردیف‌ها از نامه»؛ پیش‌نمایش و ثبت با همان مسیرِ قبلی)
-function ds_letter_rows($pdo, $text) {
-    $r = ds_ai_json($pdo, ds_prompt($pdo, 'letter'), $text, 8000);
+function ds_letter_rows($pdo, $text, $companyId = 0) {
+    $r = ds_ai_json($pdo, ds_prompt($pdo, 'letter', $companyId), $text, 8000);
     if (!$r['ok']) return $r;
     $j = $r['json'];
     $rows = array_values(array_filter((array)($j['rows'] ?? []), 'is_array'));
@@ -146,20 +156,20 @@ function ds_personnel_data(array $o) {
 
 // استخراج با پرامپتِ نوع: type = نوعِ پرامپت یا 'auto'
 //   خروجی: ok, type, type_fa, data (کلیدهای سایت), fields ([برچسب => مقدار] برای نمایش), result (برای مدارکِ خودرو: همان شکلِ vdr_read)
-function ds_extract($pdo, $type, $text) {
+function ds_extract($pdo, $type, $text, $companyId = 0) {
     $types = ds_types();
     if ($type === 'auto' || $type === '' || !isset($types[$type])) {
         $type = ds_classify($pdo, $text);
         if ($type === 'unknown') $type = 'generic';
     }
     if ($type === 'letter') {
-        $r = ds_letter_rows($pdo, $text);
+        $r = ds_letter_rows($pdo, $text, $companyId);
         if (!$r['ok']) return $r + ['type' => $type];
         $fields = ['تعدادِ ردیف' => (string)$r['count']];
         foreach ($r['counts'] as $k => $v) $fields['تعدادِ درخواستیِ ' . $k] = (string)$v;
         return ['ok' => true, 'type' => $type, 'type_fa' => $types[$type][0], 'data' => ['rows' => $r['rows'], 'counts' => $r['counts']], 'fields' => $fields, 'raw' => $r['raw']];
     }
-    $r = ds_ai_json($pdo, ds_prompt($pdo, $type), $text, $type === 'generic' ? 3000 : 1500);
+    $r = ds_ai_json($pdo, ds_prompt($pdo, $type, $companyId), $text, $type === 'generic' ? 3000 : 1500);
     if (!$r['ok']) return $r + ['type' => $type];
     $o = $r['json'];
     $labels = $types[$type][2];
@@ -184,9 +194,9 @@ function ds_extract($pdo, $type, $text) {
 }
 
 // مدرکِ خودرو (صندوقِ مدارک / ثبتِ دستی) ← همان شکلِ vdr_read؛ $docType = پیشنهادِ نوع (اختیاری)
-function ds_doc_result($pdo, $text, $docType = '') {
+function ds_doc_result($pdo, $text, $docType = '', $companyId = 0) {
     $type = ds_type_of_doc($docType) ?: 'auto';
-    $x = ds_extract($pdo, $type, $text);
+    $x = ds_extract($pdo, $type, $text, $companyId);
     if (!$x['ok']) return ['ok' => false, 'scan' => true, 'engines' => ['ocr', 'ai'], 'error' => $x['error'] ?? 'استخراج نشد.'];
     if (empty($x['result'])) return ['ok' => false, 'scan' => true, 'engines' => ['ocr', 'ai'], 'error' => 'این فایل مدرکِ خودرو شناخته نشد (' . ($x['type_fa'] ?? '') . ').', 'smart_type' => $x['type']];
     return $x['result'];
@@ -206,11 +216,11 @@ function ds_page_text($pdo, $abs, $page = 1) {
     return so_file_text($pdo, $abs, $page);
 }
 // همه‌ی کار روی هاست: متن ← نوع ← استخراج (برای مدارکِ خودرو؛ شکلِ vdr_read)
-function ds_smart_file($pdo, $abs, $page = 1, $docType = '') {
+function ds_smart_file($pdo, $abs, $page = 1, $docType = '', $companyId = 0) {
     @set_time_limit(300);
     $t = ds_page_text($pdo, $abs, $page);
     if (empty($t['ok'])) return ['ok' => false, 'scan' => true, 'engines' => ['ocr'], 'error' => $t['error'] ?? 'متنی خوانده نشد.'];
-    $r = ds_doc_result($pdo, $t['text'], $docType);
+    $r = ds_doc_result($pdo, $t['text'], $docType, $companyId);
     $r['ocr_engine'] = $t['engine'] ?? '';
     return $r;
 }
