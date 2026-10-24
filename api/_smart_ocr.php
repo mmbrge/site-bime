@@ -237,10 +237,10 @@ function so_save($pdo, $id, $name, $lang, array $pages) {
     foreach ($pages as $p) {
         // فایل‌های اصلیِ i2pdf (Word و PDF) از پوشه‌ی موقت به پوشه‌ی ماندگار
         $files = [];
-        foreach ((array)($p['files'] ?? []) as $ext => $id) {
-            if (!in_array($ext, ['docx', 'pdf'], true) || ($id = $okId($id)) === '') continue;
-            if (is_file(so_tmp_dir() . '/i2_' . $id)) @rename(so_tmp_dir() . '/i2_' . $id, inq_dir('ocr') . '/' . $id);
-            if (is_file(inq_dir('ocr') . '/' . $id)) $files[$ext] = $id;
+        foreach ((array)($p['files'] ?? []) as $ext => $fid) {   // نامِ متغیر نباید $id باشد (شناسه‌ی رکورد)
+            if (!in_array($ext, ['docx', 'pdf'], true) || ($fid = $okId($fid)) === '') continue;
+            if (is_file(so_tmp_dir() . '/i2_' . $fid)) @rename(so_tmp_dir() . '/i2_' . $fid, inq_dir('ocr') . '/' . $fid);
+            if (is_file(inq_dir('ocr') . '/' . $fid)) $files[$ext] = $fid;
         }
         $clean[] = ['n' => intval($p['n'] ?? 0), 'text' => mb_substr((string)($p['text'] ?? ''), 0, 200000), 'engine' => (string)($p['engine'] ?? ''), 'ms' => intval($p['ms'] ?? 0), 'files' => $files];
     }
