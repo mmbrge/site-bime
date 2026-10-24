@@ -1,97 +1,18 @@
 <?php
 // فایل: api/_i2pdf.php
-// موتورِ «i2pdf» برای «پردازش فایل هوشمند» — همان کاری که در سایتِ www.i2pdf.com/pdf-ocr دستی انجام می‌شود، از روی هاست:
-//   ۱) باز کردنِ صفحه‌ی ابزار (کوکی‌ها)            ۲) آماده کردنِ PDFِ تک‌صفحه (عکس ← PDF)
-//   ۳) زبانِ تشخیص (Persian / English)             ۴) «I'm not a robot» (ALTCHA = اثباتِ کار؛ خودکار حل می‌شود، کپچای تصویری نیست)
-//   ۵) Start و انتظار تا «Your result is ready.»   ۶) گرفتنِ فایلِ نتیجه (txt / Simple PDF / Word) و متنِ آن
-// خودِ درخواستِ «پردازش» از روی cURLی ساخته می‌شود که مدیر کل یک بار از DevTools ← Network کپی و در تنظیمات می‌چسباند
-// (آدرس، سرتیترها و نامِ فیلدها از همان خوانده می‌شود؛ فایل، زبان، قالب و پاسخِ ALTCHA هر بار عوض می‌شوند).
-// پیشرفتِ هر گام در یک فایلِ موقت نوشته می‌شود تا پنل تایم‌لاین و زمانِ سپری‌شده را نشان دهد (so_progress در _smart_ocr.php).
+// موتورِ «i2pdf» برای «پردازش فایل هوشمند» — همان مسیری که سایتِ www.i2pdf.com/pdf-ocr در مرورگر طی می‌کند (از روی HARِ واقعی):
+//   ۱) GET /pdf-ocr                       ← کوکیِ نشست + X-CSRF-Token (در صفحه) + شماره‌ی build (نامِ pdf-ocr-editor.<build>.js)
+//   ۲) POST /api/altcha  verification_action=challenge, scope=pdf-ocr, input_hash, options   ← {context, challenge}
+//   ۳) حلِ ALTCHA (اثباتِ کار؛ همان «I'm not a robot») و POST /api/altcha verification_action=verify, context, payload ← {grant}
+//   ۴) POST /api/pdf-ocr  فایلِ PDFِ تک‌صفحه + options + grant (+ سرتیترهای x-i2pdf-*)
+//   ۵) پاسخ multipart: metadata، text (ocr.txt)، document (ocr.docx)، pdf (ocr.pdf) — همه‌ی قالب‌ها با هم (download_formats=all)
+// نامِ فیلدهای فرمِ آپلود از خودِ اسکریپتِ سایت (‎.append("…")‎) خوانده می‌شود تا با تغییرِ سایت هم کار کند؛
+// «آزمایشِ اتصال» در تنظیمات همه‌ی گام‌ها و یافته‌ها را گزارش می‌کند.
+// پیشرفتِ هر گام برای تایم‌لاینِ پنل: so_progress در _smart_ocr.php
 
 const I2_PAGE_URL = 'https://www.i2pdf.com/pdf-ocr';
 const I2_FORMATS = ['txt' => 'Editable text (.txt)', 'simple_pdf' => 'Simple PDF (text only)', 'docx' => 'Word document (.docx)', 'pdf' => 'Searchable PDF'];
 const I2_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
-
-// ---------- خواندنِ «Copy as cURL (bash)»ِ کروم ----------
-// آرگومان‌های شِل: '...'، $'...' (با \r\n و \xHH)، "..." و ادامه‌ی خط با «\»
-function i2_shell_args($s) {
-    $s = str_replace(["\\\r\n", "\\\n"], ' ', (string)$s);
-    $out = []; $i = 0; $n = strlen($s);
-    while ($i < $n) {
-        while ($i < $n && ctype_space($s[$i])) $i++;
-        if ($i >= $n) break;
-        $tok = '';
-        while ($i < $n && !ctype_space($s[$i])) {
-            $c = $s[$i];
-            if ($c === "'") { $j = strpos($s, "'", $i + 1); if ($j === false) $j = $n; $tok .= substr($s, $i + 1, $j - $i - 1); $i = $j + 1; }
-            elseif ($c === '$' && ($s[$i + 1] ?? '') === "'") {
-                $i += 2;
-                while ($i < $n && $s[$i] !== "'") {
-                    if ($s[$i] === '\\' && $i + 1 < $n) {
-                        $e = $s[$i + 1]; $i += 2;
-                        if ($e === 'n') $tok .= "\n"; elseif ($e === 'r') $tok .= "\r"; elseif ($e === 't') $tok .= "\t"; elseif ($e === '0') $tok .= "\0";
-                        elseif ($e === 'x' && preg_match('/^[0-9a-fA-F]{1,2}/', substr($s, $i, 2), $m)) { $tok .= chr(hexdec($m[0])); $i += strlen($m[0]); }
-                        elseif ($e === 'u' && preg_match('/^[0-9a-fA-F]{4}/', substr($s, $i, 4), $m)) { $tok .= mb_chr(hexdec($m[0]), 'UTF-8'); $i += 4; }
-                        else $tok .= $e;
-                    } else { $tok .= $s[$i]; $i++; }
-                }
-                $i++;
-            }
-            elseif ($c === '"') {
-                $i++;
-                while ($i < $n && $s[$i] !== '"') { if ($s[$i] === '\\' && $i + 1 < $n) { $tok .= $s[$i + 1]; $i += 2; } else { $tok .= $s[$i]; $i++; } }
-                $i++;
-            }
-            elseif ($c === '\\' && $i + 1 < $n) { $tok .= $s[$i + 1]; $i += 2; }
-            else { $tok .= $c; $i++; }
-        }
-        $out[] = $tok;
-    }
-    return $out;
-}
-// => ['url','method','headers'=>[k=>v],'cookie','fields'=>[[name,value,filename,ctype]],'body','kind'=>multipart|form|json|none]
-function i2_parse_curl($curl) {
-    $a = i2_shell_args($curl);
-    $r = ['url' => '', 'method' => '', 'headers' => [], 'cookie' => '', 'fields' => [], 'body' => '', 'kind' => 'none'];
-    for ($i = 0; $i < count($a); $i++) {
-        $t = $a[$i]; $v = $a[$i + 1] ?? '';
-        if ($t === 'curl') continue;
-        if ($t === '--url') { $r['url'] = $v; $i++; }
-        elseif ($t === '-X' || $t === '--request') { $r['method'] = strtoupper($v); $i++; }
-        elseif ($t === '-H' || $t === '--header') { $p = strpos($v, ':'); if ($p !== false) $r['headers'][strtolower(trim(substr($v, 0, $p)))] = trim(substr($v, $p + 1)); $i++; }
-        elseif ($t === '-b' || $t === '--cookie') { $r['cookie'] = $v; $i++; }
-        elseif (in_array($t, ['--data-raw', '--data', '-d', '--data-binary', '--data-urlencode'], true)) { $r['body'] .= ($r['body'] !== '' ? '&' : '') . $v; $i++; }
-        elseif ($t === '-F' || $t === '--form') {
-            $p = strpos($v, '=');
-            if ($p !== false) { $nm = substr($v, 0, $p); $val = substr($v, $p + 1); $r['fields'][] = $val !== '' && $val[0] === '@' ? [$nm, '', basename(explode(';', substr($val, 1))[0]), 'application/pdf'] : [$nm, $val, null, null]; }
-            $i++; $r['kind'] = 'multipart';
-        }
-        elseif ($r['url'] === '' && preg_match('~^https?://~i', $t)) $r['url'] = $t;
-    }
-    if (isset($r['headers']['cookie']) && $r['cookie'] === '') $r['cookie'] = $r['headers']['cookie'];
-    unset($r['headers']['cookie'], $r['headers']['content-length']);
-    $ct = $r['headers']['content-type'] ?? '';
-    if ($r['kind'] !== 'multipart' && $r['body'] !== '') {
-        if (stripos($ct, 'multipart/form-data') !== false || preg_match('/^-{2,}\S+\r?\n/', $r['body'])) {
-            $r['kind'] = 'multipart';
-            $bd = preg_match('/boundary=([^;\s]+)/i', $ct, $m) ? trim($m[1], '"') : (preg_match('/^--(\S+)/', $r['body'], $m2) ? $m2[1] : '');
-            foreach ($bd !== '' ? explode('--' . $bd, $r['body']) : [] as $part) {
-                $part = ltrim($part, "\r\n");
-                if ($part === '' || strpos($part, '--') === 0) continue;
-                $sp = preg_split("/\r?\n\r?\n/", $part, 2);
-                $hd = $sp[0]; $val = isset($sp[1]) ? preg_replace("/\r?\n$/", '', $sp[1]) : '';
-                if (!preg_match('/name="([^"]*)"/i', $hd, $nm)) continue;
-                $fn = preg_match('/filename="([^"]*)"/i', $hd, $f) ? $f[1] : null;
-                $pct = preg_match('/Content-Type:\s*([^\r\n]+)/i', $hd, $c) ? trim($c[1]) : null;
-                $r['fields'][] = [$nm[1], $fn !== null ? '' : $val, $fn, $pct];
-            }
-        } elseif (stripos($ct, 'json') !== false || (strlen($r['body']) && $r['body'][0] === '{')) $r['kind'] = 'json';
-        else { $r['kind'] = 'form'; parse_str($r['body'], $kv); foreach ($kv as $k => $v) $r['fields'][] = [$k, is_array($v) ? json_encode($v) : (string)$v, null, null]; }
-    }
-    if ($r['method'] === '') $r['method'] = ($r['body'] !== '' || $r['fields']) ? 'POST' : 'GET';
-    unset($r['headers']['content-type']);   // مرزِ تازه را curl خودش می‌سازد
-    return $r;
-}
 
 // ---------- ALTCHA (I'm not a robot): پیدا کردنِ عددی که hash(salt + n) = challenge ----------
 function i2_altcha_solve(array $ch, $maxMs = 20000) {
@@ -114,11 +35,12 @@ function i2_altcha_solve(array $ch, $maxMs = 20000) {
 
 function i2_conf($pdo) {
     $c = (api_cfg($pdo)['smart_ocr'] ?? [])['i2pdf'] ?? [];
-    return ['curl' => (string)($c['curl'] ?? ''), 'challenge_url' => trim((string)($c['challenge_url'] ?? '')), 'page_url' => trim((string)($c['page_url'] ?? '')) ?: I2_PAGE_URL,
+    return ['page_url' => trim((string)($c['page_url'] ?? '')) ?: I2_PAGE_URL,
             'lang_fa' => trim((string)($c['lang_fa'] ?? '')) ?: 'fas', 'lang_en' => trim((string)($c['lang_en'] ?? '')) ?: 'eng',
+            'engine' => trim((string)($c['engine'] ?? '')) ?: 'future', 'layout' => trim((string)($c['layout'] ?? '')) ?: '6',
             'format' => isset(I2_FORMATS[$c['format'] ?? '']) ? $c['format'] : 'txt', 'timeout' => max(30, min(280, intval($c['timeout'] ?? 150) ?: 150))];
 }
-function i2_ready($pdo) { $c = i2_conf($pdo); return trim($c['curl']) !== '' && i2_parse_curl($c['curl'])['url'] !== '' && function_exists('curl_init'); }
+function i2_ready($pdo) { return function_exists('curl_init') && class_exists('CURLFile'); }
 
 function i2_http($method, $url, $headers, $jar, $body = null, $timeout = 60) {
     $ch = curl_init($url);
@@ -165,99 +87,154 @@ function i2_text_of($bytes, $fmt) {
     return trim($t);
 }
 
-// یک صفحه: $pdf = بایت‌های PDFِ تک‌صفحه؛ $prog(step, label) برای تایم‌لاین
-function i2_page($pdo, $pdf, $lang, $fmt, callable $prog) {
+// پاسخِ multipart ← [name => ['filename', 'type', 'body']]
+function i2_multipart($body, $ctype) {
+    if (!preg_match('/boundary="?([^";]+)"?/i', (string)$ctype, $m)) return [];
+    $out = [];
+    foreach (explode('--' . $m[1], (string)$body) as $part) {
+        if ($part === '' || strpos($part, '--') === 0) continue;
+        $part = preg_replace('/^\r?\n/', '', $part);
+        $sp = preg_split("/\r?\n\r?\n/", $part, 2);
+        if (count($sp) < 2 || !preg_match('/name="([^"]*)"/i', $sp[0], $nm)) continue;
+        $out[$nm[1]] = ['filename' => preg_match('/filename="([^"]*)"/i', $sp[0], $f) ? $f[1] : '', 'type' => preg_match('/Content-Type:\s*([^\r\n]+)/i', $sp[0], $t) ? trim($t[1]) : '',
+                        'body' => preg_replace("/\r?\n$/", '', $sp[1])];
+    }
+    return $out;
+}
+// یافته‌های صفحه: توکنِ CSRF، build، آدرسِ اسکریپت
+function i2_discover_page($html, $pageUrl) {
+    $d = ['csrf' => '', 'build' => '', 'js' => ''];
+    foreach (['/<meta[^>]+name=["\']csrf[-_]?token["\'][^>]*content=["\']([^"\']+)/i', '/<meta[^>]+content=["\']([^"\']+)["\'][^>]*name=["\']csrf[-_]?token/i',
+              '/csrf[-_]?token["\']?\s*[:=]\s*["\']([A-Za-z0-9+\/=_-]{20,})/i', '/data-csrf(?:-token)?=["\']([^"\']+)/i', '/name=["\']_?csrf[-_]?(?:token)?["\'][^>]*value=["\']([^"\']+)/i'] as $re)
+        if ($d['csrf'] === '' && preg_match($re, $html, $m)) $d['csrf'] = html_entity_decode($m[1]);
+    if (preg_match('~(/assets/build/pdf-ocr-editor\.([a-f0-9]{6,})\.js)~i', $html, $m)) { $d['js'] = i2_abs($m[1], $pageUrl); $d['build'] = $m[2]; }
+    elseif (preg_match('~src=["\']([^"\']*pdf-ocr[^"\']*\.js)~i', $html, $m)) { $d['js'] = i2_abs(html_entity_decode($m[1]), $pageUrl); if (preg_match('/\.([a-f0-9]{6,})\.js/', $m[1], $b)) $d['build'] = $b[1]; }
+    return $d;
+}
+// نامِ فیلدهای فرم در اسکریپتِ سایت (یک روز در پوشه‌ی موقت نگه داشته می‌شود)
+function i2_discover_js($url, $jar, array $hdr) {
+    if ($url === '') return ['fields' => [], 'hash_hint' => ''];
+    $cache = so_tmp_dir() . '/i2js_' . md5($url) . '.json';
+    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true))) return $j;
+    $r = i2_http('GET', $url, $hdr + ['Accept' => '*/*'], $jar, null, 30);
+    $js = $r['http'] === 200 ? $r['body'] : '';
+    preg_match_all('/\.(?:append|set)\(\s*["\']([A-Za-z0-9_\[\]-]{2,40})["\']/', $js, $m);
+    $hint = '';
+    if (($p = strpos($js, 'input_hash')) !== false) $hint = substr($js, max(0, $p - 500), 1000);
+    $j = ['fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => strlen($js)];
+    if ($js !== '') @file_put_contents($cache, json_encode($j));
+    return $j;
+}
+function i2_hex($n) { return bin2hex(random_bytes($n)); }
+
+// یک صفحه: $pdf = بایت‌های PDFِ تک‌صفحه؛ $prog(step, label) برای تایم‌لاین؛ $dbg (اختیاری) گزارشِ کامل برای «آزمایشِ اتصال»
+function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
     $c = i2_conf($pdo);
-    if (!i2_ready($pdo)) return ['ok' => false, 'error' => 'i2pdf: درخواستِ «پردازش» (cURL) در تنظیمات چسبانده نشده است.'];
-    $tpl = i2_parse_curl($c['curl']);
+    $dbg = [];
     $fmt = isset(I2_FORMATS[$fmt]) ? $fmt : $c['format'];
     $code = $lang === 'eng' ? $c['lang_en'] : $c['lang_fa'];
     $t0 = microtime(true);
     $jar = tempnam(sys_get_temp_dir(), 'i2c');
-    if ($tpl['cookie'] !== '') {   // کوکی‌های cURL (برای همان دامنه)
-        $host = parse_url($tpl['url'], PHP_URL_HOST);
-        foreach (explode(';', $tpl['cookie']) as $ck) { $kv = array_map('trim', explode('=', $ck, 2)); if (count($kv) === 2 && $kv[0] !== '') @file_put_contents($jar, "$host\tFALSE\t/\tTRUE\t0\t{$kv[0]}\t{$kv[1]}\n", FILE_APPEND); }
-    }
-    $base = ['User-Agent' => I2_UA, 'Accept-Language' => 'en-GB,en;q=0.9'];
+    $p = parse_url($c['page_url']); $base = ($p['scheme'] ?? 'https') . '://' . ($p['host'] ?? 'www.i2pdf.com') . (isset($p['port']) ? ':' . $p['port'] : '');
+    $hdr = ['User-Agent' => I2_UA, 'Accept-Language' => 'en-GB,en;q=0.9,fa-IR;q=0.8,fa;q=0.7', 'Origin' => $base, 'Referer' => $base . '/', 'Cache-Control' => 'no-cache', 'Pragma' => 'no-cache'];
+    $fail = function ($msg, $r = null) use (&$dbg) {
+        if ($r) $dbg['last_http'] = ['http' => $r['http'], 'type' => $r['type'], 'error' => $r['error'], 'body' => mb_substr((string)$r['body'], 0, 600)];
+        return ['ok' => false, 'error' => 'i2pdf: ' . $msg];
+    };
     try {
+        // ۱) صفحه‌ی ابزار
         $prog('open', 'باز کردنِ i2pdf.com/pdf-ocr');
-        $pg = i2_http('GET', $c['page_url'], $base + ['Accept' => 'text/html'], $jar, null, 30);
-        if ($pg['http'] < 200 || $pg['http'] >= 400) return ['ok' => false, 'error' => 'i2pdf: صفحه باز نشد (' . ($pg['error'] ?: 'HTTP ' . $pg['http']) . ')'];
+        $pg = i2_http('GET', $c['page_url'], ['User-Agent' => I2_UA, 'Accept' => 'text/html,application/xhtml+xml', 'Accept-Language' => $hdr['Accept-Language']], $jar, null, 30);
+        $dbg['page'] = ['http' => $pg['http'], 'url' => $pg['url'], 'size' => strlen($pg['body'])];
+        if ($pg['http'] < 200 || $pg['http'] >= 400) return $fail('صفحه باز نشد (' . ($pg['error'] ?: 'HTTP ' . $pg['http']) . ')', $pg);
+        $d = i2_discover_page($pg['body'], $pg['url'] ?: $c['page_url']);
+        $dbg['csrf_found'] = $d['csrf'] !== ''; $dbg['build'] = $d['build']; $dbg['js'] = $d['js'];
+        if ($d['csrf'] === '') return $fail('توکنِ CSRF در صفحه پیدا نشد (ساختارِ سایت عوض شده؟ «آزمایشِ اتصال» را بفرستید).');
+        $hdr['X-CSRF-Token'] = $d['csrf'];
+        $jsInfo = i2_discover_js($d['js'], $jar, $hdr);
+        $dbg['js_fields'] = $jsInfo['fields']; $dbg['js_size'] = $jsInfo['size'] ?? 0;
+        $use = function ($ev) use ($base, $hdr, $jar) { i2_http('POST', $base . '/api/tool-usage', $hdr + ['Content-Type' => 'application/json', 'Accept' => '*/*'], $jar, json_encode(['app' => 'pdf-ocr', 'event' => $ev, 'id' => i2_hex(16)]), 10); };
+        $use('view');
+
+        // ۲) فایل و گزینه‌ها (همان ترتیب و شکلِ مرورگر)
         $prog('upload', 'Upload Files — PDFِ تک‌صفحه آماده شد (' . max(1, round(strlen($pdf) / 1024)) . ' KB)');
         $prog('lang', 'Recognition language: ' . ($lang === 'eng' ? 'English' : 'Persian') . ' · Download format: ' . I2_FORMATS[$fmt]);
-        // ALTCHA: آدرسِ چالش از تنظیمات یا از خودِ صفحه (challengeurl / challengejson)
-        $payload = null;
-        $chUrl = $c['challenge_url'];
-        $chJson = null;
-        if ($chUrl === '' && preg_match('/challengeurl\s*[=:]\s*["\']([^"\']+)["\']/i', $pg['body'], $m)) $chUrl = html_entity_decode($m[1]);
-        if ($chUrl === '' && preg_match('/challengejson\s*=\s*([\'"])(.+?)\1/is', $pg['body'], $m)) $chJson = json_decode(html_entity_decode($m[2]), true);
-        $needAltcha = $chUrl !== '' || $chJson || array_filter($tpl['fields'], function ($f) { return stripos($f[0], 'altcha') !== false; }) || stripos($tpl['body'], 'altcha') !== false;
-        if ($needAltcha) {
-            $prog('robot', "I'm not a robot — در حالِ تأیید…");
-            if (!$chJson && $chUrl !== '') { $cr = i2_http('GET', i2_abs($chUrl, $c['page_url']), $base + ['Accept' => 'application/json', 'Referer' => $c['page_url']], $jar, null, 20); $chJson = json_decode($cr['body'], true); }
-            if (is_array($chJson)) $payload = i2_altcha_solve($chJson);
-            if (!$payload) return ['ok' => false, 'error' => 'i2pdf: تأییدِ «I\'m not a robot» انجام نشد' . ($chUrl === '' && !$chJson ? ' (آدرسِ چالش پیدا نشد؛ در تنظیمات «آدرسِ چالشِ ALTCHA» را بگذارید)' : '') . '.'];
-            usleep(800000);
-            $prog('robot_ok', "I'm not a robot — تأیید شد");
-        }
-        // ساختنِ درخواستِ پردازش از روی cURL
-        $set = function ($name, $val) use ($code, $fmt, $payload) {
-            $l = strtolower($name);
-            if (strpos($l, 'altcha') !== false) return $payload !== null ? $payload : $val;
-            if (preg_match('/lang/', $l)) return $code;
-            if (preg_match('/format|output|type$/', $l) && isset(I2_FORMATS[$val])) return $fmt;
-            if (preg_match('/^pages?$|page_range|pages\[?\]?/', $l)) return '1';
-            return $val;
-        };
+        $hash = hash('sha256', $pdf);
+        $options = json_encode(['pages' => '1', 'language' => $code, 'engine' => $c['engine'], 'layout' => $c['layout'], 'format' => $fmt,
+                                'area' => '{"x":0,"y":0,"width":1,"height":1}', 'download_formats' => 'all'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $use('action');
+
+        // ۳) I'm not a robot (ALTCHA)
+        $prog('robot', "I'm not a robot — در حالِ تأیید…");
+        $ch = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'challenge', 'scope' => 'pdf-ocr', 'input_hash' => $hash, 'options' => $options], 30);
+        $cj = json_decode($ch['body'], true);
+        $dbg['altcha_challenge'] = ['http' => $ch['http'], 'has_context' => !empty($cj['context']), 'has_challenge' => !empty($cj['challenge'])];
+        if ($ch['http'] !== 200 || empty($cj['challenge']) || empty($cj['context'])) return $fail('چالشِ «I\'m not a robot» گرفته نشد (HTTP ' . $ch['http'] . ').', $ch);
+        $payload = i2_altcha_solve($cj['challenge']);
+        if (!$payload) return $fail('حلِ «I\'m not a robot» ممکن نشد.');
+        $vf = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'verify', 'scope' => 'pdf-ocr', 'context' => $cj['context'], 'payload' => $payload], 30);
+        $vj = json_decode($vf['body'], true);
+        $dbg['altcha_verify'] = ['http' => $vf['http'], 'has_grant' => !empty($vj['grant'])];
+        if ($vf['http'] !== 200 || empty($vj['grant'])) return $fail('«I\'m not a robot» تأیید نشد (HTTP ' . $vf['http'] . ').', $vf);
+        $prog('robot_ok', "I'm not a robot — تأیید شد");
+
+        // ۴) Start: آپلود و پردازش
         $prog('process', 'Start — در حالِ پردازش');
-        $hdr = array_diff_key($tpl['headers'], ['content-type' => 1, 'content-length' => 1, 'cookie' => 1, 'accept-encoding' => 1]);
-        $hdr = array_merge(['user-agent' => I2_UA], $hdr);
-        if ($tpl['kind'] === 'json') {
-            $j = json_decode($tpl['body'], true) ?: [];
-            array_walk_recursive($j, function (&$v, $k) use ($set, $pdf) { if (is_string($k) && preg_match('/file|pdf|data/i', $k) && is_string($v) && strlen($v) > 200) $v = base64_encode($pdf); elseif (is_string($k)) $v = $set($k, $v); });
-            $res = i2_http($tpl['method'], $tpl['url'], $hdr + ['content-type' => 'application/json'], $jar, json_encode($j), $c['timeout']);
-        } else {
-            $tmpPdf = tempnam(sys_get_temp_dir(), 'i2p') . '.pdf';
-            file_put_contents($tmpPdf, $pdf);
-            $post = []; $hasFile = false; $hasAlt = false;
-            foreach ($tpl['fields'] as $f) {
-                if ($f[2] !== null) { $post[$f[0]] = new CURLFile($tmpPdf, 'application/pdf', 'page.pdf'); $hasFile = true; continue; }
-                if (stripos($f[0], 'altcha') !== false) $hasAlt = true;
-                $post[$f[0]] = $set($f[0], $f[1]);
-            }
-            if (!$hasFile) $post['file'] = new CURLFile($tmpPdf, 'application/pdf', 'page.pdf');
-            if ($payload !== null && !$hasAlt) $post['altcha'] = $payload;
-            $res = i2_http($tpl['method'] === 'GET' ? 'POST' : $tpl['method'], $tpl['url'], $hdr, $jar, $post, $c['timeout']);
-            @unlink($tmpPdf);
+        $tmpPdf = tempnam(sys_get_temp_dir(), 'i2p') . '.pdf';
+        file_put_contents($tmpPdf, $pdf);
+        $F = $jsInfo['fields'];
+        $fileField = 'file';
+        foreach (['file', 'pdf', 'document', 'upload', 'input', 'files[]', 'files', 'pdf_file'] as $cand) if (in_array($cand, $F, true)) { $fileField = $cand; break; }
+        $post = [$fileField => new CURLFile($tmpPdf, 'application/pdf', 'document.pdf'), 'options' => $options, 'grant' => $vj['grant'], 'input_hash' => $hash, 'scope' => 'pdf-ocr', 'context' => $cj['context']];
+        // فیلدهای دیگری که اسکریپتِ سایت می‌فرستد و مقدارشان معلوم است
+        $known = ['pages' => '1', 'language' => $code, 'lang' => $code, 'format' => $fmt, 'engine' => $c['engine'], 'layout' => $c['layout'], 'download_formats' => 'all', 'tool' => 'pdf-ocr', 'app' => 'pdf-ocr'];
+        foreach ($F as $f) {
+            if (isset($post[$f]) || in_array($f, ['verification_action', 'payload'], true)) continue;
+            if (isset($known[$f])) $post[$f] = $known[$f];
+            elseif (stripos($f, 'grant') !== false || stripos($f, 'verification') !== false || stripos($f, 'altcha') !== false) $post[$f] = $vj['grant'];
         }
-        if ($res['error'] !== '' || $res['http'] < 200 || $res['http'] >= 300) {
-            $msg = trim(mb_substr(strip_tags((string)$res['body']), 0, 200));
-            return ['ok' => false, 'error' => 'i2pdf: پردازش انجام نشد (' . ($res['error'] ?: 'HTTP ' . $res['http']) . ($msg !== '' ? ' — ' . $msg : '') . ')'];
+        $dbg['upload_fields'] = array_keys($post);
+        $res = i2_http('POST', $base . '/api/pdf-ocr', $hdr + ['Accept' => '*/*', 'x-i2pdf-attempt' => i2_hex(16), 'x-i2pdf-build' => $d['build'], 'x-i2pdf-case' => i2_hex(16), 'x-i2pdf-sequence' => '1'],
+                       $jar, $post, $c['timeout']);
+        @unlink($tmpPdf);
+        $dbg['upload'] = ['http' => $res['http'], 'type' => $res['type'], 'size' => strlen($res['body'])];
+        if ($res['error'] !== '' || $res['http'] !== 200) {
+            $j = json_decode($res['body'], true);
+            $msg = is_array($j) ? (string)($j['error'] ?? ($j['message'] ?? '')) : trim(mb_substr(strip_tags($res['body']), 0, 160));
+            return $fail('پردازش انجام نشد (' . ($res['error'] ?: 'HTTP ' . $res['http']) . ($msg !== '' ? ' — ' . $msg : '') . ')', $res);
         }
-        // پاسخ: خودِ فایل، یا JSON با متن/آدرسِ دانلود
-        $bytes = $res['body']; $text = null;
-        if (stripos($res['type'], 'json') !== false) {
-            $j = json_decode($bytes, true) ?: [];
-            $find = function ($keys) use ($j) { $hit = null; array_walk_recursive($j, function ($v, $k) use ($keys, &$hit) { if ($hit === null && is_string($k) && in_array(strtolower($k), $keys, true) && is_string($v) && $v !== '') $hit = $v; }); return $hit; };
-            if (($u = $find(['url', 'download_url', 'download', 'file_url', 'result_url', 'href'])) !== null) {
-                $prog('download', 'دریافتِ فایلِ نتیجه');
-                $bytes = i2_http('GET', i2_abs($u, $tpl['url']), $base, $jar, null, 60)['body'];
-            } elseif (($tx = $find(['text', 'result', 'content', 'ocr_text'])) !== null) { $text = $tx; $bytes = ''; }
-            else return ['ok' => false, 'error' => 'i2pdf: پاسخِ ناشناخته — ' . mb_substr($res['body'], 0, 200)];
+
+        // ۵) نتیجه: text + document + pdf
+        $parts = stripos($res['type'], 'multipart') !== false ? i2_multipart($res['body'], $res['type']) : [];
+        $dbg['parts'] = array_keys($parts);
+        $text = isset($parts['text']) ? i2_text_of($parts['text']['body'], 'txt') : '';
+        if ($text === '' && isset($parts['document'])) $text = i2_text_of($parts['document']['body'], 'docx');
+        if ($text === '' && !$parts && stripos($res['type'], 'text/plain') !== false) $text = i2_text_of($res['body'], 'txt');
+        $files = [];
+        foreach (['document' => 'docx', 'pdf' => 'pdf'] as $k => $ext) {
+            if (empty($parts[$k]['body'])) continue;
+            $id = i2_hex(8) . '.' . $ext;
+            if (@file_put_contents(so_tmp_dir() . '/i2_' . $id, $parts[$k]['body'])) $files[$ext] = $id;
         }
-        if ($text === null) {
-            $real = substr($bytes, 0, 5) === '%PDF-' ? 'pdf' : (substr($bytes, 0, 2) === 'PK' ? 'docx' : 'txt');
-            $text = i2_text_of($bytes, $real === 'pdf' ? 'simple_pdf' : $real);
-            $fmt = $real === 'pdf' ? ($fmt === 'pdf' ? 'pdf' : 'simple_pdf') : $real;
-        }
+        $use('result');
         $ms = intval((microtime(true) - $t0) * 1000);
         $prog('done', 'Your result is ready.');
-        $out = ['ok' => trim($text) !== '', 'text' => trim($text), 'ms' => $ms, 'engine' => 'i2pdf', 'format' => $fmt, 'error' => trim($text) === '' ? 'i2pdf متنی برنگرداند.' : ''];
-        if ($bytes !== '' && $fmt !== 'txt') {   // فایلِ اصلیِ i2pdf برای دانلود
-            $id = bin2hex(random_bytes(8));
-            @file_put_contents(so_tmp_dir() . "/i2_$id." . ($fmt === 'docx' ? 'docx' : 'pdf'), $bytes);
-            $out['file'] = $id . '.' . ($fmt === 'docx' ? 'docx' : 'pdf');
-        }
-        return $out;
+        $meta = isset($parts['metadata']) ? (json_decode($parts['metadata']['body'], true) ?: []) : [];
+        return ['ok' => $text !== '', 'text' => $text, 'ms' => $ms, 'engine' => 'i2pdf', 'format' => $fmt, 'rtl' => !empty($meta['rtl']), 'files' => $files,
+                'file' => $files[$fmt === 'docx' ? 'docx' : 'pdf'] ?? ($files['docx'] ?? ''), 'error' => $text === '' ? 'i2pdf متنی برنگرداند.' : ''];
     } finally { @unlink($jar); }
+}
+
+// «آزمایشِ اتصال» (تنظیمات): یک صفحه‌ی نمونه با متنِ فارسی و انگلیسی، همه‌ی گام‌ها و یافته‌ها
+function i2_test($pdo) {
+    if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
+    require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
+    $t = new TCPDF('P', 'mm', 'A5', true, 'UTF-8', false);
+    $t->setPrintHeader(false); $t->setPrintFooter(false); $t->AddPage();
+    $t->AddFont('vazir', '', 'vazir.php'); $t->SetFont('vazir', '', 22); $t->setRTL(true);
+    $t->Write(14, "آزمایش پردازش فایل بیمه با ما\n"); $t->setRTL(false); $t->SetFont('helvetica', '', 20); $t->Write(14, "i2pdf test 12345");
+    $steps = [];
+    $r = i2_page($pdo, $t->Output('', 'S'), 'fas', 'txt', function ($s, $l) use (&$steps) { $steps[] = $l; }, $dbg);
+    return ['ok' => true, 'result' => ['ok' => $r['ok'], 'error' => $r['error'] ?? '', 'text' => mb_substr((string)($r['text'] ?? ''), 0, 400), 'ms' => $r['ms'] ?? 0, 'files' => array_keys($r['files'] ?? [])],
+            'steps' => $steps, 'debug' => $dbg];
 }

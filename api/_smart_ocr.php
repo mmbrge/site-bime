@@ -30,10 +30,9 @@ function so_save_cfg($pdo, array $in) {
     if (isset($in['order'])) $c['order'] = array_values(array_filter((array)$in['order'], function ($e) { return isset(SO_ENGINES[$e]); }));
     if (isset($in['on'])) foreach (SO_ENGINES as $e => $l) $c['on'][$e] = !empty($in['on'][$e]) ? 1 : 0;
     if (isset($in['format'])) $c['format'] = (string)$in['format'];
-    if (isset($in['i2pdf']['curl'])) $in['i2pdf']['curl'] = strtr((string)$in['i2pdf']['curl'], ['’' => "'", '＂' => '"', '＜' => '<', '＞' => '>']);   // اگر از نسخه‌ی نمایشی کپی شده بود
     if (isset($in['conc'])) $c['conc'] = intval($in['conc']);
     $i2 = $c['i2pdf'] ?? [];
-    foreach (['curl', 'challenge_url', 'page_url', 'lang_fa', 'lang_en', 'format', 'timeout'] as $k) if (isset($in['i2pdf'][$k])) $i2[$k] = trim((string)$in['i2pdf'][$k]);
+    foreach (['page_url', 'lang_fa', 'lang_en', 'engine', 'layout', 'format', 'timeout'] as $k) if (isset($in['i2pdf'][$k])) $i2[$k] = trim((string)$in['i2pdf'][$k]);
     $c['i2pdf'] = $i2;
     $all['smart_ocr'] = $c;
     api_save_cfg($pdo, $all);
@@ -178,12 +177,16 @@ function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
 function so_save($pdo, $id, $name, $lang, array $pages) {
     inq_ensure($pdo);
     $clean = [];
+    $okId = function ($id) { return preg_match('/^[a-f0-9]{16}\.(pdf|docx)$/', (string)$id) ? (string)$id : ''; };
     foreach ($pages as $p) {
-        $file = preg_match('/^[a-f0-9]{16}\.(pdf|docx)$/', (string)($p['file'] ?? '')) ? $p['file'] : '';
-        // فایلِ اصلیِ i2pdf از پوشه‌ی موقت به پوشه‌ی ماندگار
-        if ($file !== '' && is_file(so_tmp_dir() . '/i2_' . $file)) @rename(so_tmp_dir() . '/i2_' . $file, inq_dir('ocr') . '/' . $file);
-        if ($file !== '' && !is_file(inq_dir('ocr') . '/' . $file)) $file = '';
-        $clean[] = ['n' => intval($p['n'] ?? 0), 'text' => mb_substr((string)($p['text'] ?? ''), 0, 200000), 'engine' => (string)($p['engine'] ?? ''), 'ms' => intval($p['ms'] ?? 0), 'file' => $file];
+        // فایل‌های اصلیِ i2pdf (Word و PDF) از پوشه‌ی موقت به پوشه‌ی ماندگار
+        $files = [];
+        foreach ((array)($p['files'] ?? []) as $ext => $id) {
+            if (!in_array($ext, ['docx', 'pdf'], true) || ($id = $okId($id)) === '') continue;
+            if (is_file(so_tmp_dir() . '/i2_' . $id)) @rename(so_tmp_dir() . '/i2_' . $id, inq_dir('ocr') . '/' . $id);
+            if (is_file(inq_dir('ocr') . '/' . $id)) $files[$ext] = $id;
+        }
+        $clean[] = ['n' => intval($p['n'] ?? 0), 'text' => mb_substr((string)($p['text'] ?? ''), 0, 200000), 'engine' => (string)($p['engine'] ?? ''), 'ms' => intval($p['ms'] ?? 0), 'files' => $files];
     }
     usort($clean, function ($a, $b) { return $a['n'] - $b['n']; });
     $all = trim(implode("\n", array_column($clean, 'text')));

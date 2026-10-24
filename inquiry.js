@@ -609,8 +609,9 @@
     const OCR_FMT = { txt: 'Editable text (.txt)', simple_pdf: 'Simple PDF (text only)', docx: 'Word document (.docx)' };
     const mmss = s => fa(String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'));
     const ocrUrl = (id, fmt, n) => `${API}?action=ocr_export&id=${id}&fmt=${fmt}${n ? '&page=' + n : ''}`;
-    const ocrDl = (id, n, orig) => ['txt', 'docx', 'pdf'].map(f => `<a class="inq-fbtn" target="_blank" href="${ocrUrl(id, f, n)}"><i class="fas ${{ txt: 'fa-file-lines', docx: 'fa-file-word', pdf: 'fa-file-pdf' }[f]} ml-1"></i>${{ txt: 'TXT', docx: 'Word', pdf: 'PDF' }[f]}</a>`).join(' ')
-        + (orig ? ` <a class="inq-fbtn" style="background:#ede9fe;color:#6d28d9" target="_blank" href="${ocrUrl(id, 'orig', n)}" title="همان فایلی که i2pdf داد"><i class="fas fa-file-arrow-down ml-1"></i>فایلِ i2pdf (${orig === 'docx' ? 'Word' : 'PDF'})</a>` : '');
+    // دانلودها: TXT/Word/PDFِ ساختِ سایتِ خودمان (از متنِ ویرایش‌شده) + فایل‌های اصلیِ i2pdf (Word و PDF) اگر هست
+    const ocrDl = (id, n, files) => ['txt', 'docx', 'pdf'].map(f => `<a class="inq-fbtn" target="_blank" href="${ocrUrl(id, f, n)}"><i class="fas ${{ txt: 'fa-file-lines', docx: 'fa-file-word', pdf: 'fa-file-pdf' }[f]} ml-1"></i>${{ txt: 'TXT', docx: 'Word', pdf: 'PDF' }[f]}</a>`).join(' ')
+        + ['docx', 'pdf'].filter(k => files && files[k]).map(k => ` <a class="inq-fbtn" style="background:#ede9fe;color:#6d28d9" target="_blank" href="${ocrUrl(id, 'orig', n)}&kind=${k}" title="همان فایلی که i2pdf داد"><i class="fas fa-file-arrow-down ml-1"></i>i2pdf ${k === 'docx' ? 'Word' : 'PDF'}</a>`).join('');
     function renderOcr(body) {
         const b = V.boot, en = b.ocr_engines || {}, order = b.ocr_order || [];
         const opt = (v, l, ok) => `<option value="${v}" ${ok === false ? 'disabled' : ''}>${l}${ok === false ? ' (خاموش/تنظیم نشده)' : ''}</option>`;
@@ -677,7 +678,7 @@
                         if (!r.ok || !c.querySelector('[data-tl]').children.length) c.querySelector('[data-tl]').insertAdjacentHTML('beforeend', `<li class="${r.ok ? 'text-emerald-700' : 'text-rose-600'}">${esc(r.ok ? (r.engine_fa || r.engine || '') + (r.ms ? ' · ' + mmss(r.ms / 1000) : '') : (r.error || 'خوانده نشد.'))}</li>`); }
                     const k = out.querySelector('[data-c]'); if (k) k.textContent = fa(done); } });
             clearInterval(tm);
-            OCR.res = res.map(r => ({ n: r.n, text: r.text_verbatim || r.text || '', engine: r.engine || '', engine_fa: r.engine_fa || '', ms: r.ms || 0, file: r.file || '', format: r.format || '', error: r.ok ? (r.note || '') : (r.error || 'خوانده نشد.') }));
+            OCR.res = res.map(r => ({ n: r.n, text: r.text_verbatim || r.text || '', engine: r.engine || '', engine_fa: r.engine_fa || '', ms: r.ms || 0, files: r.files || {}, format: r.format || '', error: r.ok ? (r.note || '') : (r.error || 'خوانده نشد.') }));
             OCR.ms = Date.now() - t0; OCR.busy = false; go.disabled = false;
             const sp = out.querySelector('[data-spin]'); if (sp) sp.className = 'fas fa-circle-check ml-1 text-emerald-600';
             const hh = out.querySelector('[data-h]'); if (hh) hh.textContent = 'Your result is ready.';
@@ -708,22 +709,22 @@
     }
     function ocrLinks(out) {
         if (!OCR.id) return;
-        const a = out.querySelector('[data-dl]'); if (a) a.innerHTML = ocrDl(OCR.id, 0, OCR.res.length === 1 && OCR.res[0].file ? OCR.res[0].file.split('.').pop() : '');
-        out.querySelectorAll('[data-dlp]').forEach(s => { const r = OCR.res.find(x => x.n === +s.dataset.dlp); if (OCR.res.length > 1) s.innerHTML = ocrDl(OCR.id, +s.dataset.dlp, r && r.file ? r.file.split('.').pop() : ''); });
+        const a = out.querySelector('[data-dl]'); if (a) a.innerHTML = ocrDl(OCR.id, 0, OCR.res.length === 1 ? OCR.res[0].files : null);
+        out.querySelectorAll('[data-dlp]').forEach(s => { const r = OCR.res.find(x => x.n === +s.dataset.dlp); if (OCR.res.length > 1) s.innerHTML = ocrDl(OCR.id, +s.dataset.dlp, r ? r.files : null); });
     }
     async function ocrSave(out, auto) {
         const r = await post({ action: 'ocr_save', id: OCR.id, name: OCR.name, lang: OCR.lang || 'fas',
-                               pages: OCR.res.map(p => ({ n: p.n, text: p.text, engine: p.engine, ms: p.ms, file: p.file })) });
+                               pages: OCR.res.map(p => ({ n: p.n, text: p.text, engine: p.engine, ms: p.ms, files: p.files })) });
         if (!r.ok) { toast(r.error || 'ذخیره نشد.', 'error'); return; }
         OCR.id = r.id; ocrLinks(out);
         if (!auto) toast('ذخیره شد.', 'success');
     }
     function ocrDetail(it) {
         const pages = it.pages || [];
-        const ext = p => (p && p.file ? p.file.split('.').pop() : '');
+        const ext = p => (p && p.files) || null;
         const m = document.createElement('div'); m.className = 'inq-modal';
         m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex flex-wrap items-center justify-between gap-2 p-4 border-b"><b class="text-sm"><i class="fas fa-file-lines ml-1 text-violet-600"></i>${esc(it.query || 'پردازش فایل')} · ${fa(pages.length)} صفحه · ${esc(fa(it.created_j || ''))}</b>
-            <span class="flex flex-wrap gap-1.5">${ocrDl(it.id, 0, pages.length === 1 ? ext(pages[0]) : '')}<button class="inq-fbtn" data-x>بستن</button></span></div>
+            <span class="flex flex-wrap gap-1.5">${ocrDl(it.id, 0, pages.length === 1 ? ext(pages[0]) : null)}<button class="inq-fbtn" data-x>بستن</button></span></div>
             <div class="p-4 overflow-y-auto">${pages.map((p, i) => `<div class="mb-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(p.n)}</b>
                 <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy ml-1"></i>Copy</button>${pages.length > 1 ? ocrDl(it.id, p.n, ext(p)) : ''}</span></div>
                 <pre dir="auto" class="bg-slate-50 rounded-xl p-3 text-[12.5px] leading-7 whitespace-pre-wrap" style="font-family:inherit">${esc(p.text_verbatim || p.text || '—')}</pre></div>`).join('') || '<p class="text-xs text-slate-400">متنی ذخیره نشده.</p>'}</div></div>`;
@@ -747,27 +748,40 @@
             box.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => { const i = +b.dataset.dn; [order[i + 1], order[i]] = [order[i], order[i + 1]]; paint(); });
             box.querySelectorAll('[data-on]').forEach(b => b.onchange = () => { c.on[b.dataset.on] = b.checked; paint(); });
         };
-        const pr = d.i2pdf_parsed;
         box.innerHTML = `<p class="font-black text-sm text-slate-800"><i class="fas fa-file-lines ml-1 text-violet-600"></i>پردازش فایل هوشمند — موتورها و اولویت</p>
             <p class="text-[10.5px] text-slate-400 leading-6">هر صفحه اول با موتورِ ردیفِ ۱ پردازش می‌شود؛ اگر جواب نداد، با بعدی. موتورِ خاموش استفاده نمی‌شود.</p>
             <div class="space-y-1.5" data-ord></div>
             <div class="grid grid-cols-2 gap-3">
                 <label class="inq-f">قالبِ خروجیِ پیش‌فرض<select class="inq-in" style="font-size:12px" data-fmt>${Object.entries(OCR_FMT).map(([k, l]) => `<option value="${k}" ${c.format === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
                 <label class="inq-f">صفحه‌های هم‌زمان<input type="number" min="1" max="6" class="inq-in" style="font-size:12px" data-conc value="${c.conc}"></label></div>
-            <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" ${pr ? '' : 'open'}><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● درخواستِ پردازش چسبانده نشده</span>'}</summary>
-                <ol class="text-[10.5px] text-slate-600 leading-6 mt-2 list-decimal pr-4">
-                    <li>در کروم i2pdf.com/pdf-ocr را باز کنید، F12 ← تبِ <b>Network</b> ← <b>Fetch/XHR</b> را بزنید و «Preserve log» را تیک بزنید.</li>
-                    <li>یک PDFِ تک‌صفحه بدهید، زبان و قالب را انتخاب کنید، Start و «I'm not a robot» را بزنید تا «Your result is ready.» بیاید.</li>
-                    <li>در فهرست، درخواستی که فایل را فرستاده (معمولاً بزرگ‌ترین درخواستِ POST به i2pdf.com) را راست‌کلیک ← <b>Copy ← Copy as cURL (bash)</b> و این‌جا بچسبانید. اگر درخواستی با نامِ altcha/challenge هم هست، آدرسش را در خانه‌ی دوم بگذارید.</li></ol>
-                <label class="inq-f mt-2">cURLِ درخواستِ پردازش<textarea class="inq-in" rows="5" dir="ltr" data-i2="curl" style="font-size:11px;font-weight:500" placeholder="curl 'https://www.i2pdf.com/...' -H '...' --data-raw $'------WebKitFormBoundary...'">${esc(i2.curl_verbatim || i2.curl)}</textarea></label>
-                ${pr ? `<div class="text-[10.5px] text-slate-600 bg-white rounded-xl border p-2 mt-1" dir="ltr"><b>${esc(pr.method)}</b> ${esc(pr.url)} · ${esc(pr.kind)}<br>${pr.fields.map(f => `<code>${esc(f.name)}</code>${f.file ? ' (file)' : (f.value ? '=' + esc(f.value) : '')}`).join(' · ')}</div>` : ''}
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                    <label class="inq-f">آدرسِ چالشِ ALTCHA (اختیاری؛ خالی = از خودِ صفحه)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="challenge_url" value="${esc(i2.challenge_url)}"></label>
+            <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" open><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● cURL روی هاست نیست</span>'}</summary>
+                <p class="text-[10.5px] text-slate-600 leading-6 mt-2">چیزی برای چسباندن لازم نیست: هر صفحه مثلِ خودِ سایت (باز کردنِ صفحه، «I'm not a robot» با حلِ خودکار، Start و دریافتِ txt، Word و PDF با هم) از روی هاست پردازش می‌شود. برای اطمینان «آزمایشِ اتصال» را بزنید؛ اگر خطا داد، گزارشش را بفرستید.</p>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
+                    <label class="inq-f">کدِ زبانِ فارسی<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_fa" value="${esc(i2.lang_fa)}"></label>
+                    <label class="inq-f">کدِ زبانِ انگلیسی<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_en" value="${esc(i2.lang_en)}"></label>
                     <label class="inq-f">مهلتِ هر صفحه (ثانیه)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="timeout" value="${esc(i2.timeout)}"></label>
-                    <label class="inq-f">کدِ زبانِ فارسی در i2pdf<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_fa" value="${esc(i2.lang_fa)}"></label>
-                    <label class="inq-f">کدِ زبانِ انگلیسی در i2pdf<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_en" value="${esc(i2.lang_en)}"></label></div></details>
+                    <label class="inq-f">موتورِ i2pdf (engine)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="engine" value="${esc(i2.engine)}"></label>
+                    <label class="inq-f">چیدمان (layout)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="layout" value="${esc(i2.layout)}"></label>
+                    <label class="inq-f">آدرسِ صفحه<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="page_url" value="${esc(i2.page_url)}"></label></div>
+                <button class="inq-fbtn mt-2" data-i2test><i class="fas fa-plug ml-1"></i>آزمایشِ اتصال به i2pdf</button>
+                <div data-i2res class="mt-2"></div></details>
             <button class="inq-go w-full" data-osave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ پردازش فایل</button>`;
         paint();
+        box.querySelector('[data-i2test]').onclick = async () => {
+            const rb = box.querySelector('[data-i2res]'), t0 = Date.now();
+            const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-violet-700"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ آزمایش (یک صفحه‌ی نمونه)… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);
+            const r = await post({ action: 'ocr_i2_test' });
+            clearInterval(tm);
+            if (!r.ok) { rb.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
+            const x = r.result, rep = JSON.stringify({ result: x, steps: r.steps, debug: r.debug }, null, 2);
+            rb.innerHTML = `<div class="rounded-xl border ${x.ok ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'} p-2.5 text-[11px]">
+                <b class="${x.ok ? 'text-emerald-700' : 'text-rose-700'}">${x.ok ? '✅ کار می‌کند — ' + mmss((x.ms || 0) / 1000) : '❌ ' + esc(x.error)}</b>
+                ${x.text ? `<pre dir="auto" class="mt-1 whitespace-pre-wrap text-slate-700" style="font-family:inherit">${esc(x.text)}</pre>` : ''}
+                <ul class="mt-1 text-slate-500">${(r.steps || []).map(s => `<li>• ${esc(s)}</li>`).join('')}</ul>
+                <details class="mt-1"><summary class="cursor-pointer text-slate-500">گزارشِ فنی (برای فرستادن)</summary><textarea readonly dir="ltr" class="inq-in" rows="8" style="font-size:10px;font-weight:500">${esc(rep)}</textarea>
+                <button class="inq-fbtn mt-1" data-cprep><i class="fas fa-copy ml-1"></i>کپیِ گزارش</button></details></div>`;
+            rb.querySelector('[data-cprep]').onclick = async () => { try { await navigator.clipboard.writeText(rep); toast('کپی شد.', 'success'); } catch (e) {} };
+        };
         box.querySelector('[data-osave]').onclick = async () => {
             const i2v = {}; box.querySelectorAll('[data-i2]').forEach(x => i2v[x.dataset.i2] = x.value);
             const r = await post({ action: 'ocr_cfg_save', cfg: { order, on: c.on, format: box.querySelector('[data-fmt]').value, conc: box.querySelector('[data-conc]').value, i2pdf: i2v } });

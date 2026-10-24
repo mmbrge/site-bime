@@ -265,14 +265,18 @@ if (strpos($action, 'ocr_') === 0) {
                      ['format' => (string)($in['format'] ?? ''), 'ptoken' => (string)($in['ptoken'] ?? '')]));
     }
     if ($action === 'ocr_progress') { session_write_close(); $out(['ok' => true] + (so_progress_read((string)($in['token'] ?? '')) ?: ['steps' => []])); }
+    if ($action === 'ocr_i2_test') {
+        if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        @set_time_limit(300); session_write_close();
+        require_once __DIR__ . '/_i2pdf.php';
+        $out(i2_test($pdo));
+    }
     if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
         require_once __DIR__ . '/_i2pdf.php';
         if ($action === 'ocr_cfg_save') so_save_cfg($pdo, (array)($in['cfg'] ?? []));
-        $c = so_cfg($pdo); $i2 = i2_conf($pdo);
-        $tpl = trim($i2['curl']) !== '' ? i2_parse_curl($i2['curl']) : null;
-        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS,
-              'i2pdf' => ['curl_verbatim' => $i2['curl']] + $i2, 'i2pdf_parsed' => $tpl ? ['url' => $tpl['url'], 'method' => $tpl['method'], 'kind' => $tpl['kind'], 'fields' => array_map(function ($f) { return ['name' => $f[0], 'file' => $f[2] !== null, 'value' => $f[2] !== null ? '' : mb_substr($f[1], 0, 60)]; }, $tpl['fields'])] : null]);
+        $c = so_cfg($pdo);
+        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS, 'i2pdf' => i2_conf($pdo)]);
     }
     if ($action === 'ocr_save') {
         $id = intval($in['id'] ?? 0);
@@ -287,11 +291,15 @@ if (strpos($action, 'ocr_') === 0) {
         if ($only) $pages = array_values(array_filter($pages, function ($p) use ($only) { return intval($p['n']) === $only; }));
         $name = preg_replace('/\.[a-z0-9]{2,5}$/i', '', (string)$r['query_text']) . ($only ? ' - صفحه ' . $only : '') . ' (متن)';
         // فایلِ اصلیِ i2pdf (Word / Simple PDF) همان‌طور که سایت داده
-        if (($in['fmt'] ?? '') === 'orig' && count($pages) === 1 && !empty($pages[0]['file']) && is_file(inq_dir('ocr') . '/' . $pages[0]['file'])) {
-            $f = inq_dir('ocr') . '/' . $pages[0]['file']; $ext = pathinfo($f, PATHINFO_EXTENSION);
+        // فایلِ اصلیِ i2pdf (Word یا PDF) همان‌طور که سایت داده: fmt=orig&kind=docx|pdf
+        if (($in['fmt'] ?? '') === 'orig' && count($pages) === 1) {
+            $kind = ($in['kind'] ?? '') === 'pdf' ? 'pdf' : 'docx';
+            $fid = $pages[0]['files'][$kind] ?? (($pages[0]['file'] ?? '') !== '' && pathinfo($pages[0]['file'], PATHINFO_EXTENSION) === $kind ? $pages[0]['file'] : '');
+            $f = $fid !== '' ? inq_dir('ocr') . '/' . basename($fid) : '';
+            if ($f === '' || !is_file($f)) $out(['ok' => false, 'error' => 'فایلِ i2pdf برای این صفحه نیست.']);
             header_remove('Content-Type');
-            header('Content-Type: ' . ($ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'));
-            header('Content-Disposition: ' . ($ext === 'pdf' ? 'inline' : 'attachment') . "; filename=\"i2pdf.$ext\"; filename*=UTF-8''" . rawurlencode($name . ' (i2pdf).' . $ext));
+            header('Content-Type: ' . ($kind === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'));
+            header('Content-Disposition: ' . ($kind === 'pdf' ? 'inline' : 'attachment') . "; filename=\"i2pdf.$kind\"; filename*=UTF-8''" . rawurlencode($name . ' (i2pdf).' . $kind));
             readfile($f); exit;
         }
         $fmt = in_array($in['fmt'] ?? '', ['txt', 'docx', 'pdf'], true) ? $in['fmt'] : 'txt';

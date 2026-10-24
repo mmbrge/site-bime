@@ -4577,7 +4577,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="upload-kit.js?v=2"></script>
     <script src="smart-ocr.js?v=2"></script>
     <?php if ($hxAccess): ?><script src="hooshix.js?v=1"></script><?php endif; ?>
-    <script src="inquiry.js?v=10"></script>
+    <script src="inquiry.js?v=11"></script>
     <script src="registry.js?v=6"></script>
     <script src="sanhab-ui.js?v=2"></script>
     <script src="issue-panel.js?v=3"></script>
