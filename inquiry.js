@@ -695,6 +695,11 @@
             <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><b class="text-sm"><i class="fas fa-file-lines text-violet-600 ml-1"></i>Recognized text — ${esc(OCR.name)} · ${fa(OCR.res.length)} صفحه${OCR.ms ? ' در ' + mmss(OCR.ms / 1000) : ''}</b>
                 <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="all"><i class="fas fa-copy ml-1"></i>کپیِ همه (Copy)</button><button class="inq-fbtn" data-sv><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی ویرایش</button><span data-dl class="flex flex-wrap gap-1.5"></span></span></div>
             <p class="text-[10.5px] text-slate-400 mb-2">ویرایشِ متن روی دانلودهای TXT، Word و PDF هم اثر دارد (بعد از «ذخیره‌ی ویرایش»)؛ «فایلِ i2pdf» همان خروجیِ اصلیِ سایت است.</p>
+            <div class="rounded-2xl border border-fuchsia-200 bg-gradient-to-l from-fuchsia-50 to-violet-50 p-3 mb-3">
+                <div class="flex flex-wrap items-end gap-2"><b class="text-[12px] text-fuchsia-900 flex-1 min-w-[180px]"><i class="fas fa-brain ml-1"></i>پردازش با هوشِ مصنوعی — اطلاعاتِ لازم از این متن با پرامپتِ همان نوعِ مدرک</b>
+                    <select data-xt class="inq-in !mt-0 w-auto" style="font-size:12px"><option value="auto">تشخیصِ خودکارِ نوع</option>${Object.entries(V.boot.ocr_types || {}).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select>
+                    <button class="inq-go !py-2 !px-4 text-xs" data-xgo><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش</button></div>
+                <div data-xout class="mt-2"></div></div>
             ${OCR.res.map((r, i) => `<div class="mb-3 rounded-2xl border border-slate-100 p-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(r.n)}${r.engine_fa ? ` · <small class="text-slate-400">${esc(r.engine_fa)}${r.ms ? ' · ' + mmss(r.ms / 1000) : ''}</small>` : ''}</b>
                 <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy ml-1"></i>Copy</button><span data-dlp="${r.n}" class="flex flex-wrap gap-1.5"></span></span></div>
                 ${r.error ? `<p class="text-[10.5px] ${r.text ? 'text-amber-600' : 'text-rose-600'} mb-1">${esc(r.error)}</p>` : ''}
@@ -705,7 +710,28 @@
             try { await navigator.clipboard.writeText(v); toast('کپی شد.', 'success'); } catch (e) {}
         });
         out.querySelector('[data-sv]').onclick = () => ocrSave(out, false);
+        out.querySelector('[data-xgo]').onclick = () => ocrExtract(out);
         ocrLinks(out);
+    }
+    // پردازش (استخراج): متنِ همه‌ی صفحه‌ها ← پرامپتِ نوع ← جدولِ فیلدها (یا ردیف‌های نامه)
+    async function ocrExtract(out) {
+        const box = out.querySelector('[data-xout]'), b = out.querySelector('[data-xgo]'), t0 = Date.now();
+        const text = OCR.res.map(r => r.text).join('\n\n').trim();
+        if (!text) { toast('متنی برای پردازش نیست.', 'error'); return; }
+        b.disabled = true;
+        const tm = setInterval(() => { box.innerHTML = `<p class="text-[11px] text-fuchsia-700"><i class="fas fa-spinner fa-spin ml-1"></i>هوشِ مصنوعی در حالِ استخراج… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 400);
+        const r = await post({ action: 'ocr_extract', text, type: out.querySelector('[data-xt]').value });
+        clearInterval(tm); b.disabled = false;
+        if (!r.ok) { box.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
+        const f = r.fields_verbatim || [], rows = r.rows_verbatim || [];
+        const plain = f.map(x => x[0] + ': ' + x[1]).join('\n');
+        const cols = rows.length ? Array.from(rows.reduce((a, x) => { Object.keys(x).forEach(k => a.add(k)); return a; }, new Set())) : [];
+        box.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-700">نوع: ${esc(r.type_fa)} · ${fa(f.length)} فیلد${rows.length ? ' · ' + fa(rows.length) + ' ردیف' : ''} · ${mmss((Date.now() - t0) / 1000)}</b>
+                <button class="inq-fbtn" data-xcp><i class="fas fa-copy ml-1"></i>کپیِ همه</button></div>
+            ${f.length ? `<table class="inq-tbl bg-white rounded-xl"><tbody>${f.map(x => `<tr><td class="text-slate-500 whitespace-nowrap" style="width:1%">${esc(x[0])}</td><td><b dir="auto">${esc(/[A-Za-z]/.test(x[1]) ? x[1] : fa(x[1]))}</b></td></tr>`).join('')}</tbody></table>` : ''}
+            ${rows.length ? `<div class="overflow-auto mt-2"><table class="inq-tbl bg-white"><thead><tr><th>#</th>${cols.map(c => `<th dir="ltr">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((x, i) => `<tr><td>${fa(i + 1)}</td>${cols.map(c => `<td dir="auto">${esc(x[c] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}
+            ${!f.length && !rows.length ? '<p class="text-[11px] text-slate-400">چیزی استخراج نشد.</p>' : ''}`;
+        box.querySelector('[data-xcp]').onclick = async () => { try { await navigator.clipboard.writeText(rows.length ? JSON.stringify(rows, null, 2) : plain); toast('کپی شد.', 'success'); } catch (e) {} };
     }
     function ocrLinks(out) {
         if (!OCR.id) return;
@@ -754,6 +780,13 @@
             <div class="grid grid-cols-2 gap-3">
                 <label class="inq-f">قالبِ خروجیِ پیش‌فرض<select class="inq-in" style="font-size:12px" data-fmt>${Object.entries(OCR_FMT).map(([k, l]) => `<option value="${k}" ${c.format === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
                 <label class="inq-f">صفحه‌های هم‌زمان<input type="number" min="1" max="6" class="inq-in" style="font-size:12px" data-conc value="${c.conc}"></label></div>
+            <label class="flex items-start gap-2 text-[11.5px] font-bold text-slate-700 cursor-pointer"><input type="checkbox" data-auto ${c.auto ? 'checked' : ''} style="accent-color:#7c3aed" class="mt-0.5">
+                <span>بعد از OCR، خودکار با پرامپتِ هر نوع مدرک اطلاعات استخراج و جای‌گذاری شود<small class="block text-[10.5px] text-slate-400 font-normal leading-5">برای مدارکِ اسکن/عکس در ثبتِ دستیِ درخواست و مدارکِ پرسنلی (معرفی‌نامه/بیمه‌نامه)؛ مدارکِ شرکت‌ها طبقِ «خواندنِ خودکار» در تعریفِ هر شرکت. ${d.ai_ready ? '' : '<b class="text-rose-500">سرویسِ هوشِ مصنوعی (کلیدهای API) تنظیم نشده.</b>'}</small></span></label>
+            <details class="rounded-2xl border border-fuchsia-100 bg-fuchsia-50/40 p-3"><summary class="text-[12px] font-black text-fuchsia-900 cursor-pointer"><i class="fas fa-message ml-1"></i>پرامپت‌های پردازش (هر نوع مدرک چه اطلاعاتی لازم دارد)</summary>
+                <p class="text-[10.5px] text-slate-500 leading-6 mt-2">هر نوع مدرک پرامپتِ خودش را دارد؛ کلیدهای انگلیسیِ داخلِ پرامپت (مثلِ vin، plate_two، owner_name) نامِ فیلدهای سایت‌اند و نباید عوض شوند. خالی یا «پیش‌فرض» = پرامپتِ پیش‌فرض.</p>
+                ${(d.prompts || []).map(p => `<div class="mt-2"><div class="flex items-center justify-between"><b class="text-[11.5px] text-slate-700">${esc(p.label)} <code class="text-[10px] text-slate-400">${p.type}</code>${p.custom_verbatim ? ' <span class="text-[10px] text-fuchsia-600">(ویرایش‌شده)</span>' : ''}</b>
+                    <button class="inq-fbtn !py-0.5" data-pdef="${p.type}">پیش‌فرض</button></div>
+                    <textarea class="inq-in" rows="4" dir="ltr" data-prompt="${p.type}" style="font-size:10.5px;font-weight:500;letter-spacing:0">${esc(p.custom_verbatim || p.default_verbatim)}</textarea></div>`).join('')}</details>
             <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" open><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● cURL روی هاست نیست</span>'}</summary>
                 <p class="text-[10.5px] text-slate-600 leading-6 mt-2">چیزی برای چسباندن لازم نیست: هر صفحه مثلِ خودِ سایت (باز کردنِ صفحه، «I'm not a robot» با حلِ خودکار، Start و دریافتِ txt، Word و PDF با هم) از روی هاست پردازش می‌شود. برای اطمینان «آزمایشِ اتصال» را بزنید؛ اگر خطا داد، گزارشش را بفرستید.</p>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
@@ -767,6 +800,7 @@
                 <div data-i2res class="mt-2"></div></details>
             <button class="inq-go w-full" data-osave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ پردازش فایل</button>`;
         paint();
+        box.querySelectorAll('[data-pdef]').forEach(b => b.onclick = () => { const p = (d.prompts || []).find(x => x.type === b.dataset.pdef); if (p) box.querySelector(`[data-prompt="${p.type}"]`).value = p.default_verbatim; });
         box.querySelector('[data-i2test]').onclick = async () => {
             const rb = box.querySelector('[data-i2res]'), t0 = Date.now();
             const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-violet-700"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ آزمایش (یک صفحه‌ی نمونه)… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);
@@ -784,7 +818,9 @@
         };
         box.querySelector('[data-osave]').onclick = async () => {
             const i2v = {}; box.querySelectorAll('[data-i2]').forEach(x => i2v[x.dataset.i2] = x.value);
-            const r = await post({ action: 'ocr_cfg_save', cfg: { order, on: c.on, format: box.querySelector('[data-fmt]').value, conc: box.querySelector('[data-conc]').value, i2pdf: i2v } });
+            const prompts = {}; box.querySelectorAll('[data-prompt]').forEach(x => prompts[x.dataset.prompt] = x.value);
+            const r = await post({ action: 'ocr_cfg_save', cfg: { order, on: c.on, format: box.querySelector('[data-fmt]').value, conc: box.querySelector('[data-conc]').value, i2pdf: i2v,
+                                                              auto: box.querySelector('[data-auto]').checked ? 1 : 0, prompts } });
             if (!r.ok) return toast(r.error, 'error');
             toast('ذخیره شد.', 'success');
             const bt = await post({ action: 'boot' }); if (bt.ok) V.boot = bt;

@@ -3803,8 +3803,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                 <span>می‌توانند «مدارکِ کلی» بفرستند (چند فایل، زیپ، پوشه، بدونِ ردیفِ مشخص)<small class="block text-slate-400 font-normal">خاموش = فقط بعد از اینکه ردیف‌ها را ساختید، مدارکِ هر خودرو را در چک‌لیستِ همان خودرو بارگذاری می‌کنند</small></span></label>
                             <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-portal-custom" class="mt-0.5 accent-blue-600" checked>
                                 <span>می‌توانند برای هر خودرو «مدرکِ دیگر» با نامِ دلخواه (جز مدارکِ پیش‌فرض) اضافه کنند</span></label>
-                            <label class="flex items-start gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"><input type="checkbox" id="cm-doc-read" class="mt-0.5 accent-blue-600">
-                                <span>مدارکِ این شرکت خودکار خوانده شود (شناساییِ نوعِ مدرک و استخراجِ اطلاعاتِ کارت/سند/فاکتور)<small class="block text-slate-400 font-normal">خاموش = مدارک فقط بارگذاری و بایگانی می‌شوند و نوع‌گذاری دستی است؛ دکمه‌ی «شناساییِ دوباره» در صندوق همچنان دستی کار می‌کند</small></span></label>
+                            <label class="block text-[11px] font-bold text-slate-600">خواندنِ خودکارِ مدارکِ این شرکت
+                                <select id="cm-doc-read" class="mt-1 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] bg-white">
+                                    <option value="0">خاموش — فقط بارگذاری و بایگانی (نوع‌گذاریِ دستی)</option>
+                                    <option value="1">الگوریتمِ سایت — PDFِ متنی (و اسکن با «خواندنِ اسکن» اگر تنظیم شده)</option>
+                                    <option value="2">پردازشِ هوشمند — OCR و بعد پرامپتِ مخصوصِ هر نوع مدرک (کارت، سند، فاکتور، بیمه‌نامه)</option></select>
+                                <small class="block text-slate-400 font-normal mt-1">در هر حالت دکمه‌های «هوشمند» و «شناساییِ دوباره» در صندوقِ مدارک دستی کار می‌کنند. موتورها و پرامپت‌ها: استعلامات ← تنظیمات ← پردازش فایل هوشمند.</small></label>
                         </div>
                         <div class="sm:col-span-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
                             <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -4575,9 +4579,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="smart-ocr.js?v=2"></script>
-    <?php if ($hxAccess): ?><script src="hooshix.js?v=1"></script><?php endif; ?>
-    <script src="inquiry.js?v=11"></script>
+    <script src="smart-ocr.js?v=3"></script>
+    <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
+    <script src="inquiry.js?v=12"></script>
     <script src="registry.js?v=6"></script>
     <script src="sanhab-ui.js?v=2"></script>
     <script src="issue-panel.js?v=3"></script>
@@ -7880,7 +7884,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             cliSmartPaint(''); ph('آماده‌سازیِ صفحه‌ها…');
             try {
                 let done = 0, total = 0;
-                const o = await SmartOCR.textOf(src, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 30, onPages: n => { total = n; ph(`خواندنِ متنِ ${faDigits(String(n))} صفحه…`); },
+                const o = await SmartOCR.textOf(src, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 30, pick: true, pickTitle: 'کدام صفحه‌های نامه پردازش شوند؟', onPages: n => { total = n; ph(`خواندنِ متنِ ${faDigits(String(n))} صفحه…`); },
                                                      onPage: () => { done++; ph(`خواندنِ متن: ${faDigits(String(done))} از ${faDigits(String(total))} صفحه…`); }});
                 if (!o.text) throw new Error('متنی از نامه خوانده نشد.');
                 ph('هوشِ مصنوعی در حالِ استخراجِ ردیف‌ها…');
@@ -9223,8 +9227,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             aiStepBusy = false;
         }
         // ---- خواندنِ هوشمندِ مدرک (دستی): OCRِ فایل در مرورگر ← متن ← هوشِ مصنوعی ← همان شناسایی/نشاندن روی ردیف ----
-        async function smartReadOne(d) {
-            const o = await SmartOCR.textOf('../' + d.file_path, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 4, name: d.orig_name});
+        async function smartReadOne(d, pick) {
+            const o = await SmartOCR.textOf('../' + d.file_path, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: pick ? 12 : 4, name: d.orig_name, pick, pickTitle: 'کدام صفحه‌های «' + (d.orig_name || 'فایل') + '» پردازش شوند؟'});
             if (!o.text) return {status: 'FAIL', error: 'متنی خوانده نشد.'};
             return await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'smart_doc_read', doc_id: d.id, text: o.text})})).json();
         }
@@ -9239,7 +9243,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!d || !window.SmartOCR) return;
             const b = document.querySelector(`[data-smart="${id}"]`); if (b) { b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
             let r;
-            try { r = await smartReadOne(d); } catch (e) { r = {status: 'FAIL', error: e.message}; }
+            try { r = await smartReadOne(d, true); } catch (e) { r = {status: 'FAIL', error: e.message, cancel: e.cancel}; }
+            if (r.cancel) { smartRefresh(); return; }
             showToast(smartMsg(r), r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'success' : 'info');
             smartRefresh();
             if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
@@ -10416,7 +10421,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = '';
             document.getElementById('cm-portal-general').checked = true;
             document.getElementById('cm-portal-custom').checked = true;
-            document.getElementById('cm-doc-read').checked = false;
+            document.getElementById('cm-doc-read').value = '0';
             document.getElementById('cm-slip-mode').value = '';
             cmSetDefaults(null, '');
         }
@@ -10478,7 +10483,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
             document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
             document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
-            document.getElementById('cm-doc-read').checked = +c.doc_read === 1;
+            document.getElementById('cm-doc-read').value = String([0, 1, 2].includes(+c.doc_read) ? +c.doc_read : 0);
             document.getElementById('cm-slip-mode').value = ['auto', 'site', 'site_all'].includes(c.slip_mode) ? c.slip_mode : '';
             cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
 
@@ -10507,7 +10512,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
                 portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
                 portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
-                doc_read: document.getElementById('cm-doc-read').checked ? 1 : 0,
+                doc_read: +document.getElementById('cm-doc-read').value,
                 slip_mode: document.getElementById('cm-slip-mode').value,
                 default_coverages: cmDefaults.coverages === null ? '' : cmDefaults.coverages,
                 default_liability: cmDefaults.liability || '',

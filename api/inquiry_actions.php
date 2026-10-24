@@ -74,7 +74,7 @@ if ($action === 'boot') {
                     'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form'),
                     'ocr' => $can('ocr')],
           'ocr_engines' => (function () use ($pdo) { require_once __DIR__ . '/_smart_ocr.php'; return so_engines($pdo); })(),
-          'ocr_order' => so_order($pdo), 'ocr_format' => so_cfg($pdo)['format'], 'ocr_conc' => so_cfg($pdo)['conc'],
+          'ocr_order' => so_order($pdo), 'ocr_types' => (function () { require_once __DIR__ . '/_doc_smart.php'; return array_map(function ($x) { return $x[0]; }, ds_types()); })(), 'ocr_format' => so_cfg($pdo)['format'], 'ocr_conc' => so_cfg($pdo)['conc'],
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
     $q = $pdo->query("SELECT COUNT(*) n, SUM(status = 'OK') ok, SUM(status = 'FAIL') fail, SUM(status IN ('QUEUED', 'RUNNING')) q FROM inq_requests WHERE created_at >= CURDATE()")->fetch();
     $o['today'] = ['total' => intval($q['n']), 'ok' => intval($q['ok']), 'fail' => intval($q['fail']), 'queue' => intval($q['q'])];
@@ -264,6 +264,16 @@ if (strpos($action, 'ocr_') === 0) {
         $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $in['engine'] : 'auto',
                      ['format' => (string)($in['format'] ?? ''), 'ptoken' => (string)($in['ptoken'] ?? '')]));
     }
+    // پردازش: متنِ OCR ← پرامپتِ نوعِ انتخابی (یا تشخیصِ خودکار) ← فیلدها
+    if ($action === 'ocr_extract') {
+        @set_time_limit(200); session_write_close();
+        require_once __DIR__ . '/_doc_smart.php';
+        $type = (string)($in['type'] ?? 'auto');
+        $x = ds_extract($pdo, isset(ds_types()[$type]) ? $type : 'auto', (string)($in['text'] ?? ''));
+        if (!$x['ok']) $out(['ok' => false, 'error' => $x['error'] ?? 'استخراج نشد.']);
+        $rows = $x['type'] === 'letter' ? ($x['data']['rows'] ?? []) : [];
+        $out(['ok' => true, 'type' => $x['type'], 'type_fa' => $x['type_fa'], 'fields_verbatim' => array_map(null, array_keys($x['fields']), array_values($x['fields'])), 'rows_verbatim' => $rows]);
+    }
     if ($action === 'ocr_progress') { session_write_close(); $out(['ok' => true] + (so_progress_read((string)($in['token'] ?? '')) ?: ['steps' => []])); }
     if ($action === 'ocr_i2_test') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
@@ -275,8 +285,11 @@ if (strpos($action, 'ocr_') === 0) {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
         require_once __DIR__ . '/_i2pdf.php';
         if ($action === 'ocr_cfg_save') so_save_cfg($pdo, (array)($in['cfg'] ?? []));
-        $c = so_cfg($pdo);
-        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS, 'i2pdf' => i2_conf($pdo)]);
+        require_once __DIR__ . '/_doc_smart.php';
+        $c = so_cfg($pdo); $custom = (api_cfg($pdo)['smart_ocr'] ?? [])['prompts'] ?? [];
+        $prompts = [];
+        foreach (ds_types() as $t => $x) $prompts[] = ['type' => $t, 'label' => $x[0], 'default_verbatim' => $x[1], 'custom_verbatim' => (string)($custom[$t] ?? '')];
+        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS, 'i2pdf' => i2_conf($pdo), 'prompts' => $prompts, 'ai_ready' => vdoc_ai_ready($pdo)]);
     }
     if ($action === 'ocr_save') {
         $id = intval($in['id'] ?? 0);

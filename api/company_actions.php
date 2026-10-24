@@ -1281,7 +1281,9 @@ try {
         if (array_key_exists('legal_active', $data)) $legal['legal_active'] = $data['legal_active'] === '' || $data['legal_active'] === null ? null : (int)!empty($data['legal_active']);
         if (!empty($data['legal_checked'])) $legal['legal_checked_at'] = date('Y-m-d H:i:s');
         $portalOpts = [];
-        foreach (['portal_general_docs', 'portal_custom_docs', 'doc_read'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
+        foreach (['portal_general_docs', 'portal_custom_docs'] as $k) if (array_key_exists($k, $data)) $portalOpts[$k] = empty($data[$k]) ? 0 : 1;
+        // خواندنِ مدارک: ۰ = فقط بارگذاری، ۱ = الگوریتمِ سایت، ۲ = پردازشِ هوشمند (OCR + پرامپتِ هر نوع مدرک)
+        if (array_key_exists('doc_read', $data)) $portalOpts['doc_read'] = in_array(intval($data['doc_read']), [0, 1, 2], true) ? intval($data['doc_read']) : 0;
         // فیش‌های بیمه‌نامه وقتی با اقساطِ قرارداد فرق داشت: خالی = تنظیمِ کلیِ صدور
         if (array_key_exists('slip_mode', $data)) $portalOpts['slip_mode'] = in_array((string)$data['slip_mode'], ['auto', 'site', 'site_all'], true) ? (string)$data['slip_mode'] : null;
         // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ درخواست‌های این شرکت (فقط اگر فرم فرستاده باشد)
@@ -2370,11 +2372,11 @@ try {
         require_once __DIR__ . '/_doc_smart.php';
         @set_time_limit(200);
         $docId = intval($data['doc_id'] ?? 0);
-        $st = $pdo->prepare("SELECT id, file_kind, status FROM company_documents WHERE id = ?");
+        $st = $pdo->prepare("SELECT id, file_kind, status, doc_type FROM company_documents WHERE id = ?");
         $st->execute([$docId]);
         $doc = $st->fetch();
         if (!$doc || $doc['file_kind'] !== 'SUPPORTING_DOC') { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد (نامه را از «ورود ردیف‌ها از نامه» بخوانید).'], JSON_UNESCAPED_UNICODE); exit; }
-        $res = ds_doc_result($pdo, (string)($data['text'] ?? ''));
+        $res = ds_doc_result($pdo, (string)($data['text'] ?? ''), (string)($doc['doc_type'] ?? ''));   // پرامپتِ مخصوصِ نوعِ مدرک (یا تشخیصِ نوع)
         vdoc_queue($pdo, [$docId], true);
         $r = vdoc_process_company_doc($pdo, dirname(__DIR__), $docId, $res);
         echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);

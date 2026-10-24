@@ -114,6 +114,20 @@ function vdoc_ai_normalize(array $o) {
     if (($v = $txt($o['doc_no'] ?? '')) !== '') $d['doc_no'] = $v;
     if (!empty($o['doc_date']) && preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)$o['doc_date']), $m)) $d['doc_date'] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
     if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = car_join([$d['car_system'] ?? '', $d['car_tip'] ?? '']);
+    // پلاکِ چهاربخشی (پرامپت‌های پردازشِ هوشمند): plate_parts برای نشاندن روی ردیف + متنِ پلاک
+    $pp = ['two' => preg_replace('/\D/', '', p2e_digits((string)($o['plate_two'] ?? ''))), 'letter' => $txt($o['plate_letter'] ?? ''),
+           'three' => preg_replace('/\D/', '', p2e_digits((string)($o['plate_three'] ?? ''))), 'iran' => preg_replace('/\D/', '', p2e_digits((string)($o['plate_iran'] ?? '')))];
+    if (in_array($pp['letter'], ['آ', 'ا'], true)) $pp['letter'] = 'الف';
+    if (strlen($pp['two']) === 2 && strlen($pp['three']) === 3 && strlen($pp['iran']) === 2 && $pp['letter'] !== '') {
+        $d['plate_parts'] = $pp;
+        $d['plate'] = $pp['iran'] . 'ایران - ' . $pp['three'] . ' ' . $pp['letter'] . ' ' . $pp['two'];
+    }
+    // بیمه‌نامه
+    if (($v = $txt($o['policy_number'] ?? '')) !== '') $d['policy_number'] = mb_substr($v, 0, 60);
+    if (($v = $txt($o['insurer'] ?? '')) !== '') $d['insurer'] = mb_substr($v, 0, 120);
+    if (!empty($o['policy_type'])) $d['policy_type'] = stripos((string)$o['policy_type'], 'BODY') !== false || mb_strpos((string)$o['policy_type'], 'بدنه') !== false ? 'BODY' : 'THIRDPARTY';
+    foreach (['start_date', 'end_date'] as $k) if (!empty($o[$k]) && preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)$o[$k]), $m)) $d[$k] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
+    foreach (['liability', 'car_value', 'premium'] as $k) if (($v = preg_replace('/\D/', '', p2e_digits((string)($o[$k] ?? '')))) !== '') $d[$k] = $v;
     if ($kind === 'unknown' && !empty($d['vin']) && !empty($d['engine_no'])) $kind = !empty($d['plate']) ? 'ownership_doc' : 'sales_invoice';
     $req = VDR_REQUIRED[$kind] ?? [];
     $missing = [];

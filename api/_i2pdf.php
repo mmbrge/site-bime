@@ -102,26 +102,69 @@ function i2_multipart($body, $ctype) {
     return $out;
 }
 // یافته‌های صفحه: توکنِ CSRF، build، آدرسِ اسکریپت
-function i2_discover_page($html, $pageUrl) {
-    $d = ['csrf' => '', 'build' => '', 'js' => ''];
-    foreach (['/<meta[^>]+name=["\']csrf[-_]?token["\'][^>]*content=["\']([^"\']+)/i', '/<meta[^>]+content=["\']([^"\']+)["\'][^>]*name=["\']csrf[-_]?token/i',
-              '/csrf[-_]?token["\']?\s*[:=]\s*["\']([A-Za-z0-9+\/=_-]{20,})/i', '/data-csrf(?:-token)?=["\']([^"\']+)/i', '/name=["\']_?csrf[-_]?(?:token)?["\'][^>]*value=["\']([^"\']+)/i'] as $re)
-        if ($d['csrf'] === '' && preg_match($re, $html, $m)) $d['csrf'] = html_entity_decode($m[1]);
+//   توکن: متا تگ‌ها (هر نامی که csrf/xsrf/token دارد)، تنظیماتِ درونِ صفحه ("csrf…": "…")، data-*csrf*، کوکیِ csrf/xsrf،
+//   نامِ متا یا کلیدی که خودِ اسکریپتِ سایت می‌خواند ($jsHints)، و در آخر رشته‌ی ۶۴ رقمیِ هگزِ نزدیکِ کلمه‌ی csrf/token
+function i2_discover_page($html, $pageUrl, $respHeaders = '', array $jsHints = []) {
+    $d = ['csrf' => '', 'csrf_src' => '', 'build' => '', 'js' => '', 'site_js' => '', 'meta_names' => [], 'cookie_names' => []];
+    $set = function ($v, $src) use (&$d) { $v = html_entity_decode(trim((string)$v)); if ($d['csrf'] === '' && strlen($v) >= 16 && strlen($v) <= 200 && !preg_match('/\s/', $v)) { $d['csrf'] = $v; $d['csrf_src'] = $src; } };
+    // متا تگ‌ها
+    preg_match_all('/<meta\b[^>]*>/i', $html, $ms);
+    $metas = [];
+    foreach ($ms[0] as $tag) {
+        $nm = preg_match('/\b(?:name|property|http-equiv|id)\s*=\s*["\']([^"\']+)/i', $tag, $a) ? $a[1] : '';
+        $ct = preg_match('/\bcontent\s*=\s*["\']([^"\']*)/i', $tag, $b) ? $b[1] : '';
+        if ($nm !== '') { $metas[strtolower($nm)] = $ct; $d['meta_names'][] = $nm; }
+    }
+    foreach ($jsHints['meta'] ?? [] as $nm) if (isset($metas[strtolower($nm)])) $set($metas[strtolower($nm)], 'meta:' . $nm);
+    foreach ($metas as $nm => $ct) if (preg_match('/csrf|xsrf/i', $nm)) $set($ct, 'meta:' . $nm);
+    // ویژگی‌ها و تنظیماتِ درونِ صفحه
+    foreach ($jsHints['keys'] ?? [] as $k) if (preg_match('/["\']?' . preg_quote($k, '/') . '["\']?\s*[:=]\s*["\']([A-Za-z0-9+\/=_.-]{16,200})["\']/', $html, $m)) $set($m[1], 'key:' . $k);
+    if (preg_match('/\bdata-[\w-]*(?:csrf|xsrf)[\w-]*\s*=\s*["\']([^"\']+)/i', $html, $m)) $set($m[1], 'data-attr');
+    if (preg_match('/["\']?[\w$.-]*(?:csrf|xsrf)[\w$.-]*["\']?\s*[:=]\s*["\']([A-Za-z0-9+\/=_.-]{16,200})["\']/i', $html, $m)) $set($m[1], 'inline');
+    if (preg_match('/name\s*=\s*["\'][\w-]*(?:csrf|xsrf|token)[\w-]*["\'][^>]*value\s*=\s*["\']([^"\']+)/i', $html, $m)) $set($m[1], 'input');
+    if (preg_match('/value\s*=\s*["\']([^"\']{16,})["\'][^>]*name\s*=\s*["\'][\w-]*(?:csrf|xsrf|token)/i', $html, $m)) $set($m[1], 'input');
+    // کوکی‌ها
+    preg_match_all('/^set-cookie:\s*([^=;\s]+)=([^;\r\n]*)/im', (string)$respHeaders, $cs, PREG_SET_ORDER);
+    foreach ($cs as $c) { $d['cookie_names'][] = $c[1]; if (preg_match('/csrf|xsrf/i', $c[1])) $set(urldecode($c[2]), 'cookie:' . $c[1]); }
+    foreach ($jsHints['cookie'] ?? [] as $cn) foreach ($cs as $c) if (strcasecmp($c[1], $cn) === 0) $set(urldecode($c[2]), 'cookie:' . $cn);
+    // آخرین راه: هگزِ ۶۴ رقمیِ نزدیکِ csrf/token
+    if ($d['csrf'] === '' && preg_match_all('/csrf|xsrf|token/i', $html, $hits, PREG_OFFSET_CAPTURE)) {
+        foreach ($hits[0] as $h) { $win = substr($html, max(0, $h[1] - 250), 500); if (preg_match('/\b([a-f0-9]{64})\b/i', $win, $m)) { $set($m[1], 'near:' . $h[0]); break; } }
+    }
     if (preg_match('~(/assets/build/pdf-ocr-editor\.([a-f0-9]{6,})\.js)~i', $html, $m)) { $d['js'] = i2_abs($m[1], $pageUrl); $d['build'] = $m[2]; }
     elseif (preg_match('~src=["\']([^"\']*pdf-ocr[^"\']*\.js)~i', $html, $m)) { $d['js'] = i2_abs(html_entity_decode($m[1]), $pageUrl); if (preg_match('/\.([a-f0-9]{6,})\.js/', $m[1], $b)) $d['build'] = $b[1]; }
+    if (preg_match('~(/assets/build/site\.[a-f0-9]{6,}\.js)~i', $html, $m)) $d['site_js'] = i2_abs($m[1], $pageUrl);
+    $d['meta_names'] = array_slice(array_values(array_unique($d['meta_names'])), 0, 30);
+    $d['cookie_names'] = array_values(array_unique($d['cookie_names']));
+    // برای گزارش: اطرافِ «csrf» در صفحه
+    $d['html_hints'] = [];
+    if (preg_match_all('/csrf|xsrf/i', $html, $hh, PREG_OFFSET_CAPTURE)) foreach (array_slice($hh[0], 0, 4) as $h) $d['html_hints'][] = substr($html, max(0, $h[1] - 120), 260);
     return $d;
 }
-// نامِ فیلدهای فرم در اسکریپتِ سایت (یک روز در پوشه‌ی موقت نگه داشته می‌شود)
-function i2_discover_js($url, $jar, array $hdr) {
-    if ($url === '') return ['fields' => [], 'hash_hint' => ''];
-    $cache = so_tmp_dir() . '/i2js_' . md5($url) . '.json';
-    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true))) return $j;
-    $r = i2_http('GET', $url, $hdr + ['Accept' => '*/*'], $jar, null, 30);
-    $js = $r['http'] === 200 ? $r['body'] : '';
+// نامِ فیلدهای فرم و محلِ توکن در اسکریپت‌های سایت (یک روز در پوشه‌ی موقت نگه داشته می‌شود)
+function i2_discover_js(array $urls, $jar, array $hdr) {
+    $urls = array_values(array_filter($urls));
+    if (!$urls) return ['fields' => [], 'hash_hint' => '', 'meta' => [], 'keys' => [], 'cookie' => [], 'csrf_hints' => []];
+    $cache = so_tmp_dir() . '/i2js_' . md5(implode('|', $urls)) . '.json';
+    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && isset($j['meta'])) return $j;
+    $js = ''; $size = 0;
+    foreach ($urls as $u) { $r = i2_http('GET', $u, $hdr + ['Accept' => '*/*'], $jar, null, 30); if ($r['http'] === 200) { $js .= "\n" . $r['body']; $size += strlen($r['body']); } }
     preg_match_all('/\.(?:append|set)\(\s*["\']([A-Za-z0-9_\[\]-]{2,40})["\']/', $js, $m);
-    $hint = '';
-    if (($p = strpos($js, 'input_hash')) !== false) $hint = substr($js, max(0, $p - 500), 1000);
-    $j = ['fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => strlen($js)];
+    $hint = ($p = strpos($js, 'input_hash')) !== false ? substr($js, max(0, $p - 500), 1000) : '';
+    $meta = []; $keys = []; $cookie = []; $hints = [];
+    if (preg_match_all('/csrf|xsrf/i', $js, $hh, PREG_OFFSET_CAPTURE)) {
+        foreach ($hh[0] as $i => $h) {
+            $win = substr($js, max(0, $h[1] - 300), 600);
+            if ($i < 4) $hints[] = $win;
+            if (preg_match_all('/meta\[\s*(?:name|property)\s*=\s*\\\\?["\']?([\w:.-]+)/i', $win, $mm)) $meta = array_merge($meta, $mm[1]);
+            if (preg_match_all('/(?:dataset\.|getAttribute\(\s*["\']data-)([\w-]*(?:csrf|xsrf|token)[\w-]*)/i', $win, $mm)) $keys = array_merge($keys, $mm[1]);
+            if (preg_match_all('/["\']([\w-]*(?:csrf|xsrf)[\w-]*)["\']/i', $win, $mm)) $keys = array_merge($keys, $mm[1]);
+            if (preg_match_all('/cookie[^;]{0,80}?["\']([\w-]*(?:csrf|xsrf)[\w-]*)["\']/i', $win, $mm)) $cookie = array_merge($cookie, $mm[1]);
+        }
+    }
+    preg_match_all('~["\'`](/api/[\w/-]*(?:csrf|xsrf|token|session|bootstrap|init)[\w/-]*)["\'`]~i', $js, $ap);
+    $j = ['apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
+          'keys' => array_values(array_unique($keys)), 'cookie' => array_values(array_unique($cookie)), 'csrf_hints' => $hints];
     if ($js !== '') @file_put_contents($cache, json_encode($j));
     return $j;
 }
@@ -147,12 +190,30 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
         $pg = i2_http('GET', $c['page_url'], ['User-Agent' => I2_UA, 'Accept' => 'text/html,application/xhtml+xml', 'Accept-Language' => $hdr['Accept-Language']], $jar, null, 30);
         $dbg['page'] = ['http' => $pg['http'], 'url' => $pg['url'], 'size' => strlen($pg['body'])];
         if ($pg['http'] < 200 || $pg['http'] >= 400) return $fail('صفحه باز نشد (' . ($pg['error'] ?: 'HTTP ' . $pg['http']) . ')', $pg);
-        $d = i2_discover_page($pg['body'], $pg['url'] ?: $c['page_url']);
-        $dbg['csrf_found'] = $d['csrf'] !== ''; $dbg['build'] = $d['build']; $dbg['js'] = $d['js'];
-        if ($d['csrf'] === '') return $fail('توکنِ CSRF در صفحه پیدا نشد (ساختارِ سایت عوض شده؟ «آزمایشِ اتصال» را بفرستید).');
+        $d0 = i2_discover_page($pg['body'], $pg['url'] ?: $c['page_url'], $pg['headers']);
+        $jsInfo = i2_discover_js([$d0['js'], $d0['site_js']], $jar, $hdr);
+        $d = i2_discover_page($pg['body'], $pg['url'] ?: $c['page_url'], $pg['headers'], $jsInfo);
+        $dbg['csrf_found'] = $d['csrf'] !== ''; $dbg['csrf_src'] = $d['csrf_src']; $dbg['build'] = $d['build']; $dbg['js'] = $d['js'];
+        $dbg['js_fields'] = $jsInfo['fields']; $dbg['js_size'] = $jsInfo['size'] ?? 0; $dbg['js_meta'] = $jsInfo['meta']; $dbg['js_keys'] = $jsInfo['keys']; $dbg['js_cookie'] = $jsInfo['cookie'];
+        // توکن از یک API هنگامِ بارگذاریِ صفحه (اگر اسکریپت چنین آدرسی دارد، یا آدرس‌های رایج)
+        if ($d['csrf'] === '') {
+            foreach (array_slice(array_unique(array_merge($jsInfo['apis'] ?? [], ['/api/csrf', '/api/csrf-token', '/api/session'])), 0, 6) as $ep) {
+                $tr = i2_http('GET', $base . $ep, $hdr + ['Accept' => 'application/json'], $jar, null, 15);
+                $tj = json_decode($tr['body'], true);
+                if ($tr['http'] === 200 && is_array($tj)) {
+                    array_walk_recursive($tj, function ($v, $k) use (&$d, $ep) { if ($d['csrf'] === '' && is_string($k) && preg_match('/csrf|xsrf|^token$/i', $k) && is_string($v) && strlen($v) >= 16) { $d['csrf'] = $v; $d['csrf_src'] = 'api:' . $ep; } });
+                }
+                if ($d['csrf'] === '' && preg_match('/^set-cookie:\s*([\w-]*(?:csrf|xsrf)[\w-]*)=([^;\r\n]+)/im', (string)$tr['headers'], $cm)) { $d['csrf'] = urldecode($cm[2]); $d['csrf_src'] = 'cookie:' . $cm[1]; }
+                if ($d['csrf'] !== '') break;
+            }
+            $dbg['csrf_src'] = $d['csrf_src']; $dbg['csrf_found'] = $d['csrf'] !== ''; $dbg['js_apis'] = $jsInfo['apis'] ?? [];
+        }
+        if ($d['csrf'] === '') {
+            $dbg['meta_names'] = $d['meta_names']; $dbg['cookie_names'] = $d['cookie_names'];
+            $dbg['html_hints'] = $d['html_hints']; $dbg['js_hints'] = array_map(function ($x) { return substr($x, 0, 600); }, $jsInfo['csrf_hints']);
+            return $fail('توکنِ CSRF در صفحه پیدا نشد؛ «گزارشِ فنی» را بفرستید تا محلش اضافه شود.');
+        }
         $hdr['X-CSRF-Token'] = $d['csrf'];
-        $jsInfo = i2_discover_js($d['js'], $jar, $hdr);
-        $dbg['js_fields'] = $jsInfo['fields']; $dbg['js_size'] = $jsInfo['size'] ?? 0;
         $use = function ($ev) use ($base, $hdr, $jar) { i2_http('POST', $base . '/api/tool-usage', $hdr + ['Content-Type' => 'application/json', 'Accept' => '*/*'], $jar, json_encode(['app' => 'pdf-ocr', 'event' => $ev, 'id' => i2_hex(16)]), 10); };
         $use('view');
 

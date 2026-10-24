@@ -38,13 +38,13 @@ if (strpos($action, 'adm_') === 0) {
     if ($action === 'adm_get') {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
         $c = $C; $c['token'] = ''; $c['has_token'] = trim((string)($raw['token'] ?? '')) !== ''; $c['models'] = implode(', ', $C['models']);
-        $c['enabled'] = $C['enabled'] ? '1' : '0'; $c['mask'] = $C['mask'] ? '1' : '0'; $c['voice'] = $C['voice'] ? '1' : '0';
+        $c['enabled'] = $C['enabled'] ? '1' : '0'; $c['mask'] = $C['mask'] ? '1' : '0'; $c['voice'] = $C['voice'] ? '1' : '0'; $c['voice_reply'] = $C['voice_reply'] ? '1' : '0';
         hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C)]);
     }
     if ($action === 'adm_save') {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
         $n = (array)($in['cfg'] ?? []);
-        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'stt_model', 'tts_model', 'tts_voice', 'timeout'];
+        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout'];
         foreach ($keys as $k) if (array_key_exists($k, $n)) $raw[$k] = is_scalar($n[$k]) ? (string)$n[$k] : '';
         if (trim((string)($n['token'] ?? '')) !== '') $raw['token'] = trim((string)$n['token']);
         if (!empty($n['clear_token'])) $raw['token'] = '';
@@ -93,7 +93,7 @@ if (strpos($action, 'adm_') === 0) {
 // ---------------- کاربر ----------------
 if ($action === 'boot') {
     hxo(['ok' => true, 'name' => HX_NAME, 'allowed' => $S['allowed'] && $C['enabled'], 'enabled' => $C['enabled'], 'ready' => hx_ready($pdo, $C), 'is_admin' => $isAdmin,
-         'me' => $S, 'models' => $C['models'], 'voice' => $C['voice'], 'mask' => $C['mask'], 'user' => $userName, 'threads' => $S['allowed'] ? $myThreads() : []]);
+         'me' => $S, 'models' => $C['models'], 'voice' => $C['voice'], 'voice_reply' => $C['voice_reply'], 'mask' => $C['mask'], 'user' => $userName, 'threads' => $S['allowed'] ? $myThreads() : []]);
 }
 if (!$C['enabled'] && !$isAdmin) hxo(['ok' => false, 'error' => HX_NAME . ' فعلاً خاموش است.']);
 if (!$S['allowed']) hxo(['ok' => false, 'error' => 'دسترسی به ' . HX_NAME . ' برای شما فعال نیست؛ از مدیر کل بخواهید.', 'denied' => true]);
@@ -151,7 +151,7 @@ if ($action === 'stt') {
     hxo(hx_stt($pdo, $C, (string)($in['audio'] ?? '')));
 }
 if ($action === 'tts') {
-    if (!$C['voice']) hxo(['ok' => false, 'error' => 'صدا خاموش است.']);
+    if (!$C['voice_reply']) hxo(['ok' => false, 'error' => 'خواندنِ پاسخ با صدا خاموش است (تنظیماتِ هوشیکس).']);
     sess_release();
     $r = hx_tts($pdo, $C, (string)($in['text'] ?? ''));
     if (!$r['ok']) hxo($r);

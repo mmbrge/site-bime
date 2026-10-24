@@ -158,7 +158,7 @@
                         ${b.voice ? '<button class="hx-ib" data-mic title="حرف بزنید (دوباره بزنید تا تمام شود)"><i class="fas fa-microphone"></i></button>' : ''}
                         <button class="hx-ib go" data-send title="ارسال"><i class="fas fa-paper-plane"></i></button></div>
                     <div class="hx-foot"><span>${b.ready ? 'هوشیکس ممکن است اشتباه کند؛ پاسخ‌های مهم را بررسی کنید.' : '<b class="text-rose-500">سرویس‌دهنده هنوز تنظیم نشده.</b>'}</span>
-                        ${b.voice ? `<label class="hx-sw"><input type="checkbox" data-vm ${H.voiceMode ? 'checked' : ''}><i class="fas fa-headset"></i>گفتگوی صوتی (پاسخ را بخواند و دوباره گوش دهد)</label>` : ''}</div></div></section></div>`}</div>`;
+                        ${b.voice && b.voice_reply ? `<label class="hx-sw"><input type="checkbox" data-vm ${H.voiceMode ? 'checked' : ''}><i class="fas fa-headset"></i>گفتگوی صوتی (پاسخ را بخواند و دوباره گوش دهد)</label>` : ''}</div></div></section></div>`}</div>`;
         const q = s => H.el.querySelector(s);
         if (q('[data-set]')) q('[data-set]').onclick = settings;
         if (!b.allowed) return;
@@ -202,7 +202,7 @@
         const a = m.role === 'assistant';
         return `<div class="hx-m ${a ? 'a' : 'u'}"><div class="hx-av">${a ? 'X' : '<i class="fas fa-user"></i>'}</div><div class="min-w-0">
             <div class="hx-b" dir="auto">${a ? md(m.text) : esc(m.text)}</div>
-            <div class="hx-tools">${a ? `<button data-cp="${i}" title="کپی"><i class="fas fa-copy"></i></button>${H.boot.voice ? `<button data-say="${i}" title="خواندن با صدا"><i class="fas fa-volume-high"></i></button>` : ''}${m.tokens ? `<small>${num(m.tokens)} توکن${m.ms ? ' · ' + fa((m.ms / 1000).toFixed(1)) + ' ث' : ''}</small>` : ''}`
+            <div class="hx-tools">${a ? `<button data-cp="${i}" title="کپی"><i class="fas fa-copy"></i></button>${H.boot.voice_reply ? `<button data-say="${i}" title="خواندن با صدا"><i class="fas fa-volume-high"></i></button>` : ''}${m.tokens ? `<small>${num(m.tokens)} توکن${m.ms ? ' · ' + fa((m.ms / 1000).toFixed(1)) + ' ث' : ''}</small>` : ''}`
                 : `<button data-cp="${i}" title="کپی"><i class="fas fa-copy"></i></button><button data-ed="${i}" title="ویرایش و ارسالِ دوباره"><i class="fas fa-pen"></i></button>`}</div></div></div>`;
     }
     function paintMsgs(typing) {
@@ -243,7 +243,7 @@
         H.msgs.push({ role: 'assistant', text: r.reply, tokens: r.tokens, ms: r.ms });
         paintMsgs(); paintThreads();
         const u = H.el.querySelector('[data-usage]'); if (u) u.innerHTML = usageHtml();
-        if (H.voiceMode) speak(r.reply, () => { if (H.voiceMode && document.body.contains(H.el)) startRec(true); });
+        if (H.voiceMode && H.boot.voice_reply) speak(r.reply, () => { if (H.voiceMode && document.body.contains(H.el)) startRec(true); });
     }
 
     // ---------------- صدا ----------------
@@ -334,7 +334,7 @@
                     <div>${yn('enabled', 'هوشیکس روشن است')}${yn('mask', 'پوشاندنِ کد ملی/موبایل/کارت پیش از ارسال')}</div>
                 </div>
                 <div class="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-                    ${yn('voice', 'صدا (میکروفون و خواندنِ پاسخ)')}${f('stt_model', 'مدلِ گفتار به متن', 'dir="ltr"')}${f('tts_model', 'مدلِ متن به گفتار', 'dir="ltr"')}
+                    <div>${yn('voice', 'میکروفون (حرف بزنید، متن می‌شود)')}${yn('voice_reply', 'خواندنِ پاسخ با صدا و «گفتگوی صوتی»')}</div>${f('stt_model', 'مدلِ گفتار به متن', 'dir="ltr"')}${f('tts_model', 'مدلِ متن به گفتار', 'dir="ltr"')}
                     <label class="hx-f">صدای گوینده<select class="hx-in" data-k="tts_voice">${g.voices.map(v => `<option ${c.tts_voice === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
                 <p class="text-[10.5px] text-slate-500 leading-6"><i class="fas fa-shield-halved text-emerald-600 ml-1"></i>هوشیکس هیچ ابزار یا دسترسی‌ای به دیتابیس، پرونده‌ها و فایل‌های سایت ندارد؛ فقط پیام‌های همان گفتگو (که سرور خودش می‌سازد) فرستاده می‌شود.</p>
                 <div class="flex flex-wrap gap-2"><button class="hx-btn text-white" style="background:linear-gradient(120deg,#7c3aed,#06b6d4)" data-save><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button><button class="hx-btn bg-slate-100" data-test><i class="fas fa-plug ml-1"></i>آزمایشِ اتصال</button><span data-tr class="text-[11px] self-center"></span></div>

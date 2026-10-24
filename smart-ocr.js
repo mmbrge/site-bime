@@ -98,11 +98,47 @@
         }
         return pagesFromFiles([f]);
     }
-    // همه‌ی کار: فایل/آدرس ← متنِ همه‌ی صفحه‌ها (برای «خواندنِ هوشمند»ِ نامه و مدارک)
+    // پنجره‌ی انتخابِ صفحه‌ها (پیش از OCR، وقتی فایل چند صفحه دارد): همه یا چندتا ← Promise<صفحه‌های انتخابی | null>
+    function pickPages(pages, opt) {
+        opt = opt || {};
+        if (pages.length <= 1) return Promise.resolve(pages);
+        return new Promise(res => {
+            const on = pages.map(() => true);
+            const m = document.createElement('div');
+            m.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:14px';
+            const paint = () => {
+                const k = on.filter(Boolean).length;
+                m.innerHTML = `<div dir="rtl" style="background:#fff;border-radius:20px;width:min(860px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;font-family:inherit">
+                    <div style="padding:14px 16px;border-bottom:1px solid #eef2f7;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                        <b style="font-size:14px;color:#1e1b4b">${opt.title || 'کدام صفحه‌ها پردازش شوند؟'} <span style="color:#7c3aed;font-size:12px">(${k} از ${pages.length} صفحه)</span></b>
+                        <span style="display:flex;gap:6px"><button data-a="all" style="border:1px solid #ddd6fe;background:#f5f3ff;color:#6d28d9;border-radius:10px;padding:5px 10px;font-size:11.5px;font-weight:700">همه‌ی صفحه‌ها</button>
+                        <button data-a="none" style="border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:5px 10px;font-size:11.5px;font-weight:700">هیچ‌کدام</button></span></div>
+                    <div style="padding:14px;overflow:auto;display:flex;flex-wrap:wrap;gap:10px">${pages.map((p, i) => `<label style="position:relative;cursor:pointer">
+                        <img src="${p.thumb}" style="height:150px;border-radius:10px;border:3px solid ${on[i] ? '#7c3aed' : '#e2e8f0'};opacity:${on[i] ? 1 : .4};display:block">
+                        <input type="checkbox" data-i="${i}" ${on[i] ? 'checked' : ''} style="position:absolute;top:6px;right:6px;accent-color:#7c3aed;width:16px;height:16px">
+                        <small style="position:absolute;bottom:6px;left:6px;background:rgba(255,255,255,.92);border-radius:6px;padding:1px 6px;font-size:10.5px;font-weight:700">صفحه‌ی ${p.n}</small></label>`).join('')}</div>
+                    <div style="padding:12px 16px;border-top:1px solid #eef2f7;display:flex;gap:8px;justify-content:flex-end">
+                        <button data-a="cancel" style="border:1px solid #e2e8f0;background:#fff;border-radius:12px;padding:8px 16px;font-size:12px;font-weight:700">انصراف</button>
+                        <button data-a="ok" ${k ? '' : 'disabled'} style="border:0;background:linear-gradient(120deg,#7c3aed,#06b6d4);color:#fff;border-radius:12px;padding:8px 18px;font-size:12px;font-weight:900;opacity:${k ? 1 : .5}">ادامه و پردازش (${k})</button></div></div>`;
+                m.querySelectorAll('[data-i]').forEach(c => c.onchange = () => { on[+c.dataset.i] = c.checked; paint(); });
+                m.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+                    const a = b.dataset.a;
+                    if (a === 'all' || a === 'none') { on.fill(a === 'all'); paint(); return; }
+                    m.remove(); res(a === 'ok' ? pages.filter((p, i) => on[i]) : null);
+                });
+            };
+            paint(); document.body.appendChild(m);
+        });
+    }
+    // همه‌ی کار: فایل/آدرس ← (انتخابِ صفحه‌ها اگر opt.pick) ← متنِ صفحه‌ها (برای «خواندنِ هوشمند»ِ نامه و مدارک)
     async function textOf(src, opt) {
         opt = opt || {};
-        const pages = typeof src === 'string' ? await pagesFromUrl(src, opt.name) : await pagesFromFiles(src);
+        let pages = typeof src === 'string' ? await pagesFromUrl(src, opt.name) : await pagesFromFiles(src);
         if (!pages.length) throw new Error('صفحه‌ای پیدا نشد.');
+        if (opt.pick && pages.length > 1) {
+            pages = await pickPages(pages, { title: opt.pickTitle });
+            if (!pages) { const e = new Error('انتخابِ صفحه لغو شد.'); e.cancel = true; throw e; }
+        }
         if (opt.maxPages && pages.length > opt.maxPages) pages.length = opt.maxPages;
         if (opt.onPages) opt.onPages(pages.length);
         const res = await run(pages, opt);
@@ -149,5 +185,5 @@
         await Promise.all(Array.from({ length: Math.min(conc, pages.length) }, lane));
         return res;
     }
-    window.SmartOCR = { pagesFromFiles, pagesFromUrl, textOf, run, isPdf, isImg };
+    window.SmartOCR = { pagesFromFiles, pagesFromUrl, pickPages, textOf, run, isPdf, isImg };
 })();

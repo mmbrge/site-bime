@@ -27,13 +27,30 @@ function vdoc_sql_clean($col) {
 }
 
 // اجرای خواننده روی یک فایل (PHP: api/_vdoc_reader.php). فقط PDFِ متنی خوانده می‌شود؛ عکس/اسکن => «خوانده نشد» (ورودِ دستی)
-function vdoc_run($pdo, $abs, $page = 1, $timeout = 280) {
+//   $opt['smart']: true = اگر کامل خوانده نشد «پردازشِ هوشمند» (OCR + پرامپتِ نوعِ مدرک)، false = هرگز،
+//                  null (پیش‌فرض) = فقط برای اسکن/عکس و اگر در تنظیمات روشن و موتور آماده باشد؛ $opt['hint'] = نوعِ پیشنهادیِ مدرک
+function vdoc_run($pdo, $abs, $page = 1, $timeout = 280, array $opt = []) {
     if (!is_file($abs)) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
     $ext = upload_ext($abs);
     if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'bmp'], true)) return ['ok' => false, 'error' => 'این نوع فایل خوانده نمی‌شود.'];
     require_once __DIR__ . '/_vdoc_reader.php';
     try { $r = vdr_read($abs, intval($page) ?: 1); }
-    catch (Throwable $e) { error_log('[vdoc_run] ' . $e->getMessage()); return ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.']; }
+    catch (Throwable $e) { error_log('[vdoc_run] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.', 'scan' => $ext !== 'pdf']; }
+    $smart = array_key_exists('smart', $opt) ? $opt['smart'] : null;
+    $full = !empty($r['ok']) && ($r['status'] ?? '') === 'full';
+    if ($pdo && !$full && $smart !== false && ($smart === true || empty($r['ok']) || !empty($r['scan']))) {
+        try {
+            require_once __DIR__ . '/_doc_smart.php';
+            if (ds_smart_available($pdo)) {
+                $s = ds_smart_file($pdo, $abs, intval($page) ?: 1, (string)($opt['hint'] ?? ''));
+                $rank = ['full' => 3, 'partial' => 2, 'none' => 1];
+                if (!empty($s['ok']) && (empty($r['ok']) || ($rank[$s['status'] ?? 'none'] ?? 0) >= ($rank[$r['status'] ?? 'none'] ?? 0))) {
+                    if (!empty($r['ok'])) $s['data'] += array_diff_key((array)$r['data'], $s['data']);   // جاهای خالی از خواننده‌ی متنی
+                    return $s;
+                }
+            }
+        } catch (Throwable $e) { error_log('[vdoc smart] ' . $e->getMessage()); }
+    }
     // اسکن/عکس (بی‌متن): اگر سرویسِ «خواندنِ اسکن (هوش مصنوعی)» تنظیم شده، با همان خوانده می‌شود
     if (empty($r['ok']) && !empty($r['scan']) && $pdo) {
         try { require_once __DIR__ . '/_vdoc_ai.php'; if (vdoc_ai_ready($pdo)) return vdoc_ai_read($pdo, $abs, intval($page) ?: 1); }
@@ -180,7 +197,10 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     $onRow = $doc && $doc['status'] === 'ASSIGNED' && $doc['plate_id'] && in_array($doc['doc_type'], vdoc_vehicle_types(), true);
     if (!$doc || ($doc['status'] !== 'UNASSIGNED' && !$onRow)) return $save('NONE', ['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.']);
     $abs = $siteRoot . '/' . ltrim($doc['file_path'], '/');
-    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs);
+    // «پردازشِ هوشمند»ِ این شرکت (تعریفِ شرکت ← خواندنِ مدارک = ۲): OCR + پرامپتِ نوعِ مدرک
+    $mode = 1;
+    try { $m = $pdo->prepare("SELECT doc_read FROM companies WHERE id = ?"); $m->execute([$doc['company_id']]); $mode = intval($m->fetchColumn()); } catch (Throwable $e) {}
+    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs, 1, 280, ['smart' => $mode === 2 ? true : false, 'hint' => (string)($doc['doc_type'] ?? '')]);
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)

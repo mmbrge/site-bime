@@ -264,7 +264,7 @@ function perm_api_map() {
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
             'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any',
-            'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
+            'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',

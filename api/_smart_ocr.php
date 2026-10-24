@@ -22,7 +22,7 @@ function so_cfg($pdo) {
     foreach (['i2pdf', 'ai', 'ocrspace', 'browser'] as $e) if (!in_array($e, $order, true)) $order[] = $e;
     $on = [];
     foreach (SO_ENGINES as $e => $l) $on[$e] = isset($c['on'][$e]) ? !empty($c['on'][$e]) : true;
-    return ['order' => $order, 'on' => $on, 'format' => in_array($c['format'] ?? '', ['txt', 'simple_pdf', 'docx', 'pdf'], true) ? $c['format'] : 'txt', 'conc' => max(1, min(6, intval($c['conc'] ?? 3) ?: 3))];
+    return ['order' => $order, 'on' => $on, 'auto' => ($c['auto'] ?? 1) ? true : false, 'format' => in_array($c['format'] ?? '', ['txt', 'simple_pdf', 'docx', 'pdf'], true) ? $c['format'] : 'txt', 'conc' => max(1, min(6, intval($c['conc'] ?? 3) ?: 3))];
 }
 function so_save_cfg($pdo, array $in) {
     $all = api_cfg($pdo);
@@ -31,6 +31,15 @@ function so_save_cfg($pdo, array $in) {
     if (isset($in['on'])) foreach (SO_ENGINES as $e => $l) $c['on'][$e] = !empty($in['on'][$e]) ? 1 : 0;
     if (isset($in['format'])) $c['format'] = (string)$in['format'];
     if (isset($in['conc'])) $c['conc'] = intval($in['conc']);
+    if (isset($in['auto'])) $c['auto'] = !empty($in['auto']) ? 1 : 0;
+    if (isset($in['prompts']) && is_array($in['prompts'])) {
+        require_once __DIR__ . '/_doc_smart.php';
+        foreach (ds_types() as $t => $x) if (array_key_exists($t, $in['prompts'])) {
+            $v = trim((string)$in['prompts'][$t]);
+            // همان پرامپتِ پیش‌فرض = چیزی ذخیره نشود (تا بهبودهای بعدیِ پیش‌فرض برسد)
+            if ($v === '' || $v === trim($x[1])) unset($c['prompts'][$t]); else $c['prompts'][$t] = mb_substr($v, 0, 8000);
+        }
+    }
     $i2 = $c['i2pdf'] ?? [];
     foreach (['page_url', 'lang_fa', 'lang_en', 'engine', 'layout', 'format', 'timeout'] as $k) if (isset($in['i2pdf'][$k])) $i2[$k] = trim((string)$in['i2pdf'][$k]);
     $c['i2pdf'] = $i2;
@@ -126,7 +135,7 @@ function so_ai_page($pdo, $dataUrl, $lang) {
 function so_ocrspace_page($pdo, $dataUrl, $lang) {
     $o = so_ocrspace_conf($pdo);
     $t0 = microtime(true);
-    $fields = ['base64Image' => $dataUrl, 'language' => $lang === 'eng' ? 'eng' : 'per', 'isOverlayRequired' => 'false', 'scale' => 'true', 'detectOrientation' => 'true',
+    $fields = ['base64Image' => $dataUrl, 'filetype' => strpos((string)$dataUrl, 'data:application/pdf') === 0 ? 'PDF' : 'JPG', 'language' => $lang === 'eng' ? 'eng' : 'per', 'isOverlayRequired' => 'false', 'scale' => 'true', 'detectOrientation' => 'true',
                'OCREngine' => $lang === 'eng' ? $o['engine'] : '1'];
     $ch = curl_init('https://api.ocr.space/parse/image');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $fields, CURLOPT_HTTPHEADER => ['apikey: ' . $o['token']],
@@ -171,6 +180,53 @@ function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
     }
     $browser = !empty($av['browser']);
     return ['ok' => false, 'browser' => $browser, 'error' => $errs ? implode(' / ', $errs) : ($browser ? 'موتورِ سروری تنظیم نشده؛ متن در خودِ مرورگر خوانده می‌شود.' : 'هیچ موتورِ روشن و تنظیم‌شده‌ای نیست.')];
+}
+
+// OCRِ یک صفحه از فایلِ روی هاست (بدونِ مرورگر): برای پردازشِ خودکارِ مدارکِ شرکت‌ها، ثبتِ دستی و مدارکِ پرسنلی
+//   i2pdf ← PDFِ تک‌صفحه؛ هوشِ مصنوعی/OCR.space ← عکسِ صفحه (اسکن‌ها یک JPEGِ تمام‌صفحه‌اند) یا خودِ PDF برای OCR.space
+function so_file_text($pdo, $abs, $page = 1, $lang = 'fas') {
+    if (!is_file($abs)) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
+    $av = so_engines($pdo);
+    $order = array_values(array_filter(so_cfg($pdo)['order'], function ($e) use ($av) { return $e !== 'browser' && !empty($av[$e]); }));
+    if (!$order) return ['ok' => false, 'error' => 'هیچ موتورِ OCRِ سروری روشن و تنظیم نشده است.'];
+    $isPdf = upload_ext($abs) === 'pdf';
+    $img = null; $pdf = null;
+    $getImg = function () use (&$img, $abs, $page, $isPdf) {
+        if ($img !== null) return $img;
+        $img = '';
+        if ($isPdf) { $x = vdoc_ai_page_image($abs, $page); if ($x) $img = 'data:' . $x['mime'] . ';base64,' . base64_encode($x['bytes']); }
+        else { $b = @file_get_contents($abs); $mime = function_exists('mime_content_type') ? (string)@mime_content_type($abs) : ''; if ($b !== false && strlen($b) < 9 * 1024 * 1024) $img = 'data:' . (preg_match('~^image/(jpeg|png|webp)$~', $mime) ? $mime : 'image/jpeg') . ';base64,' . base64_encode($b); }
+        return $img;
+    };
+    $getPdf = function () use (&$pdf, $abs, $page, $isPdf, $getImg) {
+        if ($pdf !== null) return $pdf;
+        $pdf = '';
+        if ($isPdf) {
+            require_once __DIR__ . '/_pdf.php';
+            if (intval(pdfx_page_count($abs)) <= 1) $pdf = (string)@file_get_contents($abs);
+            else { $tmp = tempnam(sys_get_temp_dir(), 'sop') . '.pdf'; try { pdfx_extract($abs, [$page - 1], $tmp); $pdf = (string)@file_get_contents($tmp); } catch (Throwable $e) {} @unlink($tmp); }
+        } elseif (($im = $getImg()) !== '') $pdf = (string)so_image_pdf($im);
+        return $pdf;
+    };
+    $errs = [];
+    foreach ($order as $e) {
+        if ($e === 'i2pdf') {
+            if (($p = $getPdf()) === '') { $errs[] = 'i2pdf: PDFِ صفحه ساخته نشد.'; continue; }
+            require_once __DIR__ . '/_i2pdf.php';
+            $r = i2_page($pdo, $p, $lang, 'txt', function () {});
+        } elseif ($e === 'ai') {
+            if (($im = $getImg()) === '') { $errs[] = 'هوشِ مصنوعی: عکسِ صفحه بیرون کشیده نشد.'; continue; }
+            $r = so_ai_page($pdo, $im, $lang);
+        } else {
+            $src = $getImg();
+            if ($src === '' && ($p = $getPdf()) !== '') $src = 'data:application/pdf;base64,' . base64_encode($p);
+            if ($src === '') { $errs[] = 'OCR.space: فایلِ صفحه آماده نشد.'; continue; }
+            $r = so_ocrspace_page($pdo, $src, $lang);
+        }
+        if (!empty($r['ok'])) return ['ok' => true, 'text' => $r['text'], 'engine' => $e, 'ms' => $r['ms'] ?? 0];
+        $errs[] = $r['error'] ?? ($e . ': خطا');
+    }
+    return ['ok' => false, 'error' => implode(' / ', $errs)];
 }
 
 // ذخیره در تاریخچه (یا به‌روزرسانیِ متن‌های ویرایش‌شده)

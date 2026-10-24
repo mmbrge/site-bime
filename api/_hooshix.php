@@ -42,7 +42,8 @@ function hx_cfg($pdo) {
         'def_daily' => max(0, intval($c['def_daily'] ?? 30)),
         'def_month_tokens' => max(0, intval($c['def_month_tokens'] ?? 200000)),
         'mask' => ($c['mask'] ?? '1') !== '0',
-        'voice' => ($c['voice'] ?? '1') !== '0',
+        'voice' => ($c['voice'] ?? '1') !== '0',                 // میکروفون (گفتار ← متن)
+        'voice_reply' => ($c['voice_reply'] ?? '0') === '1',     // خواندنِ پاسخ با صدا و «گفتگوی صوتی» — پیش‌فرض خاموش
         'stt_model' => trim((string)($c['stt_model'] ?? '')) ?: 'whisper-1',
         'tts_model' => trim((string)($c['tts_model'] ?? '')) ?: 'tts-1',
         'tts_voice' => in_array($c['tts_voice'] ?? '', HX_VOICES, true) ? $c['tts_voice'] : 'nova',

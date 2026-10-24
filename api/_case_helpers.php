@@ -205,6 +205,23 @@ function queue_ensure_cols($pdo) {
 // عکس و PDFِ اسکن‌شده خوانده نمی‌شوند (پردازشِ تصویر غیرفعال است) => data = null با توضیح، تا کارشناس دستی وارد کند.
 // خروجیِ data همان کلیدهای قبلی است: ins_company, ins_type, policy_num, insured_name, vin, plate, national_id, personnel_id, company_name, premium و ...
 function run_document_ocr_verbose($absFilePath) {
+    $r = run_document_ocr_verbose_text($absFilePath);
+    // اسکن/عکس: «پردازشِ هوشمند» (OCR روی هاست + پرامپتِ معرفی‌نامه/بیمه‌نامه‌ی پرسنلی) اگر در تنظیمات روشن و موتور آماده باشد
+    if (empty($r['data']) && !empty($r['scan']) && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+        try {
+            require_once __DIR__ . '/_doc_smart.php';
+            $pdo = $GLOBALS['pdo'];
+            if (ds_smart_available($pdo)) {
+                $t = ds_page_text($pdo, $absFilePath, 1);
+                $x = !empty($t['ok']) ? ds_extract($pdo, 'personnel', $t['text']) : ['ok' => false, 'error' => $t['error'] ?? ''];
+                if (!empty($x['ok']) && !empty($x['data'])) return ['data' => $x['data'], 'debug' => null, 'smart' => 1, 'engine' => $t['engine'] ?? ''];
+                $r['debug'] = trim(($r['debug'] ?? '') . ' (پردازشِ هوشمند: ' . ($x['error'] ?? 'نتیجه نداد') . ')');
+            }
+        } catch (Throwable $e) { error_log('[personnel smart] ' . $e->getMessage()); }
+    }
+    return $r;
+}
+function run_document_ocr_verbose_text($absFilePath) {
     if (!file_exists($absFilePath)) return ['data' => null, 'debug' => "فایل ورودی پیدا نشد: {$absFilePath}"];
     $ext = upload_ext($absFilePath);
     if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) return ['data' => null, 'debug' => 'فرمتِ فایل برای شناسایی مناسب نیست (فقط PDF/عکس).'];
