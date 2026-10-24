@@ -2352,10 +2352,10 @@ try {
     // ---- «خواندنِ هوشمند» (دستیِ کارشناس): OCRِ صفحه در مرورگر ← متن ← هوشِ مصنوعی ← همان مسیرِ شناسایی (api/_doc_smart.php) ----
     if ($action === 'smart_ocr_page') {
         require_once __DIR__ . '/_smart_ocr.php';
-        @set_time_limit(150);
+        @set_time_limit(300);
         if (function_exists('sess_release')) sess_release(); else session_write_close();
         $lang = in_array($data['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $data['lang'] : 'fas';
-        echo json_encode(so_page($pdo, (string)($data['image'] ?? ''), $lang, in_array($data['engine'] ?? '', ['ai', 'ocrspace'], true) ? $data['engine'] : 'auto'), JSON_UNESCAPED_UNICODE);
+        echo json_encode(so_page($pdo, (string)($data['image'] ?? ''), $lang, in_array($data['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $data['engine'] : 'auto', ['format' => 'txt']), JSON_UNESCAPED_UNICODE);
         exit;
     }
     if ($action === 'smart_letter_extract') {

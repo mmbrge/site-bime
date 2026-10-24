@@ -9,16 +9,89 @@
 require_once __DIR__ . '/_apis.php';
 require_once __DIR__ . '/_vdoc_ai.php';
 
-const SO_ENGINES = ['ai' => 'هوشِ مصنوعی (GapGPT)', 'ocrspace' => 'OCR.space', 'browser' => 'مرورگر (Tesseract)'];
+const SO_ENGINES = ['i2pdf' => 'i2pdf.com', 'ai' => 'هوشِ مصنوعی (GapGPT)', 'ocrspace' => 'OCR.space', 'browser' => 'مرورگر (Tesseract)'];
 
 function so_ocrspace_conf($pdo) {
     $c = api_cfg($pdo)['ocr_space'] ?? [];
     return ['token' => trim((string)($c['token'] ?? '')), 'on' => ($c['enabled'] ?? '1') !== '0', 'engine' => in_array($c['engine'] ?? '', ['1', '2', '3'], true) ? $c['engine'] : '1'];
 }
-// موتورهای آماده
+// اولویت و روشن/خاموشِ موتورها (تنظیماتِ استعلامات ← پردازش فایل هوشمند): order = ترتیب، on = روشن‌ها
+function so_cfg($pdo) {
+    $c = api_cfg($pdo)['smart_ocr'] ?? [];
+    $order = array_values(array_unique(array_filter((array)($c['order'] ?? []), function ($e) { return isset(SO_ENGINES[$e]); })));
+    foreach (['i2pdf', 'ai', 'ocrspace', 'browser'] as $e) if (!in_array($e, $order, true)) $order[] = $e;
+    $on = [];
+    foreach (SO_ENGINES as $e => $l) $on[$e] = isset($c['on'][$e]) ? !empty($c['on'][$e]) : true;
+    return ['order' => $order, 'on' => $on, 'format' => in_array($c['format'] ?? '', ['txt', 'simple_pdf', 'docx', 'pdf'], true) ? $c['format'] : 'txt', 'conc' => max(1, min(6, intval($c['conc'] ?? 3) ?: 3))];
+}
+function so_save_cfg($pdo, array $in) {
+    $all = api_cfg($pdo);
+    $c = $all['smart_ocr'] ?? [];
+    if (isset($in['order'])) $c['order'] = array_values(array_filter((array)$in['order'], function ($e) { return isset(SO_ENGINES[$e]); }));
+    if (isset($in['on'])) foreach (SO_ENGINES as $e => $l) $c['on'][$e] = !empty($in['on'][$e]) ? 1 : 0;
+    if (isset($in['format'])) $c['format'] = (string)$in['format'];
+    if (isset($in['i2pdf']['curl'])) $in['i2pdf']['curl'] = strtr((string)$in['i2pdf']['curl'], ['’' => "'", '＂' => '"', '＜' => '<', '＞' => '>']);   // اگر از نسخه‌ی نمایشی کپی شده بود
+    if (isset($in['conc'])) $c['conc'] = intval($in['conc']);
+    $i2 = $c['i2pdf'] ?? [];
+    foreach (['curl', 'challenge_url', 'page_url', 'lang_fa', 'lang_en', 'format', 'timeout'] as $k) if (isset($in['i2pdf'][$k])) $i2[$k] = trim((string)$in['i2pdf'][$k]);
+    $c['i2pdf'] = $i2;
+    $all['smart_ocr'] = $c;
+    api_save_cfg($pdo, $all);
+}
+// موتورهای آماده (تنظیم‌شده و روشن)
 function so_engines($pdo) {
-    $o = so_ocrspace_conf($pdo);
-    return ['ai' => vdoc_ai_ready($pdo), 'ocrspace' => $o['on'] && $o['token'] !== '' && function_exists('curl_init'), 'browser' => true];
+    require_once __DIR__ . '/_i2pdf.php';
+    $o = so_ocrspace_conf($pdo); $c = so_cfg($pdo);
+    $ready = ['i2pdf' => i2_ready($pdo), 'ai' => vdoc_ai_ready($pdo), 'ocrspace' => $o['on'] && $o['token'] !== '' && function_exists('curl_init'), 'browser' => true];
+    foreach ($ready as $e => $v) $ready[$e] = $v && $c['on'][$e];
+    return $ready;
+}
+// ترتیبِ موتورهای روشن و آماده (برای مرورگر: اگر «مرورگر» اول باشد، اصلاً سراغِ سرور نمی‌رود)
+function so_order($pdo) {
+    $av = so_engines($pdo);
+    return array_values(array_filter(so_cfg($pdo)['order'], function ($e) use ($av) { return !empty($av[$e]); }));
+}
+
+// پوشه‌ی موقت (پیشرفتِ گام‌ها و فایل‌های نتیجه‌ی i2pdf)
+function so_tmp_dir() {
+    if (function_exists('inq_dir')) return inq_dir('tmp');
+    $d = __DIR__ . '/data/inq';
+    if (!is_dir($d)) @mkdir($d, 0700, true);
+    if (!is_file($d . '/.htaccess')) @file_put_contents($d . '/.htaccess', "Require all denied\nDeny from all\n");
+    if (!is_dir($d . '/tmp')) @mkdir($d . '/tmp', 0700, true);
+    return $d . '/tmp';
+}
+// تایم‌لاینِ یک صفحه: پنل هر ثانیه می‌خواند (ocr_progress)
+function so_progress($token, $step, $label) {
+    if (!preg_match('/^[a-z0-9]{8,40}$/', (string)$token)) return;
+    $f = so_tmp_dir() . "/ocrp_$token.json";
+    $j = is_file($f) ? (json_decode((string)@file_get_contents($f), true) ?: []) : [];
+    if (empty($j['t0'])) $j['t0'] = microtime(true);
+    $j['steps'][] = ['step' => $step, 'label' => $label, 'at' => round(microtime(true) - $j['t0'], 1)];
+    @file_put_contents($f, json_encode($j, JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+function so_progress_read($token) {
+    if (!preg_match('/^[a-z0-9]{8,40}$/', (string)$token)) return null;
+    $f = so_tmp_dir() . "/ocrp_$token.json";
+    if (!is_file($f)) return ['steps' => []];
+    $j = json_decode((string)@file_get_contents($f), true) ?: [];
+    return ['steps' => $j['steps'] ?? [], 'elapsed' => !empty($j['t0']) ? round(microtime(true) - $j['t0'], 1) : 0];
+}
+// عکسِ صفحه ← PDFِ تک‌صفحه (برای i2pdf که PDF می‌گیرد)
+function so_image_pdf($dataUrl) {
+    if (!preg_match('~^data:image/(jpeg|png|webp);base64,(.+)$~s', (string)$dataUrl, $m)) return null;
+    $bin = base64_decode($m[2]);
+    $sz = @getimagesizefromstring($bin);
+    if (!$sz) return null;
+    if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
+    require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
+    // ۲۰۰ نقطه در اینچ: اندازه‌ی صفحه همان اندازه‌ی عکس
+    $w = $sz[0] * 25.4 / 200; $h = $sz[1] * 25.4 / 200;
+    $pdf = new TCPDF($w > $h ? 'L' : 'P', 'mm', [$w, $h], true, 'UTF-8', false);
+    $pdf->setPrintHeader(false); $pdf->setPrintFooter(false); $pdf->SetMargins(0, 0, 0); $pdf->SetAutoPageBreak(false, 0);
+    $pdf->AddPage();
+    $pdf->Image('@' . $bin, 0, 0, $w, $h, strtoupper($m[1] === 'jpeg' ? 'JPG' : $m[1]), '', '', false, 200);
+    return $pdf->Output('', 'S');
 }
 
 const SO_AI_PROMPT = 'You are a precise OCR engine. Transcribe ALL text visible in this page image exactly as written, in natural reading order (right-to-left for Persian/Arabic). '
@@ -71,27 +144,47 @@ function so_ocrspace_page($pdo, $dataUrl, $lang) {
     return ['ok' => $txt !== '', 'text' => $txt, 'ms' => $ms, 'engine' => 'ocrspace', 'error' => $txt === '' ? 'OCR.space متنی پیدا نکرد.' : ''];
 }
 
-// یک صفحه: engine = auto | ai | ocrspace
-function so_page($pdo, $dataUrl, $lang, $engine = 'auto') {
+// یک صفحه: engine = auto (ترتیبِ تنظیمات) | i2pdf | ai | ocrspace
+//   $opt: format (قالبِ خروجیِ i2pdf)، ptoken (برای تایم‌لاین)، pdf (PDFِ تک‌صفحه‌ی آماده، اختیاری)
+function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
     if (!preg_match('~^data:image/(jpeg|png|webp);base64,~', (string)$dataUrl)) return ['ok' => false, 'error' => 'عکسِ صفحه نرسید.'];
     if (strlen($dataUrl) > 9 * 1024 * 1024) return ['ok' => false, 'error' => 'عکسِ صفحه خیلی بزرگ است.'];
+    if (mt_rand(1, 30) === 1) foreach (array_merge(glob(so_tmp_dir() . '/ocrp_*') ?: [], glob(so_tmp_dir() . '/i2_*') ?: []) as $old) if (@filemtime($old) < time() - 86400) @unlink($old);
     $av = so_engines($pdo);
-    $order = $engine === 'ai' ? ['ai'] : ($engine === 'ocrspace' ? ['ocrspace'] : ['ai', 'ocrspace']);
+    $cfg = so_cfg($pdo);
+    $tok = (string)($opt['ptoken'] ?? '');
+    $prog = function ($step, $label) use ($tok) { so_progress($tok, $step, $label); };
+    if (isset(SO_ENGINES[$engine]) && $engine !== 'browser') $order = [$engine];
+    else { $order = []; foreach ($cfg['order'] as $e) { if ($e === 'browser') break; $order[] = $e; } }   // موتورهای سروریِ پیش از «مرورگر»
     $errs = [];
     foreach ($order as $e) {
-        if (empty($av[$e])) { if ($engine === $e) $errs[] = SO_ENGINES[$e] . ' تنظیم نشده است.'; continue; }
-        $r = $e === 'ai' ? so_ai_page($pdo, $dataUrl, $lang) : so_ocrspace_page($pdo, $dataUrl, $lang);
-        if ($r['ok']) return $r + ['engine_fa' => SO_ENGINES[$e]];
+        if (empty($av[$e])) { if ($engine === $e) $errs[] = SO_ENGINES[$e] . ' تنظیم نشده یا خاموش است.'; continue; }
+        $prog('engine', 'موتور: ' . SO_ENGINES[$e]);
+        if ($e === 'i2pdf') {
+            require_once __DIR__ . '/_i2pdf.php';
+            $pdf = !empty($opt['pdf']) ? $opt['pdf'] : so_image_pdf($dataUrl);
+            $r = $pdf ? i2_page($pdo, $pdf, $lang, (string)($opt['format'] ?? $cfg['format']), $prog) : ['ok' => false, 'error' => 'i2pdf: ساختِ PDFِ صفحه ممکن نشد.'];
+        } elseif ($e === 'ai') $r = so_ai_page($pdo, $dataUrl, $lang);
+        else $r = so_ocrspace_page($pdo, $dataUrl, $lang);
+        if ($r['ok']) { if ($e !== 'i2pdf') $prog('done', 'Your result is ready. (' . SO_ENGINES[$e] . ')'); return $r + ['engine_fa' => SO_ENGINES[$e], 'text_verbatim' => $r['text']]; }
+        $prog('fail', $r['error']);
         $errs[] = $r['error'];
     }
-    return ['ok' => false, 'browser' => true, 'error' => $errs ? implode(' / ', $errs) : 'موتورِ سروری تنظیم نشده؛ متن در خودِ مرورگر خوانده می‌شود.'];
+    $browser = !empty($av['browser']);
+    return ['ok' => false, 'browser' => $browser, 'error' => $errs ? implode(' / ', $errs) : ($browser ? 'موتورِ سروری تنظیم نشده؛ متن در خودِ مرورگر خوانده می‌شود.' : 'هیچ موتورِ روشن و تنظیم‌شده‌ای نیست.')];
 }
 
 // ذخیره در تاریخچه (یا به‌روزرسانیِ متن‌های ویرایش‌شده)
 function so_save($pdo, $id, $name, $lang, array $pages) {
     inq_ensure($pdo);
     $clean = [];
-    foreach ($pages as $p) $clean[] = ['n' => intval($p['n'] ?? 0), 'text' => mb_substr((string)($p['text'] ?? ''), 0, 200000), 'engine' => (string)($p['engine'] ?? ''), 'ms' => intval($p['ms'] ?? 0)];
+    foreach ($pages as $p) {
+        $file = preg_match('/^[a-f0-9]{16}\.(pdf|docx)$/', (string)($p['file'] ?? '')) ? $p['file'] : '';
+        // فایلِ اصلیِ i2pdf از پوشه‌ی موقت به پوشه‌ی ماندگار
+        if ($file !== '' && is_file(so_tmp_dir() . '/i2_' . $file)) @rename(so_tmp_dir() . '/i2_' . $file, inq_dir('ocr') . '/' . $file);
+        if ($file !== '' && !is_file(inq_dir('ocr') . '/' . $file)) $file = '';
+        $clean[] = ['n' => intval($p['n'] ?? 0), 'text' => mb_substr((string)($p['text'] ?? ''), 0, 200000), 'engine' => (string)($p['engine'] ?? ''), 'ms' => intval($p['ms'] ?? 0), 'file' => $file];
+    }
     usort($clean, function ($a, $b) { return $a['n'] - $b['n']; });
     $all = trim(implode("\n", array_column($clean, 'text')));
     $notice = mb_substr(preg_replace('/\s+/u', ' ', $all), 0, 600);
@@ -110,7 +203,8 @@ function so_save($pdo, $id, $name, $lang, array $pages) {
 }
 function so_pages_of(array $row) {
     $res = json_decode((string)($row['result_json'] ?? ''), true) ?: [];
-    return [$res['pages'] ?? [], $res['lang'] ?? 'fas'];
+    $pages = array_map(function ($p) { return $p + ['text_verbatim' => (string)($p['text'] ?? '')]; }, $res['pages'] ?? []);
+    return [$pages, $res['lang'] ?? 'fas'];
 }
 const SO_RTL_RE = '/[\x{0600}-\x{06FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u';
 

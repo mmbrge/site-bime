@@ -601,32 +601,48 @@
     }
 
     // ---------------- پردازش فایل هوشمند ----------------
-    // صفحه‌ها در مرورگر به عکس تبدیل و هم‌زمان خوانده می‌شوند (smart-ocr.js)؛ متن قابلِ ویرایش، ذخیره در تاریخچه و خروجیِ TXT/Word/PDF
-    const OCR = { pages: [], res: [], id: 0, name: '', busy: false };
+    // مثلِ سایتِ i2pdf: فایل (PDF یا عکس) ← انتخابِ صفحه‌ها (همه یا چندتا) ← زبان (فارسی/انگلیسی) و قالبِ خروجی ← «شروع»
+    // ← تایم‌لاینِ هر صفحه با زمانِ سپری‌شده ← «Your result is ready.» ← متنِ هر صفحه (کپی/ویرایش) و دانلود با قالب‌های مختلف.
+    // موتورها به ترتیبِ اولویتِ تنظیمات (i2pdf، هوشِ مصنوعی، OCR.space، مرورگر) و صفحه‌ها هم‌زمان (smart-ocr.js)
+    const OCR = { pages: [], res: [], id: 0, name: '', busy: false, prog: {} };
+    const OCR_ENG = { i2pdf: 'i2pdf.com', ai: 'هوشِ مصنوعی', ocrspace: 'OCR.space', browser: 'مرورگر (Tesseract)' };
+    const OCR_FMT = { txt: 'Editable text (.txt)', simple_pdf: 'Simple PDF (text only)', docx: 'Word document (.docx)' };
+    const mmss = s => fa(String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'));
     const ocrUrl = (id, fmt, n) => `${API}?action=ocr_export&id=${id}&fmt=${fmt}${n ? '&page=' + n : ''}`;
-    const ocrDl = (id, n) => ['txt', 'docx', 'pdf'].map(f => `<a class="inq-fbtn" target="_blank" href="${ocrUrl(id, f, n)}"><i class="fas ${{ txt: 'fa-file-lines', docx: 'fa-file-word', pdf: 'fa-file-pdf' }[f]} ml-1"></i>${{ txt: 'TXT', docx: 'Word', pdf: 'PDF' }[f]}</a>`).join(' ');
+    const ocrDl = (id, n, orig) => ['txt', 'docx', 'pdf'].map(f => `<a class="inq-fbtn" target="_blank" href="${ocrUrl(id, f, n)}"><i class="fas ${{ txt: 'fa-file-lines', docx: 'fa-file-word', pdf: 'fa-file-pdf' }[f]} ml-1"></i>${{ txt: 'TXT', docx: 'Word', pdf: 'PDF' }[f]}</a>`).join(' ')
+        + (orig ? ` <a class="inq-fbtn" style="background:#ede9fe;color:#6d28d9" target="_blank" href="${ocrUrl(id, 'orig', n)}" title="همان فایلی که i2pdf داد"><i class="fas fa-file-arrow-down ml-1"></i>فایلِ i2pdf (${orig === 'docx' ? 'Word' : 'PDF'})</a>` : '');
     function renderOcr(body) {
-        const en = V.boot.ocr_engines || {}, opt = (v, l, ok) => `<option value="${v}" ${ok === false ? 'disabled' : ''}>${l}${ok === false ? ' (تنظیم نشده)' : ''}</option>`;
+        const b = V.boot, en = b.ocr_engines || {}, order = b.ocr_order || [];
+        const opt = (v, l, ok) => `<option value="${v}" ${ok === false ? 'disabled' : ''}>${l}${ok === false ? ' (خاموش/تنظیم نشده)' : ''}</option>`;
         body.innerHTML = `<div class="inq-card">
             <div class="flex flex-wrap items-end gap-3">
-                <label class="inq-f flex-1 min-w-[220px]">فایلِ PDF یا عکس (چند عکس هم می‌شود)<input id="ocr-f" type="file" accept="application/pdf,image/*" multiple class="inq-in" style="font-size:12px"></label>
-                <label class="inq-f">زبان<select id="ocr-l" class="inq-in" style="font-size:12px"><option value="fas">فارسی (+ انگلیسی)</option><option value="eng">انگلیسی</option><option value="auto">خودکار</option></select></label>
-                <label class="inq-f">موتور<select id="ocr-e" class="inq-in" style="font-size:12px">${opt('auto', 'خودکار (بهترینِ موجود)')}${opt('ai', 'هوشِ مصنوعی', !!en.ai)}${opt('ocrspace', 'OCR.space', !!en.ocrspace)}${opt('browser', 'مرورگر (Tesseract)')}</select></label>
-                <button id="ocr-go" class="inq-go" disabled><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش</button></div>
-            <p class="text-[10.5px] text-slate-400 mt-2 leading-6">صفحه‌ها هم‌زمان پردازش می‌شوند. ${en.ai ? 'موتورِ اصلی: هوشِ مصنوعیِ تصویری.' : 'برای بهترین کیفیتِ فارسی، کلیدِ هوشِ مصنوعی (GapGPT) را در «تنظیمات ← API» وارد کنید.'} ${en.ocrspace ? 'OCR.space هم آماده است.' : ''}</p>
-            <div id="ocr-th" class="flex flex-wrap gap-2 mt-3"></div></div>
+                <label class="inq-f flex-1 min-w-[220px]">۱) فایلِ PDF یا عکس (چند عکس هم می‌شود؛ عکس خودکار PDF می‌شود)<input id="ocr-f" type="file" accept="application/pdf,image/*" multiple class="inq-in" style="font-size:12px"></label>
+                <label class="inq-f">۲) زبانِ تشخیص<select id="ocr-l" class="inq-in" style="font-size:12px"><option value="fas">فارسی (Persian)</option><option value="eng">انگلیسی (English)</option></select></label>
+                <label class="inq-f">قالبِ خروجی<select id="ocr-fmt" class="inq-in" style="font-size:12px">${Object.entries(OCR_FMT).map(([k, l]) => `<option value="${k}" ${k === (b.ocr_format || 'txt') ? 'selected' : ''}>${l}</option>`).join('')}<option disabled>Searchable PDF (در i2pdf غیرفعال)</option></select></label>
+                <label class="inq-f">موتور<select id="ocr-e" class="inq-in" style="font-size:12px">${opt('auto', 'خودکار — اولویتِ تنظیمات: ' + (order.map(e => OCR_ENG[e]).join(' ← ') || '—'))}${['i2pdf', 'ai', 'ocrspace', 'browser'].map(e => opt(e, OCR_ENG[e], !!en[e])).join('')}</select></label>
+                <button id="ocr-go" class="inq-go" disabled><i class="fas fa-play ml-1"></i>شروع (Start)</button></div>
+            <div id="ocr-pick" class="hidden mt-3 rounded-2xl border border-violet-100 bg-violet-50/50 p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2"><b class="text-[12px] text-violet-900"><i class="fas fa-list-check ml-1"></i>کدام صفحه‌ها پردازش شوند؟ <span id="ocr-cnt" class="text-violet-600"></span></b>
+                    <span class="flex gap-1.5"><button class="inq-fbtn" data-sel="all">همه‌ی صفحه‌ها</button><button class="inq-fbtn" data-sel="none">هیچ‌کدام</button></span></div>
+                <div id="ocr-th" class="flex flex-wrap gap-2"></div></div>
+            <p class="text-[10.5px] text-slate-400 mt-2 leading-6">هر صفحه جدا پردازش می‌شود و صفحه‌ها هم‌زمان جلو می‌روند. ${en.i2pdf ? 'موتورِ i2pdf آماده است.' : (b.is_admin ? 'برای موتورِ i2pdf، در «تنظیمات ← پردازش فایل هوشمند» درخواستِ پردازش را بچسبانید.' : '')}</p></div>
             <div id="ocr-out" class="mt-4"></div>`;
-        const f = body.querySelector('#ocr-f'), go = body.querySelector('#ocr-go'), th = body.querySelector('#ocr-th');
+        const f = body.querySelector('#ocr-f'), go = body.querySelector('#ocr-go'), th = body.querySelector('#ocr-th'), pick = body.querySelector('#ocr-pick');
         const thumbs = () => {
-            th.innerHTML = OCR.pages.map((p, i) => `<label class="relative cursor-pointer" title="${esc(p.src)}"><img src="${p.thumb}" style="height:110px;border-radius:10px;border:2px solid ${p.on ? '#7c3aed' : '#e2e8f0'};opacity:${p.on ? 1 : .45}">
-                <input type="checkbox" data-pi="${i}" ${p.on ? 'checked' : ''} class="absolute top-1 right-1"><small class="absolute bottom-1 left-1 bg-white/90 rounded px-1 text-[10px] font-bold" data-ps="${p.n}">${fa(p.n)}</small></label>`).join('');
+            pick.classList.toggle('hidden', !OCR.pages.length);
+            th.innerHTML = OCR.pages.map((p, i) => `<label class="relative cursor-pointer" title="${esc(p.src)}"><img src="${p.thumb}" style="height:120px;border-radius:10px;border:2.5px solid ${p.on ? '#7c3aed' : '#e2e8f0'};opacity:${p.on ? 1 : .4}">
+                <input type="checkbox" data-pi="${i}" ${p.on ? 'checked' : ''} class="absolute top-1 right-1" style="accent-color:#7c3aed"><small class="absolute bottom-1 left-1 bg-white/90 rounded px-1 text-[10px] font-bold">صفحه‌ی ${fa(p.n)}</small></label>`).join('');
             th.querySelectorAll('[data-pi]').forEach(c => c.onchange = () => { OCR.pages[+c.dataset.pi].on = c.checked; thumbs(); });
-            go.disabled = OCR.busy || !OCR.pages.some(p => p.on);
+            const k = OCR.pages.filter(p => p.on).length;
+            body.querySelector('#ocr-cnt').textContent = `(${fa(k)} از ${fa(OCR.pages.length)} صفحه)`;
+            go.disabled = OCR.busy || !k;
         };
+        body.querySelectorAll('[data-sel]').forEach(x => x.onclick = () => { OCR.pages.forEach(p => p.on = x.dataset.sel === 'all'); thumbs(); });
         f.onchange = async () => {
             if (!f.files.length) return;
             OCR.busy = true; go.disabled = true; OCR.res = []; OCR.id = 0; OCR.name = f.files[0].name + (f.files.length > 1 ? ' (+' + (f.files.length - 1) + ')' : '');
-            th.innerHTML = '<span class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>آماده‌سازیِ صفحه‌ها…</span>';
+            pick.classList.remove('hidden');
+            th.innerHTML = '<span class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>جدا کردنِ صفحه‌ها…</span>';
             try { OCR.pages = (await SmartOCR.pagesFromFiles(f.files, n => { th.innerHTML = `<span class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>صفحه‌ی ${fa(n)}…</span>`; })).map(p => Object.assign(p, { on: true })); }
             catch (e) { OCR.pages = []; toast(e.message || 'فایل خوانده نشد.', 'error'); }
             OCR.busy = false;
@@ -635,32 +651,53 @@
         };
         go.onclick = async () => {
             const sel = OCR.pages.filter(p => p.on); if (!sel.length || OCR.busy) return;
-            OCR.busy = true; go.disabled = true; OCR.id = 0;
+            OCR.busy = true; go.disabled = true; OCR.id = 0; OCR.prog = {};
+            const lang = body.querySelector('#ocr-l').value, fmt = body.querySelector('#ocr-fmt').value, eng = body.querySelector('#ocr-e').value;
+            OCR.fmt = fmt; OCR.lang = lang;
             const out = body.querySelector('#ocr-out'), t0 = Date.now();
-            out.innerHTML = `<div class="inq-card"><div class="flex items-center justify-between gap-2"><b class="text-sm"><i class="fas fa-spinner fa-spin ml-1 text-violet-600"></i>در حالِ پردازش <span data-c>۰</span> از ${fa(sel.length)} صفحه</b><small class="text-slate-400" data-t>۰ ثانیه</small></div>
-                <div class="inq-steps">${sel.map(p => `<span class="inq-step" data-st="${p.n}"></span>`).join('')}</div></div>`;
-            const tm = setInterval(() => { const e = out.querySelector('[data-t]'); if (e) e.textContent = fa(Math.round((Date.now() - t0) / 1000)) + ' ثانیه'; }, 500);
+            out.innerHTML = `<div class="inq-card"><div class="flex flex-wrap items-center justify-between gap-2 mb-2"><b class="text-sm"><i class="fas fa-gear fa-spin ml-1 text-violet-600" data-spin></i><span data-h>در حالِ پردازش</span> — <span data-c>۰</span> از ${fa(sel.length)} صفحه</b>
+                    <span class="inq-chip !bg-slate-800 text-white" dir="ltr"><span class="opacity-70 ml-1">Elapsed time</span><time data-t>۰۰:۰۰</time></span></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">${sel.map(p => `<div class="rounded-xl border border-slate-100 bg-slate-50 p-2.5" data-pg="${p.n}">
+                    <div class="flex items-center justify-between"><b class="text-[11.5px] text-slate-700">صفحه‌ی ${fa(p.n)}</b><span class="text-[10.5px] font-bold text-slate-400" data-st>در صف</span></div>
+                    <ul class="mt-1 space-y-0.5 text-[10.5px] text-slate-500" data-tl></ul></div>`).join('')}</div></div>`;
+            const tm = setInterval(() => { const e = out.querySelector('[data-t]'); if (e) e.textContent = mmss((Date.now() - t0) / 1000); }, 500);
+            const card = n => out.querySelector(`[data-pg="${n}"]`);
+            const paintTl = (p, steps, el) => {
+                const c = card(p.n); if (!c) return;
+                c.querySelector('[data-tl]').innerHTML = steps.map((s, i) => `<li class="flex justify-between gap-2"><span>${i === steps.length - 1 && !/done|fail/.test(s.step) ? '<i class="fas fa-circle-notch fa-spin ml-1 text-violet-500"></i>' : (s.step === 'fail' ? '<i class="fas fa-xmark ml-1 text-rose-500"></i>' : '<i class="fas fa-check ml-1 text-emerald-500"></i>')}${esc(s.label)}</span><span dir="ltr" class="text-slate-400">${mmss(s.at || 0)}</span></li>`).join('');
+                c.querySelector('[data-st]').innerHTML = `<span dir="ltr">${mmss(el)}</span>`;
+            };
             let done = 0;
-            const res = await SmartOCR.run(sel, { lang: body.querySelector('#ocr-l').value, engine: body.querySelector('#ocr-e').value,
-                onStart: p => { const s = out.querySelector(`[data-st="${p.n}"]`); if (s) s.className = 'inq-step run'; },
-                onPage: (p, r) => { done++; const s = out.querySelector(`[data-st="${p.n}"]`); if (s) s.className = 'inq-step ' + (r.ok ? (r.text ? 'ok' : 'warn') : 'bad'); const c = out.querySelector('[data-c]'); if (c) c.textContent = fa(done); } });
+            const res = await SmartOCR.run(sel, { lang, engine: eng, format: fmt, order: b.ocr_order, conc: b.ocr_conc || 3,
+                onStart: p => { const c = card(p.n); if (c) { c.style.borderColor = '#c4b5fd'; c.querySelector('[data-st]').textContent = 'شروع شد'; } },
+                onProgress: paintTl,
+                onPage: (p, r) => { done++; const c = card(p.n);
+                    if (c) { c.style.borderColor = r.ok ? '#6ee7b7' : '#fda4af'; c.style.background = r.ok ? '#ecfdf5' : '#fff1f2';
+                        c.querySelector('[data-st]').innerHTML = r.ok ? `<span class="text-emerald-600">Your result is ready.</span>` : '<span class="text-rose-600">ناموفق</span>';
+                        if (!r.ok || !c.querySelector('[data-tl]').children.length) c.querySelector('[data-tl]').insertAdjacentHTML('beforeend', `<li class="${r.ok ? 'text-emerald-700' : 'text-rose-600'}">${esc(r.ok ? (r.engine_fa || r.engine || '') + (r.ms ? ' · ' + mmss(r.ms / 1000) : '') : (r.error || 'خوانده نشد.'))}</li>`); }
+                    const k = out.querySelector('[data-c]'); if (k) k.textContent = fa(done); } });
             clearInterval(tm);
-            OCR.res = res.map(r => ({ n: r.n, text: r.text || '', engine: r.engine || '', engine_fa: r.engine_fa || '', ms: r.ms || 0, error: r.ok ? (r.note || '') : (r.error || 'خوانده نشد.') }));
+            OCR.res = res.map(r => ({ n: r.n, text: r.text_verbatim || r.text || '', engine: r.engine || '', engine_fa: r.engine_fa || '', ms: r.ms || 0, file: r.file || '', format: r.format || '', error: r.ok ? (r.note || '') : (r.error || 'خوانده نشد.') }));
             OCR.ms = Date.now() - t0; OCR.busy = false; go.disabled = false;
-            ocrResult(out);
-            ocrSave(out, true);
+            const sp = out.querySelector('[data-spin]'); if (sp) sp.className = 'fas fa-circle-check ml-1 text-emerald-600';
+            const hh = out.querySelector('[data-h]'); if (hh) hh.textContent = 'Your result is ready.';
+            const box = document.createElement('div'); box.className = 'mt-4'; out.appendChild(box);
+            ocrResult(box);
+            ocrSave(box, true);
         };
         if (OCR.pages.length) thumbs();
-        if (OCR.res.length) ocrResult(body.querySelector('#ocr-out'));
+        if (OCR.res.length) { const box = document.createElement('div'); body.querySelector('#ocr-out').appendChild(box); ocrResult(box); }
     }
     function ocrResult(out) {
+        OCR.out = out;
         out.innerHTML = `<div class="inq-card">
-            <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><b class="text-sm"><i class="fas fa-circle-check text-emerald-600 ml-1"></i>${esc(OCR.name)} — ${fa(OCR.res.length)} صفحه${OCR.ms ? ' در ' + fa((OCR.ms / 1000).toFixed(1)) + ' ثانیه' : ''}</b>
-                <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="all"><i class="fas fa-copy ml-1"></i>کپیِ همه</button><button class="inq-fbtn" data-sv><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی ویرایش</button><span data-dl></span></span></div>
-            ${OCR.res.map((r, i) => `<div class="mb-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(r.n)}${r.engine_fa ? ` · <small class="text-slate-400">${esc(r.engine_fa)}${r.ms ? ' · ' + fa((r.ms / 1000).toFixed(1)) + ' ث' : ''}</small>` : ''}</b>
-                <span class="flex gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy"></i></button><span data-dlp="${r.n}"></span></span></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><b class="text-sm"><i class="fas fa-file-lines text-violet-600 ml-1"></i>Recognized text — ${esc(OCR.name)} · ${fa(OCR.res.length)} صفحه${OCR.ms ? ' در ' + mmss(OCR.ms / 1000) : ''}</b>
+                <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="all"><i class="fas fa-copy ml-1"></i>کپیِ همه (Copy)</button><button class="inq-fbtn" data-sv><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی ویرایش</button><span data-dl class="flex flex-wrap gap-1.5"></span></span></div>
+            <p class="text-[10.5px] text-slate-400 mb-2">ویرایشِ متن روی دانلودهای TXT، Word و PDF هم اثر دارد (بعد از «ذخیره‌ی ویرایش»)؛ «فایلِ i2pdf» همان خروجیِ اصلیِ سایت است.</p>
+            ${OCR.res.map((r, i) => `<div class="mb-3 rounded-2xl border border-slate-100 p-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(r.n)}${r.engine_fa ? ` · <small class="text-slate-400">${esc(r.engine_fa)}${r.ms ? ' · ' + mmss(r.ms / 1000) : ''}</small>` : ''}</b>
+                <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy ml-1"></i>Copy</button><span data-dlp="${r.n}" class="flex flex-wrap gap-1.5"></span></span></div>
                 ${r.error ? `<p class="text-[10.5px] ${r.text ? 'text-amber-600' : 'text-rose-600'} mb-1">${esc(r.error)}</p>` : ''}
-                <textarea class="inq-in" data-tx="${i}" dir="auto" style="min-height:180px;font-size:13px;font-weight:600;line-height:1.9;letter-spacing:0">${esc(r.text)}</textarea></div>`).join('')}</div>`;
+                <textarea class="inq-in" data-tx="${i}" dir="auto" style="min-height:200px;font-size:13px;font-weight:600;line-height:1.9;letter-spacing:0">${esc(r.text)}</textarea></div>`).join('')}</div>`;
         out.querySelectorAll('[data-tx]').forEach(t => t.oninput = () => { OCR.res[+t.dataset.tx].text = t.value; });
         out.querySelectorAll('[data-cp]').forEach(b => b.onclick = async () => {
             const v = b.dataset.cp === 'all' ? OCR.res.map(r => r.text).join('\n\n') : OCR.res[+b.dataset.cp].text;
@@ -671,25 +708,74 @@
     }
     function ocrLinks(out) {
         if (!OCR.id) return;
-        const a = out.querySelector('[data-dl]'); if (a) a.innerHTML = ocrDl(OCR.id);
-        out.querySelectorAll('[data-dlp]').forEach(s => { if (OCR.res.length > 1) s.innerHTML = ocrDl(OCR.id, +s.dataset.dlp); });
+        const a = out.querySelector('[data-dl]'); if (a) a.innerHTML = ocrDl(OCR.id, 0, OCR.res.length === 1 && OCR.res[0].file ? OCR.res[0].file.split('.').pop() : '');
+        out.querySelectorAll('[data-dlp]').forEach(s => { const r = OCR.res.find(x => x.n === +s.dataset.dlp); if (OCR.res.length > 1) s.innerHTML = ocrDl(OCR.id, +s.dataset.dlp, r && r.file ? r.file.split('.').pop() : ''); });
     }
     async function ocrSave(out, auto) {
-        const r = await post({ action: 'ocr_save', id: OCR.id, name: OCR.name, lang: (document.getElementById('ocr-l') || {}).value || 'fas',
-                               pages: OCR.res.map(p => ({ n: p.n, text: p.text, engine: p.engine, ms: p.ms })) });
+        const r = await post({ action: 'ocr_save', id: OCR.id, name: OCR.name, lang: OCR.lang || 'fas',
+                               pages: OCR.res.map(p => ({ n: p.n, text: p.text, engine: p.engine, ms: p.ms, file: p.file })) });
         if (!r.ok) { toast(r.error || 'ذخیره نشد.', 'error'); return; }
         OCR.id = r.id; ocrLinks(out);
         if (!auto) toast('ذخیره شد.', 'success');
     }
     function ocrDetail(it) {
         const pages = it.pages || [];
+        const ext = p => (p && p.file ? p.file.split('.').pop() : '');
         const m = document.createElement('div'); m.className = 'inq-modal';
         m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex flex-wrap items-center justify-between gap-2 p-4 border-b"><b class="text-sm"><i class="fas fa-file-lines ml-1 text-violet-600"></i>${esc(it.query || 'پردازش فایل')} · ${fa(pages.length)} صفحه · ${esc(fa(it.created_j || ''))}</b>
-            <span class="flex flex-wrap gap-1.5">${ocrDl(it.id)}<button class="inq-fbtn" data-x>بستن</button></span></div>
-            <div class="p-4 overflow-y-auto">${pages.map(p => `<div class="mb-3"><div class="flex items-center justify-between mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(p.n)}</b>${pages.length > 1 ? `<span>${ocrDl(it.id, p.n)}</span>` : ''}</div>
-                <pre dir="auto" class="bg-slate-50 rounded-xl p-3 text-[12.5px] leading-7 whitespace-pre-wrap" style="font-family:inherit">${esc(p.text || '—')}</pre></div>`).join('') || '<p class="text-xs text-slate-400">متنی ذخیره نشده.</p>'}</div></div>`;
+            <span class="flex flex-wrap gap-1.5">${ocrDl(it.id, 0, pages.length === 1 ? ext(pages[0]) : '')}<button class="inq-fbtn" data-x>بستن</button></span></div>
+            <div class="p-4 overflow-y-auto">${pages.map((p, i) => `<div class="mb-3"><div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-600">صفحه‌ی ${fa(p.n)}</b>
+                <span class="flex flex-wrap gap-1.5"><button class="inq-fbtn" data-cp="${i}"><i class="fas fa-copy ml-1"></i>Copy</button>${pages.length > 1 ? ocrDl(it.id, p.n, ext(p)) : ''}</span></div>
+                <pre dir="auto" class="bg-slate-50 rounded-xl p-3 text-[12.5px] leading-7 whitespace-pre-wrap" style="font-family:inherit">${esc(p.text_verbatim || p.text || '—')}</pre></div>`).join('') || '<p class="text-xs text-slate-400">متنی ذخیره نشده.</p>'}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
+        m.querySelectorAll('[data-cp]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(pages[+b.dataset.cp].text_verbatim || pages[+b.dataset.cp].text || ''); toast('کپی شد.', 'success'); } catch (e) {} });
         document.body.appendChild(m);
+    }
+    // تنظیماتِ «پردازش فایل هوشمند» (مدیر کل): روشن/خاموش و اولویتِ موتورها، قالبِ پیش‌فرض، و موتورِ i2pdf
+    async function ocrSettings(box) {
+        const d = await post({ action: 'ocr_cfg_get' });
+        if (!d.ok) { box.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
+        const c = d.cfg, i2 = d.i2pdf;
+        let order = c.order.slice();
+        const paint = () => {
+            box.querySelector('[data-ord]').innerHTML = order.map((e, i) => `<div class="flex items-center gap-2 rounded-xl border ${c.on[e] ? 'border-violet-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} px-2.5 py-2">
+                <b class="w-6 h-6 rounded-lg bg-violet-600 text-white text-[11px] grid place-items-center">${fa(i + 1)}</b>
+                <label class="flex items-center gap-1.5 flex-1 text-[12px] font-bold text-slate-700"><input type="checkbox" data-on="${e}" ${c.on[e] ? 'checked' : ''} style="accent-color:#7c3aed">${esc(d.engines[e])}</label>
+                <span class="text-[10px] font-bold ${d.ready[e] ? 'text-emerald-600' : 'text-amber-600'}">${d.ready[e] ? '● آماده' : (c.on[e] ? '● تنظیم نشده' : '● خاموش')}</span>
+                <button class="inq-fbtn !px-2" data-up="${i}" ${i === 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i></button><button class="inq-fbtn !px-2" data-dn="${i}" ${i === order.length - 1 ? 'disabled' : ''}><i class="fas fa-arrow-down"></i></button></div>`).join('');
+            box.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [order[i - 1], order[i]] = [order[i], order[i - 1]]; paint(); });
+            box.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => { const i = +b.dataset.dn; [order[i + 1], order[i]] = [order[i], order[i + 1]]; paint(); });
+            box.querySelectorAll('[data-on]').forEach(b => b.onchange = () => { c.on[b.dataset.on] = b.checked; paint(); });
+        };
+        const pr = d.i2pdf_parsed;
+        box.innerHTML = `<p class="font-black text-sm text-slate-800"><i class="fas fa-file-lines ml-1 text-violet-600"></i>پردازش فایل هوشمند — موتورها و اولویت</p>
+            <p class="text-[10.5px] text-slate-400 leading-6">هر صفحه اول با موتورِ ردیفِ ۱ پردازش می‌شود؛ اگر جواب نداد، با بعدی. موتورِ خاموش استفاده نمی‌شود.</p>
+            <div class="space-y-1.5" data-ord></div>
+            <div class="grid grid-cols-2 gap-3">
+                <label class="inq-f">قالبِ خروجیِ پیش‌فرض<select class="inq-in" style="font-size:12px" data-fmt>${Object.entries(OCR_FMT).map(([k, l]) => `<option value="${k}" ${c.format === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                <label class="inq-f">صفحه‌های هم‌زمان<input type="number" min="1" max="6" class="inq-in" style="font-size:12px" data-conc value="${c.conc}"></label></div>
+            <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" ${pr ? '' : 'open'}><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● درخواستِ پردازش چسبانده نشده</span>'}</summary>
+                <ol class="text-[10.5px] text-slate-600 leading-6 mt-2 list-decimal pr-4">
+                    <li>در کروم i2pdf.com/pdf-ocr را باز کنید، F12 ← تبِ <b>Network</b> ← <b>Fetch/XHR</b> را بزنید و «Preserve log» را تیک بزنید.</li>
+                    <li>یک PDFِ تک‌صفحه بدهید، زبان و قالب را انتخاب کنید، Start و «I'm not a robot» را بزنید تا «Your result is ready.» بیاید.</li>
+                    <li>در فهرست، درخواستی که فایل را فرستاده (معمولاً بزرگ‌ترین درخواستِ POST به i2pdf.com) را راست‌کلیک ← <b>Copy ← Copy as cURL (bash)</b> و این‌جا بچسبانید. اگر درخواستی با نامِ altcha/challenge هم هست، آدرسش را در خانه‌ی دوم بگذارید.</li></ol>
+                <label class="inq-f mt-2">cURLِ درخواستِ پردازش<textarea class="inq-in" rows="5" dir="ltr" data-i2="curl" style="font-size:11px;font-weight:500" placeholder="curl 'https://www.i2pdf.com/...' -H '...' --data-raw $'------WebKitFormBoundary...'">${esc(i2.curl_verbatim || i2.curl)}</textarea></label>
+                ${pr ? `<div class="text-[10.5px] text-slate-600 bg-white rounded-xl border p-2 mt-1" dir="ltr"><b>${esc(pr.method)}</b> ${esc(pr.url)} · ${esc(pr.kind)}<br>${pr.fields.map(f => `<code>${esc(f.name)}</code>${f.file ? ' (file)' : (f.value ? '=' + esc(f.value) : '')}`).join(' · ')}</div>` : ''}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                    <label class="inq-f">آدرسِ چالشِ ALTCHA (اختیاری؛ خالی = از خودِ صفحه)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="challenge_url" value="${esc(i2.challenge_url)}"></label>
+                    <label class="inq-f">مهلتِ هر صفحه (ثانیه)<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="timeout" value="${esc(i2.timeout)}"></label>
+                    <label class="inq-f">کدِ زبانِ فارسی در i2pdf<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_fa" value="${esc(i2.lang_fa)}"></label>
+                    <label class="inq-f">کدِ زبانِ انگلیسی در i2pdf<input class="inq-in" dir="ltr" style="font-size:11px" data-i2="lang_en" value="${esc(i2.lang_en)}"></label></div></details>
+            <button class="inq-go w-full" data-osave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ پردازش فایل</button>`;
+        paint();
+        box.querySelector('[data-osave]').onclick = async () => {
+            const i2v = {}; box.querySelectorAll('[data-i2]').forEach(x => i2v[x.dataset.i2] = x.value);
+            const r = await post({ action: 'ocr_cfg_save', cfg: { order, on: c.on, format: box.querySelector('[data-fmt]').value, conc: box.querySelector('[data-conc]').value, i2pdf: i2v } });
+            if (!r.ok) return toast(r.error, 'error');
+            toast('ذخیره شد.', 'success');
+            const bt = await post({ action: 'boot' }); if (bt.ok) V.boot = bt;
+            ocrSettings(box);
+        };
     }
 
     // ---------------- تنظیمات (مدیر کل) ----------------
@@ -744,6 +830,7 @@
                 </div>
                 <button class="inq-go w-full mt-2" id="inq-ssave"><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیمات</button>
             </div>
+            <div class="inq-card space-y-2.5" id="inq-ocrset"><p class="text-xs text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>پردازش فایل هوشمند…</p></div>
             <div class="inq-card space-y-2.5">
                 <p class="font-black text-sm text-slate-800"><i class="fas fa-rotate-left ml-1 text-rose-500"></i>سقفِ امروزِ یک کد ملی یا کد پستی</p>
                 <p class="text-[10.5px] text-slate-400">ببینید امروز چند بار استعلام شده و در صورتِ نیاز شمارش را صفر کنید تا دوباره استعلام شود.</p>
@@ -762,6 +849,7 @@
             box.className = 'text-[11.5px] font-bold ' + (r.reset ? 'text-emerald-600' : 'text-slate-600');
             box.textContent = (r.reset ? 'صفر شد. ' : '') + [part('کد ملی', r.nid), part('کد پستی', r.postal)].filter(Boolean).join(' · ');
         };
+        ocrSettings(body.querySelector('#inq-ocrset'));
         body.querySelector('#inq-lpk').onclick = () => limitCall('limit_peek');
         body.querySelector('#inq-lrs').onclick = () => limitCall('limit_reset');
         body.querySelector('#inq-ss').onclick = async () => { const r = await post({ action: 'status' }); V.boot.status = r.status; renderSettings(body); };

@@ -74,6 +74,7 @@ if ($action === 'boot') {
                     'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form'),
                     'ocr' => $can('ocr')],
           'ocr_engines' => (function () use ($pdo) { require_once __DIR__ . '/_smart_ocr.php'; return so_engines($pdo); })(),
+          'ocr_order' => so_order($pdo), 'ocr_format' => so_cfg($pdo)['format'], 'ocr_conc' => so_cfg($pdo)['conc'],
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
     $q = $pdo->query("SELECT COUNT(*) n, SUM(status = 'OK') ok, SUM(status = 'FAIL') fail, SUM(status IN ('QUEUED', 'RUNNING')) q FROM inq_requests WHERE created_at >= CURDATE()")->fetch();
     $o['today'] = ['total' => intval($q['n']), 'ok' => intval($q['ok']), 'fail' => intval($q['fail']), 'queue' => intval($q['q'])];
@@ -257,10 +258,21 @@ if (strpos($action, 'ocr_') === 0) {
     $need('ocr');
     require_once __DIR__ . '/_smart_ocr.php';
     if ($action === 'ocr_page') {
-        @set_time_limit(150);
+        @set_time_limit(300);
         session_write_close();   // صفحه‌های هم‌زمانِ همین کاربر پشتِ قفلِ نشست نمانند
         $lang = in_array($in['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $in['lang'] : 'fas';
-        $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['ai', 'ocrspace'], true) ? $in['engine'] : 'auto'));
+        $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $in['engine'] : 'auto',
+                     ['format' => (string)($in['format'] ?? ''), 'ptoken' => (string)($in['ptoken'] ?? '')]));
+    }
+    if ($action === 'ocr_progress') { session_write_close(); $out(['ok' => true] + (so_progress_read((string)($in['token'] ?? '')) ?: ['steps' => []])); }
+    if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
+        if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        require_once __DIR__ . '/_i2pdf.php';
+        if ($action === 'ocr_cfg_save') so_save_cfg($pdo, (array)($in['cfg'] ?? []));
+        $c = so_cfg($pdo); $i2 = i2_conf($pdo);
+        $tpl = trim($i2['curl']) !== '' ? i2_parse_curl($i2['curl']) : null;
+        $out(['ok' => true, 'cfg' => $c, 'engines' => SO_ENGINES, 'ready' => so_engines($pdo), 'formats' => I2_FORMATS,
+              'i2pdf' => ['curl_verbatim' => $i2['curl']] + $i2, 'i2pdf_parsed' => $tpl ? ['url' => $tpl['url'], 'method' => $tpl['method'], 'kind' => $tpl['kind'], 'fields' => array_map(function ($f) { return ['name' => $f[0], 'file' => $f[2] !== null, 'value' => $f[2] !== null ? '' : mb_substr($f[1], 0, 60)]; }, $tpl['fields'])] : null]);
     }
     if ($action === 'ocr_save') {
         $id = intval($in['id'] ?? 0);
@@ -274,6 +286,14 @@ if (strpos($action, 'ocr_') === 0) {
         $only = intval($in['page'] ?? 0);
         if ($only) $pages = array_values(array_filter($pages, function ($p) use ($only) { return intval($p['n']) === $only; }));
         $name = preg_replace('/\.[a-z0-9]{2,5}$/i', '', (string)$r['query_text']) . ($only ? ' - صفحه ' . $only : '') . ' (متن)';
+        // فایلِ اصلیِ i2pdf (Word / Simple PDF) همان‌طور که سایت داده
+        if (($in['fmt'] ?? '') === 'orig' && count($pages) === 1 && !empty($pages[0]['file']) && is_file(inq_dir('ocr') . '/' . $pages[0]['file'])) {
+            $f = inq_dir('ocr') . '/' . $pages[0]['file']; $ext = pathinfo($f, PATHINFO_EXTENSION);
+            header_remove('Content-Type');
+            header('Content-Type: ' . ($ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'));
+            header('Content-Disposition: ' . ($ext === 'pdf' ? 'inline' : 'attachment') . "; filename=\"i2pdf.$ext\"; filename*=UTF-8''" . rawurlencode($name . ' (i2pdf).' . $ext));
+            readfile($f); exit;
+        }
         $fmt = in_array($in['fmt'] ?? '', ['txt', 'docx', 'pdf'], true) ? $in['fmt'] : 'txt';
         $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.' . $fmt;
         if ($fmt === 'txt') file_put_contents($tmp, "\xEF\xBB\xBF" . implode("\r\n\r\n", array_map(function ($p) use ($pages) { return (count($pages) > 1 ? '--- صفحه ' . $p['n'] . " ---\r\n" : '') . str_replace("\n", "\r\n", (string)$p['text']); }, $pages)));

@@ -106,20 +106,39 @@
         if (opt.maxPages && pages.length > opt.maxPages) pages.length = opt.maxPages;
         if (opt.onPages) opt.onPages(pages.length);
         const res = await run(pages, opt);
-        const text = res.map(r => (res.length > 1 ? '--- صفحه ' + r.n + ' ---\n' : '') + (r.text || '')).join('\n\n').trim();
+        const text = res.map(r => (res.length > 1 ? '--- صفحه ' + r.n + ' ---\n' : '') + (r.text_verbatim || r.text || '')).join('\n\n').trim();
         return { text, pages: res };
     }
     // صفحه‌ها را هم‌زمان (حداکثر conc تا) می‌خواند؛ onPage(p, res) برای هر صفحه
+    // opt: lang، engine (auto = اولویتِ تنظیمات)، order (موتورهای روشن به ترتیب؛ از boot)، format (قالبِ i2pdf)،
+    //      conc، api/action، onStart(p)، onPage(p, r)، onProgress(p, steps, elapsed) = تایم‌لاینِ هر صفحه (هر ثانیه)
     async function run(pages, opt) {
         opt = opt || {};
         const lang = opt.lang || 'fas', engine = opt.engine || 'auto', conc = opt.conc || 3, res = new Array(pages.length);
+        const order = opt.order || null;
+        const browserFirst = engine === 'browser' || (engine === 'auto' && order && order[0] === 'browser');
+        const browserOk = engine === 'browser' || !order || order.includes('browser');
         let next = 0;
         async function one(i) {
-            const p = pages[i]; let r;
+            const p = pages[i]; let r, timer = null;
             if (opt.onStart) opt.onStart(p);
-            if (engine !== 'browser') r = await post({ action: opt.action || 'ocr_page', image: p.dataUrl, lang, engine }, opt.api);
-            if (!r || !r.ok) {
+            if (!browserFirst) {
+                const ptoken = opt.onProgress ? (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).replace(/[^a-z0-9]/g, '') : '';
+                if (ptoken) {
+                    const poll = async () => {
+                        const g = await post({ action: 'ocr_progress', token: ptoken }, opt.api);
+                        if (g && g.ok && timer !== null) opt.onProgress(p, g.steps || [], g.elapsed || 0);
+                        if (timer !== null) timer = setTimeout(poll, 1000);
+                    };
+                    timer = setTimeout(poll, 700);
+                }
+                r = await post({ action: opt.action || 'ocr_page', image: p.dataUrl, lang, engine, format: opt.format || '', ptoken }, opt.api);
+                if (timer) clearTimeout(timer); timer = null;
+                if (ptoken) { const g = await post({ action: 'ocr_progress', token: ptoken }, opt.api); if (g && g.ok && (g.steps || []).length) opt.onProgress(p, g.steps, g.elapsed || 0); }   // تایم‌لاینِ کامل
+            }
+            if ((!r || !r.ok) && (browserFirst || (browserOk && (!r || r.browser !== false)))) {
                 const why = r ? r.error : '';
+                if (opt.onProgress) opt.onProgress(p, [{ step: 'browser', label: 'خواندن در خودِ مرورگر (Tesseract)…', at: 0 }], 0);
                 try { r = await browserPage(p, lang); if (why) r.note = why; }
                 catch (e) { r = { ok: false, text: '', error: (why ? why + ' / ' : '') + e.message }; }
             }
