@@ -146,7 +146,7 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
     $urls = array_values(array_filter($urls));
     if (!$urls) return ['fields' => [], 'hash_hint' => '', 'meta' => [], 'keys' => [], 'cookie' => [], 'csrf_hints' => []];
     $cache = so_tmp_dir() . '/i2js_' . md5(implode('|', $urls)) . '.json';
-    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && ($j['v'] ?? 0) === 3) return $j;
+    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && ($j['v'] ?? 0) === 4) return $j;
     $js = ''; $size = 0;
     foreach ($urls as $u) { $r = i2_http('GET', $u, $hdr + ['Accept' => '*/*'], $jar, null, 30); if ($r['http'] === 200) { $js .= "\n" . $r['body']; $size += strlen($r['body']); } }
     preg_match_all('/\.(?:append|set)\(\s*["\']([A-Za-z0-9_\[\]-]{2,40})["\']/', $js, $m);
@@ -164,7 +164,7 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
     }
     preg_match_all('~["\'`](/api/[\w/-]*(?:csrf|xsrf|token|session|bootstrap|init)[\w/-]*)["\'`]~i', $js, $ap);
     $up = [];
-    foreach (['files[]', 'pdf-ocr', 'grant', 'input_hash'] as $needle) {
+    foreach (['append("file"', 'altcha_grant', '/api/pdf-ocr', 'X-I2PDF-Sequence'] as $needle) {
         $off = 0; $k = 0;
         while ($k < 2 && ($p = strpos($js, $needle, $off)) !== false) { $up[] = '[' . $needle . '] ' . substr($js, max(0, $p - 700), 1400); $off = $p + strlen($needle); $k++; }
     }
@@ -174,7 +174,7 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
         $nm = $hm[1];
         if (preg_match('/(?:async\s+)?function\s+' . preg_quote($nm, '/') . '\s*\(|[,;\s]' . preg_quote($nm, '/') . '\s*=\s*(?:async\s*)?(?:function|\()/', $js, $fm, PREG_OFFSET_CAPTURE)) $hashFn = $nm . ': ' . substr($js, $fm[0][1], 700);
     }
-    $j = ['v' => 3, 'hash_fn' => $hashFn, 'upload_hints' => $up, 'apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
+    $j = ['v' => 4, 'hash_fn' => $hashFn, 'upload_hints' => $up, 'apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
           'keys' => array_values(array_unique($keys)), 'cookie' => array_values(array_unique($cookie)), 'csrf_hints' => $hints];
     if ($js !== '') @file_put_contents($cache, json_encode($j));
     return $j;
@@ -264,14 +264,16 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
         $optArr = json_decode($options, true);
         $sep = $optArr;   // گزینه‌ها جدا: pages, language, engine, layout, format, area, download_formats
         // شکلِ اسکریپتِ سایت: Object.entries({...options, altcha_context, altcha_grant}) ← فیلدهای جدا، و بعد files[]
-        $variants = [['files[]', 'exact'], ['files[]', 'exact+hash'], ['files[]', 'superset'], ['file', 'superset']];
+        // ترتیب از گزارش‌های سرورِ واقعی: files[] ← upload_missing (فایل را نمی‌بیند)، file + فیلدهای اضافه ← invalid_options
+        //   پس اول دقیقاً شکلِ مرورگر: file + گزینه‌ها + altcha_context + altcha_grant (بدونِ هیچ فیلدِ دیگری)
+        $variants = [['file', 'exact'], ['file', 'json'], ['file', 'exact+hash'], ['files[]', 'exact']];
         $dbg['attempts'] = [];
         $res = null;
         foreach ($variants as $vi => [$fileField, $mode]) {
             if ($vi > 0) { $g = $getGrant(); if (isset($g['err'])) break; }
-            $post = $sep + ['altcha_context' => $g['context'], 'altcha_grant' => $g['grant']];
-            if ($mode !== 'exact') $post['input_hash'] = $hash;
-            if ($mode === 'superset') $post += ['scope' => 'pdf-ocr', 'options' => $options, 'grant' => $g['grant'], 'context' => $g['context']];
+            $post = $mode === 'json' ? ['options' => $options] : $sep;
+            $post += ['altcha_context' => $g['context'], 'altcha_grant' => $g['grant']];
+            if ($mode === 'exact+hash') $post['input_hash'] = $hash;
             $post[$fileField] = new CURLFile($tmpPdf, 'application/pdf', 'document.pdf');
             $res = i2_http('POST', $base . '/api/pdf-ocr', $hdr + ['Accept' => '*/*', 'X-I2PDF-Attempt' => i2_hex(16), 'X-I2PDF-Build' => $d['build'], 'X-I2PDF-Case' => i2_hex(16), 'X-I2PDF-Sequence' => (string)($vi + 1)],
                            $jar, $post, $c['timeout']);
