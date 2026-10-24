@@ -152,7 +152,14 @@ if ($action === 'history') {
     $page = max(1, intval($in['page'] ?? 1)); $per = 50;
     $st = $pdo->prepare("SELECT COUNT(*) FROM inq_requests WHERE $w"); $st->execute($a); $total = intval($st->fetchColumn());
     $st = $pdo->prepare("SELECT * FROM inq_requests WHERE $w ORDER BY id DESC LIMIT $per OFFSET " . (($page - 1) * $per)); $st->execute($a);
-    $out(['ok' => true, 'items' => array_map(function ($r) use ($isAdmin) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : inq_out($r, false)) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
+    $ocrInfo = function ($r) {   // پردازش فایل: تعدادِ صفحه، موتورها، فایل‌های i2pdf
+        if ($r['kind'] !== 'ocr') return [];
+        require_once __DIR__ . '/_smart_ocr.php';
+        [$pg] = so_pages_of($r);
+        $eng = array_values(array_unique(array_filter(array_map(function ($p) { return SO_ENGINES[$p['engine'] ?? ''] ?? ($p['engine'] ?? ''); }, $pg))));
+        return ['ocr_info' => ['pages' => count($pg), 'engines' => $eng, 'files' => (bool)array_filter($pg, function ($p) { return !empty($p['files']); })]];
+    };
+    $out(['ok' => true, 'items' => array_map(function ($r) use ($isAdmin, $ocrInfo) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : inq_out($r, false)) + $ocrInfo($r) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
           'total' => $total, 'page' => $page, 'pages' => max(1, (int)ceil($total / $per)), 'all' => $all]);
 }
 if ($action === 'history_export' || $action === 'batch_export') {
