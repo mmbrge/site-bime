@@ -146,7 +146,7 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
     $urls = array_values(array_filter($urls));
     if (!$urls) return ['fields' => [], 'hash_hint' => '', 'meta' => [], 'keys' => [], 'cookie' => [], 'csrf_hints' => []];
     $cache = so_tmp_dir() . '/i2js_' . md5(implode('|', $urls)) . '.json';
-    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && isset($j['meta'])) return $j;
+    if (is_file($cache) && filemtime($cache) > time() - 86400 && is_array($j = json_decode((string)file_get_contents($cache), true)) && ($j['v'] ?? 0) === 2) return $j;
     $js = ''; $size = 0;
     foreach ($urls as $u) { $r = i2_http('GET', $u, $hdr + ['Accept' => '*/*'], $jar, null, 30); if ($r['http'] === 200) { $js .= "\n" . $r['body']; $size += strlen($r['body']); } }
     preg_match_all('/\.(?:append|set)\(\s*["\']([A-Za-z0-9_\[\]-]{2,40})["\']/', $js, $m);
@@ -163,7 +163,12 @@ function i2_discover_js(array $urls, $jar, array $hdr) {
         }
     }
     preg_match_all('~["\'`](/api/[\w/-]*(?:csrf|xsrf|token|session|bootstrap|init)[\w/-]*)["\'`]~i', $js, $ap);
-    $j = ['apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
+    $up = [];
+    foreach (['files[]', 'pdf-ocr', 'grant', 'input_hash'] as $needle) {
+        $off = 0; $k = 0;
+        while ($k < 2 && ($p = strpos($js, $needle, $off)) !== false) { $up[] = '[' . $needle . '] ' . substr($js, max(0, $p - 700), 1400); $off = $p + strlen($needle); $k++; }
+    }
+    $j = ['v' => 2, 'upload_hints' => $up, 'apis' => array_values(array_unique($ap[1] ?? [])), 'fields' => array_values(array_unique($m[1] ?? [])), 'hash_hint' => $hint, 'size' => $size, 'meta' => array_values(array_unique($meta)),
           'keys' => array_values(array_unique($keys)), 'cookie' => array_values(array_unique($cookie)), 'csrf_hints' => $hints];
     if ($js !== '') @file_put_contents($cache, json_encode($j));
     return $j;
@@ -225,41 +230,57 @@ function i2_page($pdo, $pdf, $lang, $fmt, callable $prog, &$dbg = null) {
                                 'area' => '{"x":0,"y":0,"width":1,"height":1}', 'download_formats' => 'all'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $use('action');
 
-        // ۳) I'm not a robot (ALTCHA)
+        // ۳) I'm not a robot (ALTCHA): چالش ← حل ← تأیید ← grant (برای هر تلاشِ آپلود یک grantِ تازه)
+        $getGrant = function () use ($base, $hdr, $jar, $hash, $options, &$dbg) {
+            $ch = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'challenge', 'scope' => 'pdf-ocr', 'input_hash' => $hash, 'options' => $options], 30);
+            $cj = json_decode($ch['body'], true);
+            $dbg['altcha_challenge'] = ['http' => $ch['http'], 'has_context' => !empty($cj['context']), 'has_challenge' => !empty($cj['challenge'])];
+            if ($ch['http'] !== 200 || empty($cj['challenge']) || empty($cj['context'])) return ['err' => 'چالشِ «I\'m not a robot» گرفته نشد (HTTP ' . $ch['http'] . ').', 'res' => $ch];
+            $payload = i2_altcha_solve($cj['challenge']);
+            if (!$payload) return ['err' => 'حلِ «I\'m not a robot» ممکن نشد.'];
+            $vf = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'verify', 'scope' => 'pdf-ocr', 'context' => $cj['context'], 'payload' => $payload], 30);
+            $vj = json_decode($vf['body'], true);
+            $dbg['altcha_verify'] = ['http' => $vf['http'], 'has_grant' => !empty($vj['grant'])];
+            if ($vf['http'] !== 200 || empty($vj['grant'])) return ['err' => '«I\'m not a robot» تأیید نشد (HTTP ' . $vf['http'] . ').', 'res' => $vf];
+            return ['context' => $cj['context'], 'grant' => $vj['grant']];
+        };
         $prog('robot', "I'm not a robot — در حالِ تأیید…");
-        $ch = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'challenge', 'scope' => 'pdf-ocr', 'input_hash' => $hash, 'options' => $options], 30);
-        $cj = json_decode($ch['body'], true);
-        $dbg['altcha_challenge'] = ['http' => $ch['http'], 'has_context' => !empty($cj['context']), 'has_challenge' => !empty($cj['challenge'])];
-        if ($ch['http'] !== 200 || empty($cj['challenge']) || empty($cj['context'])) return $fail('چالشِ «I\'m not a robot» گرفته نشد (HTTP ' . $ch['http'] . ').', $ch);
-        $payload = i2_altcha_solve($cj['challenge']);
-        if (!$payload) return $fail('حلِ «I\'m not a robot» ممکن نشد.');
-        $vf = i2_http('POST', $base . '/api/altcha', $hdr + ['Accept' => '*/*'], $jar, ['verification_action' => 'verify', 'scope' => 'pdf-ocr', 'context' => $cj['context'], 'payload' => $payload], 30);
-        $vj = json_decode($vf['body'], true);
-        $dbg['altcha_verify'] = ['http' => $vf['http'], 'has_grant' => !empty($vj['grant'])];
-        if ($vf['http'] !== 200 || empty($vj['grant'])) return $fail('«I\'m not a robot» تأیید نشد (HTTP ' . $vf['http'] . ').', $vf);
+        $g = $getGrant();
+        if (isset($g['err'])) return $fail($g['err'], $g['res'] ?? null);
         $prog('robot_ok', "I'm not a robot — تأیید شد");
 
-        // ۴) Start: آپلود و پردازش
+        // ۴) Start: آپلود و پردازش — شکلِ فرم از اسکریپتِ سایت: files[] + گزینه‌ها به‌صورتِ فیلدهای جدا + grant
+        //    اگر سرور «invalid_options/…» داد، شکل‌های دیگر هم (هر بار با grantِ تازه) امتحان می‌شوند
         $prog('process', 'Start — در حالِ پردازش');
         $tmpPdf = tempnam(sys_get_temp_dir(), 'i2p') . '.pdf';
         file_put_contents($tmpPdf, $pdf);
         $F = $jsInfo['fields'];
-        $fileField = 'file';
-        foreach (['file', 'pdf', 'document', 'upload', 'input', 'files[]', 'files', 'pdf_file'] as $cand) if (in_array($cand, $F, true)) { $fileField = $cand; break; }
-        $post = [$fileField => new CURLFile($tmpPdf, 'application/pdf', 'document.pdf'), 'options' => $options, 'grant' => $vj['grant'], 'input_hash' => $hash, 'scope' => 'pdf-ocr', 'context' => $cj['context']];
-        // فیلدهای دیگری که اسکریپتِ سایت می‌فرستد و مقدارشان معلوم است
-        $known = ['pages' => '1', 'language' => $code, 'lang' => $code, 'format' => $fmt, 'engine' => $c['engine'], 'layout' => $c['layout'], 'download_formats' => 'all', 'tool' => 'pdf-ocr', 'app' => 'pdf-ocr'];
-        foreach ($F as $f) {
-            if (isset($post[$f]) || in_array($f, ['verification_action', 'payload'], true)) continue;
-            if (isset($known[$f])) $post[$f] = $known[$f];
-            elseif (stripos($f, 'grant') !== false || stripos($f, 'verification') !== false || stripos($f, 'altcha') !== false) $post[$f] = $vj['grant'];
+        $optArr = json_decode($options, true);
+        $sep = $optArr;   // گزینه‌ها جدا: pages, language, engine, layout, format, area, download_formats
+        $variants = [
+            ['files[]', 'sep'], ['files[]', 'sep+json'], ['file', 'sep'], ['files[]', 'json'], ['file', 'json'],
+        ];
+        if (!in_array('files[]', $F, true) && in_array('file', $F, true)) $variants = [['file', 'sep'], ['file', 'sep+json'], ['files[]', 'sep'], ['file', 'json'], ['files[]', 'json']];
+        $dbg['attempts'] = [];
+        $res = null;
+        foreach ($variants as $vi => [$fileField, $mode]) {
+            if ($vi > 0) { $g = $getGrant(); if (isset($g['err'])) break; }
+            $post = [$fileField => new CURLFile($tmpPdf, 'application/pdf', 'document.pdf')];
+            if (strpos($mode, 'sep') !== false) $post += $sep;
+            if (strpos($mode, 'json') !== false) $post['options'] = $options;
+            $post += ['grant' => $g['grant'], 'input_hash' => $hash, 'scope' => 'pdf-ocr', 'context' => $g['context']];
+            $res = i2_http('POST', $base . '/api/pdf-ocr', $hdr + ['Accept' => '*/*', 'X-I2PDF-Attempt' => i2_hex(16), 'X-I2PDF-Build' => $d['build'], 'X-I2PDF-Case' => i2_hex(16), 'X-I2PDF-Sequence' => (string)($vi + 1)],
+                           $jar, $post, $c['timeout']);
+            $ej = json_decode($res['body'], true);
+            $dbg['attempts'][] = ['file_field' => $fileField, 'mode' => $mode, 'fields' => array_keys($post), 'http' => $res['http'], 'error' => is_array($ej) ? ($ej['error'] ?? '') : ''];
+            if ($res['http'] === 200 || $res['error'] !== '') break;
+            // فقط خطاهای مربوط به شکلِ فرم را با شکلِ دیگر تکرار کن
+            if (!is_array($ej) || !preg_match('/option|field|file|missing|invalid_(?:request|input)/i', (string)($ej['error'] ?? ''))) break;
         }
-        $dbg['upload_fields'] = array_keys($post);
-        $res = i2_http('POST', $base . '/api/pdf-ocr', $hdr + ['Accept' => '*/*', 'x-i2pdf-attempt' => i2_hex(16), 'x-i2pdf-build' => $d['build'], 'x-i2pdf-case' => i2_hex(16), 'x-i2pdf-sequence' => '1'],
-                       $jar, $post, $c['timeout']);
         @unlink($tmpPdf);
         $dbg['upload'] = ['http' => $res['http'], 'type' => $res['type'], 'size' => strlen($res['body'])];
         if ($res['error'] !== '' || $res['http'] !== 200) {
+            $dbg['js_upload_hints'] = $jsInfo['upload_hints'] ?? [];
             $j = json_decode($res['body'], true);
             $msg = is_array($j) ? (string)($j['error'] ?? ($j['message'] ?? '')) : trim(mb_substr(strip_tags($res['body']), 0, 160));
             return $fail('پردازش انجام نشد (' . ($res['error'] ?: 'HTTP ' . $res['http']) . ($msg !== '' ? ' — ' . $msg : '') . ')', $res);
