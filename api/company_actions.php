@@ -2235,7 +2235,9 @@ try {
         $pdo->prepare("UPDATE company_requests SET status = IF(status = 'NEW', 'DOCS_REVIEW', status) WHERE id = ?")->execute([$requestId]);
         $sp = $fExt === 'pdf' ? company_split_document($pdo, $siteRoot, $docId) : null;
         require_once __DIR__ . '/_vdoc.php';
-        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId]);
+        // auto = تیکِ «بررسیِ خودکارِ همه»: هر صفحه جدا در صفِ شناسایی، حتی اگر «خواندنِ مدارک» برای این شرکت خاموش باشد
+        // (الگوریتمِ خواندن همان تنظیمِ شرکت است: سایت، یا «پردازشِ هوشمند» اگر برای شرکت روشن شده)
+        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId], !empty($data['auto']));
         if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? '', 'ai_queued' => true], JSON_UNESCAPED_UNICODE); exit; }
         echo json_encode(['ok' => true, 'pages' => $sp ? intval($sp['pages']) : 1, 'ai_queued' => true], JSON_UNESCAPED_UNICODE);
         exit;
@@ -3242,8 +3244,11 @@ try {
             if (is_array($fields)) company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', $fields));
             party_fill_issue_info($pdo, $plateId);
             $res['receipts'] = count($single['receipts'] ?? []);
+            cis_t('extras');
         }
         if ($single) cbundle_rrmdir($single['dir']);
+        $res['timing'] = $GLOBALS['CIS_T']['steps'] ?? [];
+        if (array_sum($res['timing']) > 20) error_log('[mark_issued slow] plate ' . $plateId . ' ' . json_encode($res['timing']));
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
         exit;
     }

@@ -27,8 +27,8 @@ function vdoc_sql_clean($col) {
 }
 
 // اجرای خواننده روی یک فایل (PHP: api/_vdoc_reader.php). فقط PDFِ متنی خوانده می‌شود؛ عکس/اسکن => «خوانده نشد» (ورودِ دستی)
-//   $opt['smart']: true = اگر کامل خوانده نشد «پردازشِ هوشمند» (OCR + پرامپتِ نوعِ مدرک)، false = هرگز،
-//                  null (پیش‌فرض) = فقط برای اسکن/عکس و اگر در تنظیمات روشن و موتور آماده باشد؛ $opt['hint'] = نوعِ پیشنهادیِ مدرک
+//   $opt['smart']: true = اگر کامل خوانده نشد «پردازشِ هوشمند» (OCR + پرامپتِ نوعِ مدرک)؛ پیش‌فرض = هرگز
+//                  (فقط دستی یا طبقِ «خواندنِ مدارک = پردازشِ هوشمند» در تعریفِ شرکت)؛ $opt['hint'] = نوعِ پیشنهادیِ مدرک
 function vdoc_run($pdo, $abs, $page = 1, $timeout = 280, array $opt = []) {
     if (!is_file($abs)) return ['ok' => false, 'error' => 'فایل پیدا نشد.'];
     $ext = upload_ext($abs);
@@ -36,9 +36,9 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280, array $opt = []) {
     require_once __DIR__ . '/_vdoc_reader.php';
     try { $r = vdr_read($abs, intval($page) ?: 1); }
     catch (Throwable $e) { error_log('[vdoc_run] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'خواندنِ فایل ممکن نشد.', 'scan' => $ext !== 'pdf']; }
-    $smart = array_key_exists('smart', $opt) ? $opt['smart'] : null;
+    $smart = !empty($opt['smart']);
     $full = !empty($r['ok']) && ($r['status'] ?? '') === 'full';
-    if ($pdo && !$full && $smart !== false && ($smart === true || empty($r['ok']) || !empty($r['scan']))) {
+    if ($pdo && !$full && $smart) {
         try {
             require_once __DIR__ . '/_doc_smart.php';
             if (ds_smart_available($pdo)) {

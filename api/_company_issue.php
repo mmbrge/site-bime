@@ -6,7 +6,15 @@
 //  - صدورِ گروهی از فایلِ خروجیِ سایتِ بیمه‌گر (چند بیمه‌نامه در یک PDF): جدا کردنِ صفحه‌ها (api/py/policy_bundle.py)،
 //    شناسایی با همان منطقِ موتورِ تشخیص، پیدا کردنِ ردیفِ هر بیمه‌نامه و بررسیِ آمادگیِ صدور
 
+// زمانِ هر مرحله‌ی صدور (ثانیه) برای پیدا کردنِ مرحله‌ی کُند: در پاسخِ mark_issued (timing) و در error_log اگر طولانی شد
+function cis_t($label) {
+    $now = microtime(true);
+    $GLOBALS['CIS_T'] = $GLOBALS['CIS_T'] ?? ['_' => $now, 'steps' => []];
+    $GLOBALS['CIS_T']['steps'][$label] = round($now - $GLOBALS['CIS_T']['_'], 2);
+    $GLOBALS['CIS_T']['_'] = $now;
+}
 function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium, $srcFile = null, $srcOrigName = null, $policyIssueDate = null) {
+    cis_t('start');
     $policyNumber = policy_number_clean($policyNumber);   // دیتابیس: «/» معمولی؛ نامِ فایل: «∕»
     $siteRoot = dirname(__DIR__);
     $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
@@ -39,6 +47,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         if (@rename($baseDir, $issuedDir)) company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $baseDir, $issuedDir);
     }
     if (!is_dir($issuedDir)) @mkdir($issuedDir, 0755, true);
+    cis_t('folder_rename');
 
     $issuedFilePath = null;
     if ($srcFile && is_file($srcFile)) {
@@ -56,6 +65,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         catch (Throwable $e) { error_log('[company policy pages] ' . $e->getMessage()); }
     }
 
+    cis_t('policy_file');
     $issuedAt = $isImport ? policy_issue_ts($policyIssueDate, time()) : time();
     // الحاقیه و فسخ فقط در بایگانی شرکتی می‌مانند (به «بایگانی صادره» نمی‌روند)
     $folderStatus = 'FAILED';
@@ -66,6 +76,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         $folderStatus = company_copy_to_shared_sadere($siteRoot, $issuedDir, policy_issue_ts($policyIssueDate, $issuedAt), $plate['insurance_type'], $issuedFolderName) ? 'TRANSFERRED' : 'FAILED';
     }
 
+    cis_t('sadere_copy');
     $pdo->prepare("UPDATE company_request_plates SET status = 'ISSUED', policy_number = ?, vin = ?, total_premium = ?,
                     folder_path = ?, issued_file_path = COALESCE(?, issued_file_path), issued_at = FROM_UNIXTIME(?), folder_status = ?,
                     pending_policy_temp_path = NULL, pending_policy_orig_name = NULL WHERE id = ?")
@@ -81,6 +92,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         $genResult = company_generate_installments($pdo, $plateId);
         $installmentCount = $genResult['count'] ?? 0;
     }
+    cis_t('installments');
     // همه‌ی ردیف‌ها صادر شدند => خودِ درخواست هم ISSUED
     $stmt = $pdo->prepare("SELECT COUNT(*) AS total, SUM(status = 'ISSUED') AS issued FROM company_request_plates WHERE request_id = ?");
     $stmt->execute([$plate['request_id']]);
@@ -98,6 +110,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         }
     } catch (Throwable $e) {}
 
+    cis_t('notify');
     return ['ok' => true, 'folder_status' => $folderStatus, 'installments' => $installmentCount, 'issued_folder' => $issuedFolderName,
             'issued_file' => $issuedFilePath];
 }

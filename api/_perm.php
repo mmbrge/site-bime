@@ -328,6 +328,7 @@ function perm_api_map() {
             'plan_get' => 'any', 'plan_save' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
             'plan_reset' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
             'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
+            'plan_to_contract' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
         ]],
         'finance_actions' => ['pages' => ['fin-installments'], 'elevate' => true, 'actions' => [
             'ledger_meta' => $fin . '|' . $req . ':view', 'ledger_installments' => $fin . '|' . $req . ':view', 'ledger_groups' => $fin . '|' . $req . ':view', 'ledger_policy_insts' => $fin . '|' . $req . ':view', 'ledger_register' => 'fin-installments:create|fin-payments:create',

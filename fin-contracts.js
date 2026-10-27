@@ -228,6 +228,11 @@
                 <button class="fc-btn s" data-q="formula"><i class="fas fa-calculator"></i> بله، با فرمولِ قراردادِ ${d.kind === 'C' ? 'شرکت' : 'کارکنان'} حساب شود</button>
                 ${(ck.slips || []).length ? '<button class="fc-btn a" data-q="slips"><i class="fas fa-receipt"></i> طبقِ فیش‌های بیمه‌نامه</button>' : ''}
                 ${dc ? `<button class="fc-btn p" data-q="contract" data-cid="${dc.id}"><i class="fas fa-file-contract"></i> طبقِ قراردادِ «${esc(dc.name)}»</button>` : ''}</div>` : ''}</div>` : ''}
+        ${d.issued && d.installments.length ? `<div class="fc-alert ${d.applied === 'slips' ? 'warn' : 'ok'} mb-2" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <span><i class="fas ${d.applied === 'slips' ? 'fa-receipt' : 'fa-file-contract'} ml-1"></i>${d.applied === 'slips' ? 'اقساطِ ثبت‌شده طبقِ فیش‌های داخلِ فایلِ بیمه‌نامه است.' : 'اقساطِ ثبت‌شده طبقِ قراردادِ پرداخت (' + esc(d.plan.label) + ') است.'}
+                ${d.slips_pending ? `<br><span class="text-[10.5px]"><i class="fas fa-spinner fa-spin ml-1"></i>فیشِ سامانه‌ی ${fa(d.slips_pending)} قسط در حالِ ساخت است…</span>` : ''}</span>
+            ${d.any_touched ? '<span class="text-[10.5px] text-slate-500"><i class="fas fa-lock ml-1"></i>روی اقساط دریافت/تسویه ثبت شده؛ قابلِ تغییر نیست.</span>'
+                : `<button class="fc-btn p" data-tocontract title="اقساط طبقِ قراردادِ پرداختِ همین بیمه‌نامه دوباره ساخته می‌شود؛ فیش‌های قبلی به پوشه‌ی «فیش‌های قدیمی» در همان بایگانی می‌روند و فیشِ هر قسط را سامانه می‌سازد"><i class="fas fa-file-contract"></i> ${d.applied === 'slips' ? 'تبدیل به اقساطِ قرارداد' : 'ساختِ دوباره طبقِ قرارداد'}</button>`}</div>` : ''}
         ${d.issued && d.stale ? `<div class="fc-alert warn mb-2"><i class="fas fa-rotate ml-1"></i>اقساطِ ثبت‌شده با روشِ فعلی (${esc(d.plan.label)}) یکی نیست؛ احتمالاً قراردادِ ${d.kind === 'C' ? 'شرکت' : 'کارکنان'} بعد از صدور عوض شده.
             ${d.any_touched ? '<br><span class="text-[10.5px]">روی بعضی اقساط دریافت/تسویه ثبت شده؛ آن‌ها دست نمی‌خورند.</span>' : ''}
             <div class="mt-2"><button class="fc-btn p" data-regen><i class="fas fa-rotate"></i> ساختِ دوباره‌ی اقساط طبقِ روشِ فعلی</button></div></div>` : ''}
@@ -251,7 +256,7 @@
             ${rows.map(r => { const s = r.slip || {}; return `<tr><td>${fa(r.n)}${r.touched ? ' <i class="fas fa-lock text-slate-300" title="دریافت/تسویه ثبت شده"></i>' : ''}</td><td class="whitespace-nowrap">${fa(r.due)}</td><td class="whitespace-nowrap font-bold">${money(r.amount)}</td>${showPay ? payCells(r) : ''}
                 <td>${esc(s.kind || '—')}</td><td class="font-mono" dir="ltr" style="text-align:right">${fa(s.shenase || s.fish || '—')}</td>
                 <td class="text-[10.5px]">${s.account ? '<span dir="ltr">' + fa(s.account) + '</span><br>' : ''}<span class="text-slate-500">${esc(s.bank || '')}</span></td>
-                <td>${r.slip_file ? `<a class="fc-btn s" style="padding:3px 8px" target="_blank" href="${fileHref(r.slip_file)}" title="${s.site ? 'ساخته‌ی سامانه طبقِ اقساطِ قرارداد' : 'از فایلِ بیمه‌نامه'}"><i class="fas ${s.site ? 'fa-wand-magic-sparkles text-indigo-500' : 'fa-file-invoice text-rose-500'}"></i> ${s.site ? 'فیشِ سامانه' : 'فیش'}</a>` : (s.site ? '<span class="text-[10px] text-indigo-500" title="بعد از صدور ساخته می‌شود">فیشِ سامانه</span>' : '—')}</td></tr>`; }).join('')}
+                <td>${r.slip_file ? `<a class="fc-btn s" style="padding:3px 8px" target="_blank" href="${fileHref(r.slip_file)}" title="${s.site ? 'ساخته‌ی سامانه طبقِ اقساطِ قرارداد' : 'از فایلِ بیمه‌نامه'}"><i class="fas ${s.site ? 'fa-wand-magic-sparkles text-indigo-500' : 'fa-file-invoice text-rose-500'}"></i> ${s.site ? 'فیشِ سامانه' : 'فیش'}</a>` : (s.site ? `<span class="text-[10px] text-indigo-500" title="${d.issued ? 'در حالِ ساخت' : 'بعد از صدور ساخته می‌شود'}">${d.issued ? '<i class="fas fa-spinner fa-spin"></i> ' : ''}فیشِ سامانه</span>` : '—')}</td></tr>`; }).join('')}
             </tbody><tfoot><tr><td colspan="2" class="font-black">جمع (${fa(rows.length)} قسط)</td><td class="font-black whitespace-nowrap">${money(rows.reduce((a, r) => a + Number(r.amount || 0), 0))}</td><td colspan="${showPay ? 6 : 4}" class="text-[10.5px] text-slate-400">${d.issued ? (showPay ? payFoot(rows) : '') : 'پیش‌نمایش؛ اقساطِ واقعی بعد از صدور ساخته می‌شود.'}</td></tr></tfoot></table></div>`
             : `<p class="text-[11px] text-slate-400">${d.premium ? '' : 'حق بیمه هنوز معلوم نیست؛ اقساط بعد از صدور ساخته می‌شود.'}</p>`}`;
         let selMode = mode, selPrefer = prefer;
@@ -269,6 +274,19 @@
             if (selMode === 'custom') el.querySelectorAll('[data-c]').forEach(x => { plan[x.dataset.c] = en(x.value); });
             save(plan);
         };
+        const tc = el.querySelector('[data-tocontract]');
+        if (tc) tc.onclick = async () => {
+            if (!confirm('اقساطِ این بیمه‌نامه طبقِ قراردادِ پرداختش (' + d.plan.label + ') دوباره ساخته شود؟\nفیش‌های قبلی به پوشه‌ی «فیش‌های قدیمی» در همان بایگانی می‌روند و فیشِ هر قسط را سامانه می‌سازد.')) return;
+            tc.disabled = true; tc.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حالِ ساخت…';
+            const r = await api('plan_to_contract', {kind: d.kind, id: d.id});
+            if (!r.ok) { tc.disabled = false; tc.innerHTML = '<i class="fas fa-file-contract"></i> تبدیل به اقساطِ قرارداد'; return toast(r.error, 'error'); }
+            toast(r.warning || 'اقساط طبقِ قرارداد ساخته شد؛ فیش‌ها در حالِ ساخت‌اند.', r.warning ? 'warning' : 'success');
+            renderPlan(el, r);
+        };
+        // فیش‌های سامانه بعد از پاسخ ساخته می‌شوند: تا آماده شوند هر چند ثانیه دوباره خوانده می‌شود
+        clearTimeout(el._fpPoll);
+        if (d.slips_pending && (el._fpTries = (el._fpTries || 0) + 1) <= 40) el._fpPoll = setTimeout(async () => { if (!document.body.contains(el)) return; const x = await api('plan_get', {kind: d.kind, id: d.id}); if (x.ok) renderPlan(el, x); }, 4000);
+        else if (!d.slips_pending) el._fpTries = 0;
         const rg = el.querySelector('[data-regen]');
         if (rg) rg.onclick = async () => { const r = await api('plan_regen', {kind: d.kind, id: d.id}); if (!r.ok) return toast(r.error, 'error'); toast(r.warning || 'اقساط دوباره ساخته شد.', r.warning ? 'warning' : 'success'); renderPlan(el, r); };
         const rs = el.querySelector('[data-reset]');

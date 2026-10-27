@@ -73,7 +73,7 @@ try {
         $dest = $dir . '/' . $token . '.' . $ext;
         if (!move_uploaded_file($f['tmp_name'], $dest)) { echo json_encode(['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.'], JSON_UNESCAPED_UNICODE); exit; }
 
-        $ocr = run_document_ocr_verbose($dest);
+        $ocr = run_document_ocr_verbose($dest, true);   // معرفی‌نامه (مدرک): اسکن/عکس با «پردازشِ هوشمند» اگر روشن باشد
         $x = $ocr['data'];
         if (!$x) {
             // خواندن ممکن نشد (مثلاً اسکنِ بی‌کیفیت یا نبودِ موتورِ OCR): فایل نگه داشته می‌شود و دستی ادامه می‌دهید

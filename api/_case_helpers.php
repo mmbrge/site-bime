@@ -204,10 +204,11 @@ function queue_ensure_cols($pdo) {
 // شناساییِ یک مدرک (معرفی‌نامه یا بیمه‌نامه) از متنِ PDF با PHP — بدونِ پایتون و بدونِ OCR.
 // عکس و PDFِ اسکن‌شده خوانده نمی‌شوند (پردازشِ تصویر غیرفعال است) => data = null با توضیح، تا کارشناس دستی وارد کند.
 // خروجیِ data همان کلیدهای قبلی است: ins_company, ins_type, policy_num, insured_name, vin, plate, national_id, personnel_id, company_name, premium و ...
-function run_document_ocr_verbose($absFilePath) {
+//   $smart = true: اسکن/عکس با «پردازشِ هوشمند» (فقط برای مدارک، مثلِ معرفی‌نامه)؛ صدورِ بیمه‌نامه (تکی و گروهی) همیشه با الگوریتمِ خودِ سایت تا سرعت پایدار بماند
+function run_document_ocr_verbose($absFilePath, $smart = false) {
     $r = run_document_ocr_verbose_text($absFilePath);
     // اسکن/عکس: «پردازشِ هوشمند» (OCR روی هاست + پرامپتِ معرفی‌نامه/بیمه‌نامه‌ی پرسنلی) اگر در تنظیمات روشن و موتور آماده باشد
-    if (empty($r['data']) && !empty($r['scan']) && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+    if ($smart && empty($r['data']) && !empty($r['scan']) && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
         try {
             require_once __DIR__ . '/_doc_smart.php';
             $pdo = $GLOBALS['pdo'];

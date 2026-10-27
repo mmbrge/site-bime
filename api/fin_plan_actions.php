@@ -71,6 +71,7 @@ function fp_installments($pdo, $kind, $id) {
     }, $rows);
 }
 function fp_state($pdo, $kind, $t) {
+    require_once __DIR__ . '/_site_slip.php';
     $id = intval($t['id']);
     $def = fin_plan_default($pdo, $kind, $t);
     $plan = fin_plan_resolve($pdo, $kind, $t);
@@ -95,7 +96,10 @@ function fp_state($pdo, $kind, $t) {
             'any_touched' => (bool)array_filter($insts, fn($r) => $r['touched']),
             'preview' => $preview ? $preview['rows'] : [], 'installments' => $insts, 'premium' => $premium,
             'company_name' => $t['company_name'] ?? null, 'contracts' => array_map('fp_contract_out', fin_contracts($pdo, true)),
-            'slip_default' => ['mode' => $def['prefer'] ?? 'auto', 'src' => $def['prefer_src'] ?? 'global', 'fa' => fin_slip_mode_fa($def['prefer'] ?? 'auto')]];
+            'slip_default' => ['mode' => $def['prefer'] ?? 'auto', 'src' => $def['prefer_src'] ?? 'global', 'fa' => fin_slip_mode_fa($def['prefer'] ?? 'auto')],
+            // اقساطِ ثبت‌شده طبقِ چه بود (slips = فیش‌های بیمه‌نامه، site/formula = قرارداد) + فیش‌های سامانه‌ای که هنوز در حالِ ساخت‌اند
+            'applied' => (json_decode((string)($t['pay_check_json'] ?? ''), true) ?: [])['applied'] ?? null,
+            'slips_pending' => $insts && function_exists('site_slip_pending') ? site_slip_pending($pdo, $kind, $id) : 0];
 }
 
 // ---------------- قراردادها ----------------
@@ -205,6 +209,28 @@ if ($action === 'company_default_save') {
 }
 
 // ---------------- روشِ پرداختِ یک بیمه‌نامه ----------------
+// «تبدیل به اقساطِ قرارداد»: اقساطِ بیمه‌نامه‌ی صادرشده طبقِ قراردادِ پرداختش دوباره ساخته می‌شود؛ فیش‌های قبلی (داخلِ فایلِ بیمه‌نامه)
+// به «فیش‌های قدیمی» در همان بایگانی می‌روند و برای هر قسط فیشِ سامانه ساخته می‌شود. اگر روی اقساط دریافت/تسویه ثبت شده باشد، دست نمی‌خورد.
+if ($action === 'plan_to_contract') {
+    require_once __DIR__ . '/_site_slip.php';
+    $kind = ($data['kind'] ?? '') === 'C' ? 'C' : 'P';
+    $t = fp_target($pdo, $kind, $data['id'] ?? 0);
+    if (!$t) fpo(['ok' => false, 'error' => 'بیمه‌نامه پیدا نشد.']);
+    if ($t['status'] !== 'ISSUED') fpo(['ok' => false, 'error' => 'بیمه‌نامه هنوز صادر نشده است.']);
+    $insts = fp_installments($pdo, $kind, intval($t['id']));
+    if (array_filter($insts, fn($r) => $r['touched'])) fpo(['ok' => false, 'error' => 'روی اقساطِ این بیمه‌نامه دریافت یا تسویه ثبت شده؛ برای جلوگیری از به‌هم‌ریختنِ حساب‌ها اقساط عوض نمی‌شود.']);
+    $table = $kind === 'C' ? 'company_request_plates' : 'policy_cases';
+    $cur = json_decode((string)($t['pay_plan_json'] ?? ''), true) ?: [];
+    $j = ($cur['mode'] ?? '') === 'contract' && !empty($cur['contract_id']) ? ['mode' => 'contract', 'contract_id' => intval($cur['contract_id'])] : ['mode' => 'default'];
+    $j['prefer'] = 'site_all';
+    $pdo->prepare("UPDATE $table SET pay_plan_json = ? WHERE id = ?")->execute([json_encode($j, JSON_UNESCAPED_UNICODE), $t['id']]);
+    $res = $kind === 'C' ? company_generate_installments($pdo, $t['id']) : fin_generate_installments($pdo, $t['id']);
+    $t = fp_target($pdo, $kind, $t['id']);
+    $st = fp_state($pdo, $kind, $t);
+    $msg = empty($res['ok']) ? ($res['error'] ?? 'اقساط دوباره ساخته نشد.') : null;
+    if (!$msg && ($st['applied'] ?? '') === 'slips') $msg = 'فیش‌های داخلِ بیمه‌نامه با اقساطِ قرارداد یکی است؛ همان‌ها ماند.';
+    fpo($st + ['saved' => true, 'warning' => $msg]);
+}
 if (in_array($action, ['plan_get', 'plan_save', 'plan_reset', 'plan_regen'], true)) {
     $kind = ($data['kind'] ?? '') === 'C' ? 'C' : 'P';
     $t = fp_target($pdo, $kind, $data['id'] ?? 0);

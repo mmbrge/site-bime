@@ -3040,14 +3040,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <div class="card overflow-x-auto">
                 <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-500"><tr>
-                        <th class="p-3 text-right">شماره</th><th class="p-3 text-right">شرکت</th>
-                        <th class="p-3 text-right">بیمه‌گر</th><th class="p-3 text-right">ردیف‌ها (درخواستی / صادره)</th>
+                    <thead class="bg-slate-50 text-slate-500 text-[11px]"><tr>
+                        <th class="p-3 text-right">درخواست</th><th class="p-3 text-right">پیشرفتِ صدور</th>
                         <th class="p-3 text-right">مرحله‌ی ردیف‌ها</th>
-                        <th class="p-3 text-right">وضعیت</th>
-                        <th class="p-3 text-right">تاریخ ثبت</th><th class="p-3 text-right"></th>
+                        <th class="p-3 text-right">وضعیت و تاریخ</th><th class="p-3 text-left"></th>
                     </tr></thead>
-                    <tbody id="creq-body"><tr><td colspan="6" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                    <tbody id="creq-body" class="creq-list"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -4632,7 +4630,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($mkAccess): ?><script src="marketing.js?v=3"></script><?php endif; ?>
     <?php if ($ltAccess): ?><script src="letters.js?v=3"></script><?php endif; ?>
     <?php if ($hlAccess): ?><script src="health.js?v=3"></script><?php endif; ?>
-    <script src="fin-contracts.js?v=5"></script>
+    <script src="fin-contracts.js?v=6"></script>
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
@@ -6460,32 +6458,41 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('creq-summary').innerHTML = `<span class="font-black text-slate-600"><i class="fas fa-filter text-indigo-400 ml-1"></i>${e2pNum(sm.requests || 0)} درخواست · ${e2pNum(sm.rows || 0)} ردیف · ${e2pNum(sm.issued || 0)} صادرشده</span>
                 <span class="text-slate-300">|</span>${creqStageChips(sm.stages) || '<span class="text-slate-400">ردیفی نیست</span>'}`;
             companyRequestsCache = data.requests;
-            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
-            tbody.innerHTML = data.requests.map(r => `
-                <tr class="border-t border-slate-100 hover:bg-slate-50">
-                    <td class="p-3">${reqCodeHtml(r)}</td>
-                    <td class="p-3 font-bold">${r.company_name}</td>
-                    <td class="p-3">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}
-                        ${r.request_kind && r.request_kind !== 'NEW_POLICY'
-                            ? `<span class="block text-[10px] font-bold ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</span>` : ''}${Number(r.is_renewal) ? '<span class="block text-[10px] font-bold text-emerald-600"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}</td>
-                    <td class="p-3 text-[11px] whitespace-nowrap">
-                        ${r.requested_counts_fa ? `<span class="block text-[10px] text-indigo-600 font-bold mb-1">درخواستیِ نامه: ${r.requested_counts_fa}</span>` : ''}
-                        <span class="inline-block bg-cyan-50 text-cyan-700 rounded px-1.5 py-0.5 ml-1">بدنه ${e2pNum(r.body_count)} / ${e2pNum(r.body_issued)}</span>
-                        <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">ثالث ${e2pNum(r.third_count)} / ${e2pNum(r.third_issued)}</span>
-                    </td>
-                    <td class="p-3"><div class="flex flex-wrap gap-1 max-w-[260px]">${creqStageChips(r.row_stages) || '<span class="text-slate-300">—</span>'}</div></td>
-                    <td class="p-3"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span></td>
-                    <td class="p-3 text-slate-400" dir="ltr">${toJalali(r.created_at)}</td>
-                    <td class="p-3 flex items-center gap-2">
-                        <button onclick="openCompanyRequestDetail(${r.id})" class="text-blue-600 hover:underline text-xs font-bold">مشاهده</button>
-                        <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-lg">
-                            بررسی مدارک
-                            ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">${r.pending_docs_count}</span>` : ''}
-                        </button>
-                        ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" class="text-amber-600 hover:underline text-xs font-bold">ویرایش</button>
-                        <button onclick="deleteRequestRow(${r.id})" class="text-red-500 hover:underline text-xs font-bold">حذف</button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests')}
-                    </td>
-                </tr>`).join('');
+            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
+            if (!document.getElementById('creq-list-css')) { const st = document.createElement('style'); st.id = 'creq-list-css';
+                st.textContent = '.creq-list tr.creq-r{cursor:pointer;transition:background .12s}.creq-list tr.creq-r:hover{background:#f8fafc}.creq-list tr.creq-r>td{vertical-align:middle;border-top:1px solid #f1f5f9}'
+                    + '.creq-ico{width:30px;height:30px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;transition:.12s}'
+                    + '.creq-prog{height:7px;border-radius:9px;background:#f1f5f9;overflow:hidden;min-width:120px}.creq-prog>i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#10b981,#34d399)}';
+                document.head.appendChild(st); }
+            tbody.innerHTML = data.requests.map(r => {
+                const total = Number(r.body_count || 0) + Number(r.third_count || 0), issued = Number(r.body_issued || 0) + Number(r.third_issued || 0);
+                const pct = total ? Math.round(issued * 100 / total) : 0;
+                const [dt, tm] = String(toJalali(r.created_at)).split(' - ');
+                return `
+                <tr class="creq-r" onclick="if (!event.target.closest('button,a,input')) openCompanyRequestDetail(${r.id})">
+                    <td class="p-3 min-w-[230px]">
+                        <div class="flex items-center gap-2 mb-1">${reqCodeHtml(r)}
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.insurer === 'IRAN' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
+                            ${r.request_kind && r.request_kind !== 'NEW_POLICY' ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-700' : 'bg-rose-50 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
+                            ${Number(r.is_renewal) ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}</div>
+                        <p class="font-black text-[13px] text-slate-800 leading-6">${fmEsc(r.company_name || '')}</p>
+                        ${r.requested_counts_fa ? `<p class="text-[10px] text-indigo-500 font-bold">درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}</td>
+                    <td class="p-3 min-w-[170px]">
+                        <div class="flex items-center justify-between text-[10.5px] font-bold text-slate-500 mb-1"><span>${e2pNum(issued)} از ${e2pNum(total)} صادر شد</span><span class="${pct === 100 ? 'text-emerald-600' : 'text-slate-400'}">${e2pNum(pct)}٪</span></div>
+                        <div class="creq-prog"><i style="width:${pct}%"></i></div>
+                        <div class="flex gap-1 mt-1.5 text-[10px] font-bold">${Number(r.body_count) ? `<span class="bg-cyan-50 text-cyan-700 rounded-md px-1.5 py-0.5">بدنه ${e2pNum(r.body_issued)}/${e2pNum(r.body_count)}</span>` : ''}${Number(r.third_count) ? `<span class="bg-blue-50 text-blue-700 rounded-md px-1.5 py-0.5">ثالث ${e2pNum(r.third_issued)}/${e2pNum(r.third_count)}</span>` : ''}${!total ? '<span class="text-slate-300">ردیفی ثبت نشده</span>' : ''}</div></td>
+                    <td class="p-3"><div class="flex flex-wrap gap-1 max-w-[300px]">${creqStageChips(r.row_stages) || '<span class="text-slate-300">—</span>'}</div></td>
+                    <td class="p-3 whitespace-nowrap"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2.5 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
+                        <p class="text-[10.5px] text-slate-500 mt-1.5"><i class="far fa-calendar ml-1 text-slate-300"></i>${dt || '—'}${tm ? ` <span class="text-slate-300">·</span> <span class="text-slate-400">${tm}</span>` : ''}</p></td>
+                    <td class="p-3 whitespace-nowrap text-left">
+                        <div class="inline-flex items-center gap-1.5">
+                            <button onclick="openCompanyRequestDetail(${r.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-eye ml-1"></i>مشاهده</button>
+                            <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-file-circle-check ml-1"></i>بررسی مدارک
+                                ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full">${e2pNum(r.pending_docs_count)}</span>` : ''}</button>
+                            ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" title="ویرایش" class="creq-ico bg-amber-50 hover:bg-amber-100 text-amber-600"><i class="fas fa-pen"></i></button>
+                            <button onclick="deleteRequestRow(${r.id})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests', 'creq-ico bg-rose-600 hover:bg-rose-700 text-white')}
+                        </div></td>
+                </tr>`; }).join('');
         }
 
         // نوعِ درخواست، متنِ راهنما و برچسبِ توضیح را عوض می‌کند
@@ -6929,6 +6936,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-2 whitespace-nowrap text-[11px]">
                         ${p.status === 'ISSUED'
                             ? `<p class="text-[10px] text-slate-500">${p.policy_number || ''}</p>
+                               ${currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqToggleInst(${p.id}, this)" title="اقساط و فیش‌ها (و تبدیل به اقساطِ قرارداد)" class="block mb-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded"><i class="fas fa-list-ol ml-1"></i>اقساط و فیش‌ها</button>` : ''}
                                ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a> <a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">(نامِ دقیق)</a>` : ''}`
                             : (p.dup_ref ? '<span class="text-[10px] text-rose-500">صادر نمی‌شود (تکراری)</span>' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>'))}
                         ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}
@@ -6938,6 +6946,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         </div>` : ''}
                     </td>
                 </tr>`;
+        }
+        // اقساطِ یک ردیفِ صادرشده همان‌جا زیرِ ردیف (fin-contracts.js)
+        function creqToggleInst(id, btn) {
+            const tr = btn.closest('tr'), nx = tr.nextElementSibling;
+            if (nx && nx.classList.contains('creq-inst-row')) { nx.remove(); return; }
+            const row = document.createElement('tr');
+            row.className = 'creq-inst-row';
+            row.innerHTML = `<td colspan="20" class="p-3" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div class="flex justify-between mb-1"><b class="text-xs text-indigo-800"><i class="fas fa-sack-dollar ml-1"></i>مالی، اقساط و فیش‌ها</b><button class="text-slate-400 hover:text-rose-500 text-xs" onclick="this.closest('tr').remove()"><i class="fas fa-times"></i></button></div><div data-finplan="C:${Number(id)}"></div></td>`;
+            tr.after(row);
         }
         function creqRowsFiltered() {
             const V = CREQ_VIEW, q = String(V.q || '').trim().toLowerCase().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\s+/g, '');
@@ -7094,7 +7111,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <i class="fas fa-folder-open"></i>ارسالِ گروهی: یک پوشه
                         <input type="file" class="hidden" webkitdirectory directory multiple data-uk-bulk onchange="adminBulkDocs(this)">
                     </label>
-                </div>` : ''}
+                </div>
+                <label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
+                    <input type="checkbox" id="creq-bulk-auto" class="mt-0.5 accent-violet-600" ${bulkAutoPref() ? 'checked' : ''} onchange="bulkAutoPref(this.checked)">
+                    <span>بررسیِ خودکارِ همه در پس‌زمینه<small class="block font-normal text-slate-500 leading-5">هر مدرک و هر صفحه‌ی PDFهای چندصفحه‌ای جدا خوانده می‌شود و روی درخواست، ردیف و نوعِ مدرکِ درست می‌نشیند (فاکتور/سندِ کاملی که ردیف ندارد، ردیفِ تازه می‌سازد)؛ آنچه شناسایی نشد در «بررسی مدارک» می‌ماند.</small></span></label>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
@@ -7232,6 +7252,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
         function closeBundleModal() {
             document.getElementById('bundle-modal').classList.remove('active');
+            // کارِ در جریان: نوارِ شناور همین الان (نه بعد از پاسخِ بعدیِ سرور)
+            if (bdlJob) bdlPaint(bdlJob.text || 'در حالِ بررسیِ فایل…', bdlJob.pct || 0);
+            if (bdlIss) bdlIssPaint();
             if (BDL && BDL.returnTo === 'group') { loadIssueGroup(); return; }
             if (BDL && BDL.returnTo === 'import') { if (window.ImportArchive) ImportArchive.reload(); return; }
             if (BDL && BDL.requestId) openCompanyRequestDetail(BDL.requestId);
@@ -7357,10 +7380,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }
         }
         // کارِ نیمه‌تمام (صفحه تازه شد): ادامه بعد از بارگذاریِ صفحه
-        window.addEventListener('load', () => {
+        // (همان لحظه‌ی آماده شدنِ صفحه، نه بعد از بارگذاریِ همه‌ی عکس‌ها و فونت‌ها)
+        (function bdlResume() {
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', bdlResume); return; }
             let j = null; try { j = JSON.parse(localStorage.getItem(BDL_JOB_KEY) || 'null'); } catch (e) {}
             if (j && j.token && !bdlJob) { bdlJob = j; bdlPaint(j.text || 'ادامه‌ی صدورِ گروهی…', j.pct || 30); bundleSteps(); }
-        });
+        })();
         function bundleLoad(data, name) {
             BDL.token = data.token; BDL.items = data.items || []; BDL.pages = data.pages; BDL.name = name || data.name || BDL.name || '';
             BDL.results = {}; BDL.expired = false;
@@ -7649,23 +7674,49 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             }));
             const btn = document.getElementById('bdl-issue-btn');
             btn.disabled = true;
-            document.getElementById('bdl-issue-label').textContent = 'در حالِ صدور و بایگانی…';
-            let data;
-            try {
-                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'bundle_issue', token: BDL.token, items: payload})});
-                data = await res.json();
-            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور. وضعیت را با «بررسیِ دوباره» کنترل کنید.'}; }
-            if (!data.ok) { showToast(data.error || 'خطا', 'error'); bundleUpdateBar(); return; }
-            (data.results || []).forEach(r => {
-                BDL.results[r.i] = r;
-                const it = BDL.items.find(x => x.i === r.i);
-                if (r.ok && it && it.row) { it.row.status = 'ISSUED'; it.row.status_fa = 'صادر شد'; }
-            });
-            const okN = (data.results || []).filter(r => r.ok).length, badN = (data.results || []).length - okN;
-            showToast(`${faDigits(okN)} بیمه‌نامه صادر و بایگانی شد${badN ? ` · ${faDigits(badN)} مورد ناموفق` : ''}.`, badN ? 'warning' : 'success');
-            if (!data.left) BDL.expired = true;   // فایل‌های موقت پاک شدند؛ «بررسیِ دوباره» دیگر لازم نیست
-            bundleRender();
+            // یکی‌یکی (هر بیمه‌نامه یک درخواست): پیشرفت معلوم است و اگر پنجره بسته شود، نوارِ شناورِ پایینِ صفحه همان لحظه نشان داده می‌شود
+            const B = BDL, all = [];
+            bdlIss = {name: B.name || 'فایلِ بیمه‌نامه‌ها', done: 0, total: payload.length, ok: 0};
+            let left = 1, fatal = null;
+            for (const pk of payload) {
+                bdlIss.text = `صدور و بایگانی ${faDigits(bdlIss.done + 1)} از ${faDigits(bdlIss.total)}`;
+                const lb = document.getElementById('bdl-issue-label'); if (lb && BDL === B) lb.textContent = bdlIss.text + '…';
+                bdlIssPaint();
+                const data = await bdlPost({action: 'bundle_issue', token: B.token, items: [pk]});
+                if (!data.ok) { fatal = data.error || 'خطا'; break; }
+                (data.results || []).forEach(r => {
+                    B.results[r.i] = r; all.push(r);
+                    const it = B.items.find(x => x.i === r.i);
+                    if (r.ok && it && it.row) { it.row.status = 'ISSUED'; it.row.status_fa = 'صادر شد'; }
+                    if (r.ok) bdlIss.ok++;
+                });
+                left = data.left; bdlIss.done++;
+                if (BDL === B && document.getElementById('bundle-modal')?.classList.contains('active')) bundleRender();
+            }
+            const okN = all.filter(r => r.ok).length, badN = all.length - okN;
+            bdlIss = null; bdlIssPaint();
+            if (fatal) showToast(fatal + (okN ? ` (${faDigits(okN)} بیمه‌نامه صادر شد)` : ''), 'error');
+            else showToast(`${faDigits(okN)} بیمه‌نامه صادر و بایگانی شد${badN ? ` · ${faDigits(badN)} مورد ناموفق` : ''}.`, badN ? 'warning' : 'success');
+            if (!left) B.expired = true;   // فایل‌های موقت پاک شدند؛ «بررسیِ دوباره» دیگر لازم نیست
+            if (BDL === B) bundleRender();
             if (typeof loadCompanyRequests === 'function') loadCompanyRequests();
+        }
+        // نوارِ شناورِ «صدورِ گروهی» وقتی پنجره بسته است: یکی برای بررسیِ فایل (bdlJob) و یکی برای صدورِ انتخاب‌شده‌ها (bdlIss)
+        let bdlIss = null;
+        function bdlIssPaint() {
+            let fl = document.getElementById('bdl-iss-float');
+            const modalOpen = document.getElementById('bundle-modal')?.classList.contains('active');
+            if (!bdlIss || modalOpen) { if (fl) fl.remove(); return; }
+            if (!fl) {
+                fl = document.createElement('div'); fl.id = 'bdl-iss-float';
+                fl.style.cssText = 'position:fixed;left:16px;bottom:' + (document.getElementById('bdl-float') ? 96 : 16) + 'px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#064e3b;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #064e3b;cursor:pointer;font-size:11.5px';
+                fl.onclick = () => { if (BDL) { document.getElementById('bundle-modal').classList.add('active'); bundleRender(); bundleShow('result'); bdlIssPaint(); } };
+                document.body.appendChild(fl);
+            }
+            const pct = Math.round(bdlIss.done * 100 / Math.max(1, bdlIss.total));
+            fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-stamp ml-1"></i>صدورِ گروهی · ${escapeHtml(bdlIss.name)}</span><span>${faDigits(String(pct))}٪</span></div>
+                <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(3, pct)}%;background:linear-gradient(90deg,#34d399,#10b981)"></div></div>
+                <div style="margin-top:5px;opacity:.85">${escapeHtml(bdlIss.text || '')}${bdlIss.ok ? ' · ' + faDigits(bdlIss.ok) + ' صادر شد' : ''}</div>`;
         }
 
         // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
@@ -8720,9 +8771,22 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
-                    <td class="p-3">${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${!r.is_import && (!r.request_kind || r.request_kind === 'NEW_POLICY') && Number(r.row_id) ? `<button onclick="event.stopPropagation(); ilToggleInst(${i}, this)" title="اقساط و فیش‌های این بیمه‌نامه (و تبدیل به اقساطِ قرارداد)" class="block mb-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-list-ol ml-1"></i>اقساط</button>` : ''}${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
                     ${IS_REAL_ADMIN ? `<td class="p-3 whitespace-nowrap">${!r.is_import ? `<button onclick="event.stopPropagation(); editIssued(${i})" title="ویرایشِ کامل (پایگاه داده، بایگانی، اقساط)" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-pen"></i></button>` : ''}${issuedPurgeBtn(r)}</td>` : ''}
                 </tr>`).join('');
+        }
+
+        // اقساط و فیش‌های یک بیمه‌نامه‌ی صادره، همان‌جا زیرِ ردیف (fin-contracts.js: data-finplan + «تبدیل به اقساطِ قرارداد»)
+        function ilToggleInst(i, btn) {
+            const tr = btn.closest('tr'), nx = tr.nextElementSibling;
+            if (nx && nx.classList.contains('il-inst-row')) { nx.remove(); btn.classList.remove('ring-2'); return; }
+            const r = issuedListCache[i]; if (!r) return;
+            const row = document.createElement('tr');
+            row.className = 'il-inst-row';
+            row.innerHTML = `<td colspan="20" class="p-3" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div class="flex items-center justify-between mb-2"><b class="text-xs text-indigo-800"><i class="fas fa-sack-dollar ml-1"></i>مالی، اقساط و فیش‌ها · ${fmEsc(r.insured_name || r.company_name || '')} ${r.policy_number ? '· <span dir="ltr">' + fmEsc(r.policy_number) + '</span>' : ''}</b>
+                <button class="text-slate-400 hover:text-rose-500 text-xs" onclick="this.closest('tr').remove()"><i class="fas fa-times"></i></button></div><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id)}"></div></td>`;
+            tr.after(row);
+            btn.classList.add('ring-2');
         }
 
         // برچسبِ اطلاعاتِ صدور (همان issue_info_fields در api/_company_helpers.php)
@@ -8998,20 +9062,27 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ارسالِ گروهی (upload-kit.js زیپ/پوشه را باز، PDFها را صفحه‌به‌صفحه و ۱..N نام‌گذاری کرده): هر فایل یک مدرکِ «تخصیص‌نیافته»
         // با نوعِ «سایر مدارک»؛ ارسال در پس‌زمینه با نوارِ پیشرفت، و در پایان «بررسی مدارک» باز می‌شود
+        function bulkAutoPref(v) {
+            try { if (v === undefined) return localStorage.getItem('creq:bulk-auto') === '1'; localStorage.setItem('creq:bulk-auto', v ? '1' : '0'); } catch (e) {}
+            return !!v;
+        }
         function adminBulkDocs(input) {
             const files = Array.from(input.files || []);
             input.value = '';
             if (!files.length) return;
             const reqId = currentRequestId;
+            const auto = !!document.getElementById('creq-bulk-auto')?.checked;
             if (!window.UploadKit) { showToast('ابزارِ ارسال بارگذاری نشد؛ صفحه را تازه کنید.', 'error'); return; }
             const items = files.map(f => {
                 const fd = new FormData();
                 fd.append('action', 'upload_combined_pdf'); fd.append('request_id', reqId); fd.append('doc_type', 'other');
+                if (auto) fd.append('auto', '1');
                 fd.append('file', f, f.name);
                 return {name: f.name, size: f.size, form: fd};
             });
             UploadKit.enqueue({title: 'مدارکِ درخواست #' + faDigits(String(reqId)), url: COMPANY_API, items, onDone: sum => {
-                showToast(`${faDigits(String(sum.ok))} از ${faDigits(String(sum.total))} فایل برای بررسی ثبت شد` + (sum.fail ? ` (${faDigits(String(sum.fail))} خطا)` : ''), sum.fail ? 'warning' : 'success');
+                showToast(`${faDigits(String(sum.ok))} از ${faDigits(String(sum.total))} فایل ${auto ? 'ثبت شد و بررسیِ خودکار در پس‌زمینه ادامه دارد' : 'برای بررسی ثبت شد'}` + (sum.fail ? ` (${faDigits(String(sum.fail))} خطا)` : ''), sum.fail ? 'warning' : 'success');
+                if (auto) { if (currentRequestId === reqId) openCompanyRequestDetail(reqId); if (sum.ok) aiBgLoop(); return; }
                 if (currentRequestId === reqId) { openCompanyRequestDetail(reqId); if (sum.ok) openRequestDocsReview(reqId); }
                 if (sum.ok && typeof aiStepLoop === 'function') aiStepLoop();
             }});
@@ -9284,6 +9355,56 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const bits = [dd.vin ? 'شاسی ' + dd.vin : '', dd.engine_no ? 'موتور ' + dd.engine_no : '', dd.owner_name ? 'مالک ' + escapeHtml(dd.owner_name) : ''].filter(Boolean).join(' · ');
             return `<p class="text-[11px] text-amber-700 font-bold mt-1"><i class="fas fa-wand-magic-sparkles ml-1"></i>${escapeHtml(a.kind_fa || 'مدرک')} — ناقص شناسایی شد${(a.missing || []).length ? ' (خوانده نشد: ' + a.missing.join('، ') + ')' : ''}${bits ? '<br><span class="text-slate-500 font-normal" dir="auto">' + bits + '</span>' : ''}</p>`;
         }
+        // «بررسیِ خودکارِ همه در پس‌زمینه»: صفِ شناسایی تا خالی شدن خوانده می‌شود، با نوارِ شناورِ پایینِ صفحه (پنجره‌ها را می‌شود بست؛
+        // اگر صفحه تازه شود، بعد از باز شدن ادامه پیدا می‌کند)
+        const AI_BG_KEY = 'ai:bg';
+        async function aiBgLoop() {
+            try { localStorage.setItem(AI_BG_KEY, '1'); } catch (e) {}
+            if (aiStepBusy) { aiBgLoop._again = true; return; }
+            aiStepBusy = true;
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0};
+            let done = 0, pending = 1, errs = 0;
+            const paint = (txt) => {
+                let fl = document.getElementById('ai-bg-float');
+                if (!fl) {
+                    fl = document.createElement('div'); fl.id = 'ai-bg-float';
+                    fl.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#2e1065;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #2e1065;font-size:11.5px';
+                    document.body.appendChild(fl);
+                }
+                const pct = Math.round(done * 100 / Math.max(1, done + pending));
+                fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-spinner fa-spin ml-1"></i>بررسیِ خودکارِ مدارک</span><span>${faDigits(String(done))} / ${faDigits(String(done + pending))}</span></div>
+                    <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(3, pct)}%;background:linear-gradient(90deg,#c084fc,#a855f7)"></div></div>
+                    <div style="margin-top:5px;opacity:.85">روی ردیف: ${faDigits(String(sum.AUTO))} · ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · برای بررسیِ دستی: ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))}${txt ? '<br>' + escapeHtml(txt) : ''}</div>`;
+            };
+            paint('');
+            const touched = new Set();
+            while (pending) {
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json(); }
+                catch (e) { r = {ok: false}; }
+                if (!r.ok) { if (++errs > 5) break; await new Promise(res => setTimeout(res, 3000)); continue; }
+                errs = 0;
+                (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; if (x.plate_id) touched.add(x.plate_id); });
+                pending = r.pending || 0;
+                const last = (r.done || []).slice(-1)[0];
+                paint(last ? [last.kind_fa, last.vin].filter(Boolean).join(' · ') : '');
+                if ((r.done || []).length && document.getElementById('cinbox-list')) loadCompanyInboxList();
+                if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active') && !aiBgLoop._busyRefresh) {
+                    aiBgLoop._busyRefresh = true; Promise.resolve(openCompanyRequestDetail(currentRequestId)).finally(() => { aiBgLoop._busyRefresh = false; });
+                }
+            }
+            aiStepBusy = false;
+            const fl = document.getElementById('ai-bg-float'); if (fl) fl.remove();
+            if (!pending) { try { localStorage.removeItem(AI_BG_KEY); } catch (e) {} }
+            if (done) showToast(`بررسیِ خودکار تمام شد: ${faDigits(String(sum.AUTO))} مدرک روی ردیف، ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} مدرک برای بررسیِ دستی در «بررسی مدارک».`, sum.PARTIAL + sum.NONE + sum.FAIL ? 'warning' : 'success');
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            if (aiBgLoop._again) { aiBgLoop._again = false; aiBgLoop(); }
+        }
+        (function aiBgResume() {
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', aiBgResume); return; }
+            let on = false; try { on = localStorage.getItem(AI_BG_KEY) === '1'; } catch (e) {}
+            if (on) setTimeout(aiBgLoop, 1500);
+        })();
         let aiStepBusy = false;
         async function aiStepLoop() {
             if (aiStepBusy) return;
@@ -10159,9 +10280,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             // همین فایل مستقیم فرستاده می‌شود (مثلاً وقتی بیمه‌نامه عکس است و OCR ندارد)
             const fileInput = document.getElementById('cis-file');
             if (fileInput.files[0]) fd.append('issued_file', fileInput.files[0]);
+            const prog = issueProgress(document.querySelector('#cissue-modal .modal-content') || document.getElementById('cissue-modal'));
             try {
-                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
-                const data = await res.json();
+                const data = await xhrPost(COMPANY_API, fd, pc => prog.upload(pc));
+                prog.close();
+                if (data.timing) { window.__lastIssueTiming = data.timing; if (Object.values(data.timing).reduce((a, b) => a + Number(b || 0), 0) > 30) console.warn('[صدور] زمانِ هر مرحله (ثانیه):', data.timing); }
                 if (data.ok) {
                     showToast(`صدور ثبت شد. پوشه: ${data.issued_folder || ''}${data.installments ? ` · ${e2pNum(data.installments)} قسط ساخته شد` : ''}`, 'success');
                     document.getElementById('cissue-modal').classList.remove('active');
@@ -10169,7 +10292,39 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     loadCompanyRequests();
                     if (currentRequestId) openCompanyRequestDetail(currentRequestId);
                 } else showToast(data.error || 'خطا در ثبت صدور', 'error');
-            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+            } catch (e) { prog.close(); showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+        // ارسال با XHR تا درصدِ بارگذاریِ فایل معلوم باشد
+        function xhrPost(url, fd, onUp) {
+            return new Promise((res, rej) => {
+                const x = new XMLHttpRequest();
+                x.open('POST', url);
+                x.upload.onprogress = e => { if (e.lengthComputable && onUp) onUp(Math.round(e.loaded * 100 / e.total)); };
+                x.upload.onload = () => onUp && onUp(100);
+                x.onload = () => { try { res(JSON.parse(x.responseText)); } catch (e) { rej(e); } };
+                x.onerror = () => rej(new Error('net'));
+                x.send(fd);
+            });
+        }
+        // پرده‌ی «در حالِ ثبتِ صدور» روی پنجره‌ی صدور: مرحله‌ها با زمان، تا معلوم باشد کار در جریان است (هنگ نکرده)
+        function issueProgress(host) {
+            const ov = document.createElement('div');
+            ov.style.cssText = 'position:absolute;inset:0;z-index:50;background:rgba(255,255,255,.88);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;border-radius:inherit';
+            const steps = ['ارسالِ اطلاعات و فایلِ بیمه‌نامه', 'ثبتِ صدور و نام‌گذاریِ پوشه', 'بایگانی (پوشه‌ی شرکت و «بایگانی صادره»)', 'ساختِ اقساط و جدا کردنِ فیش‌ها'];
+            let up = 0, t0 = Date.now(), cur = 0;
+            const paint = () => {
+                const sec = Math.floor((Date.now() - t0) / 1000);
+                if (up >= 100) cur = Math.max(cur, Math.min(steps.length - 1, 1 + Math.floor(sec / 4)));
+                ov.innerHTML = `<div class="bg-white rounded-2xl shadow-xl border border-emerald-100 p-5 w-[min(360px,90%)]" dir="rtl">
+                    <p class="font-black text-sm text-emerald-800 mb-3"><i class="fas fa-circle-notch fa-spin ml-1"></i>در حالِ ثبتِ صدور… <span class="text-slate-400 font-bold text-xs">${e2pNum(Math.floor(sec / 60))}:${e2pNum(String(sec % 60).padStart(2, '0'))}</span></p>
+                    ${steps.map((t, i) => `<div class="flex items-center gap-2 text-[12px] py-1 ${i < cur ? 'text-emerald-700' : (i === cur ? 'text-slate-800 font-bold' : 'text-slate-400')}">
+                        <i class="fas ${i < cur ? 'fa-circle-check' : (i === cur ? 'fa-spinner fa-spin' : 'fa-circle')} text-[11px]"></i>${t}${i === 0 && up < 100 ? ` <span class="text-[10px] text-slate-400">${e2pNum(up)}٪</span>` : ''}</div>`).join('')}
+                    <p class="text-[10.5px] text-slate-400 mt-3 leading-5">فیش‌های سامانه (اگر لازم باشد) بعد از ثبت در پس‌زمینه ساخته می‌شوند.</p></div>`;
+            };
+            if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+            host.appendChild(ov); paint();
+            const tm = setInterval(paint, 500);
+            return {upload: pc => { up = pc; if (pc >= 100 && !cur) cur = 1; paint(); }, close: () => { clearInterval(tm); ov.remove(); }};
         }
 
         async function loadCompanyFinance() {
@@ -12825,18 +12980,20 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 car_color: v.color, car_usage: v.usage, phone: v.phone, issue_date: v.issue_date, car_value: v.car_value, fields: v,
             };
             if (relation) { if (relation._party) { body.party = relation._party; delete relation._party; } body.relation = relation; }
-            showToast('در حال بررسی نهایی و صدور...', 'info');
+            const host = box.closest('.modal-content') || box.parentElement;
+            const prog = issueProgress(host); prog.upload(100);
             try {
                 const res = await fetch('api/case_actions.php', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
                 });
                 const data = await res.json();
+                prog.close();
                 if (!data.ok) { showToast(data.error || 'خطا در صدور.', 'error'); return; }
                 if (data.name_mismatch) showToast('⚠️ توجه: کد ملی استخراج‌شده با پرونده یکی نبود، لطفاً بعداً بررسی کنید.', 'error');
                 showToast('بیمه‌نامه با موفقیت صادر شد.', 'success');
                 openCase(caseId);
                 loadCases();
-            } catch(e) { showToast('خطا در اتصال به سرور.', 'error'); }
+            } catch(e) { prog.close(); showToast('خطا در اتصال به سرور.', 'error'); }
         }
 
         function copyToClipboard(val, label) {

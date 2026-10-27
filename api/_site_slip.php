@@ -72,8 +72,44 @@ function site_slip_context($pdo, $kind, $refId) {
             'policy' => (string)($r['policy_number'] ?? ''), 'type_fa' => insurance_type_fa($r['insurance_type'] ?? ''), 'dir' => $dir, 'sadere' => $sadere];
 }
 
-// بعد از ثبتِ اقساط: برای هر قسطی که فیشِ سامانه دارد و فایلش هنوز ساخته نشده، PDF ساخته می‌شود
+// بعد از ثبتِ اقساط: برای هر قسطی که فیشِ سامانه دارد و فایلش هنوز ساخته نشده، PDF ساخته می‌شود.
+// ساختِ PDFها (TCPDF، چند ثانیه برای هر قسط) در درخواستِ وب بعد از فرستادنِ پاسخ انجام می‌شود تا «ثبتِ صدور» منتظرش نماند؛
+// تا ساخته شوند، قسط «فیشِ سامانه (در حالِ ساخت)» نشان داده می‌شود
 function site_slip_make($pdo, $kind, $refId, $planLabel = '') {
+    if (PHP_SAPI !== 'cli' && empty($GLOBALS['SITE_SLIP_NOW'])) { site_slip_later($pdo, $kind, $refId, $planLabel); return 0; }
+    return site_slip_make_now($pdo, $kind, $refId, $planLabel);
+}
+function site_slip_later($pdo, $kind, $refId, $planLabel) {
+    static $queue = null;
+    $first = $queue === null;
+    if ($first) $queue = [];
+    $queue[$kind . ':' . intval($refId)] = [$kind, intval($refId), $planLabel];
+    if (!$first) return;
+    register_shutdown_function(function () use ($pdo, &$queue) {
+        if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+        @ignore_user_abort(true);
+        @set_time_limit(600);
+        foreach ($queue as [$k, $id, $label]) {
+            // یک بیمه‌نامه هم‌زمان دو بار ساخته نشود (مثلاً دو کلیکِ پشتِ سرِ هم)
+            $lock = @fopen(rtrim(sys_get_temp_dir(), '/') . '/bime_slip_' . $k . '_' . $id . '.lock', 'c');
+            if ($lock) @flock($lock, LOCK_EX);
+            try { site_slip_make_now($pdo, $k, $id, $label); } catch (Throwable $e) { error_log('[site_slip_later] ' . $e->getMessage()); }
+            if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+        }
+    });
+}
+// چند قسط هنوز فیشِ سامانه‌ی ساخته‌نشده دارند؟ (برای «در حالِ ساخت» در پنل)
+function site_slip_pending($pdo, $kind, $refId) {
+    [$t, $fk] = site_slip_table($kind);
+    try {
+        $st = $pdo->prepare("SELECT slip_json FROM `$t` WHERE `$fk` = ? AND (slip_file IS NULL OR slip_file = '')");
+        $st->execute([intval($refId)]);
+        $n = 0;
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $j) { $j = json_decode((string)$j, true); if (!empty($j['site'])) $n++; }
+        return $n;
+    } catch (Throwable $e) { return 0; }
+}
+function site_slip_make_now($pdo, $kind, $refId, $planLabel = '') {
     [$t, $fk] = site_slip_table($kind);
     try {
         $st = $pdo->prepare("SELECT id, inst_number, amount, due_jalali, tracking_code, slip_json, slip_file FROM `$t` WHERE `$fk` = ? ORDER BY inst_number");
