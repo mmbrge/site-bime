@@ -303,9 +303,9 @@ function vh_detail($pdo, $key, array $scope = []) {
     $docs = [];
     $cIds = array_map(function ($r) { return $r['id']; }, array_filter($rs, function ($r) { return in_array($r['src'], ['C', 'I'], true); }));
     $pIds = array_map(function ($r) { return $r['id']; }, array_filter($rs, function ($r) { return $r['src'] === 'P'; }));
-    if ($cIds) foreach ($pdo->query("SELECT id, plate_id, doc_type, file_path, orig_name, uploaded_at, assigned_at FROM company_documents WHERE plate_id IN (" . implode(',', $cIds) . ") AND status = 'ASSIGNED' ORDER BY id DESC") as $d) {
+    if ($cIds) foreach ($pdo->query("SELECT * FROM company_documents WHERE plate_id IN (" . implode(',', $cIds) . ") AND status = 'ASSIGNED' ORDER BY id DESC") as $d) {
         if (!$d['file_path'] || is_dir($root . '/' . $d['file_path'])) continue;
-        $docs[] = ['label' => company_doc_type_label($d['doc_type']), 'file' => ltrim($d['file_path'], '/'), 'name' => $d['orig_name'] ?: basename($d['file_path']), 'src' => 'C', 'row' => (int)$d['plate_id'],
+        $docs[] = ['label' => ($d['doc_label'] ?? '') ?: company_doc_type_label($d['doc_type']), 'file' => ltrim($d['file_path'], '/'), 'name' => $d['orig_name'] ?: basename($d['file_path']), 'src' => 'C', 'row' => (int)$d['plate_id'],
                    'at' => ($d['assigned_at'] ?: $d['uploaded_at']) ? jalali_from_gregorian_ts_dotted(strtotime($d['assigned_at'] ?: $d['uploaded_at'])) : ''];
     }
     if ($pIds) foreach ($pdo->query("SELECT * FROM case_documents WHERE case_id IN (" . implode(',', $pIds) . ") ORDER BY id DESC") as $d) {

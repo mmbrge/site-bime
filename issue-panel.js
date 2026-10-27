@@ -249,11 +249,12 @@
                 clearInterval(tm); go.disabled = false;
                 const fl = Object.entries(x.fields_verbatim || {}), ap = Object.entries(x.applied_verbatim || {});
                 out.innerHTML = `<p class="text-[11px] font-black text-emerald-700 mb-1"><i class="fas fa-circle-check ml-1"></i>${esc(x.type_fa || x.type)} · ${mmss((Date.now() - t0) / 1000)}</p>
-                    ${fl.length ? `<table>${fl.map(([k, v]) => `<tr><td>${esc(k)}</td><td dir="auto"><b>${esc(/[A-Za-z]/.test(v) ? v : fa(v))}</b></td></tr>`).join('')}</table>` : '<p class="text-slate-400">اطلاعاتی پیدا نشد.</p>'}
+                    ${fl.length ? `<p class="text-[10px] text-slate-400 mb-1">روی هر فیلد بزنید تا کپی شود.</p><table>${fl.map(([k, v], i) => `<tr data-xcf="${i}" style="cursor:pointer" title="کپی"><td>${esc(k)}</td><td dir="auto"><i class="far fa-copy text-slate-300 ml-1"></i><b>${esc(/[A-Za-z]/.test(v) ? v : fa(v))}</b></td></tr>`).join('')}</table>` : '<p class="text-slate-400">اطلاعاتی پیدا نشد.</p>'}
                     <div class="mt-2 rounded-lg ${ap.length ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'} p-2 text-[11px]">${ap.length
                         ? `<b><i class="fas fa-check-double ml-1"></i>روی ${d.type === 'P' ? 'درخواست' : 'ردیف'} نشست:</b> ${ap.map(([k, v]) => `${esc(k)}: <b dir="auto">${esc(/[A-Za-z]/.test(v) ? v : fa(v))}</b>`).join(' · ')}`
                         : (x.type === 'generic' ? 'متنِ آزاد فقط نمایش داده می‌شود.' : 'چیزی تغییر نکرد (خانه‌های مربوط از قبل پر بودند یا در مدرک نبود).')}</div>
                     ${ap.length ? '<button class="ipn-btn g mt-2" data-xrf><i class="fas fa-rotate"></i> نمایشِ اطلاعاتِ به‌روز</button>' : ''}`;
+                out.querySelectorAll('[data-xcf]').forEach(tr => tr.onclick = async () => { const [k, v] = fl[+tr.dataset.xcf]; if (await copy(String(v))) toast(k + ' کپی شد.', 'success'); });
                 const rf = out.querySelector('[data-xrf]');
                 if (rf) rf.onclick = () => { close(); open(Object.assign({}, opts, {start: f.path})); };
                 if (ap.length && typeof opts.onChange === 'function') { try { opts.onChange(x); } catch (e) {} }

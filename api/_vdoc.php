@@ -110,6 +110,8 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
     $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'mobile' => 'owner_phone', 'address' => 'owner_address',
             'car_system' => 'car_system', 'car_tip' => 'car_type', 'usage' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color',
             'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no'];
+    // «نوعِ وسیله» جدا آمده: کاربری در car_usage
+    if (trim((string)($d['car_kind'] ?? '')) !== '') { $map['car_kind'] = 'car_kind'; $map['usage'] = 'car_usage'; }
     $ch = false;
     foreach ($map as $from => $to) {
         $v = trim((string)($d[$from] ?? ''));

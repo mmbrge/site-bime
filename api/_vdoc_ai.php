@@ -103,12 +103,17 @@ function vdoc_ai_normalize(array $o) {
     $code = function ($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); };
     $txt = function ($v) { return trim(preg_replace('/\s+/u', ' ', p2e_digits(str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$v)))); };
     $d = [];
-    foreach (['owner_name', 'car_system', 'car_tip', 'usage', 'car_name', 'color', 'fuel', 'address', 'seller', 'plate'] as $k) if (($v = $txt($o[$k] ?? '')) !== '') $d[$k] = $v;
+    foreach (['owner_name', 'father_name', 'car_system', 'car_tip', 'car_kind', 'usage', 'car_name', 'color', 'fuel', 'address', 'seller', 'plate'] as $k) if (($v = $txt($o[$k] ?? '')) !== '') $d[$k] = $v;
     foreach (['national_id', 'model_year', 'capacity', 'cylinders', 'axles', 'wheels', 'mobile', 'phone', 'postal_code', 'economic_code'] as $k) {
         $v = preg_replace('/[^\d]/', '', p2e_digits((string)($o[$k] ?? '')));
         if ($v !== '') $d[$k] = $v;
     }
-    if (($v = $code($o['vin'] ?? '')) !== '' && strlen($v) >= 6) { $d['vin'] = $v; $d['chassis_no'] = $v; }
+    // شماره شاسی و VIN جدا (پرامپت‌های تازه)؛ اگر فقط یکی آمد، همان برای هر دو (شناسه‌ی خودرو)
+    $vinIn = $code($o['vin'] ?? ''); $chIn = $code($o['chassis_no'] ?? '');
+    if (strlen($chIn) >= 5) $d['chassis_no'] = $chIn;
+    if (strlen($vinIn) >= 6) $d['vin'] = $vinIn;
+    if (empty($d['vin']) && !empty($d['chassis_no'])) $d['vin'] = $d['chassis_no'];
+    if (empty($d['chassis_no']) && !empty($d['vin'])) $d['chassis_no'] = $d['vin'];
     if (($v = $code($o['engine_no'] ?? '')) !== '' && strlen($v) >= 5) $d['engine_no'] = $v;
     if (($v = $code($o['cab_no'] ?? '')) !== '') $d['cab_no'] = $v;
     if (($v = $txt($o['doc_no'] ?? '')) !== '') $d['doc_no'] = $v;

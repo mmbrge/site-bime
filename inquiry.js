@@ -200,7 +200,7 @@
     function render() {
         const b = V.boot, t = b.today || {};
         const tabs = [['single', 'fa-magnifying-glass', 'استعلامِ تکی', Object.keys(b.kinds || {}).length > 0], ['group', 'fa-file-excel', 'استعلامِ گروهی', b.can.group_view],
-                      ['premium', 'fa-calculator', 'استعلامِ حق بیمه', b.can.premium], ['ocr', 'fa-file-lines', 'پردازش فایل هوشمند', b.can.ocr && !!window.SmartOCR], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
+                      ['premium', 'fa-calculator', 'استعلامِ حق بیمه', b.can.premium], ['ocr', 'fa-file-lines', 'پردازش فایل و استخراجِ مدارک', b.can.ocr && !!window.SmartOCR], ['history', 'fa-clock-rotate-left', 'تاریخچه', true], ['settings', 'fa-sliders', 'تنظیمات', b.is_admin]];
         V.el.innerHTML = `
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
             <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان)، شخص حقوقی، سنهاب (سوابقِ بیمه‌نامه) و حق بیمه</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
@@ -787,10 +787,11 @@
         const cols = rows.length ? Array.from(rows.reduce((a, x) => { Object.keys(x).forEach(k => a.add(k)); return a; }, new Set())) : [];
         box.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-2 mb-1"><b class="text-[11.5px] text-slate-700">نوع: ${esc(r.type_fa)} · ${fa(f.length)} فیلد${rows.length ? ' · ' + fa(rows.length) + ' ردیف' : ''} · ${mmss((Date.now() - t0) / 1000)}</b>
                 <button class="inq-fbtn" data-xcp><i class="fas fa-copy ml-1"></i>کپیِ همه</button></div>
-            ${f.length ? `<table class="inq-tbl bg-white rounded-xl"><tbody>${f.map(x => `<tr><td class="text-slate-500 whitespace-nowrap" style="width:1%">${esc(x[0])}</td><td><b dir="auto">${esc(/[A-Za-z]/.test(x[1]) ? x[1] : fa(x[1]))}</b></td></tr>`).join('')}</tbody></table>` : ''}
+            ${f.length ? `<table class="inq-tbl bg-white rounded-xl"><tbody>${f.map((x, i) => `<tr data-cpf="${i}" title="کلیک = کپیِ همین فیلد" style="cursor:pointer"><td class="text-slate-500 whitespace-nowrap" style="width:1%">${esc(x[0])}</td><td><i class="far fa-copy text-slate-300 ml-1"></i><b dir="auto">${esc(/[A-Za-z]/.test(x[1]) ? x[1] : fa(x[1]))}</b></td></tr>`).join('')}</tbody></table>` : ''}
             ${rows.length ? `<div class="overflow-auto mt-2"><table class="inq-tbl bg-white"><thead><tr><th>#</th>${cols.map(c => `<th dir="ltr">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((x, i) => `<tr><td>${fa(i + 1)}</td>${cols.map(c => `<td dir="auto">${esc(x[c] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}
             ${!f.length && !rows.length ? '<p class="text-[11px] text-slate-400">چیزی استخراج نشد.</p>' : ''}`;
         box.querySelector('[data-xcp]').onclick = async () => { try { await navigator.clipboard.writeText(rows.length ? JSON.stringify(rows, null, 2) : plain); toast('کپی شد.', 'success'); } catch (e) {} };
+        box.querySelectorAll('[data-cpf]').forEach(tr => tr.onclick = async () => { const x = f[+tr.dataset.cpf]; try { await navigator.clipboard.writeText(String(x[1])); toast(x[0] + ' کپی شد.', 'success'); } catch (e) {} });
     }
     function ocrLinks(out) {
         if (!OCR.id) return;

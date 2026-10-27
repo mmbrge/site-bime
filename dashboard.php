@@ -163,8 +163,10 @@ $personnelMenuHtml = '
                     </button>
                     <div class="menu-panel">
                         <a href="#" onclick="switchTab(\'my-work\')" id="nav-my-work" class="nav-item menu-link font-black text-indigo-700"><i class="fas fa-calendar-check ml-2"></i> کارکرد من <small class="text-[10px] text-slate-400 font-bold mr-1">حضور، شرح کار، مرخصی</small></a>
+                        <a href="#" onclick="switchTab(\'my-tasks\')" id="nav-my-tasks" class="nav-item menu-link"><i class="fas fa-list-check ml-2"></i> کارهای من <small class="text-[10px] text-slate-400 font-bold mr-1">کارهایی که مدیر تعریف کرده</small></a>
                         <a href="#" onclick="switchTab(\'tools\')" id="nav-tools" class="nav-item menu-link" style="display:none"><i class="fas fa-toolbox ml-2"></i> ابزارها <small class="text-[10px] text-slate-400 font-bold mr-1">عکس، PDF، تاریخِ قسط، اقساط</small></a>'
     . ((($_SESSION['role'] ?? '') === 'ADMIN') ? '
+                        <a href="#" onclick="switchTab(\'staff-tasks\')" id="nav-staff-tasks" class="nav-item menu-link"><i class="fas fa-users-gear ml-2"></i> کارهای پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">تعریفِ کار، مهلت، پیگیری</small></a>
                         <a href="#" onclick="switchTab(\'staff-work\')" id="nav-staff-work" class="nav-item menu-link"><i class="fas fa-users-viewfinder ml-2"></i> کارکرد پرسنل <small class="text-[10px] text-slate-400 font-bold mr-1">همه، تأییدِ مرخصی، تنظیمات</small></a>
                         <a href="#" onclick="switchTab(\'service-report\')" id="nav-service-report" class="nav-item menu-link"><i class="fas fa-van-shuttle ml-2"></i> گزارش سرویس‌ها <small class="text-[10px] text-slate-400 font-bold mr-1">رفت‌وآمدِ هر نفر، تعریفِ سرویس، رسید</small></a>' : '') . '
                     </div>
@@ -1238,6 +1240,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-my-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-my-root"></div></div>
         <div id="tab-tools" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="tools-root"></div></div>
         <div id="tab-staff-work" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-staff-root"></div></div>
+        <div id="tab-my-tasks" class="tab-content max-w-6xl mx-auto w-full flex-1 hidden"><div id="stk-my-root"></div></div>
+        <div id="tab-staff-tasks" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="stk-admin-root"></div></div>
         <div id="tab-service-report" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="wk-svc-root"></div></div>
         <div id="tab-announcements" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="ann-root"></div></div>
         <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><div id="tab-security" class="tab-content max-w-7xl mx-auto w-full flex-1 hidden"><div id="sec-root"></div></div><?php endif; ?>
@@ -3606,7 +3610,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="text-[11px] font-bold text-indigo-800">متنِ آماده برای هوش مصنوعی (همراهِ فایل نامه بفرستید):</p>
                     <button type="button" onclick="copyValue(document.getElementById('cli-ai-prompt').innerText, 'متن')" class="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 rounded-lg px-2 py-0.5"><i class="far fa-copy ml-1"></i>کپی</button>
                 </div>
-                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed">این نامه‌ی درخواست بیمه را بخوان و فقط یک JSON (بدون هیچ توضیح اضافه) با همان ساختارِ نمونه برگردان. در «letter.counts» تعدادِ درخواستی از هر نوع را با کلیدهای «ثالث»، «بدنه»، «تغییر اطلاعات» و «فسخ» بنویس. در «rows» برای هر خودرو یک ردیف بساز با: request («صدور»، «تغییر اطلاعات» یا «فسخ»)؛ پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرف)، plate_three (سه رقم)، plate_iran (دو رقمِ کدِ ایران، کنارِ کلمه‌ی «ایران»). مهم: در نامه‌ها پلاک معمولاً به شکلِ «۷۹۸ع۸۱-۱۱» نوشته می‌شود که یعنی plate_three=798، plate_letter=ع، plate_two=81 و عددِ بعد از خط تیره plate_iran=11؛ یا به شکلِ «۸۱ ع ۷۹۸ ایران ۱۱» که همان پلاک است. هیچ‌وقت کدِ ایران را با دو رقمِ اول جابه‌جا نکن. اگر وسیله موتورسیکلت است، پلاکِ موتور را در دو فیلد بنویس: moto_city (سه رقمِ بالای پلاک، کدِ شهر) و moto_number (پنج رقمِ پایین)؛ مثلاً «۵۸۳-۷۶۲۲۴» یعنی moto_city=583 و moto_number=76224، و فیلدهای پلاکِ خودرو را خالی بگذار. اگر خودرو پلاک ندارد، فیلدهای پلاک را خالی بگذار و chassis_no را بنویس. بقیه‌ی فیلدها: insurance_type («ثالث»، «بدنه» یا «هردو»)، expiry_date (تاریخِ انقضا/اتمامِ بیمه‌نامه‌ی فعلی به شمسی مثل 1405/07/30)، car_name (نوع خودرو)، model_year (مدل/سال ساخت)، chassis_no، engine_no، prev_policy_number (شماره‌ی بیمه‌نامه‌ی قبلی)، prev_insurer (بیمه‌گرِ قبلی)؛ فقط برای ثالث: liability_limit (تعهد مالی به ریال)؛ فقط برای بدنه: car_value (ارزش خودرو به ریال)، has_prev_body («بله»/«خیر»)، health_inspection («لازم»/«لازم نیست»)؛ برای تغییر اطلاعات و فسخ: policy_number، change_request (چه تغییری) یا cancellation_reason (دلیل)؛ و note برای هر توضیحِ دیگر. هر فیلدی که در نامه نیست یا به آن نوع بیمه مربوط نیست را نگذار یا خالی بگذار؛ چیزی حدس نزن.</p>
+                <p id="cli-ai-prompt" class="text-[10.5px] text-slate-600 leading-relaxed"><?php require_once __DIR__ . '/api/_doc_smart.php'; echo nl2br(htmlspecialchars(ds_prompt($pdo, 'letter'), ENT_QUOTES, 'UTF-8')); ?></p>
             </div>
             <input type="hidden" id="cli-request-id">
             <div class="rounded-xl border border-fuchsia-200 bg-gradient-to-l from-fuchsia-50 to-violet-50 p-3 mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -4580,10 +4584,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="upload-kit.js?v=2"></script>
     <script src="smart-ocr.js?v=5"></script>
     <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
-    <script src="inquiry.js?v=16"></script>
+    <script src="inquiry.js?v=17"></script>
     <script src="registry.js?v=6"></script>
     <script src="sanhab-ui.js?v=3"></script>
-    <script src="issue-panel.js?v=5"></script>
+    <script src="issue-panel.js?v=6"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
     <script>
@@ -4618,6 +4622,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="finance-ui.js?v=5"></script>
     <script src="finance-hub.js?v=9"></script>
     <script src="work-log.js?v=13"></script>
+    <script src="staff-tasks.js?v=1"></script>
     <script src="import-archive.js?v=3"></script>
     <script src="renewals.js?v=4"></script>
     <script src="endorse.js?v=6"></script>
@@ -4711,10 +4716,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
-            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'staff-work', 'service-report', 'announcements',
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
+            if (page === 'my-tasks') return true;   // «کارهای من» برای همه
             if (page === 'hooshix') return true;   // دسترسی را خودِ تنظیماتِ هوشیکس تعیین می‌کند (لینک فقط برای مجازها ساخته می‌شود)
             if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
@@ -8772,7 +8778,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
                     <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
                     <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
-                    <td class="p-3">${!r.is_import && (!r.request_kind || r.request_kind === 'NEW_POLICY') && Number(r.row_id) ? `<button onclick="event.stopPropagation(); ilToggleInst(${i}, this)" title="اقساط و فیش‌های این بیمه‌نامه (و تبدیل به اقساطِ قرارداد)" class="block mb-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-list-ol ml-1"></i>اقساط</button>` : ''}${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${!r.is_import && (!r.request_kind || r.request_kind === 'NEW_POLICY') && Number(r.row_id) ? `<button onclick="event.stopPropagation(); ilToggleInst(${i}, this)" title="اقساط و فیش‌های این بیمه‌نامه (و تبدیل به اقساطِ قرارداد)" class="block mb-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-list-ol ml-1"></i>اقساط</button>` : ''}${(r.damage_files || []).length ? `<a href="/${encodeFilePath(r.damage_files[0].path)}" target="_blank" onclick="event.stopPropagation()" title="${fmEsc(r.damage_files[0].label)}" class="block mb-1 text-[10px] font-bold text-emerald-700"><i class="fas fa-file-shield ml-1"></i>استعلام خسارت</a>` : ''}${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
                     ${IS_REAL_ADMIN ? `<td class="p-3 whitespace-nowrap">${!r.is_import ? `<button onclick="event.stopPropagation(); editIssued(${i})" title="ویرایشِ کامل (پایگاه داده، بایگانی، اقساط)" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-pen"></i></button>` : ''}${issuedPurgeBtn(r)}</td>` : ''}
                 </tr>`).join('');
         }
@@ -8928,6 +8934,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-sack-dollar text-indigo-400 ml-1"></i>مالی، اقساط و فیش‌های پرداختی</h4>
                 <div class="border border-indigo-100 rounded-xl p-3 mb-4" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id || r.id) || 0}"></div></div>` : ''}
 
+                ${(r.damage_files || []).length ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-file-shield text-emerald-500 ml-1"></i>استعلام خسارت</h4>
+                <div class="flex flex-wrap gap-2 mb-4">${r.damage_files.map(f => `<a href="/${encodeFilePath(f.path)}" target="_blank" class="text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-3 py-1.5"><i class="fas fa-file-pdf ml-1"></i>${fmEsc(f.label)}</a>`).join('')}</div>` : ''}
                 <h4 class="text-xs font-bold text-slate-500 mb-2">خودرو</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
                     ${infoCell('پلاک', r.plate, {ltr: true, plate: true})}
@@ -11792,6 +11800,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
+            if (tabId === 'my-tasks' && window.StaffTasks) StaffTasks.initMy();
+            if (tabId === 'staff-tasks' && window.StaffTasks) StaffTasks.initAdmin();
             if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
             if (tabId === 'announcements' && window.AnnounceAdmin) AnnounceAdmin.render(document.getElementById('ann-root'));
             if (tabId === 'security' && window.SecShield) SecShield.init(document.getElementById('sec-root'));
@@ -12879,6 +12889,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <div class="grid grid-cols-1 gap-2">
                             <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs" onchange="document.getElementById('adm-other-name').classList.toggle('hidden', this.value !== 'other')">
                                 ${Object.entries(data.required_docs || {}).map(([k, l]) => `<option value="${k}">${l}</option>`).join('') || ''}
+                                <option value="damage_inquiry">استعلام خسارت (با مهرِ استعلامات)</option>
                                 <option value="other">سایر مدارک</option>
                             </select>
                             <input type="text" id="adm-other-name" class="hidden border rounded-lg px-2 py-1.5 text-xs" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">

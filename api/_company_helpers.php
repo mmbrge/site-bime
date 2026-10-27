@@ -907,6 +907,8 @@ function company_parse_letter_rows($raw) {
             if (($pTwo !== '' || $pThree !== '' || $pIran !== '') && !$plate) $errors[] = "ردیف {$lineNo}: بخش‌های پلاک کامل نیست (دو رقم، حرف، سه رقم، کد ایران).";
         }
         $chassis = trim((string)($r['chassis_no'] ?? ($r['chassis'] ?? ($r['vin'] ?? ''))));
+        // VINِ ۱۷ نویسه‌ای (اگر جدا از شماره شاسی آمده)
+        $vinRaw = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)($r['vin'] ?? ''))));
         // اگر پلاک خوانده نشد ولی متنش شبیه شماره شاسی بود، همان را شاسی حساب کن
         if (!$plate && $chassis === '' && trim((string)$plateText) !== '' && preg_match('/^[A-Za-z0-9\-]{6,}$/', trim((string)$plateText))) {
             $chassis = trim((string)$plateText);
@@ -944,6 +946,7 @@ function company_parse_letter_rows($raw) {
             'plate_p1' => $plate ? $plate['p1'] : null, 'plate_p2' => $plate ? $plate['p2'] : null,
             'plate_letter' => $plate ? $plate['letter'] : null, 'plate_p4' => $plate ? $plate['p4'] : null,
             'chassis_no' => $chassis ?: null,
+            'vin' => strlen($vinRaw) === 17 ? $vinRaw : null,
             'engine_no' => trim((string)($r['engine_no'] ?? ($r['engine'] ?? ''))) ?: null,
             'is_new_vehicle' => $isNew ? 1 : 0,
             'car_value' => company_parse_money($r['car_value'] ?? ($r['value'] ?? '')),
@@ -955,7 +958,8 @@ function company_parse_letter_rows($raw) {
             'car_type' => trim((string)($r['car_type'] ?? ($r['tip'] ?? ''))) ?: null,
             'model_year' => p2e_digits(trim((string)($r['model_year'] ?? ($r['model'] ?? '')))) ?: null,
             'prev_policy_number' => p2e_digits(trim((string)($r['prev_policy_number'] ?? ''))) ?: null,
-            'row_note' => trim((string)($r['note'] ?? '')) ?: null,
+            'row_note' => trim(implode(' · ', array_filter([trim((string)($r['note'] ?? '')), trim((string)($r['extras'] ?? '')) !== '' ? 'تجهیزات: ' . trim((string)$r['extras']) : '',
+                                                            trim((string)($r['old_plate'] ?? '')) !== '' && !preg_match('/^[\*\-\s]*$/u', (string)$r['old_plate']) ? 'پلاکِ قدیم: ' . trim((string)$r['old_plate']) : '']))) ?: null,
             // مخصوصِ الحاقیه و فسخ؛ برای صدورِ جدید (تمدید) شماره‌ی بیمه‌نامه‌ی قبلی همین‌جا می‌نشیند
             'ref_policy_number' => trim(p2e_digits((string)($r['ref_policy_number'] ?? ($r['policy_number'] ?? ($r['prev_policy_number'] ?? ''))))) ?: null,
             'endorsement_request' => $endorseText ?: null,
@@ -967,8 +971,14 @@ function company_parse_letter_rows($raw) {
         ];
         $base['plate_display'] = company_row_label($base);
         // مدل و بیمه‌نامه‌ی قبلی در «اطلاعات صدور»ِ ردیف هم می‌نشیند تا در پنجره‌ی صدور آماده باشد
+        $tx = function ($k) use ($r) { $v = trim((string)($r[$k] ?? '')); return $v !== '' ? mb_substr(p2e_digits($v), 0, 250) : null; };
         $ii = array_filter(['car_model_year' => $base['model_year'], 'prev_policy_number' => $base['prev_policy_number'],
-                            'chassis_no' => $base['chassis_no'], 'engine_no' => $base['engine_no'], 'car_system' => $base['car_name'], 'car_tip' => $base['car_type'],
+                            'chassis_no' => $base['chassis_no'], 'engine_no' => $base['engine_no'], 'vin' => $base['vin'],
+                            'car_system' => $tx('car_system') ?: $base['car_name'], 'car_tip' => $base['car_type'], 'car_type' => $tx('car_tip'),
+                            'car_kind' => $tx('car_kind'), 'car_usage' => $tx('usage'), 'car_color' => $tx('color'), 'car_capacity' => $tx('capacity'), 'car_cylinders' => $tx('cylinders'),
+                            'owner_name' => $tx('owner_name'), 'owner_national_id' => preg_replace('/\D/', '', (string)$tx('owner_national_id')) ?: null,
+                            'owner_phone' => $tx('owner_phone'), 'owner_address' => $tx('owner_address'),
+                            'insured_name' => $tx('insured_name'), 'insured_national_id' => preg_replace('/\D/', '', (string)$tx('insured_national_id')) ?: null,
                             'prev_insurer' => trim((string)($r['prev_insurer'] ?? '')) ?: null]);
         $base['issue_info'] = $ii ? json_encode($ii, JSON_UNESCAPED_UNICODE) : null;
 

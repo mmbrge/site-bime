@@ -114,6 +114,7 @@ function perm_catalog() {
             'my-work' => ['کارکرد من و مرخصی', ['view', 'create', 'edit', 'export']],
             'staff-work' => ['کارکرد پرسنل، تأیید مرخصی و تنظیمات', ['view', 'edit', 'export']],
             'service-report' => ['گزارش سرویس‌های رفت‌وآمد (همه‌ی پرسنل)', ['view', 'edit']],
+            'staff-tasks' => ['کارهای پرسنل (تعریفِ کار، مهلت و پیگیری)', ['view', 'create', 'edit']],
         ]],
     ];
 }
@@ -282,6 +283,11 @@ function perm_api_map() {
             // «استخراج اطلاعات» از یک مدرک: فقط خانه‌های خالیِ ردیف پر می‌شود
             'doc_text' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'extract' => 'issue-queue:edit|companies-requests:edit|cases:edit',
             'dmg_upload' => 'issue-queue:edit|companies-requests:edit|cases:edit',
+        ]],
+        // «کارهای من» برای همه؛ مدیریتِ کارهای پرسنل در خودِ فایل با دسترسیِ staff-tasks بررسی می‌شود
+        'staff_tasks_actions' => ['pages' => ['staff-tasks'], 'elevate' => false, 'loose' => true, 'actions' => [
+            'my_list' => 'any', 'my_ping' => 'any', 'my_status' => 'any', 'note' => 'any', 'log' => 'any',
+            'admin_list' => 'staff-tasks:view', 'admin_save' => 'staff-tasks:create|staff-tasks:edit', 'admin_cancel' => 'staff-tasks:edit', 'admin_delete' => 'staff-tasks:edit',
         ]],
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [
             'list' => 'vehicles:view', 'detail' => 'vehicles:view', 'models' => 'vehicles:view', 'model_img' => 'vehicles:view', 'model_image' => 'vehicles:edit', 'model_image_delete' => 'vehicles:edit', 'note' => 'vehicles:edit',

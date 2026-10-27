@@ -764,6 +764,19 @@ try {
         $stmt = $pdo->prepare("SELECT id FROM policy_cases WHERE id = ?");
         $stmt->execute([$caseId]);
         if (!$stmt->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'پرونده یافت نشد.']); exit; }
+        // استعلامِ خسارت: نامِ «پلاک (استعلام خسارت ثالث|بدنه)» و مهرِ استعلامات (api/_damage_inq.php)
+        if ($docKey === 'damage_inquiry') {
+            require_once __DIR__ . '/_damage_inq.php';
+            $f = $_FILES['file']; $ext = upload_ext($f['name'] ?? '');
+            if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true) || !is_uploaded_file($f['tmp_name'] ?? '')) { echo json_encode(['ok' => false, 'error' => 'فقط PDF یا عکس.'], JSON_UNESCAPED_UNICODE); exit; }
+            $tmp = dirname(__DIR__) . '/tmp_ocr/' . uniqid('dmg_') . '.' . $ext;
+            if (!is_dir(dirname($tmp))) @mkdir(dirname($tmp), 0777, true);
+            move_uploaded_file($f['tmp_name'], $tmp);
+            $r = dmg_save($pdo, 'P', $caseId, $tmp, $_SESSION['user_id']);
+            if (is_file($tmp)) @unlink($tmp);
+            echo json_encode($r, JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         echo json_encode(admin_store_case_doc($pdo, dirname(__DIR__), $caseId, $docKey, $docLabel, $_FILES['file'], $_SESSION['user_id']), JSON_UNESCAPED_UNICODE);
         exit;
     }

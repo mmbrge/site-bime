@@ -1119,6 +1119,16 @@ try {
             exit;
         }
 
+        // فایل‌های «استعلام خسارت»ِ هر بیمه‌نامه (یک پرس‌وجو برای کلِ صفحه)
+        try {
+            $cid = []; $pid = [];
+            foreach ($rows as $r) { if (($r['source'] ?? '') === 'PERSONNEL') $pid[] = intval($r['row_id'] ?? 0); else $cid[] = intval($r['row_id'] ?? 0); }
+            $cid = array_filter($cid); $pid = array_filter($pid); $dm = [];
+            if ($cid) foreach ($pdo->query("SELECT plate_id k, file_path, doc_label FROM company_documents WHERE doc_type = 'damage_inquiry' AND status = 'ASSIGNED' AND plate_id IN (" . implode(',', $cid) . ") ORDER BY id DESC") as $d) $dm['C' . $d['k']][] = ['path' => $d['file_path'], 'label' => $d['doc_label'] ?: 'استعلام خسارت'];
+            if ($pid) foreach ($pdo->query("SELECT case_id k, file_path, doc_label FROM case_documents WHERE doc_key = 'damage_inquiry' AND COALESCE(status, '') <> 'REJECTED' AND case_id IN (" . implode(',', $pid) . ") ORDER BY id DESC") as $d) $dm['P' . $d['k']][] = ['path' => $d['file_path'], 'label' => $d['doc_label'] ?: 'استعلام خسارت'];
+            foreach ($rows as &$r) $r['damage_files'] = $dm[(($r['source'] ?? '') === 'PERSONNEL' ? 'P' : 'C') . intval($r['row_id'] ?? 0)] ?? [];
+            unset($r);
+        } catch (Throwable $e) { error_log('[issued damage files] ' . $e->getMessage()); }
         echo json_encode(['ok' => true, 'rows' => $rows, 'counts' => $counts], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -2749,8 +2759,8 @@ try {
                               (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no,
                                is_new_vehicle, car_value, liability_limit, ref_policy_number, endorsement_request,
                                cancellation_reason, insurance_type, expiry_date,
-                               skip_health_inspection, has_prev_body, car_name, car_type, row_note, issue_info)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                               skip_health_inspection, has_prev_body, car_name, car_type, row_note, issue_info, vin)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
         foreach ($parsed['rows'] as $r) {
             $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
@@ -2760,7 +2770,7 @@ try {
                            $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
                            $r['ref_policy_number'], $r['endorsement_request'], $r['cancellation_reason'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
-                           $r['has_prev_body'], $r['car_name'], $r['car_type'] ?? null, $r['row_note'], $r['issue_info'] ?? null]);
+                           $r['has_prev_body'], $r['car_name'], $r['car_type'] ?? null, $r['row_note'], $r['issue_info'] ?? null, $r['vin'] ?? null]);
             $newIds[] = $pdo->lastInsertId();
             $created++;
         }
