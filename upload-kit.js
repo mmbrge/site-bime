@@ -44,6 +44,7 @@
     function base(name) { return String(name || '').replace(/^.*[\/\\]/, '').replace(/\.[A-Za-z0-9]{1,10}\s*$/, ''); }
     function isPdf(f) { return f && (ext(f.name) === 'pdf' || f.type === 'application/pdf'); }
     function isZip(f) { return f && (ext(f.name) === 'zip' || /zip/.test(f.type || '')); }
+    function isArc(f) { return f && /^(rar|7z|tar|tgz|gz)$/.test(ext(f.name)); }
     function isHeic(f) { return f && (/^(heic|heif)$/.test(ext(f.name)) || /image\/hei[cf]/.test(f.type || '')); }
     function isImg(f) { return f && /^(jpe?g|png|webp|gif|bmp)$/.test(ext(f.name)); }
     var MIME = {pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', zip: 'application/zip'};
@@ -239,6 +240,49 @@
         });
     }
 
+    // ---------------- RAR / 7z (libarchive.js، داخلِ مرورگر؛ فایل‌ها: [{file, path}])
+    var arcMod = null;
+    function unarchive(f) {
+        if (!arcMod) {
+            // import() داخلِ Function تا مرورگرهای قدیمی (که import() نمی‌شناسند) کلِ فایل را رد نکنند
+            arcMod = new Function('u', 'return import(u)')(BASE + 'libarchive/libarchive.js?v=' + LV).then(function (m) {
+                m.Archive.init({workerUrl: BASE + 'libarchive/worker-bundle.js?v=' + LV});
+                return m.Archive;
+            }).catch(function (e) { arcMod = null; throw new Error('بازکردنِ RAR/7z در این مرورگر ممکن نشد.'); });
+        }
+        return arcMod.then(function (Archive) { return Archive.open(f); }).then(function (a) {
+            return a.extractFiles().then(function () { return a.getFilesArray(); });
+        }).then(function (arr) {
+            return (arr || []).filter(function (x) { return x && x.file && x.file.size !== undefined; })
+                .map(function (x) { return {file: x.file, path: (x.path || '') + (x.file.name || '')}; });
+        });
+    }
+
+    // ---------------- بازدیدِ ارسالیِ مشتری: پوشه، چند عکس، زیپ، RAR یا 7z => یک زیپ از عکس‌ها/PDFها (روی سرور در پوشه‌ی بازدید باز می‌شود)
+    //   عکس‌های داخلِ RAR/7z همین‌جا در مرورگر بیرون کشیده می‌شوند (هاست RAR باز نمی‌کند)
+    function inspectionFile(files, onStatus) {
+        files = Array.prototype.slice.call(files || []).filter(function (f) { return !/^\./.test(f.name); });
+        if (!files.length) return Promise.resolve(null);
+        var hasArc = files.some(isArc);
+        if (files.length === 1 && !hasArc) return Promise.resolve(files[0]);
+        var paths = new Map();
+        return expand(files, {splitPdf: false, renumber: false, allow: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], onStatus: onStatus}).then(function (r) {
+            var list = r.files || r || [];
+            if (!list.length) throw new Error('عکس یا PDFی داخلِ فایل پیدا نشد' + ((r.skipped || []).length ? ' (' + r.skipped.slice(0, 3).join('، ') + ')' : '') + '.');
+            return ensure('jszip').then(function (JSZip) {
+                var z = new JSZip(), used = {};
+                list.forEach(function (f, i) {
+                    var nm = String(f.name || ('photo-' + (i + 1))).replace(/[\/\\]/g, '_');
+                    while (used[nm]) nm = (i + 1) + '-' + nm;
+                    used[nm] = 1;
+                    z.file(nm, f);
+                });
+                if (onStatus) onStatus('ساختِ زیپِ ' + faD(list.length) + ' فایل…');
+                return z.generateAsync({type: 'blob'});
+            }).then(function (b) { return mkFile(b, 'inspection.zip', 'application/zip'); });
+        });
+    }
+
     // ---------------- HEIC => JPG
     function heicToJpg(f) {
         return ensure('heic').then(function (h) { return h({blob: f, toType: 'image/jpeg', quality: 0.9}); })
@@ -273,6 +317,17 @@
                     });
                     return ch;
                 }).catch(function () { skipped.push(item.path + ' (زیپِ خراب یا رمزدار)'); });
+            }
+            if (isArc(f)) {
+                if (depth > 5) { skipped.push(item.path); return Promise.resolve(); }
+                st('باز کردنِ «' + f.name + '»…');
+                return unarchive(f).then(function (ents) {
+                    ents = ents.filter(function (x) { return !/(^|\/)(__MACOSX|\.DS_Store|Thumbs\.db|desktop\.ini)/i.test(x.path) && !/(^|\/)\._/.test(x.path); });
+                    ents.sort(function (a, b) { return natCmp(a.path, b.path); });
+                    var ch = Promise.resolve();
+                    ents.forEach(function (x) { ch = ch.then(function () { return one({f: mkFile(x.file, String(x.file.name || x.path).replace(/^.*\//, '')), path: item.path + '/' + x.path}, depth + 1); }); });
+                    return ch;
+                }).catch(function () { skipped.push(item.path + ' (فایلِ فشرده‌ی خراب، رمزدار یا ناشناخته)'); });
             }
             var e = ext(f.name);
             if (allow.indexOf(e) < 0 && !(e === '' && /^image\//.test(f.type || ''))) { skipped.push(item.path); return Promise.resolve(); }
@@ -482,7 +537,7 @@
 
     window.UploadKit = {
         pdfToImages: pdfToImages, pageCount: pageCount,
-        ensure: ensure, pickPages: pickPages, expand: expand, extractPages: extractPages, heicToJpg: heicToJpg,
+        ensure: ensure, unarchive: unarchive, isArchive: isArc, inspectionFile: inspectionFile, pickPages: pickPages, expand: expand, extractPages: extractPages, heicToJpg: heicToJpg,
         enqueue: enqueue, post: xhrPost, isPdf: isPdf, isZip: isZip, isHeic: isHeic, isImg: isImg, ext: ext, mkFile: mkFile, busy: busy
     };
 })();

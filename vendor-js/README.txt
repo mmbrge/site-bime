@@ -6,3 +6,4 @@
   tsparticles.bundle.min.js      — tsparticles 2.12.0                    MIT
   html2canvas.min.js             — html2canvas 1.4.1                     MIT
   tesseract/                     — tesseract.js 5.1.1 + tesseract.js-core 5.1.1 (lstm) + traineddata fas/eng (4.0.0_best_int)  Apache-2.0
+  libarchive/                    — libarchive.js 2.0.2 (RAR/7z/tar در مرورگر؛ بازدیدهای ارسالی)   MIT

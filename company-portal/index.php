@@ -55,7 +55,7 @@ if (!$companies) {
 <link rel="stylesheet" href="../vendor-css/tailwind.css?v=3">
 <script src="../notif-bell.js?v=4"></script>
 <script src="../party-ui.js?v=3"></script>
-<script src="../upload-kit.js?v=2"></script>
+<script src="../upload-kit.js?v=3"></script>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <script src="../net-watch.js?v=5"></script>
@@ -1228,14 +1228,12 @@ async function portalUploadInspection(plateId, input) {
     input.value = '';
     if (!files.length) return;
     let file = files[0];
-    if (files.length > 1 || isDir) {
+    // پوشه، چند عکس، زیپ، RAR یا 7z: عکس‌ها در مرورگر بیرون کشیده و یک زیپ می‌شوند
+    if (files.length > 1 || isDir || (UploadKit.isArchive && UploadKit.isArchive(file))) {
         try {
             showToast('در حالِ آماده‌سازیِ ' + faNum(files.length) + ' فایل…');
-            const JSZip = await UploadKit.ensure('jszip');
-            const z = new JSZip();
-            files.forEach(f => z.file((f.webkitRelativePath || f.name).replace(/^[^/]*\//, '') || f.name, f));
-            file = new File([await z.generateAsync({type: 'blob'})], 'inspection.zip', {type: 'application/zip'});
-        } catch (e) { showToast('ساختِ زیپ ممکن نشد: ' + (e.message || e)); return; }
+            file = await UploadKit.inspectionFile(files, t => showToast(t));
+        } catch (e) { showToast('آماده‌سازیِ عکس‌های بازدید ممکن نشد: ' + (e.message || e)); return; }
     }
     const fd = new FormData();
     fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', 'health_inspection'); fd.append('doc_file', file, file.name);

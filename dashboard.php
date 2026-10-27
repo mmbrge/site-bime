@@ -4661,7 +4661,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if (($realRole ?? '') === 'ADMIN'): ?><script src="chat-access.js?v=1"></script><?php endif; ?>
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
-    <script src="upload-kit.js?v=2"></script>
+    <script src="upload-kit.js?v=3"></script>
     <script src="smart-ocr.js?v=5"></script>
     <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
     <script src="inquiry.js?v=17"></script>
@@ -7938,14 +7938,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             input.value = '';
             if (!files.length) return;
             let file = files[0];
-            if (files.length > 1 || (input.webkitdirectory && files.length)) {
+            // پوشه، چند عکس، زیپ، RAR یا 7z: عکس‌ها در مرورگر بیرون کشیده و یک زیپ می‌شوند تا روی سرور در پوشه‌ی بازدید باز شوند
+            if (files.length > 1 || input.webkitdirectory || (UploadKit.isArchive && UploadKit.isArchive(file))) {
                 try {
                     showToast(`در حالِ آماده‌سازیِ ${e2pNum(files.length)} فایلِ بازدید…`, 'info');
-                    const JSZip = await UploadKit.ensure('jszip');
-                    const z = new JSZip();
-                    files.forEach(f => z.file((f.webkitRelativePath || f.name).replace(/^[^/]*\//, '') || f.name, f));
-                    file = new File([await z.generateAsync({type: 'blob'})], 'inspection.zip', {type: 'application/zip'});
-                } catch (e) { showToast('ساختِ زیپ ممکن نشد: ' + (e.message || e), 'error'); return; }
+                    file = await UploadKit.inspectionFile(files, t => showToast(t, 'info'));
+                } catch (e) { showToast('آماده‌سازیِ عکس‌های بازدید ممکن نشد: ' + (e.message || e), 'error'); return; }
             }
             const fd = new FormData();
             fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', 'health_inspection'); fd.append('doc_file', file, file.name);
