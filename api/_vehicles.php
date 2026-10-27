@@ -164,6 +164,10 @@ function vh_model_image($pdo, $car) {
 
 // همه‌ی ردیف‌ها از همه‌ی منابع (شکلِ یکسان). $scope: ['company_ids' => [...]] برای پنلِ شرکت‌ها
 function vh_records($pdo, array $scope = []) {
+    // cache = true: در همین درخواستِ PHP یک بار خوانده می‌شود (بررسیِ خودکارِ مدارکِ چند ردیف پشتِ سرِ هم)
+    static $memo = [];
+    $mk = !empty($scope['cache']) ? json_encode($scope['company_ids'] ?? null) : null;
+    if ($mk !== null && isset($memo[$mk])) return $memo[$mk];
     $root = dirname(__DIR__);
     $rel = function ($p) use ($root) { return $p ? ltrim(str_replace($root, '', (string)$p), '/') : null; };
     $cids = isset($scope['company_ids']) ? array_values(array_filter(array_map('intval', (array)$scope['company_ids']))) : null;
@@ -233,6 +237,7 @@ function vh_records($pdo, array $scope = []) {
         $r['days_left'] = $r['issued'] && $r['end_date'] ? vh_days_left($r['end_date']) : null;
     }
     unset($r);
+    if ($mk !== null) $memo[$mk] = $recs;
     return $recs;
 }
 

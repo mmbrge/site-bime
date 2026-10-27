@@ -126,9 +126,17 @@ if ($action === '' && !$isJson && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' 
 }
 
 function jd($ts) { return $ts ? jalali_from_gregorian_ts_dotted($ts) : null; }
+// مدارکِ خودکارِ ردیف‌ها (پرونده‌ی خودرو) فقط وقتی لازم شد بارگذاری می‌شود
+function ral_load() {
+    require_once __DIR__ . '/_import_archive.php';
+    require_once __DIR__ . '/_bordereau.php';
+    require_once __DIR__ . '/_vehicles.php';
+    require_once __DIR__ . '/_registry_link.php';
+    require_once __DIR__ . '/_row_autolink.php';
+}
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
-$adminOnly = ['admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
+$adminOnly = ['autolink_run', 'autolink_remove', 'admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'smart_letter_extract', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
@@ -1932,6 +1940,10 @@ try {
         $request['requested_counts_obj'] = json_decode((string)($request['requested_counts'] ?? ''), true) ?: null;
 
         company_doc_label_ensure($pdo);
+        // مدارکِ خودکار از سوابقِ همین خودرو (فقط ردیف‌های تازه‌ی بررسی‌نشده؛ کسریِ چک‌لیست)
+        if ($reqKind === 'NEW_POLICY' && empty($request['is_import']) && ($actor['role'] ?? '') === 'ADMIN') {
+            try { ral_load(); ral_link_request($pdo, dirname(__DIR__), $requestId, $actor['id'] ?? null, false, 5.0); } catch (Throwable $e) { error_log('[row autolink] ' . $e->getMessage()); }
+        }
         $stmt = $pdo->prepare("SELECT * FROM company_documents WHERE request_id = ? ORDER BY uploaded_at DESC");
         $stmt->execute([$requestId]);
         $docs = $stmt->fetchAll();
@@ -1960,7 +1972,7 @@ try {
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],
-                               'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])],
+                               'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir']), 'auto' => !empty($d['auto_from'])],
                     array_filter($rowDocs, fn($d) => in_array($d['doc_type'], $item['upload_types'], true)
                                                      || $d['doc_type'] === $item['key'])
                 ));
@@ -2576,6 +2588,26 @@ try {
     }
 
     // ---- حذف یک مدرکِ بارگزاری‌شده‌ی یک ردیف (اگر اشتباه آپلود شده بود) ----
+    // ---- مدارکِ خودکارِ ردیف‌ها: بررسیِ دوباره، برداشتن (و دیگر نیامدن) و همه‌ی مدارکِ قبلیِ همین خودرو ----
+    if ($action === 'autolink_run') {
+        ral_load();
+        $siteRoot = dirname(__DIR__);
+        if (!empty($data['plate_id'])) { $n = ral_link_plate($pdo, $siteRoot, intval($data['plate_id']), $actor['id'] ?? null); echo json_encode(['ok' => true, 'attached' => $n, 'rows' => 1, 'left' => 0]); exit; }
+        echo json_encode(['ok' => true] + ral_link_request($pdo, $siteRoot, intval($data['request_id'] ?? 0), $actor['id'] ?? null, true, 20.0));
+        exit;
+    }
+    if ($action === 'autolink_remove') {
+        ral_load();
+        echo json_encode(ral_remove($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0)), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'row_doc_history') {
+        ral_load();
+        company_doc_label_ensure($pdo);
+        echo json_encode(['ok' => true, 'docs' => ral_history($pdo, intval($data['plate_id'] ?? 0))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'delete_row_doc') {
         // حذف، مثل حذفِ خودِ درخواست، فقط دستِ مدیر کل است
         if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند مدرک را حذف کند.']); exit; }
@@ -2588,6 +2620,14 @@ try {
         $siteRoot = dirname(__DIR__);
         $abs = $siteRoot . '/' . $doc['file_path'];
         if (is_file($abs)) @unlink($abs);
+        // مدرکِ خودکار که حذف شد، دیگر خودکار روی همین ردیف برنمی‌گردد
+        try {
+            ral_load(); ral_ensure($pdo);
+            $st = $pdo->prepare("SELECT d.auto_from, crp.auto_dismiss FROM company_documents d JOIN company_request_plates crp ON crp.id = d.plate_id WHERE d.id = ?");
+            $st->execute([$docId]);
+            $ax = $st->fetch();
+            if ($ax && $ax['auto_from']) { $dis = ral_dismissed($ax); $dis[] = $ax['auto_from']; $pdo->prepare("UPDATE company_request_plates SET auto_dismiss = ? WHERE id = ?")->execute([json_encode(array_slice(array_values(array_unique($dis)), -60)), $doc['plate_id']]); }
+        } catch (Throwable $e) {}
         $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$docId]);
         if ($doc['plate_id']) company_sync_plate_status($pdo, $doc['plate_id']);
         echo json_encode(['ok' => true]);

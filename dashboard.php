@@ -531,7 +531,32 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
            نوشته شده (نه کلاس‌های Tailwind) تا مستقل از CDN هم درست کار کند. */
         .rows-table { width: 100%; }
-        .rows-table .col-checklist { width: 52%; min-width: 430px; }
+        .rows-table .col-checklist { width: 34%; min-width: 230px; }
+        /* ردیف‌های جمع‌شونده‌ی درخواست (هر بار فقط یکی باز) */
+        .cq-sum { cursor: pointer; transition: background .15s; }
+        .cq-sum:hover { background: #f8fafc; }
+        .cq-sum.on { background: linear-gradient(90deg, #ecfeff, #eef2ff); }
+        .cq-sum td { vertical-align: middle; }
+        .cq-chev { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: #f1f5f9; color: #475569; font-size: 11px; transition: transform .2s, background .2s; }
+        .cq-chev:hover { background: #e2e8f0; }
+        .cq-sum.on .cq-chev { transform: rotate(180deg); background: #0e7490; color: #fff; }
+        .cq-pill { display: inline-flex; align-items: center; gap: 2px; font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 999px; border: 1px solid; white-space: nowrap; line-height: 1.6; }
+        .cq-pill.ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+        .cq-pill.no { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+        .cq-pill.op { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
+        .cq-pill.in { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+        .cq-det > td { background: linear-gradient(180deg, #f8fafc, #fff); border-bottom: 2px solid #a5f3fc; }
+        .cq-det-in { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 12px; padding: 10px 12px; animation: cqIn .18s ease-out; }
+        .cq-det-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .cq-det-main { min-width: 0; }
+        @media (max-width: 900px) { .cq-det-in { grid-template-columns: 1fr; } }
+        @keyframes cqIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+        .ck-auto { display: inline-block; font-size: 8.5px; font-weight: 900; background: #ccfbf1; color: #0f766e; border-radius: 6px; padding: 0 4px; margin-right: 3px; }
+        .ck-auto-x { display: inline-flex; align-items: center; cursor: pointer; color: #0f766e; font-size: 9.5px; margin-right: 4px; }
+        .ck-auto-x:hover { color: #be123c; }
+        .cq-hist { margin-top: 10px; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 8px; background: #fff; }
+        .cq-hist-i { font-size: 10px; display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 9px; padding: 4px 7px; background: #f8fafc; }
+        .cq-hist-i.me { border-color: #99f6e4; background: #f0fdfa; }
         /* عرضِ مودالِ جزئیاتِ درخواست - بدون وابستگی به کلاس‌های دلخواهِ Tailwind */
         .creq-wide-modal { width: 96vw; max-width: 1400px; }
         /* مرکز صدور: سرتیتر و زبانه‌ها */
@@ -6754,11 +6779,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                                              : 'bg-slate-50 border-slate-200 text-slate-400');
             const mark = ok ? '✓' : '✗';
             const star = item.required ? '<span class="text-red-400">*</span>' : '';
+            const autoTag = d => d.auto ? `<span class="ck-auto" title="خودکار از سوابقِ همین خودرو آمد">خودکار</span>${canEdit && plate.status !== 'ISSUED' ? `<button onclick="autolinkRemove(${d.id})" title="برداشتنِ این مدرکِ خودکار (دیگر خودکار نمی‌آید)" class="ck-auto-x"><i class="fas fa-link-slash"></i></button><label class="ck-auto-x" title="جایگزین با مدرکِ تازه"><i class="fas fa-arrow-right-arrow-left"></i><input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="autolinkReplace(${d.id}, ${plate.id}, '${d.doc_type}', this)"></label>` : ''}` : '';
             const links = (item.docs || []).map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ این پوشه">${d.label} (پوشه)</a>`
-                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`
             ).join('<span class="text-slate-300 mx-1">|</span>');
-            const del = canEdit ? (item.docs || []).map(d =>
+            const del = canEdit ? (item.docs || []).filter(d => !d.auto).map(d =>
                 `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
 
             let uploader = '';
@@ -6777,6 +6803,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 const accept = item.key === 'health_inspection' ? '.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
                 uploader = `<span class="up-stack">${sel}
                     <label class="up-btn"><i class="fas fa-cloud-arrow-up"></i>بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)"></label></span>`;
+            } else if (canEdit && ok && plate.status !== 'ISSUED' && !VISIT_KEYS.includes(item.key) && (item.docs || []).length) {
+                // مدرکِ تازه‌تر (مثلاً کارتِ جدید): کنارِ قبلی می‌نشیند و قبلی هم در «مدارکِ قبلیِ خودرو» می‌ماند
+                const types = item.upload_types || [item.key];
+                uploader = `<span class="up-stack"><input type="hidden" id="rowdoc-type-${plate.id}-${item.key}-n" value="${(item.docs[0] && types.includes(item.docs[0].doc_type)) ? item.docs[0].doc_type : types[0]}">
+                    <label class="up-btn soft" style="padding:2px 8px;font-size:9.5px" title="بارگذاریِ نسخه‌ی تازه‌تر از همین مدرک"><i class="fas fa-plus"></i>نسخه‌ی جدید<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}-n', this)"></label></span>`;
             }
 
             return `<div class="ck-chip border ${tone}" title="${item.hint || ''}">
@@ -6893,66 +6924,146 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         }
 
         // ---- ردیف‌های درخواست: دو زبانه (در حالِ صدور / صادر شده)، جستجو، فیلتر و مرتب‌سازی (پیش‌فرض: نزدیک‌ترین انقضا) ----
-        const CREQ_VIEW = {rid: 0, tab: 'open', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set()};
+        const CREQ_VIEW = {rid: 0, tab: 'open', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0};
         const creqExpiryKey = p => {
             if (p.expiry_date && /^\d{4}-\d{2}-\d{2}/.test(p.expiry_date)) return p.expiry_date.slice(0, 10);
             const m = /(\d{4})\D(\d{1,2})\D(\d{1,2})/.exec(String(p.expiry_date_jalali || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
             return m ? 'J' + m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0') : '';
         };
+        // خلاصه‌ی چک‌لیست برای ردیفِ جمع‌شده: ✓/✗ با نامِ کوتاه (🔗 = مدرکِ خودکار از سوابق)
+        const CK_SHORT = {car_card_or_title: 'کارت/سند', prev_body_policy: 'بدنه‌ی قبل', prev_third_policy: 'ثالثِ قبل', health_inspection: 'بازدید', health_report: 'گزارش بازدید',
+            damage_inquiry: 'استعلام خسارت', no_claim_report: 'عدم خسارت', policy_doc: 'بیمه‌نامه', new_car_card_or_title: 'کارت/سندِ جدید', cancellation_proof: 'مدرکِ فسخ', other: 'سایر'};
+        function creqDocPills(p) {
+            return (p.checklist || []).filter(it => !(it.custom && !(it.docs || []).length)).map(it => {
+                const ok = it.satisfied, auto = (it.docs || []).some(d => d.auto);
+                const cls = ok ? 'ok' : (it.required ? 'no' : (it.internal ? 'in' : 'op'));
+                const n = it.custom ? ' ' + e2pNum((it.docs || []).length) : '';
+                return `<span class="cq-pill ${cls}" title="${fmEsc(it.label)}${ok ? ' — دارد' : (it.required ? ' — کم دارد (اجباری)' : ' — ندارد')}${auto ? ' · خودکار از سوابق' : ''}">${ok ? '✓' : '✗'} ${CK_SHORT[it.key] || fmEsc(it.label)}${n}${auto ? ' 🔗' : ''}</span>`;
+            }).join('');
+        }
         function creqRowHtml(p, idx, r, isAdmin) {
                 const fs = FOLDER_STATUS_FA[p.folder_status] || ['—', 'text-slate-400'];
                 const missing = Object.values(p.missing_docs || {});
-                const chips = rowChecklistHtml(p, isAdmin);
-                return `
-                <tr class="border-t border-slate-100 align-top">
-                    <td class="p-2 text-[10px] text-slate-400">${CREQ_VIEW.tab === 'issued' && p.issued_file_path ? `<input type="checkbox" class="accent-emerald-600 ml-1" data-creq-sel="${p.id}" ${CREQ_VIEW.sel.has(p.id) ? 'checked' : ''} onchange="creqToggleSel(${p.id}, this.checked)">` : ''}${e2pNum(idx + 1)}</td>
+                const open = Number(CREQ_VIEW.open) === Number(p.id);
+                const typeFa = p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—');
+                const dupActive = (p.dups || []).some(m => m.state === 'active') && !p.dup_ref;
+                const summary = `
+                <tr class="cq-sum border-t border-slate-100 ${open ? 'on' : ''}" data-cq="${p.id}" onclick="creqRowClick(event, ${p.id})">
+                    <td class="p-2 text-[10px] text-slate-400 whitespace-nowrap">${CREQ_VIEW.tab === 'issued' && p.issued_file_path ? `<input type="checkbox" class="accent-emerald-600 ml-1" data-creq-sel="${p.id}" ${CREQ_VIEW.sel.has(p.id) ? 'checked' : ''} onchange="creqToggleSel(${p.id}, this.checked)">` : ''}${e2pNum(idx + 1)}</td>
                     <td class="p-2">
-                        ${rowIdentityHtml(p)}
-                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
-                        ${Number(p.is_new_vehicle) ? '<p class="text-[10px] text-emerald-600 font-bold">صفر کیلومتر</p>' : ''}
-                        ${window.PartyUI && p.party ? `<div class="whitespace-normal max-w-[260px]">${PartyUI.chip(p.party, {onEdit: isAdmin && p.status !== 'ISSUED' ? `editRowParty(${p.id})` : ''})}</div>` : ''}
-                        ${p.engine_no ? `<p class="text-[10px] text-slate-400" dir="ltr">موتور: ${p.engine_no}</p>` : ''}
-                        ${p.row_note ? `<p class="text-[10px] text-slate-400">${p.row_note}</p>` : ''}
-                        ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
-                        ${p.endorsement_request ? `<p class="text-[10px] text-violet-600 mt-0.5">خواسته: ${p.endorsement_request}</p>` : ''}
-                        ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600 mt-0.5">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
-                        ${p.renewal ? `<div class="rounded-lg ${p.renewal.issued ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-sky-50 border-sky-200 text-sky-800'} border text-[10px] p-1.5 mt-1 whitespace-normal max-w-[300px]"><b><i class="fas fa-rotate ml-1"></i>${p.renewal.issued ? 'تمدید شد' : 'درخواستِ تمدید ثبت شد'}</b> — ${fmEsc(faDigits(p.renewal.note))}
-                            ${Number(p.renewal.request_id) !== Number(r.id) ? `<button type="button" onclick="openCompanyRequestDetail(${Number(p.renewal.request_id)})" class="underline mr-1">باز کردنِ درخواست</button>` : ''}</div>` : ''}
-                        ${p.dup_ref ? `<div class="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] p-1.5 mt-1 whitespace-normal">⛔ تکراری — بیمه‌نامه‌ی قبلی${p.dup_ref.policy_number ? ' <b dir="ltr">' + faDigits(p.dup_ref.policy_number) + '</b>' : ''}${p.dup_ref.issued_j ? ' (صادره ' + faDigits(p.dup_ref.issued_j) + ')' : ''}
-                            ${p.dup_ref.file ? `<a href="/${encodeFilePath(p.dup_ref.file)}" target="_blank" class="text-blue-600 underline mr-1">دانلود</a>` : ''}<button type="button" onclick="openIssuedRef('${p.dup_ref.source}', ${p.dup_ref.id})" class="text-indigo-600 underline mr-1">صفحه‌ی صدور</button>
-                            ${isAdmin ? `<button type="button" onclick="unmarkDuplicate(${p.id})" class="text-slate-500 underline mr-1">برداشتنِ تکراری</button>` : ''}</div>` : dupBoxHtml(p.dups, {plateId: isAdmin ? p.id : 0})}
+                        <div class="flex items-center gap-1.5 flex-wrap">${rowIdentityHtml(p)}
+                            ${p.dup_ref ? '<span class="cq-pill no">⛔ تکراری</span>' : (dupActive ? '<span class="cq-pill no">⚠ احتمالاً تکراری</span>' : '')}
+                            ${Number(p.is_new_vehicle) ? '<span class="cq-pill ok">صفر کیلومتر</span>' : ''}
+                            ${p.renewal ? `<span class="cq-pill ${p.renewal.issued ? 'ok' : 'in'}"><i class="fas fa-rotate"></i> ${p.renewal.issued ? 'تمدید شد' : 'تمدید ثبت شد'}</span>` : ''}</div>
+                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold truncate max-w-[240px]">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
                     </td>
-                    <td class="p-2 text-[11px] whitespace-nowrap">${p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—')}
-                        ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500">ارزش: ${money(p.car_value)} ریال</p>` : ''}
-                        ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500">تعهد: ${money(p.liability_limit)} ریال</p>` : ''}
-                        ${p.insurance_type === 'BODY' && Number(p.skip_health_inspection) ? '<p class="text-[9px] text-slate-400">بدون بازدید</p>' : ''}
-                        ${p.insurance_type === 'BODY' ? `<div class="mt-1 whitespace-normal max-w-[220px]">${(p.coverages_fa || []).length
+                    <td class="p-2 text-[11px] whitespace-nowrap font-bold">${typeFa}
+                        ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.car_value)}</p>` : ''}
+                        ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.liability_limit)}</p>` : ''}</td>
+                    <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر</span>' : '—')}</td>
+                    <td class="p-2 col-checklist"><div class="flex flex-wrap gap-1">${creqDocPills(p) || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
+                    <td class="p-2 whitespace-nowrap">
+                        <span class="status-badge ${p.dup_ref ? 'bg-rose-100 text-rose-700' : (ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600')} text-[10px] font-bold px-2 py-1 rounded-full">${p.dup_ref ? '⛔ تکراری' : (p.status_fa || p.status)}</span>
+                        ${missing.length && !p.dup_ref ? `<p class="text-[9px] text-amber-600 mt-1">کم دارد: ${e2pNum(missing.length)} مدرک</p>` : ''}
+                        ${p.status === 'ISSUED' ? `<p class="text-[9px] ${fs[1]} mt-1">بایگانی: ${fs[0]}</p>` : ''}
+                    </td>
+                    <td class="p-2 whitespace-nowrap text-[11px]"><div class="flex items-center gap-1 justify-end">
+                        ${p.status === 'ISSUED'
+                            ? (p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg" title="${fmEsc(p.policy_number || '')}"><i class="fas fa-file-pdf ml-1"></i>بیمه‌نامه</a>` : `<span class="text-[10px] text-slate-500">${p.policy_number || ''}</span>`)
+                            : (p.dup_ref ? '' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">ثبت صدور</button>` : ''))}
+                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-1 rounded-lg" title="پنل صدور"><i class="fas fa-table-columns ml-1"></i>پنل</button>` : ''}
+                        <button type="button" class="cq-chev" title="${open ? 'بستنِ جزئیات' : 'جزئیات و مدارک'}" onclick="creqToggleRow(${p.id})"><i class="fas fa-chevron-down"></i></button></div>
+                    </td>
+                </tr>`;
+                if (!open) return summary;
+                const chips = rowChecklistHtml(p, isAdmin);
+                const hasAuto = (p.checklist || []).some(it => (it.docs || []).some(d => d.auto));
+                return summary + `
+                <tr class="cq-det"><td colspan="7" class="p-0"><div class="cq-det-in">
+                    <div class="cq-det-side">
+                        ${window.PartyUI && p.party ? `<div class="whitespace-normal">${PartyUI.chip(p.party, {onEdit: isAdmin && p.status !== 'ISSUED' ? `editRowParty(${p.id})` : ''})}</div>` : ''}
+                        ${p.chassis_no && (p.plate_p1 || p.plate_p2) ? `<p class="text-[10px] text-slate-500" dir="ltr">شاسی: ${fmEsc(p.chassis_no)}</p>` : ''}
+                        ${p.vin && p.vin !== p.chassis_no ? `<p class="text-[10px] text-slate-500" dir="ltr">VIN: ${fmEsc(p.vin)}</p>` : ''}
+                        ${p.engine_no ? `<p class="text-[10px] text-slate-500" dir="ltr">موتور: ${fmEsc(p.engine_no)}</p>` : ''}
+                        ${p.row_note ? `<p class="text-[10px] text-slate-500">${p.row_note}</p>` : ''}
+                        ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
+                        ${p.endorsement_request ? `<p class="text-[10px] text-violet-600">خواسته: ${p.endorsement_request}</p>` : ''}
+                        ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
+                        ${p.insurance_type === 'BODY' && Number(p.skip_health_inspection) ? '<p class="text-[10px] text-slate-400">بدون بازدید</p>' : ''}
+                        ${p.insurance_type === 'BODY' ? `<div class="whitespace-normal">${(p.coverages_fa || []).length
                             ? p.coverages_fa.map(c => `<span class="inline-block text-[9px] bg-violet-50 text-violet-700 border border-violet-100 rounded px-1 mt-0.5 ml-0.5">${c}</span>`).join('')
                             : '<span class="text-[9px] text-amber-600">پوشش‌ها مشخص نشده</span>'}
                             ${isAdmin && p.status !== 'ISSUED' && window.CompanyManualRequest ? `<button onclick='CompanyManualRequest.editCoverages(${p.id}, ${JSON.stringify(p.selected_coverages || null)})' class="text-[9px] text-blue-600 underline mr-1">ویرایش پوشش</button>` : ''}</div>` : ''}
-                    </td>
-                    <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر کیلومتر</span>' : '—')}</td>
-                    <td class="p-2 col-checklist"><div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
-                    <td class="p-2 whitespace-nowrap">
-                        <span class="status-badge ${p.dup_ref ? 'bg-rose-100 text-rose-700' : (ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600')} text-[10px] font-bold px-2 py-1 rounded-full">${p.dup_ref ? '⛔ تکراری' : (p.status_fa || p.status)}</span>
-                        ${(p.dups || []).some(m => m.state === 'active') && !p.dup_ref ? '<p class="text-[9px] text-rose-600 font-bold mt-1">⚠ احتمالاً تکراری</p>' : ''}
-                        ${missing.length && !p.dup_ref ? `<p class="text-[9px] text-amber-600 mt-1">کم دارد: ${missing.join('، ')}</p>` : ''}
-                        ${p.status === 'ISSUED' ? `<p class="text-[9px] ${fs[1]} mt-1">بایگانی: ${fs[0]}${p.folder_status === 'FAILED' && isAdmin ? ` <button onclick="retryFolderTransfer(${p.id})" class="text-blue-600 underline">تلاش دوباره</button>` : ''}</p>` : ''}
+                        ${p.renewal ? `<div class="rounded-lg ${p.renewal.issued ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-sky-50 border-sky-200 text-sky-800'} border text-[10px] p-1.5 whitespace-normal"><b><i class="fas fa-rotate ml-1"></i>${p.renewal.issued ? 'تمدید شد' : 'درخواستِ تمدید ثبت شد'}</b> — ${fmEsc(faDigits(p.renewal.note))}
+                            ${Number(p.renewal.request_id) !== Number(r.id) ? `<button type="button" onclick="openCompanyRequestDetail(${Number(p.renewal.request_id)})" class="underline mr-1">باز کردنِ درخواست</button>` : ''}</div>` : ''}
+                        ${p.dup_ref ? `<div class="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] p-1.5 whitespace-normal">⛔ تکراری — بیمه‌نامه‌ی قبلی${p.dup_ref.policy_number ? ' <b dir="ltr">' + faDigits(p.dup_ref.policy_number) + '</b>' : ''}${p.dup_ref.issued_j ? ' (صادره ' + faDigits(p.dup_ref.issued_j) + ')' : ''}
+                            ${p.dup_ref.file ? `<a href="/${encodeFilePath(p.dup_ref.file)}" target="_blank" class="text-blue-600 underline mr-1">دانلود</a>` : ''}<button type="button" onclick="openIssuedRef('${p.dup_ref.source}', ${p.dup_ref.id})" class="text-indigo-600 underline mr-1">صفحه‌ی صدور</button>
+                            ${isAdmin ? `<button type="button" onclick="unmarkDuplicate(${p.id})" class="text-slate-500 underline mr-1">برداشتنِ تکراری</button>` : ''}</div>` : dupBoxHtml(p.dups, {plateId: isAdmin ? p.id : 0})}
+                        ${missing.length && !p.dup_ref ? `<p class="text-[10px] text-amber-700 font-bold">کم دارد: ${missing.join('، ')}</p>` : ''}
+                        ${p.status === 'ISSUED' && p.folder_status === 'FAILED' && isAdmin ? `<p class="text-[10px] ${fs[1]}">بایگانی: ${fs[0]} <button onclick="retryFolderTransfer(${p.id})" class="text-blue-600 underline">تلاش دوباره</button></p>` : ''}
                         ${rowStageButtons(p, isAdmin)}
-                    </td>
-                    <td class="p-2 whitespace-nowrap text-[11px]">
-                        ${p.status === 'ISSUED'
-                            ? `<p class="text-[10px] text-slate-500">${p.policy_number || ''}</p>
-                               ${currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqToggleInst(${p.id}, this)" title="اقساط و فیش‌ها (و تبدیل به اقساطِ قرارداد)" class="block mb-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded"><i class="fas fa-list-ol ml-1"></i>اقساط و فیش‌ها</button>` : ''}
-                               ${p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-blue-600 hover:underline text-[10px]">فایل بیمه‌نامه</a> <a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">(نامِ دقیق)</a>` : ''}`
-                            : (p.dup_ref ? '<span class="text-[10px] text-rose-500">صادر نمی‌شود (تکراری)</span>' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-emerald-600 hover:underline font-bold">ثبت صدور</button>` : '<span class="text-[10px] text-slate-400">در انتظار صدور</span>'))}
-                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}
-                        ${isAdmin ? `<div class="flex gap-2 mt-1">
-                            <button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px]">ویرایش</button>
-                            ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px]">حذف</button>` : ''}
-                        </div>` : ''}
-                    </td>
-                </tr>`;
+                        <div class="flex flex-wrap gap-1.5 mt-1">
+                            ${p.status === 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqToggleInst(${p.id}, this)" title="اقساط و فیش‌ها (و تبدیل به اقساطِ قرارداد)" class="text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded"><i class="fas fa-list-ol ml-1"></i>اقساط و فیش‌ها</button>` : ''}
+                            ${p.status === 'ISSUED' && p.issued_file_path ? `<a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-[10px] text-slate-500 hover:underline" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">بیمه‌نامه (نامِ دقیق)</a>` : ''}
+                            ${isAdmin ? `<button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px] font-bold"><i class="fas fa-pen ml-0.5"></i>ویرایش</button>
+                                ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px] font-bold"><i class="fas fa-trash ml-0.5"></i>حذف</button>` : ''}` : ''}
+                        </div>
+                    </div>
+                    <div class="cq-det-main">
+                        <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap"><b class="text-[11px] text-slate-700"><i class="fas fa-folder-open ml-1 text-teal-600"></i>مدارکِ این ردیف</b>
+                            <span class="flex gap-1.5 flex-wrap">${isAdmin && p.status !== 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqAutolinkRow(${p.id})" class="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-lg" title="کسری‌ها از مدارکِ قبلیِ همین خودرو (همین شرکت) پر شود"><i class="fas fa-link ml-1"></i>پیدا کردن از سوابق</button>` : ''}
+                                <button onclick="creqRowHistory(${p.id}, this)" class="text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ قبلیِ این خودرو</button></span></div>
+                        ${hasAuto ? '<p class="text-[9.5px] text-teal-700 mb-1"><i class="fas fa-circle-info ml-0.5"></i>مدارکِ «خودکار» از درخواست‌های قبلیِ همین خودرو آمده‌اند؛ با <i class="fas fa-link-slash"></i> برداشته می‌شوند (دیگر خودکار نمی‌آیند) و با <i class="fas fa-arrow-right-arrow-left"></i> جایگزینِ مدرکِ تازه.</p>' : ''}
+                        <div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div>
+                        <div id="cq-hist-${p.id}"></div>
+                    </div>
+                </div></td></tr>`;
+        }
+        // فقط یک ردیف همزمان باز است
+        function creqToggleRow(id) { id = Number(id); CREQ_VIEW.open = Number(CREQ_VIEW.open) === id ? 0 : id; creqRenderRows();
+            if (CREQ_VIEW.open) setTimeout(() => document.querySelector(`tr[data-cq="${id}"]`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'}), 30); }
+        function creqRowClick(ev, id) { if (ev.target.closest('a,button,input,label,select,textarea')) return; creqToggleRow(id); }
+        async function creqAutolinkRow(plateId) {
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', plate_id: plateId})})).json().catch(() => ({}));
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            showToast(d.attached ? `${e2pNum(d.attached)} مدرک از سوابقِ همین خودرو روی ردیف نشست.` : 'مدرکِ تازه‌ای در سوابقِ این خودرو برای کسری‌ها پیدا نشد.', d.attached ? 'success' : 'info');
+            if (d.attached && currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+        async function creqAutolinkAll() {
+            if (!currentRequestId) return;
+            showToast('در حالِ بررسیِ سوابقِ خودروها…', 'info');
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', request_id: currentRequestId})})).json().catch(() => ({}));
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            showToast(`${e2pNum(d.rows || 0)} ردیف بررسی شد؛ ${e2pNum(d.attached || 0)} مدرک از سوابق نشست.${d.left ? ' ' + e2pNum(d.left) + ' ردیف ماند؛ دوباره بزنید.' : ''}`, d.attached ? 'success' : 'info');
+            if (d.attached) openCompanyRequestDetail(currentRequestId);
+        }
+        function autolinkRemove(docId, silent) {
+            const go = async () => {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_remove', doc_id: docId})})).json().catch(() => ({}));
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); return false; }
+                if (!silent) { showToast('مدرکِ خودکار برداشته شد و دیگر خودکار روی این ردیف نمی‌آید.', 'success'); if (currentRequestId) openCompanyRequestDetail(currentRequestId); }
+                return true;
+            };
+            if (silent) return go();
+            showConfirm('برداشتنِ مدرکِ خودکار', 'این مدرک از سوابقِ همین خودرو آمده؛ از این ردیف برداشته شود؟ (مدرکِ اصلی در درخواستِ قبلی می‌ماند)', go);
+        }
+        async function autolinkReplace(docId, plateId, docType, input) {
+            if (!(input.files || []).length) return;
+            const tmp = document.createElement('input'); tmp.type = 'hidden'; tmp.id = 'rowdoc-rep-' + docId; tmp.value = docType; document.body.appendChild(tmp);
+            if (await autolinkRemove(docId, true)) await uploadRowDoc(plateId, tmp.id, input);
+            tmp.remove();
+        }
+        async function creqRowHistory(plateId, btn) {
+            const box = document.getElementById('cq-hist-' + plateId); if (!box) return;
+            if (box.innerHTML) { box.innerHTML = ''; return; }
+            box.innerHTML = '<p class="text-[10px] text-slate-400 mt-2"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ سوابق…</p>';
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'row_doc_history', plate_id: plateId})})).json().catch(() => ({}));
+            if (!d.ok) { box.innerHTML = `<p class="text-[10px] text-rose-500 mt-2">${fmEsc(d.error || 'خطا')}</p>`; return; }
+            const docs = d.docs || [];
+            box.innerHTML = `<div class="cq-hist"><b class="text-[10.5px] text-slate-600"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ این خودرو در درخواست‌های همین شرکت (${e2pNum(docs.length)})</b>
+                ${docs.length ? `<div class="grid gap-1 mt-1" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${docs.map(x => `<div class="cq-hist-i ${x.this_row ? 'me' : ''}">
+                    ${x.is_dir ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${x.id}" class="font-bold text-blue-700 hover:underline">${fmEsc(x.label)} (پوشه)</a>` : `<a href="../${encodeFilePath(x.file)}" target="_blank" class="font-bold text-blue-700 hover:underline">${fmEsc(x.label)}</a>`}
+                    <span class="text-slate-400">${x.this_row ? 'همین ردیف' : (Number(x.request_id) === Number(currentRequestId) ? 'همین درخواست' : 'درخواست #' + e2pNum(x.request_id))} · ${fmEsc(x.kind || '')}${x.at ? ' · ' + faDigits(x.at) : ''}${x.auto ? ' · خودکار' : ''}</span></div>`).join('')}</div>` : '<p class="text-[10px] text-slate-400 mt-1">مدرکی پیدا نشد.</p>'}</div>`;
         }
         // اقساطِ یک ردیفِ صادرشده همان‌جا زیرِ ردیف (fin-contracts.js)
         function creqToggleInst(id, btn) {
@@ -7042,7 +7153,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             // ---- جدولِ ریزِ ردیف‌ها: هر ردیف یک بیمه‌نامه‌ی درخواستی ----
             window.__creqCtx = {r, isAdmin};
-            if (CREQ_VIEW.rid !== r.id) Object.assign(CREQ_VIEW, {rid: r.id, tab: currentRequestRows.some(p => p.status !== 'ISSUED') || !currentRequestRows.length ? 'open' : 'issued', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set()});
+            if (CREQ_VIEW.rid !== r.id) Object.assign(CREQ_VIEW, {rid: r.id, tab: currentRequestRows.some(p => p.status !== 'ISSUED') || !currentRequestRows.length ? 'open' : 'issued', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0});
 
             const hasIssuedFiles = currentRequestRows.some(p => p.has_issued_file || p.status === 'ISSUED');
 
@@ -7090,13 +7201,14 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <select onchange="creqSetView('sort', this.value)" class="border border-slate-200 rounded-xl px-2 py-1.5 text-[11px] bg-white" title="مرتب‌سازی">
                             <option value="expiry" ${CREQ_VIEW.sort === 'expiry' ? 'selected' : ''}>انقضا: نزدیک‌ترین اول</option><option value="expiry_desc" ${CREQ_VIEW.sort === 'expiry_desc' ? 'selected' : ''}>انقضا: دورترین اول</option>
                             <option value="added" ${CREQ_VIEW.sort === 'added' ? 'selected' : ''}>ترتیبِ ثبت</option><option value="issued" ${CREQ_VIEW.sort === 'issued' ? 'selected' : ''}>تاریخِ صدور (تازه‌ترین)</option></select>
-                        <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span></div>
+                        <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span>
+                        ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}</div>
                 </div>
                 <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
                 <div class="overflow-x-auto border border-slate-100 rounded-xl mb-4">
                     <table class="rows-table text-right">
                         <thead class="bg-slate-50 text-[10px] text-slate-500">
-                            <tr><th class="p-2">#</th><th class="p-2">پلاک / شماره شاسی</th><th class="p-2">نوع</th><th class="p-2">انقضا</th><th class="p-2 col-checklist">مدارک (چک‌لیست)</th><th class="p-2">وضعیت / مرحله</th><th class="p-2">صدور</th></tr>
+                            <tr><th class="p-2">#</th><th class="p-2">پلاک / شماره شاسی</th><th class="p-2">نوع</th><th class="p-2">انقضا</th><th class="p-2 col-checklist">مدارک</th><th class="p-2">وضعیت / مرحله</th><th class="p-2">صدور</th></tr>
                         </thead>
                         <tbody id="creq-rows-tbody"></tbody>
                     </table>
