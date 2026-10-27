@@ -555,6 +555,29 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .cq-pill { display: inline-flex; align-items: center; gap: 2px; font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 999px; border: 1px solid; white-space: nowrap; line-height: 1.6; }
         .cq-pill.ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
         .cq-pill.no { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+        /* ردیفی که مدیر کل با وجودِ بیمه‌نامه‌ی فعال ساخته (تکراریِ تأییدشده): زرد */
+        .cq-pill.cq-pill-dupack { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+        tr.cq-sum.cq-dupack > td { background: #fffbeb !important; }
+        tr.cq-sum.cq-dupack > td:first-child { box-shadow: inset -3px 0 0 #f59e0b; }
+        /* پیش‌نمایشِ ورودِ ردیف‌ها: ردیفِ دارای بیمه‌نامه‌ی فعال */
+        tr.cli-dup-tr > td { background: #fff1f2; }
+        .cli-dup { margin-top: 3px; white-space: normal; min-width: 190px; font-size: 9.5px; color: #9f1239; line-height: 1.6; }
+        .cli-dup-ok { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: #92400e; font-weight: 800; cursor: pointer; }
+        .cli-dup-ok input { accent-color: #d97706; }
+        /* پنجره‌ی «بیمه‌نامه‌ی فعال هست» هنگامِ ساختِ ردیف */
+        .dupc-ov { position: fixed; inset: 0; z-index: 1000001; background: rgba(15,23,42,.6); display: flex; align-items: center; justify-content: center; padding: 14px; }
+        .dupc-box { width: min(720px, 100%); max-height: 90vh; overflow: auto; background: #f8fafc; border-radius: 22px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.5); padding-bottom: 12px; }
+        .dupc-h { display: flex; gap: 12px; align-items: flex-start; padding: 16px 18px; background: linear-gradient(120deg, #9f1239, #e11d48); color: #fff; border-radius: 22px 22px 0 0; position: sticky; top: 0; z-index: 1; }
+        .dupc-h > i { font-size: 20px; margin-top: 2px; }
+        .dupc-h b { display: block; font-size: 14px; font-weight: 900; }
+        .dupc-h small { display: block; font-size: 11px; opacity: .9; margin-top: 2px; }
+        .dupc-list { padding: 12px 16px 6px; }
+        .dupc-row { background: #fff; border: 1px solid #fecdd3; border-radius: 14px; padding: 8px 10px; margin-bottom: 8px; }
+        .dupc-lab { font-size: 12px; font-weight: 900; color: #334155; }
+        .dupc-f { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 10px 16px 0; }
+        .dupc-b { font-size: 12px; font-weight: 800; border-radius: 12px; padding: 8px 14px; background: #fff; border: 1px solid #e2e8f0; color: #475569; }
+        .dupc-b.ok { background: #0d9488; border-color: #0d9488; color: #fff; }
+        .dupc-b.warn { background: #f59e0b; border-color: #f59e0b; color: #fff; }
         .cq-pill.op { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
         .cq-pill.in { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
         .cq-det > td { background: linear-gradient(180deg, #f8fafc, #fff); border-bottom: 2px solid #a5f3fc; }

@@ -41,15 +41,15 @@ function dup_plate_key_parts($p1, $p2, $letter, $p4) {
 }
 
 // پایانِ بیمه‌نامه (شمسی) و وضعیت
-function dup_state($endJ, $issuedAt) {
+function dup_state($endJ, $issuedAt, $margin = 30) {
     $endJ = trim(str_replace(['-', '.'], '/', p2e_digits((string)$endJ)));
     if (preg_match('#^(1[34]\d\d)/(\d{1,2})/(\d{1,2})#', $endJ, $m)) {
         $end = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
-        [$y, $mo, $d] = jalali_from_gregorian_ts(time() + 30 * 86400);
+        [$y, $mo, $d] = jalali_from_gregorian_ts(time() + $margin * 86400);
         return [$end, strcmp($end, sprintf('%04d/%02d/%02d', $y, $mo, $d)) > 0 ? 'active' : 'history'];
     }
     $ts = $issuedAt ? strtotime((string)$issuedAt) : 0;
-    return [null, $ts && $ts > time() - 335 * 86400 ? 'active' : 'history'];
+    return [null, $ts && $ts > time() - (365 - $margin) * 86400 ? 'active' : 'history'];
 }
 
 // $v: ['vin'|'chassis', 'engine', 'plate' (متن) یا p1,p2,letter,p4, 'type' => THIRDPARTY|BODY, 'exclude_plate' , 'exclude_case', 'company_id']
@@ -60,6 +60,7 @@ function dup_find($pdo, array $v) {
     $eng = dup_clean($v['engine'] ?? '');
     $pk = !empty($v['plate']) ? dup_plate_key($v['plate']) : dup_plate_key_parts($v['p1'] ?? '', $v['p2'] ?? '', $v['letter'] ?? '', $v['p4'] ?? '');
     $type = in_array($v['type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $v['type'] : null;
+    $margin = isset($v['margin_days']) ? max(0, intval($v['margin_days'])) : 30;
     if (strlen($vin) < 6 && strlen($eng) < 6 && $pk === '') return [];
     $out = [];
     $jd = function ($ts) { if (!$ts) return null; [$y, $m, $d] = jalali_from_gregorian_ts(strtotime($ts)); return sprintf('%04d/%02d/%02d', $y, $m, $d); };
@@ -89,7 +90,7 @@ function dup_find($pdo, array $v) {
             if (!$match || !empty($r['dup_of_id'])) continue;   // ردیفی که خودش «تکراری» زده شده حساب نمی‌شود
             if ($r['status'] === 'ISSUED') {
                 $ii = json_decode((string)($r['issue_info'] ?? ''), true) ?: [];
-                [$end, $state] = dup_state($r['end_date_j'] ?: ($ii['end_date'] ?? ''), $r['issued_at']);
+                [$end, $state] = dup_state($r['end_date_j'] ?: ($ii['end_date'] ?? ''), $r['issued_at'], $margin);
             } elseif (!in_array($r['status'], ['CANCELLED'], true) && $r['req_status'] !== 'CANCELLED') {
                 $end = null; $state = 'open';
             } else continue;
@@ -120,7 +121,7 @@ function dup_find($pdo, array $v) {
             if (!$match) continue;
             if ($r['status'] === 'ISSUED') {
                 $ii = json_decode((string)($r['issue_info'] ?? ''), true) ?: [];
-                [$end, $state] = dup_state($ii['end_date'] ?? '', $r['issued_at'] ?: $r['updated_at'] ?? null);
+                [$end, $state] = dup_state($ii['end_date'] ?? '', $r['issued_at'] ?: $r['updated_at'] ?? null, $margin);
             } elseif (!in_array($r['status'], ['WITHDRAWN', 'CANCELLED', 'REJECTED'], true)) {
                 $end = null; $state = 'open';
             } else continue;
@@ -154,4 +155,88 @@ function dup_for_company(array $list, array $companyIds) {
         $out[] = $x;
     }
     return $out;
+}
+
+// ======================================================================================
+// هنگامِ ساختِ ردیف: بیمه‌نامه‌ی «فعال» = صادرشده و هنوز منقضی نشده (پایانش امروز یا بعد)، همان نوعِ بیمه
+// (ثالث با ثالث، بدنه با بدنه). فقط مدیر کل می‌تواند ردیفِ تکراری را آگاهانه بسازد (با برچسبِ زردِ «تکراری»)؛
+// بقیه فقط می‌بینند/دانلود می‌کنند و آن ردیف ساخته نمی‌شود.
+//  - تمدیدِ همان بیمه‌نامه تکراری نیست: شماره‌ی «بیمه‌نامه‌ی قبلی»ِ ردیف همان بیمه‌نامه است، یا تاریخِ انقضای ردیف همان پایانِ بیمه‌نامه
+//  - ردیفِ الحاقیه/فسخ (به بیمه‌نامه‌ی موجود اشاره دارد) بررسی نمی‌شود
+// ======================================================================================
+function dup_ack_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $c = $pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'dup_ack_json'")->fetch();
+        if (!$c) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN dup_ack_json TEXT NULL, ADD COLUMN dup_ack_by INT NULL, ADD COLUMN dup_ack_at DATETIME NULL");
+    } catch (Throwable $e) { error_log('[dup_ack_ensure] ' . $e->getMessage()); }
+}
+
+// ورودی با نام‌های ستونِ ردیف (plate_p1…/chassis_no/vin/engine_no) یا نام‌های کوتاهِ پورتال (p1…)
+function dup_row_norm(array $r) {
+    $g = function ($a, $b = null) use ($r) { $x = $r[$a] ?? ($b !== null ? ($r[$b] ?? '') : ''); return trim(p2e_digits((string)$x)); };
+    return ['p1' => $g('plate_p1', 'p1'), 'p2' => $g('plate_p2', 'p2'), 'letter' => trim((string)($r['plate_letter'] ?? ($r['letter'] ?? ''))), 'p4' => $g('plate_p4', 'p4'),
+            'chassis' => $g('chassis_no'), 'vin' => $g('vin'), 'engine' => $g('engine_no'), 'type' => (string)($r['insurance_type'] ?? ($r['type'] ?? '')),
+            'ref' => $g('ref_policy_number'), 'expiry' => $g('expiry_date'), 'expiry_j' => $g('expiry_date_jalali', 'expiry_j'),
+            'end_req' => trim((string)($r['endorsement_request'] ?? '')) !== '' || trim((string)($r['cancellation_reason'] ?? '')) !== ''];
+}
+// کلیدِ ثابتِ هر ردیف (بین پیش‌نمایش و ساخت، برای «با وجودِ تکراری بساز»ِ مدیر)
+function dup_row_key(array $r) {
+    $n = dup_row_norm($r);
+    return $n['type'] . '|' . dup_plate_key_parts($n['p1'], $n['p2'], $n['letter'], $n['p4']) . '|' . dup_clean($n['vin'] ?: $n['chassis']) . '|' . dup_clean($n['engine']);
+}
+function dup_row_label(array $r) {
+    $n = dup_row_norm($r);
+    $pl = $n['letter'] === 'موتور' ? trim($n['p1'] . '-' . $n['p2']) : trim(implode(' ', array_filter([$n['p2'], $n['letter'], $n['p4'], $n['p1'] !== '' ? 'ایران ' . $n['p1'] : ''], 'strlen')));
+    return $pl !== '' ? $pl : ($n['vin'] ?: $n['chassis'] ?: $n['engine'] ?: '—');
+}
+
+// همه‌ی سوابقِ همین خودرو و نوع با معیارِ «منقضی‌نشده»؛ بیمه‌نامه‌ای که این ردیف تمدیدش است state=history و renewal=true می‌گیرد
+function dup_find_for_row($pdo, array $r) {
+    $x = dup_active_for_row($pdo, $r, true);
+    return $x['all'];
+}
+// ['hits' => [بیمه‌نامه‌های فعالِ صادرشده], 'renewal' => [همان‌هایی که این ردیف تمدیدشان است]]
+function dup_active_for_row($pdo, array $r, $withAll = false) {
+    $n = dup_row_norm($r);
+    if ($n['end_req'] || !in_array($n['type'], ['THIRDPARTY', 'BODY'], true)) return ['hits' => [], 'renewal' => [], 'all' => []];
+    $list = dup_find($pdo, ['vin' => $n['vin'] ?: $n['chassis'], 'engine' => $n['engine'], 'p1' => $n['p1'], 'p2' => $n['p2'], 'letter' => $n['letter'], 'p4' => $n['p4'],
+                            'type' => $n['type'], 'margin_days' => 0, 'exclude_plate' => intval($r['_exclude_plate'] ?? 0)]);
+    // پایانِ ردیف (شمسی) برای تشخیصِ تمدید
+    $rowEnd = '';
+    if ($n['expiry_j'] !== '' && preg_match('#(1[34]\d\d)\D(\d{1,2})\D(\d{1,2})#', $n['expiry_j'], $m)) $rowEnd = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
+    elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $n['expiry'], $m) && intval($m[1]) > 1900) { [$y, $mo, $d] = jalali_from_gregorian_ts(strtotime($n['expiry'])); $rowEnd = sprintf('%04d/%02d/%02d', $y, $mo, $d); }
+    elseif ($n['expiry'] !== '' && preg_match('#(1[34]\d\d)\D(\d{1,2})\D(\d{1,2})#', $n['expiry'], $m)) $rowEnd = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
+    $ref = dup_clean($n['ref']);
+    $hits = []; $ren = [];
+    foreach ($list as &$m) {
+        if ($m['state'] !== 'active') continue;
+        $isRen = ($ref !== '' && $m['policy_number'] && dup_clean($m['policy_number']) === $ref) || ($rowEnd !== '' && $m['end_j'] === $rowEnd);
+        if ($isRen) { $ren[] = $m; $m['state'] = 'history'; $m['renewal'] = true; } else $hits[] = $m;
+    }
+    unset($m);
+    // نزدیک‌ترین پایان اول
+    usort($hits, function ($a, $b) { return strcmp((string)$a['end_j'], (string)$b['end_j']); });
+    return ['hits' => $hits, 'renewal' => $ren, 'all' => $withAll ? $list : []];
+}
+// خلاصه‌ی امن برای مرورگر (کارکنان)
+function dup_hits_public(array $hits) {
+    return array_values(array_map(function ($m) {
+        return ['source' => $m['source'], 'id' => $m['id'], 'policy_number' => $m['policy_number'], 'type' => $m['type'], 'match' => $m['match'],
+                'issued_j' => $m['issued_j'], 'end_j' => $m['end_j'], 'owner' => $m['owner'], 'file' => $m['file'] ?: null, 'request_id' => $m['request_id'] ?? null];
+    }, array_slice($hits, 0, 5)));
+}
+// متنِ کوتاه برای پیامِ خطا
+function dup_hits_text(array $hits) {
+    $m = $hits[0] ?? null;
+    if (!$m) return '';
+    return 'بیمه‌نامه‌ی فعالِ ' . ($m['type'] === 'BODY' ? 'بدنه' : 'ثالث') . ($m['policy_number'] ? ' ' . $m['policy_number'] : '') . ($m['end_j'] ? ' (تا ' . $m['end_j'] . ')' : '') . ' — یکسان در ' . $m['match'];
+}
+// ردیفی که مدیر کل آگاهانه با وجودِ بیمه‌نامه‌ی فعال ساخته
+function dup_ack_mark($pdo, $plateId, array $hits, $userId) {
+    dup_ack_ensure($pdo);
+    $pdo->prepare("UPDATE company_request_plates SET dup_ack_json = ?, dup_ack_by = ?, dup_ack_at = NOW() WHERE id = ?")
+        ->execute([json_encode(dup_hits_public($hits), JSON_UNESCAPED_UNICODE), $userId ?: null, $plateId]);
 }

@@ -2092,8 +2092,13 @@
                 expiry_date: document.getElementById('aap-expiry').value,
                 skip_health_inspection: document.getElementById('aap-skip-health').checked ? 1 : 0,
             };
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
-            const data = await res.json();
+            let data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
+            // بیمه‌نامه‌ی فعال: فقط مدیر کل با تأیید (برچسبِ تکراری) می‌سازد
+            if (!data.ok && data.dup) {
+                const a = await dupCreateDialog(data);
+                if (a !== 'allow') return;
+                data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({}, payload, {dup_confirm: 1}))})).json();
+            }
             if (data.ok) {
                 if (window.RegLink && aapReg.v && aapReg.sel.size && aapReg.dismiss !== aapReg.v.key && data.plate_id) {
                     const x = await RegLink.attach({plate_id: data.plate_id}, [...aapReg.sel].map(i => aapReg.v.docs[i]).filter(Boolean));
@@ -2262,6 +2267,32 @@
                 return `<div class="${m.state === 'active' ? 'text-rose-800' : (m.state === 'open' ? 'text-amber-800' : 'text-slate-600')}">${head} <span class="inline-flex gap-2 mr-1">${btns}</span></div>`;
             }).join('') + '</div>';
         }
+        // ---- ساختِ ردیف با وجودِ بیمه‌نامه‌ی فعال (api/_dup.php: dup_active_for_row) ----
+        // data.dup_rows: [{label, type, key, index?, hits}] · نتیجه: 'allow' (مدیر کل: با برچسبِ تکراری بساز) | 'skip' (بدونِ این‌ها) | null
+        function dupCreateDialog(data, opts = {}) {
+            return new Promise(done => {
+                const rows = data.dup_rows || data.dup_blocked || [];
+                const iiEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+                const admin = !!data.dup_admin && !opts.noAllow;
+                const ov = document.createElement('div');
+                ov.className = 'dupc-ov';
+                ov.innerHTML = `<div class="dupc-box" dir="rtl">
+                    <div class="dupc-h"><i class="fas fa-clone"></i><div><b>${opts.title || 'بیمه‌نامه‌ی فعال برای این خودروها هست'}</b>
+                        <small>برای همین خودرو و همین نوعِ بیمه (ثالث با ثالث، بدنه با بدنه) بیمه‌نامه‌ی صادرشده‌ی منقضی‌نشده پیدا شد${opts.done ? '؛ این ردیف‌ها ساخته نشدند' : ''}.</small></div></div>
+                    <div class="dupc-list">${rows.map(d => `<div class="dupc-row"><p class="dupc-lab">${iiEsc(faDigits(d.label || ''))} <span class="${d.type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">(${d.type === 'BODY' ? 'بدنه' : 'ثالث'})</span></p>
+                        ${dupBoxHtml((d.hits || []).map(h => Object.assign({}, h, {state: 'active'})), {history: true})}</div>`).join('')}</div>
+                    <p class="text-[10.5px] text-slate-500 px-4">${admin ? 'شما مدیر کل هستید: اگر در جریانِ تکراری بودن هستید، ردیف ساخته می‌شود و برچسبِ زردِ «تکراری» می‌گیرد.' : 'فقط مدیر کل می‌تواند ردیفِ تکراری بسازد؛ بیمه‌نامه‌ها را می‌توانید ببینید و دانلود کنید.'}</p>
+                    <div class="dupc-f">
+                        ${admin && !opts.done ? `<button data-a="allow" class="dupc-b warn"><i class="fas fa-triangle-exclamation"></i> در جریانم؛ با برچسبِ «تکراری» ایجاد شود</button>` : ''}
+                        ${opts.canSkip ? `<button data-a="skip" class="dupc-b ok"><i class="fas fa-check"></i> ${opts.skipLabel || 'ایجادِ بقیه، بدونِ این ردیف‌ها'}</button>` : ''}
+                        <button data-a="" class="dupc-b">${opts.done ? 'باشه' : 'انصراف'}</button></div></div>`;
+                document.body.appendChild(ov);
+                const end = v => { ov.remove(); done(v || null); };
+                ov.querySelectorAll('[data-a]').forEach(b => b.onclick = () => end(b.dataset.a));
+                ov.addEventListener('mousedown', e => { if (e.target === ov) end(null); });
+            });
+        }
+        window.dupCreateDialog = dupCreateDialog;
         // رفتن به جزئیاتِ یک بیمه‌نامه‌ی صادرشده در «صادره‌ها»
         async function openIssuedRef(src, id) {
             switchTab('issued-list');
@@ -2309,13 +2340,14 @@
                 const missing = Object.values(p.missing_docs || {});
                 const open = Number(CREQ_VIEW.open) === Number(p.id);
                 const typeFa = p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—');
-                const dupActive = (p.dups || []).some(m => m.state === 'active') && !p.dup_ref;
+                const dupAck = p.dup_ack_json ? (() => { try { return JSON.parse(p.dup_ack_json) || []; } catch (e) { return []; } })() : null;
+                const dupActive = (p.dups || []).some(m => m.state === 'active') && !p.dup_ref && !dupAck;
                 const summary = `
-                <tr class="cq-sum border-t border-slate-100 ${open ? 'on' : ''}" data-cq="${p.id}" onclick="creqRowClick(event, ${p.id})">
+                <tr class="cq-sum border-t border-slate-100 ${open ? 'on' : ''} ${dupAck ? 'cq-dupack' : ''}" data-cq="${p.id}" onclick="creqRowClick(event, ${p.id})">
                     <td class="p-2 text-[10px] text-slate-400 whitespace-nowrap">${CREQ_VIEW.tab === 'issued' && p.issued_file_path ? `<input type="checkbox" class="accent-emerald-600 ml-1" data-creq-sel="${p.id}" ${CREQ_VIEW.sel.has(p.id) ? 'checked' : ''} onchange="creqToggleSel(${p.id}, this.checked)">` : ''}${e2pNum(idx + 1)}</td>
                     <td class="p-2">
                         <div class="flex items-center gap-1.5 flex-wrap">${rowIdentityHtml(p)}
-                            ${p.dup_ref ? '<span class="cq-pill no">⛔ تکراری</span>' : (dupActive ? '<span class="cq-pill no">⚠ احتمالاً تکراری</span>' : '')}
+                            ${p.dup_ref ? '<span class="cq-pill no">⛔ تکراری</span>' : (dupAck ? `<span class="cq-pill cq-pill-dupack" title="${fmEsc('با وجودِ بیمه‌نامه‌ی فعال، با تأییدِ مدیر کل ساخته شد' + (dupAck[0] && dupAck[0].policy_number ? ' — ' + dupAck[0].policy_number + (dupAck[0].end_j ? ' تا ' + dupAck[0].end_j : '') : ''))}">⚠ تکراری</span>` : (dupActive ? '<span class="cq-pill no">⚠ احتمالاً تکراری</span>' : ''))}
                             ${Number(p.is_new_vehicle) ? '<span class="cq-pill ok">صفر کیلومتر</span>' : ''}
                             ${p.renewal ? `<span class="cq-pill ${p.renewal.issued ? 'ok' : 'in'}"><i class="fas fa-rotate"></i> ${p.renewal.issued ? 'تمدید شد' : 'تمدید ثبت شد'}</span>` : ''}</div>
                         ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold truncate max-w-[240px]">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
@@ -3537,8 +3569,18 @@
             const hasEnd = rows.some(isEnd);
             const any = k => rows.some(x => x[k]);
             const dash = '<span class="text-slate-300">—</span>';
+            cliDupAdmin = !!data.dup_admin;
+            const dupN = rows.filter(x => (x.dup_hits || []).length).length;
+            const dupCell = x => {
+                const h = x.dup_hits || [];
+                if (!h.length) return (x.dup_renewal || []).length ? `<span class="text-emerald-700 text-[9.5px] font-bold" title="تمدیدِ بیمه‌نامه‌ی ${iiEsc(faDigits(x.dup_renewal[0].policy_number || ''))}">تمدید ✓</span>` : '';
+                const m = h[0];
+                return `<div class="cli-dup"><b>⛔ بیمه‌نامه‌ی فعال</b> ${m.policy_number ? `<span dir="ltr">${iiEsc(faDigits(m.policy_number))}</span>` : ''}${m.end_j ? ' تا ' + faDigits(m.end_j) : ''} (${iiEsc(m.match)})
+                    ${h.map(z => z.file ? `<a href="/${encodeFilePath(z.file)}" target="_blank" class="text-blue-600 underline font-bold mr-1">دانلود${h.length > 1 ? ' ' + faDigits(z.end_j || '') : ''}</a>` : '').join('')}
+                    ${cliDupAdmin ? `<label class="cli-dup-ok"><input type="checkbox" data-cli-dup="${iiEsc(x.dup_key)}"> در جریانم؛ با برچسبِ تکراری ایجاد شود</label>` : '<span class="text-[9px] text-slate-500 block">ایجاد نمی‌شود</span>'}</div>`;
+            };
             const cols = [
-                ['درخواست', x => x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')],
+                ['درخواست', x => (x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')) + dupCell(x)],
                 ['پلاک / شاسی', x => rowIdentityHtml(x) + (x.plate_p1 && x.chassis_no ? `<p class="text-[9.5px] text-slate-400" dir="ltr">${x.chassis_no}</p>` : '')],
                 ['نوع', x => `<span class="font-bold ${x.insurance_type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">${x.insurance_type_fa}</span>`],
                 ['انقضا', x => faDigits(x.expiry_date_jalali) || (Number(x.is_new_vehicle) ? 'صفر کیلومتر' : dash)],
@@ -3558,17 +3600,20 @@
                 ${(data.errors || []).length ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2 text-[10px] text-amber-700">${data.errors.map(x => '• ' + x).join('<br>')}</div>` : ''}
                 ${data.counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 mb-2">تعدادِ درخواستیِ نامه: ${data.counts_fa}</p>` : ''}
                 <p class="text-xs font-bold text-slate-600 mb-1">${e2pNum(rows.length)} ردیف شناسایی شد${tc.THIRDPARTY ? `، ${e2pNum(tc.THIRDPARTY)} ثالث` : ''}${tc.BODY ? `، ${e2pNum(tc.BODY)} بدنه` : ''}. پلاک‌ها را با نامه مقایسه کنید:</p>
+                ${dupN ? `<div class="bg-rose-50 border border-rose-200 rounded-lg p-2 mb-2 text-[10.5px] text-rose-800"><i class="fas fa-clone ml-1"></i><b>${e2pNum(dupN)} ردیف</b> بیمه‌نامه‌ی فعالِ (منقضی‌نشده) همان نوع دارد و با «ایجاد» ساخته نمی‌شود${cliDupAdmin ? '، مگر تیکِ «در جریانم» را بزنید (ردیف با برچسبِ زردِ تکراری ساخته می‌شود)' : ''}. بیمه‌نامه‌ها را از همین‌جا دانلود کنید.</div>` : ''}
                 <div class="max-h-64 overflow-auto border border-slate-100 rounded-lg">
                     <table class="w-full text-right text-[10px] no-count">
                         <thead class="bg-slate-50 text-slate-500 sticky top-0"><tr>${cols.map(c => `<th class="p-1.5 whitespace-nowrap">${c[0]}</th>`).join('')}</tr></thead>
-                        <tbody>${rows.map(x => `<tr class="border-t border-slate-100">${cols.map(c => `<td class="p-1.5 whitespace-nowrap">${c[1](x)}</td>`).join('')}</tr>`).join('')}</tbody>
+                        <tbody>${rows.map(x => `<tr class="border-t border-slate-100 ${(x.dup_hits || []).length ? 'cli-dup-tr' : ''}">${cols.map(c => `<td class="p-1.5 whitespace-nowrap">${c[1](x)}</td>`).join('')}</tr>`).join('')}</tbody>
                     </table>
                 </div>`;
             document.getElementById('cli-commit-btn').classList.toggle('hidden', rows.length === 0);
         }
 
+        let cliDupAdmin = false;
         async function commitLetterRows() {
             const requestId = document.getElementById('cli-request-id').value;
+            const dupAllow = [...document.querySelectorAll('#cli-preview [data-cli-dup]:checked')].map(c => c.dataset.cliDup);
             const raw = document.getElementById('cli-raw').value.trim();
             const file = document.getElementById('cli-file').files[0];
             const replace = document.getElementById('cli-replace').checked;
@@ -3582,18 +3627,21 @@
                 fd.append('replace_existing', replace ? '1' : '');
                 fd.append('default_coverages', cliDefaults.coverages === null ? '' : (typeof cliDefaults.coverages === 'string' ? cliDefaults.coverages : JSON.stringify(cliDefaults.coverages)));
                 fd.append('default_liability', cliDefaults.liability || '');
+                fd.append('dup_allow', JSON.stringify(dupAllow));
                 fd.append('import_file', file);
                 res = await fetch(COMPANY_API, {method: 'POST', body: fd});
             } else {
                 res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace,
+                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace, dup_allow: dupAllow,
                         default_coverages: cliDefaults.coverages === null ? '' : cliDefaults.coverages, default_liability: cliDefaults.liability || ''})});
             }
             const data = await res.json();
             if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
-            showToast(`${e2pNum(data.created)} ردیف ساخته شد${data.duplicates ? ` (${e2pNum(data.duplicates)} ردیف تکراری رد شد)` : ''}.`, 'success');
+            const nb = (data.dup_blocked || []).length;
+            showToast(`${e2pNum(data.created)} ردیف ساخته شد${data.duplicates ? ` (${e2pNum(data.duplicates)} ردیفِ تکراریِ همین درخواست رد شد)` : ''}${nb ? `؛ ${e2pNum(nb)} ردیف به‌خاطرِ بیمه‌نامه‌ی فعال ساخته نشد` : ''}${data.dup_ack ? `؛ ${e2pNum(data.dup_ack)} ردیف با برچسبِ تکراری` : ''}.`, nb ? 'warning' : 'success');
             document.getElementById('letter-import-modal').classList.remove('active');
             openCompanyRequestDetail(requestId);
+            if (nb) dupCreateDialog({dup_rows: data.dup_blocked}, {done: true, noAllow: true, title: `${e2pNum(nb)} ردیف ساخته نشد: بیمه‌نامه‌ی فعال دارند`});
         }
 
         // ===================== لیست صدور =====================
@@ -4977,8 +5025,13 @@
             const types = [document.getElementById('cit-ai-t3').checked ? 'THIRDPARTY' : '', document.getElementById('cit-ai-tb').checked ? 'BODY' : ''].filter(Boolean);
             if (!reqId) { showToast('درخواست را انتخاب کنید.', 'error'); return; }
             if (!types.length) { showToast('نوعِ بیمه (ثالث/بدنه) را انتخاب کنید.', 'error'); return; }
-            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_create_row', doc_id: docId, request_id: reqId, types,
-                vin: document.getElementById('cit-ai-vin').value.trim(), engine_no: document.getElementById('cit-ai-eng').value.trim()})})).json();
+            const body = {action: 'doc_ai_create_row', doc_id: docId, request_id: reqId, types,
+                vin: document.getElementById('cit-ai-vin').value.trim(), engine_no: document.getElementById('cit-ai-eng').value.trim()};
+            let r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+            if (!r.ok && r.dup) {   // بیمه‌نامه‌ی فعال: فقط مدیر کل با تأیید
+                if (await dupCreateDialog(r) !== 'allow') return;
+                r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign(body, {dup_confirm: 1}))})).json();
+            }
             if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
             showToast('ردیفِ تازه ساخته شد و مدرک رویش نشست.', 'success');
             citAfterDone(docId);

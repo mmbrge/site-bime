@@ -1761,6 +1761,27 @@ try {
         }
         if ($errors) { echo json_encode(['ok' => false, 'error' => implode("\n", $errors)], JSON_UNESCAPED_UNICODE); exit; }
 
+        // بیمه‌نامه‌ی فعالِ صادرشده (منقضی‌نشده، همان نوع): بدونِ تأییدِ مدیر کل ثبت نمی‌شود؛ فهرست با دانلود برمی‌گردد
+        require_once __DIR__ . '/_dup.php';
+        dup_ensure($pdo); dup_ack_ensure($pdo);
+        $isAdminActor = perm_real_role() === 'ADMIN';   // فقط مدیر کلِ واقعی (نه کاربرِ با دسترسیِ سفارشی)
+        $dupAllow = $isAdminActor ? array_flip(array_map('strval', is_array($data['dup_allow'] ?? null) ? $data['dup_allow'] : [])) : [];
+        $dupRows = []; $dupAckIdx = [];
+        if ($kind === 'NEW_POLICY') foreach ($clean as $ci => $vals) {
+            $dr = ['plate_p1' => $vals[0], 'plate_p2' => $vals[1], 'plate_letter' => $vals[2], 'plate_p4' => $vals[3], 'chassis_no' => $vals[4], 'engine_no' => $vals[5],
+                   'ref_policy_number' => $vals[9], 'insurance_type' => $vals[12], 'expiry_date' => $vals[13]];
+            $dx = dup_active_for_row($pdo, $dr);
+            if (!$dx['hits']) continue;
+            $key = dup_row_key($dr);
+            if (isset($dupAllow[$key])) { $dupAckIdx[$ci] = $dx['hits']; continue; }
+            $dupRows[] = ['index' => $ci, 'key' => $key, 'label' => dup_row_label($dr), 'type' => $vals[12], 'hits' => dup_hits_public($dx['hits'])];
+        }
+        if ($dupRows) {
+            echo json_encode(['ok' => false, 'dup' => true, 'dup_admin' => $isAdminActor, 'dup_rows' => $dupRows,
+                              'error' => "برای این خودروها بیمه‌نامه‌ی فعال (منقضی‌نشده) هست و درخواست ثبت نشد:\n" . implode("\n", array_map(function ($d) { return '«' . $d['label'] . '»'; }, array_slice($dupRows, 0, 15)))], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         company_ensure_car_type($pdo);
         $pdo->beginTransaction();
         $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, ?, 'NEW')")
@@ -1779,6 +1800,7 @@ try {
         $plateIds = [];
         foreach ($clean as $vals) { $ins->execute(array_merge([$requestId], $vals)); $plateIds[] = (int)$pdo->lastInsertId(); }
         $pdo->commit();
+        foreach ($dupAckIdx as $ci => $ah) if (!empty($plateIds[$ci])) dup_ack_mark($pdo, $plateIds[$ci], $ah, $actor['user_id'] ?? null);
         // سواری/سنگین (برای انتخابِ خودکارِ نوعِ گزارش بازدید) - اگر مایگریشن ۰۲۰ اجرا نشده باشد بی‌صدا رد می‌شود
         foreach ($plateIds as $i => $pid) {
             if (empty($classes[$i])) continue;
@@ -1860,6 +1882,19 @@ try {
         if ($p1 === '' && $p2 === '' && $letter === '' && $p4 === '' && $chassis === '') {
             echo json_encode(['ok' => false, 'error' => $isNew ? 'برای خودروی صفرکیلومتر شماره شاسی را وارد کنید.' : 'یا پلاک را کامل وارد کنید یا شماره شاسی را.']); exit;
         }
+        // بیمه‌نامه‌ی فعالِ صادرشده برای همین خودرو و همین نوع: فقط مدیر کل با تأیید (برچسبِ «تکراری») می‌سازد
+        require_once __DIR__ . '/_dup.php';
+        dup_ack_ensure($pdo);
+        $dupRow = ['plate_p1' => $p1, 'plate_p2' => $p2, 'plate_letter' => $letter, 'plate_p4' => $p4, 'chassis_no' => $chassis, 'engine_no' => $data['engine_no'] ?? '',
+                   'insurance_type' => $insuranceType, 'ref_policy_number' => $data['ref_policy_number'] ?? '', 'expiry_date' => $expiryDate,
+                   'endorsement_request' => $data['endorsement_request'] ?? '', 'cancellation_reason' => $data['cancellation_reason'] ?? ''];
+        $dx = dup_active_for_row($pdo, $dupRow);
+        $isAdminActor = perm_real_role() === 'ADMIN';   // فقط مدیر کلِ واقعی (نه کاربرِ با دسترسیِ سفارشی)
+        if ($dx['hits'] && !($isAdminActor && !empty($data['dup_confirm']))) {
+            echo json_encode(['ok' => false, 'dup' => true, 'dup_admin' => $isAdminActor, 'dup_rows' => [['label' => dup_row_label($dupRow), 'type' => $insuranceType, 'key' => dup_row_key($dupRow), 'hits' => dup_hits_public($dx['hits'])]],
+                              'error' => 'برای «' . dup_row_label($dupRow) . '» ' . dup_hits_text($dx['hits']) . '؛ ردیف ساخته نشد.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         company_ensure_car_type($pdo);
         $stmt = $pdo->prepare("INSERT INTO company_request_plates
             (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, is_new_vehicle,
@@ -1874,6 +1909,7 @@ try {
                         trim($data['cancellation_reason'] ?? '') ?: null,
                         $insuranceType, $expiryDate, $skipHealth, trim($data['car_name'] ?? '') ?: null, mb_substr(trim($data['car_type'] ?? ''), 0, 120) ?: null]);
         $newPlateId = $pdo->lastInsertId();
+        if ($dx['hits']) dup_ack_mark($pdo, intval($newPlateId), $dx['hits'], $actor['user_id'] ?? null);
         // ردیفِ بی‌تنظیم از پیش‌فرضِ کلیِ درخواست پیروی می‌کند
         party_apply_from_input($pdo, intval($newPlateId), ['party_mode' => $data['party_mode'] ?? '', 'party' => $data['party'] ?? null, 'insured' => $data['insured'] ?? null]);
         company_set_vehicle_kind($pdo, intval($newPlateId), $data['vehicle_kind'] ?? '');
@@ -2379,11 +2415,27 @@ try {
         $kind = $aj['kind'] ?? '';
         $isNew = !empty($data['is_new']) || $kind === 'sales_invoice' ? 1 : 0;
         $carName = mb_substr(car_join([($d['car_system'] ?? ''), ($d['car_tip'] ?? '')]) ?: ($d['usage'] ?? ''), 0, 100) ?: null;
+        // بیمه‌نامه‌ی فعالِ صادرشده برای همین شاسی/موتور و همین نوع: فقط مدیر کل با تأیید
+        require_once __DIR__ . '/_dup.php';
+        dup_ack_ensure($pdo);
+        $isAdminActor = perm_real_role() === 'ADMIN';   // فقط مدیر کلِ واقعی (نه کاربرِ با دسترسیِ سفارشی)
+        $dupHits = []; $dupRows = [];
+        foreach ($types as $t) {
+            if (!$t) continue;
+            $dr = ['chassis_no' => $vin, 'engine_no' => $eng, 'insurance_type' => $t];
+            $dx = dup_active_for_row($pdo, $dr);
+            if ($dx['hits']) { $dupHits[$t] = $dx['hits']; $dupRows[] = ['label' => dup_row_label($dr), 'type' => $t, 'key' => dup_row_key($dr), 'hits' => dup_hits_public($dx['hits'])]; }
+        }
+        if ($dupRows && !($isAdminActor && !empty($data['dup_confirm']))) {
+            echo json_encode(['ok' => false, 'dup' => true, 'dup_admin' => $isAdminActor, 'dup_rows' => $dupRows, 'error' => 'برای این خودرو ' . dup_hits_text(reset($dupHits)) . '؛ ردیف ساخته نشد.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         $ids = [];
         foreach ($types as $t) {
             $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
                 ->execute([$requestId, $vin ?: null, strlen($vin) === 17 ? $vin : null, $eng ?: null, $isNew, $t, $isNew, $carName]);
             $ids[] = intval($pdo->lastInsertId());
+            if ($t && !empty($dupHits[$t])) dup_ack_mark($pdo, end($ids), $dupHits[$t], $actor['user_id'] ?? null);
         }
         $docType = vdoc_doc_type($kind, $d, []) ?: (trim((string)($data['doc_type'] ?? '')) ?: 'other');
         $siteRoot = dirname(__DIR__);
@@ -2791,7 +2843,16 @@ try {
     if ($action === 'preview_letter_rows' || ($_POST['action'] ?? '') === 'preview_letter_rows') {
         $parsed = company_read_import_input($data, $_FILES['import_file'] ?? null);
         if (isset($parsed['error'])) { echo json_encode(['ok' => false, 'error' => $parsed['error']], JSON_UNESCAPED_UNICODE); exit; }
-        echo json_encode(['ok' => true, 'rows' => $parsed['rows'], 'errors' => $parsed['errors'],
+        // بیمه‌نامه‌ی فعال (منقضی‌نشده) برای همین خودرو و همین نوع: در پیش‌نمایش با دانلود دیده می‌شود و ساخته نمی‌شود (مگر مدیر کل تأیید کند)
+        require_once __DIR__ . '/_dup.php';
+        foreach ($parsed['rows'] as &$pr) {
+            $dx = dup_active_for_row($pdo, $pr);
+            $pr['dup_key'] = dup_row_key($pr);
+            $pr['dup_hits'] = dup_hits_public($dx['hits']);
+            $pr['dup_renewal'] = dup_hits_public($dx['renewal']);
+        }
+        unset($pr);
+        echo json_encode(['ok' => true, 'rows' => $parsed['rows'], 'errors' => $parsed['errors'], 'dup_admin' => perm_real_role() === 'ADMIN',
                           'source' => $parsed['source'], 'counts_fa' => $parsed['counts_fa'] ?? ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -2813,6 +2874,9 @@ try {
             exit;
         }
         $raw = $parsed['raw'];
+        // ستون‌های «تکراری» پیش از تراکنش ساخته شوند (ALTER تراکنشِ باز را می‌بندد)
+        require_once __DIR__ . '/_dup.php';
+        dup_ensure($pdo); dup_ack_ensure($pdo);
 
         $pdo->beginTransaction();
         $stmtCnt = $pdo->prepare("SELECT COUNT(*) FROM company_request_plates WHERE request_id = ?" . ($replace ? " AND status = 'ISSUED'" : ''));
@@ -2835,16 +2899,29 @@ try {
                                skip_health_inspection, has_prev_body, car_name, car_type, row_note, issue_info, vin)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $created = 0; $skipped = 0; $newIds = [];
+        // بیمه‌نامه‌ی فعالِ صادرشده: فقط مدیر کل (با تیکِ همان ردیف) می‌تواند بسازد؛ وگرنه ردیف ساخته نمی‌شود و در پاسخ می‌آید
+        $dupAllow = perm_real_role() === 'ADMIN' ? array_flip(array_map('strval', is_array($data['dup_allow'] ?? null) ? $data['dup_allow'] : (json_decode((string)($data['dup_allow'] ?? '[]'), true) ?: []))) : [];
+        $dupBlocked = []; $dupAck = [];
         foreach ($parsed['rows'] as $r) {
             $find->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
                             $r['chassis_no'], $r['insurance_type']]);
             if ($find->fetchColumn()) { $skipped++; continue; } // ردیفِ تکراری دوباره ساخته نمی‌شود
+            $dx = dup_active_for_row($pdo, $r);
+            $ackHits = null;
+            if ($dx['hits']) {
+                if (!isset($dupAllow[dup_row_key($r)])) {
+                    $dupBlocked[] = ['label' => dup_row_label($r), 'type' => $r['insurance_type'], 'hits' => dup_hits_public($dx['hits'])];
+                    continue;
+                }
+                $ackHits = $dx['hits'];
+            }
             $ins->execute([$requestId, $r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4'],
                            $r['chassis_no'], $r['engine_no'], $r['is_new_vehicle'], $r['car_value'], $r['liability_limit'],
                            $r['ref_policy_number'], $r['endorsement_request'], $r['cancellation_reason'],
                            $r['insurance_type'], $r['expiry_date'], $r['skip_health_inspection'],
                            $r['has_prev_body'], $r['car_name'], $r['car_type'] ?? null, $r['row_note'], $r['issue_info'] ?? null, $r['vin'] ?? null]);
             $newIds[] = $pdo->lastInsertId();
+            if ($ackHits) $dupAck[] = [intval(end($newIds)), $ackHits];
             $created++;
         }
         // متنِ مرجعِ استخراج‌شده نگه داشته می‌شود تا بعداً بشود با خودِ نامه مقایسه کرد
@@ -2861,6 +2938,7 @@ try {
                 ->execute([json_encode($parsed['counts']), $newKind, $requestId]);
         }
         $pdo->commit();
+        foreach ($dupAck as [$aid, $ah]) dup_ack_mark($pdo, $aid, $ah, $actor['user_id'] ?? null);
 
         // پیش‌فرضِ پوشش‌ها/تعهد برای ردیف‌های این نامه (از پنجره‌ی ورود؛ همان پیش‌فرضِ درخواست هم می‌شود)، وگرنه پیش‌فرضِ درخواست یا شرکت
         [$defCov, $defLiab] = company_defaults_from_input($data);
@@ -2876,7 +2954,7 @@ try {
             company_sync_plate_status($pdo, $pid);
         }
 
-        echo json_encode(['ok' => true, 'created' => $created, 'duplicates' => $skipped,
+        echo json_encode(['ok' => true, 'created' => $created, 'duplicates' => $skipped, 'dup_blocked' => $dupBlocked, 'dup_ack' => count($dupAck),
                           'errors' => $parsed['errors'], 'counts_fa' => $parsed['counts_fa'] ?? ''], JSON_UNESCAPED_UNICODE);
         exit;
     }

@@ -769,7 +769,8 @@ async function nrDupCheck() {
             p2: moto ? enD(row.querySelector('.plate-mnum').value) : row.querySelector('.plate-p2').value.trim(),
             letter: moto ? 'موتور' : row.querySelector('.plate-letter').value.trim(), p4: moto ? '' : row.querySelector('.plate-p4').value.trim(),
             chassis_no: (row.querySelector('.plate-chassis')?.value || '').trim(), engine_no: (row.querySelector('.plate-engine')?.value || '').trim(),
-            type: row.querySelector('.plate-instype').value};
+            type: row.querySelector('.plate-instype').value,
+            expiry_j: row.querySelector('.plate-isnew')?.checked ? '' : enD(row.querySelector('.plate-expiry')?.value), ref_policy_number: enD(row.querySelector('.plate-refpolicy')?.value)};
     });
     let r;
     try { r = await (await fetch('../api/company_portal_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dup_check', rows: payload})})).json(); } catch (e) { return; }
@@ -927,9 +928,29 @@ function collectPlateRows(containerId) {
     return out;
 }
 
-async function submitNewRequest() {
+// خودروهای تکراری (بیمه‌نامه‌ی فعال یا درخواستِ در جریان): فهرست با دانلودِ بیمه‌نامه‌ی خودِ شرکت؛ «ثبت بدونِ این خودروها» بقیه را ثبت می‌کند
+function portalDupDialog(data) {
+    return new Promise(done => {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:14px';
+        const rows = (data.dup_rows || []).map(d => `<div class="border border-rose-100 rounded-xl p-2 mb-2 bg-white"><p class="text-[12px] font-black text-slate-700 mb-1">${escH(faNum(d.label))} <span class="text-[10px] font-bold ${d.type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">(${d.type === 'BODY' ? 'بدنه' : 'ثالث'})</span></p>${portalDupHtml(d.hits || [])}</div>`).join('');
+        ov.innerHTML = `<div dir="rtl" style="width:min(640px,100%);max-height:90vh;overflow:auto" class="bg-slate-50 rounded-2xl shadow-2xl p-4">
+            <h3 class="text-sm font-black text-rose-700 mb-1"><i class="fas fa-clone ml-1"></i>خودروهای تکراری</h3>
+            <p class="text-[11px] text-slate-500 mb-3">برای این خودروها و همین نوعِ بیمه، بیمه‌نامه‌ی منقضی‌نشده یا درخواستِ در جریان هست و ثبت نمی‌شوند.${data.all_dup ? ' همه‌ی خودروها تکراری‌اند.' : ' می‌توانید بقیه‌ی خودروها را ثبت کنید.'}</p>
+            ${rows}
+            <div class="flex gap-2 justify-end mt-3">${data.all_dup ? '' : '<button data-ok class="bg-teal-600 text-white text-xs font-bold rounded-xl px-4 py-2"><i class="fas fa-check ml-1"></i>ثبت بدونِ این خودروها</button>'}
+                <button data-no class="bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-xl px-4 py-2">بازگشت و اصلاح</button></div></div>`;
+        document.body.appendChild(ov);
+        const end = v => { ov.remove(); done(v); };
+        ov.querySelector('[data-no]').onclick = () => end(false);
+        const ok = ov.querySelector('[data-ok]'); if (ok) ok.onclick = () => end(true);
+        ov.addEventListener('mousedown', e => { if (e.target === ov) end(false); });
+    });
+}
+async function submitNewRequest(skipDup) {
     const fd = new FormData();
     fd.append('action', 'submit_request');
+    if (skipDup) fd.append('dup_skip', '1');
     fd.append('company_id', document.getElementById('nr-company').value);
     fd.append('insurer', document.getElementById('nr-insurer').value);
     fd.append('request_kind', document.getElementById('nr-kind').value);
@@ -956,6 +977,8 @@ async function submitNewRequest() {
             ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => { document.getElementById('nr-cnt-' + k).value = ''; });
             document.getElementById('nr-plates-list').innerHTML = '';
             loadRequests();
+        } else if (data.dup && !skipDup) {
+            if (await portalDupDialog(data)) submitNewRequest(true);
         } else { showToast(data.error || 'خطا در ثبت درخواست.'); }
     } catch (e) { showToast('خطا در ارتباط با سرور.'); }
 }

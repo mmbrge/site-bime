@@ -95,8 +95,7 @@ try {
         foreach (array_slice($rows, 0, 300) as $i => $r) {
             $types = ($r['type'] ?? '') === 'BOTH' ? ['THIRDPARTY', 'BODY'] : [$r['type'] ?? 'THIRDPARTY'];
             $list = [];
-            foreach ($types as $t) $list = array_merge($list, dup_find($pdo, ['vin' => $r['chassis_no'] ?? '', 'engine' => $r['engine_no'] ?? '', 'p1' => $r['p1'] ?? '', 'p2' => $r['p2'] ?? '',
-                                                                              'letter' => $r['letter'] ?? '', 'p4' => $r['p4'] ?? '', 'type' => $t]));
+            foreach ($types as $t) $list = array_merge($list, dup_find_for_row($pdo, $r + ['insurance_type' => $t]));
             $out[$i] = dup_for_company($list, $allowedCompanyIds);
         }
         echo json_encode(['ok' => true, 'dups' => (object)$out], JSON_UNESCAPED_UNICODE);
@@ -630,22 +629,34 @@ try {
         } elseif ($counts) {
             $counts['ENDORSEMENT'] = 0; $counts['CANCELLATION'] = 0; $counts = array_sum($counts) ? $counts : null;
         }
-        // درخواستِ تکراری ثبت نمی‌شود: خودرویی که برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ در جریان دارد
+        // درخواستِ تکراری ثبت نمی‌شود: خودرویی که برای همین نوعِ بیمه بیمه‌نامه‌ی فعال (منقضی‌نشده) یا درخواستِ در جریان دارد.
+        // با dup_skip همان خودروها کنار گذاشته می‌شوند و بقیه ثبت می‌شوند.
+        $dupSkipIdx = [];
         if ($kind === 'NEW_POLICY') {
             require_once __DIR__ . '/_dup.php';
-            $dupMsgs = [];
-            foreach ((json_decode($data['plates'] ?? '[]', true) ?: []) as $p) {
+            $dupMsgs = []; $dupList = [];
+            $fa = function ($x) { return strtr((string)$x, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']); };
+            foreach ((json_decode($data['plates'] ?? '[]', true) ?: []) as $pi => $p) {
                 $t = in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true) ? $p['insurance_type'] : null;
                 if (!$t) continue;
-                $hits = array_filter(dup_find($pdo, ['vin' => $p['chassis_no'] ?? '', 'engine' => $p['engine_no'] ?? '', 'p1' => $p['p1'] ?? '', 'p2' => $p['p2'] ?? '', 'letter' => $p['letter'] ?? '', 'p4' => $p['p4'] ?? '', 'type' => $t]),
-                                     function ($m) { return $m['state'] !== 'history'; });
-                if ($hits) {
-                    $lab = trim(($p['p2'] ?? '') . ' ' . ($p['letter'] ?? '') . ' ' . ($p['p4'] ?? '') . ' ' . ($p['p1'] ?? '')) ?: ($p['chassis_no'] ?? '') ?: ($p['engine_no'] ?? '');
-                    $m = array_values($hits)[0];
-                    $dupMsgs[] = '«' . $lab . '» (' . ($t === 'BODY' ? 'بدنه' : 'ثالث') . '): ' . ($m['state'] === 'open' ? 'درخواستِ دیگری برای همین خودرو در جریان است' : 'بیمه‌نامه‌ی فعال دارد' . ($m['end_j'] ? ' تا ' . strtr($m['end_j'], ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']) : ''));
-                }
+                $dr = $p + ['insurance_type' => $t, 'expiry_j' => $p['expiry_j'] ?? ''];
+                $dx = dup_active_for_row($pdo, $dr);
+                $open = array_values(array_filter(dup_find($pdo, ['vin' => $p['chassis_no'] ?? '', 'engine' => $p['engine_no'] ?? '', 'p1' => $p['p1'] ?? '', 'p2' => $p['p2'] ?? '', 'letter' => $p['letter'] ?? '', 'p4' => $p['p4'] ?? '', 'type' => $t]),
+                                                  function ($m) { return $m['state'] === 'open'; }));
+                if (!$dx['hits'] && !$open) continue;
+                $lab = dup_row_label($dr);
+                $dupSkipIdx[$pi] = true;
+                $m = $dx['hits'][0] ?? $open[0];
+                $dupMsgs[] = '«' . $lab . '» (' . ($t === 'BODY' ? 'بدنه' : 'ثالث') . '): ' . ($m['state'] === 'open' ? 'درخواستِ دیگری برای همین خودرو در جریان است' : 'بیمه‌نامه‌ی فعال دارد' . ($m['end_j'] ? ' تا ' . $fa($m['end_j']) : ''));
+                $dupList[] = ['index' => $pi, 'label' => $lab, 'type' => $t, 'hits' => dup_for_company($dx['hits'] ?: $open, $allowedCompanyIds)];
             }
-            if ($dupMsgs) { echo json_encode(['ok' => false, 'dup' => true, 'error' => "این خودروها تکراری‌اند و ثبت نشدند:\n" . implode("\n", array_slice($dupMsgs, 0, 15)) . (count($dupMsgs) > 15 ? "\n…" : '') . "\nآن‌ها را از فهرست حذف کنید."], JSON_UNESCAPED_UNICODE); exit; }
+            $platesIn = json_decode($data['plates'] ?? '[]', true) ?: [];
+            $allDup = $dupSkipIdx && count($dupSkipIdx) >= count(array_filter($platesIn, function ($p) { return in_array($p['insurance_type'] ?? '', ['THIRDPARTY', 'BODY'], true); }));
+            if ($dupMsgs && (empty($data['dup_skip']) || $allDup)) {
+                echo json_encode(['ok' => false, 'dup' => true, 'dup_rows' => $dupList, 'all_dup' => $allDup,
+                                  'error' => "این خودروها تکراری‌اند و ثبت نمی‌شوند:\n" . implode("\n", array_slice($dupMsgs, 0, 15)) . (count($dupMsgs) > 15 ? "\n…" : '')], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
         }
         $stmt = $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, ?, ?, ?, ?, ?, 'NEW')");
         $stmt->execute([$companyId, $session['company_user_id'], $requestText, $insurer, $kind,
@@ -674,7 +685,8 @@ try {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $zkToken = preg_replace('/[^a-f0-9]/', '', (string)($data['zk_token'] ?? ''));
             $zkUsed = [];
-            foreach ($plates as $p) {
+            foreach ($plates as $pi => $p) {
+                if (!empty($dupSkipIdx[$pi])) continue;   // تکراری (کاربر «ثبت بدونِ تکراری‌ها» را زده)
                 // صفر کیلومتر از فاکتور: شماره موتور و شاسی بدونِ . * - و فاصله
                 if (!empty($p['zk'])) { $p['chassis_no'] = preg_replace('/[^A-Za-z0-9]/', '', strtoupper(p2e_digits((string)($p['chassis_no'] ?? '')))); $p['engine_no'] = preg_replace('/[^A-Za-z0-9]/', '', strtoupper(p2e_digits((string)($p['engine_no'] ?? '')))); }
                 $pp1 = trim($p['p1'] ?? ''); $pp2 = trim($p['p2'] ?? '');

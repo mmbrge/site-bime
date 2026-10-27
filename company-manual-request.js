@@ -619,7 +619,7 @@
     }
 
     // ---------------- ثبت ----------------
-    async function submit() {
+    async function submit(dupAllow) {
         if (st.personal) { if (!st.customer.id && String(st.customer.name || '').trim().length < 2) { toast('نامِ مشتری را بنویسید یا مشتریِ قبلی را انتخاب کنید.', 'error'); return; } }
         else if (!st.companyId) { toast('شرکت را انتخاب کنید.', 'error'); return; }
         if (st.detect && st.detect.busy) { toast('صبر کنید خواندنِ مدارک تمام شود.', 'warning'); return; }
@@ -633,6 +633,7 @@
             default_liability: st.liabilityPerRow ? '' : st.liabilityAll,
             default_coverages: st.covBaseOnly ? 'none' : (st.cov && Object.keys(st.cov).length ? st.cov : null),
             party_mode: st.partyMode || 'COMPANY', party: st.party, insured: st.partyMode === 'SPLIT' ? st.insured : null,
+            dup_allow: Array.isArray(dupAllow) ? dupAllow : [],
             rows: st.rows.map(r => ({
                 insurance_type: r.type,
                 // صفرکیلومترِ بی‌پلاک: خانه‌های عددیِ پلاک خالی‌اند، پس حرفِ پیش‌فرضِ «الف» هم فرستاده نمی‌شود (وگرنه «پلاک ناقص» می‌شد)
@@ -652,6 +653,20 @@
         const btn = root.querySelector('[data-act="submit"]');
         btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin ml-1"></i> در حال ثبت...';
         const d = await post(payload);
+        if (!d.ok && d.dup && window.dupCreateDialog) {
+            // بیمه‌نامه‌ی فعال (منقضی‌نشده) برای بعضی خودروها: مدیر کل می‌تواند با برچسبِ «تکراری» بسازد؛ بقیه فقط بدونِ آن‌ها
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت درخواست و بارگذاری مدارک';
+            const left = st.rows.length - d.dup_rows.length;
+            const a = await window.dupCreateDialog(d, { canSkip: left > 0, skipLabel: `ثبتِ ${fa(left)} خودروی دیگر، بدونِ این‌ها` });
+            if (a === 'allow') return submit(d.dup_rows.map(x => x.key));
+            if (a === 'skip') {
+                const drop = new Set(d.dup_rows.map(x => x.index));
+                st.rows = st.rows.filter((r, i) => !drop.has(i));
+                if (typeof render === 'function') try { render(); } catch (e) {}
+                return submit();
+            }
+            return;
+        }
         if (!d.ok) {
             btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت درخواست و بارگذاری مدارک';
             if (window.showAlert) showAlert('ثبت انجام نشد', d.error || 'خطا', 'error'); else toast(d.error, 'error');
