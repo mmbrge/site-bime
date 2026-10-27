@@ -505,16 +505,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 
     <!-- فوتر -->
-    <div class="footer-credit">
-        <div class="footer-box group/author hover-target">
-            <span>طراحی و اجرا :</span>
-            <span class="text-brand-accent font-black mr-1 relative inline-block cursor-none">
-                گروه توسعه بهیکس
-            </span>
-            <span class="text-gray-300 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
-        </div>
-        <p class="copyright-text">تمامی حقوق مادی و معنوی محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.4.0</span></p>
-    </div>
+    <?php // فوتر: متن، رنگ و نمایشش از «تنظیمات ← فوتر» (api/_footer.php)؛ نسخه‌ی جاری همین‌جا نوشته می‌شود
+    require_once __DIR__ . '/api/_footer.php'; $__ft = footer_html($pdo, 'login', 'Version:1.4.0', ['name' => 'text-brand-accent', 'sub' => 'text-gray-300', 'copy' => 'copyright-text']); ?>
+    <?php if ($__ft !== ''): ?><div class="footer-credit"><?php echo $__ft; ?></div><?php endif; ?>
 
     <!-- بارگذاری ذرات -->
     <script>window.CURSOR_FX_COLOR = '#00d2ff';</script>

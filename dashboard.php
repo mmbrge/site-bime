@@ -1086,9 +1086,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <!-- منوی راست کلیک -->
     <div id="contextMenu" class="win11-menu fixed z-[9999999] w-56 py-2">
         <div id="ctx-general" class="hidden">
-            <div class="ctx-item text-gray-300 hover-target" onclick="ctxExecute('copy')"><i class="far fa-copy w-4 text-center"></i> کپی (Copy)</div>
-            <div class="ctx-item text-gray-300 hover-target" onclick="ctxExecute('cut')"><i class="fas fa-cut w-4 text-center"></i> برش (Cut)</div>
-            <div class="ctx-item text-gray-300 hover-target" onclick="ctxExecute('paste')"><i class="fas fa-paste w-4 text-center"></i> چسباندن (Paste)</div>
+            <div class="ctx-item text-gray-300 hover-target" onmousedown="event.preventDefault()" onclick="ctxExecute('copy')"><i class="far fa-copy w-4 text-center"></i> کپی (Copy)</div>
+            <div class="ctx-item text-gray-300 hover-target" onmousedown="event.preventDefault()" onclick="ctxExecute('cut')"><i class="fas fa-cut w-4 text-center"></i> برش (Cut)</div>
+            <div class="ctx-item text-gray-300 hover-target" onmousedown="event.preventDefault()" onclick="ctxExecute('paste')"><i class="fas fa-paste w-4 text-center"></i> چسباندن (Paste)</div>
             <div class="ctx-divider"></div>
         </div>
         
@@ -2352,6 +2352,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="api-keys-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             <?php endif; ?>
+            <?php if ($realRole === 'ADMIN'): ?>
+            <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-shoe-prints text-violet-500 ml-2"></i>فوتر (توسعه‌دهنده و نسخه) <small class="text-[11px] text-slate-400 font-bold mr-1">متن، رنگ و نمایش/پنهانِ پایینِ پنل و صفحه‌ی ورود</small></h3>
+                <div id="footer-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
+            </div>
+            <?php endif; ?>
             <div data-scat="general" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-violet-100 pb-3"><i class="fas fa-palette text-violet-500 ml-2"></i>لوگو و فاوآیکن <small class="text-[11px] text-slate-400 font-bold mr-1">لوگوی سربرگ پنل و آیکونِ تبِ مرورگر</small></h3>
                 <div id="brand-settings-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
@@ -3249,14 +3255,10 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <?php endforeach; ?>
         <?php endif; ?>
 
-        <div class="footer-credit mt-auto">
-            <div class="footer-box group/author hover-target relative">
-                <span>طراحی و توسعه سیستم :</span>
-                <span class="text-blue-600 font-black mr-1 relative inline-block cursor-none">گروه توسعه بهیکس</span>
-                <span class="text-slate-400 text-xs ml-1" style="font-family: Arial, sans-serif;">(MMBehzadi)</span>
-            </div>
-            <p class="text-slate-500 text-[10px]">تمامی حقوق مادی و معنوی سیستم محفوظ می‌باشد - ۲۰۲۶ © <span dir="ltr" style="font-family: Arial, sans-serif;">- Version:1.4.0</span></p>
-        </div>
+        <?php // فوتر: متن، رنگ و نمایشش از «تنظیمات ← فوتر» (api/_footer.php)؛ نسخه‌ی جاری همین‌جا نوشته می‌شود
+        require_once __DIR__ . '/api/_footer.php'; $__ver = 'Version:1.4.0'; $__ft = footer_html($pdo, 'panel', $__ver); ?>
+        <div class="footer-credit mt-auto" id="site-footer"<?php echo $__ft === '' ? ' style="display:none"' : ''; ?>><?php echo $__ft; ?></div>
+        <script>window.SITE_VERSION = <?php echo json_encode($__ver); ?>;</script>
     </main>
     <script>
         // پنجره‌های تمام‌صفحه‌ای که داخلِ <main> نوشته شده‌اند (نمایشگرِ عکس‌های بازدید، گالری، بزرگ‌نمایی، جزئیاتِ پرونده و ...)
@@ -4645,7 +4647,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
     <script src="tools.js?v=4"></script>
-    <script src="comfort.js?v=18"></script>
+    <script src="comfort.js?v=19"></script>
     <script src="settings-nav.js?v=5"></script>
     <script src="miniapp-admin.js?v=2"></script>
     <script src="sms-otp.js?v=2"></script>
@@ -4722,7 +4724,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="visit-reports-list.js?v=11"></script>
     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=5"></script><?php endif; ?>
     <?php endif; ?>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبتِ دستیِ درخواست (گروهی، تکی، شخصی) مستقل از دسترسیِ گزارشِ بازدید ?><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=16"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبتِ دستیِ درخواست (گروهی، تکی، شخصی) مستقل از دسترسیِ گزارشِ بازدید ?><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=16"></script><script src="footer-settings.js?v=1"></script><?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
         // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
@@ -11975,7 +11977,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
-            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
+            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.FooterSettings) FooterSettings.render(document.getElementById('footer-settings-root')); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
             if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
             if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
             if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
@@ -14750,7 +14752,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             
             // ذخیره متن انتخاب شده و فیلدی که فوکوس دارد قبل از اینکه منو باز شود
             ctxSelectedText = window.getSelection().toString();
-            ctxActiveElement = document.activeElement;
+            // فیلدی که رویش کلیک‌راست شد (حتی اگر هنوز فوکوس نداشت)
+            const tf = e.target.closest && e.target.closest('input, textarea');
+            ctxActiveElement = tf && !tf.readOnly && !tf.disabled ? tf : document.activeElement;
+            if (tf && document.activeElement !== tf) { try { tf.focus({preventScroll: true}); } catch (x) {} }
+            if (ctxActiveElement && /^(INPUT|TEXTAREA)$/.test(ctxActiveElement.tagName) && !ctxSelectedText) {
+                try { ctxSelectedText = ctxActiveElement.value.slice(ctxActiveElement.selectionStart, ctxActiveElement.selectionEnd); } catch (x) {}
+            }
 
             document.getElementById('ctx-row-actions').classList.add('hidden');
             document.getElementById('ctx-general').classList.remove('hidden');
@@ -14788,6 +14796,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         const start = ctxActiveElement.selectionStart;
                         const end = ctxActiveElement.selectionEnd;
                         ctxActiveElement.value = ctxActiveElement.value.slice(0, start) + ctxActiveElement.value.slice(end);
+                        ctxActiveElement.dispatchEvent(new Event('input', {bubbles: true}));
                         showToast('متن برش داده شد.', 'success');
                     }).catch(() => showToast('خطا در دسترسی به کلیپ‌بورد.', 'error'));
                 } else {
@@ -14797,10 +14806,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             
             if(action === 'paste') {
                 if (ctxActiveElement && (ctxActiveElement.tagName === 'INPUT' || ctxActiveElement.tagName === 'TEXTAREA')) {
+                    const el = ctxActiveElement;
                     navigator.clipboard.readText().then(text => {
-                        const start = ctxActiveElement.selectionStart || 0;
-                        const end = ctxActiveElement.selectionEnd || 0;
-                        ctxActiveElement.value = ctxActiveElement.value.slice(0, start) + text + ctxActiveElement.value.slice(end);
+                        let start = 0, end = 0;
+                        try { start = el.selectionStart || 0; end = el.selectionEnd || 0; } catch (x) {}
+                        el.value = el.value.slice(0, start) + text + el.value.slice(end);
+                        // فیلد دوباره فوکوس می‌گیرد و رویدادِ input می‌فرستد تا فرم/ابزارِ همان فیلد (محاسبه، جستجو، ...) هم باخبر شود
+                        try { el.focus({preventScroll: true}); const p = start + text.length; el.setSelectionRange(p, p); } catch (x) {}
+                        el.dispatchEvent(new Event('input', {bubbles: true}));
+                        el.dispatchEvent(new Event('change', {bubbles: true}));
                         showToast('متن جایگذاری شد.', 'success');
                     }).catch(() => showToast('دسترسی کلیپ‌بورد در مرورگر مسدود است.', 'warning'));
                 } else {

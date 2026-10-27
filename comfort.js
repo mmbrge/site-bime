@@ -1807,7 +1807,8 @@
         }, {capture: true, passive: true});
         document.addEventListener('mousedown', e => {
             // کلیکِ بیرونِ پنل (پخش‌کننده یا جعبه‌ابزار) می‌بنددش؛ دکمه‌های گوشه (root) خودشان باز/بسته می‌کنند
-            if (!S.open || root.contains(e.target) || e.target.closest('.cf-cpick,.cf-modal,.cf-pal,.cf-pops,#cf-up-pill')) return;
+            // منوی کلیک‌راستِ سایت (کپی/چسباندن) و منوی جدول‌ها بیرونِ پنل حساب نمی‌شوند (چسباندن در فیلدِ ابزارها پنل را نبندد)
+            if (!S.open || root.contains(e.target) || e.target.closest('.cf-cpick,.cf-modal,.cf-pal,.cf-pops,#cf-up-pill,#contextMenu,.win11-menu,.tcx')) return;
             closePanels();
         });
     }

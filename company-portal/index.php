@@ -61,7 +61,7 @@ if (!$companies) {
 <script src="../net-watch.js?v=5"></script>
 <script src="../cursor-fx.js?v=2" defer></script>
 <script src="../tools.js?v=4"></script>
-<script src="../comfort.js?v=18"></script>
+<script src="../comfort.js?v=19"></script>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
 <script src="../announce.js?v=3"></script>
 <script src="zerokm.js?v=3"></script>
