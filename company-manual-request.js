@@ -37,13 +37,19 @@
                  detect: { busy: false, done: 0, total: 0, pages: [] } };
     }
 
-    async function open() {
-        if (!form) {
+    // opts.single: درخواستِ تکیِ شرکت (یک خودرو؛ نامه یا اسکرین‌شاتِ چت اختیاری) | opts.personal: درخواستِ شخصی (مشتریِ بی‌قرارداد)
+    async function open(opts) {
+        opts = opts || {};
+        if (!form || opts.personal) {
             const d = await post({ action: 'admin_manual_form' });
             if (!d.ok) { toast(d.error || 'خطا در بارگذاری فرم', 'error'); return; }
             form = d;
         }
         st = blankState();
+        st.single = !!(opts.single || opts.personal);
+        st.personal = !!opts.personal;
+        st.letterKind = 'letter';
+        if (st.personal) st.customer = { id: '', name: '', kind: 'PERSON', national_id: '', mobile: '', address: '' };
         if (!root) {
             root = document.createElement('div');
             root.className = 'fixed inset-0 z-[1200] bg-slate-900/60 backdrop-blur-sm overflow-y-auto p-3 md:p-6';
@@ -66,31 +72,46 @@
 
     // ---------------- رندر ----------------
     function render() {
-        const company = (form.companies || []).find(c => String(c.id) === String(st.companyId));
+        const company = st.personal ? null : (form.companies || []).find(c => String(c.id) === String(st.companyId));
         const allowed = company ? company.allowed_insurers : 'BOTH';
         const insurers = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
+        const rowLimit = st.single && !st.personal ? (st.mode === 'MIXED' ? 2 : 1) : 99;
+        const title = st.personal ? 'درخواستِ شخصیِ تازه' : (st.single ? 'درخواستِ تکیِ شرکت' : 'ثبت کامل درخواست دستی شرکت');
+        const sub = st.personal ? 'برای اشخاص و شرکت‌هایی که هنوز با ما قرارداد ندارند. پوشه در «بایگانی شخصی» به نامِ مشتری ساخته می‌شود؛ بعد از صدور، بایگانی صادره هم مثل بقیه ساخته می‌شود. نامه لازم نیست (اسکرین‌شاتِ چت هم می‌شود).'
+            : (st.single ? 'یک خودرو، بدونِ نیاز به نامه: نامه یا اسکرین‌شاتِ چتِ درخواست را می‌شود گذاشت (اختیاری). پوشه‌بندیِ بایگانی مثلِ درخواست‌های گروهی است.'
+            : 'برای وقتی که شرکت درخواست را در پنل ثبت نمی‌کند یا فقط مدارک خودرو را می‌فرستد. نامه اختیاری است؛ پوشه‌ی امروز داخل پوشه‌ی همان شرکت ساخته می‌شود و بعد از صدور، بایگانی صادره مثل بقیه ساخته می‌شود.');
+        const cu = st.customer || {};
         if (!insurers.includes(st.insurer)) st.insurer = insurers[0];
         const hasThird = isNew() && types().has('THIRDPARTY');
         const hasBody = isNew() && types().has('BODY');
 
         root.innerHTML = `<div class="bg-slate-50 rounded-3xl shadow-2xl max-w-6xl mx-auto overflow-hidden">
           <div class="bg-gradient-to-l from-blue-700 via-indigo-700 to-violet-700 text-white p-5 flex justify-between items-start gap-3">
-            <div><h2 class="text-lg md:text-xl font-black"><i class="fas fa-file-circle-plus ml-2"></i>ثبت کامل درخواست دستی شرکت</h2>
-              <p class="text-[11px] text-white/80 mt-1 leading-6">برای وقتی که شرکت درخواست را در پنل ثبت نمی‌کند یا فقط مدارک خودرو را می‌فرستد. نامه اختیاری است؛ پوشه‌ی امروز داخل پوشه‌ی همان شرکت ساخته می‌شود و بعد از صدور، بایگانی صادره مثل بقیه ساخته می‌شود.</p></div>
+            <div><h2 class="text-lg md:text-xl font-black"><i class="fas ${st.personal ? 'fa-user-plus' : (st.single ? 'fa-car' : 'fa-file-circle-plus')} ml-2"></i>${title}</h2>
+              <p class="text-[11px] text-white/80 mt-1 leading-6">${sub}</p></div>
             <button data-act="close" class="text-white/80 hover:text-white text-2xl leading-none px-2">×</button>
           </div>
           <div class="p-4 md:p-6 space-y-5">
             <div class="bg-white rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div class="md:col-span-2"><label class="lbl">شرکت *</label>
-                <select data-f="companyId" class="inp">${'<option value="">-- انتخاب شرکت --</option>' + (form.companies || []).map(c => `<option value="${c.id}" ${String(c.id) === String(st.companyId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+              ${st.personal ? `<div class="md:col-span-4 grid grid-cols-1 md:grid-cols-4 gap-3 bg-violet-50/60 border border-violet-100 rounded-xl p-3">
+                <div class="md:col-span-4 flex flex-wrap items-center gap-2"><b class="text-[11px] text-violet-800"><i class="fas fa-user ml-1"></i>مشتری</b>
+                  <select data-cu-pick class="inp" style="max-width:320px"><option value="">+ مشتریِ تازه</option>${(form.personal_customers || []).map(c => `<option value="${c.id}" ${String(cu.id) === String(c.id) ? 'selected' : ''}>${esc(c.name)}${c.national_id ? ' — ' + fa(c.national_id) : ''}</option>`).join('')}</select>
+                  <span class="text-[10px] text-slate-500">مشتریِ قبلی را انتخاب کنید یا مشخصاتِ مشتریِ تازه را بنویسید.</span></div>
+                <div><label class="lbl">نوع</label><select data-cu="kind" class="inp" ${cu.id ? 'disabled' : ''}><option value="PERSON" ${cu.kind !== 'LEGAL' ? 'selected' : ''}>شخصِ حقیقی</option><option value="LEGAL" ${cu.kind === 'LEGAL' ? 'selected' : ''}>شرکت (بدونِ قرارداد)</option></select></div>
+                <div><label class="lbl">${cu.kind === 'LEGAL' ? 'نامِ شرکت' : 'نام و نام خانوادگی'} *</label><input data-cu="name" class="inp" value="${esc(cu.name)}" ${cu.id ? 'disabled' : ''}></div>
+                <div><label class="lbl">${cu.kind === 'LEGAL' ? 'شناسه ملی' : 'کد ملی'}</label><input data-cu="national_id" class="inp" dir="ltr" value="${esc(fa(cu.national_id))}" ${cu.id ? 'disabled' : ''}></div>
+                <div><label class="lbl">موبایل</label><input data-cu="mobile" class="inp" dir="ltr" value="${esc(fa(cu.mobile))}"></div></div>`
+              : `<div class="md:col-span-2"><label class="lbl">شرکت *</label>
+                <select data-f="companyId" class="inp">${'<option value="">-- انتخاب شرکت --</option>' + (form.companies || []).map(c => `<option value="${c.id}" ${String(c.id) === String(st.companyId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`}
               <div><label class="lbl">بیمه‌گر</label><select data-f="insurer" class="inp">${insurers.map(i => `<option value="${i}" ${st.insurer === i ? 'selected' : ''}>${i === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('')}</select></div>
               <div><label class="lbl">نوع درخواست</label><select data-f="kind" class="inp">${Object.entries(form.kinds || {}).map(([k, v]) => `<option value="${k}" ${st.kind === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
               ${isNew() ? `<div class="md:col-span-4"><label class="lbl">بیمه‌ی درخواستی</label>
                 <div class="grid grid-cols-3 gap-2 max-w-lg">${[['THIRDPARTY', 'ثالث', 'fa-car-side'], ['BODY', 'بدنه', 'fa-car-burst'], ['MIXED', 'هر دو', 'fa-layer-group']].map(([k, t, ic]) =>
                     `<button data-mode="${k}" class="rounded-xl border-2 py-2.5 text-xs font-black ${st.mode === k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200'}"><i class="fas ${ic} ml-1"></i>${t}</button>`).join('')}</div></div>` : ''}
-              <div class="md:col-span-2"><label class="lbl">نامه‌ی درخواست (اختیاری)</label>
+              <div class="md:col-span-2"><label class="lbl">${st.single ? 'نامه یا اسکرین‌شاتِ چتِ درخواست (اختیاری)' : 'نامه‌ی درخواست (اختیاری)'}</label>
+                ${st.single ? `<div class="flex gap-1 mb-1.5">${[['letter', 'نامه', 'fa-envelope-open-text'], ['chat', 'اسکرین‌شاتِ چت', 'fa-comments']].map(([k, t, ic]) => `<button data-lk="${k}" class="rounded-lg px-2.5 py-1 text-[10.5px] font-bold border ${st.letterKind === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}"><i class="fas ${ic} ml-1"></i>${t}</button>`).join('')}</div>` : ''}
                 <label class="flex items-center gap-2 border-2 border-dashed rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50 text-xs ${st.letter ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}">
-                  <i class="fas fa-envelope-open-text"></i><span class="truncate">${st.letter ? esc(st.letter.name) : 'انتخاب فایل نامه (PDF یا عکس) - اگر نامه ندارد خالی بماند'}</span>
+                  <i class="fas ${st.letterKind === 'chat' ? 'fa-comments' : 'fa-envelope-open-text'}"></i><span class="truncate">${st.letter ? esc(st.letter.name) : (st.letterKind === 'chat' ? 'انتخاب عکسِ اسکرین‌شاتِ چت' : 'انتخاب فایل نامه (PDF یا عکس) - اگر نامه ندارد خالی بماند')}</span>
                   <input type="file" data-uk-skip data-letter class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
                 ${st.letter ? '<button data-act="rmletter" class="text-[10px] text-rose-500 underline mt-1">حذف نامه</button>' : ''}</div>
               <div class="md:col-span-2"><label class="lbl">توضیح درخواست (اختیاری)</label><textarea data-f="text" rows="2" class="inp" placeholder="مثلاً: مدارک در بله فرستاده شد، بدون نامه">${esc(st.text)}</textarea></div>
@@ -104,8 +125,8 @@
             <div class="space-y-3">
               <div class="flex justify-between items-center"><h3 class="font-black text-sm text-slate-700"><i class="fas fa-car ml-1 text-indigo-500"></i>خودروها (${fa(st.rows.length)})</h3>
                 <div class="flex gap-2">
-                  ${st.mode === 'MIXED' || !isNew() ? `<button data-add="THIRDPARTY" class="btn-s bg-sky-50 text-sky-700">+ ثالث</button><button data-add="BODY" class="btn-s bg-violet-50 text-violet-700">+ بدنه</button>`
-                    : `<button data-add="${st.mode}" class="btn-s bg-indigo-600 text-white">+ افزودن خودرو</button>`}
+                  ${st.rows.length >= rowLimit ? '<span class="text-[10.5px] text-teal-700 font-bold">درخواستِ تکی: یک خودرو</span>' : (st.mode === 'MIXED' || !isNew() ? `<button data-add="THIRDPARTY" class="btn-s bg-sky-50 text-sky-700">+ ثالث</button><button data-add="BODY" class="btn-s bg-violet-50 text-violet-700">+ بدنه</button>`
+                    : `<button data-add="${st.mode}" class="btn-s bg-indigo-600 text-white">+ افزودن خودرو</button>`)}
                 </div></div>
               ${st.rows.map((r, i) => rowCard(r, i)).join('')}
             </div>
@@ -248,8 +269,10 @@
         return `<div class="bg-white rounded-2xl border-2 border-amber-100 p-4">
             <h3 class="font-black text-sm text-amber-800 mb-1"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار / ذینفع (برای همه‌ی خودروها)</h3>
             <p class="text-[10.5px] text-slate-500 mb-2 leading-6">خودرو به نامِ خودِ شرکت است، یا به نامِ شخص/شرکتِ دیگری که «ذینفع» می‌شود (بیمه‌گذار: شرکت)، یا به نامِ دیگری که خودش بیمه‌گذار می‌شود. برای خودروی متفاوت، در کارتِ همان خودرو «مالک/بیمه‌گذارِ این خودرو فرق دارد» را بزنید.</p>
-            <div data-pty-scope="all">${PartyUI.editor({ mode: st.partyMode, party: st.party, insured: st.insured })}</div></div>`;
+            <div data-pty-scope="all">${custWord(PartyUI.editor({ mode: st.partyMode, party: st.party, insured: st.insured }))}</div></div>`;
     }
+    // درخواستِ شخصی: «شرکت» در برچسب‌های مالک/بیمه‌گذار یعنی همان مشتری
+    const custWord = h => st && st.personal ? String(h).replace(/خودِ شرکت/g, 'خودِ مشتری').replace(/بیمه‌گذار: شرکت/g, 'بیمه‌گذار: مشتری').replace(/\(بیمه‌گذار: شرکت\)/g, '(بیمه‌گذار: مشتری)') : h;
     const pnorm = v => String(v || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/شرکت|سهامی|خاص|عام|[\s\u200c()«»\-ـ.]/g, '');
     function rowPartyHtml(r) {
         if (!window.PartyUI) return '';
@@ -262,7 +285,7 @@
             <label class="flex items-center gap-2 text-[11px] font-bold ${r.partyOpen ? 'text-amber-800' : 'text-slate-500'}"><input type="checkbox" data-r="partyOpen" ${r.partyOpen ? 'checked' : ''}> مالک/بیمه‌گذارِ این خودرو فرق دارد
               ${r.partyOpen ? '' : `<span class="font-normal text-slate-400">(طبقِ انتخابِ کلی: ${esc(PartyUI.SHORT[st.partyMode] || '')})</span>`}</label>
             ${r.partyAuto ? `<p class="text-[10.5px] text-amber-700 mt-1">مالکِ مدرک «${esc(r.party && r.party.name || '')}» با شرکت فرق دارد؛ طبقِ تنظیمِ شرکت «${esc(PartyUI.SHORT[r.partyMode] || '')}» انتخاب شد (قابلِ تغییر).</p>` : ''}
-            ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${PartyUI.editor({ mode: r.partyMode, party: r.party, insured: r.insured }, { allowInherit: true })}</div>` : ''}${warn}</div>`;
+            ${r.partyOpen ? `<div class="mt-2" data-pty-scope="row">${custWord(PartyUI.editor({ mode: r.partyMode, party: r.party, insured: r.insured }, { allowInherit: true }))}</div>` : ''}${warn}</div>`;
     }
 
     function liabilityOptions(val, withEmpty) {
@@ -483,6 +506,18 @@
         root.querySelector('[data-act="submit"]').onclick = submit;
         const rm = root.querySelector('[data-act="rmletter"]'); if (rm) rm.onclick = () => { st.letter = null; render(); };
         root.querySelector('[data-letter]').onchange = e => { st.letter = e.target.files[0] || null; render(); };
+        root.querySelectorAll('[data-lk]').forEach(b => b.onclick = () => { st.letterKind = b.dataset.lk; render(); });
+        const cuPick = root.querySelector('[data-cu-pick]');
+        if (cuPick) cuPick.onchange = () => {
+            const c = (form.personal_customers || []).find(x => String(x.id) === cuPick.value);
+            st.customer = c ? { id: c.id, name: c.name, kind: c.company_type === 'حقوقی' ? 'LEGAL' : 'PERSON', national_id: c.national_id || '', mobile: c.mobile || '', address: c.address || '' }
+                            : { id: '', name: '', kind: 'PERSON', national_id: '', mobile: '', address: '' };
+            render();
+        };
+        root.querySelectorAll('[data-cu]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+            st.customer[el.dataset.cu] = el.dataset.cu === 'national_id' || el.dataset.cu === 'mobile' ? en(el.value).replace(/\D/g, '') : el.value;
+            if (el.tagName === 'SELECT') render();
+        }));
         const det = root.querySelector('[data-detect]'); if (det) det.onchange = e => detectFiles([...e.target.files]);
 
         root.querySelectorAll('[data-f]').forEach(el => {
@@ -585,13 +620,15 @@
 
     // ---------------- ثبت ----------------
     async function submit() {
-        if (!st.companyId) { toast('شرکت را انتخاب کنید.', 'error'); return; }
+        if (st.personal) { if (!st.customer.id && String(st.customer.name || '').trim().length < 2) { toast('نامِ مشتری را بنویسید یا مشتریِ قبلی را انتخاب کنید.', 'error'); return; } }
+        else if (!st.companyId) { toast('شرکت را انتخاب کنید.', 'error'); return; }
         if (st.detect && st.detect.busy) { toast('صبر کنید خواندنِ مدارک تمام شود.', 'warning'); return; }
         const noLetter = st.rows.findIndex(r => !r.noPlate && !r.moto && !r.letter && (en(r.p1) + en(r.p2) + en(r.p4)).trim());
         if (noLetter >= 0) { toast(`حرفِ پلاکِ خودروی ردیفِ ${fa(noLetter + 1)} از مدرک خوانده نشد؛ انتخابش کنید.`, 'error'); return; }
         const covOut = c => (!c ? null : (c.__none ? 'none' : c));
         const payload = {
-            action: 'admin_create_full_request', company_id: st.companyId, insurer: st.insurer, request_kind: st.kind,
+            action: 'admin_create_full_request', company_id: st.personal ? '' : st.companyId, insurer: st.insurer, request_kind: st.kind,
+            req_mode: st.single ? 'SINGLE' : 'GROUP', personal: st.personal ? 1 : 0, customer: st.personal ? st.customer : null,
             request_text: st.text,
             default_liability: st.liabilityPerRow ? '' : st.liabilityAll,
             default_coverages: st.covBaseOnly ? 'none' : (st.cov && Object.keys(st.cov).length ? st.cov : null),
@@ -622,7 +659,7 @@
         }
         // بارگذاری نامه و مدارک، یکی‌یکی، با همان مسیر و نام‌گذاریِ استاندارد
         const jobs = [];
-        if (st.letter) jobs.push({ plate: null, type: 'letter', file: st.letter });
+        if (st.letter) jobs.push({ plate: null, type: st.letterKind === 'chat' ? 'chat' : 'letter', file: st.letter });
         st.rows.forEach((r, i) => Object.entries(r.files).forEach(([t, fs]) => fs.forEach(f => jobs.push({ plate: d.plate_ids[i], type: t, file: f }))));
         let failed = 0;
         const mkForm = j => { const fd = new FormData(); fd.append('action', 'admin_upload_plate_doc'); fd.append('request_id', d.request_id);
@@ -631,7 +668,7 @@
         const bg = jobs.length && window.UploadKit && UploadKit.enqueue;
         if (bg) {
             UploadKit.enqueue({ title: 'مدارکِ درخواست #' + fa(d.request_id), url: API,
-                items: jobs.map(j => ({ name: ((form.doc_types || {})[j.type] || (j.type === 'letter' ? 'نامه' : j.type)) + ' — ' + j.file.name, size: j.file.size, form: mkForm(j) })),
+                items: jobs.map(j => ({ name: ((form.doc_types || {})[j.type] || (j.type === 'letter' ? 'نامه' : (j.type === 'chat' ? 'اسکرین‌شاتِ چت' : j.type))) + ' — ' + j.file.name, size: j.file.size, form: mkForm(j) })),
                 onDone: sum => { toast(`مدارکِ درخواست #${fa(d.request_id)}: ${fa(sum.ok)} از ${fa(sum.total)} بارگذاری شد` + (sum.fail ? ` (${fa(sum.fail)} ناموفق؛ از جزئیاتِ درخواست دوباره بفرستید)` : '.'), sum.fail ? 'warning' : 'success');
                     if (typeof currentRequestId !== 'undefined' && String(currentRequestId) === String(d.request_id) && window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id); } });
         } else for (let j = 0; j < jobs.length; j++) {
@@ -665,7 +702,8 @@
         }
         close();
         if (window.showAlert) showAlert('درخواست ثبت شد', `درخواست #${fa(d.request_id)} با ${fa(d.plate_ids.length)} خودرو ثبت شد` + (jobs.length ? (bg ? ` و ${fa(jobs.length)} فایل در پس‌زمینه بارگذاری می‌شود (نوارِ پیشرفت پایینِ صفحه)` : ` و ${fa(Math.max(0, jobs.length - failed))} فایل بارگذاری شد`) : '') + (linked ? ` و ${fa(linked)} گزارش بازدید به ردیف‌ها وصل شد` : '') + (regDone ? ` و ${fa(regDone)} مدرک از پرونده‌ی خودروها روی ردیف‌ها نشست` : '') + (failed ? ` (${fa(failed)} فایل بارگذاری نشد؛ از جزئیات درخواست دوباره بفرستید)` : '') + '.', failed ? 'warning' : 'success');
-        if (window.loadCompanyRequests) loadCompanyRequests();
+        if (st.personal && window.loadPersonalRequests) loadPersonalRequests(); else if (window.loadCompanyRequests) loadCompanyRequests();
+        if (st.personal) form = null;   // فهرستِ مشتری‌ها بارِ بعد تازه خوانده شود
         if (window.openCompanyRequestDetail) openCompanyRequestDetail(d.request_id);
     }
 

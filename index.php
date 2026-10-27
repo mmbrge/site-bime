@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی). پیکربندیِ Tailwind (فونتِ Vazir و رنگ‌های brand) در tools/css/tailwind.config.js -->
     <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
-    <link rel="stylesheet" href="vendor-css/tailwind.css?v=2">
+    <link rel="stylesheet" href="vendor-css/tailwind.css?v=3">
     
     <style>
         /* ================= فونت‌ها ================= */

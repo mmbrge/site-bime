@@ -187,16 +187,18 @@ try {
 
     // ---- گزارش مالی خلاصه‌ی شرکت‌های درخواست‌کننده (فقط خواندنی - برای ADMIN و همکار) ----
     if ($action === 'finance_summary') {
+        creq_mode_ensure($pdo);
         $stmt = $pdo->query("
-            SELECT c.id, c.name,
+            SELECT c.id, c.name, c.customer_kind,
                    COALESCE((SELECT SUM(i.total_amount) FROM invoices i WHERE i.company_id = c.id), 0) AS total_invoiced,
                    COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.company_id = c.id), 0) AS total_paid
             FROM companies c
             WHERE c.kind IN ('INSURANCE_CLIENT','BOTH') AND c.is_import = 0
-            ORDER BY c.name
+            ORDER BY (c.customer_kind = 'PERSONAL'), c.name
         ");
         $rows = $stmt->fetchAll();
         foreach ($rows as &$row) {
+            $row['personal'] = ($row['customer_kind'] ?? '') === 'PERSONAL' ? 1 : 0;
             $row['total_invoiced'] = intval($row['total_invoiced']);
             $row['total_paid'] = intval($row['total_paid']);
             $row['outstanding'] = $row['total_invoiced'] - $row['total_paid'];
@@ -938,9 +940,13 @@ try {
             // برچسبِ «بایگانی وارداتی»: '' = همه، 1 = فقط وارداتی، 0 = بدونِ وارداتی
             $impF = (string)($data['import'] ?? '');
             if ($impF === '1') $w[] = "cr.is_import = 1"; elseif ($impF === '0') $w[] = "cr.is_import = 0";
+            // مشتریِ شخصی / شرکتی: '' = همه، P = فقط شخصی، C = فقط شرکت‌ها
+            creq_mode_ensure($pdo);
+            $custF = (string)($data['customer'] ?? '');
+            if ($custF === 'P') $w[] = "c.customer_kind = 'PERSONAL'"; elseif ($custF === 'C') $w[] = "COALESCE(c.customer_kind, '') <> 'PERSONAL'";
             $stmt = $pdo->prepare("
                 SELECT crp.*, cr.request_kind, cr.insurer, cr.created_at AS request_created_at, cr.request_text, cr.is_import, cr.ref_code AS request_ref,
-                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json,
+                       cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json, cr.req_mode, c.customer_kind,
                        c.name AS company_name, c.economic_code, c.phone AS company_phone, c.address AS company_address
                   FROM company_request_plates crp
                   JOIN company_requests cr ON cr.id = crp.request_id
@@ -957,8 +963,9 @@ try {
                     'party_mode' => $pr['mode'], 'party_mode_fa' => $pr['mode_short'],
                     'owner_name' => ($iiR['owner_name'] ?? '') ?: ($pr['owner']['name'] ?? ''),
                     'beneficiary_name' => ($iiR['beneficiary'] ?? '') ?: ($pr['beneficiary']['name'] ?? ''),
-                    'source' => 'COMPANY', 'source_fa' => !empty($r['is_import']) ? 'وارداتی' : 'شرکتی',
-                    'is_import' => !empty($r['is_import']) ? 1 : 0, 'tag' => !empty($r['is_import']) ? 'بایگانی وارداتی' : null,
+                    'source' => 'COMPANY', 'source_fa' => !empty($r['is_import']) ? 'وارداتی' : (($r['customer_kind'] ?? '') === 'PERSONAL' ? 'شخصی' : 'شرکتی'),
+                    'is_import' => !empty($r['is_import']) ? 1 : 0, 'tag' => !empty($r['is_import']) ? 'بایگانی وارداتی' : (($r['customer_kind'] ?? '') === 'PERSONAL' ? 'شخصی' : (($r['req_mode'] ?? '') === 'SINGLE' ? 'تکی' : null)),
+                    'personal' => ($r['customer_kind'] ?? '') === 'PERSONAL' ? 1 : 0,
                     'row_id' => intval($r['id']), 'request_id' => intval($r['request_id']), 'request_ref' => $r['request_ref'] ?? null,
                     'plate_raw' => company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']),
                     'expiry_date_raw' => $r['expiry_date'] ?? null,
@@ -1182,10 +1189,11 @@ try {
         if (!function_exists('fin_contracts_ensure')) require_once __DIR__ . '/finance_core.php';
         fin_contracts_ensure($pdo);
         companies_extra_ensure($pdo);
-        // همه‌ی شرکت‌ها (کارفرمایانِ معرفی‌نامه‌ها هم؛ آن‌هایی که اطلاعاتشان کامل نیست «اطلاعات ناقص» می‌خورند)
+        creq_mode_ensure($pdo);
+        // همه‌ی شرکت‌ها (کارفرمایانِ معرفی‌نامه‌ها هم؛ آن‌هایی که اطلاعاتشان کامل نیست «اطلاعات ناقص» می‌خورند) — مشتریانِ شخصی صفحه‌ی خودشان را دارند
         $stmt = $pdo->query("SELECT c.*, parent.name AS parent_name, fc.name AS contract_name, fc.contract_key FROM companies c
                               LEFT JOIN companies parent ON parent.id = c.parent_id LEFT JOIN fin_contracts fc ON fc.id = c.contract_id
-                              WHERE c.is_import = 0 ORDER BY c.name");
+                              WHERE c.is_import = 0 AND COALESCE(c.customer_kind, '') <> 'PERSONAL' ORDER BY c.name");
         $companiesList = $stmt->fetchAll();
         // آمار برای کارت‌های صفحه‌ی شرکت‌ها: کاربرانِ پنل، درخواست‌ها، درخواست‌های باز، صادره‌ها
         $stat = ['users' => [], 'req' => [], 'open' => [], 'issued' => []];
@@ -1509,6 +1517,12 @@ try {
                 FROM company_requests cr JOIN companies c ON c.id = cr.company_id";
         // فیلترها: وضعیت، شرکت، ماهِ ثبت (شمسی)، نوعِ درخواست، بیمه‌گر و جستجو (شماره‌ی درخواست / شرکت / پلاک / شاسی / بیمه‌گذار)
         $w = ["cr.is_import = 0"]; $params = [];   // «بایگانی وارداتی» صفحه‌ی خودش را دارد
+        // گروهی / تکی (شرکت‌های طرفِ قرارداد) و شخصی (صفحه‌ی «درخواست‌های شخصی»)
+        creq_mode_ensure($pdo);
+        $scope = in_array($data['scope'] ?? '', ['group', 'single', 'personal', 'all'], true) ? $data['scope'] : 'all';
+        $scopeSql = ['group' => "COALESCE(c.customer_kind, '') <> 'PERSONAL' AND COALESCE(cr.req_mode, '') <> 'SINGLE'",
+                     'single' => "COALESCE(c.customer_kind, '') <> 'PERSONAL' AND cr.req_mode = 'SINGLE'", 'personal' => "c.customer_kind = 'PERSONAL'"];
+        if (isset($scopeSql[$scope])) $w[] = $scopeSql[$scope];
         if ($statusFilter !== '') { $w[] = "cr.status = ?"; $params[] = $statusFilter; }
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $params[] = intval($data['company_id']); }
         if (!empty($data['request_kind'])) { $w[] = "cr.request_kind = ?"; $params[] = (string)$data['request_kind']; }
@@ -1524,7 +1538,7 @@ try {
             array_push($params, intval($q), $q, $like, $like, str_replace(' ', '', $like), $like, $like, $like);
         }
         if ($w) $sql .= " WHERE " . implode(' AND ', $w);
-        $sql .= " ORDER BY cr.created_at DESC LIMIT " . (count($w) > 1 ? 1000 : 300);
+        $sql .= " ORDER BY cr.created_at DESC LIMIT " . (count($w) > 2 ? 1000 : 300);
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
@@ -1553,8 +1567,11 @@ try {
         $stageList = [];
         foreach ($sum['stages'] as $st => $n) $stageList[] = ['status' => $st, 'status_fa' => company_plate_status_fa($st), 'n' => $n];
         $sum['stages'] = $stageList;
-        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
-        echo json_encode(['ok' => true, 'requests' => $rows, 'summary' => $sum, 'companies' => $companies], JSON_UNESCAPED_UNICODE);
+        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 AND " . ($scope === 'personal' ? "customer_kind = 'PERSONAL'" : "COALESCE(customer_kind, '') <> 'PERSONAL'") . " ORDER BY name")->fetchAll();
+        // شمارِ هر زبانه (گروهی / تکی)
+        $scopeCounts = [];
+        foreach (['group', 'single', 'personal'] as $sc) $scopeCounts[$sc] = (int)$pdo->query("SELECT COUNT(*) FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.is_import = 0 AND " . $scopeSql[$sc])->fetchColumn();
+        echo json_encode(['ok' => true, 'requests' => $rows, 'summary' => $sum, 'companies' => $companies, 'scope_counts' => $scopeCounts], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -1593,7 +1610,9 @@ try {
             exit;
         }
         companies_extra_ensure($pdo);
-        $companies = $pdo->query("SELECT id, name, allowed_insurers, economic_code, other_owner_mode FROM companies WHERE is_import = 0 ORDER BY name")->fetchAll();
+        creq_mode_ensure($pdo);
+        $companies = $pdo->query("SELECT id, name, allowed_insurers, economic_code, other_owner_mode FROM companies WHERE is_import = 0 AND COALESCE(customer_kind, '') <> 'PERSONAL' ORDER BY name")->fetchAll();
+        $personalCustomers = personal_customers_list($pdo);
         $checklists = [];
         foreach (['NEW_POLICY', 'ENDORSEMENT', 'CANCELLATION'] as $k) {
             foreach (['THIRDPARTY', 'BODY'] as $t) {
@@ -1606,7 +1625,7 @@ try {
         }
         $docTypes = [];
         foreach (company_doc_types() as $key => $v) $docTypes[$key] = company_doc_type_label($key);
-        echo json_encode(['ok' => true, 'companies' => $companies, 'coverage_options' => body_coverage_options(),
+        echo json_encode(['ok' => true, 'companies' => $companies, 'personal_customers' => $personalCustomers, 'coverage_options' => body_coverage_options(),
                           'liability_options' => liability_limit_options('C', $pdo), 'checklists' => $checklists,
                           'doc_types' => $docTypes, 'kinds' => company_request_kinds(),
                           'cancellation_reasons' => company_cancellation_reasons()], JSON_UNESCAPED_UNICODE);
@@ -1669,6 +1688,13 @@ try {
     }
 
     if ($action === 'admin_create_full_request') {
+        creq_mode_ensure($pdo);
+        // درخواستِ شخصی: مشتری (شخص یا شرکتِ بی‌قرارداد) پیدا یا ساخته می‌شود
+        if (!empty($data['personal']) && is_array($data['customer'] ?? null)) {
+            $pc = personal_customer_upsert($pdo, $data['customer']);
+            if (empty($pc['ok'])) { echo json_encode($pc, JSON_UNESCAPED_UNICODE); exit; }
+            $data['company_id'] = $pc['id'];
+        }
         $companyId = intval($data['company_id'] ?? 0);
         $st = $pdo->prepare("SELECT id, name, allowed_insurers FROM companies WHERE id = ?");
         $st->execute([$companyId]);
@@ -1738,6 +1764,8 @@ try {
             ->execute([$companyId, trim($data['request_text'] ?? '') ?: null, $insurer, $kind, json_encode(company_normalize_requested_counts($counts))]);
         $requestId = (int)$pdo->lastInsertId();
         ref_code_of($pdo, 'company_requests', $requestId);
+        $reqMode = ($data['req_mode'] ?? '') === 'SINGLE' ? 'SINGLE' : 'GROUP';
+        $pdo->prepare("UPDATE company_requests SET req_mode = ? WHERE id = ?")->execute([$reqMode, $requestId]);
         // پیش‌فرضِ همین درخواست (برای ردیف‌هایی که بعداً اضافه می‌شوند یا از نامه وارد می‌شوند)
         if ($defaultLiability || $defaultCov !== null) $pdo->prepare("UPDATE company_requests SET default_coverages = ?, default_liability = ? WHERE id = ?")->execute([$defaultCov, $defaultLiability ?: null, $requestId]);
         $ins = $pdo->prepare("INSERT INTO company_request_plates
@@ -1888,6 +1916,7 @@ try {
                        $plateId ? 'SUPPORTING_DOC' : 'LETTER', $plateId ? $docType : 'letter', $actor['user_id']]);
         $docId = $pdo->lastInsertId();
         $docLabel = $plateId && $docType === 'other' ? company_doc_label_clean($data['doc_label'] ?? '') : '';
+        if (!$plateId && $docType === 'chat') $docLabel = 'اسکرین‌شاتِ چتِ درخواست';   // درخواستِ تکی: به‌جای نامه
         if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         if ($plateId) {
@@ -1928,7 +1957,8 @@ try {
     if ($action === 'request_detail') {
         $requestId = intval($data['request_id'] ?? 0);
         party_ensure($pdo);
-        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name, c.economic_code AS company_economic_code, c.address AS company_address, c.phone AS company_phone FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        creq_mode_ensure($pdo);
+        $stmt = $pdo->prepare("SELECT cr.*, c.name AS company_name, c.economic_code AS company_economic_code, c.address AS company_address, c.phone AS company_phone, c.customer_kind, c.national_id AS customer_nid, c.customer_mobile FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
         $stmt->execute([$requestId]);
         $request = $stmt->fetch();
         if (!$request) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }

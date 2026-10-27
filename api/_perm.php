@@ -26,6 +26,7 @@ function perm_catalog() {
         ]],
         ['ثالث و بدنه › شرکت‌ها', [
             'companies-requests' => ['درخواست‌های شرکتی', $all],
+            'personal-requests' => ['درخواست‌های شخصی (اشخاص و شرکت‌های بی‌قرارداد)', $all],
             'companies-inbox' => ['صندوق ورودی مدارک', ['view', 'edit', 'delete']],
             'companies-manage' => ['مدیریت شرکت‌ها', $all],
         ]],
@@ -223,6 +224,18 @@ function perm_classify($action) {
 
 // نقشه‌ی اکشن‌های API به صفحه و عملیات
 function perm_api_map() {
+    // «درخواست‌های شخصی» همان سازوکارِ درخواست‌های شرکتی است: هر جا companies-requests:X مجاز است، personal-requests:X هم
+    static $m = null;
+    if ($m !== null) return $m;
+    $m = perm_api_map_raw();
+    foreach ($m as $k => $e) {
+        if (in_array('companies-requests', $e['pages'] ?? [], true)) $m[$k]['pages'][] = 'personal-requests';
+        foreach ($e['actions'] ?? [] as $a => $p) if (is_string($p) && strpos($p, 'companies-requests:') !== false)
+            $m[$k]['actions'][$a] = preg_replace_callback('/companies-requests:(\w+)/', function ($x) { return $x[0] . '|personal-requests:' . $x[1]; }, $p);
+    }
+    return $m;
+}
+function perm_api_map_raw() {
     $fin = 'fin';
     $req = 'companies-requests';
     return [

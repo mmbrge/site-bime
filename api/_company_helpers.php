@@ -103,8 +103,80 @@ function company_archive_root($siteRoot) {
 function company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName) {
     [$jy, $jm, ] = jalali_from_gregorian_ts($requestCreatedTimestamp);
     $letterDate = jalali_from_gregorian_ts_dotted($requestCreatedTimestamp);
-    return company_archive_root($siteRoot) . '/' . $jy . '/' . sanitize_folder_name($companyName)
+    // مشتریِ شخصی (شخص یا شرکتِ بی‌قرارداد): «بایگانی شخصی» به‌جای «بایگانی شرکتی»
+    $root = isset(company_personal_names()[(string)$companyName]) ? personal_archive_root($siteRoot) : company_archive_root($siteRoot);
+    return $root . '/' . $jy . '/' . sanitize_folder_name($companyName)
         . '/' . jalali_month_name($jm) . '/' . $letterDate;
+}
+
+// ---- درخواست‌های «گروهی / تکی» و مشتریانِ «شخصی» ----
+// companies.customer_kind: خالی = شرکتِ طرفِ قرارداد | PERSONAL = مشتریِ شخصی (شخصِ حقیقی یا شرکتِ بی‌قرارداد)
+// company_requests.req_mode: خالی/GROUP = گروهی (نامه و چند خودرو) | SINGLE = تکی (یک خودرو؛ نامه اختیاری، اسکرین‌شاتِ چت هم می‌شود)
+function creq_mode_ensure($pdo) {
+    static $done = false;
+    if ($done || $pdo->inTransaction()) return;
+    $done = true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM companies LIKE 'customer_kind'")->fetch()) $pdo->exec("ALTER TABLE companies ADD COLUMN customer_kind VARCHAR(10) NULL");
+        if (!$pdo->query("SHOW COLUMNS FROM companies LIKE 'customer_mobile'")->fetch()) $pdo->exec("ALTER TABLE companies ADD COLUMN customer_mobile VARCHAR(20) NULL");
+        if (!$pdo->query("SHOW COLUMNS FROM company_requests LIKE 'req_mode'")->fetch()) $pdo->exec("ALTER TABLE company_requests ADD COLUMN req_mode VARCHAR(8) NULL");
+    } catch (Throwable $e) { error_log('[creq mode schema] ' . $e->getMessage()); }
+}
+function personal_archive_root($siteRoot) { return archive_root($siteRoot) . '/بایگانی شخصی'; }
+// نامِ مشتریانِ شخصی (برای ریشه‌ی بایگانی)؛ $reset بعد از ساختنِ مشتریِ تازه
+function company_personal_names($reset = false) {
+    static $set = null;
+    if ($set !== null && !$reset) return $set;
+    $set = [];
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if (!$pdo) return $set;
+    try { foreach ($pdo->query("SELECT name FROM companies WHERE customer_kind = 'PERSONAL'") as $r) $set[(string)$r['name']] = true; } catch (Throwable $e) {}
+    return $set;
+}
+function company_is_personal($pdo, $companyId) {
+    try { $st = $pdo->prepare("SELECT customer_kind FROM companies WHERE id = ?"); $st->execute([intval($companyId)]); return $st->fetchColumn() === 'PERSONAL'; } catch (Throwable $e) { return false; }
+}
+// مشتریِ شخصی را پیدا می‌کند یا می‌سازد: ['id'] موجود، یا name/kind(PERSON|LEGAL)/national_id/mobile/address
+function personal_customer_upsert($pdo, array $c) {
+    creq_mode_ensure($pdo);
+    companies_extra_ensure($pdo);
+    if (!empty($c['id'])) {
+        $st = $pdo->prepare("SELECT id FROM companies WHERE id = ? AND customer_kind = 'PERSONAL'");
+        $st->execute([intval($c['id'])]);
+        $id = (int)$st->fetchColumn();
+        if (!$id) return ['ok' => false, 'error' => 'مشتری پیدا نشد.'];
+    } else {
+        $name = trim(preg_replace('/\s+/u', ' ', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)($c['name'] ?? ''))));
+        if (mb_strlen($name) < 2) return ['ok' => false, 'error' => 'نامِ مشتری را بنویسید.'];
+        $nid = preg_replace('/\D/', '', p2e_digits((string)($c['national_id'] ?? '')));
+        $id = 0;
+        if ($nid !== '') { $st = $pdo->prepare("SELECT id FROM companies WHERE customer_kind = 'PERSONAL' AND national_id = ? LIMIT 1"); $st->execute([$nid]); $id = (int)$st->fetchColumn(); }
+        if (!$id) { $st = $pdo->prepare("SELECT id FROM companies WHERE customer_kind = 'PERSONAL' AND name = ? LIMIT 1"); $st->execute([$name]); $id = (int)$st->fetchColumn(); }
+        if (!$id) {
+            // نامِ تکراری با شرکتِ طرفِ قرارداد: پسوندِ «(شخصی)» تا بایگانی‌ها روی هم نیفتند
+            $st = $pdo->prepare("SELECT COUNT(*) FROM companies WHERE name = ? AND COALESCE(customer_kind, '') <> 'PERSONAL'");
+            $st->execute([$name]);
+            if ((int)$st->fetchColumn()) $name .= ' (شخصی)';
+            $legal = ($c['kind'] ?? '') === 'LEGAL';
+            $pdo->prepare("INSERT INTO companies (name, kind, payment_terms, economic_code, address, phone, allowed_insurers, is_import, customer_kind, national_id, customer_mobile, company_type)
+                           VALUES (?, 'INSURANCE_CLIENT', 'CASH_IMMEDIATE', ?, ?, ?, 'BOTH', 0, 'PERSONAL', ?, ?, ?)")
+                ->execute([$name, $legal ? ($nid ?: null) : null, trim((string)($c['address'] ?? '')) ?: null, trim(p2e_digits((string)($c['mobile'] ?? ''))) ?: null,
+                           $nid ?: null, trim(p2e_digits((string)($c['mobile'] ?? ''))) ?: null, $legal ? 'حقوقی' : 'حقیقی']);
+            $id = (int)$pdo->lastInsertId();
+            company_personal_names(true);
+        }
+    }
+    $mob = trim(p2e_digits((string)($c['mobile'] ?? '')));
+    if ($mob !== '') $pdo->prepare("UPDATE companies SET customer_mobile = ? WHERE id = ?")->execute([$mob, $id]);
+    return ['ok' => true, 'id' => $id];
+}
+function personal_customers_list($pdo) {
+    creq_mode_ensure($pdo);
+    try {
+        return $pdo->query("SELECT c.id, c.name, c.national_id, c.customer_mobile AS mobile, c.company_type, c.address,
+                                   (SELECT COUNT(*) FROM company_requests r WHERE r.company_id = c.id) AS requests
+                              FROM companies c WHERE c.customer_kind = 'PERSONAL' ORDER BY c.name")->fetchAll();
+    } catch (Throwable $e) { return []; }
 }
 
 // پوشه‌ی موقتِ مدارکِ تخصیص‌نیافته‌ی یک شرکت (پیش از تگ‌گذاری دستی)

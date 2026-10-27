@@ -329,7 +329,7 @@ function bk_restore($pdo, $zipPath, $withFiles = true) {
         }
         // پوشه‌های اصلی حتی اگر خالی بودند ساخته شوند
         foreach ([archive_root($site) . '/بایگانی صادره', archive_root($site) . '/بایگانی کسر از حقوق',
-                  archive_root($site) . '/بایگانی شرکتی', archive_root($site) . '/بایگانی وارداتی', archive_root($site) . '/بایگانی گزارشات بازدید',
+                  archive_root($site) . '/بایگانی شرکتی', archive_root($site) . '/بایگانی شخصی', archive_root($site) . '/بایگانی وارداتی', archive_root($site) . '/بایگانی گزارشات بازدید',
                   temp_archive_root($site), temp_finance_root($site), finance_root($site)] as $d) @mkdir($d, 0775, true);
     }
     $zip->close();
@@ -470,7 +470,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
             foreach (['/بایگانی صادره', '/بایگانی کسر از حقوق', '/سایر مدارک'] as $d) bk_rrmdir_contents($arch . $d);
             bk_rrmdir_contents($tmp, ['شرکت‌ها', 'چت شرکت‌ها', 'چت داخلی']);
         }
-        if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($arch . '/بایگانی وارداتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
+        if ($has('companies')) { bk_rrmdir_contents($arch . '/بایگانی شرکتی'); bk_rrmdir_contents($arch . '/بایگانی شخصی'); bk_rrmdir_contents($arch . '/بایگانی وارداتی'); bk_rrmdir_contents($tmp . '/شرکت‌ها'); bk_rrmdir_contents($tmp . '/چت شرکت‌ها'); }
         if ($has('finance')) { bk_rrmdir_contents(finance_root($siteRoot), ['درمان تکمیلی']); bk_rrmdir_contents(temp_finance_root($siteRoot)); }
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
         if ($has('life')) bk_rrmdir_contents($arch . '/بایگانی بیمه عمر');
@@ -483,6 +483,6 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
     }
     if ($full || $has('messages')) @file_put_contents($siteRoot . '/queue/bale_debug.log', '');
     // پوشه‌های اصلیِ بایگانی دوباره ساخته می‌شوند تا خالی ولی مرتب دیده شوند
-    foreach ([$arch . '/بایگانی صادره', $arch . '/بایگانی کسر از حقوق', $arch . '/سایر مدارک', $arch . '/بایگانی شرکتی', $arch . '/بایگانی وارداتی', $arch . '/بایگانی گزارشات بازدید',
+    foreach ([$arch . '/بایگانی صادره', $arch . '/بایگانی کسر از حقوق', $arch . '/سایر مدارک', $arch . '/بایگانی شرکتی', $arch . '/بایگانی شخصی', $arch . '/بایگانی وارداتی', $arch . '/بایگانی گزارشات بازدید',
               $tmp, temp_finance_root($siteRoot), finance_root($siteRoot)] as $dir) @mkdir($dir, 0775, true);
 }

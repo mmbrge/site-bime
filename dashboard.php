@@ -281,7 +281,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <title>پورتال مدیریت | بیمه با ما</title>
     <?php echo brand_favicon_tag($pdo); ?>
     <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی) تا با قطعیِ اینترنتِ بین‌الملل ظاهر به هم نریزد -->
-    <link rel="stylesheet" href="vendor-css/tailwind.css?v=2">
+    <link rel="stylesheet" href="vendor-css/tailwind.css?v=3">
     <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
     
     <style>
@@ -531,6 +531,15 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
            نوشته شده (نه کلاس‌های Tailwind) تا مستقل از CDN هم درست کار کند. */
         .rows-table { width: 100%; }
+        .creq-scopes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 720px; }
+        .creq-scopes button { text-align: right; border-radius: 16px; padding: 10px 14px; border: 2px solid #e2e8f0; background: #fff; color: #475569; font-size: 12.5px; font-weight: 900; transition: .15s; }
+        .creq-scopes button small { display: block; font-size: 10px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+        .creq-scopes button b { display: inline-block; min-width: 22px; text-align: center; font-size: 10.5px; background: #f1f5f9; border-radius: 999px; padding: 0 6px; margin-right: 4px; }
+        .creq-scopes button.on { border-color: transparent; background: linear-gradient(120deg, #1d4ed8, #0e7490); color: #fff; box-shadow: 0 10px 24px -14px #1d4ed8; }
+        .creq-scopes button.on small { color: rgba(255,255,255,.8); }
+        .creq-scopes button.on b { background: rgba(255,255,255,.22); }
+        .preq-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-radius: 22px; color: #fff;
+                     background: linear-gradient(120deg, #4338ca, #7c3aed 50%, #db2777); box-shadow: 0 14px 34px -16px rgba(124,58,237,.6); }
         .rows-table .col-checklist { width: 34%; min-width: 230px; }
         /* ردیف‌های جمع‌شونده‌ی درخواست (هر بار فقط یکی باز) */
         .cq-sum { cursor: pointer; transition: background .15s; }
@@ -1147,7 +1156,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('pasargad-recon', 'fa-scale-unbalanced', 'مغایرت‌گیری با پاسارگاد', 'خروجیِ هفتگی/ماهانه با سایت') : '')
                         . ($isAdminRole ? $bmLink('legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی‌های قبلی', 'اکسل‌ها، پوشه‌ها، ادغام') : '')
                         . ($isAdminRole ? $bmLink('premium-inquiries', 'fa-calculator', 'استعلام‌های حق بیمه', 'لاگِ استعلام‌های مینی‌اپ و پاسخ به کاربر') : '');
-                    $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
+                    $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'گروهی و تکی؛ ردیف‌ها، مدارک، صدور') . ($isLiaison ? '' : $bmLink('personal-requests', 'fa-user', 'درخواست‌های شخصی', 'اشخاص و شرکت‌های بی‌قرارداد')) . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
                         . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات')
                         . ($isAdminRole ? $bmLink('contacts', 'fa-address-book', 'بانک مخاطبین', 'ورود و خروجِ اکسل، شماره‌ها، لاگِ کدِ تأیید') : '') : '';
@@ -2945,6 +2954,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <select id="il-kind" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
                 <select id="il-insurer" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
                 <select id="il-import" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="برچسبِ بایگانی وارداتی"><option value="">با و بدونِ «بایگانی وارداتی»</option><option value="1">فقط بایگانی وارداتی</option><option value="0">بدونِ بایگانی وارداتی</option></select>
+                <select id="il-customer" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="مشتریِ شخصی یا شرکت"><option value="">شرکت‌ها و شخصی</option><option value="C">فقط شرکت‌ها</option><option value="P">فقط درخواست‌های شخصی</option></select>
                 <select id="il-endo" onchange="loadIssuedList()" class="border rounded-lg px-3 py-2 text-xs" title="الحاقیه"><option value="">با و بدونِ الحاقیه</option><option value="has">دارای الحاقیه</option><option value="cancelled">فسخ‌شده</option><option value="none">بدونِ الحاقیه</option></select>
                 <input type="text" id="il-exp-from" oninput="debouncedIssuedList()" placeholder="انقضای قبلی از ۱۴۰۵/۰۷/۰۱" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
                 <input type="text" id="il-exp-to" oninput="debouncedIssuedList()" placeholder="انقضای قبلی تا ۱۴۰۵/۰۷/۳۰" dir="ltr" class="border rounded-lg px-3 py-2 text-xs">
@@ -3035,6 +3045,43 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
         <?php endif; ?>
 
+        <!-- درخواست‌های شخصی: اشخاصِ حقیقی و شرکت‌هایی که هنوز قرارداد ندارند (بایگانی شخصی، مالیِ جدا؛ بعد از صدور در بایگانی صادره هم) -->
+        <div id="tab-personal-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
+            <div class="preq-hero">
+                <div><h1 class="text-2xl font-black"><i class="fas fa-user-shield ml-2"></i>درخواست‌های شخصی</h1>
+                    <p class="text-[11.5px] opacity-90 mt-1 leading-6">مشتریانِ شخصی (اشخاص و شرکت‌هایی که هنوز با ما قرارداد ندارند): هر درخواست در «بایگانی شخصی» پوشه می‌گیرد، مالیِ هر مشتری جداست و بعد از صدور، بیمه‌نامه در «بایگانی صادره» هم می‌نشیند.</p></div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button onclick="loadPersonalRequests()" class="bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
+                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
+                    <button onclick="CompanyManualRequest.open({personal: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="card p-4 space-y-3">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <div class="relative lg:col-span-2"><i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                        <input type="search" id="preq-q" oninput="clearTimeout(window.__preqT); window.__preqT = setTimeout(loadPersonalRequests, 350)" placeholder="نام یا کد ملیِ مشتری، پلاک، شاسی، بیمه‌نامه..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs"></div>
+                    <select id="preq-company" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی مشتری‌ها</option></select>
+                    <select id="preq-month" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی ماه‌ها</option></select>
+                    <select id="preq-status-filter" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
+                        <option value="">همه‌ی وضعیت‌ها</option><option value="NEW">جدید</option><option value="DOCS_REVIEW">در حال بررسی</option><option value="READY_FOR_ISSUE">آماده‌ی صدور</option><option value="ISSUED">صادر شده</option><option value="CANCELLED">لغو شده</option></select>
+                    <select id="preq-insurer" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
+                        <option value="">پاسارگاد و ایران</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
+                </div>
+                <div id="preq-summary" class="flex flex-wrap items-center gap-2 text-[11px]"></div>
+            </div>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500 text-[11px]"><tr>
+                        <th class="p-3 text-right">درخواست و مشتری</th><th class="p-3 text-right">پیشرفتِ صدور</th>
+                        <th class="p-3 text-right">مرحله‌ی ردیف‌ها</th>
+                        <th class="p-3 text-right">وضعیت و تاریخ</th><th class="p-3 text-left"></th>
+                    </tr></thead>
+                    <tbody id="preq-body" class="creq-list"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">درخواست‌های بیمه‌ی شرکتی</h1>
@@ -3049,10 +3096,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
-                    <button onclick="CompanyManualRequest.open()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواست</button>
+                    <button onclick="CompanyManualRequest.open(CREQ_SCOPE === 'single' ? {single: true} : {})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواستِ گروهی</button>
+                    <button onclick="CompanyManualRequest.open({single: true})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-bold" title="یک خودرو؛ نامه اختیاری (نامه یا اسکرین‌شاتِ چت)"><i class="fas fa-car ml-1"></i>درخواستِ تکی</button>
                     <button onclick="openAdminNewRequestModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold" title="فقط ساخت درخواست خالی (ردیف‌ها و مدارک را بعداً اضافه می‌کنید)"><i class="fas fa-file ml-1"></i>درخواست خالی</button>
                     <?php endif; ?>
                 </div>
+            </div>
+            <!-- درخواست‌های گروهی (نامه و چند خودرو) / تکی (یک خودرو؛ نامه اختیاری) -->
+            <div class="creq-scopes" id="creq-scopes">
+                <button type="button" data-scope="group" onclick="creqSetScope('group')" class="on"><i class="fas fa-layer-group ml-1"></i>درخواست‌های گروهی <b data-sc="group"></b><small>نامه و چند خودرو</small></button>
+                <button type="button" data-scope="single" onclick="creqSetScope('single')"><i class="fas fa-car ml-1"></i>درخواست‌های تکی <b data-sc="single"></b><small>یک خودرو؛ نامه یا اسکرین‌شاتِ چت</small></button>
             </div>
             <!-- فیلتر: هر شرکت، هر ماه، هر نوع؛ با خلاصه‌ی مرحله‌ی همه‌ی ردیف‌ها -->
             <div class="card p-4 space-y-3">
@@ -4667,8 +4720,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($vrAccess): ?>
     <script src="visit-reports.js?v=18"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=5"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=15"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=5"></script><?php endif; ?>
     <?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبتِ دستیِ درخواست (گروهی، تکی، شخصی) مستقل از دسترسیِ گزارشِ بازدید ?><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=16"></script><?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
         // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
@@ -4739,7 +4793,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
         // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
         const PERM = <?php echo json_encode($permBoot, JSON_UNESCAPED_UNICODE); ?>;
-        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
             'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
@@ -5482,6 +5536,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         setInterval(() => {
             const visible = id => document.getElementById('tab-' + id) && !document.getElementById('tab-' + id).classList.contains('hidden');
             if (visible('companies-requests')) loadCompanyRequests();
+            if (visible('personal-requests')) loadPersonalRequests();
             if (visible('companies-finance')) loadCompanyFinance();
             if (visible('companies-manage')) loadCompanyManage();
             if (visible('staff-users')) loadStaffUsers();
@@ -6471,25 +6526,33 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         const CREQ_STAGE_COLOR = {PENDING: 'bg-amber-50 text-amber-700', READY_FOR_ISSUE: 'bg-emerald-50 text-emerald-700', WITH_BOSS: 'bg-violet-50 text-violet-700',
                                   IN_ISSUANCE: 'bg-sky-50 text-sky-700', ISSUED: 'bg-teal-100 text-teal-800', CANCELLED: 'bg-slate-100 text-slate-500'};
         const creqStageChips = list => (list || []).map(s => `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${CREQ_STAGE_COLOR[s.status] || 'bg-slate-100 text-slate-600'}">${s.status_fa} <b>${e2pNum(s.n)}</b></span>`).join(' ');
-        async function loadCompanyRequests() {
-            const status = document.getElementById('creq-status-filter').value;
-            jMonthOptions(document.getElementById('creq-month'));
-            applyFacets('requests', {'creq-company': 'companies', 'creq-month': 'months', 'creq-status-filter': 'statuses', 'creq-kind': 'kinds', 'creq-insurer': 'insurers'});
+        // «درخواست‌های شرکتی» (گروهی/تکی) و «درخواست‌های شخصی» با همین فهرست؛ P = پیشوندِ شناسه‌های همان صفحه
+        let CREQ_SCOPE = 'group';
+        function creqSetScope(sc) { CREQ_SCOPE = sc; document.querySelectorAll('#creq-scopes [data-scope]').forEach(b => b.classList.toggle('on', b.dataset.scope === sc)); const cs = document.getElementById('creq-company'); if (cs) { cs.value = ''; } loadCompanyRequests(); }
+        function loadPersonalRequests() { return loadCompanyRequests('preq'); }
+        async function loadCompanyRequests(P) {
+            P = P === 'preq' ? 'preq' : 'creq';
+            const personal = P === 'preq', reload = personal ? 'loadPersonalRequests' : 'loadCompanyRequests';
+            const status = document.getElementById(P + '-status-filter').value;
+            jMonthOptions(document.getElementById(P + '-month'));
+            if (!personal) applyFacets('requests', {'creq-company': 'companies', 'creq-month': 'months', 'creq-status-filter': 'statuses', 'creq-kind': 'kinds', 'creq-insurer': 'insurers'});
             const g = id => (document.getElementById(id) || {}).value || '';
-            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status,
-                company_id: g('creq-company'), month: g('creq-month'), request_kind: g('creq-kind'), insurer: g('creq-insurer'), q: g('creq-q').trim()})});
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status, scope: personal ? 'personal' : CREQ_SCOPE,
+                company_id: g(P + '-company'), month: g(P + '-month'), request_kind: g(P + '-kind'), insurer: g(P + '-insurer'), q: g(P + '-q').trim()})});
             const data = await res.json();
-            const tbody = document.getElementById('creq-body');
+            const tbody = document.getElementById(P + '-body');
             if (!data.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
-            const csel = document.getElementById('creq-company');
-            if (csel && !csel.dataset.filled && data.companies) {
-                csel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-                csel.dataset.filled = '1';
+            const csel = document.getElementById(P + '-company');
+            if (csel && data.companies && csel.dataset.filled !== (personal ? 'p' : CREQ_SCOPE)) {
+                const cur = csel.value;
+                csel.innerHTML = `<option value="">${personal ? 'همه‌ی مشتری‌ها' : 'همه‌ی شرکت‌ها'}</option>` + data.companies.map(c => `<option value="${c.id}">${fmEsc(c.name)}</option>`).join('');
+                csel.value = cur; csel.dataset.filled = personal ? 'p' : CREQ_SCOPE;
             }
+            if (!personal && data.scope_counts) document.querySelectorAll('#creq-scopes [data-sc]').forEach(b => { b.textContent = e2pNum(data.scope_counts[b.dataset.sc] || 0); });
             const sm = data.summary || {};
-            document.getElementById('creq-summary').innerHTML = `<span class="font-black text-slate-600"><i class="fas fa-filter text-indigo-400 ml-1"></i>${e2pNum(sm.requests || 0)} درخواست · ${e2pNum(sm.rows || 0)} ردیف · ${e2pNum(sm.issued || 0)} صادرشده</span>
+            document.getElementById(P + '-summary').innerHTML = `<span class="font-black text-slate-600"><i class="fas fa-filter text-indigo-400 ml-1"></i>${e2pNum(sm.requests || 0)} درخواست · ${e2pNum(sm.rows || 0)} ردیف · ${e2pNum(sm.issued || 0)} صادرشده</span>
                 <span class="text-slate-300">|</span>${creqStageChips(sm.stages) || '<span class="text-slate-400">ردیفی نیست</span>'}`;
-            companyRequestsCache = data.requests;
+            if (!personal) companyRequestsCache = data.requests;
             if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
             if (!document.getElementById('creq-list-css')) { const st = document.createElement('style'); st.id = 'creq-list-css';
                 st.textContent = '.creq-list tr.creq-r{cursor:pointer;transition:background .12s}.creq-list tr.creq-r:hover{background:#f8fafc}.creq-list tr.creq-r>td{vertical-align:middle;border-top:1px solid #f1f5f9}'
@@ -6507,7 +6570,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.insurer === 'IRAN' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                             ${r.request_kind && r.request_kind !== 'NEW_POLICY' ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-700' : 'bg-rose-50 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
                             ${Number(r.is_renewal) ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}</div>
-                        <p class="font-black text-[13px] text-slate-800 leading-6">${fmEsc(r.company_name || '')}</p>
+                        <p class="font-black text-[13px] text-slate-800 leading-6">${personal ? '<i class="fas fa-user text-violet-400 ml-1 text-[11px]"></i>' : ''}${fmEsc(r.company_name || '')}${!personal && r.req_mode === 'SINGLE' ? ' <span class="text-[9.5px] font-bold bg-teal-50 text-teal-700 rounded-full px-1.5 py-0.5 align-middle">تکی</span>' : ''}</p>
                         ${r.requested_counts_fa ? `<p class="text-[10px] text-indigo-500 font-bold">درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}</td>
                     <td class="p-3 min-w-[170px]">
                         <div class="flex items-center justify-between text-[10.5px] font-bold text-slate-500 mb-1"><span>${e2pNum(issued)} از ${e2pNum(total)} صادر شد</span><span class="${pct === 100 ? 'text-emerald-600' : 'text-slate-400'}">${e2pNum(pct)}٪</span></div>
@@ -6522,7 +6585,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                             <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-file-circle-check ml-1"></i>بررسی مدارک
                                 ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full">${e2pNum(r.pending_docs_count)}</span>` : ''}</button>
                             ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" title="ویرایش" class="creq-ico bg-amber-50 hover:bg-amber-100 text-amber-600"><i class="fas fa-pen"></i></button>
-                            <button onclick="deleteRequestRow(${r.id})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${purgeBtn('creq', r.id, 'loadCompanyRequests', 'creq-ico bg-rose-600 hover:bg-rose-700 text-white')}
+                            <button onclick="deleteRequestRow(${r.id}, ${personal ? 1 : 0})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${purgeBtn('creq', r.id, reload, 'creq-ico bg-rose-600 hover:bg-rose-700 text-white')}
                         </div></td>
                 </tr>`; }).join('');
         }
@@ -6621,11 +6684,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
             document.getElementById('ancr-insurer').innerHTML = options.map(o => `<option value="${o}">${o === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('');
         }
-        function deleteRequestRow(requestId) {
+        function deleteRequestRow(requestId, personal) {
             showConfirm('حذف درخواست', `درخواست #${requestId} و همه‌ی پلاک‌ها، مدارک و اطلاعات مالیِ آن برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`, async () => {
                 const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_request', request_id: requestId})});
                 const data = await res.json();
-                if (data.ok) { showToast('درخواست حذف شد.', 'success'); loadCompanyRequests(); }
+                if (data.ok) { showToast('درخواست حذف شد.', 'success'); personal ? loadPersonalRequests() : loadCompanyRequests(); }
                 else showToast(data.error || 'خطا', 'error');
             });
         }
@@ -7163,7 +7226,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
                     ${r.request_kind && r.request_kind !== 'NEW_POLICY'
                         ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}${Number(r.is_renewal) ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}
-                    <span class="text-xs text-slate-400">${r.company_name} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
+                    ${r.customer_kind === 'PERSONAL' ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-violet-100 text-violet-700"><i class="fas fa-user ml-0.5"></i>شخصی</span>' : (r.req_mode === 'SINGLE' ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-teal-100 text-teal-700"><i class="fas fa-car ml-0.5"></i>تکی</span>' : '')}
+                    <span class="text-xs text-slate-400">${fmEsc(r.company_name)}${r.customer_kind === 'PERSONAL' && r.customer_nid ? ' (' + faDigits(r.customer_nid) + ')' : ''}${r.customer_kind === 'PERSONAL' && r.customer_mobile ? ' · <span dir="ltr">' + faDigits(r.customer_mobile) + '</span>' : ''} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
                 </div>
                 <p class="text-[10px] text-slate-400 mb-2">ثبت: ${faDigits(r.created_at_jalali)} · آخرین ویرایش: ${faDigits(r.updated_at_jalali)}</p>
                 ${r.requested_counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-3"><i class="fas fa-envelope-open-text ml-1"></i>تعدادِ درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}
@@ -8822,6 +8886,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 expiry_from: ((document.getElementById('il-exp-from') || {}).value || '').trim(),
                 expiry_to: ((document.getElementById('il-exp-to') || {}).value || '').trim(),
                 import: (document.getElementById('il-import') || {}).value || '',
+                customer: (document.getElementById('il-customer') || {}).value || '',
                 endo: (document.getElementById('il-endo') || {}).value || '',
             };
         }
@@ -8875,7 +8940,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             tbody.innerHTML = issuedListCache.map((r, i) => `
                 <tr class="border-t border-slate-100 hover:bg-emerald-50/40 cursor-pointer" onclick="openIssuedDetail(${i})">
                     <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
-                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700')}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span></td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.personal ? 'bg-violet-100 text-violet-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'))}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span></td>
                     <td class="p-3">${r.request_kind_fa}</td>
                     <td class="p-3 font-bold">${fmEsc(r.insured_name || '—')}${r.source === 'PERSONNEL' && issuedRel(r) !== 'خودش' ? `<small class="block text-[10px] font-normal text-slate-400">${fmEsc(issuedRel(r))}ِ پرسنل</small>` : ''}</td>
                     <td class="p-3">${r.source === 'PERSONNEL'
@@ -8990,7 +9055,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (!r) return;
             document.getElementById('il-detail-body').innerHTML = `
                 <div class="flex items-center gap-2 mb-3 flex-wrap">
-                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700')}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.personal ? 'bg-violet-100 text-violet-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'))}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span>
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">${r.request_kind_fa}</span>
                     <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
                 </div>
@@ -10454,9 +10519,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             const tbody = document.getElementById('cfin-body');
             if (!data.ok) { tbody.innerHTML = `<tr><td colspan="4" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
             if (!data.companies.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center p-8 text-slate-400">شرکتی ثبت نشده.</td></tr>'; return; }
-            tbody.innerHTML = data.companies.map(c => `
+            // مشتریانِ شخصی (بدونِ قرارداد) جدا، زیرِ شرکت‌ها
+            let pHead = false;
+            tbody.innerHTML = data.companies.map(c => `${c.personal && !pHead && (pHead = true) ? '<tr class="bg-violet-50"><td colspan="4" class="p-2 text-[11px] font-black text-violet-700"><i class="fas fa-user ml-1"></i>مشتریانِ شخصی (اشخاص و شرکت‌های بی‌قرارداد)</td></tr>' : ''}
                 <tr class="border-t border-slate-100">
-                    <td class="p-3 font-bold">${c.name}</td>
+                    <td class="p-3 font-bold">${c.personal ? '<i class="fas fa-user text-violet-400 ml-1 text-[10px]"></i>' : ''}${fmEsc(c.name)}</td>
                     <td class="p-3 font-mono">${c.total_invoiced.toLocaleString('fa-IR')}</td>
                     <td class="p-3 font-mono">${c.total_paid.toLocaleString('fa-IR')}</td>
                     <td class="p-3 font-mono ${c.outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}">${c.outstanding.toLocaleString('fa-IR')}</td>
@@ -11940,6 +12007,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
             if (tabId.indexOf('hl-') === 0 && window.Health) Health.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
+            if (tabId === 'personal-requests') loadPersonalRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
             if (tabId === 'companies-finance') loadCompanyFinance();
             if (tabId === 'companies-manage') loadCompanyManage();
